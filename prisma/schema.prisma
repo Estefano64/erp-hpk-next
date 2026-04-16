@@ -1,0 +1,877 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Planta {
+  planta_id  Int        @id @default(autoincrement())
+  codigo     String     @unique @db.VarChar(10)
+  nombre     String     @db.VarChar(100)
+  direccion  String?    @db.VarChar(200)
+  activo     Boolean    @default(true)
+  areas      Area[]
+  equipos    Equipo[]
+  materiales Material[]
+
+  @@map("planta")
+}
+
+model Usuario {
+  id             Int      @id @default(autoincrement())
+  codigoEmpleado String   @unique @map("codigo_empleado") @db.VarChar(20)
+  email          String?  @unique @db.VarChar(100)
+  dni            String?  @unique @db.VarChar(20)
+  password       String   @db.VarChar(255)
+  nombre         String   @db.VarChar(100)
+  rol            String   @default("viewer") @db.VarChar(20)
+  activo         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("usuarios")
+}
+
+model Area {
+  area_id       Int          @id @default(autoincrement())
+  codigo        String       @unique @db.VarChar(10)
+  nombre        String       @db.VarChar(100)
+  planta_codigo String?      @db.VarChar(10)
+  activo        Boolean      @default(true)
+  planta        Planta?      @relation(fields: [planta_codigo], references: [codigo])
+  equipos       Equipo[]
+  estrategias   Estrategia[]
+  materiales    Material[]
+  sub_areas     SubArea[]
+
+  @@map("area")
+}
+
+model SubArea {
+  sub_area_id Int      @id @default(autoincrement())
+  codigo      String   @unique @db.VarChar(10)
+  nombre      String   @db.VarChar(100)
+  area_codigo String   @db.VarChar(10)
+  activo      Boolean  @default(true)
+  equipos     Equipo[]
+  area        Area     @relation(fields: [area_codigo], references: [codigo])
+
+  @@map("sub_area")
+}
+
+model UnidadMedida {
+  unidad_medida_id Int          @id @default(autoincrement())
+  codigo           String       @unique @db.VarChar(10)
+  nombre           String       @db.VarChar(100)
+  abreviatura      String?      @db.VarChar(20)
+  activo           Boolean      @default(true)
+  equipos          Equipo[]
+  estrategias      Estrategia[]
+  materiales       Material[]
+
+  @@map("unidad_medida")
+}
+
+model Moneda {
+  moneda_id          Int                @id @default(autoincrement())
+  codigo             String             @unique @db.VarChar(10)
+  nombre             String             @db.VarChar(100)
+  simbolo            String?            @db.VarChar(10)
+  activo             Boolean            @default(true)
+  codigos_reparacion CodigoReparacion[]
+  equipos            Equipo[]
+  materiales         Material[]
+
+  @@map("moneda")
+}
+
+model Fabricante {
+  fabricante_id      Int                @id @default(autoincrement())
+  codigo             String             @unique @db.VarChar(20)
+  nombre             String             @db.VarChar(200)
+  pais               String?            @db.VarChar(100)
+  activo             Boolean            @default(true)
+  codigos_reparacion CodigoReparacion[]
+  equipos            Equipo[]
+  materiales         Material[]
+  ordenes_trabajo    OrdenTrabajo[]
+
+  @@map("fabricante")
+}
+
+model Categoria {
+  categoria_id Int        @id @default(autoincrement())
+  codigo       String     @unique @db.VarChar(10)
+  nombre       String     @db.VarChar(100)
+  activo       Boolean    @default(true)
+  materiales   Material[]
+
+  @@map("categoria")
+}
+
+model Clasificacion {
+  clasificacion_id Int        @id @default(autoincrement())
+  codigo           String     @unique @db.VarChar(10)
+  nombre           String     @db.VarChar(100)
+  activo           Boolean    @default(true)
+  materiales       Material[]
+
+  @@map("clasificacion")
+}
+
+model StatusEquipo {
+  status_equipo_id Int      @id @default(autoincrement())
+  codigo           String   @unique @db.VarChar(10)
+  nombre           String   @db.VarChar(100)
+  activo           Boolean  @default(true)
+  equipos          Equipo[]
+
+  @@map("status_equipo")
+}
+
+model TipoEquipo {
+  tipo_equipo_id Int      @id @default(autoincrement())
+  codigo         String   @unique @db.VarChar(10)
+  nombre         String   @db.VarChar(100)
+  activo         Boolean  @default(true)
+  equipos        Equipo[]
+
+  @@map("tipo_equipo")
+}
+
+model Criticidad {
+  criticidad_id Int      @id @default(autoincrement())
+  codigo        String   @unique @db.VarChar(10)
+  nombre        String   @db.VarChar(100)
+  nivel         Int?
+  activo        Boolean  @default(true)
+  equipos       Equipo[]
+
+  @@map("criticidad")
+}
+
+model Ubicacion {
+  ubicacion_id Int      @id @default(autoincrement())
+  codigo       String   @unique @db.VarChar(10)
+  nombre       String   @db.VarChar(100)
+  descripcion  String?  @db.VarChar(200)
+  activo       Boolean? @default(true)
+  equipos      Equipo[]
+
+  @@map("ubicacion")
+}
+
+model StatusEstrategia {
+  status_estrategia_id Int          @id @default(autoincrement())
+  codigo               String       @unique @db.VarChar(10)
+  nombre               String       @db.VarChar(100)
+  activo               Boolean      @default(true)
+  estrategias          Estrategia[]
+
+  @@map("status_estrategia")
+}
+
+model TipoEstrategia {
+  tipo_estrategia_id Int          @id @default(autoincrement())
+  codigo             String       @unique @db.VarChar(10)
+  nombre             String       @db.VarChar(100)
+  activo             Boolean      @default(true)
+  estrategias        Estrategia[]
+
+  @@map("tipo_estrategia")
+}
+
+model TipoTarea {
+  tipo_tarea_id Int     @id @default(autoincrement())
+  codigo        String  @unique @db.VarChar(10)
+  nombre        String  @db.VarChar(100)
+  activo        Boolean @default(true)
+  tareas        Tarea[]
+
+  @@map("tipo_tarea")
+}
+
+model TipoCodRep {
+  tipo_cod_rep_id    Int                @id @default(autoincrement())
+  codigo             String             @unique @db.VarChar(10)
+  nombre             String             @db.VarChar(100)
+  activo             Boolean            @default(true)
+  codigos_reparacion CodigoReparacion[]
+
+  @@map("tipo_cod_rep")
+}
+
+model CategoriaCodRep {
+  categoria_cod_rep_id Int                @id @default(autoincrement())
+  codigo               String             @unique @db.VarChar(10)
+  nombre               String             @db.VarChar(100)
+  activo               Boolean            @default(true)
+  codigos_reparacion   CodigoReparacion[]
+
+  @@map("categoria_cod_rep")
+}
+
+model FlotaEquipo {
+  flota_equipo_id    Int                @id @default(autoincrement())
+  codigo             String             @unique @db.VarChar(10)
+  nombre             String             @db.VarChar(100)
+  activo             Boolean            @default(true)
+  codigos_reparacion CodigoReparacion[]
+
+  @@map("flota_equipo")
+}
+
+model Posicion {
+  posicion_id        Int                @id @default(autoincrement())
+  codigo             String             @unique @db.VarChar(10)
+  nombre             String             @db.VarChar(100)
+  activo             Boolean            @default(true)
+  codigos_reparacion CodigoReparacion[]
+
+  @@map("posicion")
+}
+
+model Cliente {
+  cliente_id         Int            @id @default(autoincrement())
+  codigo             String         @unique @db.VarChar(10)
+  razon_social       String         @db.VarChar(200)
+  nombre_comercial   String?        @db.VarChar(200)
+  ruc                String?        @db.VarChar(20)
+  direccion          String?        @db.VarChar(300)
+  telefono           String?        @db.VarChar(50)
+  email              String?        @db.VarChar(100)
+  contacto_principal String?        @db.VarChar(200)
+  activo             Boolean        @default(true)
+  contratos          Contrato[]
+  ordenes_trabajo    OrdenTrabajo[]
+
+  @@map("cliente")
+}
+
+model Garantia {
+  garantia_id     Int            @id @default(autoincrement())
+  codigo          String         @unique @db.VarChar(10)
+  nombre          String         @db.VarChar(100)
+  activo          Boolean        @default(true)
+  ordenes_trabajo OrdenTrabajo[]
+
+  @@map("garantia")
+}
+
+model AtencionReparacion {
+  atencion_reparacion_id Int            @id @default(autoincrement())
+  codigo                 String         @unique @db.VarChar(30)
+  nombre                 String         @db.VarChar(100)
+  activo                 Boolean        @default(true)
+  ordenes_trabajo        OrdenTrabajo[]
+
+  @@map("atencion_reparacion")
+}
+
+model TipoReparacion {
+  tipo_reparacion_id Int            @id @default(autoincrement())
+  codigo             String         @unique @db.VarChar(10)
+  nombre             String         @db.VarChar(100)
+  activo             Boolean        @default(true)
+  ordenes_trabajo    OrdenTrabajo[]
+
+  @@map("tipo_reparacion")
+}
+
+model TipoGarantia {
+  tipo_garantia_id Int            @id @default(autoincrement())
+  codigo           String         @unique @db.VarChar(30)
+  nombre           String         @db.VarChar(100)
+  activo           Boolean        @default(true)
+  ordenes_trabajo  OrdenTrabajo[]
+
+  @@map("tipo_garantia")
+}
+
+model PrioridadAtencion {
+  prioridad_atencion_id Int            @id @default(autoincrement())
+  codigo                String         @unique @db.VarChar(10)
+  nombre                String         @db.VarChar(100)
+  nivel                 Int?
+  activo                Boolean        @default(true)
+  ordenes_trabajo       OrdenTrabajo[]
+
+  @@map("prioridad_atencion")
+}
+
+model BaseMetalica {
+  base_metalica_id Int            @id @default(autoincrement())
+  codigo           String         @unique @db.VarChar(10)
+  nombre           String         @db.VarChar(100)
+  activo           Boolean        @default(true)
+  ordenes_trabajo  OrdenTrabajo[]
+
+  @@map("base_metalica")
+}
+
+model OtStatus {
+  ot_status_id    Int            @id @default(autoincrement())
+  codigo          String         @unique @db.VarChar(30)
+  nombre          String         @db.VarChar(100)
+  activo          Boolean        @default(true)
+  ordenes_trabajo OrdenTrabajo[]
+
+  @@map("ot_status")
+}
+
+model RecursosStatus {
+  recursos_status_id Int            @id @default(autoincrement())
+  codigo             String         @unique @db.VarChar(30)
+  nombre             String         @db.VarChar(100)
+  activo             Boolean        @default(true)
+  ordenes_trabajo    OrdenTrabajo[]
+
+  @@map("recursos_status")
+}
+
+model TallerStatus {
+  taller_status_id Int            @id @default(autoincrement())
+  codigo           String         @unique @db.VarChar(30)
+  nombre           String         @db.VarChar(100)
+  activo           Boolean        @default(true)
+  ordenes_trabajo  OrdenTrabajo[]
+
+  @@map("taller_status")
+}
+
+model Material {
+  material_id           Int             @id @default(autoincrement())
+  codigo                String          @unique @db.VarChar(50)
+  descripcion_compuesta String?
+  descripcion           String
+  planta_codigo         String          @db.VarChar(10)
+  area_codigo           String          @db.VarChar(10)
+  categoria_codigo      String          @db.VarChar(10)
+  clasificacion_codigo  String          @db.VarChar(10)
+  punto_reposicion      Decimal?        @db.Decimal(10, 2)
+  stock_maximo          Decimal?        @db.Decimal(10, 2)
+  unidad_medida_codigo  String          @db.VarChar(10)
+  plazo_entrega         Int?
+  precio                Decimal?        @db.Decimal(15, 4)
+  moneda_codigo         String?         @db.VarChar(10)
+  fabricante_codigo     String?         @db.VarChar(20)
+  np                    String?         @db.VarChar(100)
+  modelo                String?         @db.VarChar(100)
+  caja                  String?         @db.VarChar(50)
+  stock_actual          Decimal?        @default(0) @db.Decimal(10, 2)
+  ubicacion             String?         @db.VarChar(50)
+  activo                Boolean?        @default(true)
+  created_at            DateTime?       @default(now())
+  updated_at            DateTime?       @default(now()) @updatedAt
+  compra_detalles       CompraDetalle[]
+  area                  Area            @relation(fields: [area_codigo], references: [codigo])
+  categoria             Categoria       @relation(fields: [categoria_codigo], references: [codigo])
+  clasificacion         Clasificacion   @relation(fields: [clasificacion_codigo], references: [codigo])
+  fabricante            Fabricante?     @relation(fields: [fabricante_codigo], references: [codigo])
+  moneda                Moneda?         @relation(fields: [moneda_codigo], references: [codigo])
+  planta                Planta          @relation(fields: [planta_codigo], references: [codigo])
+  unidad_medida         UnidadMedida    @relation(fields: [unidad_medida_codigo], references: [codigo])
+  ot_repuestos          OTRepuesto[]
+  tareas                Tarea[]
+
+  @@map("material")
+}
+
+model Equipo {
+  equipo_id            Int           @id @default(autoincrement())
+  codigo               String        @unique @db.VarChar(50)
+  descripcion          String
+  status_codigo        String        @db.VarChar(10)
+  area_codigo          String        @db.VarChar(10)
+  sub_area_codigo      String?       @db.VarChar(10)
+  tipo_codigo          String        @db.VarChar(10)
+  fecha_inicio         DateTime?     @db.Date
+  fecha_fabricacion    DateTime?     @db.Date
+  fabricante_codigo    String?       @db.VarChar(20)
+  modelo               String?       @db.VarChar(100)
+  numero_serie         String?       @db.VarChar(100)
+  numero_parte         String?       @db.VarChar(100)
+  capacidad            String?       @db.VarChar(50)
+  unidad_medida_codigo String?       @db.VarChar(10)
+  observaciones        String?
+  planta_codigo        String        @db.VarChar(10)
+  criticidad_codigo    String?       @db.VarChar(10)
+  cantidad             Int           @default(1)
+  usuario_responsable  String?       @db.VarChar(100)
+  moneda_codigo        String?       @db.VarChar(10)
+  precio               Decimal?      @db.Decimal(12, 2)
+  ubicacion_codigo     String?       @db.VarChar(10)
+  area                 Area          @relation(fields: [area_codigo], references: [codigo])
+  criticidad           Criticidad?   @relation(fields: [criticidad_codigo], references: [codigo])
+  fabricante           Fabricante?   @relation(fields: [fabricante_codigo], references: [codigo])
+  moneda               Moneda?       @relation(fields: [moneda_codigo], references: [codigo])
+  planta               Planta        @relation(fields: [planta_codigo], references: [codigo])
+  status               StatusEquipo  @relation(fields: [status_codigo], references: [codigo])
+  sub_area             SubArea?      @relation(fields: [sub_area_codigo], references: [codigo])
+  tipo                 TipoEquipo    @relation(fields: [tipo_codigo], references: [codigo])
+  ubicacion            Ubicacion?    @relation(fields: [ubicacion_codigo], references: [codigo])
+  unidad_medida        UnidadMedida? @relation(fields: [unidad_medida_codigo], references: [codigo])
+  estrategias          Estrategia[]
+
+  @@map("equipo")
+}
+
+model Estrategia {
+  estrategia_id           Int              @id @default(autoincrement())
+  codigo                  String           @unique @db.VarChar(50)
+  area_codigo             String           @db.VarChar(10)
+  equipo_codigo           String           @db.VarChar(50)
+  actividad_codigo        String           @db.VarChar(50)
+  frecuencia              Int
+  unidad_medida_codigo    String           @db.VarChar(10)
+  descripcion             String
+  tipo_estrategia_codigo  String           @db.VarChar(10)
+  status_codigo           String           @db.VarChar(10)
+  fecha_ultima_ejecucion  DateTime?        @db.Date
+  fecha_proxima_ejecucion DateTime?        @db.Date
+  area                    Area             @relation(fields: [area_codigo], references: [codigo])
+  equipo                  Equipo           @relation(fields: [equipo_codigo], references: [codigo])
+  status                  StatusEstrategia @relation(fields: [status_codigo], references: [codigo])
+  tipo                    TipoEstrategia   @relation(fields: [tipo_estrategia_codigo], references: [codigo])
+  unidad_medida           UnidadMedida     @relation(fields: [unidad_medida_codigo], references: [codigo])
+
+  @@map("estrategia")
+}
+
+model Tarea {
+  tarea_id          Int               @id @default(autoincrement())
+  actividad_codigo  String            @db.VarChar(50)
+  cod_rep_codigo    String?           @db.VarChar(50)
+  np_cod1           String?           @db.VarChar(100)
+  np_cod2           String?           @db.VarChar(100)
+  id_tubo           String?           @db.VarChar(50)
+  od_vas            String?           @db.VarChar(50)
+  descripcion       String
+  item_numero       Int
+  tipo_codigo       String            @db.VarChar(10)
+  material_codigo   String?           @db.VarChar(50)
+  requerimiento     Decimal           @db.Decimal(10, 2)
+  ref_descripcion   String?
+  np                String?           @db.VarChar(100)
+  texto             String?
+  precio            Decimal?          @db.Decimal(12, 2)
+  codigo_reparacion CodigoReparacion? @relation(fields: [cod_rep_codigo], references: [codigo])
+  material          Material?         @relation(fields: [material_codigo], references: [codigo])
+  tipo              TipoTarea         @relation(fields: [tipo_codigo], references: [codigo])
+
+  @@map("tarea")
+}
+
+model CodigoReparacion {
+  cod_rep_id        Int             @id @default(autoincrement())
+  codigo            String          @unique @db.VarChar(50)
+  descripcion       String
+  tipo_codigo       String          @db.VarChar(10)
+  categoria_codigo  String          @db.VarChar(10)
+  flota_codigo      String          @db.VarChar(10)
+  fabricante_codigo String?         @db.VarChar(20)
+  np                String?         @db.VarChar(100)
+  posicion_codigo   String?         @db.VarChar(10)
+  precio            Decimal?        @db.Decimal(15, 4)
+  moneda_codigo     String?         @db.VarChar(10)
+  activo            Boolean         @default(true)
+  created_at        DateTime        @default(now())
+  updated_at        DateTime        @default(now()) @updatedAt
+  categoria         CategoriaCodRep @relation(fields: [categoria_codigo], references: [codigo])
+  fabricante        Fabricante?     @relation(fields: [fabricante_codigo], references: [codigo])
+  flota             FlotaEquipo     @relation(fields: [flota_codigo], references: [codigo])
+  moneda            Moneda?         @relation(fields: [moneda_codigo], references: [codigo])
+  posicion          Posicion?       @relation(fields: [posicion_codigo], references: [codigo])
+  tipo              TipoCodRep      @relation(fields: [tipo_codigo], references: [codigo])
+  contratos         Contrato[]
+  ordenes_trabajo   OrdenTrabajo[]
+  tareas            Tarea[]
+
+  @@map("codigo_reparacion")
+}
+
+model OrdenTrabajo {
+  id                          Int                 @id @default(autoincrement())
+  ot                          String?             @db.VarChar(50)
+  id_cliente                  Int?
+  estrategia                  Boolean?
+  id_cod_rep                  Int?
+  tipo                        String?             @db.VarChar(100)
+  np                          String?             @db.VarChar(100)
+  descripcion                 String?
+  id_fabricante               Int?
+  cod_rep_flota               String?             @db.VarChar(100)
+  cod_rep_posicion            String?             @db.VarChar(100)
+  equipo_codigo               String?             @db.VarChar(100)
+  ns                          String?             @db.VarChar(100)
+  plaqueteo                   String?             @db.VarChar(100)
+  wo_cliente                  String?             @db.VarChar(100)
+  po_cliente                  String?             @db.VarChar(100)
+  id_viajero                  String?             @db.VarChar(100)
+  guia_remision               String?             @db.VarChar(100)
+  empresa_entrega             String?             @db.VarChar(200)
+  fecha_recepcion             DateTime?           @db.Date
+  pcr                         Decimal?            @db.Decimal(10, 2)
+  horas                       Decimal?            @db.Decimal(10, 2)
+  porcentaje_pcr              Decimal?            @db.Decimal(5, 2)
+  garantia_codigo             String?             @db.VarChar(10)
+  atencion_reparacion_codigo  String?             @db.VarChar(50)
+  tipo_reparacion_codigo      String?             @db.VarChar(20)
+  tipo_garantia_codigo        String?             @db.VarChar(30)
+  prioridad_atencion_codigo   String?             @db.VarChar(10)
+  contrato_dias               Int?
+  base_metalica_codigo        String?             @db.VarChar(30)
+  comentarios                 String?
+  fecha_requerimiento_cliente DateTime?           @db.Date
+  fecha_reprogramada          DateTime?           @db.Date
+  ot_status_codigo            String?             @db.VarChar(50)
+  recursos_status_codigo      String?             @db.VarChar(50)
+  taller_status_codigo        String?             @db.VarChar(50)
+  usuario_crea                String?             @db.VarChar(100)
+  fecha_creacion              DateTime?           @default(now()) @db.Date
+  usuario_actualiza           String?             @db.VarChar(100)
+  fecha_actualizacion         DateTime?           @db.Date
+  fecha_evaluacion            DateTime?           @db.Date
+  evaluador                   String?             @db.VarChar(100)
+  nro_informe_evaluacion      String?             @db.VarChar(100)
+  fecha_entrega_informe       DateTime?           @db.Date
+  dias_evaluacion             Int?
+  reparacion_cil              String?             @db.VarChar(10)
+  reparacion_vas              String?             @db.VarChar(10)
+  reparacion_tapa             String?             @db.VarChar(10)
+  reparacion_piston           String?             @db.VarChar(10)
+  nro_cotizacion              String?             @db.VarChar(100)
+  monto_cotizacion            Decimal?            @db.Decimal(15, 2)
+  fecha_cotizacion            DateTime?           @db.Date
+  dias_cotizacion             Int?
+  fecha_aprobacion            DateTime?           @db.Date
+  dias_aprobacion             Int?
+  fecha_req_1                 DateTime?           @db.Date
+  fecha_req_2                 DateTime?           @db.Date
+  fecha_llegada_repuestos     DateTime?           @db.Date
+  dias_proceso                Int?
+  fecha_entrega               DateTime?           @db.Date
+  cumplimiento                String?             @db.VarChar(20)
+  nro_informe_entrega         String?             @db.VarChar(100)
+  guia_entrega_salida         String?             @db.VarChar(100)
+  nro_factura                 String?             @db.VarChar(100)
+  fecha_facturacion           DateTime?           @db.Date
+  dias_en_taller              Int?
+  pct_cilindro                Decimal?            @default(0) @db.Decimal(5, 2)
+  pct_vastago                 Decimal?            @default(0) @db.Decimal(5, 2)
+  pct_tapa                    Decimal?            @default(0) @db.Decimal(5, 2)
+  pct_piston                  Decimal?            @default(0) @db.Decimal(5, 2)
+  pct_cuerpo_int_1            Decimal?            @default(0) @db.Decimal(5, 2)
+  pct_cuerpo_int_2            Decimal?            @default(0) @db.Decimal(5, 2)
+  pct_otros                   Decimal?            @default(0) @db.Decimal(5, 2)
+  compras                     Compra[]
+  atencion_reparacion         AtencionReparacion? @relation(fields: [atencion_reparacion_codigo], references: [codigo])
+  base_metalica               BaseMetalica?       @relation(fields: [base_metalica_codigo], references: [codigo])
+  garantia                    Garantia?           @relation(fields: [garantia_codigo], references: [codigo])
+  cliente                     Cliente?            @relation(fields: [id_cliente], references: [cliente_id])
+  codigo_reparacion           CodigoReparacion?   @relation(fields: [id_cod_rep], references: [cod_rep_id])
+  fabricante                  Fabricante?         @relation(fields: [id_fabricante], references: [fabricante_id])
+  ot_status                   OtStatus?           @relation(fields: [ot_status_codigo], references: [codigo])
+  prioridad_atencion          PrioridadAtencion?  @relation(fields: [prioridad_atencion_codigo], references: [codigo])
+  recursos_status             RecursosStatus?     @relation(fields: [recursos_status_codigo], references: [codigo])
+  taller_status               TallerStatus?       @relation(fields: [taller_status_codigo], references: [codigo])
+  tipo_garantia               TipoGarantia?       @relation(fields: [tipo_garantia_codigo], references: [codigo])
+  tipo_reparacion             TipoReparacion?     @relation(fields: [tipo_reparacion_codigo], references: [codigo])
+  adjuntos                    OtAdjunto[]
+  historial                   OTHistorial[]
+  repuestos                   OTRepuesto[]
+  planificaciones             PlanificacionOT[]
+
+  @@map("orden_trabajo")
+}
+
+model OtAdjunto {
+  id               Int          @id @default(autoincrement())
+  orden_trabajo_id Int
+  etapa            String       @db.VarChar(30)
+  nombre_archivo   String       @db.VarChar(255)
+  ruta             String       @db.VarChar(500)
+  tipo_mime        String       @db.VarChar(100)
+  tamano           Int
+  fecha_subida     DateTime     @default(now())
+  orden_trabajo    OrdenTrabajo @relation(fields: [orden_trabajo_id], references: [id])
+
+  @@map("ot_adjunto")
+}
+
+model Almacen {
+  id        Int      @id @default(autoincrement())
+  codigo    String   @unique @db.VarChar(20)
+  nombre    String   @db.VarChar(100)
+  capacidad Decimal  @db.Decimal(10, 2)
+  ocupacion Decimal  @default(0) @db.Decimal(10, 2)
+  zonas     Int      @default(0)
+  ubicacion String   @db.VarChar(200)
+  estado    String   @default("Activo") @db.VarChar(10)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  compras   Compra[]
+
+  @@map("almacenes")
+}
+
+model Proveedor {
+  id           Int          @id @default(autoincrement())
+  ruc          String       @unique @db.VarChar(11)
+  razonSocial  String       @db.VarChar(200)
+  contacto     String       @db.VarChar(100)
+  telefono     String       @db.VarChar(20)
+  email        String       @db.VarChar(100)
+  direccion    String?
+  estado       String       @default("Activo") @db.VarChar(10)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  compras      Compra[]
+  ot_repuestos OTRepuesto[]
+
+  @@map("proveedores")
+}
+
+model Compra {
+  id                     Int             @id @default(autoincrement())
+  numero_po              String          @unique @db.VarChar(50)
+  numero_req             String?         @db.VarChar(50)
+  ot_id                  Int?
+  proveedor_id           Int
+  fecha_solicitud        DateTime        @default(now()) @db.Date
+  fecha_entrega_esperada DateTime?       @db.Date
+  fecha_entrega_real     DateTime?       @db.Date
+  almacen_id             Int
+  estado                 String          @default("Pendiente") @db.VarChar(20)
+  subtotal               Decimal         @default(0) @db.Decimal(12, 2)
+  impuesto               Decimal         @default(0) @db.Decimal(12, 2)
+  total                  Decimal         @default(0) @db.Decimal(12, 2)
+  moneda                 String          @default("USD") @db.VarChar(3)
+  nro_factura            String?         @db.VarChar(100)
+  nro_guia               String?         @db.VarChar(100)
+  observaciones          String?
+  usuario_solicita       String          @db.VarChar(100)
+  usuario_aprueba        String?         @db.VarChar(100)
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+  almacen                Almacen         @relation(fields: [almacen_id], references: [id])
+  orden_trabajo          OrdenTrabajo?   @relation(fields: [ot_id], references: [id])
+  proveedor              Proveedor       @relation(fields: [proveedor_id], references: [id])
+  detalles               CompraDetalle[]
+  ot_repuestos           OTRepuesto[]
+
+  @@index([numero_po])
+  @@index([estado])
+  @@index([ot_id])
+  @@map("compras")
+}
+
+model CompraDetalle {
+  id              Int      @id @default(autoincrement())
+  compra_id       Int
+  material_id     Int
+  cantidad        Int
+  precio_unitario Decimal  @default(0) @db.Decimal(12, 2)
+  subtotal        Decimal  @default(0) @db.Decimal(12, 2)
+  descuento       Decimal? @default(0) @db.Decimal(12, 2)
+  impuesto        Decimal? @default(0) @db.Decimal(12, 2)
+  total           Decimal  @default(0) @db.Decimal(12, 2)
+  observaciones   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  compra          Compra   @relation(fields: [compra_id], references: [id])
+  material        Material @relation(fields: [material_id], references: [material_id])
+
+  @@index([compra_id])
+  @@map("compras_detalle")
+}
+
+model OrdenCompra {
+  id                      Int       @id @default(autoincrement())
+  numero_oc               String    @unique @db.VarChar(50)
+  fecha_orden             DateTime  @db.Date
+  fecha_entrega_requerida DateTime? @db.Date
+  proveedor_id            Int
+  contacto_proveedor      String?   @db.VarChar(200)
+  material_id             Int?
+  descripcion             String?
+  cantidad                Decimal?  @db.Decimal(12, 4)
+  unidad_medida           String?   @db.VarChar(20)
+  precio_unitario         Decimal?  @db.Decimal(14, 4)
+  subtotal                Decimal?  @db.Decimal(14, 2)
+  igv_porcentaje          Decimal?  @default(18) @db.Decimal(5, 2)
+  descuento_porcentaje    Decimal?  @default(0) @db.Decimal(5, 2)
+  total_final             Decimal?  @db.Decimal(14, 2)
+  forma_pago              String?   @db.VarChar(50)
+  plazo_pago              Int?
+  moneda                  String    @default("USD") @db.VarChar(10)
+  almacen_id              Int?
+  direccion_entrega       String?
+  incoterm                String?   @db.VarChar(10)
+  estado                  String    @default("borrador") @db.VarChar(20)
+  prioridad               String    @default("media") @db.VarChar(10)
+  tipo_compra             String?   @db.VarChar(30)
+  observaciones           String?
+  user_crea               String?   @db.VarChar(100)
+  ot_id                   Int?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  @@map("ordenes_compra")
+}
+
+model MovimientoInventario {
+  id                   Int      @id @default(autoincrement())
+  material_id          Int
+  tipo_movimiento      String   @db.VarChar(10)
+  cantidad             Decimal  @db.Decimal(10, 2)
+  documento_referencia String?  @db.VarChar(50)
+  observacion          String?
+  usuario              String   @db.VarChar(50)
+  fecha_movimiento     DateTime @default(now()) @db.Date
+
+  @@map("movimientos_inventario")
+}
+
+model Herramienta {
+  id        Int      @id @default(autoincrement())
+  codigo    String   @unique @db.VarChar(20)
+  nombre    String   @db.VarChar(100)
+  stock     Int      @default(0)
+  asignadas Int      @default(0)
+  estado    String   @default("Disponible") @db.VarChar(15)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("herramientas")
+}
+
+model OTHistorial {
+  id                Int          @id @default(autoincrement())
+  ot_id             Int
+  tipo_operacion    String       @db.VarChar(50)
+  descripcion       String
+  usuario           String       @db.VarChar(100)
+  fecha             DateTime     @default(now()) @db.Date
+  datos_adicionales String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  orden_trabajo     OrdenTrabajo @relation(fields: [ot_id], references: [id])
+
+  @@index([ot_id])
+  @@index([fecha])
+  @@map("ot_historial")
+}
+
+model OTRepuesto {
+  id                     Int          @id @default(autoincrement())
+  ot_id                  Int
+  material_id            Int?
+  material_codigo        String?      @db.VarChar(20)
+  nro_req                String?      @db.VarChar(50)
+  item_req               Int?
+  tipo_codigo            String?      @db.VarChar(10)
+  cantidad               Decimal      @db.Decimal(10, 2)
+  descripcion            String?
+  texto                  String?
+  fabricante_codigo      String?      @db.VarChar(50)
+  unidad_medida          String?      @default("UNIDAD") @db.VarChar(20)
+  fecha_solicitud        DateTime     @default(now()) @db.Date
+  fecha_requerida        DateTime?    @db.Date
+  estado                 String       @default("REV") @db.VarChar(30)
+  estado_cot             String?      @db.VarChar(20)
+  po_id                  Int?
+  nro_oc                 String?      @db.VarChar(50)
+  item_oc                Int?
+  proveedor_id           Int?
+  precio_unitario        Decimal?     @db.Decimal(15, 4)
+  precio_venta           Decimal?     @db.Decimal(15, 4)
+  moneda                 String?      @default("USD") @db.VarChar(10)
+  t_req                  Decimal?     @db.Decimal(10, 2)
+  t_oc                   Decimal?     @db.Decimal(10, 2)
+  t_total                Decimal?     @db.Decimal(10, 2)
+  t_almacenaje           Decimal?     @db.Decimal(10, 2)
+  t_armado               Decimal?     @db.Decimal(10, 2)
+  t_fact                 Decimal?     @db.Decimal(10, 2)
+  fecha_oc               DateTime?    @db.Date
+  fecha_entrega_esperada DateTime?    @db.Date
+  fecha_entrega_real     DateTime?    @db.Date
+  fecha_salida_almacen   DateTime?    @db.Date
+  fecha_envio_mina       DateTime?    @db.Date
+  fecha_facturacion      DateTime?    @db.Date
+  nro_guia               String?      @db.VarChar(100)
+  nro_factura_proveedor  String?      @db.VarChar(100)
+  factura_cliente        String?      @db.VarChar(100)
+  gr_mina                String?      @db.VarChar(100)
+  evaluador              String?      @db.VarChar(100)
+  es_adicional           Boolean?     @default(false)
+  ubicacion              String?      @db.VarChar(50)
+  observaciones          String?
+  usuario_solicita       String       @db.VarChar(100)
+  usuario_aprueba        String?      @db.VarChar(100)
+  fecha_aprobacion       DateTime?    @db.Date
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+  material               Material?    @relation(fields: [material_id], references: [material_id])
+  orden_trabajo          OrdenTrabajo @relation(fields: [ot_id], references: [id])
+  compra                 Compra?      @relation(fields: [po_id], references: [id])
+  proveedor              Proveedor?   @relation(fields: [proveedor_id], references: [id])
+
+  @@index([ot_id])
+  @@index([nro_req])
+  @@index([estado])
+  @@index([po_id])
+  @@index([nro_oc])
+  @@map("ot_repuestos")
+}
+
+model PlanificacionOT {
+  id               Int          @id @default(autoincrement())
+  ot_id            Int
+  componente       String       @db.VarChar(10)
+  operacion_codigo String       @db.VarChar(20)
+  descripcion      String       @db.VarChar(200)
+  tipo_reparacion  String?      @db.VarChar(10)
+  orden            Int          @default(0)
+  horas_estimadas  Decimal?     @db.Decimal(5, 1)
+  fecha_inicio     DateTime?    @db.Timestamp(6)
+  fecha_fin        DateTime?    @db.Timestamp(6)
+  tecnico          String?      @db.VarChar(100)
+  maquina          String?      @db.VarChar(50)
+  estado           String?      @default("Pendiente") @db.VarChar(30)
+  observaciones    String?
+  semana_plan      String?      @db.VarChar(10)
+  qty_personal     Int?         @default(1)
+  horas_extras     Boolean?     @default(false)
+  horas_extras_qty Decimal?     @db.Decimal(5, 1)
+  created_at       DateTime     @default(now())
+  updated_at       DateTime     @updatedAt
+  orden_trabajo    OrdenTrabajo @relation(fields: [ot_id], references: [id])
+
+  @@map("planificacion_ot")
+}
+
+model Contrato {
+  id                Int               @id @default(autoincrement())
+  codigo            String            @unique @db.VarChar(50)
+  cliente_id        Int
+  cod_rep_id        Int?
+  fecha_inicio      DateTime          @db.Date
+  fecha_termino     DateTime          @db.Date
+  dias_reparacion   Int
+  precio            Decimal           @db.Decimal(12, 2)
+  activo            Boolean           @default(true)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  cliente           Cliente           @relation(fields: [cliente_id], references: [cliente_id])
+  codigo_reparacion CodigoReparacion? @relation(fields: [cod_rep_id], references: [cod_rep_id])
+
+  @@index([cliente_id])
+  @@index([codigo])
+  @@index([cod_rep_id])
+  @@index([cliente_id, cod_rep_id])
+  @@map("contrato")
+}

@@ -1,0 +1,1 @@
+-- Migration applied via manual SQL script

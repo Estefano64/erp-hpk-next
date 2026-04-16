@@ -1,0 +1,517 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import {
+  Typography,
+  Form,
+  Input,
+  Select,
+  Button,
+  InputNumber,
+  DatePicker,
+  Checkbox,
+  Row,
+  Col,
+  Card,
+  Divider,
+  message,
+  Descriptions,
+} from "antd";
+import { SaveOutlined, ArrowLeftOutlined } from "@ant-design/icons";
+import { useRouter } from "next/navigation";
+import dayjs from "dayjs";
+
+const { Title, Text } = Typography;
+const { TextArea } = Input;
+
+interface CatalogOption {
+  codigo: string;
+  nombre: string;
+}
+
+interface ClienteOption {
+  cliente_id: number;
+  codigo: string;
+  nombre_comercial: string | null;
+  razon_social: string;
+}
+
+interface CodRepOption {
+  cod_rep_id: number;
+  codigo: string;
+  descripcion: string;
+  np: string | null;
+  tipo: { nombre: string } | null;
+  flota: { nombre: string } | null;
+  fabricante: { fabricante_id: number; nombre: string } | null;
+  posicion: { nombre: string } | null;
+}
+
+export default function NuevaOTPage() {
+  const router = useRouter();
+  const [form] = Form.useForm();
+  const [saving, setSaving] = useState(false);
+  const [messageApi, contextHolder] = message.useMessage();
+
+  // Catálogos
+  const [clientes, setClientes] = useState<ClienteOption[]>([]);
+  const [codReps, setCodReps] = useState<CodRepOption[]>([]);
+  const [tipoReparaciones, setTipoReparaciones] = useState<CatalogOption[]>([]);
+  const [atencionReparaciones, setAtencionReparaciones] = useState<CatalogOption[]>([]);
+  const [prioridades, setPrioridades] = useState<CatalogOption[]>([]);
+  const [tipoGarantias, setTipoGarantias] = useState<CatalogOption[]>([]);
+
+  // Estado del form para lógica condicional
+  const [estrategia, setEstrategia] = useState(false);
+  const [garantia, setGarantia] = useState(false);
+  const [atencionCodigo, setAtencionCodigo] = useState("");
+  const [selectedCodRep, setSelectedCodRep] = useState<CodRepOption | null>(null);
+
+  // Campos calculados
+  const [porcentajePcr, setPorcentajePcr] = useState<number | null>(null);
+  const [contratoDias, setContratoDias] = useState<number | null>(null);
+  const [fechaReqCalculada, setFechaReqCalculada] = useState<string | null>(null);
+  const [diasCalculados, setDiasCalculados] = useState<number | null>(null);
+  const [tieneContrato, setTieneContrato] = useState(false);
+
+  useEffect(() => {
+    async function loadCatalogs() {
+      const [cliRes, crRes, tipoRepRes, atencionRes, prioRes, tipoGarRes] = await Promise.all([
+        fetch("/api/clientes?limit=100"),
+        fetch("/api/codigos-reparacion?limit=500"),
+        fetch("/api/catalogos?tabla=tipoReparacion"),
+        fetch("/api/catalogos?tabla=atencionReparacion"),
+        fetch("/api/catalogos?tabla=prioridadAtencion"),
+        fetch("/api/catalogos?tabla=tipoGarantia"),
+      ]);
+      if (cliRes.ok) setClientes((await cliRes.json()).data ?? []);
+      if (crRes.ok) setCodReps((await crRes.json()).data ?? []);
+      if (tipoRepRes.ok) setTipoReparaciones((await tipoRepRes.json()).data ?? []);
+      if (atencionRes.ok) setAtencionReparaciones((await atencionRes.json()).data ?? []);
+      if (prioRes.ok) setPrioridades((await prioRes.json()).data ?? []);
+      if (tipoGarRes.ok) setTipoGarantias((await tipoGarRes.json()).data ?? []);
+    }
+    loadCatalogs();
+  }, []);
+
+  // Cuando cambia Cod Rep, autocompletar campos
+  function handleCodRepChange(codRepId: number | undefined) {
+    if (!codRepId) {
+      setSelectedCodRep(null);
+      return;
+    }
+    const found = codReps.find((cr) => cr.cod_rep_id === codRepId);
+    setSelectedCodRep(found ?? null);
+  }
+
+  // Calcular % PCR cuando cambian PCR o Horas
+  function recalcPcr() {
+    const pcr = form.getFieldValue("pcr");
+    const horas = form.getFieldValue("horas");
+    if (pcr && horas && Number(pcr) > 0) {
+      setPorcentajePcr(Number(((Number(horas) / Number(pcr)) * 100).toFixed(2)));
+    } else {
+      setPorcentajePcr(null);
+    }
+  }
+
+  // Buscar contrato cuando cambia cliente o cod_rep
+  async function buscarContrato(clienteId?: number, codRepId?: number) {
+    const cId = clienteId ?? form.getFieldValue("id_cliente");
+    const crId = codRepId ?? form.getFieldValue("id_cod_rep");
+    const fechaRecepcion = form.getFieldValue("fecha_recepcion");
+
+    if (cId && crId) {
+      const res = await fetch(`/api/contratos?cliente=${cId}&limit=100`);
+      if (res.ok) {
+        const json = await res.json();
+        const contrato = (json.data ?? []).find(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (c: any) => c.cod_rep_id === crId && c.activo !== false
+        );
+        if (contrato) {
+          setTieneContrato(true);
+          setContratoDias(contrato.dias_reparacion);
+          if (fechaRecepcion) {
+            const req = dayjs(fechaRecepcion).add(contrato.dias_reparacion, "day");
+            setFechaReqCalculada(req.format("DD/MM/YYYY"));
+          }
+          return;
+        }
+      }
+    }
+    setTieneContrato(false);
+    setContratoDias(null);
+    setFechaReqCalculada(null);
+    // Si tenía "Contrato" seleccionado y ya no hay match, limpiarlo
+    if (form.getFieldValue("atencion_reparacion_codigo") === "Contrato") {
+      form.setFieldValue("atencion_reparacion_codigo", undefined);
+      setAtencionCodigo("");
+    }
+  }
+
+  // Cuando cambia fecha recepción, recalcular según atención
+  function handleFechaRecepcionChange() {
+    const atencion = form.getFieldValue("atencion_reparacion_codigo");
+    const fechaRecepcion = form.getFieldValue("fecha_recepcion");
+    if (atencion === "Contrato" && contratoDias && fechaRecepcion) {
+      const req = dayjs(fechaRecepcion).add(contratoDias, "day");
+      setFechaReqCalculada(req.format("DD/MM/YYYY"));
+    }
+    // Recalcular días para Presupuesto/Emergencia
+    if (atencion !== "Contrato") {
+      calcularDiasRequerimiento();
+    }
+  }
+
+  // Calcula días entre fecha recepción y fecha requerimiento (Presupuesto/Emergencia)
+  function calcularDiasRequerimiento() {
+    const fechaRecepcion = form.getFieldValue("fecha_recepcion");
+    const fechaReq = form.getFieldValue("fecha_requerimiento_cliente");
+    if (fechaRecepcion && fechaReq) {
+      const diff = dayjs(fechaReq).diff(dayjs(fechaRecepcion), "day");
+      setDiasCalculados(diff);
+    } else {
+      setDiasCalculados(null);
+    }
+  }
+
+  async function handleSave() {
+    try {
+      const values = await form.validateFields();
+      setSaving(true);
+
+      const payload: Record<string, unknown> = {
+        id_cliente: values.id_cliente,
+        estrategia: estrategia,
+        id_cod_rep: estrategia ? values.id_cod_rep : null,
+        equipo_codigo: values.equipo_codigo || null,
+        ns: values.ns || null,
+        plaqueteo: values.plaqueteo || null,
+        wo_cliente: values.wo_cliente || null,
+        po_cliente: values.po_cliente || null,
+        id_viajero: values.id_viajero || null,
+        guia_remision: values.guia_remision || null,
+        empresa_entrega: values.empresa_entrega || null,
+        fecha_recepcion: values.fecha_recepcion ? values.fecha_recepcion.format("YYYY-MM-DD") : null,
+        pcr: values.pcr ?? null,
+        horas: values.horas ?? null,
+        garantia_codigo: garantia ? "Si" : "No",
+        atencion_reparacion_codigo: values.atencion_reparacion_codigo || null,
+        tipo_reparacion_codigo: values.tipo_reparacion_codigo || null,
+        tipo_garantia_codigo: garantia ? "Por definir" : (values.tipo_garantia_codigo || "NA"),
+        prioridad_atencion_codigo: values.prioridad_atencion_codigo || null,
+        base_metalica_codigo: values.base_metalica ? "Si" : "No",
+        comentarios: values.comentarios || null,
+        fecha_requerimiento_cliente: atencionCodigo !== "Contrato" && values.fecha_requerimiento_cliente
+          ? values.fecha_requerimiento_cliente.format("YYYY-MM-DD")
+          : null,
+      };
+
+      const res = await fetch("/api/ordenes-trabajo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) throw new Error();
+
+      messageApi.success("OT creada correctamente");
+      setTimeout(() => router.push("/ordenes-trabajo"), 1000);
+    } catch {
+      messageApi.error("Error al crear la OT");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div>
+      {contextHolder}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+        <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/ordenes-trabajo")} />
+        <Title level={3} style={{ margin: 0 }}>Nueva Orden de Trabajo</Title>
+      </div>
+
+      <Form form={form} layout="vertical">
+        {/* ── SECCIÓN: Cliente y Código Reparable ── */}
+        <Card title="Identificación" style={{ marginBottom: 16 }} styles={{ body: { paddingBottom: 0 } }}>
+          <Row gutter={16}>
+            <Col xs={24} md={8}>
+              <Form.Item name="id_cliente" label="Cliente" rules={[{ required: true, message: "Requerido" }]}>
+                <Select
+                  showSearch
+                  optionFilterProp="label"
+                  placeholder="Seleccionar cliente"
+                  onChange={(v) => { buscarContrato(v, undefined); }}
+                  options={clientes.map((c) => ({
+                    value: c.cliente_id,
+                    label: `${c.codigo} - ${c.nombre_comercial ?? c.razon_social}`,
+                  }))}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={4}>
+              <Form.Item label="Estrategia">
+                <Checkbox
+                  checked={estrategia}
+                  onChange={(e) => {
+                    setEstrategia(e.target.checked);
+                    if (!e.target.checked) {
+                      form.setFieldValue("id_cod_rep", undefined);
+                      setSelectedCodRep(null);
+                    }
+                  }}
+                >
+                  Si
+                </Checkbox>
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item name="id_cod_rep" label="Código Reparable">
+                <Select
+                  showSearch
+                  optionFilterProp="label"
+                  placeholder={estrategia ? "Seleccionar código reparable" : "Habilite estrategia primero"}
+                  disabled={!estrategia}
+                  allowClear
+                  onChange={(v) => { handleCodRepChange(v); buscarContrato(undefined, v); }}
+                  options={codReps.map((cr) => ({
+                    value: cr.cod_rep_id,
+                    label: `${cr.codigo} - ${cr.descripcion}`,
+                  }))}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          {/* Campos autocompletados del Cod Rep */}
+          {selectedCodRep && (
+            <Descriptions
+              bordered
+              size="small"
+              column={{ xs: 1, sm: 2, md: 3 }}
+              style={{ marginBottom: 16 }}
+            >
+              <Descriptions.Item label="Tipo">{selectedCodRep.tipo?.nombre ?? "-"}</Descriptions.Item>
+              <Descriptions.Item label="N/P">{selectedCodRep.np ?? "-"}</Descriptions.Item>
+              <Descriptions.Item label="Descripción">{selectedCodRep.descripcion}</Descriptions.Item>
+              <Descriptions.Item label="Fabricante">{selectedCodRep.fabricante?.nombre ?? "-"}</Descriptions.Item>
+              <Descriptions.Item label="Flota">{selectedCodRep.flota?.nombre ?? "-"}</Descriptions.Item>
+              <Descriptions.Item label="Posición">{selectedCodRep.posicion?.nombre ?? "-"}</Descriptions.Item>
+            </Descriptions>
+          )}
+        </Card>
+
+        {/* ── SECCIÓN: Datos del equipo ── */}
+        <Card title="Datos del Equipo" style={{ marginBottom: 16 }} styles={{ body: { paddingBottom: 0 } }}>
+          <Row gutter={16}>
+            <Col xs={12} md={6}>
+              <Form.Item name="equipo_codigo" label="Equipo">
+                <Input placeholder="Ej: SH001" />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={6}>
+              <Form.Item name="ns" label="N/S (Número de Serie)">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={6}>
+              <Form.Item name="plaqueteo" label="Plaqueteo">
+                <Input />
+              </Form.Item>
+            </Col>
+          </Row>
+        </Card>
+
+        {/* ── SECCIÓN: Documentos del cliente ── */}
+        <Card title="Documentos y Logística" style={{ marginBottom: 16 }} styles={{ body: { paddingBottom: 0 } }}>
+          <Row gutter={16}>
+            <Col xs={12} md={6}>
+              <Form.Item name="wo_cliente" label="WO Cliente">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={6}>
+              <Form.Item name="po_cliente" label="PO Cliente">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={6}>
+              <Form.Item name="id_viajero" label="ID Viajero">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={6}>
+              <Form.Item name="guia_remision" label="Guía Remisión (llegada)">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={8}>
+              <Form.Item name="empresa_entrega" label="Empresa que entrega">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={6}>
+              <Form.Item name="fecha_recepcion" label="Fecha de Recepción" rules={[{ required: true, message: "Requerido" }]}>
+                <DatePicker
+                  style={{ width: "100%" }}
+                  format="DD/MM/YYYY"
+                  onChange={() => { handleFechaRecepcionChange(); }}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+        </Card>
+
+        {/* ── SECCIÓN: Datos técnicos ── */}
+        <Card title="PCR y Horas de Trabajo" style={{ marginBottom: 16 }} styles={{ body: { paddingBottom: 0 } }}>
+          <Row gutter={16}>
+            <Col xs={8} md={5}>
+              <Form.Item name="pcr" label="PCR (horas vida)">
+                <InputNumber style={{ width: "100%" }} min={0} onChange={() => recalcPcr()} />
+              </Form.Item>
+            </Col>
+            <Col xs={8} md={5}>
+              <Form.Item name="horas" label="Horas actuales">
+                <InputNumber style={{ width: "100%" }} min={0} onChange={() => recalcPcr()} />
+              </Form.Item>
+            </Col>
+            <Col xs={8} md={4}>
+              <Form.Item label="% PCR">
+                <Text strong style={{ fontSize: 16 }}>
+                  {porcentajePcr != null ? `${porcentajePcr}%` : "-"}
+                </Text>
+              </Form.Item>
+            </Col>
+          </Row>
+        </Card>
+
+        {/* ── SECCIÓN: Atención y Reparación ── */}
+        <Card title="Tipo Reparación y Garantía" style={{ marginBottom: 16 }} styles={{ body: { paddingBottom: 0 } }}>
+          <Row gutter={16}>
+            <Col xs={12} md={4}>
+              <Form.Item label="Garantía">
+                <Checkbox
+                  checked={garantia}
+                  onChange={(e) => {
+                    setGarantia(e.target.checked);
+                    if (e.target.checked) {
+                      form.setFieldValue("tipo_garantia_codigo", "Por definir");
+                    } else {
+                      form.setFieldValue("tipo_garantia_codigo", undefined);
+                    }
+                  }}
+                >
+                  Si
+                </Checkbox>
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={6}>
+              <Form.Item name="atencion_reparacion_codigo" label="Atención Reparación" rules={[{ required: true, message: "Requerido" }]}>
+                <Select
+                  placeholder="Seleccionar"
+                  onChange={(v) => {
+                    setAtencionCodigo(v ?? "");
+                    buscarContrato();
+                  }}
+                  options={atencionReparaciones.map((a) => ({
+                    value: a.codigo,
+                    label: a.nombre,
+                    disabled: a.codigo === "Contrato" && !tieneContrato,
+                  }))}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={6}>
+              <Form.Item name="tipo_reparacion_codigo" label="Tipo Reparación" rules={[{ required: true, message: "Requerido" }]}>
+                <Select
+                  placeholder="Seleccionar"
+                  options={tipoReparaciones.map((t) => ({ value: t.codigo, label: t.nombre }))}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={6}>
+              <Form.Item name="tipo_garantia_codigo" label="Tipo Garantía">
+                <Select
+                  placeholder="Seleccionar"
+                  disabled={garantia}
+                  value={garantia ? "Por definir" : undefined}
+                  options={tipoGarantias.map((t) => ({ value: t.codigo, label: t.nombre }))}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={6}>
+              <Form.Item name="prioridad_atencion_codigo" label="Prioridad de Atención" rules={[{ required: true, message: "Requerido" }]}>
+                <Select
+                  placeholder="Seleccionar"
+                  options={prioridades.map((p) => ({ value: p.codigo, label: `${p.codigo} - ${p.nombre}` }))}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={4}>
+              <Form.Item label="Base Metálica" name="base_metalica" valuePropName="checked">
+                <Checkbox>Si</Checkbox>
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Divider style={{ margin: "8px 0 16px" }} />
+
+          <Row gutter={16}>
+            {atencionCodigo === "Contrato" ? (
+              <>
+                <Col xs={12} md={6}>
+                  <Form.Item label="Días Contrato">
+                    <Text strong style={{ fontSize: 16 }}>
+                      {contratoDias != null ? `${contratoDias} días` : "Sin contrato"}
+                    </Text>
+                  </Form.Item>
+                </Col>
+                <Col xs={12} md={6}>
+                  <Form.Item label="Fecha Requerimiento (calculada)">
+                    <Text strong>{fechaReqCalculada ?? "-"}</Text>
+                  </Form.Item>
+                </Col>
+              </>
+            ) : (
+              <>
+                <Col xs={12} md={6}>
+                  <Form.Item name="fecha_requerimiento_cliente" label="Fecha Requerimiento Cliente">
+                    <DatePicker
+                      style={{ width: "100%" }}
+                      format="DD/MM/YYYY"
+                      onChange={() => calcularDiasRequerimiento()}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={12} md={6}>
+                  <Form.Item label="Días calculados">
+                    <Text strong style={{ fontSize: 16 }}>
+                      {diasCalculados != null ? `${diasCalculados} días` : "-"}
+                    </Text>
+                  </Form.Item>
+                </Col>
+              </>
+            )}
+          </Row>
+        </Card>
+
+        {/* ── SECCIÓN: Comentarios ── */}
+        <Card style={{ marginBottom: 24 }}>
+          <Form.Item name="comentarios" label="Comentarios">
+            <TextArea rows={3} placeholder="Observaciones adicionales..." />
+          </Form.Item>
+        </Card>
+
+        {/* ── Botones ── */}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+          <Button onClick={() => router.push("/ordenes-trabajo")}>Cancelar</Button>
+          <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={handleSave}>
+            Crear OT
+          </Button>
+        </div>
+      </Form>
+    </div>
+  );
+}
