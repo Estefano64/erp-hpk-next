@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { isAdmin } from "@/lib/audit";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -41,12 +42,49 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   }
 }
 
-// DELETE — soft delete
-export async function DELETE(_req: NextRequest, ctx: Ctx) {
+export async function DELETE(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
+    const codRepId = Number(id);
+    const force = new URL(req.url).searchParams.get("force") === "true";
+
+    if (force) {
+      if (!(await isAdmin(req))) {
+        return NextResponse.json(
+          { error: "Solo administradores pueden eliminar permanentemente" },
+          { status: 403 }
+        );
+      }
+
+      const [contratos, ots, tareas] = await Promise.all([
+        prisma.contrato.count({ where: { cod_rep_id: codRepId } }),
+        prisma.ordenTrabajo.count({ where: { id_cod_rep: codRepId } }),
+        prisma.tarea.count({ where: { codigo_reparacion: { cod_rep_id: codRepId } } }),
+      ]);
+
+      if (contratos > 0 || ots > 0 || tareas > 0) {
+        const partes: string[] = [];
+        if (contratos > 0) partes.push(`${contratos} contrato(s)`);
+        if (ots > 0) partes.push(`${ots} OT(s)`);
+        if (tareas > 0) partes.push(`${tareas} tarea(s)`);
+        return NextResponse.json(
+          {
+            error: "No se puede eliminar permanentemente",
+            detail: `Tiene ${partes.join(", ")} en el historial. Use "Desactivar" o cierre esas referencias.`,
+            contratos,
+            ots,
+            tareas,
+          },
+          { status: 409 }
+        );
+      }
+
+      await prisma.codigoReparacion.delete({ where: { cod_rep_id: codRepId } });
+      return NextResponse.json({ success: true, permanent: true });
+    }
+
     await prisma.codigoReparacion.update({
-      where: { cod_rep_id: Number(id) },
+      where: { cod_rep_id: codRepId },
       data: { activo: false },
     });
     return NextResponse.json({ success: true });

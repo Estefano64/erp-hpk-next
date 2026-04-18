@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getAuditUser, isAdmin } from "@/lib/audit";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -46,9 +47,10 @@ export async function PUT(req: NextRequest, { params }: Params) {
       if (body[field]) body[field] = new Date(body[field]);
     }
 
+    const usuario = await getAuditUser(req);
     const updated = await prisma.equipo.update({
       where: { equipo_id: Number(id) },
-      data: body,
+      data: { ...body, usuario_actualiza: usuario },
       include: equipoIncludes,
     });
 
@@ -59,11 +61,57 @@ export async function PUT(req: NextRequest, { params }: Params) {
   }
 }
 
-// DELETE — eliminar un equipo
-export async function DELETE(_req: NextRequest, { params }: Params) {
+export async function DELETE(req: NextRequest, { params }: Params) {
   try {
     const { id } = await params;
-    await prisma.equipo.delete({ where: { equipo_id: Number(id) } });
+    const equipoId = Number(id);
+    const force = new URL(req.url).searchParams.get("force") === "true";
+
+    const equipo = await prisma.equipo.findUnique({
+      where: { equipo_id: equipoId },
+      select: { codigo: true },
+    });
+    if (!equipo) {
+      return NextResponse.json({ error: "Equipo no encontrado" }, { status: 404 });
+    }
+
+    if (force) {
+      if (!(await isAdmin(req))) {
+        return NextResponse.json(
+          { error: "Solo administradores pueden eliminar permanentemente" },
+          { status: 403 }
+        );
+      }
+
+      const [estrategias, ots] = await Promise.all([
+        prisma.estrategia.count({ where: { equipo_codigo: equipo.codigo } }),
+        prisma.ordenTrabajo.count({ where: { equipo_codigo: equipo.codigo } }),
+      ]);
+
+      if (estrategias > 0 || ots > 0) {
+        const partes: string[] = [];
+        if (estrategias > 0) partes.push(`${estrategias} estrategia(s)`);
+        if (ots > 0) partes.push(`${ots} OT(s)`);
+        return NextResponse.json(
+          {
+            error: "No se puede eliminar permanentemente",
+            detail: `Tiene ${partes.join(" y ")} en el historial. Use "Desactivar" o cierre esas referencias.`,
+            estrategias,
+            ots,
+          },
+          { status: 409 }
+        );
+      }
+
+      await prisma.equipo.delete({ where: { equipo_id: equipoId } });
+      return NextResponse.json({ success: true, permanent: true });
+    }
+
+    const usuario = await getAuditUser(req);
+    await prisma.equipo.update({
+      where: { equipo_id: equipoId },
+      data: { activo: false, usuario_actualiza: usuario },
+    });
     return NextResponse.json({ data: { deleted: true } });
   } catch (error) {
     console.error("DELETE /api/equipos/[id] error:", error);

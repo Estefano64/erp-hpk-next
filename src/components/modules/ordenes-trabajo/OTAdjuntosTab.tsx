@@ -38,7 +38,7 @@ const { Dragger } = Upload;
 interface Adjunto {
   id: number;
   orden_trabajo_id: number;
-  etapa: string;
+  etapa_codigo: string;
   nombre_archivo: string;
   ruta: string;
   tipo_mime: string;

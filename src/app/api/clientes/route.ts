@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getAuditUser } from "@/lib/audit";
 
 export async function GET(req: NextRequest) {
   try {
@@ -38,6 +39,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    const usuario = await getAuditUser(req);
     const created = await prisma.cliente.create({
       data: {
         codigo: body.codigo,
@@ -48,6 +50,8 @@ export async function POST(req: NextRequest) {
         telefono: body.telefono || null,
         email: body.email || null,
         contacto_principal: body.contacto_principal || null,
+        usuario_crea: usuario,
+        usuario_actualiza: usuario,
       },
     });
     return NextResponse.json({ data: created }, { status: 201 });

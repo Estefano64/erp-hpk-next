@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getAuditUser } from "@/lib/audit";
 
 const equipoIncludes = {
   status: true,
@@ -29,7 +30,7 @@ export async function GET(req: NextRequest) {
     const criticidad = searchParams.get("criticidad") ?? "";
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const where: Record<string, any> = {};
+    const where: Record<string, any> = { activo: true };
     if (search) {
       where.OR = [
         { codigo: { contains: search, mode: "insensitive" } },
@@ -79,6 +80,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Ya existe un equipo con ese código" }, { status: 400 });
     }
 
+    const usuario = await getAuditUser(req);
     const created = await prisma.equipo.create({
       data: {
         codigo: body.codigo,
@@ -103,6 +105,8 @@ export async function POST(req: NextRequest) {
         ubicacion_codigo: body.ubicacion_codigo || null,
         cantidad: body.cantidad ?? 1,
         usuario_responsable: body.usuario_responsable || null,
+        usuario_crea: usuario,
+        usuario_actualiza: usuario,
       },
       include: equipoIncludes,
     });

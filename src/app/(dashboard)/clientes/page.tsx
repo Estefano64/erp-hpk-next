@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useSession } from "next-auth/react";
 import {
   Typography,
   Table,
@@ -21,6 +22,7 @@ import {
   SearchOutlined,
   EditOutlined,
   DeleteOutlined,
+  StopOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
@@ -41,6 +43,8 @@ interface ClienteRecord {
 }
 
 export default function ClientesPage() {
+  const { data: session } = useSession();
+  const isAdminUser = (session?.user as { rol?: string } | undefined)?.rol === "admin";
   const [data, setData] = useState<ClienteRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -110,14 +114,26 @@ export default function ClientesPage() {
     }
   }
 
-  async function handleDelete(id: number) {
+  async function handleDesactivar(id: number) {
     const res = await fetch(`/api/clientes/${id}`, { method: "DELETE" });
     if (res.ok) {
-      messageApi.success("Eliminado");
+      messageApi.success("Cliente desactivado");
       fetchData();
-    } else {
-      messageApi.error("Error al eliminar");
+      return;
     }
+    const body = await res.json().catch(() => null);
+    messageApi.error(body?.detail ?? body?.error ?? "Error al desactivar");
+  }
+
+  async function handleEliminarPermanente(id: number) {
+    const res = await fetch(`/api/clientes/${id}?force=true`, { method: "DELETE" });
+    if (res.ok) {
+      messageApi.success("Cliente eliminado permanentemente");
+      fetchData();
+      return;
+    }
+    const body = await res.json().catch(() => null);
+    messageApi.error(body?.detail ?? body?.error ?? "Error al eliminar");
   }
 
   const columns: ColumnsType<ClienteRecord> = [
@@ -140,9 +156,24 @@ export default function ClientesPage() {
       render: (_: unknown, record: ClienteRecord) => (
         <Space size="small">
           <Button type="text" icon={<EditOutlined />} onClick={() => openEdit(record)} />
-          <Popconfirm title="¿Eliminar este cliente?" onConfirm={() => handleDelete(record.cliente_id)}>
-            <Button type="text" danger icon={<DeleteOutlined />} />
+          <Popconfirm
+            title="¿Desactivar este cliente?"
+            description="Se ocultará de las listas pero se conservará en la base de datos."
+            onConfirm={() => handleDesactivar(record.cliente_id)}
+          >
+            <Button type="text" icon={<StopOutlined />} title="Desactivar" />
           </Popconfirm>
+          {isAdminUser && (
+            <Popconfirm
+              title="¿Eliminar permanentemente?"
+              description="Esta acción no se puede deshacer."
+              okType="danger"
+              okText="Eliminar"
+              onConfirm={() => handleEliminarPermanente(record.cliente_id)}
+            >
+              <Button type="text" danger icon={<DeleteOutlined />} title="Eliminar permanentemente" />
+            </Popconfirm>
+          )}
         </Space>
       ),
     },

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { isAdmin } from "@/lib/audit";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -64,12 +65,49 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   }
 }
 
-// DELETE — soft delete
-export async function DELETE(_req: NextRequest, ctx: Ctx) {
+export async function DELETE(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
+    const materialId = Number(id);
+    const force = new URL(req.url).searchParams.get("force") === "true";
+
+    if (force) {
+      if (!(await isAdmin(req))) {
+        return NextResponse.json(
+          { error: "Solo administradores pueden eliminar permanentemente" },
+          { status: 403 }
+        );
+      }
+
+      const [otRepuestos, compraDetalles, tareas] = await Promise.all([
+        prisma.oTRepuesto.count({ where: { material_id: materialId } }),
+        prisma.compraDetalle.count({ where: { material_id: materialId } }),
+        prisma.tarea.count({ where: { material: { material_id: materialId } } }),
+      ]);
+
+      if (otRepuestos > 0 || compraDetalles > 0 || tareas > 0) {
+        const partes: string[] = [];
+        if (otRepuestos > 0) partes.push(`${otRepuestos} repuesto(s) en OTs`);
+        if (compraDetalles > 0) partes.push(`${compraDetalles} línea(s) de compra`);
+        if (tareas > 0) partes.push(`${tareas} tarea(s)`);
+        return NextResponse.json(
+          {
+            error: "No se puede eliminar permanentemente",
+            detail: `Tiene ${partes.join(", ")} en el historial. Use "Desactivar" o cierre esas referencias.`,
+            otRepuestos,
+            compraDetalles,
+            tareas,
+          },
+          { status: 409 }
+        );
+      }
+
+      await prisma.material.delete({ where: { material_id: materialId } });
+      return NextResponse.json({ success: true, permanent: true });
+    }
+
     await prisma.material.update({
-      where: { material_id: Number(id) },
+      where: { material_id: materialId },
       data: { activo: false },
     });
     return NextResponse.json({ success: true });

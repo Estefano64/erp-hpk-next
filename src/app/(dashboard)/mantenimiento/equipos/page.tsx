@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useSession } from "next-auth/react";
 import {
   Typography,
   Table,
@@ -24,6 +25,7 @@ import {
   SearchOutlined,
   EditOutlined,
   DeleteOutlined,
+  StopOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
@@ -95,6 +97,8 @@ const criticidadColors: Record<string, string> = {
 };
 
 export default function EquiposPage() {
+  const { data: session } = useSession();
+  const isAdminUser = (session?.user as { rol?: string } | undefined)?.rol === "admin";
   const [data, setData] = useState<EquipoRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -239,14 +243,26 @@ export default function EquiposPage() {
     }
   }
 
-  async function handleDelete(id: number) {
+  async function handleDesactivar(id: number) {
     const res = await fetch(`/api/equipos/${id}`, { method: "DELETE" });
     if (res.ok) {
-      messageApi.success("Eliminado");
+      messageApi.success("Equipo desactivado");
       fetchData();
-    } else {
-      messageApi.error("Error al eliminar");
+      return;
     }
+    const body = await res.json().catch(() => null);
+    messageApi.error(body?.detail ?? body?.error ?? "Error al desactivar");
+  }
+
+  async function handleEliminarPermanente(id: number) {
+    const res = await fetch(`/api/equipos/${id}?force=true`, { method: "DELETE" });
+    if (res.ok) {
+      messageApi.success("Equipo eliminado permanentemente");
+      fetchData();
+      return;
+    }
+    const body = await res.json().catch(() => null);
+    messageApi.error(body?.detail ?? body?.error ?? "Error al eliminar");
   }
 
   const columns: ColumnsType<EquipoRecord> = [
@@ -347,9 +363,24 @@ export default function EquiposPage() {
       render: (_: unknown, record: EquipoRecord) => (
         <Space size="small">
           <Button type="text" icon={<EditOutlined />} onClick={() => openEdit(record)} />
-          <Popconfirm title="¿Eliminar este equipo?" onConfirm={() => handleDelete(record.equipo_id)}>
-            <Button type="text" danger icon={<DeleteOutlined />} />
+          <Popconfirm
+            title="¿Desactivar este equipo?"
+            description="Se ocultará de las listas pero se conservará en la base de datos."
+            onConfirm={() => handleDesactivar(record.equipo_id)}
+          >
+            <Button type="text" icon={<StopOutlined />} title="Desactivar" />
           </Popconfirm>
+          {isAdminUser && (
+            <Popconfirm
+              title="¿Eliminar permanentemente?"
+              description="Esta acción no se puede deshacer."
+              okType="danger"
+              okText="Eliminar"
+              onConfirm={() => handleEliminarPermanente(record.equipo_id)}
+            >
+              <Button type="text" danger icon={<DeleteOutlined />} title="Eliminar permanentemente" />
+            </Popconfirm>
+          )}
         </Space>
       ),
     },

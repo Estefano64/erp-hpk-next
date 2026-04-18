@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useSession } from "next-auth/react";
 import {
   Typography,
   Table,
@@ -23,6 +24,7 @@ import {
   SearchOutlined,
   EditOutlined,
   DeleteOutlined,
+  StopOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
@@ -65,6 +67,8 @@ interface Option {
 }
 
 export default function MaterialesPage() {
+  const { data: session } = useSession();
+  const isAdminUser = (session?.user as { rol?: string } | undefined)?.rol === "admin";
   const [data, setData] = useState<MaterialRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -195,14 +199,26 @@ export default function MaterialesPage() {
     }
   }
 
-  async function handleDelete(id: number) {
+  async function handleDesactivar(id: number) {
     const res = await fetch(`/api/materiales/${id}`, { method: "DELETE" });
     if (res.ok) {
-      messageApi.success("Eliminado");
+      messageApi.success("Material desactivado");
       fetchData();
-    } else {
-      messageApi.error("Error al eliminar");
+      return;
     }
+    const body = await res.json().catch(() => null);
+    messageApi.error(body?.detail ?? body?.error ?? "Error al desactivar");
+  }
+
+  async function handleEliminarPermanente(id: number) {
+    const res = await fetch(`/api/materiales/${id}?force=true`, { method: "DELETE" });
+    if (res.ok) {
+      messageApi.success("Material eliminado permanentemente");
+      fetchData();
+      return;
+    }
+    const body = await res.json().catch(() => null);
+    messageApi.error(body?.detail ?? body?.error ?? "Error al eliminar");
   }
 
   const columns: ColumnsType<MaterialRecord> = [
@@ -276,9 +292,24 @@ export default function MaterialesPage() {
       render: (_: unknown, record: MaterialRecord) => (
         <Space size="small">
           <Button type="text" icon={<EditOutlined />} onClick={() => openEdit(record)} />
-          <Popconfirm title="¿Eliminar este registro?" onConfirm={() => handleDelete(record.material_id)}>
-            <Button type="text" danger icon={<DeleteOutlined />} />
+          <Popconfirm
+            title="¿Desactivar este material?"
+            description="Se ocultará de las listas pero se conservará en la base de datos."
+            onConfirm={() => handleDesactivar(record.material_id)}
+          >
+            <Button type="text" icon={<StopOutlined />} title="Desactivar" />
           </Popconfirm>
+          {isAdminUser && (
+            <Popconfirm
+              title="¿Eliminar permanentemente?"
+              description="Esta acción no se puede deshacer."
+              okType="danger"
+              okText="Eliminar"
+              onConfirm={() => handleEliminarPermanente(record.material_id)}
+            >
+              <Button type="text" danger icon={<DeleteOutlined />} title="Eliminar permanentemente" />
+            </Popconfirm>
+          )}
         </Space>
       ),
     },

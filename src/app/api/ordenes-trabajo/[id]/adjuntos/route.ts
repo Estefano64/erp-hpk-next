@@ -17,7 +17,7 @@ export async function GET(req: NextRequest, { params }: Params) {
 
     const where: Record<string, unknown> = { orden_trabajo_id: Number(id) };
     if (etapa && ETAPAS_VALIDAS.includes(etapa)) {
-      where.etapa = etapa;
+      where.etapa_codigo = etapa;
     }
 
     const adjuntos = await prisma.otAdjunto.findMany({
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const adjunto = await prisma.otAdjunto.create({
       data: {
         orden_trabajo_id: otId,
-        etapa,
+        etapa_codigo: etapa,
         nombre_archivo: file.name,
         ruta,
         tipo_mime: file.type,
