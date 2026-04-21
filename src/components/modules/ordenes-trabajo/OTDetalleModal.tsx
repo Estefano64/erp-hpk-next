@@ -29,8 +29,10 @@ import {
   DollarOutlined,
   PaperClipOutlined,
   HistoryOutlined,
+  ExperimentOutlined,
 } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
+import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 import OTAdjuntosTab from "./OTAdjuntosTab";
 
@@ -146,6 +148,7 @@ function SectionTitle({ children }: { children: string }) {
 }
 
 export default function OTDetalleModal({ otId, open, onClose, onUpdated }: Props) {
+  const router = useRouter();
   const [ot, setOt] = useState<OTDetalle | null>(null);
   const [loading, setLoading] = useState(false);
   const [messageApi, contextHolder] = message.useMessage();
@@ -746,14 +749,32 @@ export default function OTDetalleModal({ otId, open, onClose, onUpdated }: Props
             Equipo: {ot?.equipo_codigo ?? "-"} &nbsp;|&nbsp; Estado: {ot?.ot_status?.nombre ?? "-"}
           </div>
         </div>
-        <Button
-          icon={<CloseOutlined />}
-          onClick={onClose}
-          size="small"
-          style={{ background: "rgba(255,255,255,0.12)", border: "none", color: brand.white }}
-        >
-          Cerrar
-        </Button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Button
+            icon={<InboxOutlined />}
+            onClick={() => { if (ot) { onClose(); router.push(`/requerimientos/detalle?ot_id=${ot.id}`); } }}
+            size="small"
+            style={{ background: "rgba(255,255,255,0.15)", border: "none", color: brand.white }}
+          >
+            Requerimientos
+          </Button>
+          <Button
+            icon={<ExperimentOutlined />}
+            onClick={() => { if (ot) { onClose(); router.push(`/ordenes-trabajo/${ot.id}/evaluacion`); } }}
+            size="small"
+            style={{ background: brand.cyan, border: "none", color: brand.white }}
+          >
+            Hoja de Evaluacion
+          </Button>
+          <Button
+            icon={<CloseOutlined />}
+            onClick={onClose}
+            size="small"
+            style={{ background: "rgba(255,255,255,0.12)", border: "none", color: brand.white }}
+          >
+            Cerrar
+          </Button>
+        </div>
       </div>
 
       {/* ── Contenido ── */}

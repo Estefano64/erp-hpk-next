@@ -609,8 +609,32 @@ model OrdenTrabajo {
   historial                   OTHistorial[]
   repuestos                   OTRepuesto[]
   planificaciones             PlanificacionOT[]
+  evaluaciones_tecnicas       EvaluacionTecnica[]
 
   @@map("orden_trabajo")
+}
+
+model EvaluacionTecnica {
+  id                      Int          @id @default(autoincrement())
+  ot_id                   Int
+  modelo_evaluacion       String       @db.VarChar(50)
+  sistema_medicion        String       @default("Metrico") @db.VarChar(10)
+  fecha_evaluacion        DateTime?    @db.Date
+  evaluado_por            String?      @db.VarChar(150)
+  datos_formulario        Json         @default("{}")
+  resultado_general       String?
+  recomendaciones_general String?
+  informe_archivo         String?      @db.VarChar(500)
+  informe_nombre          String?      @db.VarChar(300)
+  informe_fecha_subida    DateTime?
+  estado                  String       @default("BORRADOR") @db.VarChar(15)
+  createdAt               DateTime     @default(now())
+  updatedAt               DateTime     @updatedAt
+  orden_trabajo           OrdenTrabajo @relation(fields: [ot_id], references: [id], onDelete: Cascade)
+
+  @@index([ot_id])
+  @@index([estado])
+  @@map("evaluaciones_tecnicas")
 }
 
 model OtAdjunto {
