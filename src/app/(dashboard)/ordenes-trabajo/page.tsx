@@ -18,7 +18,9 @@ import {
   SearchOutlined,
   ReloadOutlined,
   EyeOutlined,
+  ExperimentOutlined,
 } from "@ant-design/icons";
+import { Tooltip } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
 import { useRouter } from "next/navigation";
@@ -213,16 +215,27 @@ export default function OrdenesTrabajoPage() {
       render: (_: unknown, r: OTRecord) => r.taller_status?.nombre ?? "-",
     },
     {
-      title: "",
-      width: 50,
+      title: "Acciones",
+      width: 110,
       align: "center",
       fixed: "right",
       render: (_: unknown, record: OTRecord) => (
-        <Button
-          type="text"
-          icon={<EyeOutlined />}
-          onClick={() => { setModalOtId(record.id); setModalOpen(true); }}
-        />
+        <Space size={0}>
+          <Tooltip title="Ver detalle">
+            <Button
+              type="text"
+              icon={<EyeOutlined />}
+              onClick={() => { setModalOtId(record.id); setModalOpen(true); }}
+            />
+          </Tooltip>
+          <Tooltip title="Hoja de Evaluacion">
+            <Button
+              type="text"
+              icon={<ExperimentOutlined style={{ color: brand.cyan }} />}
+              onClick={() => router.push(`/ordenes-trabajo/${record.id}/evaluacion`)}
+            />
+          </Tooltip>
+        </Space>
       ),
     },
   ];
