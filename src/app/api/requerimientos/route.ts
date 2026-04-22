@@ -64,7 +64,8 @@ export async function GET(req: NextRequest) {
     });
 
     // Transformar a formato plano para el frontend
-    const data = records.map((r) => ({
+    type R = typeof records[number];
+    const data = records.map((r: R) => ({
       id: r.id,
       ot_id: r.ot_id,
       numero_ot: r.orden_trabajo?.ot ?? null,

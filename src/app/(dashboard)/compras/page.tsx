@@ -28,6 +28,7 @@ import {
   ClockCircleOutlined,
   CheckCircleOutlined,
   InfoCircleOutlined,
+  FilePdfOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { Popover, Divider } from "antd";
@@ -253,13 +254,16 @@ export default function ComprasPage() {
     },
     {
       title: "Acciones",
-      width: 100,
+      width: 130,
       align: "center",
       fixed: "right",
       render: (_: unknown, r: Compra) => (
         <Space size={0}>
           <Tooltip title="Ver detalle">
             <Button type="text" icon={<EyeOutlined />} onClick={() => setModalId(r.id)} />
+          </Tooltip>
+          <Tooltip title="Generar PDF (OC)">
+            <Button type="text" icon={<FilePdfOutlined style={{ color: "#cf1322" }} />} onClick={() => window.open(`/api/compras/${r.id}/pdf`, "_blank")} />
           </Tooltip>
           {r.estado === "Pendiente" && (
             <Tooltip title="Eliminar">

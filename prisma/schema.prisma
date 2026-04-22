@@ -245,10 +245,6 @@ model Cliente {
   email              String?        @db.VarChar(100)
   contacto_principal String?        @db.VarChar(200)
   activo             Boolean        @default(true)
-  usuario_crea       String?        @db.VarChar(100)
-  usuario_actualiza  String?        @db.VarChar(100)
-  created_at         DateTime       @default(now())
-  updated_at         DateTime       @default(now()) @updatedAt
   contratos          Contrato[]
   ordenes_trabajo    OrdenTrabajo[]
 
@@ -346,18 +342,6 @@ model TallerStatus {
   @@map("taller_status")
 }
 
-model OtEtapa {
-  ot_etapa_id Int         @id @default(autoincrement())
-  codigo      String      @unique @db.VarChar(20)
-  nombre      String      @db.VarChar(100)
-  descripcion String?     @db.VarChar(300)
-  orden       Int         @default(0)
-  activo      Boolean     @default(true)
-  adjuntos    OtAdjunto[]
-
-  @@map("ot_etapa")
-}
-
 model Material {
   material_id           Int             @id @default(autoincrement())
   codigo                String          @unique @db.VarChar(50)
@@ -420,11 +404,6 @@ model Equipo {
   moneda_codigo        String?       @db.VarChar(10)
   precio               Decimal?      @db.Decimal(12, 2)
   ubicacion_codigo     String?       @db.VarChar(10)
-  activo               Boolean       @default(true)
-  usuario_crea         String?       @db.VarChar(100)
-  usuario_actualiza    String?       @db.VarChar(100)
-  created_at           DateTime      @default(now())
-  updated_at           DateTime      @default(now()) @updatedAt
   area                 Area          @relation(fields: [area_codigo], references: [codigo])
   criticidad           Criticidad?   @relation(fields: [criticidad_codigo], references: [codigo])
   fabricante           Fabricante?   @relation(fields: [fabricante_codigo], references: [codigo])
@@ -453,8 +432,6 @@ model Estrategia {
   status_codigo           String           @db.VarChar(10)
   fecha_ultima_ejecucion  DateTime?        @db.Date
   fecha_proxima_ejecucion DateTime?        @db.Date
-  created_at              DateTime         @default(now())
-  updated_at              DateTime         @default(now()) @updatedAt
   area                    Area             @relation(fields: [area_codigo], references: [codigo])
   equipo                  Equipo           @relation(fields: [equipo_codigo], references: [codigo])
   status                  StatusEstrategia @relation(fields: [status_codigo], references: [codigo])
@@ -481,10 +458,8 @@ model Tarea {
   np                String?           @db.VarChar(100)
   texto             String?
   precio            Decimal?          @db.Decimal(12, 2)
-  created_at        DateTime          @default(now())
-  updated_at        DateTime          @default(now()) @updatedAt
   codigo_reparacion CodigoReparacion? @relation(fields: [cod_rep_codigo], references: [codigo])
-  material          Material?         @relation(fields: [material_codigo], references: [codigo], onDelete: Restrict)
+  material          Material?         @relation(fields: [material_codigo], references: [codigo])
   tipo              TipoTarea         @relation(fields: [tipo_codigo], references: [codigo])
 
   @@map("tarea")
@@ -593,10 +568,11 @@ model OrdenTrabajo {
   pct_cuerpo_int_2            Decimal?            @default(0) @db.Decimal(5, 2)
   pct_otros                   Decimal?            @default(0) @db.Decimal(5, 2)
   compras                     Compra[]
+  evaluaciones_tecnicas       EvaluacionTecnica[]
   atencion_reparacion         AtencionReparacion? @relation(fields: [atencion_reparacion_codigo], references: [codigo])
   base_metalica               BaseMetalica?       @relation(fields: [base_metalica_codigo], references: [codigo])
   garantia                    Garantia?           @relation(fields: [garantia_codigo], references: [codigo])
-  cliente                     Cliente?            @relation(fields: [id_cliente], references: [cliente_id], onDelete: Restrict)
+  cliente                     Cliente?            @relation(fields: [id_cliente], references: [cliente_id])
   codigo_reparacion           CodigoReparacion?   @relation(fields: [id_cod_rep], references: [cod_rep_id])
   fabricante                  Fabricante?         @relation(fields: [id_fabricante], references: [fabricante_id])
   ot_status                   OtStatus?           @relation(fields: [ot_status_codigo], references: [codigo])
@@ -609,7 +585,6 @@ model OrdenTrabajo {
   historial                   OTHistorial[]
   repuestos                   OTRepuesto[]
   planificaciones             PlanificacionOT[]
-  evaluaciones_tecnicas       EvaluacionTecnica[]
 
   @@map("orden_trabajo")
 }
@@ -627,7 +602,12 @@ model EvaluacionTecnica {
   informe_archivo         String?      @db.VarChar(500)
   informe_nombre          String?      @db.VarChar(300)
   informe_fecha_subida    DateTime?
-  estado                  String       @default("BORRADOR") @db.VarChar(15)
+  estado                  String       @default("BORRADOR") @db.VarChar(25)
+  revisado_por            String?      @db.VarChar(150)
+  fecha_revision          DateTime?
+  comentarios_revision    String?
+  solicitado_revision_por String?      @db.VarChar(150)
+  fecha_solicitud_revision DateTime?
   createdAt               DateTime     @default(now())
   updatedAt               DateTime     @updatedAt
   orden_trabajo           OrdenTrabajo @relation(fields: [ot_id], references: [id], onDelete: Cascade)
@@ -640,14 +620,13 @@ model EvaluacionTecnica {
 model OtAdjunto {
   id               Int          @id @default(autoincrement())
   orden_trabajo_id Int
-  etapa_codigo     String       @db.VarChar(20)
+  etapa            String       @db.VarChar(30)
   nombre_archivo   String       @db.VarChar(255)
   ruta             String       @db.VarChar(500)
   tipo_mime        String       @db.VarChar(100)
   tamano           Int
   fecha_subida     DateTime     @default(now())
-  orden_trabajo    OrdenTrabajo @relation(fields: [orden_trabajo_id], references: [id], onDelete: Cascade)
-  etapa            OtEtapa      @relation(fields: [etapa_codigo], references: [codigo], onDelete: Restrict)
+  orden_trabajo    OrdenTrabajo @relation(fields: [orden_trabajo_id], references: [id])
 
   @@map("ot_adjunto")
 }
@@ -708,7 +687,7 @@ model Compra {
   createdAt              DateTime        @default(now())
   updatedAt              DateTime        @updatedAt
   almacen                Almacen         @relation(fields: [almacen_id], references: [id])
-  orden_trabajo          OrdenTrabajo?   @relation(fields: [ot_id], references: [id], onDelete: Restrict)
+  orden_trabajo          OrdenTrabajo?   @relation(fields: [ot_id], references: [id])
   proveedor              Proveedor       @relation(fields: [proveedor_id], references: [id])
   detalles               CompraDetalle[]
   ot_repuestos           OTRepuesto[]
@@ -809,7 +788,7 @@ model OTHistorial {
   datos_adicionales String?
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
-  orden_trabajo     OrdenTrabajo @relation(fields: [ot_id], references: [id], onDelete: Cascade)
+  orden_trabajo     OrdenTrabajo @relation(fields: [ot_id], references: [id])
 
   @@index([ot_id])
   @@index([fecha])
@@ -865,8 +844,8 @@ model OTRepuesto {
   fecha_aprobacion       DateTime?    @db.Date
   createdAt              DateTime     @default(now())
   updatedAt              DateTime     @updatedAt
-  material               Material?    @relation(fields: [material_id], references: [material_id], onDelete: Restrict)
-  orden_trabajo          OrdenTrabajo @relation(fields: [ot_id], references: [id], onDelete: Cascade)
+  material               Material?    @relation(fields: [material_id], references: [material_id])
+  orden_trabajo          OrdenTrabajo @relation(fields: [ot_id], references: [id])
   compra                 Compra?      @relation(fields: [po_id], references: [id])
   proveedor              Proveedor?   @relation(fields: [proveedor_id], references: [id])
 
@@ -899,7 +878,7 @@ model PlanificacionOT {
   horas_extras_qty Decimal?     @db.Decimal(5, 1)
   created_at       DateTime     @default(now())
   updated_at       DateTime     @updatedAt
-  orden_trabajo    OrdenTrabajo @relation(fields: [ot_id], references: [id], onDelete: Cascade)
+  orden_trabajo    OrdenTrabajo @relation(fields: [ot_id], references: [id])
 
   @@map("planificacion_ot")
 }

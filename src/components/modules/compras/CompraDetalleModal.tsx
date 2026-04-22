@@ -246,7 +246,7 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
           )}
           <Button
             icon={<PrinterOutlined />}
-            onClick={() => window.print()}
+            onClick={() => compra?.id && window.open(`/api/compras/${compra.id}/pdf`, "_blank")}
             size="small"
             style={{ background: "rgba(255,255,255,0.12)", border: "none", color: brand.white }}
           >

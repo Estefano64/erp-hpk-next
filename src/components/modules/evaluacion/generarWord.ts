@@ -93,6 +93,33 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
     return `<tr><td class="label">${esc(label)}</td><td class="editable" colspan="2">${esc(v(prefix)) || "—"}</td></tr>`;
   };
 
+  // Helper: render de imagenes subidas (max 6, grilla 3x2, altura uniforme)
+  const renderImagenesSubidas = (prefix: string): string => {
+    const imgs = ((datos[`${prefix}_imagenes`] as { name: string; data: string }[] | undefined) || []).slice(0, 6);
+    if (!imgs.length) return "";
+    const COLS = 3;
+    const cells = imgs.map(
+      (img) =>
+        `<td class="foto-cell"><div class="foto-img-wrap"><img src="${img.data}" /></div><div class="foto-caption">${esc(
+          img.name || ""
+        )}</div></td>`
+    );
+    // Completar la ultima fila con celdas vacias para que la grilla quede ordenada
+    while (cells.length % COLS !== 0) {
+      cells.push('<td class="foto-cell foto-vacia"></td>');
+    }
+    const rows: string[] = [];
+    for (let i = 0; i < cells.length; i += COLS) {
+      rows.push(`<tr>${cells.slice(i, i + COLS).join("")}</tr>`);
+    }
+    return `
+      <div class="fotos-subidas">
+        <div class="fotos-titulo">Evidencia fotografica</div>
+        <table class="tabla-fotos"><tbody>${rows.join("")}</tbody></table>
+      </div>
+    `;
+  };
+
   // Helper: seccion con imagen y medidas
   const renderSeccionComponente = (
     numSec: number,
@@ -116,6 +143,7 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
           ? `<div class="hallazgos"><b>Hallazgos encontrados:</b><ul>${hallazgosMarcados.map((h) => `<li>${esc(h.texto)}</li>`).join("")}</ul></div>`
           : ""
       }
+      ${renderImagenesSubidas(prefix)}
       ${resultado ? `<div class="campo-texto"><b>Resultado</b><div class="textarea-box">${esc(resultado)}</div></div>` : ""}
       ${recomendaciones ? `<div class="campo-texto"><b>Recomendaciones</b><div class="textarea-box">${esc(recomendaciones)}</div></div>` : ""}
     `;
@@ -362,8 +390,8 @@ body { font-family: Calibri, Arial, sans-serif; font-size: 9pt; margin: 0; color
 
 .header-corp { width: 100%; border-bottom: 3pt solid ${AZUL}; margin-bottom: 12pt; padding-bottom: 8pt; }
 .header-corp td { border: none; padding: 0; vertical-align: middle; }
-.header-corp .logo-cell { width: 120pt; text-align: left; }
-.header-corp .logo-cell img { width: 110pt; height: auto; }
+.header-corp .logo-cell { width: 95pt; text-align: left; }
+.header-corp .logo-cell img { width: 85pt; height: auto; max-height: 40pt; }
 .header-corp .titulo-cell { text-align: center; padding: 0 10pt; }
 .header-corp .titulo-cell h1 { font-size: 14pt; color: ${AZUL}; margin: 0 0 3pt; letter-spacing: 1.5pt; font-weight: bold; text-transform: uppercase; }
 .header-corp .titulo-cell p { font-size: 9pt; color: #555; margin: 0; }
@@ -379,9 +407,18 @@ th { background: ${AZUL}; color: #fff; font-weight: 600; text-align: center; fon
 td.label { font-weight: 600; background: ${GRIS_FONDO}; color: #333; white-space: nowrap; width: 30%; }
 td.editable { color: ${AZUL_CLARO}; font-weight: 600; text-align: center; }
 
-.img-ref-wrap { text-align: center; margin: 6pt auto; padding: 4pt; border: 1pt solid #ddd; background: #fafcff; width: 60%; }
-.img-ref-wrap img { width: 220pt; height: auto; max-height: 140pt; }
+.img-ref-wrap { text-align: center; margin: 6pt auto; padding: 4pt; border: 1pt solid #ddd; background: #fafcff; width: 45%; }
+.img-ref-wrap img { width: 140pt; height: auto; max-height: 90pt; }
 .img-ref-wrap .img-caption { font-size: 7.5pt; color: ${AZUL}; margin-top: 3pt; font-weight: 600; letter-spacing: 0.3pt; }
+
+.fotos-subidas { margin: 6pt 0 8pt; }
+.fotos-titulo { font-size: 8.5pt; color: ${AZUL}; font-weight: 700; padding: 3pt 6pt; background: ${GRIS_FONDO}; border-left: 3pt solid ${AZUL}; margin-bottom: 4pt; letter-spacing: 0.3pt; }
+.tabla-fotos { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.tabla-fotos td.foto-cell { border: 0.5pt solid #ccc; padding: 4pt; width: 33.33%; text-align: center; background: #fff; vertical-align: top; }
+.tabla-fotos td.foto-vacia { border: 0; background: transparent; }
+.foto-img-wrap { width: 100%; height: 110pt; line-height: 110pt; text-align: center; overflow: hidden; }
+.foto-img-wrap img { height: 110pt; width: auto; max-width: 100%; vertical-align: middle; }
+.foto-caption { font-size: 7pt; color: #666; margin-top: 3pt; font-style: italic; line-height: 1.2; max-height: 16pt; overflow: hidden; }
 
 .hallazgos { margin: 6pt 0; padding: 4pt 8pt; border-left: 3pt solid #c0392b; background: #fef5f5; }
 .hallazgos b { color: #c0392b; font-size: 9pt; }

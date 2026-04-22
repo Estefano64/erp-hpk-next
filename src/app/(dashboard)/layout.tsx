@@ -32,6 +32,7 @@ const menuItems: MenuProps["items"] = [
     label: "Operaciones",
     children: [
       { key: "/ordenes-trabajo", label: "Órdenes de Trabajo" },
+      { key: "/evaluaciones", label: "Hojas de Evaluación" },
       { key: "/codigos-reparacion", label: "Cod. Reparables" },
       { key: "/contratos", label: "Contratos" },
     ],
@@ -54,6 +55,7 @@ const menuItems: MenuProps["items"] = [
       { key: "/proveedores", label: "Proveedores" },
       { key: "/requerimientos", label: "Requerimientos" },
       { key: "/compras", label: "Órdenes de Compra" },
+      { key: "/movimientos", label: "Movimientos" },
     ],
   },
   { key: "/reportes", icon: <BarChartOutlined />, label: "Reportes" },

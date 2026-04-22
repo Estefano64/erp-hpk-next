@@ -32,7 +32,8 @@ export async function GET(req: NextRequest) {
       orderBy: { fecha_solicitud: "desc" },
     });
 
-    const data = records.map((r) => ({
+    type R = typeof records[number];
+    const data = records.map((r: R) => ({
       id: r.id,
       numero_po: r.numero_po,
       numero_req: r.numero_req,

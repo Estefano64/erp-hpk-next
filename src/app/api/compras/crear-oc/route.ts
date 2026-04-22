@@ -29,6 +29,7 @@ export async function POST(req: NextRequest) {
     if (!repuestos.length) {
       return NextResponse.json({ error: "Requerimientos no encontrados" }, { status: 404 });
     }
+    type Req = typeof repuestos[number];
 
     // Generar numero de PO: D{YY}{NNNN}
     const year = new Date().getFullYear().toString().slice(-2);
@@ -105,7 +106,7 @@ export async function POST(req: NextRequest) {
 
     // Actualizar los requerimientos: estado "En PO", po_id, nro_oc
     await prisma.oTRepuesto.updateMany({
-      where: { id: { in: repuestos.map((r) => r.id) } },
+      where: { id: { in: repuestos.map((r: Req) => r.id) } },
       data: {
         estado: "En PO",
         po_id: compra.id,
@@ -115,14 +116,14 @@ export async function POST(req: NextRequest) {
     });
 
     // Registrar historial por cada OT unica involucrada
-    const otIds = [...new Set(repuestos.map((r) => r.ot_id))];
+    const otIds: number[] = Array.from(new Set(repuestos.map((r: Req) => r.ot_id)));
     await Promise.all(
-      otIds.map((otId) =>
+      otIds.map((otId: number) =>
         prisma.oTHistorial.create({
           data: {
             ot_id: otId,
             tipo_operacion: "Otro",
-            descripcion: `Generacion de OC ${numero_po} con ${repuestos.filter((r) => r.ot_id === otId).length} item(s)`,
+            descripcion: `Generacion de OC ${numero_po} con ${repuestos.filter((r: Req) => r.ot_id === otId).length} item(s)`,
             usuario: usuario || "Logistica",
             datos_adicionales: JSON.stringify({ po_id: compra.id, numero_po }),
           },

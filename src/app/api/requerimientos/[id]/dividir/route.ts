@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const startItem = ((sameReq[0]?.item_req ?? original.item_req ?? 0) as number) + 1;
 
     // Transaccion: actualizar el original con la primera parte, crear nuevos registros con las demas
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx: any) => {
       // Primera parte: actualizar el original
       await tx.oTRepuesto.update({
         where: { id: original.id },
