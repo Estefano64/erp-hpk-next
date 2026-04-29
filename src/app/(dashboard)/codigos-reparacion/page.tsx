@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   Typography,
@@ -26,6 +27,7 @@ import {
   DeleteOutlined,
   StopOutlined,
   ReloadOutlined,
+  ToolOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
@@ -58,6 +60,7 @@ interface Option {
 }
 
 export default function CodigosReparacionPage() {
+  const router = useRouter();
   const { data: session } = useSession();
   const isAdminUser = (session?.user as { rol?: string } | undefined)?.rol === "admin";
   const [data, setData] = useState<CodRep[]>([]);
@@ -262,10 +265,16 @@ export default function CodigosReparacionPage() {
     },
     {
       title: "Acciones",
-      width: 100,
+      width: 130,
       align: "center",
       render: (_: unknown, record: CodRep) => (
         <Space size="small">
+          <Button
+            type="text"
+            icon={<ToolOutlined />}
+            title="Operaciones / HH"
+            onClick={() => router.push(`/codigos-reparacion/${record.cod_rep_id}/operaciones`)}
+          />
           <Button type="text" icon={<EditOutlined />} onClick={() => openEdit(record)} />
           <Popconfirm
             title="¿Desactivar este código?"

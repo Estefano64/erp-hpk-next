@@ -12,12 +12,14 @@ import {
   Row,
   Col,
   Card,
+  Tooltip,
 } from "antd";
 import {
   PlusOutlined,
   SearchOutlined,
   ReloadOutlined,
   EyeOutlined,
+  AuditOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
@@ -130,7 +132,17 @@ export default function OrdenesTrabajoPage() {
       width: 150,
       fixed: "left",
       sorter: (a, b) => a.ot.localeCompare(b.ot),
-      render: (v: string) => <Tag color={brand.navy}>{v}</Tag>,
+      render: (v: string, r: OTRecord) => (
+        <Tooltip title="Abrir página de la OT (URL compartible)">
+          <Tag
+            color={brand.navy}
+            style={{ cursor: "pointer" }}
+            onClick={() => router.push(`/ordenes-trabajo/${r.id}`)}
+          >
+            {v}
+          </Tag>
+        </Tooltip>
+      ),
     },
     {
       title: "Cliente",
@@ -214,15 +226,26 @@ export default function OrdenesTrabajoPage() {
     },
     {
       title: "",
-      width: 50,
+      width: 90,
       align: "center",
       fixed: "right",
       render: (_: unknown, record: OTRecord) => (
-        <Button
-          type="text"
-          icon={<EyeOutlined />}
-          onClick={() => { setModalOtId(record.id); setModalOpen(true); }}
-        />
+        <Space size={0}>
+          <Tooltip title="Ver detalle">
+            <Button
+              type="text"
+              icon={<EyeOutlined />}
+              onClick={() => { setModalOtId(record.id); setModalOpen(true); }}
+            />
+          </Tooltip>
+          <Tooltip title="Hoja de evaluación">
+            <Button
+              type="text"
+              icon={<AuditOutlined />}
+              onClick={() => router.push(`/ordenes-trabajo/${record.id}/evaluacion`)}
+            />
+          </Tooltip>
+        </Space>
       ),
     },
   ];

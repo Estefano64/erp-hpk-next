@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { Layout, Menu, Button, Dropdown, Spin, Typography, Tag } from "antd";
@@ -17,6 +17,7 @@ import {
   SettingOutlined,
   FileProtectOutlined,
   ControlOutlined,
+  DatabaseOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { brand } from "@/lib/theme";
@@ -24,39 +25,55 @@ import { brand } from "@/lib/theme";
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
 
-const menuItems: MenuProps["items"] = [
-  { key: "/dashboard", icon: <DashboardOutlined />, label: "Dashboard" },
-  {
-    key: "operaciones",
-    icon: <ToolOutlined />,
-    label: "Operaciones",
-    children: [
-      { key: "/ordenes-trabajo", label: "Órdenes de Trabajo" },
-      { key: "/codigos-reparacion", label: "Cod. Reparables" },
-      { key: "/contratos", label: "Contratos" },
-    ],
-  },
-  {
-    key: "mantenimiento",
-    icon: <ControlOutlined />,
-    label: "Mantenimiento",
-    children: [
-      { key: "/mantenimiento/equipos", label: "Equipos" },
-    ],
-  },
-  {
-    key: "logistica",
-    icon: <ShoppingCartOutlined />,
-    label: "Logística",
-    children: [
-      { key: "/clientes", label: "Clientes" },
-      { key: "/materiales", label: "Materiales" },
-      { key: "/proveedores", label: "Proveedores" },
-      { key: "/compras", label: "Compras" },
-    ],
-  },
-  { key: "/reportes", icon: <BarChartOutlined />, label: "Reportes" },
-];
+function buildMenuItems(rol: string | null): MenuProps["items"] {
+  const configChildren: NonNullable<MenuProps["items"]> = [
+    { key: "/configuracion-cotizacion", label: "Configuración cotización" },
+  ];
+  if (rol === "admin") {
+    configChildren.push({ key: "/catalogos", label: "Catálogos maestros" });
+  }
+  return [
+    { key: "/dashboard", icon: <DashboardOutlined />, label: "Dashboard" },
+    {
+      key: "operaciones",
+      icon: <ToolOutlined />,
+      label: "Operaciones",
+      children: [
+        { key: "/ordenes-trabajo", label: "Órdenes de Trabajo" },
+        { key: "/codigos-reparacion", label: "Cod. Reparables" },
+        { key: "/contratos", label: "Contratos" },
+        { key: "/operaciones/planificacion", label: "Planificación" },
+        { key: "/operaciones/programacion-semanal", label: "Programación semanal" },
+      ],
+    },
+    {
+      key: "mantenimiento",
+      icon: <ControlOutlined />,
+      label: "Mantenimiento",
+      children: [
+        { key: "/mantenimiento/equipos", label: "Equipos" },
+      ],
+    },
+    {
+      key: "logistica",
+      icon: <ShoppingCartOutlined />,
+      label: "Logística",
+      children: [
+        { key: "/clientes", label: "Clientes" },
+        { key: "/materiales", label: "Materiales" },
+        { key: "/proveedores", label: "Proveedores" },
+        { key: "/compras", label: "Compras" },
+      ],
+    },
+    { key: "/reportes", icon: <BarChartOutlined />, label: "Reportes" },
+    {
+      key: "configuracion",
+      icon: <SettingOutlined />,
+      label: "Configuración",
+      children: configChildren,
+    },
+  ];
+}
 
 const rolLabels: Record<string, { label: string; color: string }> = {
   admin: { label: "Admin", color: brand.navy },
@@ -92,6 +109,8 @@ export default function DashboardLayout({
 
   const rolInfo = rol ? (rolLabels[rol] ?? rolLabels.viewer) : null;
 
+  const menuItems = useMemo(() => buildMenuItems(rol), [rol]);
+
   // Determina qué item y submenú están activos
   const selectedKey = (menuItems ?? []).reduce<string>((best, item) => {
     if (!item) return best;
@@ -102,7 +121,7 @@ export default function DashboardLayout({
         }
       }
     }
-    if ("key" in item && pathname.startsWith(item.key as string) && !["operaciones", "logistica", "mantenimiento"].includes(item.key as string)) {
+    if ("key" in item && pathname.startsWith(item.key as string) && !["operaciones", "logistica", "mantenimiento", "configuracion"].includes(item.key as string)) {
       return item.key as string;
     }
     return best;
@@ -122,7 +141,7 @@ export default function DashboardLayout({
     if (parentKey && !openKeys.includes(parentKey)) {
       setOpenKeys((prev) => [...prev, parentKey]);
     }
-  }, [pathname]);
+  }, [pathname, menuItems]);
 
   const userMenuItems: MenuProps["items"] = [
     {

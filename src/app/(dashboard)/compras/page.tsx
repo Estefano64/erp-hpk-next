@@ -1,12 +1,383 @@
 "use client";
 
-import { Typography } from "antd";
+import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import {
+  Typography,
+  Table,
+  Button,
+  Input,
+  Select,
+  Space,
+  Tag,
+  Modal,
+  Form,
+  message,
+  Popconfirm,
+  Row,
+  Col,
+  Card,
+  DatePicker,
+} from "antd";
+import {
+  PlusOutlined,
+  SearchOutlined,
+  EyeOutlined,
+  StopOutlined,
+  ReloadOutlined,
+} from "@ant-design/icons";
+import type { ColumnsType } from "antd/es/table";
+import dayjs from "dayjs";
+import { brand } from "@/lib/theme";
+
+const { Title } = Typography;
+
+interface CompraRecord {
+  id: number;
+  numero_po: string;
+  numero_req: string | null;
+  proveedor: { id: number; ruc: string; razon_social: string; nombre_comercial: string | null };
+  status_oc: { codigo: string; nombre: string } | null;
+  moneda: { codigo: string; nombre: string } | null;
+  orden_trabajo: { id: number; ot: string | null } | null;
+  fecha_solicitud: string;
+  fecha_entrega_esperada: string | null;
+  total: string;
+  _count: { detalles: number };
+}
+
+interface CatalogOption {
+  codigo: string;
+  nombre: string;
+}
+
+interface ProveedorOption {
+  id: number;
+  ruc: string;
+  razon_social: string;
+  nombre_comercial: string | null;
+}
+
+const statusColor: Record<string, string> = {
+  PEND_OC: "default",
+  PROCESO: "processing",
+  ENTREGADO: "cyan",
+  INCOMPLETO: "orange",
+  COMPLETO: "success",
+  ANULADO: "error",
+  DEVOLUCION: "volcano",
+};
 
 export default function ComprasPage() {
+  const router = useRouter();
+  const { data: session } = useSession();
+  const isAdminUser = (session?.user as { rol?: string } | undefined)?.rol === "admin";
+
+  const [data, setData] = useState<CompraRecord[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [filterEstado, setFilterEstado] = useState<string>("");
+  const [filterProveedor, setFilterProveedor] = useState<number | undefined>();
+
+  const [statusOptions, setStatusOptions] = useState<CatalogOption[]>([]);
+  const [monedaOptions, setMonedaOptions] = useState<CatalogOption[]>([]);
+  const [proveedorOptions, setProveedorOptions] = useState<ProveedorOption[]>([]);
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [form] = Form.useForm();
+  const [saving, setSaving] = useState(false);
+
+  const [messageApi, contextHolder] = message.useMessage();
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    const params = new URLSearchParams({ page: String(page), limit: "20" });
+    if (search) params.set("search", search);
+    if (filterEstado) params.set("estado", filterEstado);
+    if (filterProveedor) params.set("proveedor_id", String(filterProveedor));
+    const res = await fetch(`/api/compras?${params}`);
+    const json = await res.json();
+    setData(json.data ?? []);
+    setTotal(json.total ?? 0);
+    setLoading(false);
+  }, [page, search, filterEstado, filterProveedor]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  useEffect(() => {
+    (async () => {
+      const provRes = await fetch("/api/proveedores?limit=100");
+      const provJson = await provRes.json();
+      setProveedorOptions(provJson.data ?? []);
+      setStatusOptions([
+        { codigo: "PEND_OC", nombre: "Pendiente de OC" },
+        { codigo: "PROCESO", nombre: "En proceso" },
+        { codigo: "ENTREGADO", nombre: "Entregado" },
+        { codigo: "INCOMPLETO", nombre: "Incompleto" },
+        { codigo: "COMPLETO", nombre: "Completo" },
+        { codigo: "ANULADO", nombre: "Anulado" },
+        { codigo: "DEVOLUCION", nombre: "Devolución" },
+      ]);
+      setMonedaOptions([
+        { codigo: "USD", nombre: "Dólar" },
+        { codigo: "SOL", nombre: "Sol Peruano" },
+      ]);
+    })();
+  }, []);
+
+  function openCreate() {
+    form.resetFields();
+    form.setFieldsValue({
+      fecha_solicitud: dayjs(),
+      status_oc_codigo: "PEND_OC",
+      moneda_codigo: "USD",
+    });
+    setModalOpen(true);
+  }
+
+  async function handleSave() {
+    try {
+      const values = await form.validateFields();
+      setSaving(true);
+      const body = {
+        ...values,
+        fecha_solicitud: values.fecha_solicitud ? values.fecha_solicitud.toISOString() : null,
+        fecha_entrega_esperada: values.fecha_entrega_esperada ? values.fecha_entrega_esperada.toISOString() : null,
+        detalles: [],
+      };
+      const res = await fetch("/api/compras", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error ?? "Error");
+      }
+      const created = await res.json();
+      messageApi.success("Compra creada. Agregá las líneas en el detalle.");
+      setModalOpen(false);
+      router.push(`/compras/${created.data.id}`);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Error al guardar";
+      messageApi.error(msg);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleAnular(id: number) {
+    const res = await fetch(`/api/compras/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      messageApi.success("Compra anulada");
+      fetchData();
+      return;
+    }
+    const body = await res.json().catch(() => null);
+    messageApi.error(body?.detail ?? body?.error ?? "Error al anular");
+  }
+
+  const columns: ColumnsType<CompraRecord> = [
+    {
+      title: "PO",
+      dataIndex: "numero_po",
+      width: 120,
+      render: (v: string) => <Tag color={brand.navy}>{v}</Tag>,
+    },
+    {
+      title: "Proveedor",
+      key: "proveedor",
+      ellipsis: true,
+      render: (_: unknown, r: CompraRecord) => r.proveedor.nombre_comercial ?? r.proveedor.razon_social,
+    },
+    { title: "OT", key: "ot", width: 100, render: (_: unknown, r: CompraRecord) => r.orden_trabajo?.ot ?? "-" },
+    {
+      title: "Estado",
+      key: "estado",
+      width: 130,
+      render: (_: unknown, r: CompraRecord) =>
+        r.status_oc ? <Tag color={statusColor[r.status_oc.codigo] ?? "default"}>{r.status_oc.nombre}</Tag> : "-",
+    },
+    { title: "Líneas", key: "lineas", width: 80, align: "center", render: (_: unknown, r: CompraRecord) => r._count?.detalles ?? 0 },
+    {
+      title: "Total",
+      key: "total",
+      width: 130,
+      align: "right",
+      render: (_: unknown, r: CompraRecord) => {
+        const n = Number(r.total);
+        return `${r.moneda?.codigo ?? ""} ${n.toLocaleString("es-PE", { minimumFractionDigits: 2 })}`;
+      },
+    },
+    {
+      title: "Fecha Sol.",
+      dataIndex: "fecha_solicitud",
+      width: 110,
+      render: (v: string) => dayjs(v).format("DD/MM/YYYY"),
+    },
+    {
+      title: "Acciones",
+      width: 110,
+      align: "center",
+      render: (_: unknown, record: CompraRecord) => (
+        <Space size="small">
+          <Button type="text" icon={<EyeOutlined />} onClick={() => router.push(`/compras/${record.id}`)} title="Ver detalle" />
+          {isAdminUser && record.status_oc?.codigo !== "ANULADO" && (
+            <Popconfirm
+              title="¿Anular esta compra?"
+              description="Cambia el estado a ANULADO. Se puede ver pero no editar."
+              onConfirm={() => handleAnular(record.id)}
+            >
+              <Button type="text" danger icon={<StopOutlined />} title="Anular" />
+            </Popconfirm>
+          )}
+        </Space>
+      ),
+    },
+  ];
+
   return (
     <div>
-      <Typography.Title level={2}>Compras</Typography.Title>
-      <Typography.Text type="secondary">Módulo en construcción.</Typography.Text>
+      {contextHolder}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <Title level={3} style={{ margin: 0 }}>Compras</Title>
+        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nueva Compra</Button>
+      </div>
+
+      <Card styles={{ body: { padding: 16 } }} style={{ marginBottom: 16 }}>
+        <Row gutter={[12, 12]}>
+          <Col xs={24} md={8}>
+            <Input
+              placeholder="PO, req, factura, guía…"
+              prefix={<SearchOutlined />}
+              allowClear
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            />
+          </Col>
+          <Col xs={12} md={5}>
+            <Select
+              placeholder="Estado OC"
+              allowClear
+              style={{ width: "100%" }}
+              value={filterEstado || undefined}
+              onChange={(v) => { setFilterEstado(v ?? ""); setPage(1); }}
+              options={statusOptions.map((s) => ({ value: s.codigo, label: s.nombre }))}
+            />
+          </Col>
+          <Col xs={12} md={8}>
+            <Select
+              placeholder="Proveedor"
+              allowClear
+              showSearch
+              style={{ width: "100%" }}
+              value={filterProveedor}
+              onChange={(v) => { setFilterProveedor(v); setPage(1); }}
+              filterOption={(input, option) =>
+                (option?.label as string).toLowerCase().includes(input.toLowerCase())
+              }
+              options={proveedorOptions.map((p) => ({
+                value: p.id,
+                label: `${p.nombre_comercial ?? p.razon_social} (${p.ruc})`,
+              }))}
+            />
+          </Col>
+          <Col xs={24} md={3}>
+            <Button icon={<ReloadOutlined />} onClick={() => { setSearch(""); setFilterEstado(""); setFilterProveedor(undefined); setPage(1); }}>
+              Limpiar
+            </Button>
+          </Col>
+        </Row>
+      </Card>
+
+      <Table
+        rowKey="id"
+        columns={columns}
+        dataSource={data}
+        loading={loading}
+        pagination={{
+          current: page,
+          pageSize: 20,
+          total,
+          showTotal: (t) => `${t} compras`,
+          onChange: setPage,
+        }}
+        scroll={{ x: 1100 }}
+        size="small"
+      />
+
+      <Modal
+        title="Nueva Compra"
+        open={modalOpen}
+        onCancel={() => setModalOpen(false)}
+        onOk={handleSave}
+        confirmLoading={saving}
+        width={720}
+        destroyOnHidden
+      >
+        <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="numero_po" label="Número PO" rules={[{ required: true, message: "Requerido" }]}>
+                <Input placeholder="Ej: D260055" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="numero_req" label="Número Req">
+                <Input placeholder="Opcional" />
+              </Form.Item>
+            </Col>
+            <Col span={24}>
+              <Form.Item name="proveedor_id" label="Proveedor" rules={[{ required: true, message: "Requerido" }]}>
+                <Select
+                  showSearch
+                  placeholder="Seleccionar proveedor"
+                  filterOption={(input, option) =>
+                    (option?.label as string).toLowerCase().includes(input.toLowerCase())
+                  }
+                  options={proveedorOptions.map((p) => ({
+                    value: p.id,
+                    label: `${p.nombre_comercial ?? p.razon_social} (${p.ruc})`,
+                  }))}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="fecha_solicitud" label="Fecha Solicitud" rules={[{ required: true, message: "Requerido" }]}>
+                <DatePicker format="DD/MM/YYYY" style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="fecha_entrega_esperada" label="Fecha Entrega Esperada">
+                <DatePicker format="DD/MM/YYYY" style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="moneda_codigo" label="Moneda">
+                <Select options={monedaOptions.map((m) => ({ value: m.codigo, label: m.nombre }))} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="status_oc_codigo" label="Estado OC">
+                <Select options={statusOptions.map((s) => ({ value: s.codigo, label: s.nombre }))} />
+              </Form.Item>
+            </Col>
+            <Col span={16}>
+              <Form.Item name="nro_guia" label="Nro Guía">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={24}>
+              <Form.Item name="observaciones" label="Observaciones">
+                <Input.TextArea rows={2} />
+              </Form.Item>
+            </Col>
+          </Row>
+        </Form>
+      </Modal>
     </div>
   );
 }

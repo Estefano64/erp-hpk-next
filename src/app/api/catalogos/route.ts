@@ -28,6 +28,17 @@ const allowed: Record<string, keyof typeof prisma> = {
   tipoGarantia: "tipoGarantia",
   baseMetalica: "baseMetalica",
   ubicacion: "ubicacion",
+  componente: "componente",
+  operacionReparacion: "operacionReparacion",
+  modeloEvaluacion: "modeloEvaluacion",
+  tipoEstrategia: "tipoEstrategia",
+  statusEstrategia: "statusEstrategia",
+  tipoTarea: "tipoTarea",
+  conjuntoMantenimiento: "conjuntoMantenimiento",
+  statusRequerimiento: "statusRequerimiento",
+  statusCotizacion: "statusCotizacion",
+  statusOc: "statusOC",
+  statusTarea: "statusTarea",
 };
 
 // Tablas que deben ordenarse por PK (respetando orden de inserción)
@@ -41,10 +52,15 @@ const orderByPK: Record<string, string> = {
   tipoGarantia: "tipo_garantia_id",
   garantia: "garantia_id",
   baseMetalica: "base_metalica_id",
+  statusTarea: "orden",
+  statusRequerimiento: "orden",
+  statusCotizacion: "orden",
+  statusOc: "orden",
 };
 
 export async function GET(req: NextRequest) {
   const tabla = req.nextUrl.searchParams.get("tabla") ?? "";
+  const incluirInactivos = req.nextUrl.searchParams.get("incluirInactivos") === "1";
 
   if (!allowed[tabla]) {
     return NextResponse.json({ error: `Tabla "${tabla}" no permitida` }, { status: 400 });
@@ -58,7 +74,7 @@ export async function GET(req: NextRequest) {
     const orderBy = pk ? { [pk]: "asc" } : { codigo: "asc" };
 
     const data = await model.findMany({
-      where: { activo: true },
+      where: incluirInactivos ? {} : { activo: true },
       orderBy,
     });
     return NextResponse.json({ data });

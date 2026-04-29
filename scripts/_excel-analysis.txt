@@ -1,0 +1,244 @@
+
+========================================
+FILE: 1 Log - material.xlsx
+SHEETS: 8
+  [Sheet1] rows=835 headerAt=0
+    cols (15): Todos | Software | TODOS | Todos | Todos | Todos | Todos | Produccion | Produccion | Todos | Logistica | Logistica | Logistica | Todos | Todos
+  [Planta] rows=3 headerAt=0
+    cols (2): 7 caracteres: 3 Ciudad & 2 Descripción & 2 número | 
+  [Area] rows=6 headerAt=0
+    cols (2): 2 caracteres: DD descripcion | 
+  [Categoria] rows=2 headerAt=5
+    cols (3): CAP | Capital | >$5,000
+  [Clasificación] rows=84 headerAt=0
+    cols (2): 4 caracteres: DDDD descripcion | 
+  [Und Med] rows=21 headerAt=0
+    cols (2): 3 caracteres: DDD descripcion | 
+  [Moneda] rows=3 headerAt=0
+    cols (2): 3 caracteres: DDD descripcion | 
+  [Fabricante] rows=42 headerAt=0
+    cols (2): 3 caracteres: DDD descripcion | 
+
+========================================
+FILE: 2 Mant - equipos y Herramientos.xlsx
+SHEETS: 8
+  [Sheet1] rows=496 headerAt=0
+    cols (22): Log y Mant | Log y Mant | Log y Mant | Log y Mant | Log y Mant | Log y Mant | Log y Mant | Log y Mant | Log y Mant | Log y Mant | Log y Mant | Log y Mant | Log y Mant | Log y Mant | Log y Mant | Log y Mant | Log y Mant | Log y Mant |  |  |  | 
+  [Und Med] rows=21 headerAt=0
+    cols (2): 3 caracteres: DDD descripcion | 
+  [Planta] rows=2 headerAt=0
+    cols (2): 7 caracteres: 3 Ciudad & 2 Descripción & 2 número | 
+  [Area] rows=6 headerAt=0
+    cols (2): 2 caracteres: DD descripcion | 
+  [Sub Area] rows=13 headerAt=0
+    cols (2): 3caracteres | 
+  [Criticidad] rows=4 headerAt=0
+    cols (2): # | 
+  [tipo] rows=6 headerAt=0
+    cols (2): 3caracteres | 
+  [status] rows=6 headerAt=0
+    cols (2): 3caracteres | 
+
+========================================
+FILE: 3. Todos - Estrategias.xlsx
+SHEETS: 7
+  [Hoja1] rows=0 headerAt=0
+    cols (1): 
+  [Sheet1] rows=108 headerAt=0
+    cols (10): Todos | Software | Todos | Todos | Software | Todos | Todos | Todos | Todos | Todos
+  [Hoja2] rows=129 headerAt=0
+    cols (1): Prod y Mant
+  [Status] rows=4 headerAt=0
+    cols (2): 2 caracteres: DD descripcion | 
+  [Tipo estrategias] rows=9 headerAt=0
+    cols (2): 2 caracteres: DD descripcion | 
+  [Und Med] rows=19 headerAt=0
+    cols (2): 3 caracteres: DDD descripcion | 
+  [Area] rows=6 headerAt=0
+    cols (2): 2 caracteres: DD descripcion | 
+
+========================================
+FILE: 4. Log prod - Task list materiales y servicios (toño).xlsx
+SHEETS: 4
+  [Task List Materiales] rows=585 headerAt=0
+    cols (17): Prod y Mant | Software | Software | Prod y Mant |  |  |  | Prod y Mant | Prod y Mant | Prod y Mant | Software | Prod y Mant |  |  | Prod y Mant | Prod y Mant(Solo si es servicio) | Logistica(Solo si es servicio)
+  [Tipo] rows=4 headerAt=0
+    cols (3): 3 caracteres: DDD descripcion |  | 
+  [Task List Materiales (2)] rows=1427 headerAt=0
+    cols (16): Prod y Mant | Software | Software | Prod y Mant |  |  |  | Prod y Mant | Prod y Mant | Prod y Mant | Software | Prod y Mant |  | Prod y Mant | Prod y Mant(Solo si es servicio) | Logistica(Solo si es servicio)
+  [Hoja4] rows=925 headerAt=0
+    cols (2):  | 
+
+========================================
+FILE: 4. Log prod - Task list materiales y servicios.xlsx
+SHEETS: 4
+  [Hoja1] (empty)
+  [Task List Materiales] rows=1400 headerAt=0
+    cols (16): Prod y Mant | Software | Software | Prod y Mant |  |  |  | Prod y Mant | Prod y Mant | Prod y Mant | Software | Prod y Mant |  | Prod y Mant | Prod y Mant(Solo si es servicio) | Logistica(Solo si es servicio)
+  [Tipo] rows=4 headerAt=0
+    cols (2): 3 caracteres: DDD descripcion | 
+  [Hoja4] (empty)
+
+========================================
+FILE: 5. Cod Rep.xlsx
+SHEETS: 7
+  [Cod Rep] rows=143 headerAt=0
+    cols (14): Produccion | Software | Produccion | Produccion |  | Produccion | Produccion | Produccion | Produccion | Produccion | Logistica | Logistica |  | 
+  [Descripcion tipo] rows=10 headerAt=0
+    cols (2):  | 
+  [Tipo] rows=7 headerAt=0
+    cols (2): 3 caracteres: 3 letras | 
+  [Categoría] rows=6 headerAt=0
+    cols (2): 3 caracteres: 3 letras | 
+  [Flota] rows=45 headerAt=0
+    cols (2): 3 caracteres: 3 letras | 
+  [Fabricante] rows=5 headerAt=0
+    cols (2): 3 caracteres: DDD descripcion | 
+  [Posicion] rows=6 headerAt=0
+    cols (2): 3 caracteres: DDD descripcion | 
+
+========================================
+FILE: 5.1 Encabezados.xlsx
+SHEETS: 11
+  [Encabezados] rows=1856 headerAt=1
+    cols (8): NP | COD. REP | DESCRIPCION TIPO | COMPONENTE | TRABAJO | QTY | HORAS | HH
+  [Cilindros] rows=142 headerAt=0
+    cols (8): Descripcion | Tipo | Descripcion tipo | Categoria | Flota | Fabricante | NP | Posicion
+  [Descripcion tipo] rows=10 headerAt=0
+    cols (2):  | 
+  [AV] rows=6 headerAt=1
+    cols (3): 1 | CILINDRO | Desarmado
+  [AE] rows=7 headerAt=1
+    cols (3): 1 | CILINDRO | Desarmado
+  [CHT] rows=18 headerAt=1
+    cols (3): 1 | CILINDRO | Desarmado
+  [CHP] rows=15 headerAt=1
+    cols (3): 1 | CILINDRO | Desarmado
+  [CHVS] rows=12 headerAt=1
+    cols (3): 1 | CILINDRO | Desarmado
+  [SD] rows=9 headerAt=1
+    cols (3): 1 | CILINDRO | Desarmado
+  [FS] rows=5 headerAt=1
+    cols (3): 1 | FRENO | Desarmado
+  [RD] rows=34 headerAt=1
+    cols (3): 1 | RUEDA | Desarmado
+
+========================================
+FILE: 6. Ots.xlsx
+SHEETS: 13
+  [Sheet1] rows=18 headerAt=1
+    cols (34): Software | Tabla | Tabla | Manual
+(solo se habilita con Si "Estrategia?" | Si se llena "Cod Rep"
+Jala información de "5. Cod Rep", si no es manual |  |  |  |  |  | Manual | Manual | Manual | Manual | Manual | Manual | Manual | Manual | Manual | Manual | Manual | Calculado
+(hrs/PCR) si se tiene los 2 datos | Tabla | Tabla | Tabla | Tabla
+(si garantia dice "Si" se pone "por definir") | Tabla | Referenciado | Tabla | Manual | Manual (calculado si tiene contrato) | Tabla | Tabla | Tabla
+  [Imagenes] rows=3 headerAt=0
+    cols (56): FINAL |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | fesa ykmmp |  |  |  |  |  |  |  |  |  |  |  |  | sire mmg |  |  |  | 
+    ... more cols
+  [Cliente] rows=17 headerAt=0
+    cols (2): 12 letras | 
+  [Estrategia] rows=2 headerAt=0
+    cols (2): Cod | Descripcion
+  [Garantia] rows=2 headerAt=0
+    cols (2): Cod | Descripcion
+  [Atencion reparacion] rows=3 headerAt=0
+    cols (2): Cod | Descripcion
+  [Tipo Reparacion] rows=4 headerAt=0
+    cols (2): Cod | Descripcion
+  [Tipo Garantia] rows=4 headerAt=0
+    cols (2): Cod | Descripcion
+  [Prioridad Atencion] rows=4 headerAt=0
+    cols (2): Cod | Descripcion
+  [Base Metalica] rows=1 headerAt=0
+    cols (1): Si
+  [OT Status] rows=2 headerAt=0
+    cols (1): Abierta
+  [Recursos Status] rows=5 headerAt=0
+    cols (1): En revision procesos
+  [Taller Status] rows=6 headerAt=0
+    cols (1): Pdt Evaluación
+
+========================================
+FILE: 6.1. Ots VENTAS.xlsx
+SHEETS: 13
+  [Sheet1] rows=22 headerAt=1
+    cols (34): Software | Tabla |  | Tabla | Manual
+(solo se habilita con Si "Estrategia?" | Si se llena "Cod Rep"
+Jala información de "5. Cod Rep", si no es manual |  |  |  |  | Manual | Manual | Manual | Manual | Manual | Manual | Manual | Manual | Manual | Manual | Manual | Calculado
+(hrs/PCR) si se tiene los 2 datos | Tabla | Tabla | Tabla | Tabla
+(si garantia dice "Si" se pone "por definir") | Tabla | Referenciado | Tabla | Manual | Manual (calculado si tiene contrato) | Tabla | Tabla | Tabla
+  [Imagenes] rows=3 headerAt=0
+    cols (56): FINAL |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | fesa ykmmp |  |  |  |  |  |  |  |  |  |  |  |  | sire mmg |  |  |  | 
+    ... more cols
+  [Cliente] rows=17 headerAt=0
+    cols (2): 12 letras | 
+  [Estrategia] rows=2 headerAt=0
+    cols (2): Cod | Descripcion
+  [Garantia] rows=2 headerAt=0
+    cols (2): Cod | Descripcion
+  [Atencion reparacion] rows=3 headerAt=0
+    cols (2): Cod | Descripcion
+  [Tipo Reparacion] rows=4 headerAt=0
+    cols (2): Cod | Descripcion
+  [Tipo Garantia] rows=4 headerAt=0
+    cols (2): Cod | Descripcion
+  [Prioridad Atencion] rows=4 headerAt=0
+    cols (2): Cod | Descripcion
+  [Base Metalica] rows=1 headerAt=0
+    cols (1): Si
+  [OT Status] rows=2 headerAt=0
+    cols (1): Abierta
+  [Recursos Status] rows=5 headerAt=0
+    cols (1): En revision procesos
+  [Taller Status] rows=6 headerAt=0
+    cols (1): Pdt Evaluación
+
+========================================
+FILE: 7. Log - POs requerimientos.xlsx
+SHEETS: 1
+  [VERSION FINAL] rows=21 headerAt=2
+    cols (37):  |  |  | Automatico | Automatico | Automatico | 4. Log prod - Task list materiales | 1 Log - material | 4. Log prod - Task list materiales | 1 Log - material | 4. Log prod - Task list materiales | Manual | 1 Log - material | Tabla Status Req. | Correlativo de acuerdo al usuario | Item de la OC | Automatico editable (LOG) | Automatico | Manual (LOG) | Manual (LOG) | Automatico editable (LOG) | Manual (LOG) | GER. / PROD. | Automatico | Manual (LOG) | Manual (LOG) | Manual (LOG) |  |  | Manual (LOG) |  |  |  |  |  |  | 
+
+========================================
+FILE: 8. REQ & OC.xlsx
+SHEETS: 2
+  [LOG (REQ - OC) RESUMEN] rows=6 headerAt=0
+    cols (27): (según registro automatico) | Selección (Desplegable) | automatico | automatico | automatico | automatico | automatico | automatico | automatico | automatico | automatico | automatico | automatico | automatico | automatico | automatico | automatico | automatico | Manual (desplegable) | Manual | Manual (Desplegable) | Manual | Manual | Manual | Manual | Manual | Manual
+  [LOG (REQ - OC) DETALLE] rows=15 headerAt=0
+    cols (28): automatico | Selección (Desplegable) | automatico | automatico | automatico | automatico | automatico | automatico | automatico | automatico | automatico | automatico | automatico | automatico | Selección (Desplegable) | Automatico | Manual | Automatico | Automatico | Automatico | Automatico | Automatico | manual | manual | manual | manual | manual | manual
+
+========================================
+FILE: check list CUADRO DE CILINDROS (EVALUACION) (1).xlsx
+SHEETS: 4
+  [CILINDRO HIDRAULICO] rows=143 headerAt=2
+    cols (16):  | CILINDRO |  |  |  |  |  |  | RESULTADO DE EVALUACION: |  |  |  | RECOMENDACIONES |  |  | 
+  [CILINDRO (CON TRUNNI] rows=132 headerAt=2
+    cols (16): 1 | Diametro interior | 3 puntos de medidas |  |  |  |  |  | RESULTADO DE EVALUACION: |  |  |  | RECOMENDACIONES |  |  | 
+  [ACUMULADOR] rows=38 headerAt=3
+    cols (17):  | CILINDRO |  |  |  |  |  |  |  | ACUMULADOR HIDRÁULICO (CON BLADDER) |  |  |  | ACUMULADOR HIDRÁULICO (CON BLADDER) |  |  | 
+  [CILINDRO TELESCOPICO] rows=168 headerAt=3
+    cols (17):  | FORMULARIO O CONSULTA DE N° DE ETAPAS |  |  |  |  |  |  |  | CILINDRO |  |  |  | CILINDRO |  |  | 
+
+========================================
+FILE: Hoja_de_Evaluacion_HPK.xlsx
+SHEETS: 7
+  [TIPOS DE CILINDROS] rows=6 headerAt=0
+    cols (2):  | TIPOS
+  [1] rows=33 headerAt=5
+    cols (21): Diámetro Interior | A1: |  | A2: |  | A3: |  | A4: |  |  |  |  |  |  |  |  |  |  |  |  | 
+  [2] rows=31 headerAt=5
+    cols (21): Diámetro Interior | A1: |  | A2: |  | A3: |  | A4: |  |  |  |  |  |  |  |  |  |  |  |  | 
+  [3] rows=29 headerAt=5
+    cols (21): Diámetro Interior | A1: |  | A2: |  | A3: |  | A4: |  |  |  |  |  |  |  |  |  |  |  |  | 
+  [4] rows=60 headerAt=2
+    cols (21): FORMULARIO O CONSULTA DE N° DE ETAPAS |  |  |  |  |  | camisa movil | Cuerpo intermedio |  |  |  |  |  |  |  |  |  |  |  |  | 
+  [5] rows=14 headerAt=5
+    cols (18): Diámetro Interior | A1: |  | A2: |  | A3: |  | A4: |  |  |  |  |  |  |  |  |  | 
+  [6] rows=4 headerAt=5
+    cols (18): Diámetro de Salida 1 | A: | X: | Y: |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+
+========================================
+FILE: Tablas de planificacion.xlsx
+SHEETS: 1
+  [Planeamiento] rows=11 headerAt=2
+    cols (24):  | CILINDRO |  |  | CILINDRO |  |  | VASTAGO |  |  | VASTAGO |  |  | TAPA |  |  | TAPA |  |  | PISTON |  |  | PISTON | 
