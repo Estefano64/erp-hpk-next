@@ -370,7 +370,7 @@ export default function OperacionesCodRepPage() {
   ];
 
   if (loading) return <Spin size="large" />;
-  if (!codRep) return <Alert type="error" message="CodRep no encontrado" />;
+  if (!codRep) return <Alert type="error" title="CodRep no encontrado" />;
 
   const progreso = rows.length > 0 ? Math.round((completados / rows.length) * 100) : 0;
 
@@ -387,7 +387,7 @@ export default function OperacionesCodRepPage() {
       <Alert
         type="info"
         showIcon
-        message="Plantilla de operaciones para esta reparación"
+        title="Plantilla de operaciones para esta reparación"
         description="Editá inline cualquier campo (Componente, Trabajo, Op. del catálogo, Qty, Horas, HH). Los cambios se guardan automáticamente. Usá ▲▼ para reordenar y 🗑️ para eliminar."
         style={{ marginBottom: 16 }}
       />

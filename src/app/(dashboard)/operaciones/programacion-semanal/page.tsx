@@ -1177,7 +1177,7 @@ export default function ProgramacionSemanalPage() {
           type="info"
           showIcon
           style={{ marginTop: 12 }}
-          message="Recomendación"
+          title="Recomendación"
           description={<>En el diálogo del navegador elegí <strong>horizontal (landscape)</strong> y <strong>A4</strong>. Si imprimís un día, en la opción "más ajustes" del navegador podés ajustar el zoom para que ese día ocupe la página entera.</>}
         />
         <div style={{ marginTop: 8, fontSize: 12, color: brand.textSecondary }}>

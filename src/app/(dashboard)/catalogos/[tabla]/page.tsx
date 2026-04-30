@@ -169,7 +169,7 @@ export default function CatalogoCrudPage() {
   if (!cfg) {
     return (
       <Card>
-        <Alert type="error" showIcon message={`Catálogo "${tabla}" no existe.`} />
+        <Alert type="error" showIcon title={`Catálogo "${tabla}" no existe.`} />
         <Button style={{ marginTop: 12 }} icon={<ArrowLeftOutlined />} onClick={() => router.push("/catalogos")}>
           Volver al índice
         </Button>

@@ -295,7 +295,7 @@ export default function CompraDetallePage() {
   }
 
   if (loading) return <Spin size="large" />;
-  if (!compra) return <Alert type="error" message="Compra no encontrada" />;
+  if (!compra) return <Alert type="error" title="Compra no encontrada" />;
 
   const isAnulada = compra.status_oc?.codigo === "ANULADO";
   const moneda = compra.moneda?.codigo ?? "";
@@ -375,7 +375,7 @@ export default function CompraDetallePage() {
       </Space>
 
       {isAnulada && (
-        <Alert type="warning" showIcon message="Esta compra está anulada. Solo lectura." style={{ marginBottom: 16 }} />
+        <Alert type="warning" showIcon title="Esta compra está anulada. Solo lectura." style={{ marginBottom: 16 }} />
       )}
 
       {/* Cabecera */}
@@ -578,7 +578,7 @@ export default function CompraDetallePage() {
             <Alert
               type="warning"
               showIcon
-              message={`Esta línea tiene ${editingLine.cantidad_recibida} ya recibido — no se puede cambiar material ni cantidad.`}
+              title={`Esta línea tiene ${editingLine.cantidad_recibida} ya recibido — no se puede cambiar material ni cantidad.`}
             />
           )}
         </Form>
@@ -599,7 +599,7 @@ export default function CompraDetallePage() {
         <Alert
           type="info"
           showIcon
-          message="Revisá que las cantidades que recibiste coincidan con la guía del proveedor."
+          title="Revisá que las cantidades que recibiste coincidan con la guía del proveedor."
           description="Podés recibir parcialmente — las líneas con 0 se saltean. El estado pasa a ENTREGADO si todo llega completo, o INCOMPLETO si queda algo pendiente."
           style={{ marginBottom: 16 }}
         />

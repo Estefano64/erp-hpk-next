@@ -85,7 +85,7 @@ export default function CatalogosIndexPage() {
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="Gestión de catálogos maestros"
+        title="Gestión de catálogos maestros"
         description="Verificá, agregá o eliminá entradas. Las eliminaciones tienen dos modos: 'desactivar' (soft, recomendado si hay datos relacionados) y 'eliminar' (real, solo si no hay FKs). Solo administradores pueden modificar."
       />
 

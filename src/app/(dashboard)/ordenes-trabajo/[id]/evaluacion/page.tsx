@@ -1,412 +1,783 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
-  Typography, Card, Button, Space, Spin, Alert, Tag, Row, Col,
-  InputNumber, Input, Select, Descriptions, message, Divider, Modal,
+  Typography,
+  Card,
+  Row,
+  Col,
+  Form,
+  Input,
+  Select,
+  DatePicker,
+  Button,
+  Space,
+  Divider,
+  Spin,
+  App,
+  Upload,
+  Tag,
+  Alert,
+  Modal,
 } from "antd";
-import { ArrowLeftOutlined, SaveOutlined, CheckCircleOutlined } from "@ant-design/icons";
+import {
+  ArrowLeftOutlined,
+  SaveOutlined,
+  FileWordOutlined,
+  UploadOutlined,
+  DownloadOutlined,
+  InfoCircleOutlined,
+  LockOutlined,
+  SendOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  EditOutlined,
+  FileDoneOutlined,
+  ClockCircleOutlined,
+} from "@ant-design/icons";
+import type { UploadFile } from "antd/es/upload/interface";
 import { brand } from "@/lib/theme";
-import type { CampoCaptura, PlantillaEvaluacion, TipoCaptura } from "@/lib/evaluacion-templates";
+import dayjs, { Dayjs } from "dayjs";
+import EvaluacionFormulario, {
+  MODELOS_EVALUACION,
+  detectarModeloDesdeEstrategia,
+} from "@/components/modules/evaluacion/EvaluacionFormulario";
+import { generarWordEvaluacion } from "@/components/modules/evaluacion/generarWord";
 
-interface Captura {
+const { Title, Text } = Typography;
+const { TextArea } = Input;
+
+interface OTDetalle {
   id: number;
-  campo_key: string;
-  tipo_captura: TipoCaptura;
-  valor_numero: string | null;
-  valor_texto: string | null;
-  valor_booleano: boolean | null;
-  valor_url: string | null;
-  unidad: string | null;
+  ot: string | null;
+  estrategia: boolean | null;
+  tipo: string | null;
+  np: string | null;
+  descripcion: string | null;
+  equipo_codigo: string | null;
+  ns: string | null;
+  fecha_recepcion: string | null;
+  cod_rep_flota: string | null;
+  cod_rep_posicion: string | null;
+  guia_remision: string | null;
+  cliente: { codigo: string; nombre_comercial: string | null; razon_social: string } | null;
+  codigo_reparacion: { codigo: string; descripcion: string } | null;
+  fabricante: { nombre: string } | null;
 }
 
-interface EvaluacionData {
-  ot: {
-    id: number;
-    ot: string | null;
-    descripcion: string | null;
-    taller_status: { codigo: string; nombre: string } | null;
-    cliente: { codigo: string; razon_social: string } | null;
-  };
-  codigo_reparacion: {
-    codigo: string;
-    descripcion: string;
-    np: string | null;
-    modelo_evaluacion_codigo: string | null;
-    modelo_evaluacion: { codigo: string; nombre: string } | null;
-  } | null;
-  modelo_evaluacion_codigo: string | null;
-  plantilla: PlantillaEvaluacion | null;
-  planificacion_eval_id: number;
-  capturas: Captura[];
+interface Evaluacion {
+  id: number;
+  ot_id: number;
+  modelo_evaluacion: string;
+  sistema_medicion: string;
+  fecha_evaluacion: string | null;
+  evaluado_por: string | null;
+  datos_formulario: Record<string, unknown>;
+  resultado_general: string | null;
+  recomendaciones_general: string | null;
+  informe_archivo: string | null;
+  informe_nombre: string | null;
+  informe_fecha_subida: string | null;
+  estado: string;
+  revisado_por?: string | null;
+  fecha_revision?: string | null;
+  comentarios_revision?: string | null;
+  solicitado_revision_por?: string | null;
+  fecha_solicitud_revision?: string | null;
 }
 
-type CapturaValue = {
-  valor_numero?: number | null;
-  valor_texto?: string | null;
-  valor_booleano?: boolean | null;
-  valor_url?: string | null;
+const estadoColorPage: Record<string, string> = {
+  BORRADOR: "default",
+  COMPLETADA: "blue",
+  PENDIENTE_APROBACION: "gold",
+  APROBADA: "green",
+  RECHAZADA: "red",
+};
+
+const estadoLabelPage: Record<string, string> = {
+  BORRADOR: "Borrador",
+  COMPLETADA: "Completada",
+  PENDIENTE_APROBACION: "Pendiente Aprobación",
+  APROBADA: "Aprobada",
+  RECHAZADA: "Rechazada",
+};
+
+const estadoIconPage: Record<string, React.ReactNode> = {
+  BORRADOR: <EditOutlined />,
+  COMPLETADA: <FileDoneOutlined />,
+  PENDIENTE_APROBACION: <ClockCircleOutlined />,
+  APROBADA: <CheckCircleOutlined />,
+  RECHAZADA: <CloseCircleOutlined />,
 };
 
 export default function EvaluacionPage() {
-  const params = useParams<{ id: string }>();
+  const params = useParams();
   const router = useRouter();
-  const otId = Number(params?.id);
+  const { message } = App.useApp();
+  const [form] = Form.useForm();
+  const otId = Number(params.id);
 
-  const [data, setData] = useState<EvaluacionData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [values, setValues] = useState<Record<string, CapturaValue>>({});
-  const [savingKey, setSavingKey] = useState<string | null>(null);
-  const [finalizing, setFinalizing] = useState(false);
-  const [messageApi, contextHolder] = message.useMessage();
-  const debounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [ot, setOt] = useState<OTDetalle | null>(null);
+  const [evaluacion, setEvaluacion] = useState<Evaluacion | null>(null);
+  const [modeloEvaluacion, setModeloEvaluacion] = useState<string>("cil_vastago_simple");
+  const [sistemaMedicion, setSistemaMedicion] = useState<string>("Metrico");
+  const [modeloBloqueado, setModeloBloqueado] = useState(false);
+  const [datosFormulario, setDatosFormulario] = useState<Record<string, unknown>>({});
 
-  const fetchData = useCallback(async () => {
-    if (!otId) return;
+  // Modal revision
+  const [modalAccion, setModalAccion] = useState<"solicitar" | "aprobar" | "rechazar" | "reabrir" | null>(null);
+  const [accionForm] = Form.useForm();
+  const [procesandoAccion, setProcesandoAccion] = useState(false);
+
+  const cargarDatos = useCallback(async () => {
     setLoading(true);
-    const res = await fetch(`/api/ordenes-trabajo/${otId}/evaluacion`);
-    if (res.ok) {
-      const json = await res.json();
-      setData(json.data);
-      const initial: Record<string, CapturaValue> = {};
-      for (const c of json.data.capturas as Captura[]) {
-        initial[c.campo_key] = {
-          valor_numero: c.valor_numero !== null ? Number(c.valor_numero) : null,
-          valor_texto: c.valor_texto,
-          valor_booleano: c.valor_booleano,
-          valor_url: c.valor_url,
-        };
-      }
-      setValues(initial);
-    } else {
-      const err = await res.json().catch(() => null);
-      messageApi.error(err?.error ?? "Error al cargar");
-    }
-    setLoading(false);
-  }, [otId, messageApi]);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
-
-  const persistCaptura = useCallback(async (campo: CampoCaptura, val: CapturaValue) => {
-    if (!data) return;
-    setSavingKey(campo.key);
     try {
-      const body = {
-        campo_key: campo.key,
-        tipo_captura: campo.tipo,
-        unidad: campo.unidad ?? null,
-        valor_numero: val.valor_numero ?? null,
-        valor_texto: val.valor_texto ?? null,
-        valor_booleano: val.valor_booleano ?? null,
-        valor_url: val.valor_url ?? null,
+      const resOT = await fetch(`/api/ordenes-trabajo/${otId}`);
+      const jsonOT = await resOT.json();
+      if (!resOT.ok) throw new Error(jsonOT.error || "Error al cargar OT");
+      const otData = jsonOT.data as OTDetalle;
+      setOt(otData);
+
+      // Determinar modelo de evaluacion
+      let modeloInicial = "cil_vastago_simple";
+      let bloqueado = false;
+      if (otData.estrategia && otData.tipo) {
+        const detectado = detectarModeloDesdeEstrategia(otData.tipo);
+        if (detectado) {
+          modeloInicial = detectado;
+          bloqueado = true;
+        }
+      }
+      setModeloBloqueado(bloqueado);
+
+      // Intentar cargar evaluacion existente
+      try {
+        const resEval = await fetch(`/api/evaluaciones/ot/${otId}`);
+        if (resEval.ok) {
+          const jsonEval = await resEval.json();
+          const ev = jsonEval.data as Evaluacion;
+          setEvaluacion(ev);
+          if (!bloqueado) modeloInicial = ev.modelo_evaluacion;
+          setSistemaMedicion(ev.sistema_medicion);
+          setDatosFormulario(ev.datos_formulario || {});
+        }
+      } catch {
+        // No hay evaluacion previa
+      }
+
+      setModeloEvaluacion(modeloInicial);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Error desconocido";
+      message.error(msg);
+    } finally {
+      setLoading(false);
+    }
+  }, [otId, message]);
+
+  useEffect(() => {
+    if (otId) cargarDatos();
+  }, [otId, cargarDatos]);
+
+  // Aplicar valores al Form despues de que este montado (cuando loading=false)
+  useEffect(() => {
+    if (loading || !evaluacion) return;
+    form.setFieldsValue({
+      evaluado_por: evaluacion.evaluado_por,
+      fecha_evaluacion: evaluacion.fecha_evaluacion ? dayjs(evaluacion.fecha_evaluacion) : null,
+      resultado_general: evaluacion.resultado_general,
+      recomendaciones_general: evaluacion.recomendaciones_general,
+    });
+  }, [loading, evaluacion, form]);
+
+  const handleGuardar = async () => {
+    try {
+      setSaving(true);
+      const values = await form.validateFields();
+      const payload = {
+        ot_id: otId,
+        modelo_evaluacion: modeloEvaluacion,
+        sistema_medicion: sistemaMedicion,
+        fecha_evaluacion: values.fecha_evaluacion
+          ? (values.fecha_evaluacion as Dayjs).format("YYYY-MM-DD")
+          : null,
+        evaluado_por: values.evaluado_por || null,
+        datos_formulario: datosFormulario,
+        resultado_general: values.resultado_general || null,
+        recomendaciones_general: values.recomendaciones_general || null,
+        estado: "COMPLETADA",
       };
-      const res = await fetch(`/api/planificacion/${data.planificacion_eval_id}/capturas`, {
+
+      const url = evaluacion?.id
+        ? `/api/evaluaciones/${evaluacion.id}`
+        : "/api/evaluaciones";
+      const method = evaluacion?.id ? "PUT" : "POST";
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Error al guardar");
+      setEvaluacion(json.data);
+      message.success("Hoja de evaluacion guardada");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Error desconocido";
+      message.error(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUploadInforme = async (file: File) => {
+    if (!evaluacion?.id) {
+      message.warning("Primero guarda la hoja de evaluacion");
+      return false;
+    }
+    try {
+      setUploading(true);
+      const fd = new FormData();
+      fd.append("informe", file);
+      const res = await fetch(`/api/evaluaciones/${evaluacion.id}/informe`, {
+        method: "POST",
+        body: fd,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Error al subir informe");
+      setEvaluacion(json.data);
+      message.success("Informe subido correctamente");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Error desconocido";
+      message.error(msg);
+    } finally {
+      setUploading(false);
+    }
+    return false; // impedir subida automatica del Upload component
+  };
+
+  const handleGenerarWord = async () => {
+    try {
+      const values = form.getFieldsValue();
+      await generarWordEvaluacion({
+        ot,
+        modeloEvaluacion,
+        sistemaMedicion,
+        fechaEvaluacion: values.fecha_evaluacion ? (values.fecha_evaluacion as Dayjs).format("DD/MM/YYYY") : "",
+        evaluadoPor: values.evaluado_por || "",
+        datos: datosFormulario,
+        resultadoGeneral: values.resultado_general || "",
+        recomendacionesGeneral: values.recomendaciones_general || "",
+      });
+      message.success("Word generado correctamente");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Error al generar Word";
+      message.error(msg);
+    }
+  };
+
+  // Ejecutar accion de revision (solicitar/aprobar/rechazar/reabrir)
+  const ejecutarAccionRevision = async () => {
+    if (!modalAccion || !evaluacion) return;
+    try {
+      const values = accionForm.getFieldsValue();
+      setProcesandoAccion(true);
+      const res = await fetch(`/api/evaluaciones/${evaluacion.id}/revision`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          accion: modalAccion,
+          usuario: values.usuario || "Usuario",
+          comentarios: values.comentarios || null,
+        }),
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        throw new Error(err?.error ?? "Error");
-      }
-    } catch (e) {
-      messageApi.error(e instanceof Error ? e.message : "Error al guardar");
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Error");
+
+      const textos: Record<string, string> = {
+        solicitar: "Evaluación enviada a revisión",
+        aprobar: "Evaluación aprobada",
+        rechazar: "Evaluación rechazada",
+        reabrir: "Evaluación reabierta en borrador",
+      };
+      message.success(textos[modalAccion]);
+      setEvaluacion(json.data);
+      setModalAccion(null);
+      accionForm.resetFields();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : "Error");
     } finally {
-      setSavingKey(null);
+      setProcesandoAccion(false);
     }
-  }, [data, messageApi]);
+  };
 
-  const updateField = useCallback((campo: CampoCaptura, val: CapturaValue) => {
-    setValues((prev) => ({ ...prev, [campo.key]: { ...prev[campo.key], ...val } }));
-    if (debounceTimers.current[campo.key]) clearTimeout(debounceTimers.current[campo.key]);
-    debounceTimers.current[campo.key] = setTimeout(() => {
-      const merged = { ...values[campo.key], ...val };
-      persistCaptura(campo, merged);
-    }, 600);
-  }, [values, persistCaptura]);
+  // Permisos segun estado
+  const estado = evaluacion?.estado || "BORRADOR";
+  const puedeEditar = ["BORRADOR", "COMPLETADA", "RECHAZADA"].includes(estado);
+  const puedeSolicitar = ["BORRADOR", "COMPLETADA", "RECHAZADA"].includes(estado) && !!evaluacion?.id;
+  const puedeAprobarRechazar = estado === "PENDIENTE_APROBACION";
+  const puedeReabrir = ["APROBADA", "RECHAZADA"].includes(estado);
 
-  const camposCompletos = useMemo(() => {
-    if (!data?.plantilla) return { total: 0, filled: 0 };
-    let total = 0, filled = 0;
-    for (const s of data.plantilla.secciones) {
-      for (const c of s.campos) {
-        total++;
-        const v = values[c.key];
-        if (!v) continue;
-        const any = v.valor_numero != null || !!v.valor_texto || v.valor_booleano != null || !!v.valor_url;
-        if (any) filled++;
-      }
-    }
-    return { total, filled };
-  }, [data, values]);
-
-  if (loading) return <Spin size="large" />;
-  if (!data) return <Alert type="error" message="OT no encontrada" />;
-  if (!data.codigo_reparacion) {
+  if (loading) {
     return (
-      <div>
-        <Button icon={<ArrowLeftOutlined />} onClick={() => router.push(`/ordenes-trabajo`)} style={{ marginBottom: 16 }}>Volver</Button>
-        <Alert type="warning" showIcon message="Esta OT no tiene Código de Reparación asignado. Asigná uno antes de evaluar." />
-      </div>
-    );
-  }
-  if (!data.plantilla) {
-    return (
-      <div>
-        <Button icon={<ArrowLeftOutlined />} onClick={() => router.push(`/ordenes-trabajo`)} style={{ marginBottom: 16 }}>Volver</Button>
-        <Alert
-          type="warning"
-          showIcon
-          message={`No hay plantilla para el modelo de evaluación "${data.codigo_reparacion.modelo_evaluacion_codigo ?? "(sin modelo)"}"`}
-          description="El CodRep de la OT no tiene un ModeloEvaluacion asignado, o ese modelo aún no tiene plantilla en el sistema."
-        />
+      <div style={{ textAlign: "center", padding: 60 }}>
+        <Spin size="large" />
       </div>
     );
   }
 
-  const { plantilla } = data;
+  if (!ot) {
+    return <Alert type="error" title="OT no encontrada" />;
+  }
+
+  const clienteNombre = ot.cliente?.nombre_comercial ?? ot.cliente?.razon_social ?? "-";
 
   return (
     <div>
-      {contextHolder}
-      <Space style={{ marginBottom: 16 }}>
-        <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/ordenes-trabajo")}>Volver</Button>
-        <Typography.Title level={3} style={{ margin: 0 }}>Evaluación — OT {data.ot.ot ?? `#${data.ot.id}`}</Typography.Title>
-      </Space>
-
-      <Card size="small" style={{ marginBottom: 16 }}>
-        <Descriptions column={{ xs: 1, sm: 2, md: 3 }} size="small">
-          <Descriptions.Item label="Cliente">{data.ot.cliente?.razon_social ?? "-"}</Descriptions.Item>
-          <Descriptions.Item label="CodRep">
-            <Tag color={brand.navy}>{data.codigo_reparacion.codigo}</Tag>
-            {data.codigo_reparacion.descripcion}
-          </Descriptions.Item>
-          <Descriptions.Item label="NP">{data.codigo_reparacion.np ?? "-"}</Descriptions.Item>
-          <Descriptions.Item label="Modelo evaluación">
-            <Tag color={brand.cyan}>{plantilla.codigo}</Tag>
-            {plantilla.nombre}
-          </Descriptions.Item>
-          <Descriptions.Item label="Taller status">
-            {data.ot.taller_status ? <Tag>{data.ot.taller_status.nombre}</Tag> : "-"}
-          </Descriptions.Item>
-          <Descriptions.Item label="Progreso">
-            <Tag color={camposCompletos.filled === camposCompletos.total ? "success" : "processing"}>
-              {camposCompletos.filled} / {camposCompletos.total} campos
-            </Tag>
-          </Descriptions.Item>
-        </Descriptions>
-      </Card>
-
-      {plantilla.secciones.map((seccion, i) => (
-        <Card
-          key={i}
-          title={<span><strong>{seccion.titulo}</strong></span>}
-          size="small"
-          style={{ marginBottom: 12 }}
-          styles={{ body: { padding: "12px 16px" } }}
-        >
-          {seccion.refCampo && (
-            <div style={{ marginBottom: 12 }}>
-              <Input
-                placeholder={`Referencia: ${seccion.titulo}`}
-                value={values[seccion.refCampo]?.valor_texto ?? ""}
-                onChange={(e) => updateField(
-                  { key: seccion.refCampo!, label: "REF", tipo: "TEXTO" },
-                  { valor_texto: e.target.value },
-                )}
-              />
-            </div>
-          )}
-          <Row gutter={[16, 12]}>
-            {seccion.campos.map((campo) => (
-              <Col key={campo.key} xs={24} sm={12} md={8} lg={6}>
-                <FieldRenderer
-                  campo={campo}
-                  value={values[campo.key] ?? {}}
-                  saving={savingKey === campo.key}
-                  onChange={(v) => updateField(campo, v)}
-                />
-              </Col>
-            ))}
-          </Row>
-        </Card>
-      ))}
-
-      <Card size="small" style={{ marginBottom: 12 }} title={<strong>Hallazgos posibles</strong>}>
-        <Alert
-          type="info"
-          showIcon
-          message="Marcá los que apliquen en los campos 'Resultado' / 'Recomendaciones' de cada sección, o dejalos como referencia."
+      {/* ── Header ── */}
+      <div style={{ marginBottom: 16 }}>
+        <Button
+          type="text"
+          icon={<ArrowLeftOutlined />}
+          onClick={() => router.push("/ordenes-trabajo")}
           style={{ marginBottom: 8 }}
-        />
-        <Space wrap>
-          {plantilla.hallazgosPosibles.map((h) => (
-            <Tag key={h}>{h}</Tag>
-          ))}
-        </Space>
+        >
+          Volver a Ordenes de Trabajo
+        </Button>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <Title level={3} style={{ margin: 0 }}>
+              Hoja de Evaluacion Tecnica
+            </Title>
+            <Space>
+              <Text type="secondary">OT:</Text>
+              <Tag color={brand.navy}>{ot.ot}</Tag>
+              {evaluacion && (
+                <Tag color={estadoColorPage[estado] || "default"} icon={estadoIconPage[estado]}>
+                  {estadoLabelPage[estado] || estado}
+                </Tag>
+              )}
+            </Space>
+          </div>
+          <Space wrap>
+            <Button icon={<FileWordOutlined />} onClick={handleGenerarWord}>
+              Descargar Word
+            </Button>
+            {puedeEditar && (
+              <Button
+                type="primary"
+                icon={<SaveOutlined />}
+                loading={saving}
+                onClick={handleGuardar}
+              >
+                Guardar Hoja
+              </Button>
+            )}
+            {puedeSolicitar && (
+              <Button
+                icon={<SendOutlined />}
+                style={{ background: brand.cyan, color: "#fff", borderColor: brand.cyan }}
+                onClick={() => setModalAccion("solicitar")}
+              >
+                Enviar a revisión
+              </Button>
+            )}
+            {puedeAprobarRechazar && (
+              <>
+                <Button
+                  icon={<CheckCircleOutlined />}
+                  style={{ background: "#52c41a", color: "#fff", borderColor: "#52c41a" }}
+                  onClick={() => setModalAccion("aprobar")}
+                >
+                  Aprobar
+                </Button>
+                <Button danger icon={<CloseCircleOutlined />} onClick={() => setModalAccion("rechazar")}>
+                  Rechazar
+                </Button>
+              </>
+            )}
+            {puedeReabrir && (
+              <Button icon={<EditOutlined />} onClick={() => setModalAccion("reabrir")}>
+                Reabrir / Editar
+              </Button>
+            )}
+          </Space>
+        </div>
+
+        {/* Alert con info de revision */}
+        {evaluacion && estado === "PENDIENTE_APROBACION" && (
+          <Alert
+            style={{ marginTop: 12 }}
+            type="warning"
+            showIcon
+            icon={<ClockCircleOutlined />}
+            title="Esta evaluación está pendiente de aprobación"
+            description={
+              evaluacion.solicitado_revision_por
+                ? `Enviada por ${evaluacion.solicitado_revision_por}${
+                    evaluacion.fecha_solicitud_revision
+                      ? ` el ${dayjs(evaluacion.fecha_solicitud_revision).format("DD/MM/YYYY HH:mm")}`
+                      : ""
+                  }`
+                : "Esperando revisión del supervisor"
+            }
+          />
+        )}
+        {evaluacion && estado === "APROBADA" && (
+          <Alert
+            style={{ marginTop: 12 }}
+            type="success"
+            showIcon
+            title="Evaluación aprobada — bloqueada para edición"
+            description={
+              <>
+                Aprobada por <b>{evaluacion.revisado_por}</b>
+                {evaluacion.fecha_revision && ` el ${dayjs(evaluacion.fecha_revision).format("DD/MM/YYYY HH:mm")}`}
+                {evaluacion.comentarios_revision && (
+                  <div style={{ marginTop: 4, fontSize: 12 }}>
+                    <b>Comentarios:</b> {evaluacion.comentarios_revision}
+                  </div>
+                )}
+                <div style={{ marginTop: 6, fontSize: 12 }}>
+                  <LockOutlined /> Los campos están bloqueados. Usa <b>Reabrir / Editar</b> para modificar la evaluación.
+                </div>
+              </>
+            }
+          />
+        )}
+        {evaluacion && estado === "RECHAZADA" && (
+          <Alert
+            style={{ marginTop: 12 }}
+            type="error"
+            showIcon
+            title="Evaluación rechazada"
+            description={
+              <>
+                Rechazada por <b>{evaluacion.revisado_por}</b>
+                {evaluacion.fecha_revision && ` el ${dayjs(evaluacion.fecha_revision).format("DD/MM/YYYY HH:mm")}`}
+                {evaluacion.comentarios_revision && (
+                  <div style={{ marginTop: 4, fontSize: 12 }}>
+                    <b>Motivo:</b> {evaluacion.comentarios_revision}
+                  </div>
+                )}
+                <div style={{ marginTop: 6, fontSize: 12 }}>
+                  Usa <b>Reabrir / Editar</b> para hacer cambios y enviarla nuevamente.
+                </div>
+              </>
+            }
+          />
+        )}
+      </div>
+
+      {/* ── Seccion 1: Datos Generales ── */}
+      <Card
+        title={
+          <Space>
+            <span style={{ background: brand.navy, color: "#fff", borderRadius: "50%", width: 24, height: 24, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12 }}>1</span>
+            Datos Generales de la OT
+          </Space>
+        }
+        style={{ marginBottom: 16 }}
+      >
+        <Row gutter={[16, 12]}>
+          <Col xs={24} sm={12} md={8}>
+            <Text type="secondary" style={{ fontSize: 12 }}>Fecha de Ingreso</Text>
+            <div>{ot.fecha_recepcion ? dayjs(ot.fecha_recepcion).format("DD/MM/YYYY") : "-"}</div>
+          </Col>
+          <Col xs={24} sm={12} md={8}>
+            <Text type="secondary" style={{ fontSize: 12 }}>Guia Cliente</Text>
+            <div>{ot.guia_remision || "-"}</div>
+          </Col>
+          <Col xs={24} sm={12} md={8}>
+            <Text type="secondary" style={{ fontSize: 12 }}>Cliente</Text>
+            <div>{clienteNombre}</div>
+          </Col>
+          <Col xs={24} sm={12} md={8}>
+            <Text type="secondary" style={{ fontSize: 12 }}>OT</Text>
+            <div><Tag color={brand.navy}>{ot.ot}</Tag></div>
+          </Col>
+          <Col xs={24} sm={12} md={8}>
+            <Text type="secondary" style={{ fontSize: 12 }}>Fabricante</Text>
+            <div>{ot.fabricante?.nombre || "-"}</div>
+          </Col>
+          <Col xs={24} sm={12} md={8}>
+            <Text type="secondary" style={{ fontSize: 12 }}>Flota</Text>
+            <div>{ot.cod_rep_flota || "-"}</div>
+          </Col>
+          <Col xs={24} sm={12} md={8}>
+            <Text type="secondary" style={{ fontSize: 12 }}>Descripcion</Text>
+            <div>{ot.descripcion || "-"}</div>
+          </Col>
+          <Col xs={24} sm={12} md={8}>
+            <Text type="secondary" style={{ fontSize: 12 }}>Tipo</Text>
+            <div>{ot.tipo || "-"}</div>
+          </Col>
+          <Col xs={24} sm={12} md={8}>
+            <Text type="secondary" style={{ fontSize: 12 }}>Numero de Parte</Text>
+            <div>{ot.np || "-"}</div>
+          </Col>
+          <Col xs={24} sm={12} md={8}>
+            <Text type="secondary" style={{ fontSize: 12 }}>Posicion</Text>
+            <div>{ot.cod_rep_posicion || "-"}</div>
+          </Col>
+          <Col xs={24} sm={12} md={8}>
+            <Text type="secondary" style={{ fontSize: 12 }}>Codigo Reparable</Text>
+            <div>{ot.codigo_reparacion?.codigo || "-"}</div>
+          </Col>
+          <Col xs={24} sm={12} md={8}>
+            <Text type="secondary" style={{ fontSize: 12 }}>Estrategia</Text>
+            <div>
+              {ot.estrategia ? (
+                <Tag color="blue">Con Estrategia</Tag>
+              ) : (
+                <Tag>Sin Estrategia</Tag>
+              )}
+            </div>
+          </Col>
+        </Row>
       </Card>
 
-      <Card size="small" title={<strong>Recomendaciones pre-escritas</strong>}>
-        <Space wrap>
-          {plantilla.recomendacionesPosibles.map((r) => (
-            <Tag key={r} color="cyan">{r}</Tag>
-          ))}
-        </Space>
+      {/* ── Seccion 2: Configuracion evaluacion ── */}
+      <Card
+        title={
+          <Space>
+            <span style={{ background: brand.navy, color: "#fff", borderRadius: "50%", width: 24, height: 24, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12 }}>2</span>
+            Configuracion de la Evaluacion
+          </Space>
+        }
+        style={{ marginBottom: 16 }}
+      >
+        <Form form={form} layout="vertical" disabled={!puedeEditar}>
+          <Row gutter={16}>
+            <Col xs={24} md={8}>
+              <Form.Item label="Modelo / Tipo de componente">
+                <Select
+                  value={modeloEvaluacion}
+                  onChange={setModeloEvaluacion}
+                  disabled={modeloBloqueado || !puedeEditar}
+                  suffixIcon={modeloBloqueado ? <LockOutlined /> : undefined}
+                  options={MODELOS_EVALUACION.map((m) => ({
+                    label: m.label,
+                    value: m.value,
+                  }))}
+                />
+                {modeloBloqueado && (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    icon={<InfoCircleOutlined />}
+                    title="Tipo determinado por la estrategia de la OT"
+                    style={{ marginTop: 8 }}
+                    banner
+                  />
+                )}
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={8}>
+              <Form.Item label="Sistema de Medicion">
+                <Select
+                  value={sistemaMedicion}
+                  onChange={setSistemaMedicion}
+                  disabled={!puedeEditar}
+                  options={[
+                    { label: "Sistema Metrico (mm)", value: "Metrico" },
+                    { label: "Sistema Imperial (in)", value: "Imperial" },
+                  ]}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={4}>
+              <Form.Item label="Fecha Evaluacion" name="fecha_evaluacion">
+                <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={4}>
+              <Form.Item label="Evaluado por" name="evaluado_por">
+                <Input placeholder="Nombre" />
+              </Form.Item>
+            </Col>
+          </Row>
+        </Form>
+      </Card>
+
+      {/* ── Seccion 3: Formulario dinamico de evaluacion ── */}
+      <EvaluacionFormulario
+        modelo={modeloEvaluacion}
+        sistemaMedicion={sistemaMedicion}
+        datos={datosFormulario}
+        onChange={setDatosFormulario}
+        readonly={!puedeEditar}
+      />
+
+      {/* ── Seccion final: Resultado y Recomendaciones ── */}
+      <Card
+        title={
+          <Space>
+            <span style={{ background: brand.navy, color: "#fff", borderRadius: "50%", width: 24, height: 24, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12 }}>F</span>
+            Resultado General y Recomendaciones
+          </Space>
+        }
+        style={{ marginBottom: 16 }}
+      >
+        <Form form={form} layout="vertical" disabled={!puedeEditar}>
+          <Form.Item label="Resultado general de la evaluacion" name="resultado_general">
+            <TextArea rows={3} placeholder="Conclusiones generales de la evaluacion del componente..." />
+          </Form.Item>
+          <Form.Item label="Recomendaciones" name="recomendaciones_general">
+            <TextArea rows={3} placeholder="Recomendaciones tecnicas..." />
+          </Form.Item>
+        </Form>
+      </Card>
+
+      {/* ── Seccion: Subir Informe ── */}
+      <Card
+        title={
+          <Space>
+            <UploadOutlined />
+            Adjuntar Informe de Evaluacion
+          </Space>
+        }
+        style={{ marginBottom: 16 }}
+      >
+        {evaluacion?.informe_nombre && (
+          <Alert
+            style={{ marginBottom: 12 }}
+            type="success"
+            showIcon
+            title={
+              <Space>
+                <strong>{evaluacion.informe_nombre}</strong>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  Subido: {evaluacion.informe_fecha_subida ? dayjs(evaluacion.informe_fecha_subida).format("DD/MM/YYYY HH:mm") : ""}
+                </Text>
+                <a href={evaluacion.informe_archivo!} target="_blank" rel="noopener noreferrer">
+                  <Button type="link" size="small" icon={<DownloadOutlined />}>
+                    Descargar
+                  </Button>
+                </a>
+              </Space>
+            }
+          />
+        )}
+        <Upload
+          beforeUpload={(file) => handleUploadInforme(file as File)}
+          showUploadList={false}
+          accept=".pdf,.doc,.docx,.xls,.xlsx"
+          maxCount={1}
+          disabled={!puedeEditar}
+        >
+          <Button icon={<UploadOutlined />} loading={uploading} disabled={!puedeEditar}>
+            {evaluacion?.informe_nombre ? "Reemplazar Informe" : "Subir Informe"}
+          </Button>
+        </Upload>
+        <Text type="secondary" style={{ display: "block", marginTop: 8, fontSize: 12 }}>
+          Formatos aceptados: PDF, Word, Excel. Maximo 20MB.
+          {!puedeEditar && (
+            <span style={{ color: "#cf1322", marginLeft: 8 }}>
+              <LockOutlined /> Bloqueado mientras la evaluacion este {estadoLabelPage[estado] || estado}. Reabrela para modificar.
+            </span>
+          )}
+        </Text>
       </Card>
 
       <Divider />
 
-      <div style={{ textAlign: "right" }}>
-        <Space>
-          <Button icon={<SaveOutlined />} onClick={() => messageApi.info("Los cambios se guardan automáticamente al editar cada campo.")}>
-            Guardar
+      {/* Boton guardar al final */}
+      <div style={{ textAlign: "right", marginBottom: 40 }}>
+        <Space wrap>
+          <Button onClick={() => router.push("/ordenes-trabajo")}>Cancelar</Button>
+          <Button icon={<FileWordOutlined />} onClick={handleGenerarWord}>
+            Descargar Word
           </Button>
-          <Button
-            type="primary"
-            icon={<CheckCircleOutlined />}
-            loading={finalizing}
-            disabled={camposCompletos.filled === 0}
-            onClick={() => {
-              Modal.confirm({
-                title: "¿Finalizar evaluación?",
-                content: `Vas a marcar la evaluación como terminada (${camposCompletos.filled} de ${camposCompletos.total} campos llenos). La OT pasará a "Pdt proceso". Los valores guardados quedan como están.`,
-                okText: "Finalizar",
-                cancelText: "Cancelar",
-                async onOk() {
-                  setFinalizing(true);
-                  try {
-                    const res = await fetch(`/api/ordenes-trabajo/${otId}/evaluacion/finalizar`, { method: "POST" });
-                    if (!res.ok) {
-                      const err = await res.json().catch(() => null);
-                      throw new Error(err?.error ?? "Error");
-                    }
-                    const json = await res.json();
-                    messageApi.success(`Evaluación finalizada. Taller status: ${json.taller_status_nuevo}.`);
-                    fetchData();
-                  } catch (e) {
-                    messageApi.error(e instanceof Error ? e.message : "Error al finalizar");
-                  } finally {
-                    setFinalizing(false);
-                  }
-                },
-              });
-            }}
-          >
-            Finalizar evaluación
-          </Button>
+          {puedeEditar && (
+            <Button
+              type="primary"
+              icon={<SaveOutlined />}
+              size="large"
+              loading={saving}
+              onClick={handleGuardar}
+            >
+              Guardar Hoja de Evaluacion
+            </Button>
+          )}
+          {puedeSolicitar && (
+            <Button
+              icon={<SendOutlined />}
+              size="large"
+              style={{ background: brand.cyan, color: "#fff", borderColor: brand.cyan }}
+              onClick={() => setModalAccion("solicitar")}
+            >
+              Enviar a revisión
+            </Button>
+          )}
         </Space>
       </div>
+
+      {/* Modal de revisión */}
+      <Modal
+        title={
+          modalAccion === "solicitar"
+            ? <Space><SendOutlined style={{ color: brand.cyan }} />Enviar a revisión</Space>
+            : modalAccion === "aprobar"
+            ? <Space><CheckCircleOutlined style={{ color: "#52c41a" }} />Aprobar Evaluación</Space>
+            : modalAccion === "rechazar"
+            ? <Space><CloseCircleOutlined style={{ color: "#ff4d4f" }} />Rechazar Evaluación</Space>
+            : <Space><EditOutlined />Reabrir Evaluación</Space>
+        }
+        open={!!modalAccion}
+        onCancel={() => setModalAccion(null)}
+        onOk={ejecutarAccionRevision}
+        confirmLoading={procesandoAccion}
+        forceRender
+        okText={
+          modalAccion === "solicitar" ? "Enviar" :
+          modalAccion === "aprobar" ? "Aprobar" :
+          modalAccion === "rechazar" ? "Rechazar" : "Reabrir"
+        }
+        okButtonProps={{ danger: modalAccion === "rechazar", type: "primary" }}
+      >
+        <Form form={accionForm} layout="vertical">
+          <Form.Item
+            label={modalAccion === "solicitar" ? "Tu nombre (evaluador)" : "Tu nombre"}
+            name="usuario"
+            rules={[{ required: true, message: "Ingresa tu nombre" }]}
+          >
+            <Input placeholder="Ej. Juan Pérez" />
+          </Form.Item>
+          {modalAccion !== "reabrir" && (
+            <Form.Item
+              label={
+                modalAccion === "solicitar"
+                  ? "Comentarios para el revisor (opcional)"
+                  : modalAccion === "rechazar"
+                  ? "Motivo del rechazo"
+                  : "Comentarios (opcional)"
+              }
+              name="comentarios"
+              rules={modalAccion === "rechazar" ? [{ required: true, message: "Indica el motivo del rechazo" }] : []}
+            >
+              <Input.TextArea rows={3} placeholder="Observaciones..." />
+            </Form.Item>
+          )}
+          {modalAccion === "solicitar" && (
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              Al enviar a revisión, la evaluación quedará bloqueada hasta que el revisor la apruebe o rechace.
+            </Text>
+          )}
+          {modalAccion === "rechazar" && (
+            <Text type="warning" style={{ fontSize: 12 }}>
+              ⚠ Al rechazar, el evaluador podrá reabrirla y volver a enviarla.
+            </Text>
+          )}
+          {modalAccion === "reabrir" && (
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              La evaluación volverá a estado <b>Borrador</b>. Podrás editarla y enviarla nuevamente a revisión.
+            </Text>
+          )}
+        </Form>
+      </Modal>
     </div>
   );
-}
-
-function FieldRenderer({
-  campo,
-  value,
-  saving,
-  onChange,
-}: {
-  campo: CampoCaptura;
-  value: CapturaValue;
-  saving: boolean;
-  onChange: (v: CapturaValue) => void;
-}) {
-  const label = (
-    <span>
-      {campo.label}
-      {campo.unidad && <span style={{ color: brand.textSecondary }}> ({campo.unidad})</span>}
-      {saving && <span style={{ marginLeft: 6, color: brand.cyan, fontSize: 11 }}>guardando…</span>}
-    </span>
-  );
-
-  switch (campo.tipo) {
-    case "MEDIDA_NUMERICA":
-    case "TOLERANCIA":
-      return (
-        <div>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>{label}</div>
-          <InputNumber
-            value={value.valor_numero ?? undefined}
-            onChange={(v) => onChange({ valor_numero: v == null ? null : Number(v) })}
-            step={0.01}
-            style={{ width: "100%" }}
-            placeholder="0.00"
-          />
-        </div>
-      );
-    case "CHECKLIST_BMN":
-      return (
-        <div>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>{label}</div>
-          <Select
-            value={value.valor_texto ?? undefined}
-            onChange={(v) => onChange({ valor_texto: v ?? null })}
-            placeholder="—"
-            allowClear
-            style={{ width: "100%" }}
-            options={[
-              { value: "BUENO", label: "Bueno" },
-              { value: "MALO", label: "Malo" },
-              { value: "NA", label: "N/A" },
-            ]}
-          />
-        </div>
-      );
-    case "BOOLEAN":
-      return (
-        <div>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>{label}</div>
-          <Select
-            value={value.valor_booleano ?? undefined}
-            onChange={(v) => onChange({ valor_booleano: v ?? null })}
-            placeholder="—"
-            allowClear
-            style={{ width: "100%" }}
-            options={[
-              { value: true, label: "Sí" },
-              { value: false, label: "No" },
-            ]}
-          />
-        </div>
-      );
-    case "FOTO":
-      return (
-        <div>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>{label}</div>
-          <Input
-            value={value.valor_url ?? ""}
-            onChange={(e) => onChange({ valor_url: e.target.value })}
-            placeholder="URL de imagen"
-          />
-        </div>
-      );
-    case "TEXTO":
-    default:
-      if (campo.opciones) {
-        return (
-          <div>
-            <div style={{ fontSize: 12, marginBottom: 4 }}>{label}</div>
-            <Select
-              value={value.valor_texto ?? undefined}
-              onChange={(v) => onChange({ valor_texto: v ?? null })}
-              placeholder="—"
-              allowClear
-              style={{ width: "100%" }}
-              options={campo.opciones.map((o) => ({ value: o, label: o }))}
-            />
-          </div>
-        );
-      }
-      return (
-        <div>
-          <div style={{ fontSize: 12, marginBottom: 4 }}>{label}</div>
-          <Input.TextArea
-            value={value.valor_texto ?? ""}
-            onChange={(e) => onChange({ valor_texto: e.target.value })}
-            autoSize={{ minRows: 1, maxRows: 4 }}
-          />
-        </div>
-      );
-  }
 }

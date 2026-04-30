@@ -796,6 +796,7 @@ model OrdenTrabajo {
   historial                   OTHistorial[]
   repuestos                   OTRepuesto[]
   planificaciones             PlanificacionOT[]
+  evaluaciones_tecnicas       EvaluacionTecnica[]
 
   @@map("orden_trabajo")
 }
@@ -852,6 +853,12 @@ model Compra {
   moneda_codigo          String?         @db.VarChar(10)
   nro_factura            String?         @db.VarChar(100)
   nro_guia               String?         @db.VarChar(100)
+  guia_archivo           String?         @db.VarChar(500)
+  guia_nombre            String?         @db.VarChar(300)
+  guia_fecha_subida      DateTime?
+  factura_archivo        String?         @db.VarChar(500)
+  factura_nombre         String?         @db.VarChar(300)
+  factura_fecha_subida   DateTime?
   observaciones          String?
   usuario_solicita       String          @db.VarChar(100)
   usuario_aprueba        String?         @db.VarChar(100)
@@ -1096,4 +1103,32 @@ model Contrato {
   @@index([cod_rep_id])
   @@index([cliente_id, cod_rep_id])
   @@map("contrato")
+}
+
+model EvaluacionTecnica {
+  id                       Int          @id @default(autoincrement())
+  ot_id                    Int
+  modelo_evaluacion        String       @db.VarChar(50)
+  sistema_medicion         String       @default("Metrico") @db.VarChar(10)
+  fecha_evaluacion         DateTime?    @db.Date
+  evaluado_por             String?      @db.VarChar(150)
+  datos_formulario         Json         @default("{}")
+  resultado_general        String?
+  recomendaciones_general  String?
+  informe_archivo          String?      @db.VarChar(500)
+  informe_nombre           String?      @db.VarChar(300)
+  informe_fecha_subida     DateTime?
+  estado                   String       @default("BORRADOR") @db.VarChar(25)
+  revisado_por             String?      @db.VarChar(150)
+  fecha_revision           DateTime?
+  comentarios_revision     String?
+  solicitado_revision_por  String?      @db.VarChar(150)
+  fecha_solicitud_revision DateTime?
+  createdAt                DateTime     @default(now())
+  updatedAt                DateTime     @updatedAt
+  orden_trabajo            OrdenTrabajo @relation(fields: [ot_id], references: [id], onDelete: Cascade)
+
+  @@index([ot_id])
+  @@index([estado])
+  @@map("evaluaciones_tecnicas")
 }

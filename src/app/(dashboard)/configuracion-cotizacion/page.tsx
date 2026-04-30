@@ -82,7 +82,7 @@ export default function ConfiguracionCotizacionPage() {
         <Alert
           type="warning"
           showIcon
-          message="Solo lectura"
+          title="Solo lectura"
           description="Esta página solo puede editarse con rol admin."
           style={{ marginBottom: 16 }}
         />

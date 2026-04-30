@@ -705,7 +705,7 @@ export default function PlanificacionPage() {
         type="info"
         icon={<InfoCircleOutlined />}
         showIcon
-        message="Jornada: L–V 08:00 – 18:00, descanso de almuerzo 12:30 – 13:30"
+        title="Jornada: L–V 08:00 – 18:00, descanso de almuerzo 12:30 – 13:30"
         description="Fin Estimado se calcula automáticamente respetando esta agenda (las horas extras no se incluyen en el cálculo)."
         style={{ marginBottom: 12 }}
       />

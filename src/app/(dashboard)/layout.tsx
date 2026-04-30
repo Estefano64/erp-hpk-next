@@ -40,6 +40,7 @@ function buildMenuItems(rol: string | null): MenuProps["items"] {
       label: "Operaciones",
       children: [
         { key: "/ordenes-trabajo", label: "Órdenes de Trabajo" },
+        { key: "/evaluaciones", label: "Hojas de Evaluación" },
         { key: "/codigos-reparacion", label: "Cod. Reparables" },
         { key: "/contratos", label: "Contratos" },
         { key: "/operaciones/planificacion", label: "Planificación" },
@@ -63,6 +64,8 @@ function buildMenuItems(rol: string | null): MenuProps["items"] {
         { key: "/materiales", label: "Materiales" },
         { key: "/proveedores", label: "Proveedores" },
         { key: "/compras", label: "Compras" },
+        { key: "/stock", label: "Stock" },
+        { key: "/movimientos", label: "Movimientos" },
       ],
     },
     { key: "/reportes", icon: <BarChartOutlined />, label: "Reportes" },

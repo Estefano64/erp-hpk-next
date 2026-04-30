@@ -24,7 +24,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es" className={montserrat.variable}>
-      <body>
+      <body suppressHydrationWarning>
         <SessionProvider>
           <AntdRegistry>
             <ThemeProvider>{children}</ThemeProvider>
