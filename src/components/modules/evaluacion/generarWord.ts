@@ -138,10 +138,30 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
     const recomendaciones = v(`${prefix}_recomendaciones`);
     const hallazgosMarcados = hallazgosChecks.filter((h) => v(h.key));
 
+    // Si hay imagen Y medidas: layout lado a lado (imagen | tabla)
+    // Si solo hay imagen: imagen centrada
+    // Si solo hay medidas: tabla a ancho completo
+    let cabeceraHTML = "";
+    if (imgSrc && medidasHTML) {
+      cabeceraHTML = `
+        <table class="seccion-layout"><tr>
+          <td class="seccion-img-cell">
+            <div class="img-ref-wrap"><img src="${imgSrc}" /><div class="img-caption">Referencia: ${esc(imgLabel)}</div></div>
+          </td>
+          <td class="seccion-med-cell">
+            <table><thead><tr><th>Parametro</th><th>X</th><th>Y</th></tr></thead><tbody>${medidasHTML}</tbody></table>
+          </td>
+        </tr></table>
+      `;
+    } else if (imgSrc) {
+      cabeceraHTML = `<div class="img-ref-wrap solo"><img src="${imgSrc}" /><div class="img-caption">Referencia: ${esc(imgLabel)}</div></div>`;
+    } else if (medidasHTML) {
+      cabeceraHTML = `<table><thead><tr><th>Parametro</th><th>X</th><th>Y</th></tr></thead><tbody>${medidasHTML}</tbody></table>`;
+    }
+
     return `
       <h2><span class="section-num">${numSec}</span> ${esc(titulo)}</h2>
-      ${imgSrc ? `<div class="img-ref-wrap"><img src="${imgSrc}" /><div class="img-caption">Referencia: ${esc(imgLabel)}</div></div>` : ""}
-      ${medidasHTML ? `<table><thead><tr><th>Parametro</th><th>X</th><th>Y</th></tr></thead><tbody>${medidasHTML}</tbody></table>` : ""}
+      ${cabeceraHTML}
       ${
         hallazgosMarcados.length > 0
           ? `<div class="hallazgos"><b>Hallazgos encontrados:</b><ul>${hallazgosMarcados.map((h) => `<li>${esc(h.texto)}</li>`).join("")}</ul></div>`
@@ -411,18 +431,26 @@ th { background: ${AZUL}; color: #fff; font-weight: 600; text-align: center; fon
 td.label { font-weight: 600; background: ${GRIS_FONDO}; color: #333; white-space: nowrap; width: 30%; }
 td.editable { color: ${AZUL_CLARO}; font-weight: 600; text-align: center; }
 
-.img-ref-wrap { text-align: center; margin: 6pt auto; padding: 4pt; border: 1pt solid #ddd; background: #fafcff; width: 35%; }
-.img-ref-wrap img { width: 100pt; height: auto; max-height: 65pt; }
-.img-ref-wrap .img-caption { font-size: 7pt; color: ${AZUL}; margin-top: 2pt; font-weight: 600; letter-spacing: 0.3pt; }
+.img-ref-wrap { text-align: center; margin: 0; padding: 8pt; border: 1pt solid #cfd8e3; background: #fafcff; border-radius: 3pt; }
+.img-ref-wrap img { width: auto; height: auto; max-width: 100%; max-height: 180pt; display: block; margin: 0 auto; }
+.img-ref-wrap .img-caption { font-size: 8.5pt; color: ${AZUL}; margin-top: 6pt; font-weight: 700; letter-spacing: 0.5pt; text-transform: uppercase; }
 
-.fotos-subidas { margin: 6pt 0 8pt; }
-.fotos-titulo { font-size: 8.5pt; color: ${AZUL}; font-weight: 700; padding: 3pt 6pt; background: ${GRIS_FONDO}; border-left: 3pt solid ${AZUL}; margin-bottom: 4pt; letter-spacing: 0.3pt; }
+/* Layout 2 columnas: imagen | medidas (lado a lado en A4 horizontal) */
+.seccion-layout { width: 100%; border-collapse: separate; border-spacing: 0; margin: 6pt 0 8pt; }
+.seccion-layout > tbody > tr > td { border: none; padding: 0; vertical-align: top; }
+.seccion-layout td.seccion-img-cell { width: 35%; padding-right: 10pt; }
+.seccion-layout td.seccion-med-cell { width: 65%; }
+/* Cuando va sola la imagen (sin medidas), centrarla con ancho moderado */
+.img-ref-wrap.solo { width: 55%; margin: 10pt auto; }
+
+.fotos-subidas { margin: 10pt 0 12pt; }
+.fotos-titulo { font-size: 9pt; color: ${AZUL}; font-weight: 700; padding: 5pt 8pt; background: ${GRIS_FONDO}; border-left: 4pt solid ${AZUL}; margin-bottom: 6pt; letter-spacing: 0.4pt; }
 .tabla-fotos { width: 100%; border-collapse: collapse; table-layout: fixed; }
-.tabla-fotos td.foto-cell { border: 0.5pt solid #ccc; padding: 4pt; width: 33.33%; text-align: center; background: #fff; vertical-align: top; }
+.tabla-fotos td.foto-cell { border: 0.5pt solid #ccc; padding: 6pt; width: 33.33%; text-align: center; background: #fff; vertical-align: top; }
 .tabla-fotos td.foto-vacia { border: 0; background: transparent; }
-.foto-img-wrap { width: 100%; height: 80pt; line-height: 80pt; text-align: center; overflow: hidden; }
-.foto-img-wrap img { height: 80pt; width: auto; max-width: 100%; vertical-align: middle; }
-.foto-caption { font-size: 6.5pt; color: #666; margin-top: 2pt; font-style: italic; line-height: 1.2; max-height: 14pt; overflow: hidden; }
+.foto-img-wrap { width: 100%; height: 150pt; text-align: center; overflow: hidden; padding: 2pt; }
+.foto-img-wrap img { max-height: 146pt; max-width: 100%; width: auto; height: auto; vertical-align: middle; }
+.foto-caption { font-size: 7.5pt; color: #555; margin-top: 4pt; font-style: italic; line-height: 1.3; max-height: 22pt; overflow: hidden; }
 
 .hallazgos { margin: 6pt 0; padding: 4pt 8pt; border-left: 3pt solid #c0392b; background: #fef5f5; }
 .hallazgos b { color: #c0392b; font-size: 9pt; }

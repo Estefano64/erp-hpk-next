@@ -61,6 +61,7 @@ function buildMenuItems(_rol: string | null): MenuProps["items"] {
         { key: "/clientes", label: "Clientes" },
         { key: "/materiales", label: "Materiales" },
         { key: "/proveedores", label: "Proveedores" },
+        { key: "/requerimientos", label: "Requerimientos" },
         { key: "/compras", label: "Compras" },
         { key: "/stock", label: "Stock" },
         { key: "/movimientos", label: "Movimientos" },

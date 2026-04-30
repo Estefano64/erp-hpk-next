@@ -8,12 +8,13 @@ export async function POST(req: NextRequest) {
     const {
       repuesto_ids,
       proveedor_id,
-      ubicacion_codigo,
       moneda,
       fecha_entrega_esperada,
       observaciones,
       usuario,
     } = body;
+    // Compatibilidad: POs2 envía "almacen_id" (string code), current usa "ubicacion_codigo"
+    const ubicacion_codigo: string | null = body.ubicacion_codigo ?? body.almacen_id ?? null;
 
     if (!Array.isArray(repuesto_ids) || repuesto_ids.length === 0) {
       return NextResponse.json({ error: "Debes seleccionar al menos un requerimiento" }, { status: 400 });
