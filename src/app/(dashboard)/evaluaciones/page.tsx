@@ -465,59 +465,58 @@ export default function EvaluacionesPage() {
           danger: modalAccion?.accion === "rechazar",
           type: "primary",
         }}
+        forceRender
       >
         {modalAccion && (
-          <>
-            <Card size="small" style={{ background: brand.bgPage, marginBottom: 12 }}>
-              <Row gutter={16}>
-                <Col span={12}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>OT:</Text>{" "}
-                  <Tag color={brand.navy}>{modalAccion.evalItem.orden_trabajo?.ot}</Tag>
-                </Col>
-                <Col span={12}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>Evaluador:</Text>{" "}
-                  <b>{modalAccion.evalItem.evaluado_por || "-"}</b>
-                </Col>
-                <Col span={24} style={{ marginTop: 8 }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>Tipo:</Text>{" "}
-                  <b>{modalAccion.evalItem.modelo_evaluacion}</b>
-                </Col>
-              </Row>
-            </Card>
+          <Card size="small" style={{ background: brand.bgPage, marginBottom: 12 }}>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Text type="secondary" style={{ fontSize: 12 }}>OT:</Text>{" "}
+                <Tag color={brand.navy}>{modalAccion.evalItem.orden_trabajo?.ot}</Tag>
+              </Col>
+              <Col span={12}>
+                <Text type="secondary" style={{ fontSize: 12 }}>Evaluador:</Text>{" "}
+                <b>{modalAccion.evalItem.evaluado_por || "-"}</b>
+              </Col>
+              <Col span={24} style={{ marginTop: 8 }}>
+                <Text type="secondary" style={{ fontSize: 12 }}>Tipo:</Text>{" "}
+                <b>{modalAccion.evalItem.modelo_evaluacion}</b>
+              </Col>
+            </Row>
+          </Card>
+        )}
 
-            <Form form={accionForm} layout="vertical">
-              <Form.Item
-                label={modalAccion.accion === "solicitar" ? "Tu nombre" : "Nombre del revisor"}
-                name="usuario"
-                rules={[{ required: true, message: "Ingresa tu nombre" }]}
-              >
-                <Input placeholder="Ej. Juan Pérez" />
-              </Form.Item>
-              <Form.Item
-                label={
-                  modalAccion.accion === "solicitar"
-                    ? "Comentarios para el revisor (opcional)"
-                    : modalAccion.accion === "rechazar"
-                    ? "Motivo del rechazo"
-                    : "Comentarios (opcional)"
-                }
-                name="comentarios"
-                rules={
-                  modalAccion.accion === "rechazar"
-                    ? [{ required: true, message: "Indica el motivo del rechazo" }]
-                    : []
-                }
-              >
-                <TextArea rows={3} placeholder="Observaciones..." />
-              </Form.Item>
-            </Form>
+        <Form form={accionForm} layout="vertical">
+          <Form.Item
+            label={modalAccion?.accion === "solicitar" ? "Tu nombre" : "Nombre del revisor"}
+            name="usuario"
+            rules={[{ required: true, message: "Ingresa tu nombre" }]}
+          >
+            <Input placeholder="Ej. Juan Pérez" />
+          </Form.Item>
+          <Form.Item
+            label={
+              modalAccion?.accion === "solicitar"
+                ? "Comentarios para el revisor (opcional)"
+                : modalAccion?.accion === "rechazar"
+                ? "Motivo del rechazo"
+                : "Comentarios (opcional)"
+            }
+            name="comentarios"
+            rules={
+              modalAccion?.accion === "rechazar"
+                ? [{ required: true, message: "Indica el motivo del rechazo" }]
+                : []
+            }
+          >
+            <TextArea rows={3} placeholder="Observaciones..." />
+          </Form.Item>
+        </Form>
 
-            {modalAccion.accion === "rechazar" && (
-              <Text type="warning" style={{ fontSize: 12 }}>
-                ⚠ Al rechazar, el evaluador podrá reabrir la evaluación y volver a enviarla.
-              </Text>
-            )}
-          </>
+        {modalAccion?.accion === "rechazar" && (
+          <Text type="warning" style={{ fontSize: 12 }}>
+            ⚠ Al rechazar, el evaluador podrá reabrir la evaluación y volver a enviarla.
+          </Text>
         )}
       </Modal>
     </div>

@@ -2,237 +2,340 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
 import {
   Typography,
   Table,
   Button,
   Input,
   Select,
-  Space,
   Tag,
-  Modal,
-  Form,
-  message,
-  Popconfirm,
   Row,
   Col,
   Card,
-  DatePicker,
+  Space,
+  Tooltip,
+  App,
+  Statistic,
+  Popconfirm,
 } from "antd";
 import {
-  PlusOutlined,
   SearchOutlined,
-  EyeOutlined,
-  StopOutlined,
   ReloadOutlined,
+  EyeOutlined,
+  DeleteOutlined,
+  UnorderedListOutlined,
+  ShoppingCartOutlined,
+  ClockCircleOutlined,
+  CheckCircleOutlined,
+  InfoCircleOutlined,
+  FilePdfOutlined,
+  FileExcelOutlined,
+  MessageOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import dayjs from "dayjs";
+import { Popover, Divider } from "antd";
 import { brand } from "@/lib/theme";
+import dayjs from "dayjs";
+import CompraDetalleModal from "@/components/modules/compras/CompraDetalleModal";
 
 const { Title } = Typography;
 
-interface CompraRecord {
+interface Compra {
   id: number;
   numero_po: string;
   numero_req: string | null;
-  proveedor: { id: number; ruc: string; razon_social: string; nombre_comercial: string | null };
-  status_oc: { codigo: string; nombre: string } | null;
-  moneda: { codigo: string; nombre: string } | null;
-  orden_trabajo: { id: number; ot: string | null } | null;
+  ot_id: number | null;
+  ot_numero: string | null;
+  proveedor_id: number;
+  proveedor_nombre: string | null;
+  almacen_nombre: string | null;
   fecha_solicitud: string;
   fecha_entrega_esperada: string | null;
-  total: string;
-  _count: { detalles: number };
+  fecha_entrega_real: string | null;
+  estado: string;
+  subtotal: number;
+  impuesto: number;
+  total: number;
+  moneda: string;
+  nro_factura: string | null;
+  nro_guia: string | null;
+  observaciones: string | null;
+  cantidad_items: number;
+  usuario_solicita: string;
 }
 
-interface CatalogOption {
-  codigo: string;
-  nombre: string;
-}
-
-interface ProveedorOption {
-  id: number;
-  ruc: string;
-  razon_social: string;
-  nombre_comercial: string | null;
-}
-
-const statusColor: Record<string, string> = {
-  PEND_OC: "default",
-  PROCESO: "processing",
-  ENTREGADO: "cyan",
-  INCOMPLETO: "orange",
-  COMPLETO: "success",
-  ANULADO: "error",
-  DEVOLUCION: "volcano",
+const estadoColor: Record<string, string> = {
+  Pendiente: "gold",
+  Aprobado: "blue",
+  "En Proceso": "cyan",
+  Recibido: "green",
+  Cancelado: "red",
 };
 
 export default function ComprasPage() {
   const router = useRouter();
-  const { data: session } = useSession();
-  const isAdminUser = (session?.user as { rol?: string } | undefined)?.rol === "admin";
+  const { message } = App.useApp();
 
-  const [data, setData] = useState<CompraRecord[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
+  const [data, setData] = useState<Compra[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
-  const [filterEstado, setFilterEstado] = useState<string>("");
-  const [filterProveedor, setFilterProveedor] = useState<number | undefined>();
+  const [estado, setEstado] = useState<string>("");
 
-  const [statusOptions, setStatusOptions] = useState<CatalogOption[]>([]);
-  const [monedaOptions, setMonedaOptions] = useState<CatalogOption[]>([]);
-  const [proveedorOptions, setProveedorOptions] = useState<ProveedorOption[]>([]);
-
-  const [modalOpen, setModalOpen] = useState(false);
-  const [form] = Form.useForm();
-  const [saving, setSaving] = useState(false);
-
-  const [messageApi, contextHolder] = message.useMessage();
+  const [modalId, setModalId] = useState<number | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams({ page: String(page), limit: "20" });
-    if (search) params.set("search", search);
-    if (filterEstado) params.set("estado", filterEstado);
-    if (filterProveedor) params.set("proveedor_id", String(filterProveedor));
-    const res = await fetch(`/api/compras?${params}`);
-    const json = await res.json();
-    setData(json.data ?? []);
-    setTotal(json.total ?? 0);
-    setLoading(false);
-  }, [page, search, filterEstado, filterProveedor]);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
+    try {
+      const params = new URLSearchParams();
+      if (search) params.set("search", search);
+      if (estado) params.set("estado", estado);
+      const res = await fetch(`/api/compras?${params}`);
+      const json = await res.json();
+      setData(json.data ?? []);
+    } catch {
+      message.error("Error al cargar compras");
+    } finally {
+      setLoading(false);
+    }
+  }, [search, estado, message]);
 
   useEffect(() => {
-    (async () => {
-      const provRes = await fetch("/api/proveedores?limit=100");
-      const provJson = await provRes.json();
-      setProveedorOptions(provJson.data ?? []);
-      setStatusOptions([
-        { codigo: "PEND_OC", nombre: "Pendiente de OC" },
-        { codigo: "PROCESO", nombre: "En proceso" },
-        { codigo: "ENTREGADO", nombre: "Entregado" },
-        { codigo: "INCOMPLETO", nombre: "Incompleto" },
-        { codigo: "COMPLETO", nombre: "Completo" },
-        { codigo: "ANULADO", nombre: "Anulado" },
-        { codigo: "DEVOLUCION", nombre: "Devolución" },
-      ]);
-      setMonedaOptions([
-        { codigo: "USD", nombre: "Dólar" },
-        { codigo: "SOL", nombre: "Sol Peruano" },
-      ]);
-    })();
-  }, []);
+    fetchData();
+  }, [fetchData]);
 
-  function openCreate() {
-    form.resetFields();
-    form.setFieldsValue({
-      fecha_solicitud: dayjs(),
-      status_oc_codigo: "PEND_OC",
-      moneda_codigo: "USD",
-    });
-    setModalOpen(true);
-  }
-
-  async function handleSave() {
+  async function handleDelete(id: number) {
     try {
-      const values = await form.validateFields();
-      setSaving(true);
-      const body = {
-        ...values,
-        fecha_solicitud: values.fecha_solicitud ? values.fecha_solicitud.toISOString() : null,
-        fecha_entrega_esperada: values.fecha_entrega_esperada ? values.fecha_entrega_esperada.toISOString() : null,
-        detalles: [],
-      };
-      const res = await fetch("/api/compras", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        throw new Error(err?.error ?? "Error");
-      }
-      const created = await res.json();
-      messageApi.success("Compra creada. Agregá las líneas en el detalle.");
-      setModalOpen(false);
-      router.push(`/compras/${created.data.id}`);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Error al guardar";
-      messageApi.error(msg);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleAnular(id: number) {
-    const res = await fetch(`/api/compras/${id}`, { method: "DELETE" });
-    if (res.ok) {
-      messageApi.success("Compra anulada");
+      const res = await fetch(`/api/compras/${id}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Error al eliminar");
+      message.success("Compra eliminada");
       fetchData();
-      return;
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : "Error");
     }
-    const body = await res.json().catch(() => null);
-    messageApi.error(body?.detail ?? body?.error ?? "Error al anular");
   }
 
-  const columns: ColumnsType<CompraRecord> = [
+  // KPIs
+  const pendientes = data.filter((c) => c.estado === "Pendiente").length;
+  const enProceso = data.filter((c) => c.estado === "En Proceso" || c.estado === "Aprobado").length;
+  const recibidas = data.filter((c) => c.estado === "Recibido").length;
+  const totalValor = data.reduce((s, c) => s + Number(c.total || 0), 0);
+
+  const exportarExcel = async () => {
+    try {
+      const XLSX = await import("xlsx");
+      const rows = data.map((c) => ({
+        "Nro OC": c.numero_po,
+        Estado: c.estado,
+        Proveedor: c.proveedor_nombre ?? "",
+        Almacén: c.almacen_nombre ?? "",
+        "F. Solicitud": c.fecha_solicitud ? dayjs(c.fecha_solicitud).format("DD/MM/YYYY") : "",
+        "F. Entrega Esp.": c.fecha_entrega_esperada ? dayjs(c.fecha_entrega_esperada).format("DD/MM/YYYY") : "",
+        "F. Entrega Real": c.fecha_entrega_real ? dayjs(c.fecha_entrega_real).format("DD/MM/YYYY") : "",
+        Items: c.cantidad_items,
+        Subtotal: Number(c.subtotal),
+        IGV: Number(c.impuesto),
+        Total: Number(c.total),
+        Moneda: c.moneda,
+        "Nro Guía": c.nro_guia ?? "",
+        "Nro Factura": c.nro_factura ?? "",
+        Comentarios: c.observaciones ?? "",
+        Usuario: c.usuario_solicita ?? "",
+      }));
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Compras");
+      XLSX.writeFile(wb, `Compras-${dayjs().format("YYYYMMDD-HHmm")}.xlsx`);
+      message.success("Excel descargado");
+    } catch {
+      message.error("Error al exportar Excel");
+    }
+  };
+
+  // Valores unicos para filtros
+  const valoresUnicos = (campo: keyof Compra) => {
+    const set = new Set<string>();
+    data.forEach((r) => {
+      const v = r[campo];
+      if (v !== null && v !== undefined && v !== "") set.add(String(v));
+    });
+    return [...set].sort().map((v) => ({ text: v, value: v }));
+  };
+
+  const popoverContent = (r: Compra) => (
+    <div style={{ maxWidth: 340, fontSize: 12 }}>
+      <div style={{ fontWeight: 600, color: brand.navy, marginBottom: 6 }}>OC: {r.numero_po}</div>
+      <Row gutter={[8, 4]}>
+        <Col span={12}><span style={{ color: "#888" }}>Proveedor:</span> <b>{r.proveedor_nombre || "-"}</b></Col>
+        <Col span={12}><span style={{ color: "#888" }}>Almacén:</span> <b>{r.almacen_nombre || "-"}</b></Col>
+        <Col span={12}><span style={{ color: "#888" }}>Items:</span> <b>{r.cantidad_items}</b></Col>
+        <Col span={12}><span style={{ color: "#888" }}>Moneda:</span> <b>{r.moneda}</b></Col>
+        <Col span={24}><span style={{ color: "#888" }}>F. Solicitud:</span> <b>{dayjs(r.fecha_solicitud).format("DD/MM/YYYY")}</b></Col>
+        <Col span={24}><span style={{ color: "#888" }}>F. Entrega Esp:</span> <b>{r.fecha_entrega_esperada ? dayjs(r.fecha_entrega_esperada).format("DD/MM/YYYY") : "-"}</b></Col>
+        <Col span={24}><span style={{ color: "#888" }}>F. Entrega Real:</span> <b>{r.fecha_entrega_real ? dayjs(r.fecha_entrega_real).format("DD/MM/YYYY") : "-"}</b></Col>
+        <Col span={12}><span style={{ color: "#888" }}>Subtotal:</span> <b>{Number(r.subtotal).toFixed(2)}</b></Col>
+        <Col span={12}><span style={{ color: "#888" }}>IGV:</span> <b>{Number(r.impuesto).toFixed(2)}</b></Col>
+        <Col span={24}><span style={{ color: "#888" }}>Total:</span> <b style={{ color: brand.navy }}>{r.moneda} {Number(r.total).toFixed(2)}</b></Col>
+        {r.nro_factura && <Col span={24}><span style={{ color: "#888" }}>Factura:</span> <b>{r.nro_factura}</b></Col>}
+        {r.usuario_solicita && <Col span={24}><span style={{ color: "#888" }}>Usuario:</span> <b>{r.usuario_solicita}</b></Col>}
+      </Row>
+      <Divider style={{ margin: "8px 0" }} />
+      <Tag color={estadoColor[r.estado] || "default"}>{r.estado}</Tag>
+      {r.observaciones && <div style={{ marginTop: 6, fontSize: 11, fontStyle: "italic" }}>{r.observaciones}</div>}
+    </div>
+  );
+
+  const columns: ColumnsType<Compra> = [
     {
-      title: "PO",
+      title: "Nro OC",
       dataIndex: "numero_po",
-      width: 120,
-      render: (v: string) => <Tag color={brand.navy}>{v}</Tag>,
+      width: 130,
+      fixed: "left",
+      filters: valoresUnicos("numero_po"),
+      filterSearch: true,
+      onFilter: (value, r) => r.numero_po === value,
+      sorter: (a, b) => a.numero_po.localeCompare(b.numero_po),
+      render: (v, r) => (
+        <Popover content={popoverContent(r)} placement="right" mouseEnterDelay={0.3} trigger="hover">
+          <div style={{ cursor: "help", display: "flex", alignItems: "center", gap: 4 }}>
+            <InfoCircleOutlined style={{ color: brand.cyan, fontSize: 11 }} />
+            <Tag color={brand.navy}>{v}</Tag>
+          </div>
+        </Popover>
+      ),
+    },
+    {
+      title: "Estado",
+      dataIndex: "estado",
+      width: 110,
+      filters: [
+        { text: "Pendiente", value: "Pendiente" },
+        { text: "Aprobado", value: "Aprobado" },
+        { text: "En Proceso", value: "En Proceso" },
+        { text: "Recibido", value: "Recibido" },
+        { text: "Cancelado", value: "Cancelado" },
+      ],
+      onFilter: (value, r) => r.estado === value,
+      render: (v: string) => <Tag color={estadoColor[v] || "default"}>{v}</Tag>,
     },
     {
       title: "Proveedor",
-      key: "proveedor",
+      dataIndex: "proveedor_nombre",
+      width: 200,
       ellipsis: true,
-      render: (_: unknown, r: CompraRecord) => r.proveedor.nombre_comercial ?? r.proveedor.razon_social,
-    },
-    { title: "OT", key: "ot", width: 100, render: (_: unknown, r: CompraRecord) => r.orden_trabajo?.ot ?? "-" },
-    {
-      title: "Estado",
-      key: "estado",
-      width: 130,
-      render: (_: unknown, r: CompraRecord) =>
-        r.status_oc ? <Tag color={statusColor[r.status_oc.codigo] ?? "default"}>{r.status_oc.nombre}</Tag> : "-",
-    },
-    { title: "Líneas", key: "lineas", width: 80, align: "center", render: (_: unknown, r: CompraRecord) => r._count?.detalles ?? 0 },
-    {
-      title: "Total",
-      key: "total",
-      width: 130,
-      align: "right",
-      render: (_: unknown, r: CompraRecord) => {
-        const n = Number(r.total);
-        return `${r.moneda?.codigo ?? ""} ${n.toLocaleString("es-PE", { minimumFractionDigits: 2 })}`;
-      },
+      filters: valoresUnicos("proveedor_nombre"),
+      filterSearch: true,
+      onFilter: (value, r) => r.proveedor_nombre === value,
+      sorter: (a, b) => (a.proveedor_nombre ?? "").localeCompare(b.proveedor_nombre ?? ""),
     },
     {
-      title: "Fecha Sol.",
+      title: "Almacén",
+      dataIndex: "almacen_nombre",
+      width: 140,
+      ellipsis: true,
+      filters: valoresUnicos("almacen_nombre"),
+      filterSearch: true,
+      onFilter: (value, r) => r.almacen_nombre === value,
+    },
+    {
+      title: "F. Solicitud",
       dataIndex: "fecha_solicitud",
       width: 110,
       render: (v: string) => dayjs(v).format("DD/MM/YYYY"),
+      sorter: (a, b) => (a.fecha_solicitud ?? "").localeCompare(b.fecha_solicitud ?? ""),
+    },
+    {
+      title: "F. Entrega Esp.",
+      dataIndex: "fecha_entrega_esperada",
+      width: 120,
+      render: (v: string | null) => (v ? dayjs(v).format("DD/MM/YYYY") : "-"),
+    },
+    {
+      title: "Items",
+      dataIndex: "cantidad_items",
+      width: 70,
+      align: "center",
+    },
+    {
+      title: "Subtotal",
+      dataIndex: "subtotal",
+      width: 110,
+      align: "right",
+      render: (v: number) => Number(v).toFixed(2),
+    },
+    {
+      title: "Total",
+      dataIndex: "total",
+      width: 120,
+      align: "right",
+      render: (v: number, r: Compra) => (
+        <span style={{ fontWeight: 600, color: brand.navy }}>
+          {r.moneda} {Number(v).toFixed(2)}
+        </span>
+      ),
+      sorter: (a, b) => Number(a.total) - Number(b.total),
+    },
+    {
+      title: "Guía",
+      dataIndex: "nro_guia",
+      width: 110,
+      render: (v: string | null) =>
+        v ? <Tag color="cyan">{v}</Tag> : <span style={{ color: "#bbb" }}>—</span>,
+    },
+    {
+      title: "Factura",
+      dataIndex: "nro_factura",
+      width: 130,
+      render: (v: string | null) =>
+        v ? <Tag color="purple">{v}</Tag> : <span style={{ color: "#bbb" }}>—</span>,
+    },
+    {
+      title: "Comentarios",
+      dataIndex: "observaciones",
+      width: 220,
+      ellipsis: true,
+      render: (v: string | null) =>
+        v ? (
+          <Tooltip title={v}>
+            <Space size={4}>
+              <MessageOutlined style={{ color: brand.cyan }} />
+              <span style={{ fontSize: 12 }}>{v}</span>
+            </Space>
+          </Tooltip>
+        ) : (
+          <span style={{ color: "#bbb" }}>—</span>
+        ),
+    },
+    {
+      title: "Usuario",
+      dataIndex: "usuario_solicita",
+      width: 120,
     },
     {
       title: "Acciones",
-      width: 110,
+      width: 130,
       align: "center",
-      render: (_: unknown, record: CompraRecord) => (
-        <Space size="small">
-          <Button type="text" icon={<EyeOutlined />} onClick={() => router.push(`/compras/${record.id}`)} title="Ver detalle" />
-          {isAdminUser && record.status_oc?.codigo !== "ANULADO" && (
-            <Popconfirm
-              title="¿Anular esta compra?"
-              description="Cambia el estado a ANULADO. Se puede ver pero no editar."
-              onConfirm={() => handleAnular(record.id)}
-            >
-              <Button type="text" danger icon={<StopOutlined />} title="Anular" />
-            </Popconfirm>
+      fixed: "right",
+      render: (_: unknown, r: Compra) => (
+        <Space size={0}>
+          <Tooltip title="Ver detalle">
+            <Button type="text" icon={<EyeOutlined />} onClick={() => setModalId(r.id)} />
+          </Tooltip>
+          <Tooltip title="Generar PDF (OC)">
+            <Button type="text" icon={<FilePdfOutlined style={{ color: "#cf1322" }} />} onClick={() => window.open(`/api/compras/${r.id}/pdf`, "_blank")} />
+          </Tooltip>
+          {r.estado === "Pendiente" && (
+            <Tooltip title="Eliminar">
+              <Popconfirm
+                title="¿Eliminar esta OC?"
+                description="Solo se pueden eliminar OCs Pendientes"
+                onConfirm={() => handleDelete(r.id)}
+                okText="Eliminar"
+                cancelText="Cancelar"
+              >
+                <Button type="text" danger icon={<DeleteOutlined />} />
+              </Popconfirm>
+            </Tooltip>
           )}
         </Space>
       ),
@@ -241,53 +344,104 @@ export default function ComprasPage() {
 
   return (
     <div>
-      {contextHolder}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <Title level={3} style={{ margin: 0 }}>Compras</Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nueva Compra</Button>
+        <Title level={3} style={{ margin: 0 }}>
+          Órdenes de Compra
+        </Title>
+        <Space>
+          <Button
+            icon={<FileExcelOutlined />}
+            onClick={exportarExcel}
+            style={{ background: "#1d6f42", color: "#fff", borderColor: "#1d6f42" }}
+          >
+            Descargar Excel
+          </Button>
+          <Button
+            type="primary"
+            icon={<UnorderedListOutlined />}
+            onClick={() => router.push("/requerimientos")}
+          >
+            Ver Requerimientos
+          </Button>
+        </Space>
       </div>
 
+      {/* KPI Cards */}
+      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+        <Col xs={12} md={6}>
+          <Card styles={{ body: { padding: 16 } }}>
+            <Statistic
+              title="Pendientes"
+              value={pendientes}
+              prefix={<ClockCircleOutlined style={{ color: "#faad14" }} />}
+              styles={{ content: { color: "#faad14" } }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} md={6}>
+          <Card styles={{ body: { padding: 16 } }}>
+            <Statistic
+              title="En Proceso"
+              value={enProceso}
+              prefix={<ShoppingCartOutlined style={{ color: brand.cyan }} />}
+              styles={{ content: { color: brand.cyan } }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} md={6}>
+          <Card styles={{ body: { padding: 16 } }}>
+            <Statistic
+              title="Recibidas"
+              value={recibidas}
+              prefix={<CheckCircleOutlined style={{ color: "#52c41a" }} />}
+              styles={{ content: { color: "#52c41a" } }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} md={6}>
+          <Card styles={{ body: { padding: 16 } }}>
+            <Statistic
+              title="Valor total"
+              value={totalValor}
+              precision={2}
+              prefix="$"
+              styles={{ content: { color: brand.navy } }}
+            />
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Filtros */}
       <Card styles={{ body: { padding: 16 } }} style={{ marginBottom: 16 }}>
         <Row gutter={[12, 12]}>
-          <Col xs={24} md={8}>
+          <Col xs={24} sm={8} md={6}>
             <Input
-              placeholder="PO, req, factura, guía…"
+              placeholder="Buscar por OC, factura..."
               prefix={<SearchOutlined />}
               allowClear
               value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              onChange={(e) => setSearch(e.target.value)}
             />
           </Col>
-          <Col xs={12} md={5}>
+          <Col xs={12} sm={6} md={4}>
             <Select
-              placeholder="Estado OC"
+              placeholder="Estado"
               allowClear
               style={{ width: "100%" }}
-              value={filterEstado || undefined}
-              onChange={(v) => { setFilterEstado(v ?? ""); setPage(1); }}
-              options={statusOptions.map((s) => ({ value: s.codigo, label: s.nombre }))}
+              value={estado || undefined}
+              onChange={(v) => setEstado(v ?? "")}
+              options={[
+                { value: "Pendiente", label: "Pendiente" },
+                { value: "Aprobado", label: "Aprobado" },
+                { value: "En Proceso", label: "En Proceso" },
+                { value: "Recibido", label: "Recibido" },
+                { value: "Cancelado", label: "Cancelado" },
+              ]}
             />
           </Col>
-          <Col xs={12} md={8}>
-            <Select
-              placeholder="Proveedor"
-              allowClear
-              showSearch
-              style={{ width: "100%" }}
-              value={filterProveedor}
-              onChange={(v) => { setFilterProveedor(v); setPage(1); }}
-              filterOption={(input, option) =>
-                (option?.label as string).toLowerCase().includes(input.toLowerCase())
-              }
-              options={proveedorOptions.map((p) => ({
-                value: p.id,
-                label: `${p.nombre_comercial ?? p.razon_social} (${p.ruc})`,
-              }))}
-            />
-          </Col>
-          <Col xs={24} md={3}>
-            <Button icon={<ReloadOutlined />} onClick={() => { setSearch(""); setFilterEstado(""); setFilterProveedor(undefined); setPage(1); }}>
-              Limpiar
+          <Col xs={12} sm={6} md={4}>
+            <Button icon={<ReloadOutlined />} onClick={fetchData} block>
+              Actualizar
             </Button>
           </Col>
         </Row>
@@ -298,86 +452,17 @@ export default function ComprasPage() {
         columns={columns}
         dataSource={data}
         loading={loading}
-        pagination={{
-          current: page,
-          pageSize: 20,
-          total,
-          showTotal: (t) => `${t} compras`,
-          onChange: setPage,
-        }}
-        scroll={{ x: 1100 }}
+        pagination={{ pageSize: 20, showTotal: (t) => `${t} órdenes de compra` }}
+        scroll={{ x: 1500 }}
         size="small"
       />
 
-      <Modal
-        title="Nueva Compra"
-        open={modalOpen}
-        onCancel={() => setModalOpen(false)}
-        onOk={handleSave}
-        confirmLoading={saving}
-        width={720}
-        destroyOnHidden
-      >
-        <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="numero_po" label="Número PO" rules={[{ required: true, message: "Requerido" }]}>
-                <Input placeholder="Ej: D260055" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="numero_req" label="Número Req">
-                <Input placeholder="Opcional" />
-              </Form.Item>
-            </Col>
-            <Col span={24}>
-              <Form.Item name="proveedor_id" label="Proveedor" rules={[{ required: true, message: "Requerido" }]}>
-                <Select
-                  showSearch
-                  placeholder="Seleccionar proveedor"
-                  filterOption={(input, option) =>
-                    (option?.label as string).toLowerCase().includes(input.toLowerCase())
-                  }
-                  options={proveedorOptions.map((p) => ({
-                    value: p.id,
-                    label: `${p.nombre_comercial ?? p.razon_social} (${p.ruc})`,
-                  }))}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="fecha_solicitud" label="Fecha Solicitud" rules={[{ required: true, message: "Requerido" }]}>
-                <DatePicker format="DD/MM/YYYY" style={{ width: "100%" }} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="fecha_entrega_esperada" label="Fecha Entrega Esperada">
-                <DatePicker format="DD/MM/YYYY" style={{ width: "100%" }} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="moneda_codigo" label="Moneda">
-                <Select options={monedaOptions.map((m) => ({ value: m.codigo, label: m.nombre }))} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="status_oc_codigo" label="Estado OC">
-                <Select options={statusOptions.map((s) => ({ value: s.codigo, label: s.nombre }))} />
-              </Form.Item>
-            </Col>
-            <Col span={16}>
-              <Form.Item name="nro_guia" label="Nro Guía">
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={24}>
-              <Form.Item name="observaciones" label="Observaciones">
-                <Input.TextArea rows={2} />
-              </Form.Item>
-            </Col>
-          </Row>
-        </Form>
-      </Modal>
+      <CompraDetalleModal
+        compraId={modalId}
+        open={!!modalId}
+        onClose={() => setModalId(null)}
+        onUpdated={fetchData}
+      />
     </div>
   );
 }

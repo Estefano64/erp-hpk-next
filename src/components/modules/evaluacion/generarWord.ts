@@ -66,12 +66,16 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
   const otNumero = ot?.ot || "N-D";
 
   // Cargar imagenes de referencia segun el modelo
-  const [logoB64, imgCilindro, imgVastago, imgTapa, imgPiston] = await Promise.all([
+  const [logoB64, imgCilindro, imgVastago, imgTapa, imgPiston, imgHub, imgSpindle, imgConjFreno, imgPistonFreno] = await Promise.all([
     imagenABase64("/logo.png"),
     imagenABase64("/Cilindro.png"),
     imagenABase64("/Vastago.png"),
     imagenABase64("/Tapa.png"),
     imagenABase64("/Piston.png"),
+    imagenABase64("/Hub.jpeg"),
+    imagenABase64("/Spindle.jpeg"),
+    imagenABase64("/ConjuntoFreno.jpeg"),
+    imagenABase64("/PistonFreno.jpeg"),
   ]);
 
   const clienteNombre = ot?.cliente?.nombre_comercial ?? ot?.cliente?.razon_social ?? "-";
@@ -216,7 +220,7 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
       "Engranaje de sensor presenta corrosion",
       "Lainas de separacion llegaron dañadas",
     ].map((texto, idx) => ({ key: `${p}_hub_g0_${idx}`, texto }));
-    seccionesHTML += renderSeccionComponente(numSec++, "HUB (Cubo)", imgCilindro, "Hub", medidasHub, `${p}_hub`, hallazgosHub);
+    seccionesHTML += renderSeccionComponente(numSec++, "HUB (Cubo)", imgHub, "Hub", medidasHub, `${p}_hub`, hallazgosHub);
 
     // SPINDLE
     const medidasSpi = [
@@ -232,7 +236,7 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
       "Presenta picaduras en alojamiento conico",
       "Alojamientos roscados de pernos de sujecion de bastidor",
     ].map((texto, idx) => ({ key: `${p}_spi_g0_${idx}`, texto }));
-    seccionesHTML += renderSeccionComponente(numSec++, "SPINDLE (Muñon)", imgVastago, "Spindle", medidasSpi, `${p}_spi`, hallazgosSpi);
+    seccionesHTML += renderSeccionComponente(numSec++, "SPINDLE (Muñon)", imgSpindle, "Spindle", medidasSpi, `${p}_spi`, hallazgosSpi);
 
     // CONJUNTO DE FRENO
     const hallazgosFreno = [
@@ -241,14 +245,14 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
       "Pernos de sujecion llegaron elongados",
       "Sellos presentan desgaste",
     ].map((texto, idx) => ({ key: `${p}_freno_g0_${idx}`, texto }));
-    seccionesHTML += renderSeccionComponente(numSec++, "CONJUNTO DE FRENO", "", "", "", `${p}_freno`, hallazgosFreno);
+    seccionesHTML += renderSeccionComponente(numSec++, "CONJUNTO DE FRENO", imgConjFreno, "Conjunto de Freno", "", `${p}_freno`, hallazgosFreno);
 
     // CAJA DE FRENO
     const hallazgosCaja = [
       "Presenta rayas en asientos de sellos",
       "Alojamientos roscados presentan contaminacion",
     ].map((texto, idx) => ({ key: `${p}_caja_g0_${idx}`, texto }));
-    seccionesHTML += renderSeccionComponente(numSec++, "CAJA DE FRENO", "", "", "", `${p}_caja`, hallazgosCaja);
+    seccionesHTML += renderSeccionComponente(numSec++, "CAJA DE FRENO", imgPistonFreno, "Pistón de Freno", "", `${p}_caja`, hallazgosCaja);
 
     // GENERAL
     const hallazgosGen = [

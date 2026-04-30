@@ -1,168 +1,165 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { getAuditUser, isAdmin } from "@/lib/audit";
+import { getAuditUser } from "@/lib/audit";
 
-type Ctx = { params: Promise<{ id: string }> };
+type Params = { params: Promise<{ id: string }> };
 
-// Transiciones válidas entre estados OC.
-// null → PEND_OC → PROCESO → ENTREGADO → COMPLETO
-//                         → INCOMPLETO → COMPLETO
-// Desde cualquiera → ANULADO o DEVOLUCION
-const VALID_TRANSITIONS: Record<string, string[]> = {
-  "null": ["PEND_OC", "ANULADO"],
-  "PEND_OC": ["PROCESO", "ANULADO"],
-  "PROCESO": ["ENTREGADO", "INCOMPLETO", "ANULADO"],
-  "ENTREGADO": ["COMPLETO", "INCOMPLETO", "DEVOLUCION"],
-  "INCOMPLETO": ["COMPLETO", "DEVOLUCION", "ANULADO"],
-  "COMPLETO": ["DEVOLUCION"],
-  "ANULADO": [],
-  "DEVOLUCION": ["COMPLETO", "ANULADO"],
+// ── Mapeos status (POs2 ↔ current) ─────────────────────────────
+const codeToLabel: Record<string, string> = {
+  PEND_OC: "Pendiente",
+  PROCESO: "En Proceso",
+  ENTREGADO: "Recibido",
+  INCOMPLETO: "En Proceso",
+  COMPLETO: "Recibido",
+  ANULADO: "Cancelado",
+  DEVOLUCION: "Cancelado",
+};
+const labelToCode: Record<string, string> = {
+  Pendiente: "PEND_OC",
+  Aprobado: "PROCESO",
+  "En Proceso": "PROCESO",
+  Recibido: "COMPLETO",
+  Cancelado: "ANULADO",
 };
 
-function assertValidTransition(prev: string | null | undefined, next: string | null | undefined) {
-  if (!next || prev === next) return { ok: true as const };
-  const from = prev ?? "null";
-  const allowed = VALID_TRANSITIONS[from] ?? [];
-  if (!allowed.includes(next)) {
-    return { ok: false as const, reason: `Transición inválida: ${from} → ${next}. Permitidas: ${allowed.join(", ") || "(ninguna)"}` };
-  }
-  return { ok: true as const };
-}
-
-const UpdateSchema = z.object({
-  numero_po: z.string().trim().min(1).optional(),
-  numero_req: z.string().trim().optional().nullable(),
-  ot_id: z.number().int().positive().optional().nullable(),
-  proveedor_id: z.number().int().positive().optional(),
-  fecha_solicitud: z.string().optional().nullable(),
-  fecha_entrega_esperada: z.string().optional().nullable(),
-  fecha_entrega_real: z.string().optional().nullable(),
-  ubicacion_codigo: z.string().trim().optional().nullable(),
-  status_oc_codigo: z.string().trim().optional().nullable(),
-  moneda_codigo: z.string().trim().optional().nullable(),
-  nro_factura: z.string().trim().optional().nullable(),
-  nro_guia: z.string().trim().optional().nullable(),
-  observaciones: z.string().trim().optional().nullable(),
-});
-
-function toDate(s: string | null | undefined): Date | null {
-  if (!s) return null;
-  const d = new Date(s);
-  return isNaN(d.getTime()) ? null : d;
-}
-
-export async function GET(_req: NextRequest, ctx: Ctx) {
-  const { id } = await ctx.params;
-  const item = await prisma.compra.findUnique({
-    where: { id: Number(id) },
-    include: {
-      proveedor: true,
-      status_oc: true,
-      moneda: true,
-      ubicacion: true,
-      orden_trabajo: { select: { id: true, ot: true, descripcion: true } },
-      detalles: {
-        include: {
-          material: { select: { material_id: true, codigo: true, descripcion: true, np: true } },
-          status_oc: true,
+// GET — obtener una compra por id (DTO compatible con POs2)
+export async function GET(_req: NextRequest, { params }: Params) {
+  try {
+    const { id } = await params;
+    const r = await prisma.compra.findUnique({
+      where: { id: Number(id) },
+      include: {
+        proveedor: true,
+        ubicacion: true,
+        orden_trabajo: { select: { id: true, ot: true, descripcion: true } },
+        detalles: {
+          include: { material: { select: { material_id: true, codigo: true, descripcion: true, np: true } } },
+          orderBy: { id: "asc" },
         },
-        orderBy: { id: "asc" },
+        ot_repuestos: {
+          include: {
+            material: { select: { codigo: true, descripcion: true } },
+            orden_trabajo: { select: { id: true, ot: true } },
+          },
+        },
       },
-    },
-  });
-  if (!item) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
-  return NextResponse.json({ data: item });
-}
-
-export async function PUT(req: NextRequest, ctx: Ctx) {
-  try {
-    const { id } = await ctx.params;
-    const compraId = Number(id);
-    const body = await req.json();
-    const parsed = UpdateSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json({ error: "Validación", detail: parsed.error.flatten() }, { status: 400 });
-    }
-
-    // Validar transición de estado si se está cambiando
-    if (parsed.data.status_oc_codigo !== undefined) {
-      const current = await prisma.compra.findUnique({ where: { id: compraId }, select: { status_oc_codigo: true } });
-      if (!current) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
-      const check = assertValidTransition(current.status_oc_codigo, parsed.data.status_oc_codigo);
-      if (!check.ok) return NextResponse.json({ error: check.reason }, { status: 400 });
-    }
-
-    const usuario = await getAuditUser(req);
-    const data: Record<string, unknown> = { usuario_aprueba: usuario };
-    const dateFields = new Set(["fecha_solicitud", "fecha_entrega_esperada", "fecha_entrega_real"]);
-    for (const k of Object.keys(parsed.data) as Array<keyof typeof parsed.data>) {
-      const v = parsed.data[k];
-      if (v === undefined) continue;
-      if (dateFields.has(k)) data[k] = toDate(v as string | null);
-      else data[k] = v === "" ? null : v;
-    }
-
-    const updated = await prisma.compra.update({
-      where: { id: compraId },
-      data,
-      include: { proveedor: true, status_oc: true, moneda: true, detalles: true },
     });
-    return NextResponse.json({ data: updated });
-  } catch (error: unknown) {
-    const err = error as { code?: string };
-    if (err?.code === "P2002") return NextResponse.json({ error: "numero_po ya existe" }, { status: 409 });
-    if (err?.code === "P2025") return NextResponse.json({ error: "No encontrado" }, { status: 404 });
-    console.error("PUT /api/compras/[id] error:", error);
-    return NextResponse.json({ error: "Error al actualizar" }, { status: 500 });
+    if (!r) return NextResponse.json({ error: "Compra no encontrada" }, { status: 404 });
+
+    type Repuesto = (typeof r.ot_repuestos)[number];
+    const data = {
+      id: r.id,
+      numero_po: r.numero_po,
+      numero_req: r.numero_req,
+      ot_id: r.ot_id,
+      proveedor: r.proveedor
+        ? { id: r.proveedor.id, razonSocial: r.proveedor.razon_social, ruc: r.proveedor.ruc, direccion: r.proveedor.direccion, telefono: r.proveedor.telefono, email: r.proveedor.email, contacto: r.proveedor.contacto }
+        : null,
+      almacen: r.ubicacion ? { id: r.ubicacion_codigo, codigo: r.ubicacion.codigo, nombre: r.ubicacion.nombre } : null,
+      ubicacion_codigo: r.ubicacion_codigo,
+      orden_trabajo: r.orden_trabajo,
+      fecha_solicitud: r.fecha_solicitud,
+      fecha_entrega_esperada: r.fecha_entrega_esperada,
+      fecha_entrega_real: r.fecha_entrega_real,
+      estado: r.status_oc_codigo ? codeToLabel[r.status_oc_codigo] ?? r.status_oc_codigo : "Pendiente",
+      status_oc_codigo: r.status_oc_codigo,
+      subtotal: r.subtotal,
+      impuesto: r.impuesto,
+      total: r.total,
+      moneda: r.moneda_codigo ?? "USD",
+      nro_factura: r.nro_factura,
+      nro_guia: r.nro_guia,
+      guia_archivo: r.guia_archivo,
+      guia_nombre: r.guia_nombre,
+      guia_fecha_subida: r.guia_fecha_subida,
+      factura_archivo: r.factura_archivo,
+      factura_nombre: r.factura_nombre,
+      factura_fecha_subida: r.factura_fecha_subida,
+      observaciones: r.observaciones,
+      usuario_solicita: r.usuario_solicita,
+      usuario_aprueba: r.usuario_aprueba,
+      detalles: r.detalles,
+      ot_repuestos: r.ot_repuestos.map((rep: Repuesto) => ({
+        id: rep.id,
+        nro_req: rep.nro_req,
+        item_req: rep.item_req,
+        descripcion: rep.descripcion,
+        cantidad: rep.cantidad,
+        precio_unitario: rep.precio_unitario,
+        estado: rep.status_oc_codigo
+          ? codeToLabel[rep.status_oc_codigo] ?? rep.status_oc_codigo
+          : "Pendiente",
+        material: rep.material,
+        orden_trabajo: rep.orden_trabajo,
+      })),
+    };
+
+    return NextResponse.json({ data });
+  } catch (error) {
+    console.error("GET /api/compras/[id] error:", error);
+    return NextResponse.json({ error: "Error al obtener compra" }, { status: 500 });
   }
 }
 
-export async function DELETE(req: NextRequest, ctx: Ctx) {
+// PUT — actualizar compra (acepta params POs2 y traduce al schema current)
+export async function PUT(req: NextRequest, { params }: Params) {
   try {
-    const { id } = await ctx.params;
-    const compraId = Number(id);
-    const force = new URL(req.url).searchParams.get("force") === "true";
-
-    if (force) {
-      if (!(await isAdmin(req))) {
-        return NextResponse.json({ error: "Solo administradores pueden eliminar permanentemente" }, { status: 403 });
-      }
-      // Bloquear si ya hubo movimientos de inventario ligados a sus detalles
-      const detalles = await prisma.compraDetalle.findMany({
-        where: { compra_id: compraId },
-        select: { id: true, cantidad_recibida: true },
-      });
-      const conRecepcion = detalles.filter((d) => Number(d.cantidad_recibida ?? 0) > 0).length;
-      if (conRecepcion > 0) {
-        return NextResponse.json(
-          {
-            error: "No se puede eliminar permanentemente",
-            detail: `La compra tiene ${conRecepcion} línea(s) con recepción registrada. Solo se puede anular.`,
-          },
-          { status: 409 },
-        );
-      }
-      await prisma.compra.delete({ where: { id: compraId } });
-      return NextResponse.json({ success: true, permanent: true });
-    }
-
-    // Soft: transición a ANULADO (respetar validación)
-    const current = await prisma.compra.findUnique({ where: { id: compraId }, select: { status_oc_codigo: true } });
-    if (!current) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
-    const check = assertValidTransition(current.status_oc_codigo, "ANULADO");
-    if (!check.ok) return NextResponse.json({ error: check.reason }, { status: 400 });
-
+    const { id } = await params;
+    const body = await req.json();
     const usuario = await getAuditUser(req);
-    await prisma.compra.update({
-      where: { id: compraId },
-      data: { status_oc_codigo: "ANULADO", usuario_aprueba: usuario },
+
+    const data: Record<string, unknown> = {};
+    // Aliases POs2 → current
+    if (body.proveedor_id !== undefined) data.proveedor_id = body.proveedor_id;
+    if (body.almacen_id !== undefined) data.ubicacion_codigo = body.almacen_id; // POs2 manda id, lo guardamos como código
+    if (body.ubicacion_codigo !== undefined) data.ubicacion_codigo = body.ubicacion_codigo;
+    if (body.estado !== undefined) {
+      data.status_oc_codigo = labelToCode[body.estado] ?? body.estado;
+    }
+    if (body.status_oc_codigo !== undefined) data.status_oc_codigo = body.status_oc_codigo;
+    if (body.moneda !== undefined) data.moneda_codigo = body.moneda;
+    if (body.moneda_codigo !== undefined) data.moneda_codigo = body.moneda_codigo;
+    for (const k of ["fecha_entrega_esperada", "fecha_entrega_real"]) {
+      if (body[k] !== undefined) data[k] = body[k] ? new Date(body[k]) : null;
+    }
+    for (const k of ["nro_factura", "nro_guia", "observaciones", "usuario_aprueba"]) {
+      if (body[k] !== undefined) data[k] = body[k];
+    }
+    if (usuario && data.usuario_aprueba === undefined) data.usuario_aprueba = usuario;
+
+    const record = await prisma.compra.update({
+      where: { id: Number(id) },
+      data,
     });
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ data: record });
   } catch (error: unknown) {
     const err = error as { code?: string };
-    if (err?.code === "P2025") return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+    if (err?.code === "P2025") return NextResponse.json({ error: "Compra no encontrada" }, { status: 404 });
+    console.error("PUT /api/compras/[id] error:", error);
+    return NextResponse.json({ error: "Error al actualizar compra" }, { status: 500 });
+  }
+}
+
+// DELETE — solo si está en estado Pendiente (PEND_OC)
+export async function DELETE(_req: NextRequest, { params }: Params) {
+  try {
+    const { id } = await params;
+    const compra = await prisma.compra.findUnique({ where: { id: Number(id) } });
+    if (!compra) return NextResponse.json({ error: "Compra no encontrada" }, { status: 404 });
+    if (compra.status_oc_codigo !== "PEND_OC") {
+      return NextResponse.json({ error: "Solo se pueden eliminar compras en estado Pendiente" }, { status: 400 });
+    }
+
+    // Desvincular requerimientos asociados
+    await prisma.oTRepuesto.updateMany({
+      where: { po_id: Number(id) },
+      data: { po_id: null, nro_oc: null, status_oc_codigo: null },
+    });
+
+    await prisma.compra.delete({ where: { id: Number(id) } });
+    return NextResponse.json({ message: "Compra eliminada" });
+  } catch (error) {
     console.error("DELETE /api/compras/[id] error:", error);
-    return NextResponse.json({ error: "Error al anular" }, { status: 500 });
+    return NextResponse.json({ error: "Error al eliminar" }, { status: 500 });
   }
 }

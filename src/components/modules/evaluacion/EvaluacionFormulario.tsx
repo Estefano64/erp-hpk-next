@@ -26,6 +26,10 @@ export const IMG_COMPONENTE: Record<string, string> = {
   tapa: "/Tapa.png",
   piston: "/Piston.png",
   embolo: "/Piston.png",
+  hub: "/Hub.jpeg",
+  spindle: "/Spindle.jpeg",
+  conjunto_freno: "/ConjuntoFreno.jpeg",
+  piston_freno: "/PistonFreno.jpeg",
 };
 
 // ── Detectar modelo desde estrategia ────────────────────────
@@ -864,7 +868,7 @@ export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, o
           <SeccionNum num={3} titulo="HUB (Cubo)">
             <Row gutter={16}>
               <Col xs={24} md={8}>
-                <ImagenReferencia componente="cilindro" label="Hub" />
+                <ImagenReferencia componente="hub" label="Hub" />
               </Col>
               <Col xs={24} md={16}>
                 <TablaMedidas
@@ -909,7 +913,7 @@ export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, o
           <SeccionNum num={4} titulo="SPINDLE (Muñon)">
             <Row gutter={16}>
               <Col xs={24} md={8}>
-                <ImagenReferencia componente="vastago" label="Spindle" />
+                <ImagenReferencia componente="spindle" label="Spindle" />
               </Col>
               <Col xs={24} md={16}>
                 <TablaMedidas
@@ -947,6 +951,11 @@ export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, o
           </SeccionNum>
 
           <SeccionNum num={5} titulo="CONJUNTO DE FRENO">
+            <Row gutter={16} style={{ marginBottom: 12 }}>
+              <Col xs={24} md={8}>
+                <ImagenReferencia componente="conjunto_freno" label="Conjunto de Freno" />
+              </Col>
+            </Row>
             <ChecklistHallazgos
               id={`${p}_freno`}
               titulo="Check list - Conjunto de Freno"
@@ -969,6 +978,11 @@ export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, o
           </SeccionNum>
 
           <SeccionNum num={6} titulo="CAJA DE FRENO">
+            <Row gutter={16} style={{ marginBottom: 12 }}>
+              <Col xs={24} md={8}>
+                <ImagenReferencia componente="piston_freno" label="Pistón de Freno" />
+              </Col>
+            </Row>
             <ChecklistHallazgos
               id={`${p}_caja`}
               titulo="Check list - Caja de Freno"

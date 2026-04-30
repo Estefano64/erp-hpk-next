@@ -25,13 +25,11 @@ import { brand } from "@/lib/theme";
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
 
-function buildMenuItems(rol: string | null): MenuProps["items"] {
+function buildMenuItems(_rol: string | null): MenuProps["items"] {
   const configChildren: NonNullable<MenuProps["items"]> = [
     { key: "/configuracion-cotizacion", label: "Configuración cotización" },
+    { key: "/catalogos", label: "Catálogos maestros" },
   ];
-  if (rol === "admin") {
-    configChildren.push({ key: "/catalogos", label: "Catálogos maestros" });
-  }
   return [
     { key: "/dashboard", icon: <DashboardOutlined />, label: "Dashboard" },
     {
