@@ -20,6 +20,7 @@ import {
   Card,
   Alert,
   Space,
+  Modal,
 } from "antd";
 import {
   SaveOutlined,
@@ -39,6 +40,7 @@ import dayjs from "dayjs";
 import OTAdjuntosTab from "./OTAdjuntosTab";
 import OTTareasTab from "./OTTareasTab";
 import OTHistorialTab from "./OTHistorialTab";
+import OTRequerimientosTab from "./OTRequerimientosTab";
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -161,6 +163,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   const [ot, setOt] = useState<OTDetalle | null>(null);
   const [loading, setLoading] = useState(false);
   const [messageApi, contextHolder] = message.useMessage();
+  const [modalApi, modalCtx] = Modal.useModal();
 
   // Status (siempre editable)
   const [otStatus, setOtStatus] = useState("");
@@ -325,51 +328,150 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
     }
   }
 
+  /**
+   * Hace el PUT real a la OT, opcionalmente borra los requerimientos pendientes
+   * (SIN_APROBACION sin OC). NO aplica template automáticamente: el usuario
+   * lo aplica manualmente desde el tab "Requerimientos" con el botón.
+   */
+  async function ejecutarSaveEdit(clearPending: boolean): Promise<boolean> {
+    if (!ot) return false;
+    const payload: Record<string, unknown> = { ...editData };
+
+    if (payload.id_cod_rep && payload.id_cod_rep !== ot.id_cod_rep) {
+      const codRep = codReps.find((cr) => cr.cod_rep_id === payload.id_cod_rep);
+      if (codRep) {
+        payload.tipo = codRep.tipo?.nombre ?? null;
+        payload.np = codRep.np ?? null;
+        payload.descripcion = codRep.descripcion;
+        payload.id_fabricante = codRep.fabricante?.fabricante_id ?? null;
+        payload.cod_rep_flota = codRep.flota?.nombre ?? null;
+        payload.cod_rep_posicion = codRep.posicion?.nombre ?? null;
+      }
+    }
+
+    if (payload.garantia_codigo === "Si") {
+      payload.tipo_garantia_codigo = "Por definir";
+    }
+
+    const pcr = Number(payload.pcr);
+    const horas = Number(payload.horas);
+    if (pcr > 0 && horas >= 0) {
+      payload.porcentaje_pcr = Number(((horas / pcr) * 100).toFixed(2));
+    }
+
+    const res = await fetch(`/api/ordenes-trabajo/${ot.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...payload, version: ot.version }),
+    });
+    if (res.status === 409) {
+      messageApi.warning("Otro usuario actualizó esta OT. Sincronizando…");
+      fetchOT();
+      return false;
+    }
+    if (!res.ok) {
+      messageApi.error("Error al guardar");
+      return false;
+    }
+    messageApi.success("OT actualizada");
+    setEditing(false);
+
+    if (clearPending) {
+      try {
+        const r2 = await fetch(`/api/ordenes-trabajo/${ot.id}/requerimientos/limpiar-pendientes`, {
+          method: "DELETE",
+        });
+        if (r2.ok) {
+          const j = await r2.json();
+          if (j.eliminados > 0) {
+            messageApi.success(
+              `Se eliminaron ${j.eliminados} requerimiento(s) pendiente(s). Aplicá el nuevo template desde el tab Requerimientos.`,
+            );
+          }
+        } else {
+          messageApi.warning("No se pudieron limpiar los pendientes.");
+        }
+      } catch {
+        messageApi.warning("Error al limpiar pendientes.");
+      }
+    }
+
+    fetchOT();
+    notifySync();
+    onUpdated?.();
+    return true;
+  }
+
   /* ── Guardar edición general ── */
   async function handleSaveEdit() {
     if (!ot) return;
     setSavingEdit(true);
     try {
-      const payload: Record<string, unknown> = { ...editData };
+      const cambioCodRep =
+        editData.id_cod_rep != null && editData.id_cod_rep !== ot.id_cod_rep;
 
-      if (payload.id_cod_rep && payload.id_cod_rep !== ot.id_cod_rep) {
-        const codRep = codReps.find((cr) => cr.cod_rep_id === payload.id_cod_rep);
-        if (codRep) {
-          payload.tipo = codRep.tipo?.nombre ?? null;
-          payload.np = codRep.np ?? null;
-          payload.descripcion = codRep.descripcion;
-          payload.id_fabricante = codRep.fabricante?.fabricante_id ?? null;
-          payload.cod_rep_flota = codRep.flota?.nombre ?? null;
-          payload.cod_rep_posicion = codRep.posicion?.nombre ?? null;
+      // Si cambia el cod_rep, chequeo si la OT ya tiene requerimientos para preguntar qué hacer.
+      if (cambioCodRep) {
+        let tieneReqs = false;
+        let countReqs = 0;
+        try {
+          const resReqs = await fetch(`/api/ordenes-trabajo/${ot.id}/requerimientos`);
+          if (resReqs.ok) {
+            const j = await resReqs.json();
+            countReqs = (j.data ?? []).length;
+            tieneReqs = countReqs > 0;
+          }
+        } catch { /* si falla, asumimos que no tiene */ }
+
+        if (tieneReqs) {
+          const codRepNuevo = codReps.find((cr) => cr.cod_rep_id === editData.id_cod_rep);
+          await new Promise<void>((resolve) => {
+            const m = modalApi.confirm({
+              title: "Cambio de código de reparación",
+              content: (
+                <div>
+                  <p>Esta OT tiene <strong>{countReqs}</strong> requerimiento(s) cargado(s) del cod_rep anterior.</p>
+                  <p>Vas a cambiar el código a <strong>{codRepNuevo?.codigo ?? "(nuevo)"}</strong>. ¿Qué hago con los requerimientos existentes?</p>
+                  <ul style={{ marginLeft: 20, fontSize: 13 }}>
+                    <li><strong>Conservar todos</strong>: deja los requerimientos como están (incluso los SIN_APROBACION del cod_rep viejo).</li>
+                    <li><strong>Limpiar pendientes</strong>: elimina los SIN_APROBACION sin OC. Los aprobados o con OC se mantienen.</li>
+                  </ul>
+                  <p style={{ marginTop: 12, color: "#999", fontSize: 12 }}>
+                    En cualquier caso, el template del nuevo cod_rep <strong>NO se aplica automáticamente</strong>.
+                    Aplicalo cuando quieras desde el tab Requerimientos con el botón &quot;Generar desde template&quot;.
+                  </p>
+                </div>
+              ),
+              okText: "Conservar todos",
+              cancelText: "Cancelar",
+              width: 580,
+              footer: (_, { OkBtn, CancelBtn }) => (
+                <>
+                  <CancelBtn />
+                  <Button
+                    danger
+                    onClick={async () => {
+                      m.destroy();
+                      await ejecutarSaveEdit(true);
+                      resolve();
+                    }}
+                  >
+                    Limpiar pendientes
+                  </Button>
+                  <OkBtn />
+                </>
+              ),
+              onOk: async () => { await ejecutarSaveEdit(false); resolve(); },
+              onCancel: () => { resolve(); /* sigue en edición */ },
+            });
+          });
+          return;
         }
       }
 
-      if (payload.garantia_codigo === "Si") {
-        payload.tipo_garantia_codigo = "Por definir";
-      }
-
-      const pcr = Number(payload.pcr);
-      const horas = Number(payload.horas);
-      if (pcr > 0 && horas >= 0) {
-        payload.porcentaje_pcr = Number(((horas / pcr) * 100).toFixed(2));
-      }
-
-      const res = await fetch(`/api/ordenes-trabajo/${ot.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...payload, version: ot.version }),
-      });
-      if (res.status === 409) {
-        messageApi.warning("Otro usuario actualizó esta OT. Sincronizando…");
-        fetchOT();
-        return;
-      }
-      if (!res.ok) throw new Error();
-      messageApi.success("OT actualizada");
-      setEditing(false);
-      fetchOT();
-      notifySync();
-      onUpdated?.();
+      // Sin cambio de cod_rep o sin requerimientos previos: guardar normal.
+      // El template solo se aplica explícitamente desde el botón del tab.
+      await ejecutarSaveEdit(false);
     } catch {
       messageApi.error("Error al guardar");
     } finally {
@@ -812,7 +914,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   const tabItems = [
     { key: "resumen", label: "Resumen", icon: <InfoCircleOutlined />, children: resumenContent },
     { key: "tareas", label: "Tareas", icon: <UnorderedListOutlined />, children: ot ? <OTTareasTab otId={ot.id} codRepCodigo={ot.codigo_reparacion?.codigo ?? null} /> : null },
-    { key: "requerimientos", label: "Requerimientos", icon: <InboxOutlined />, children: placeholderTab("Requerimientos") },
+    { key: "requerimientos", label: "Requerimientos", icon: <InboxOutlined />, children: ot ? <OTRequerimientosTab otId={ot.id} codRepCodigo={ot.codigo_reparacion?.codigo ?? null} onUpdated={() => fetchOT()} /> : null },
     { key: "costos", label: "Costos", icon: <DollarOutlined />, children: placeholderTab("Costos") },
     { key: "adjuntos", label: "Adjuntos", icon: <PaperClipOutlined />, children: ot ? <OTAdjuntosTab otId={ot.id} /> : null },
     { key: "historial", label: "Historial", icon: <HistoryOutlined />, children: ot ? <OTHistorialTab otId={ot.id} /> : null },
@@ -821,6 +923,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   return (
     <div className="ot-detail-root">
       {contextHolder}
+      {modalCtx}
 
       {/* ── Header ── */}
       <div

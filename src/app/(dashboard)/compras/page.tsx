@@ -17,7 +17,10 @@ import {
   App,
   Statistic,
   Popconfirm,
+  Tabs,
+  Badge,
 } from "antd";
+import RequerimientosAprobadosTab from "@/components/modules/compras/RequerimientosAprobadosTab";
 import {
   SearchOutlined,
   ReloadOutlined,
@@ -342,30 +345,8 @@ export default function ComprasPage() {
     },
   ];
 
-  return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <Title level={3} style={{ margin: 0 }}>
-          Órdenes de Compra
-        </Title>
-        <Space>
-          <Button
-            icon={<FileExcelOutlined />}
-            onClick={exportarExcel}
-            style={{ background: "#1d6f42", color: "#fff", borderColor: "#1d6f42" }}
-          >
-            Descargar Excel
-          </Button>
-          <Button
-            type="primary"
-            icon={<UnorderedListOutlined />}
-            onClick={() => router.push("/requerimientos")}
-          >
-            Ver Requerimientos
-          </Button>
-        </Space>
-      </div>
-
+  const ocsContent = (
+    <>
       {/* KPI Cards */}
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
         <Col xs={12} md={6}>
@@ -411,7 +392,6 @@ export default function ComprasPage() {
         </Col>
       </Row>
 
-      {/* Filtros */}
       <Card styles={{ body: { padding: 16 } }} style={{ marginBottom: 16 }}>
         <Row gutter={[12, 12]}>
           <Col xs={24} sm={8} md={6}>
@@ -455,6 +435,56 @@ export default function ComprasPage() {
         pagination={{ pageSize: 20, showTotal: (t) => `${t} órdenes de compra` }}
         scroll={{ x: 1500 }}
         size="small"
+      />
+    </>
+  );
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <Title level={3} style={{ margin: 0 }}>
+          Compras
+        </Title>
+        <Space>
+          <Button
+            icon={<FileExcelOutlined />}
+            onClick={exportarExcel}
+            style={{ background: "#1d6f42", color: "#fff", borderColor: "#1d6f42" }}
+          >
+            Descargar Excel
+          </Button>
+          <Button
+            icon={<UnorderedListOutlined />}
+            onClick={() => router.push("/requerimientos")}
+          >
+            Ir a Requerimientos
+          </Button>
+        </Space>
+      </div>
+
+      <Tabs
+        defaultActiveKey="ocs"
+        items={[
+          {
+            key: "ocs",
+            label: (
+              <span>
+                <ShoppingCartOutlined /> Órdenes de Compra
+                <Badge count={data.length} style={{ background: brand.navy, marginLeft: 8 }} showZero />
+              </span>
+            ),
+            children: ocsContent,
+          },
+          {
+            key: "aprobados",
+            label: (
+              <span>
+                <InfoCircleOutlined /> Requerimientos aprobados
+              </span>
+            ),
+            children: <RequerimientosAprobadosTab onOCCreated={fetchData} />,
+          },
+        ]}
       />
 
       <CompraDetalleModal
