@@ -31,6 +31,7 @@ import {
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
+import { numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE } from "@/lib/tables";
 import dayjs from "dayjs";
 
 
@@ -92,6 +93,8 @@ export default function StockPage() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [filtro, setFiltro] = useState<string>("todos");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -164,6 +167,7 @@ export default function StockPage() {
   };
 
   const columns: ColumnsType<StockItem> = [
+    numeracionColumn<StockItem>({ current: page, pageSize }),
     {
       title: "Alerta",
       dataIndex: "alerta",
@@ -455,7 +459,13 @@ export default function StockPage() {
         columns={columns}
         dataSource={data}
         loading={loading}
-        pagination={{ pageSize: 25, showTotal: (t) => `${t} materiales` }}
+        pagination={paginacionEstandar({
+          current: page,
+          pageSize,
+          total: data.length,
+          onChange: (p, s) => { setPage(p); setPageSize(s); },
+          label: "materiales",
+        })}
         scroll={{ x: 1700 }}
         size="small"
       />

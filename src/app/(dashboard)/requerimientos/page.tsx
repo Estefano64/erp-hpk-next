@@ -16,6 +16,7 @@ import {
   Tooltip,
   App,
   Statistic,
+  Segmented,
 } from "antd";
 import {
   SearchOutlined,
@@ -31,6 +32,7 @@ import {
   ShoppingCartOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
+import { numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE } from "@/lib/tables";
 import { Popover, Divider, Checkbox } from "antd";
 import { brand } from "@/lib/theme";
 import dayjs from "dayjs";
@@ -100,6 +102,8 @@ export default function RequerimientosPage() {
   const [search, setSearch] = useState("");
   const [estado, setEstado] = useState<string>("");
   const [tipo, setTipo] = useState<string>("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
 
   // Columnas ocultas (persistidas en localStorage)
   const COLS_STORAGE_KEY = "req-list-cols-v1";
@@ -225,6 +229,7 @@ export default function RequerimientosPage() {
   );
 
   const columns: ColumnsType<Requerimiento> = [
+    numeracionColumn<Requerimiento>({ current: page, pageSize }),
     {
       key: "numero_ot",
       title: "OT",
@@ -543,32 +548,33 @@ export default function RequerimientosPage() {
         </Col>
       </Row>
 
+      {/* Selector de vista por estado */}
+      <Card styles={{ body: { padding: 12 } }} style={{ marginBottom: 12 }}>
+        <Segmented
+          block
+          value={estado || "__all"}
+          onChange={(v) => { setEstado(v === "__all" ? "" : (v as string)); setPage(1); }}
+          options={[
+            { value: "__all", label: "Todos" },
+            { value: "Pendiente", label: "Pendiente" },
+            { value: "Aprobado", label: "Aprobado" },
+            { value: "En PO", label: "En OC" },
+            { value: "COM", label: "Completado" },
+            { value: "ANU", label: "Anulado" },
+          ]}
+        />
+      </Card>
+
       {/* Filtros */}
       <Card styles={{ body: { padding: 16 } }} style={{ marginBottom: 16 }}>
         <Row gutter={[12, 12]}>
-          <Col xs={24} sm={8} md={6}>
+          <Col xs={24} sm={12} md={8}>
             <Input
               placeholder="Buscar material, OT, OC..."
               prefix={<SearchOutlined />}
               allowClear
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-            />
-          </Col>
-          <Col xs={12} sm={6} md={4}>
-            <Select
-              placeholder="Estado REQ"
-              allowClear
-              style={{ width: "100%" }}
-              value={estado || undefined}
-              onChange={(v) => setEstado(v ?? "")}
-              options={[
-                { value: "Pendiente", label: "Pendiente" },
-                { value: "Aprobado", label: "Aprobado" },
-                { value: "En PO", label: "En OC" },
-                { value: "COM", label: "Completado" },
-                { value: "ANU", label: "Anulado" },
-              ]}
             />
           </Col>
           <Col xs={12} sm={6} md={4}>
@@ -605,10 +611,13 @@ export default function RequerimientosPage() {
         columns={columnasVisibles}
         dataSource={data}
         loading={loading}
-        pagination={{
-          pageSize: 20,
-          showTotal: (t) => `${t} requerimientos`,
-        }}
+        pagination={paginacionEstandar({
+          current: page,
+          pageSize,
+          total: data.length,
+          onChange: (p, s) => { setPage(p); setPageSize(s); },
+          label: "requerimientos",
+        })}
         scroll={{ x: 1800 }}
         size="small"
       />

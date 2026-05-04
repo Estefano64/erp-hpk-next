@@ -52,33 +52,35 @@ export async function POST(req: NextRequest) {
     }
     const d = parsed.data;
 
-    // Si no especifican orden, usar el máximo + 1 dentro del cod_rep
-    let orden = d.orden;
-    if (orden == null) {
-      const maxAgg = await prisma.operacionCodRep.aggregate({
-        where: { cod_rep_codigo: d.cod_rep_codigo },
-        _max: { orden: true },
+    // Si no especifican orden, calcular max+1 y crear en una sola transacción
+    // (evita que dos POST paralelos reserven el mismo orden).
+    const created = await prisma.$transaction(async (tx) => {
+      let orden = d.orden;
+      if (orden == null) {
+        const maxAgg = await tx.operacionCodRep.aggregate({
+          where: { cod_rep_codigo: d.cod_rep_codigo },
+          _max: { orden: true },
+        });
+        orden = (maxAgg._max.orden ?? 0) + 1;
+      }
+      return tx.operacionCodRep.create({
+        data: {
+          cod_rep_codigo: d.cod_rep_codigo,
+          componente_codigo: d.componente_codigo,
+          trabajo: d.trabajo,
+          operacion_reparacion_codigo: d.operacion_reparacion_codigo ?? null,
+          qty: d.qty,
+          horas: d.horas ?? null,
+          hh: d.hh ?? null,
+          orden,
+          activo: true,
+        },
+        include: {
+          componente: { select: { codigo: true, nombre: true } },
+          operacion_reparacion: { select: { codigo: true, nombre: true } },
+        },
       });
-      orden = (maxAgg._max.orden ?? 0) + 1;
-    }
-
-    const created = await prisma.operacionCodRep.create({
-      data: {
-        cod_rep_codigo: d.cod_rep_codigo,
-        componente_codigo: d.componente_codigo,
-        trabajo: d.trabajo,
-        operacion_reparacion_codigo: d.operacion_reparacion_codigo ?? null,
-        qty: d.qty,
-        horas: d.horas ?? null,
-        hh: d.hh ?? null,
-        orden,
-        activo: true,
-      },
-      include: {
-        componente: { select: { codigo: true, nombre: true } },
-        operacion_reparacion: { select: { codigo: true, nombre: true } },
-      },
-    });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
     return NextResponse.json({ data: created }, { status: 201 });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {

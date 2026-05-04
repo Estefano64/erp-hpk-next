@@ -1,149 +1,191 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
-// POST — crear OC desde multiples requerimientos
+const Schema = z.object({
+  repuesto_ids: z.array(z.coerce.number().int().positive()).min(1),
+  proveedor_id: z.coerce.number().int().positive(),
+  moneda: z.string().trim().optional().nullable(),
+  fecha_entrega_esperada: z.string().optional().nullable(),
+  observaciones: z.string().optional().nullable(),
+  ubicacion_codigo: z.string().optional().nullable(),
+  almacen_id: z.string().optional().nullable(),
+  usuario: z.string().trim().optional().nullable(),
+});
+
+const IGV_PCT = new Prisma.Decimal("0.18");
+const ONE_PLUS_IGV = new Prisma.Decimal(1).plus(IGV_PCT);
+const MAX_NUMERO_PO_RETRIES = 5;
+
+async function siguienteNumeroPO(tx: Prisma.TransactionClient, prefix: string): Promise<string> {
+  const ultima = await tx.compra.findFirst({
+    where: { numero_po: { startsWith: prefix } },
+    orderBy: { numero_po: "desc" },
+    select: { numero_po: true },
+  });
+  let seq = 1;
+  if (ultima) {
+    const lastNum = parseInt(ultima.numero_po.substring(prefix.length), 10);
+    if (!Number.isNaN(lastNum)) seq = lastNum + 1;
+  }
+  return `${prefix}${String(seq).padStart(4, "0")}`;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const {
-      repuesto_ids,
-      proveedor_id,
-      moneda,
-      fecha_entrega_esperada,
-      observaciones,
-      usuario,
-    } = body;
-    // Compatibilidad: POs2 envía "almacen_id" (string code), current usa "ubicacion_codigo"
-    const ubicacion_codigo: string | null = body.ubicacion_codigo ?? body.almacen_id ?? null;
-
-    if (!Array.isArray(repuesto_ids) || repuesto_ids.length === 0) {
-      return NextResponse.json({ error: "Debes seleccionar al menos un requerimiento" }, { status: 400 });
+    const parsed = Schema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Validación", detail: parsed.error.flatten() },
+        { status: 400 },
+      );
     }
-    if (!proveedor_id) {
-      return NextResponse.json({ error: "proveedor_id es obligatorio" }, { status: 400 });
-    }
+    const d = parsed.data;
+    const ubicacion_codigo = d.ubicacion_codigo ?? d.almacen_id ?? null;
+    const monedaInput = (d.moneda ?? "USD").toUpperCase();
+    const moneda_codigo = monedaInput === "PEN" ? "SOL" : monedaInput;
+    const usuario = d.usuario || "Logistica";
 
-    // Cargar requerimientos
-    const repuestos = await prisma.oTRepuesto.findMany({
-      where: { id: { in: repuesto_ids.map(Number) } },
-    });
-    if (!repuestos.length) {
-      return NextResponse.json({ error: "Requerimientos no encontrados" }, { status: 404 });
-    }
-    type Req = typeof repuestos[number];
+    const prefix = `D${new Date().getFullYear().toString().slice(-2)}`;
 
-    // Generar numero de PO: D{YY}{NNNN}
-    const year = new Date().getFullYear().toString().slice(-2);
-    const prefix = `D${year}`;
-    const ultima = await prisma.compra.findFirst({
-      where: { numero_po: { startsWith: prefix } },
-      orderBy: { numero_po: "desc" },
-    });
-    let seq = 1;
-    if (ultima) {
-      const lastNum = parseInt(ultima.numero_po.substring(3)) || 0;
-      seq = lastNum + 1;
-    }
-    const numero_po = `${prefix}${String(seq).padStart(4, "0")}`;
+    const result = await prisma.$transaction(async (tx) => {
+      // Cargamos sólo requerimientos que NO estén ya asignados a una OC.
+      const repuestos = await tx.oTRepuesto.findMany({
+        where: { id: { in: d.repuesto_ids }, po_id: null },
+      });
+      if (repuestos.length === 0) {
+        throw Object.assign(
+          new Error("Ninguno de los requerimientos está disponible (todos ya tienen OC)"),
+          { code: "NO_DISPONIBLES" },
+        );
+      }
+      if (repuestos.length !== d.repuesto_ids.length) {
+        const encontrados = new Set(repuestos.map((r) => r.id));
+        const faltantes = d.repuesto_ids.filter((id) => !encontrados.has(id));
+        throw Object.assign(
+          new Error(`Requerimientos no disponibles (ya asignados o inexistentes): ${faltantes.join(", ")}`),
+          { code: "PARCIAL" },
+        );
+      }
 
-    // Calcular totales (con IGV 18%)
-    const IGV_PCT = 0.18;
-    let subtotal = 0;
-    const detallesData: Array<{
-      material_id: number;
-      cantidad: number;
-      precio_unitario: number;
-      subtotal: number;
-      impuesto: number;
-      total: number;
-    }> = [];
+      // Calcular totales con Prisma.Decimal para no perder precisión.
+      let subtotal = new Prisma.Decimal(0);
+      const detallesData: Prisma.CompraDetalleCreateManyInput[] = [];
 
-    for (const rep of repuestos) {
-      const precio = parseFloat(String(rep.precio_unitario || 0));
-      const cant = parseFloat(String(rep.cantidad || 0));
-      const itemSub = precio * cant;
-      subtotal += itemSub;
+      for (const rep of repuestos) {
+        const precio = new Prisma.Decimal(rep.precio_unitario ?? 0);
+        const cant = new Prisma.Decimal(rep.cantidad);
+        const itemSub = precio.mul(cant);
+        subtotal = subtotal.plus(itemSub);
 
-      // Solo items MAC con material_id van en compra_detalles
-      if (rep.material_id) {
-        detallesData.push({
-          material_id: rep.material_id,
-          cantidad: cant,
-          precio_unitario: precio,
-          subtotal: itemSub,
-          impuesto: itemSub * IGV_PCT,
-          total: itemSub * (1 + IGV_PCT),
+        if (rep.material_id) {
+          const itemImp = itemSub.mul(IGV_PCT);
+          const itemTotal = itemSub.mul(ONE_PLUS_IGV);
+          detallesData.push({
+            compra_id: 0, // se setea tras crear la compra
+            material_id: rep.material_id,
+            cantidad: cant,
+            precio_unitario: precio,
+            subtotal: itemSub,
+            impuesto: itemImp,
+            total: itemTotal,
+          });
+        }
+      }
+
+      const impuesto = subtotal.mul(IGV_PCT);
+      const total = subtotal.mul(ONE_PLUS_IGV);
+
+      // Generar numero_po con reintento por colisión P2002.
+      let compraCreada: Awaited<ReturnType<typeof tx.compra.create>> | null = null;
+      let lastError: unknown = null;
+      for (let intento = 0; intento < MAX_NUMERO_PO_RETRIES; intento++) {
+        const numero_po = await siguienteNumeroPO(tx, prefix);
+        try {
+          compraCreada = await tx.compra.create({
+            data: {
+              numero_po,
+              proveedor_id: d.proveedor_id,
+              ubicacion_codigo,
+              fecha_solicitud: new Date(),
+              fecha_entrega_esperada: d.fecha_entrega_esperada ? new Date(d.fecha_entrega_esperada) : null,
+              status_oc_codigo: "PEND_OC",
+              subtotal,
+              impuesto,
+              total,
+              moneda_codigo,
+              observaciones: d.observaciones || `OC generada desde ${repuestos.length} requerimiento(s)`,
+              usuario_solicita: usuario,
+            },
+          });
+          break;
+        } catch (e) {
+          if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+            lastError = e;
+            continue;
+          }
+          throw e;
+        }
+      }
+      if (!compraCreada) {
+        throw lastError ?? new Error("No se pudo generar numero_po único");
+      }
+      const compra = compraCreada;
+
+      if (detallesData.length > 0) {
+        await tx.compraDetalle.createMany({
+          data: detallesData.map((det) => ({ ...det, compra_id: compra.id })),
         });
       }
-    }
 
-    const impuesto = subtotal * IGV_PCT;
-    const total = subtotal + impuesto;
-
-    // Normalizar codigo de moneda (POs2 usa "PEN", current usa "SOL")
-    const monedaInput = (moneda || "USD").toString().toUpperCase();
-    const moneda_codigo = monedaInput === "PEN" ? "SOL" : monedaInput;
-
-    // Crear la Compra
-    const compra = await prisma.compra.create({
-      data: {
-        numero_po,
-        proveedor_id: Number(proveedor_id),
-        ubicacion_codigo: ubicacion_codigo || null,
-        fecha_solicitud: new Date(),
-        fecha_entrega_esperada: fecha_entrega_esperada ? new Date(fecha_entrega_esperada) : null,
-        status_oc_codigo: "PEND_OC",
-        subtotal,
-        impuesto,
-        total,
-        moneda_codigo,
-        observaciones: observaciones || `OC generada desde ${repuestos.length} requerimiento(s)`,
-        usuario_solicita: usuario || "Logistica",
-      },
-    });
-
-    // Crear los CompraDetalle
-    if (detallesData.length > 0) {
-      await prisma.compraDetalle.createMany({
-        data: detallesData.map((d) => ({ ...d, compra_id: compra.id })),
+      // Asignar po_id sólo a los que seguían disponibles (race-safe).
+      const assigned = await tx.oTRepuesto.updateMany({
+        where: { id: { in: repuestos.map((r) => r.id) }, po_id: null },
+        data: {
+          po_id: compra.id,
+          nro_oc: compra.numero_po,
+          fecha_oc: new Date(),
+          status_oc_codigo: "PEND_OC",
+        },
       });
-    }
+      if (assigned.count !== repuestos.length) {
+        throw Object.assign(
+          new Error("Conflicto: otro proceso asignó parte de los requerimientos"),
+          { code: "RACE" },
+        );
+      }
 
-    // Actualizar los requerimientos: po_id, nro_oc, fecha_oc, status_oc_codigo
-    await prisma.oTRepuesto.updateMany({
-      where: { id: { in: repuestos.map((r: Req) => r.id) } },
-      data: {
-        po_id: compra.id,
-        nro_oc: numero_po,
-        fecha_oc: new Date(),
-        status_oc_codigo: "PEND_OC",
-      },
-    });
-
-    // Registrar historial por cada OT unica involucrada
-    const otIds: number[] = Array.from(new Set(repuestos.map((r: Req) => r.ot_id)));
-    await Promise.all(
-      otIds.map((otId: number) =>
-        prisma.oTHistorial.create({
+      const otIds = Array.from(new Set(repuestos.map((r) => r.ot_id)));
+      for (const otId of otIds) {
+        const itemsOT = repuestos.filter((r) => r.ot_id === otId).length;
+        await tx.oTHistorial.create({
           data: {
             ot_id: otId,
             tipo_operacion: "Otro",
-            descripcion: `Generacion de OC ${numero_po} con ${repuestos.filter((r: Req) => r.ot_id === otId).length} item(s)`,
-            usuario: usuario || "Logistica",
-            datos_adicionales: JSON.stringify({ po_id: compra.id, numero_po }),
+            descripcion: `Generación de OC ${compra.numero_po} con ${itemsOT} item(s)`,
+            usuario,
+            datos_adicionales: JSON.stringify({ po_id: compra.id, numero_po: compra.numero_po }),
           },
-        })
-      )
-    );
+        });
+      }
+
+      return { compra, items: repuestos.length };
+    });
 
     return NextResponse.json(
       {
-        message: `OC ${numero_po} creada con ${repuestos.length} item(s)`,
-        compra,
+        message: `OC ${result.compra.numero_po} creada con ${result.items} item(s)`,
+        compra: result.compra,
       },
-      { status: 201 }
+      { status: 201 },
     );
-  } catch (error) {
+  } catch (error: unknown) {
+    const err = error as { code?: string; message?: string };
+    if (err?.code === "NO_DISPONIBLES" || err?.code === "PARCIAL" || err?.code === "RACE") {
+      return NextResponse.json({ error: err.message }, { status: 409 });
+    }
     console.error("POST /api/compras/crear-oc error:", error);
     const msg = error instanceof Error ? error.message : "Error al crear OC";
     return NextResponse.json({ error: msg }, { status: 500 });

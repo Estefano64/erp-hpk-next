@@ -29,6 +29,7 @@ import {
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
+import { numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE } from "@/lib/tables";
 
 const { Title } = Typography;
 
@@ -72,6 +73,7 @@ export default function MaterialesPage() {
   const [data, setData] = useState<MaterialRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [filterPlanta, setFilterPlanta] = useState("");
@@ -101,7 +103,7 @@ export default function MaterialesPage() {
     setLoading(true);
     const params = new URLSearchParams({
       page: String(page),
-      limit: "20",
+      limit: String(pageSize),
     });
     if (search) params.set("search", search);
     if (filterPlanta) params.set("planta", filterPlanta);
@@ -115,7 +117,7 @@ export default function MaterialesPage() {
     setData(json.data ?? []);
     setTotal(json.total ?? 0);
     setLoading(false);
-  }, [page, search, filterPlanta, filterArea, filterCategoria, filterClasificacion, filterFab]);
+  }, [page, pageSize, search, filterPlanta, filterArea, filterCategoria, filterClasificacion, filterFab]);
 
   useEffect(() => {
     async function loadOptions() {
@@ -222,6 +224,7 @@ export default function MaterialesPage() {
   }
 
   const columns: ColumnsType<MaterialRecord> = [
+    numeracionColumn<MaterialRecord>({ current: page, pageSize }),
     {
       title: "Código",
       dataIndex: "codigo",
@@ -412,13 +415,13 @@ export default function MaterialesPage() {
         columns={columns}
         dataSource={data}
         loading={loading}
-        pagination={{
+        pagination={paginacionEstandar({
           current: page,
-          pageSize: 20,
+          pageSize,
           total,
-          showTotal: (t) => `${t} registros`,
-          onChange: setPage,
-        }}
+          onChange: (p, s) => { setPage(p); setPageSize(s); },
+          label: "materiales",
+        })}
         scroll={{ x: 1200 }}
         size="small"
       />

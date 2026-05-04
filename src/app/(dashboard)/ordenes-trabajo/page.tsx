@@ -22,6 +22,7 @@ import {
   AuditOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
+import { numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE } from "@/lib/tables";
 import { brand } from "@/lib/theme";
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
@@ -73,6 +74,7 @@ export default function OrdenesTrabajoPage() {
   const [data, setData] = useState<OTRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [filterOtStatus, setFilterOtStatus] = useState("");
@@ -89,7 +91,7 @@ export default function OrdenesTrabajoPage() {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams({ page: String(page), limit: "20" });
+    const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
     if (search) params.set("search", search);
     if (filterOtStatus) params.set("ot_status", filterOtStatus);
     if (filterRecursosStatus) params.set("recursos_status", filterRecursosStatus);
@@ -99,7 +101,7 @@ export default function OrdenesTrabajoPage() {
     setData(json.data ?? []);
     setTotal(json.total ?? 0);
     setLoading(false);
-  }, [page, search, filterOtStatus, filterRecursosStatus, filterTallerStatus]);
+  }, [page, pageSize, search, filterOtStatus, filterRecursosStatus, filterTallerStatus]);
 
   useEffect(() => {
     async function loadCatalogs() {
@@ -126,6 +128,7 @@ export default function OrdenesTrabajoPage() {
   }
 
   const columns: ColumnsType<OTRecord> = [
+    numeracionColumn<OTRecord>({ current: page, pageSize }),
     {
       title: "OT",
       dataIndex: "ot",
@@ -311,13 +314,13 @@ export default function OrdenesTrabajoPage() {
         columns={columns}
         dataSource={data}
         loading={loading}
-        pagination={{
+        pagination={paginacionEstandar({
           current: page,
-          pageSize: 20,
+          pageSize,
           total,
-          showTotal: (t) => `${t} registros`,
-          onChange: setPage,
-        }}
+          onChange: (p, s) => { setPage(p); setPageSize(s); },
+          label: "órdenes de trabajo",
+        })}
         scroll={{ x: 1500 }}
         size="small"
       />

@@ -7,7 +7,6 @@ import {
   Table,
   Button,
   Input,
-  Select,
   Tag,
   Row,
   Col,
@@ -17,6 +16,7 @@ import {
   App,
   Statistic,
   Popconfirm,
+  Segmented,
 } from "antd";
 import {
   SearchOutlined,
@@ -33,6 +33,7 @@ import {
   MessageOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
+import { numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE } from "@/lib/tables";
 import { Popover, Divider } from "antd";
 import { brand } from "@/lib/theme";
 import dayjs from "dayjs";
@@ -80,6 +81,8 @@ export default function ComprasPage() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [estado, setEstado] = useState<string>("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
 
   const [modalId, setModalId] = useState<number | null>(null);
 
@@ -186,6 +189,7 @@ export default function ComprasPage() {
   );
 
   const columns: ColumnsType<Compra> = [
+    numeracionColumn<Compra>({ current: page, pageSize }),
     {
       title: "Nro OC",
       dataIndex: "numero_po",
@@ -411,32 +415,33 @@ export default function ComprasPage() {
         </Col>
       </Row>
 
+      {/* Selector de vista por estado */}
+      <Card styles={{ body: { padding: 12 } }} style={{ marginBottom: 12 }}>
+        <Segmented
+          block
+          value={estado || "__all"}
+          onChange={(v) => { setEstado(v === "__all" ? "" : (v as string)); setPage(1); }}
+          options={[
+            { value: "__all", label: "Todos" },
+            { value: "Pendiente", label: "Pendiente" },
+            { value: "Aprobado", label: "Aprobado" },
+            { value: "En Proceso", label: "En Proceso" },
+            { value: "Recibido", label: "Recibido" },
+            { value: "Cancelado", label: "Cancelado" },
+          ]}
+        />
+      </Card>
+
       {/* Filtros */}
       <Card styles={{ body: { padding: 16 } }} style={{ marginBottom: 16 }}>
         <Row gutter={[12, 12]}>
-          <Col xs={24} sm={8} md={6}>
+          <Col xs={24} sm={16} md={10}>
             <Input
               placeholder="Buscar por OC, factura..."
               prefix={<SearchOutlined />}
               allowClear
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-            />
-          </Col>
-          <Col xs={12} sm={6} md={4}>
-            <Select
-              placeholder="Estado"
-              allowClear
-              style={{ width: "100%" }}
-              value={estado || undefined}
-              onChange={(v) => setEstado(v ?? "")}
-              options={[
-                { value: "Pendiente", label: "Pendiente" },
-                { value: "Aprobado", label: "Aprobado" },
-                { value: "En Proceso", label: "En Proceso" },
-                { value: "Recibido", label: "Recibido" },
-                { value: "Cancelado", label: "Cancelado" },
-              ]}
             />
           </Col>
           <Col xs={12} sm={6} md={4}>
@@ -452,7 +457,13 @@ export default function ComprasPage() {
         columns={columns}
         dataSource={data}
         loading={loading}
-        pagination={{ pageSize: 20, showTotal: (t) => `${t} órdenes de compra` }}
+        pagination={paginacionEstandar({
+          current: page,
+          pageSize,
+          total: data.length,
+          onChange: (p, s) => { setPage(p); setPageSize(s); },
+          label: "órdenes de compra",
+        })}
         scroll={{ x: 1500 }}
         size="small"
       />

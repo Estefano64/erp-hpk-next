@@ -33,7 +33,13 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         where: { ot_id: otId, operacion_codigo: EVAL_OPERACION_CODIGO },
         include: { _count: { select: { capturas: true } } },
       });
-      if (!planEval || planEval._count.capturas === 0) {
+      if (!planEval) {
+        throw Object.assign(
+          new Error("No hay tarea de evaluación (EVAL) asignada a esta OT."),
+          { code: "NO_PLAN" },
+        );
+      }
+      if (planEval._count.capturas === 0) {
         throw Object.assign(
           new Error("No hay capturas de evaluación. Llená al menos un campo antes de finalizar."),
           { code: "NO_CAPTURES" },
@@ -66,7 +72,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   } catch (error: unknown) {
     const err = error as { code?: string; message?: string };
     if (err?.code === "NOT_FOUND") return NextResponse.json({ error: err.message }, { status: 404 });
-    if (err?.code === "NO_CAPTURES") return NextResponse.json({ error: err.message }, { status: 400 });
+    if (err?.code === "NO_PLAN" || err?.code === "NO_CAPTURES") {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
     console.error("POST /api/ordenes-trabajo/[id]/evaluacion/finalizar error:", error);
     return NextResponse.json({ error: "Error al finalizar evaluación" }, { status: 500 });
   }

@@ -132,9 +132,17 @@ async function calcular(otId: number, monedaOverride?: string) {
     };
   });
 
-  const subtotal = laborCost + materialCost;
-  const igv = subtotal * (igvPct / 100);
-  const total = subtotal + igv;
+  // Redondear a centavos al final para evitar drift por acumulación de floats.
+  // Para flujo de dinero más estricto, los acumuladores deberían usar Prisma.Decimal,
+  // pero aquí el cálculo es read-only y un redondeo final basta para no exponer
+  // 0.30000000000000004 al cliente.
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const subtotalRaw = laborCost + materialCost;
+  const subtotal = round2(subtotalRaw);
+  const igv = round2(subtotalRaw * (igvPct / 100));
+  const total = round2(subtotal + igv);
+  const laborCostR = round2(laborCost);
+  const materialCostR = round2(materialCost);
 
   return {
     ot: { id: ot.id, ot: ot.ot, descripcion: ot.descripcion },
@@ -144,12 +152,12 @@ async function calcular(otId: number, monedaOverride?: string) {
     igv_porcentaje: igvPct,
     labor: {
       total_hh: laborHH,
-      costo: laborCost,
+      costo: laborCostR,
       operaciones: laborBreakdown,
       operaciones_sin_hh: opsSinHH,
     },
     materiales: {
-      costo: materialCost,
+      costo: materialCostR,
       tareas: materialBreakdown,
       tareas_con_precio: tareasConPrecio,
       tareas_sin_material: tareasSinMaterial,

@@ -27,6 +27,7 @@ import {
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
+import { numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE } from "@/lib/tables";
 
 const { Title } = Typography;
 
@@ -48,6 +49,7 @@ export default function ClientesPage() {
   const [data, setData] = useState<ClienteRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -60,14 +62,14 @@ export default function ClientesPage() {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams({ page: String(page), limit: "20" });
+    const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
     if (search) params.set("search", search);
     const res = await fetch(`/api/clientes?${params}`);
     const json = await res.json();
     setData(json.data ?? []);
     setTotal(json.total ?? 0);
     setLoading(false);
-  }, [page, search]);
+  }, [page, pageSize, search]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -137,6 +139,7 @@ export default function ClientesPage() {
   }
 
   const columns: ColumnsType<ClienteRecord> = [
+    numeracionColumn<ClienteRecord>({ current: page, pageSize }),
     {
       title: "Código",
       dataIndex: "codigo",
@@ -209,13 +212,13 @@ export default function ClientesPage() {
         columns={columns}
         dataSource={data}
         loading={loading}
-        pagination={{
+        pagination={paginacionEstandar({
           current: page,
-          pageSize: 20,
+          pageSize,
           total,
-          showTotal: (t) => `${t} registros`,
-          onChange: setPage,
-        }}
+          onChange: (p, s) => { setPage(p); setPageSize(s); },
+          label: "clientes",
+        })}
         scroll={{ x: 900 }}
         size="small"
       />

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { PrismaClient, TipoMovimientoInventario } from "@prisma/client";
+import { PrismaClient, Prisma, TipoMovimientoInventario } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
@@ -286,7 +286,7 @@ async function main() {
         sistema_medicion: "Metrico",
         fecha_evaluacion: daysAgo(randInt(1, 30)),
         evaluado_por: pick(["Carlos Mendoza", "Ana Torres", "Luis Pérez", "María García"]),
-        datos_formulario: datos,
+        datos_formulario: datos as Prisma.InputJsonValue,
         resultado_general: estado === "BORRADOR" ? null : "Componente apto para reparación. Desgaste dentro de tolerancia.",
         recomendaciones_general: estado === "BORRADOR" ? null : "Reemplazar sellos y cromar vástago.",
         estado,

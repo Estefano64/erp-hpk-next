@@ -7,7 +7,6 @@ import {
   Table,
   Button,
   Input,
-  Select,
   Tag,
   Row,
   Col,
@@ -18,6 +17,7 @@ import {
   Tooltip,
   Modal,
   Form,
+  Segmented,
 } from "antd";
 import {
   SearchOutlined,
@@ -33,6 +33,7 @@ import {
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
+import { numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE } from "@/lib/tables";
 import dayjs from "dayjs";
 
 const { Title, Text } = Typography;
@@ -97,6 +98,8 @@ export default function EvaluacionesPage() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [filtroEstado, setFiltroEstado] = useState<string | undefined>();
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
 
   // Modal aprobar/rechazar
   const [modalAccion, setModalAccion] = useState<{ evalItem: Evaluacion; accion: "aprobar" | "rechazar" | "solicitar" } | null>(null);
@@ -185,6 +188,7 @@ export default function EvaluacionesPage() {
   };
 
   const columns: ColumnsType<Evaluacion> = [
+    numeracionColumn<Evaluacion>({ current: page, pageSize }),
     {
       title: "OT",
       width: 130,
@@ -398,32 +402,33 @@ export default function EvaluacionesPage() {
         </Col>
       </Row>
 
+      {/* Selector de vista por estado */}
+      <Card styles={{ body: { padding: 12 } }} style={{ marginBottom: 12 }}>
+        <Segmented
+          block
+          value={filtroEstado ?? "__all"}
+          onChange={(v) => { setFiltroEstado(v === "__all" ? undefined : (v as string)); setPage(1); }}
+          options={[
+            { value: "__all", label: "Todos" },
+            { value: "BORRADOR", label: "Borrador" },
+            { value: "COMPLETADA", label: "Completada" },
+            { value: "PENDIENTE_APROBACION", label: "Pendiente Aprobación" },
+            { value: "APROBADA", label: "Aprobada" },
+            { value: "RECHAZADA", label: "Rechazada" },
+          ]}
+        />
+      </Card>
+
       {/* Filtros */}
       <Card styles={{ body: { padding: 16 } }} style={{ marginBottom: 12 }}>
         <Row gutter={[12, 12]}>
-          <Col xs={24} sm={10} md={8}>
+          <Col xs={24} sm={16} md={12}>
             <Input
               placeholder="Buscar OT, evaluador, tipo..."
               prefix={<SearchOutlined />}
               allowClear
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-            />
-          </Col>
-          <Col xs={12} sm={8} md={5}>
-            <Select
-              placeholder="Filtrar por estado"
-              allowClear
-              style={{ width: "100%" }}
-              value={filtroEstado}
-              onChange={setFiltroEstado}
-              options={[
-                { value: "BORRADOR", label: "Borrador" },
-                { value: "COMPLETADA", label: "Completada" },
-                { value: "PENDIENTE_APROBACION", label: "Pendiente Aprobación" },
-                { value: "APROBADA", label: "Aprobada" },
-                { value: "RECHAZADA", label: "Rechazada" },
-              ]}
             />
           </Col>
           <Col xs={12} sm={6} md={3}>
@@ -439,7 +444,13 @@ export default function EvaluacionesPage() {
         columns={columns}
         dataSource={filtered}
         loading={loading}
-        pagination={{ pageSize: 20, showTotal: (t) => `${t} evaluaciones` }}
+        pagination={paginacionEstandar({
+          current: page,
+          pageSize,
+          total: data.length,
+          onChange: (p, s) => { setPage(p); setPageSize(s); },
+          label: "evaluaciones",
+        })}
         scroll={{ x: 1700 }}
         size="small"
       />

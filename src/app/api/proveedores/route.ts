@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
       ];
     }
 
-    const [data, total] = await Promise.all([
+    const [records, total] = await Promise.all([
       prisma.proveedor.findMany({
         where,
         orderBy: { id: "desc" },
@@ -41,6 +41,9 @@ export async function GET(req: NextRequest) {
       }),
       prisma.proveedor.count({ where }),
     ]);
+
+    // Alias razonSocial (camelCase) para compatibilidad con páginas estilo POs2
+    const data = records.map((p) => ({ ...p, razonSocial: p.razon_social }));
 
     return NextResponse.json({ data, total, page });
   } catch (error) {

@@ -36,7 +36,10 @@ function buildPayload(fields: FieldDef[], body: Record<string, unknown>): { ok: 
       case "number": {
         const n = Number(v);
         if (!Number.isFinite(n)) return { ok: false, error: `Campo "${f.label}" debe ser numérico.` };
-        out[f.key] = Math.trunc(n);
+        if (!Number.isInteger(n)) {
+          return { ok: false, error: `Campo "${f.label}" debe ser un número entero (recibido ${n}).` };
+        }
+        out[f.key] = n;
         break;
       }
       case "boolean":

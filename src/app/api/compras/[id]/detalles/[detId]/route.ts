@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { calcularLinea, recalcCompraTotals } from "@/lib/compra-utils";
 
 const UpdateDetalleSchema = z.object({
   material_id: z.number().int().positive().optional(),
@@ -11,19 +12,6 @@ const UpdateDetalleSchema = z.object({
   status_oc_codigo: z.string().trim().optional().nullable(),
   observaciones: z.string().trim().optional().nullable(),
 });
-
-async function recalcCompraTotals(tx: import("@prisma/client").Prisma.TransactionClient, compraId: number) {
-  const detalles = await tx.compraDetalle.findMany({
-    where: { compra_id: compraId },
-    select: { subtotal: true, impuesto: true, descuento: true },
-  });
-  const subtotal = detalles.reduce((a, d) => a + Number(d.subtotal) - Number(d.descuento ?? 0), 0);
-  const impuesto = detalles.reduce((a, d) => a + Number(d.impuesto ?? 0), 0);
-  await tx.compra.update({
-    where: { id: compraId },
-    data: { subtotal, impuesto, total: subtotal + impuesto },
-  });
-}
 
 type Ctx = { params: Promise<{ id: string; detId: string }> };
 
@@ -60,16 +48,21 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 
       const cantidad = parsed.data.cantidad ?? Number(current.cantidad);
       const precio = parsed.data.precio_unitario ?? Number(current.precio_unitario);
-      const desc = parsed.data.descuento !== undefined ? Number(parsed.data.descuento ?? 0) : Number(current.descuento ?? 0);
-      const imp = parsed.data.impuesto !== undefined ? Number(parsed.data.impuesto ?? 0) : Number(current.impuesto ?? 0);
-      const sub = cantidad * precio;
-      const total = sub - desc + imp;
+      const descRaw = parsed.data.descuento !== undefined ? parsed.data.descuento ?? 0 : current.descuento ?? 0;
+      const impRaw = parsed.data.impuesto !== undefined ? parsed.data.impuesto ?? 0 : current.impuesto ?? 0;
+
+      const { subtotal, descuento, impuesto, total } = calcularLinea({
+        cantidad,
+        precio_unitario: precio,
+        descuento: descRaw,
+        impuesto: impRaw,
+      });
 
       const data: Record<string, unknown> = {
-        subtotal: sub,
+        subtotal,
         total,
-        descuento: desc,
-        impuesto: imp,
+        descuento,
+        impuesto,
       };
       if (parsed.data.material_id !== undefined) data.material_id = parsed.data.material_id;
       if (parsed.data.cantidad !== undefined) data.cantidad = cantidad;

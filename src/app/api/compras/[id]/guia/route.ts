@@ -2,10 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { writeFile, mkdir, unlink } from "fs/promises";
 import path from "path";
+import { validarArchivo, sanitizarNombreArchivo } from "@/lib/file-uploads";
 
 type Params = { params: Promise<{ id: string }> };
-
-const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
 
 // POST — subir guía de remisión o factura
 // Query: ?tipo=guia (default) | factura
@@ -25,8 +24,9 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!file) {
       return NextResponse.json({ error: "No se envió ningún archivo" }, { status: 400 });
     }
-    if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json({ error: "El archivo excede 20 MB" }, { status: 400 });
+    const validacion = validarArchivo(file, "documentos");
+    if (!validacion.ok) {
+      return NextResponse.json({ error: validacion.error }, { status: 400 });
     }
 
     // Eliminar archivo anterior si existe
@@ -38,8 +38,8 @@ export async function POST(req: NextRequest, { params }: Params) {
       } catch { /* OK si no existe */ }
     }
 
-    // Generar nombre unico
-    const ext = path.extname(file.name) || "";
+    // Generar nombre único (extensión ya validada por validarArchivo).
+    const ext = path.extname(file.name).toLowerCase();
     const uniqueName = `${tipo}-compra-${compraId}-${Date.now()}${ext}`;
 
     const relDir = path.join("uploads", "compras");
@@ -52,16 +52,17 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const ruta = `/${relDir.replace(/\\/g, "/")}/${uniqueName}`;
 
+    const nombreSanitizado = sanitizarNombreArchivo(file.name);
     const dataUpdate =
       tipo === "guia"
         ? {
             guia_archivo: ruta,
-            guia_nombre: file.name,
+            guia_nombre: nombreSanitizado,
             guia_fecha_subida: new Date(),
           }
         : {
             factura_archivo: ruta,
-            factura_nombre: file.name,
+            factura_nombre: nombreSanitizado,
             factura_fecha_subida: new Date(),
           };
 

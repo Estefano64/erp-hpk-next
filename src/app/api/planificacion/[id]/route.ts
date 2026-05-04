@@ -73,7 +73,14 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       if (!current) throw Object.assign(new Error("No encontrado"), { code: "NOT_FOUND" });
 
       // ── 1) Versioning (optimistic concurrency) ──
-      if (input.version != null && input.version !== current.version) {
+      // Si el cliente no envía version, exigirla (evita "last write wins" silencioso).
+      if (input.version == null) {
+        throw Object.assign(
+          new Error("Falta el campo 'version' para edición concurrente"),
+          { code: "VERSION_REQUIRED", currentVersion: current.version },
+        );
+      }
+      if (input.version !== current.version) {
         throw Object.assign(
           new Error(`Conflicto: la tarea fue modificada por otro usuario (versión actual: ${current.version}, enviada: ${input.version})`),
           { code: "CONFLICT", currentVersion: current.version },
@@ -186,6 +193,9 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     if (err?.code === "NOT_FOUND") return NextResponse.json({ error: "No encontrado" }, { status: 404 });
     if (err?.code === "CONFLICT") {
       return NextResponse.json({ error: err.message, currentVersion: err.currentVersion }, { status: 409 });
+    }
+    if (err?.code === "VERSION_REQUIRED") {
+      return NextResponse.json({ error: err.message, currentVersion: err.currentVersion }, { status: 400 });
     }
     if (err?.code === "REALIZADO_LOCKED") return NextResponse.json({ error: err.message }, { status: 423 });
     if (err?.code === "HE_INVALID") return NextResponse.json({ error: err.message }, { status: 400 });
