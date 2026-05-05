@@ -31,7 +31,15 @@ import {
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
-import { numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE } from "@/lib/tables";
+import {
+  numeracionColumn,
+  paginacionEstandar,
+  PAGINATION_PAGE_SIZE,
+  useColumnasOcultas,
+  ColumnasToggleButton,
+  visibleColumns,
+  filtroPorColumna,
+} from "@/lib/tables";
 import dayjs from "dayjs";
 
 
@@ -95,6 +103,7 @@ export default function StockPage() {
   const [filtro, setFiltro] = useState<string>("todos");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
+  const { ocultas, setOcultas } = useColumnasOcultas("stock-list-cols-v1");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -169,6 +178,7 @@ export default function StockPage() {
   const columns: ColumnsType<StockItem> = [
     numeracionColumn<StockItem>({ current: page, pageSize }),
     {
+      key: "alerta",
       title: "Alerta",
       dataIndex: "alerta",
       width: 90,
@@ -187,6 +197,7 @@ export default function StockPage() {
       ),
     },
     {
+      key: "codigo",
       title: "Código",
       dataIndex: "codigo",
       width: 110,
@@ -197,10 +208,12 @@ export default function StockPage() {
       sorter: (a, b) => (a.codigo || "").localeCompare(b.codigo || ""),
     },
     {
+      key: "descripcion",
       title: "Descripción",
       dataIndex: "descripcion",
       width: 280,
       ellipsis: true,
+      ...filtroPorColumna(data, "descripcion"),
       render: (v: string, r: StockItem) => (
         <Popover content={popoverContent(r)} placement="right" mouseEnterDelay={0.3} trigger="hover">
           <div style={{ cursor: "help", display: "flex", alignItems: "center", gap: 4 }}>
@@ -210,8 +223,9 @@ export default function StockPage() {
         </Popover>
       ),
     },
-    { title: "N/P", dataIndex: "np", width: 110 },
+    { key: "np", title: "N/P", dataIndex: "np", width: 110, ...filtroPorColumna(data, "np") },
     {
+      key: "stock_actual",
       title: "Stock",
       dataIndex: "stock_actual",
       width: 80,
@@ -223,8 +237,9 @@ export default function StockPage() {
         </span>
       ),
     },
-    { title: "UM", dataIndex: "unidad_medida", width: 55, align: "center" },
+    { key: "unidad_medida", title: "UM", dataIndex: "unidad_medida", width: 55, align: "center", ...filtroPorColumna(data, "unidad_medida") },
     {
+      key: "cantidad_en_po",
       title: "En POs",
       dataIndex: "cantidad_en_po",
       width: 90,
@@ -240,6 +255,7 @@ export default function StockPage() {
         ),
     },
     {
+      key: "cantidad_en_req",
       title: "En REQ",
       dataIndex: "cantidad_en_req",
       width: 90,
@@ -255,6 +271,7 @@ export default function StockPage() {
         ),
     },
     {
+      key: "stock_proyectado",
       title: "Proyectado",
       dataIndex: "stock_proyectado",
       width: 100,
@@ -269,13 +286,15 @@ export default function StockPage() {
       ),
     },
     {
+      key: "punto_reposicion",
       title: "Pto. Repo",
       dataIndex: "punto_reposicion",
       width: 90,
       align: "right",
     },
-    { title: "Máximo", dataIndex: "stock_maximo", width: 80, align: "right" },
+    { key: "stock_maximo", title: "Máximo", dataIndex: "stock_maximo", width: 80, align: "right" },
     {
+      key: "por_solicitar",
       title: "Por Solicitar",
       dataIndex: "por_solicitar",
       width: 110,
@@ -289,6 +308,7 @@ export default function StockPage() {
         ),
     },
     {
+      key: "almacen",
       title: "Almacén",
       dataIndex: "almacen",
       width: 130,
@@ -297,8 +317,9 @@ export default function StockPage() {
       onFilter: (value, r) => r.almacen === value,
       render: (v: string | null) => v || <span style={{ color: "#bbb" }}>—</span>,
     },
-    { title: "Ubicación", dataIndex: "ubicacion", width: 110 },
+    { key: "ubicacion", title: "Ubicación", dataIndex: "ubicacion", width: 110, ...filtroPorColumna(data, "ubicacion") },
     {
+      key: "fabricante",
       title: "Fabricante",
       dataIndex: "fabricante",
       width: 110,
@@ -307,6 +328,7 @@ export default function StockPage() {
       onFilter: (value, r) => r.fabricante === value,
     },
     {
+      key: "precio",
       title: "Precio",
       dataIndex: "precio",
       width: 100,
@@ -314,6 +336,7 @@ export default function StockPage() {
       render: (v: number | null, r: StockItem) => (v != null ? `${r.moneda || ""} ${v.toFixed(2)}` : "-"),
     },
     {
+      key: "valor_total",
       title: "Valor Total",
       dataIndex: "valor_total",
       width: 120,
@@ -366,13 +389,21 @@ export default function StockPage() {
           <DatabaseOutlined style={{ marginRight: 8, color: brand.navy }} />
           Stock de Materiales
         </Title>
-        <Button
-          icon={<FileExcelOutlined />}
-          onClick={exportarStockExcel}
-          style={{ background: "#1d6f42", color: "#fff", borderColor: "#1d6f42" }}
-        >
-          Descargar Excel
-        </Button>
+        <Space>
+          <ColumnasToggleButton<StockItem>
+            columns={columns}
+            ocultas={ocultas}
+            setOcultas={setOcultas}
+            obligatorias={["__num", "codigo", "descripcion"]}
+          />
+          <Button
+            icon={<FileExcelOutlined />}
+            onClick={exportarStockExcel}
+            style={{ background: "#1d6f42", color: "#fff", borderColor: "#1d6f42" }}
+          >
+            Descargar Excel
+          </Button>
+        </Space>
       </div>
 
       {/* KPIs */}
@@ -456,7 +487,7 @@ export default function StockPage() {
 
       <Table
         rowKey="material_id"
-        columns={columns}
+        columns={visibleColumns(columns, ocultas)}
         dataSource={data}
         loading={loading}
         pagination={paginacionEstandar({

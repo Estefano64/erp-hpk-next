@@ -27,7 +27,15 @@ import {
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
-import { numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE } from "@/lib/tables";
+import {
+  numeracionColumn,
+  paginacionEstandar,
+  PAGINATION_PAGE_SIZE,
+  useColumnasOcultas,
+  ColumnasToggleButton,
+  visibleColumns,
+  filtroPorColumna,
+} from "@/lib/tables";
 
 const { Title } = Typography;
 
@@ -52,6 +60,7 @@ export default function ProveedoresPage() {
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const { ocultas, setOcultas } = useColumnasOcultas("proveedores-list-cols-v1");
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ProveedorRecord | null>(null);
@@ -144,18 +153,58 @@ export default function ProveedoresPage() {
   const columns: ColumnsType<ProveedorRecord> = [
     numeracionColumn<ProveedorRecord>({ current: page, pageSize }),
     {
+      key: "ruc",
       title: "RUC",
       dataIndex: "ruc",
       width: 130,
       sorter: (a, b) => a.ruc.localeCompare(b.ruc),
+      ...filtroPorColumna(data, "ruc"),
       render: (v: string) => <Tag color={brand.navy}>{v}</Tag>,
     },
-    { title: "Razón Social", dataIndex: "razon_social", ellipsis: true, sorter: (a, b) => a.razon_social.localeCompare(b.razon_social) },
-    { title: "Nombre Comercial", dataIndex: "nombre_comercial", ellipsis: true, render: (v: string | null) => v ?? "-" },
-    { title: "Contacto", dataIndex: "contacto", width: 180, ellipsis: true, render: (v: string | null) => v ?? "-" },
-    { title: "Teléfono", dataIndex: "telefono", width: 130, render: (v: string | null) => v ?? "-" },
-    { title: "Email", dataIndex: "email", width: 200, ellipsis: true, render: (v: string | null) => v ?? "-" },
     {
+      key: "razon_social",
+      title: "Razón Social",
+      dataIndex: "razon_social",
+      ellipsis: true,
+      sorter: (a, b) => a.razon_social.localeCompare(b.razon_social),
+      ...filtroPorColumna(data, "razon_social"),
+    },
+    {
+      key: "nombre_comercial",
+      title: "Nombre Comercial",
+      dataIndex: "nombre_comercial",
+      ellipsis: true,
+      ...filtroPorColumna(data, "nombre_comercial"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "contacto",
+      title: "Contacto",
+      dataIndex: "contacto",
+      width: 180,
+      ellipsis: true,
+      ...filtroPorColumna(data, "contacto"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "telefono",
+      title: "Teléfono",
+      dataIndex: "telefono",
+      width: 130,
+      ...filtroPorColumna(data, "telefono"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "email",
+      title: "Email",
+      dataIndex: "email",
+      width: 200,
+      ellipsis: true,
+      ...filtroPorColumna(data, "email"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "acciones",
       title: "Acciones",
       width: 120,
       align: "center",
@@ -190,7 +239,15 @@ export default function ProveedoresPage() {
       {contextHolder}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <Title level={3} style={{ margin: 0 }}>Proveedores</Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nuevo</Button>
+        <Space>
+          <ColumnasToggleButton<ProveedorRecord>
+            columns={columns}
+            ocultas={ocultas}
+            setOcultas={setOcultas}
+            obligatorias={["__num", "ruc", "acciones"]}
+          />
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nuevo</Button>
+        </Space>
       </div>
 
       <Card styles={{ body: { padding: 16 } }} style={{ marginBottom: 16 }}>
@@ -212,7 +269,7 @@ export default function ProveedoresPage() {
 
       <Table
         rowKey="id"
-        columns={columns}
+        columns={visibleColumns(columns, ocultas)}
         dataSource={data}
         loading={loading}
         pagination={paginacionEstandar({

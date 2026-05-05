@@ -36,6 +36,7 @@ import {
   SettingOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType, TableRowSelection } from "antd/es/table/interface";
+import { numeracionColumn } from "@/lib/tables";
 import { Popover, InputNumber, Divider, Checkbox } from "antd";
 import { brand } from "@/lib/theme";
 import dayjs, { Dayjs } from "dayjs";
@@ -419,6 +420,7 @@ export default function RequerimientosDetallePage() {
   );
 
   const columns: ColumnsType<Requerimiento> = [
+    numeracionColumn<Requerimiento>(),
     {
       key: "numero_ot",
       title: "OT",

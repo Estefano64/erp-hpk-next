@@ -33,7 +33,15 @@ import {
   MessageOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import { numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE } from "@/lib/tables";
+import {
+  numeracionColumn,
+  paginacionEstandar,
+  PAGINATION_PAGE_SIZE,
+  useColumnasOcultas,
+  ColumnasToggleButton,
+  visibleColumns,
+  filtroPorColumna,
+} from "@/lib/tables";
 import { Popover, Divider } from "antd";
 import { brand } from "@/lib/theme";
 import dayjs from "dayjs";
@@ -85,6 +93,7 @@ export default function ComprasPage() {
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
 
   const [modalId, setModalId] = useState<number | null>(null);
+  const { ocultas, setOcultas } = useColumnasOcultas("compras-list-cols-v1");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -191,6 +200,7 @@ export default function ComprasPage() {
   const columns: ColumnsType<Compra> = [
     numeracionColumn<Compra>({ current: page, pageSize }),
     {
+      key: "numero_po",
       title: "Nro OC",
       dataIndex: "numero_po",
       width: 130,
@@ -209,6 +219,7 @@ export default function ComprasPage() {
       ),
     },
     {
+      key: "estado",
       title: "Estado",
       dataIndex: "estado",
       width: 110,
@@ -223,6 +234,7 @@ export default function ComprasPage() {
       render: (v: string) => <Tag color={estadoColor[v] || "default"}>{v}</Tag>,
     },
     {
+      key: "proveedor_nombre",
       title: "Proveedor",
       dataIndex: "proveedor_nombre",
       width: 200,
@@ -233,6 +245,7 @@ export default function ComprasPage() {
       sorter: (a, b) => (a.proveedor_nombre ?? "").localeCompare(b.proveedor_nombre ?? ""),
     },
     {
+      key: "almacen_nombre",
       title: "Almacén",
       dataIndex: "almacen_nombre",
       width: 140,
@@ -242,6 +255,7 @@ export default function ComprasPage() {
       onFilter: (value, r) => r.almacen_nombre === value,
     },
     {
+      key: "fecha_solicitud",
       title: "F. Solicitud",
       dataIndex: "fecha_solicitud",
       width: 110,
@@ -249,18 +263,21 @@ export default function ComprasPage() {
       sorter: (a, b) => (a.fecha_solicitud ?? "").localeCompare(b.fecha_solicitud ?? ""),
     },
     {
+      key: "fecha_entrega_esperada",
       title: "F. Entrega Esp.",
       dataIndex: "fecha_entrega_esperada",
       width: 120,
       render: (v: string | null) => (v ? dayjs(v).format("DD/MM/YYYY") : "-"),
     },
     {
+      key: "cantidad_items",
       title: "Items",
       dataIndex: "cantidad_items",
       width: 70,
       align: "center",
     },
     {
+      key: "subtotal",
       title: "Subtotal",
       dataIndex: "subtotal",
       width: 110,
@@ -268,6 +285,7 @@ export default function ComprasPage() {
       render: (v: number) => Number(v).toFixed(2),
     },
     {
+      key: "total",
       title: "Total",
       dataIndex: "total",
       width: 120,
@@ -280,20 +298,25 @@ export default function ComprasPage() {
       sorter: (a, b) => Number(a.total) - Number(b.total),
     },
     {
+      key: "nro_guia",
       title: "Guía",
       dataIndex: "nro_guia",
       width: 110,
+      ...filtroPorColumna(data, "nro_guia"),
       render: (v: string | null) =>
         v ? <Tag color="cyan">{v}</Tag> : <span style={{ color: "#bbb" }}>—</span>,
     },
     {
+      key: "nro_factura",
       title: "Factura",
       dataIndex: "nro_factura",
       width: 130,
+      ...filtroPorColumna(data, "nro_factura"),
       render: (v: string | null) =>
         v ? <Tag color="purple">{v}</Tag> : <span style={{ color: "#bbb" }}>—</span>,
     },
     {
+      key: "observaciones",
       title: "Comentarios",
       dataIndex: "observaciones",
       width: 220,
@@ -311,11 +334,14 @@ export default function ComprasPage() {
         ),
     },
     {
+      key: "usuario_solicita",
       title: "Usuario",
       dataIndex: "usuario_solicita",
       width: 120,
+      ...filtroPorColumna(data, "usuario_solicita"),
     },
     {
+      key: "acciones",
       title: "Acciones",
       width: 130,
       align: "center",
@@ -353,6 +379,12 @@ export default function ComprasPage() {
           Órdenes de Compra
         </Title>
         <Space>
+          <ColumnasToggleButton<Compra>
+            columns={columns}
+            ocultas={ocultas}
+            setOcultas={setOcultas}
+            obligatorias={["__num", "numero_po", "acciones"]}
+          />
           <Button
             icon={<FileExcelOutlined />}
             onClick={exportarExcel}
@@ -454,7 +486,7 @@ export default function ComprasPage() {
 
       <Table
         rowKey="id"
-        columns={columns}
+        columns={visibleColumns(columns, ocultas)}
         dataSource={data}
         loading={loading}
         pagination={paginacionEstandar({

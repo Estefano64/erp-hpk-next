@@ -11,6 +11,7 @@ import {
   EyeInvisibleOutlined, SearchOutlined, ReloadOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
+import { numeracionColumn } from "@/lib/tables";
 import { brand } from "@/lib/theme";
 import { catalogosById, type FieldDef } from "@/lib/catalogos-config";
 
@@ -313,7 +314,7 @@ export default function CatalogoCrudPage() {
 
       <Table
         rowKey={cfg.pkField}
-        columns={columns}
+        columns={[numeracionColumn<CatalogRow>(), ...columns]}
         dataSource={filtered}
         loading={loading}
         size="small"

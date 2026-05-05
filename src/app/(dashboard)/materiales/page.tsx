@@ -29,7 +29,15 @@ import {
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
-import { numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE } from "@/lib/tables";
+import {
+  numeracionColumn,
+  paginacionEstandar,
+  PAGINATION_PAGE_SIZE,
+  useColumnasOcultas,
+  ColumnasToggleButton,
+  visibleColumns,
+  filtroPorColumna,
+} from "@/lib/tables";
 
 const { Title } = Typography;
 
@@ -81,6 +89,7 @@ export default function MaterialesPage() {
   const [filterCategoria, setFilterCategoria] = useState("");
   const [filterClasificacion, setFilterClasificacion] = useState("");
   const [filterFab, setFilterFab] = useState("");
+  const { ocultas, setOcultas } = useColumnasOcultas("materiales-list-cols-v1");
 
   // Opciones para selects
   const [plantas, setPlantas] = useState<Option[]>([]);
@@ -226,57 +235,88 @@ export default function MaterialesPage() {
   const columns: ColumnsType<MaterialRecord> = [
     numeracionColumn<MaterialRecord>({ current: page, pageSize }),
     {
+      key: "codigo",
       title: "Código",
       dataIndex: "codigo",
       width: 90,
       sorter: (a, b) => a.codigo.localeCompare(b.codigo),
+      ...filtroPorColumna(data, "codigo"),
       render: (v: string) => <Tag color={brand.navy}>{v}</Tag>,
     },
-    { title: "Descripción", dataIndex: "descripcion", ellipsis: true, sorter: (a: MaterialRecord, b: MaterialRecord) => a.descripcion.localeCompare(b.descripcion) },
     {
+      key: "descripcion",
+      title: "Descripción",
+      dataIndex: "descripcion",
+      ellipsis: true,
+      sorter: (a: MaterialRecord, b: MaterialRecord) => a.descripcion.localeCompare(b.descripcion),
+      ...filtroPorColumna(data, "descripcion"),
+    },
+    {
+      key: "planta_codigo",
       title: "Planta",
       dataIndex: "planta_codigo",
       width: 90,
       sorter: (a, b) => (a.planta?.nombre ?? "").localeCompare(b.planta?.nombre ?? ""),
+      ...filtroPorColumna(data, "planta_codigo"),
       render: (_: string, r: MaterialRecord) => r.planta?.nombre ?? r.planta_codigo,
     },
     {
+      key: "area_codigo",
       title: "Área",
       dataIndex: "area_codigo",
       width: 100,
       sorter: (a, b) => (a.area?.nombre ?? "").localeCompare(b.area?.nombre ?? ""),
+      ...filtroPorColumna(data, "area_codigo"),
       render: (_: string, r: MaterialRecord) => r.area?.nombre ?? r.area_codigo,
     },
     {
+      key: "categoria_codigo",
       title: "Categoría",
       dataIndex: "categoria_codigo",
       width: 100,
       sorter: (a, b) => (a.categoria?.nombre ?? "").localeCompare(b.categoria?.nombre ?? ""),
+      ...filtroPorColumna(data, "categoria_codigo"),
       render: (_: string, r: MaterialRecord) => r.categoria?.nombre ?? r.categoria_codigo,
     },
     {
+      key: "clasificacion_codigo",
       title: "Clasificación",
       dataIndex: "clasificacion_codigo",
       width: 110,
       sorter: (a, b) => (a.clasificacion?.nombre ?? "").localeCompare(b.clasificacion?.nombre ?? ""),
+      ...filtroPorColumna(data, "clasificacion_codigo"),
       render: (_: string, r: MaterialRecord) => r.clasificacion?.nombre ?? r.clasificacion_codigo,
     },
     {
+      key: "unidad_medida_codigo",
       title: "Und. Med.",
       dataIndex: "unidad_medida_codigo",
       width: 80,
+      ...filtroPorColumna(data, "unidad_medida_codigo"),
       render: (_: string, r: MaterialRecord) =>
         r.unidad_medida?.abreviatura ?? r.unidad_medida?.nombre ?? r.unidad_medida_codigo,
     },
     {
+      key: "fabricante_codigo",
       title: "Fabricante",
       dataIndex: "fabricante_codigo",
       width: 100,
       sorter: (a, b) => (a.fabricante?.nombre ?? "").localeCompare(b.fabricante?.nombre ?? ""),
+      ...filtroPorColumna(data, "fabricante_codigo"),
       render: (_: string, r: MaterialRecord) => r.fabricante?.nombre ?? r.fabricante_codigo ?? "-",
     },
-    { title: "NP", dataIndex: "np", width: 120, ellipsis: true, sorter: (a: MaterialRecord, b: MaterialRecord) => (a.np ?? "").localeCompare(b.np ?? ""), render: (v: string | null) => v ?? "-" },
     {
+      key: "np",
+      title: "NP",
+      dataIndex: "np",
+      width: 120,
+      ellipsis: true,
+      sorter: (a: MaterialRecord, b: MaterialRecord) => (a.np ?? "").localeCompare(b.np ?? ""),
+      ...filtroPorColumna(data, "np"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "precio",
       title: "Precio",
       dataIndex: "precio",
       width: 110,
@@ -289,6 +329,7 @@ export default function MaterialesPage() {
       },
     },
     {
+      key: "acciones",
       title: "Acciones",
       width: 100,
       align: "center",
@@ -325,9 +366,17 @@ export default function MaterialesPage() {
         <Title level={3} style={{ margin: 0 }}>
           Materiales
         </Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-          Nuevo
-        </Button>
+        <Space>
+          <ColumnasToggleButton<MaterialRecord>
+            columns={columns}
+            ocultas={ocultas}
+            setOcultas={setOcultas}
+            obligatorias={["__num", "codigo", "acciones"]}
+          />
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+            Nuevo
+          </Button>
+        </Space>
       </div>
 
       <Card styles={{ body: { padding: 16 } }} style={{ marginBottom: 16 }}>
@@ -412,7 +461,7 @@ export default function MaterialesPage() {
 
       <Table
         rowKey="material_id"
-        columns={columns}
+        columns={visibleColumns(columns, ocultas)}
         dataSource={data}
         loading={loading}
         pagination={paginacionEstandar({

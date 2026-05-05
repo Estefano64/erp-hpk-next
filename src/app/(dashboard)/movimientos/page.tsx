@@ -47,6 +47,7 @@ import {
   PaperClipOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
+import { numeracionColumn } from "@/lib/tables";
 import { brand } from "@/lib/theme";
 import dayjs, { Dayjs } from "dayjs";
 
@@ -217,6 +218,7 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
   };
 
   const columns: ColumnsType<Movimiento> = [
+    numeracionColumn<Movimiento>(),
     {
       title: "Fecha",
       dataIndex: "fecha_movimiento",

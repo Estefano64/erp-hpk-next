@@ -6,6 +6,7 @@ import {
 } from "antd";
 import { SearchOutlined, ReloadOutlined, CalendarOutlined, InfoCircleOutlined, SaveOutlined, UndoOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
+import { numeracionColumn } from "@/lib/tables";
 import dayjs, { Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
 import { brand } from "@/lib/theme";
@@ -378,6 +379,7 @@ export default function PlanificacionPage() {
   );
 
   const columns: ColumnsType<PlanRow> = [
+    numeracionColumn<PlanRow>(),
     {
       title: "OT", key: "ot", width: 100, fixed: "left",
       render: (_, r) => r.orden_trabajo?.ot

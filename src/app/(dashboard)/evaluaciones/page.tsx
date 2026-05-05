@@ -33,7 +33,15 @@ import {
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
-import { numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE } from "@/lib/tables";
+import {
+  numeracionColumn,
+  paginacionEstandar,
+  PAGINATION_PAGE_SIZE,
+  useColumnasOcultas,
+  ColumnasToggleButton,
+  visibleColumns,
+  filtroPorColumna,
+} from "@/lib/tables";
 import dayjs from "dayjs";
 
 const { Title, Text } = Typography;
@@ -100,6 +108,7 @@ export default function EvaluacionesPage() {
   const [filtroEstado, setFiltroEstado] = useState<string | undefined>();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
+  const { ocultas, setOcultas } = useColumnasOcultas("evaluaciones-list-cols-v1");
 
   // Modal aprobar/rechazar
   const [modalAccion, setModalAccion] = useState<{ evalItem: Evaluacion; accion: "aprobar" | "rechazar" | "solicitar" } | null>(null);
@@ -190,12 +199,14 @@ export default function EvaluacionesPage() {
   const columns: ColumnsType<Evaluacion> = [
     numeracionColumn<Evaluacion>({ current: page, pageSize }),
     {
+      key: "ot",
       title: "OT",
       width: 130,
       fixed: "left",
       render: (_, r) => (r.orden_trabajo?.ot ? <Tag color={brand.navy}>{r.orden_trabajo.ot}</Tag> : "-"),
     },
     {
+      key: "estado",
       title: "Estado",
       dataIndex: "estado",
       width: 180,
@@ -214,6 +225,7 @@ export default function EvaluacionesPage() {
       ),
     },
     {
+      key: "modelo_evaluacion",
       title: "Tipo Cilindro",
       dataIndex: "modelo_evaluacion",
       width: 220,
@@ -223,6 +235,7 @@ export default function EvaluacionesPage() {
       ellipsis: true,
     },
     {
+      key: "evaluado_por",
       title: "Evaluado por",
       dataIndex: "evaluado_por",
       width: 140,
@@ -232,6 +245,7 @@ export default function EvaluacionesPage() {
       render: (v: string | null) => v || "-",
     },
     {
+      key: "fecha_evaluacion",
       title: "F. Evaluación",
       dataIndex: "fecha_evaluacion",
       width: 120,
@@ -239,12 +253,15 @@ export default function EvaluacionesPage() {
       render: (v: string | null) => (v ? dayjs(v).format("DD/MM/YYYY") : "-"),
     },
     {
+      key: "solicitado_revision_por",
       title: "Solicitada por",
       dataIndex: "solicitado_revision_por",
       width: 130,
+      ...filtroPorColumna(data, "solicitado_revision_por"),
       render: (v: string | null) => v || "-",
     },
     {
+      key: "revisado_por",
       title: "Revisada por",
       dataIndex: "revisado_por",
       width: 130,
@@ -254,6 +271,7 @@ export default function EvaluacionesPage() {
       render: (v: string | null) => v || "-",
     },
     {
+      key: "fecha_revision",
       title: "F. Revisión",
       dataIndex: "fecha_revision",
       width: 120,
@@ -261,6 +279,7 @@ export default function EvaluacionesPage() {
       render: (v: string | null) => (v ? dayjs(v).format("DD/MM/YYYY") : "-"),
     },
     {
+      key: "informe_nombre",
       title: "Informe",
       dataIndex: "informe_nombre",
       width: 100,
@@ -268,6 +287,7 @@ export default function EvaluacionesPage() {
       render: (v: string | null) => (v ? <Tag color="green">Sí</Tag> : <Tag>No</Tag>),
     },
     {
+      key: "acciones",
       title: "Acciones",
       width: 200,
       align: "center",
@@ -331,6 +351,14 @@ export default function EvaluacionesPage() {
           <ExperimentOutlined style={{ color: brand.cyan, marginRight: 8 }} />
           Hojas de Evaluación
         </Title>
+        <Space>
+          <ColumnasToggleButton<Evaluacion>
+            columns={columns}
+            ocultas={ocultas}
+            setOcultas={setOcultas}
+            obligatorias={["__num", "ot", "acciones"]}
+          />
+        </Space>
       </div>
 
       {/* KPIs */}
@@ -441,7 +469,7 @@ export default function EvaluacionesPage() {
 
       <Table
         rowKey="id"
-        columns={columns}
+        columns={visibleColumns(columns, ocultas)}
         dataSource={filtered}
         loading={loading}
         pagination={paginacionEstandar({

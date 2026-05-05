@@ -27,7 +27,15 @@ import {
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
-import { numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE } from "@/lib/tables";
+import {
+  numeracionColumn,
+  paginacionEstandar,
+  PAGINATION_PAGE_SIZE,
+  useColumnasOcultas,
+  ColumnasToggleButton,
+  visibleColumns,
+  filtroPorColumna,
+} from "@/lib/tables";
 
 const { Title } = Typography;
 
@@ -52,6 +60,7 @@ export default function ClientesPage() {
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const { ocultas, setOcultas } = useColumnasOcultas("clientes-list-cols-v1");
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ClienteRecord | null>(null);
@@ -141,18 +150,59 @@ export default function ClientesPage() {
   const columns: ColumnsType<ClienteRecord> = [
     numeracionColumn<ClienteRecord>({ current: page, pageSize }),
     {
+      key: "codigo",
       title: "Código",
       dataIndex: "codigo",
       width: 110,
       sorter: (a, b) => a.codigo.localeCompare(b.codigo),
+      ...filtroPorColumna(data, "codigo"),
       render: (v: string) => <Tag color={brand.navy}>{v}</Tag>,
     },
-    { title: "Razón Social", dataIndex: "razon_social", ellipsis: true, sorter: (a: ClienteRecord, b: ClienteRecord) => a.razon_social.localeCompare(b.razon_social) },
-    { title: "Nombre Comercial", dataIndex: "nombre_comercial", ellipsis: true, sorter: (a: ClienteRecord, b: ClienteRecord) => (a.nombre_comercial ?? "").localeCompare(b.nombre_comercial ?? ""), render: (v: string | null) => v ?? "-" },
-    { title: "RUC", dataIndex: "ruc", width: 130, sorter: (a: ClienteRecord, b: ClienteRecord) => (a.ruc ?? "").localeCompare(b.ruc ?? ""), render: (v: string | null) => v ?? "-" },
-    { title: "Contacto", dataIndex: "contacto_principal", width: 180, ellipsis: true, render: (v: string | null) => v ?? "-" },
-    { title: "Teléfono", dataIndex: "telefono", width: 130, render: (v: string | null) => v ?? "-" },
     {
+      key: "razon_social",
+      title: "Razón Social",
+      dataIndex: "razon_social",
+      ellipsis: true,
+      sorter: (a: ClienteRecord, b: ClienteRecord) => a.razon_social.localeCompare(b.razon_social),
+      ...filtroPorColumna(data, "razon_social"),
+    },
+    {
+      key: "nombre_comercial",
+      title: "Nombre Comercial",
+      dataIndex: "nombre_comercial",
+      ellipsis: true,
+      sorter: (a: ClienteRecord, b: ClienteRecord) => (a.nombre_comercial ?? "").localeCompare(b.nombre_comercial ?? ""),
+      ...filtroPorColumna(data, "nombre_comercial"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "ruc",
+      title: "RUC",
+      dataIndex: "ruc",
+      width: 130,
+      sorter: (a: ClienteRecord, b: ClienteRecord) => (a.ruc ?? "").localeCompare(b.ruc ?? ""),
+      ...filtroPorColumna(data, "ruc"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "contacto_principal",
+      title: "Contacto",
+      dataIndex: "contacto_principal",
+      width: 180,
+      ellipsis: true,
+      ...filtroPorColumna(data, "contacto_principal"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "telefono",
+      title: "Teléfono",
+      dataIndex: "telefono",
+      width: 130,
+      ...filtroPorColumna(data, "telefono"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "acciones",
       title: "Acciones",
       width: 100,
       align: "center",
@@ -187,7 +237,15 @@ export default function ClientesPage() {
       {contextHolder}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <Title level={3} style={{ margin: 0 }}>Clientes</Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nuevo</Button>
+        <Space>
+          <ColumnasToggleButton<ClienteRecord>
+            columns={columns}
+            ocultas={ocultas}
+            setOcultas={setOcultas}
+            obligatorias={["__num", "codigo", "acciones"]}
+          />
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nuevo</Button>
+        </Space>
       </div>
 
       <Card styles={{ body: { padding: 16 } }} style={{ marginBottom: 16 }}>
@@ -209,7 +267,7 @@ export default function ClientesPage() {
 
       <Table
         rowKey="cliente_id"
-        columns={columns}
+        columns={visibleColumns(columns, ocultas)}
         dataSource={data}
         loading={loading}
         pagination={paginacionEstandar({
