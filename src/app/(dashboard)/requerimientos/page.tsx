@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Typography, Card, Table, Tag, Space, Button, Input, Select, DatePicker, Row, Col,
-  Modal, Form, message, Tooltip, Popconfirm, Empty, Alert, InputNumber,
+  Modal, Form, message, Tooltip, Popconfirm, Empty, Alert, InputNumber, Segmented,
 } from "antd";
 import {
   SearchOutlined, ReloadOutlined, CheckOutlined, CloseOutlined, StopOutlined,
@@ -14,6 +14,14 @@ import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { brand } from "@/lib/theme";
 import { useCachedFetch } from "@/lib/useCachedFetch";
+import {
+  numeracionColumn,
+  paginacionEstandar,
+  PAGINATION_PAGE_SIZE,
+  useColumnasOcultas,
+  ColumnasToggleButton,
+  visibleColumns,
+} from "@/lib/tables";
 
 const { Title, Text } = Typography;
 
@@ -67,7 +75,8 @@ export default function RequerimientosPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
-  const limit = 100;
+  const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
+  const { ocultas, setOcultas } = useColumnasOcultas("requerimientos-list-cols-v1");
 
   // Filtros
   const [search, setSearch] = useState("");
@@ -141,7 +150,7 @@ export default function RequerimientosPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+      const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
       if (search) params.set("search", search);
       if (filterOt) params.set("ot", filterOt);
       if (filterStatusReq) params.set("status_req", filterStatusReq);
@@ -162,7 +171,7 @@ export default function RequerimientosPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, filterOt, filterStatusReq, filterStatusCot, filterStatusOc, filterTipo, filterProveedor, filterFechas, soloAprobadosSinOC]);
+  }, [page, pageSize, search, filterOt, filterStatusReq, filterStatusCot, filterStatusOc, filterTipo, filterProveedor, filterFechas, soloAprobadosSinOC]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -464,6 +473,7 @@ export default function RequerimientosPage() {
 
   // Columnas del nivel "grupo" (header de cada nro_req)
   const groupColumns: ColumnsType<GrupoReq> = [
+    numeracionColumn<GrupoReq>({ current: page, pageSize }),
     {
       title: "OT", key: "ot", width: 110, fixed: "left",
       render: (_, g) => g.orden_trabajo?.ot ? (
@@ -737,8 +747,34 @@ export default function RequerimientosPage() {
           <Tag color="success">Aprobados: {stats.aprob}</Tag>
           <Tag color="processing">Con OC: {stats.conOC}</Tag>
           {stats.anul > 0 && <Tag>Anulados: {stats.anul}</Tag>}
+          <ColumnasToggleButton<GrupoReq>
+            columns={groupColumns}
+            ocultas={ocultas}
+            setOcultas={setOcultas}
+            obligatorias={["__num", "ot", "actions_grupo"]}
+          />
         </Space>
       </div>
+
+      {/* Selector de vista por estado del requerimiento */}
+      <Card size="small" style={{ marginBottom: 12 }} styles={{ body: { padding: 12 } }}>
+        <Segmented
+          block
+          value={filterStatusReq ?? "__all"}
+          onChange={(v) => {
+            setFilterStatusReq(v === "__all" ? undefined : (v as string));
+            setPage(1);
+          }}
+          options={[
+            { value: "__all", label: "Todos" },
+            { value: "BORRADOR", label: "Borrador" },
+            { value: "SIN_APROBACION", label: "Sin aprobación" },
+            { value: "APROBADO", label: "Aprobados" },
+            { value: "DESAPROBADO", label: "Desaprobados" },
+            { value: "ANULADO", label: "Anulados" },
+          ]}
+        />
+      </Card>
 
       {/* Filtros */}
       <Card size="small" style={{ marginBottom: 12 }} styles={{ body: { padding: 12 } }}>
@@ -894,11 +930,17 @@ export default function RequerimientosPage() {
       ) : (
         <Table<GrupoReq>
           rowKey="key"
-          columns={groupColumns}
+          columns={visibleColumns(groupColumns, ocultas)}
           dataSource={grupos}
           loading={loading}
           size="small"
-          pagination={{ current: page, pageSize: limit, total, onChange: setPage, showTotal: (t) => `${t} items en ${grupos.length} requerimiento(s)` }}
+          pagination={paginacionEstandar({
+            current: page,
+            pageSize,
+            total,
+            onChange: (p, s) => { setPage(p); setPageSize(s); },
+            label: `items (${grupos.length} requerimiento(s))`,
+          })}
           scroll={{ x: 1500 }}
           expandable={{
             defaultExpandAllRows: false,
