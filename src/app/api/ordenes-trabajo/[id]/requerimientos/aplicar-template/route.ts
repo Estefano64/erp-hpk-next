@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
-import { nextNroReq, nextItemReq } from "@/lib/requerimientos";
+import { nextNroReq } from "@/lib/requerimientos";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -72,11 +72,11 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         }
       }
 
-      // Copiar template
+      // Un solo nro_req para todo el template, item_req incremental dentro
+      const nroReq = await nextNroReq(tx);
       let creados = 0;
-      for (const t of tareas) {
-        const nroReq = await nextNroReq(tx);
-        const itemReq = await nextItemReq(tx, otId);
+      for (let i = 0; i < tareas.length; i++) {
+        const t = tareas[i];
         await tx.oTRepuesto.create({
           data: {
             ot_id: otId,
@@ -92,7 +92,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
             moneda: "USD",
             es_adicional: false,
             nro_req: nroReq,
-            item_req: itemReq,
+            item_req: i + 1,
             status_requerimiento_codigo: "BORRADOR",
             usuario_solicita: usuario,
           },

@@ -8,7 +8,7 @@ import {
 } from "antd";
 import {
   SearchOutlined, ReloadOutlined, CheckOutlined, CloseOutlined, StopOutlined,
-  EditOutlined, FileAddOutlined, InboxOutlined,
+  EditOutlined, FileAddOutlined, InboxOutlined, SendOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
@@ -32,6 +32,7 @@ interface RequerimientoRow {
   proveedor_id: number | null;
   fecha_solicitud: string;
   fecha_requerida: string | null;
+  fecha_entrega_esperada: string | null;
   status_requerimiento_codigo: string | null;
   status_cotizacion_codigo: string | null;
   status_oc_codigo: string | null;
@@ -92,6 +93,7 @@ export default function RequerimientosPage() {
   // OC modal
   const [ocOpen, setOcOpen] = useState(false);
   const [ocSaving, setOcSaving] = useState(false);
+  const [itemsParaOC, setItemsParaOC] = useState<RequerimientoRow[]>([]);
   const [ocForm] = Form.useForm<{
     proveedor_id: number;
     ubicacion_codigo?: string;
@@ -174,36 +176,59 @@ export default function RequerimientosPage() {
   const selectedRows = useMemo(() => rows.filter((r) => selectedKeys.includes(r.id)), [rows, selectedKeys]);
   const elegiblesAprobar = selectedRows.filter((r) => r.status_requerimiento_codigo === "SIN_APROBACION");
   const elegiblesOC = selectedRows.filter((r) => r.status_requerimiento_codigo === "APROBADO" && r.po_id == null);
-  const proveedoresEnSeleccion = new Set(elegiblesOC.map((r) => r.proveedor_id ?? null));
 
-  // ── Aprobar bulk ──
-  async function aprobarBulk() {
+  // ── Helpers que iteran un endpoint POST por cada item ──
+  async function bulkPost(items: RequerimientoRow[], path: (id: number) => string, label: string) {
     let ok = 0, errs = 0;
-    for (const r of elegiblesAprobar) {
-      const res = await fetch(`/api/requerimientos/${r.id}/aprobar`, { method: "POST" });
+    for (const r of items) {
+      const res = await fetch(path(r.id), { method: "POST" });
       if (res.ok) ok++; else errs++;
     }
-    if (ok > 0) messageApi.success(`Aprobados ${ok} requerimiento(s).`);
+    if (ok > 0) messageApi.success(`${label}: ${ok} item(s).`);
     if (errs > 0) messageApi.warning(`${errs} con error.`);
-    setSelectedKeys([]);
-    fetchData();
+    return { ok, errs };
   }
+  async function aprobarItems(items: RequerimientoRow[]) {
+    await bulkPost(items, (id) => `/api/requerimientos/${id}/aprobar`, "Aprobados");
+    setSelectedKeys([]); fetchData();
+  }
+  async function enviarItems(items: RequerimientoRow[]) {
+    await bulkPost(items, (id) => `/api/requerimientos/${id}/enviar-a-aprobacion`, "Enviados a aprobación");
+    setSelectedKeys([]); fetchData();
+  }
+  async function anularItems(items: RequerimientoRow[]) {
+    let ok = 0, errs = 0;
+    for (const r of items) {
+      const res = await fetch(`/api/requerimientos/${r.id}/anular`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (res.ok) ok++; else errs++;
+    }
+    if (ok > 0) messageApi.success(`Anulados ${ok} item(s).`);
+    if (errs > 0) messageApi.warning(`${errs} con error.`);
+    setSelectedKeys([]); fetchData();
+  }
+  // Wrapper para mantener el botón global compatible con la firma anterior.
+  async function aprobarBulk() { await aprobarItems(elegiblesAprobar); }
 
   // ── Generar OC ──
-  function abrirOcModal() {
-    if (elegiblesOC.length === 0) {
-      messageApi.warning("Seleccioná al menos un requerimiento APROBADO sin OC.");
+  function abrirOcModal(itemsExplicit?: RequerimientoRow[]) {
+    const items = itemsExplicit ?? elegiblesOC;
+    if (items.length === 0) {
+      messageApi.warning("No hay items APROBADOS sin OC.");
       return;
     }
-    if (proveedoresEnSeleccion.size > 1) {
+    const proveedoresEn = new Set(items.map((r) => r.proveedor_id ?? null));
+    if (proveedoresEn.size > 1) {
       modalApi.warning({
         title: "Proveedores múltiples",
         content: "Los items seleccionados tienen proveedores distintos. Una OC se crea con un solo proveedor — vas a tener que elegir uno y los items del otro proveedor irán al mismo OC con ese proveedor.",
       });
     }
-    // Pre-seleccionar el proveedor más común si hay
-    const provId = elegiblesOC.find((r) => r.proveedor_id)?.proveedor_id;
-    const moneda = elegiblesOC.find((r) => r.moneda)?.moneda ?? "USD";
+    const provId = items.find((r) => r.proveedor_id)?.proveedor_id;
+    const moneda = items.find((r) => r.moneda)?.moneda ?? "USD";
+    setItemsParaOC(items);
     ocForm.resetFields();
     ocForm.setFieldsValue({ proveedor_id: provId ?? undefined, moneda });
     setOcOpen(true);
@@ -215,7 +240,7 @@ export default function RequerimientosPage() {
     setOcSaving(true);
     try {
       const payload = {
-        repuesto_ids: elegiblesOC.map((r) => r.id),
+        repuesto_ids: itemsParaOC.map((r) => r.id),
         proveedor_id: values.proveedor_id,
         ubicacion_codigo: values.ubicacion_codigo ?? null,
         moneda: values.moneda,
@@ -341,34 +366,248 @@ export default function RequerimientosPage() {
     return { aprob, sinAprob, conOC, anul };
   }, [rows]);
 
-  const columns: ColumnsType<RequerimientoRow> = [
+  // ── Agrupación por nro_req ──
+  // Cada grupo es un "Requerimiento" (header) con N items adentro.
+  interface GrupoReq {
+    key: string;
+    nro_req: string | null;
+    ot_id: number;
+    orden_trabajo: RequerimientoRow["orden_trabajo"];
+    fecha_solicitud: string | null;
+    fecha_requerida: string | null;
+    fecha_entrega_esperada: string | null;
+    total_items: number;
+    cantidad_total: number;
+    items: RequerimientoRow[];
+    // Agregados de status (códigos únicos presentes)
+    estados_req: string[];
+    estados_cot: string[];
+    estados_oc: string[];
+    numero_po: string | null; // si todos los items comparten la misma OC
+    proveedor_nombre: string | null; // si todos comparten proveedor
+  }
+
+  function earliest(a: string | null, b: string | null): string | null {
+    if (!a) return b;
+    if (!b) return a;
+    return new Date(a) < new Date(b) ? a : b;
+  }
+
+  const grupos = useMemo<GrupoReq[]>(() => {
+    const map = new Map<string, RequerimientoRow[]>();
+    for (const r of rows) {
+      const key = r.nro_req ?? `__sin_req_${r.id}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(r);
+    }
+    return Array.from(map.entries()).map(([key, items]) => {
+      items.sort((a, b) => (a.item_req ?? 0) - (b.item_req ?? 0));
+      const first = items[0];
+      const setUniq = (vals: (string | undefined | null)[]) =>
+        Array.from(new Set(vals.filter((v): v is string => !!v)));
+      const cantidad_total = items.reduce((s, i) => s + Number(i.cantidad), 0);
+      const numerosPo = setUniq(items.map((i) => i.compra?.numero_po ?? null));
+      const proveedores = setUniq(items.map((i) => i.proveedor?.razon_social ?? null));
+      let fSol: string | null = null;
+      let fReq: string | null = null;
+      let fEnt: string | null = null;
+      for (const i of items) {
+        fSol = earliest(fSol, i.fecha_solicitud);
+        fReq = earliest(fReq, i.fecha_requerida);
+        fEnt = earliest(fEnt, i.fecha_entrega_esperada);
+      }
+      return {
+        key,
+        nro_req: key.startsWith("__sin_req_") ? null : key,
+        ot_id: first.ot_id,
+        orden_trabajo: first.orden_trabajo,
+        fecha_solicitud: fSol,
+        fecha_requerida: fReq,
+        fecha_entrega_esperada: fEnt,
+        total_items: items.length,
+        cantidad_total,
+        items,
+        estados_req: setUniq(items.map((i) => i.status_requerimiento?.codigo)),
+        estados_cot: setUniq(items.map((i) => i.status_cotizacion?.codigo)),
+        estados_oc: setUniq(items.map((i) => i.status_oc?.codigo)),
+        numero_po: numerosPo.length === 1 ? numerosPo[0] : null,
+        proveedor_nombre: proveedores.length === 1 ? proveedores[0] : null,
+      };
+    });
+  }, [rows]);
+
+  // Helper: render un grupo de status como Tag(s). Si todos coinciden, un tag; si hay mezcla, "Mixto".
+  function renderStatusResumen(
+    codes: string[],
+    palette: Record<string, string>,
+    label: (c: string) => string,
+  ) {
+    if (codes.length === 0) return <Text type="secondary" style={{ fontSize: 10 }}>—</Text>;
+    if (codes.length === 1) {
+      const c = codes[0];
+      return <Tag color={palette[c] ?? "default"} style={{ margin: 0, fontSize: 10 }}>{label(c)}</Tag>;
+    }
+    return (
+      <Tooltip title={codes.map(label).join(" / ")}>
+        <Tag color="warning" style={{ margin: 0, fontSize: 10 }}>Mixto ({codes.length})</Tag>
+      </Tooltip>
+    );
+  }
+
+  // Diccionarios de label desde catálogo cacheado (fallback al código si no está)
+  const reqLabel = (c: string) =>
+    (srRes?.data ?? []).find((s) => s.codigo === c)?.nombre ?? c;
+  const cotLabel = (c: string) =>
+    (scRes?.data ?? []).find((s) => s.codigo === c)?.nombre ?? c;
+  const ocLabel = (c: string) =>
+    (soRes?.data ?? []).find((s) => s.codigo === c)?.nombre ?? c;
+
+  // Columnas del nivel "grupo" (header de cada nro_req)
+  const groupColumns: ColumnsType<GrupoReq> = [
     {
       title: "OT", key: "ot", width: 110, fixed: "left",
-      render: (_, r) => r.orden_trabajo?.ot ? (
-        <a onClick={() => router.push(`/ordenes-trabajo/${r.ot_id}`)} style={{ fontSize: 11 }}>
-          <Tag color={brand.navy} style={{ margin: 0 }}>{r.orden_trabajo.ot}</Tag>
+      render: (_, g) => g.orden_trabajo?.ot ? (
+        <a onClick={() => router.push(`/ordenes-trabajo/${g.ot_id}`)} style={{ fontSize: 11 }}>
+          <Tag color={brand.navy} style={{ margin: 0 }}>{g.orden_trabajo.ot}</Tag>
         </a>
-      ) : <Tag>#{r.ot_id}</Tag>,
+      ) : <Tag>#{g.ot_id}</Tag>,
     },
     {
-      title: "Nro Req / Item", key: "nro", width: 120,
-      render: (_, r) => (
-        <Space size={4} direction="vertical" style={{ lineHeight: 1.1 }}>
-          <Text strong style={{ fontSize: 11 }}>{r.nro_req ?? "—"}</Text>
-          <Text type="secondary" style={{ fontSize: 10 }}>Item {r.item_req}</Text>
-          {r.es_adicional && <Tag color="gold" style={{ fontSize: 9, margin: 0 }}>ADIC</Tag>}
+      title: "Nro Req", key: "nro", width: 160,
+      render: (_, g) => (
+        <Space size={4} direction="vertical" style={{ lineHeight: 1.2 }}>
+          <Text strong style={{ fontSize: 12 }}>{g.nro_req ?? "(sin nro)"}</Text>
+          <Text type="secondary" style={{ fontSize: 11 }}>{g.total_items} item(s)</Text>
         </Space>
       ),
     },
     {
-      title: "Cliente / Cod. Rep.", key: "cliente", width: 180, ellipsis: true,
-      render: (_, r) => (
+      title: "Cliente / Cod. Rep.", key: "cliente", width: 200, ellipsis: true,
+      render: (_, g) => (
         <div style={{ lineHeight: 1.2 }}>
-          <div style={{ fontSize: 11 }}>{r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "—"}</div>
-          {r.orden_trabajo?.codigo_reparacion?.codigo && (
-            <Text type="secondary" style={{ fontSize: 10 }}>{r.orden_trabajo.codigo_reparacion.codigo}</Text>
+          <div style={{ fontSize: 12 }}>{g.orden_trabajo?.cliente?.nombre_comercial ?? g.orden_trabajo?.cliente?.razon_social ?? "—"}</div>
+          {g.orden_trabajo?.codigo_reparacion?.codigo && (
+            <Text type="secondary" style={{ fontSize: 10 }}>{g.orden_trabajo.codigo_reparacion.codigo}</Text>
           )}
         </div>
+      ),
+    },
+    {
+      title: "Proveedor", key: "prov", width: 140, ellipsis: true,
+      render: (_, g) => g.proveedor_nombre ?? <Text type="secondary">—</Text>,
+    },
+    {
+      title: "REQ", key: "req", width: 110, align: "center",
+      render: (_, g) => renderStatusResumen(g.estados_req, REQ_COLOR, reqLabel),
+    },
+    {
+      title: "COT", key: "cot", width: 110, align: "center",
+      render: (_, g) => renderStatusResumen(g.estados_cot, COT_COLOR, cotLabel),
+    },
+    {
+      title: "OC", key: "oc", width: 140, align: "center",
+      render: (_, g) => (
+        <Space direction="vertical" size={2} style={{ lineHeight: 1 }}>
+          {renderStatusResumen(g.estados_oc, OC_COLOR, ocLabel)}
+          {g.numero_po && (
+            <a onClick={() => router.push(`/compras`)} style={{ fontSize: 10 }} title="Ver compras">
+              <Text code style={{ fontSize: 10 }}>{g.numero_po}</Text>
+            </a>
+          )}
+        </Space>
+      ),
+    },
+    {
+      title: "F. Solicitud", key: "fsol", width: 100,
+      render: (_, g) => g.fecha_solicitud
+        ? <Text style={{ fontSize: 11 }}>{dayjs(g.fecha_solicitud).format("DD/MM/YY")}</Text>
+        : <Text type="secondary">—</Text>,
+    },
+    {
+      title: "F. Requerida", key: "freq", width: 100,
+      render: (_, g) => g.fecha_requerida
+        ? <Text style={{ fontSize: 11 }}>{dayjs(g.fecha_requerida).format("DD/MM/YY")}</Text>
+        : <Text type="secondary">—</Text>,
+    },
+    {
+      title: "F. Entrega", key: "fent", width: 100,
+      render: (_, g) => g.fecha_entrega_esperada
+        ? <Text style={{ fontSize: 11 }}>{dayjs(g.fecha_entrega_esperada).format("DD/MM/YY")}</Text>
+        : <Text type="secondary">—</Text>,
+    },
+    {
+      title: "Acciones grupo", key: "actions_grupo", width: 200, fixed: "right",
+      render: (_, g) => {
+        const borrador = g.items.filter((i) => i.status_requerimiento_codigo === "BORRADOR");
+        const sinAprob = g.items.filter((i) => i.status_requerimiento_codigo === "SIN_APROBACION");
+        const aprobSinOC = g.items.filter(
+          (i) => i.status_requerimiento_codigo === "APROBADO" && i.po_id == null,
+        );
+        const anulables = g.items.filter(
+          (i) => i.status_requerimiento_codigo !== "ANULADO" &&
+                 i.status_requerimiento_codigo !== "DESAPROBADO" &&
+                 i.po_id == null,
+        );
+        return (
+          <Space size={2} wrap>
+            {borrador.length > 0 && (
+              <Tooltip title={`Enviar ${borrador.length} item(s) a aprobación`}>
+                <Popconfirm
+                  title={`Enviar ${borrador.length} item(s) a aprobación?`}
+                  onConfirm={() => enviarItems(borrador)}
+                  okText="Enviar" cancelText="Cancelar"
+                >
+                  <Button size="small" icon={<SendOutlined />}>{borrador.length}</Button>
+                </Popconfirm>
+              </Tooltip>
+            )}
+            {isAdmin && sinAprob.length > 0 && (
+              <Tooltip title={`Aprobar ${sinAprob.length} item(s) del grupo`}>
+                <Popconfirm
+                  title={`Aprobar ${sinAprob.length} item(s)?`}
+                  onConfirm={() => aprobarItems(sinAprob)}
+                  okText="Aprobar" cancelText="Cancelar"
+                >
+                  <Button size="small" type="primary" icon={<CheckOutlined />}>{sinAprob.length}</Button>
+                </Popconfirm>
+              </Tooltip>
+            )}
+            {aprobSinOC.length > 0 && (
+              <Tooltip title={`Generar OC con ${aprobSinOC.length} item(s) del grupo`}>
+                <Button
+                  size="small" type="primary" icon={<FileAddOutlined />}
+                  onClick={() => abrirOcModal(aprobSinOC)}
+                >
+                  OC ({aprobSinOC.length})
+                </Button>
+              </Tooltip>
+            )}
+            {isAdmin && anulables.length > 0 && (
+              <Tooltip title={`Anular ${anulables.length} item(s) del grupo`}>
+                <Popconfirm
+                  title={`Anular ${anulables.length} item(s) del requerimiento ${g.nro_req}?`}
+                  onConfirm={() => anularItems(anulables)}
+                  okText="Anular" cancelText="Cancelar" okButtonProps={{ danger: true }}
+                >
+                  <Button size="small" danger icon={<StopOutlined />} />
+                </Popconfirm>
+              </Tooltip>
+            )}
+          </Space>
+        );
+      },
+    },
+  ];
+
+  // Columnas del nivel "item" (filas dentro de un grupo expandido)
+  const itemColumns: ColumnsType<RequerimientoRow> = [
+    {
+      title: "Item", key: "item", width: 60, align: "center",
+      render: (_, r) => (
+        <Space size={2} direction="vertical" style={{ lineHeight: 1.1 }}>
+          <Text strong style={{ fontSize: 11 }}>#{r.item_req}</Text>
+          {r.es_adicional && <Tag color="gold" style={{ fontSize: 9, margin: 0 }}>ADIC</Tag>}
+        </Space>
       ),
     },
     {
@@ -387,7 +626,7 @@ export default function RequerimientosPage() {
       ),
     },
     {
-      title: "Qty", key: "qty", width: 80, align: "right",
+      title: "Qty", key: "qty", width: 90, align: "right",
       render: (_, r) => `${Number(r.cantidad).toLocaleString()} ${r.unidad_medida ?? ""}`,
     },
     {
@@ -401,7 +640,7 @@ export default function RequerimientosPage() {
       render: (_, r) => r.proveedor?.razon_social ?? <Text type="secondary">—</Text>,
     },
     {
-      title: "REQ", key: "req", width: 100, align: "center",
+      title: "REQ", key: "req", width: 110, align: "center",
       render: (_, r) => r.status_requerimiento ? (
         <Tag color={REQ_COLOR[r.status_requerimiento.codigo] ?? "default"} style={{ margin: 0, fontSize: 10 }}>
           {r.status_requerimiento.nombre}
@@ -409,12 +648,12 @@ export default function RequerimientosPage() {
       ) : "—",
     },
     {
-      title: "COT", key: "cot", width: 100, align: "center",
+      title: "COT", key: "cot", width: 110, align: "center",
       render: (_, r) => r.status_cotizacion ? (
         <Tag color={COT_COLOR[r.status_cotizacion.codigo] ?? "default"} style={{ margin: 0, fontSize: 10 }}>
           {r.status_cotizacion.nombre}
         </Tag>
-      ) : "—",
+      ) : <Text type="secondary">—</Text>,
     },
     {
       title: "OC", key: "oc", width: 130, align: "center",
@@ -424,7 +663,7 @@ export default function RequerimientosPage() {
             <Tag color={OC_COLOR[r.status_oc.codigo] ?? "default"} style={{ margin: 0, fontSize: 10 }}>
               {r.status_oc.nombre}
             </Tag>
-          ) : "—"}
+          ) : <Text type="secondary">—</Text>}
           {r.compra?.numero_po && (
             <a onClick={() => router.push(`/compras`)} style={{ fontSize: 10 }} title="Ver compras">
               <Text code style={{ fontSize: 10 }}>{r.compra.numero_po}</Text>
@@ -434,15 +673,22 @@ export default function RequerimientosPage() {
       ),
     },
     {
-      title: "Solicitud", dataIndex: "fecha_solicitud", width: 90,
-      render: (v: string) => v ? <Text style={{ fontSize: 11 }}>{dayjs(v).format("DD/MM/YY")}</Text> : "—",
+      title: "F. Requerida", key: "freq", width: 100,
+      render: (_, r) => r.fecha_requerida
+        ? <Text style={{ fontSize: 11 }}>{dayjs(r.fecha_requerida).format("DD/MM/YY")}</Text>
+        : <Text type="secondary">—</Text>,
+    },
+    {
+      title: "F. Entrega", key: "fent", width: 100,
+      render: (_, r) => r.fecha_entrega_esperada
+        ? <Text style={{ fontSize: 11 }}>{dayjs(r.fecha_entrega_esperada).format("DD/MM/YY")}</Text>
+        : <Text type="secondary">—</Text>,
     },
     {
       title: "", key: "actions", width: 150, fixed: "right",
       render: (_, r) => {
         const sr = r.status_requerimiento_codigo;
         const tieneOC = r.po_id != null;
-        // Editar: admin, no terminal, no anulado, no con OC en cantidad/material
         const canEdit = isAdmin && sr !== "ANULADO" && sr !== "DESAPROBADO" && !tieneOC;
         const canApprove = isAdmin && sr === "SIN_APROBACION";
         const canAnular = isAdmin && !tieneOC && sr !== "ANULADO";
@@ -450,7 +696,7 @@ export default function RequerimientosPage() {
           <Space size={0}>
             {canApprove && (
               <Tooltip title="Aprobar">
-                <Popconfirm title={`Aprobar ${r.nro_req}?`} onConfirm={() => aprobar(r)} okText="Aprobar" cancelText="Cancelar">
+                <Popconfirm title={`Aprobar item ${r.item_req}?`} onConfirm={() => aprobar(r)} okText="Aprobar" cancelText="Cancelar">
                   <Button type="text" size="small" icon={<CheckOutlined style={{ color: brand.success }} />} />
                 </Popconfirm>
               </Tooltip>
@@ -624,7 +870,7 @@ export default function RequerimientosPage() {
                   icon={<FileAddOutlined />}
                   type="primary"
                   disabled={elegiblesOC.length === 0}
-                  onClick={abrirOcModal}
+                  onClick={() => abrirOcModal()}
                 >
                   Generar OC ({elegiblesOC.length})
                 </Button>
@@ -646,25 +892,46 @@ export default function RequerimientosPage() {
       {rows.length === 0 && !loading ? (
         <Empty description="No hay requerimientos con esos filtros." />
       ) : (
-        <Table
-          rowKey="id"
-          columns={columns}
-          dataSource={rows}
+        <Table<GrupoReq>
+          rowKey="key"
+          columns={groupColumns}
+          dataSource={grupos}
           loading={loading}
           size="small"
-          pagination={{ current: page, pageSize: limit, total, onChange: setPage, showTotal: (t) => `${t} requerimientos` }}
+          pagination={{ current: page, pageSize: limit, total, onChange: setPage, showTotal: (t) => `${t} items en ${grupos.length} requerimiento(s)` }}
           scroll={{ x: 1500 }}
-          rowSelection={{
-            selectedRowKeys: selectedKeys,
-            onChange: (keys) => setSelectedKeys(keys as number[]),
-            getCheckboxProps: (r) => ({ disabled: r.status_requerimiento_codigo === "ANULADO" }),
+          expandable={{
+            defaultExpandAllRows: false,
+            expandRowByClick: false,
+            expandedRowRender: (g) => {
+              const itemKeysEnGrupo = g.items.map((i) => i.id);
+              const seleccionEnGrupo = selectedKeys.filter((k) => itemKeysEnGrupo.includes(k));
+              return (
+                <Table<RequerimientoRow>
+                  rowKey="id"
+                  columns={itemColumns}
+                  dataSource={g.items}
+                  pagination={false}
+                  size="small"
+                  scroll={{ x: 1400 }}
+                  rowSelection={{
+                    selectedRowKeys: seleccionEnGrupo,
+                    onChange: (keys) => {
+                      const otras = selectedKeys.filter((k) => !itemKeysEnGrupo.includes(k));
+                      setSelectedKeys([...otras, ...(keys as number[])]);
+                    },
+                    getCheckboxProps: (r) => ({ disabled: r.status_requerimiento_codigo === "ANULADO" }),
+                  }}
+                />
+              );
+            },
           }}
         />
       )}
 
       {/* Modal Generar OC */}
       <Modal
-        title={`Generar OC con ${elegiblesOC.length} item(s)`}
+        title={`Generar OC con ${itemsParaOC.length} item(s)`}
         open={ocOpen}
         onCancel={() => setOcOpen(false)}
         onOk={onCrearOC}
@@ -677,7 +944,7 @@ export default function RequerimientosPage() {
         <Alert
           type="info" showIcon style={{ marginBottom: 12 }}
           title="Items elegibles"
-          description={`Solo se incluyen items APROBADOS sin OC: ${elegiblesOC.length} de los ${selectedKeys.length} seleccionados.`}
+          description={`Solo se incluyen items APROBADOS sin OC: ${itemsParaOC.length} item(s).`}
         />
         <Form form={ocForm} layout="vertical">
           <Form.Item name="proveedor_id" label="Proveedor" rules={[{ required: true, message: "Proveedor requerido" }]}>

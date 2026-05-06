@@ -8,12 +8,13 @@ export async function POST(req: NextRequest) {
     const {
       repuesto_ids,
       proveedor_id,
-      ubicacion_codigo,
       moneda,
       fecha_entrega_esperada,
       observaciones,
       usuario,
     } = body;
+    // Compatibilidad: POs2 envía "almacen_id" (string code), current usa "ubicacion_codigo"
+    const ubicacion_codigo: string | null = body.ubicacion_codigo ?? body.almacen_id ?? null;
 
     if (!Array.isArray(repuesto_ids) || repuesto_ids.length === 0) {
       return NextResponse.json({ error: "Debes seleccionar al menos un requerimiento" }, { status: 400 });
@@ -109,13 +110,15 @@ export async function POST(req: NextRequest) {
     }
 
     // Actualizar los requerimientos: po_id, nro_oc, fecha_oc, status_oc_codigo
+    // Una vez creada la OC, el item sale de PEND_OC y entra a PROCESO.
     await prisma.oTRepuesto.updateMany({
       where: { id: { in: repuestos.map((r: Req) => r.id) } },
       data: {
         po_id: compra.id,
         nro_oc: numero_po,
         fecha_oc: new Date(),
-        status_oc_codigo: "PEND_OC",
+        fecha_entrega_esperada: fecha_entrega_esperada ? new Date(fecha_entrega_esperada) : null,
+        status_oc_codigo: "PROCESO",
       },
     });
 

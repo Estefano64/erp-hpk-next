@@ -24,9 +24,13 @@ import {
   DeleteOutlined,
   StopOutlined,
   ReloadOutlined,
+  ImportOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
+import { ImportarExcelModal } from "@/components/ImportarExcelModal";
+import { EmptyState } from "@/components/EmptyState";
+import { DuplicateHint } from "@/components/DuplicateHint";
 
 const { Title } = Typography;
 
@@ -42,6 +46,18 @@ interface ProveedorRecord {
   activo: boolean;
 }
 
+function RazonSocialDupHint({ form, excludeId }: { form: ReturnType<typeof Form.useForm>[0]; excludeId?: number }) {
+  const value = (Form.useWatch("razon_social", form) ?? "") as string;
+  return (
+    <DuplicateHint<ProveedorRecord>
+      value={value}
+      endpoint="/api/proveedores"
+      excludeId={excludeId}
+      mapMatch={(p) => ({ id: p.id, primary: p.razon_social, secondary: p.ruc })}
+    />
+  );
+}
+
 export default function ProveedoresPage() {
   const { data: session } = useSession();
   const isAdminUser = (session?.user as { rol?: string } | undefined)?.rol === "admin";
@@ -55,6 +71,7 @@ export default function ProveedoresPage() {
   const [editing, setEditing] = useState<ProveedorRecord | null>(null);
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const [messageApi, contextHolder] = message.useMessage();
 
@@ -187,8 +204,35 @@ export default function ProveedoresPage() {
       {contextHolder}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <Title level={3} style={{ margin: 0 }}>Proveedores</Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nuevo</Button>
+        <Space>
+          {isAdminUser && (
+            <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>
+              Importar Excel
+            </Button>
+          )}
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nuevo</Button>
+        </Space>
       </div>
+
+      <ImportarExcelModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onSuccess={() => fetchData()}
+        title="Importar proveedores desde Excel"
+        endpoint="/api/proveedores/bulk"
+        fields={[
+          { key: "ruc", label: "RUC", required: true, aliases: ["nro_ruc", "nrouc"] },
+          { key: "razon_social", label: "Razón social", required: true, aliases: ["razonsocial", "nombre"] },
+          { key: "nombre_comercial", label: "Nombre comercial", aliases: ["comercial"] },
+          { key: "contacto", label: "Contacto" },
+          { key: "telefono", label: "Teléfono", aliases: ["tel", "celular"] },
+          { key: "email", label: "Email", aliases: ["correo"] },
+          { key: "direccion", label: "Dirección" },
+        ]}
+        templateRows={[
+          ["20100123456", "Mi Proveedor SAC", "MiProvee", "Juan Pérez", "999999999", "ventas@miprovee.com", "Av. Industrial 100, Lima"],
+        ]}
+      />
 
       <Card styles={{ body: { padding: 16 } }} style={{ marginBottom: 16 }}>
         <Row gutter={[12, 12]}>
@@ -212,6 +256,24 @@ export default function ProveedoresPage() {
         columns={columns}
         dataSource={data}
         loading={loading}
+        locale={{
+          emptyText: !loading && total === 0 && !search ? (
+            <EmptyState
+              title="Aún no hay proveedores cargados"
+              description="Importá masivamente desde Excel (RUC, razón social, contacto) o creá uno manualmente."
+              primaryAction={isAdminUser ? {
+                label: "Importar desde Excel",
+                icon: <ImportOutlined />,
+                onClick: () => setImportOpen(true),
+              } : undefined}
+              secondaryAction={{
+                label: "Crear manualmente",
+                icon: <PlusOutlined />,
+                onClick: openCreate,
+              }}
+            />
+          ) : undefined,
+        }}
         pagination={{
           current: page,
           pageSize: 20,
@@ -232,24 +294,34 @@ export default function ProveedoresPage() {
         width={700}
         destroyOnHidden
       >
-        <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
+        <div style={{ fontSize: 12, color: brand.textSecondary, marginTop: 12 }}>
+          Los campos con <span style={{ color: "#ff4d4f" }}>*</span> son obligatorios.
+        </div>
+        <Form
+          form={form} layout="vertical" style={{ marginTop: 8 }}
+          validateTrigger={["onChange", "onBlur"]}
+          requiredMark
+        >
           <Row gutter={16}>
             <Col span={8}>
               <Form.Item
                 name="ruc"
                 label="RUC"
                 rules={[
-                  { required: true, message: "Requerido" },
-                  { pattern: /^\d{11}$/, message: "Debe tener 11 dígitos" },
+                  { required: true, message: "El RUC es obligatorio" },
+                  { pattern: /^\d{11}$/, message: "Debe tener 11 dígitos numéricos" },
                 ]}
               >
                 <Input maxLength={11} />
               </Form.Item>
             </Col>
             <Col span={16}>
-              <Form.Item name="razon_social" label="Razón Social" rules={[{ required: true, message: "Requerido" }]}>
-                <Input />
+              <Form.Item name="razon_social" label="Razón Social" rules={[{ required: true, message: "Razón social obligatoria" }]}>
+                <Input placeholder="Ej. Repuestos Industriales SAC" />
               </Form.Item>
+              {!editing && (
+                <RazonSocialDupHint form={form} />
+              )}
             </Col>
             <Col span={24}>
               <Form.Item name="nombre_comercial" label="Nombre Comercial">

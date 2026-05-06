@@ -100,7 +100,7 @@ async function main() {
     const matsSel = pickN(materiales, numItems);
     for (let idx = 0; idx < matsSel.length; idx++) {
       const mat = matsSel[idx];
-      const cant = randDecimal(1, 10);
+      const cant = randInt(1, 10);
       const precio = mat.precio ? Number(mat.precio) : randDecimal(50, 800);
       const exists = await prisma.oTRepuesto.findFirst({
         where: { ot_id: ot.id, material_id: mat.material_id, item_req: idx + 1 },
@@ -152,7 +152,7 @@ async function main() {
 
     let subtotal = 0;
     const detallesData = matsSel.map((mat) => {
-      const cant = randDecimal(1, 8, 2);
+      const cant = randInt(1, 8);
       const precio = mat.precio ? Number(mat.precio) : randDecimal(80, 1200);
       const sub = cant * precio;
       subtotal += sub;
@@ -223,7 +223,7 @@ async function main() {
     const matFresh = await prisma.material.findUnique({ where: { material_id: mat.material_id }, select: { stock_actual: true } });
     const stockActual = Number(matFresh?.stock_actual ?? 0);
     if (stockActual <= 0) continue;
-    const cant = randDecimal(1, Math.min(stockActual, 5), 2);
+    const cant = randInt(1, Math.max(1, Math.min(Math.floor(stockActual), 5)));
     if (cant <= 0) continue;
     await prisma.movimientoInventario.create({
       data: {
@@ -241,7 +241,7 @@ async function main() {
   }
   for (let i = 0; i < 10; i++) {
     const mat = pick(materiales);
-    const cant = randDecimal(5, 50, 2);
+    const cant = randInt(5, 50);
     await prisma.movimientoInventario.create({
       data: {
         material_id: mat.material_id,

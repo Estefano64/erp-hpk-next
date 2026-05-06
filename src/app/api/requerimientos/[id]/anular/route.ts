@@ -17,7 +17,11 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 
     const current = await prisma.oTRepuesto.findUnique({
       where: { id: Number(id) },
-      select: { status_requerimiento_codigo: true, po_id: true, ot_id: true, nro_req: true, observaciones: true },
+      select: {
+        status_requerimiento_codigo: true,
+        status_cotizacion_codigo: true,
+        po_id: true, ot_id: true, nro_req: true, observaciones: true,
+      },
     });
     if (!current) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
     if (current.po_id != null) {
@@ -29,11 +33,17 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       return NextResponse.json({ error: "Ya está anulado." }, { status: 409 });
     }
 
+    // Si la cotización está en proceso (PEND_COT/PEND_APROB), anularla también.
+    const cotizacionPendiente =
+      current.status_cotizacion_codigo === "PEND_COT" ||
+      current.status_cotizacion_codigo === "PEND_APROB";
+
     const updated = await prisma.$transaction(async (tx) => {
       const r = await tx.oTRepuesto.update({
         where: { id: Number(id) },
         data: {
           status_requerimiento_codigo: "ANULADO",
+          ...(cotizacionPendiente ? { status_cotizacion_codigo: "ANULADO" } : {}),
           observaciones: motivo
             ? (current.observaciones ? `${current.observaciones}\n[Anulación] ${motivo}` : `[Anulación] ${motivo}`)
             : current.observaciones,
