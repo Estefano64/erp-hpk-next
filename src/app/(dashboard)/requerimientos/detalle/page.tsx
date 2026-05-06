@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { Suspense, useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Typography,
@@ -173,7 +173,17 @@ const ocColor: Record<string, string> = {
   DEVOLUCION: "warning",
 };
 
+// useSearchParams requiere Suspense en Next 15+ para que el build no falle
+// al prerenderizar. Wrapper exportado abajo.
 export default function RequerimientosDetallePage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>
+      <RequerimientosDetalleInner />
+    </Suspense>
+  );
+}
+
+function RequerimientosDetalleInner() {
   const router = useRouter();
   const params = useSearchParams();
   const { message } = App.useApp();
