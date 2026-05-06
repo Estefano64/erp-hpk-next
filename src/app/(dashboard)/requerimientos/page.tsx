@@ -1,447 +1,1089 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Typography,
-  Table,
-  Button,
-  Input,
-  Select,
-  Tag,
-  Row,
-  Col,
-  Card,
-  Space,
-  Tooltip,
-  App,
-  Statistic,
+  Typography, Card, Table, Tag, Space, Button, Input, Select, DatePicker, Row, Col,
+  Modal, Form, message, Tooltip, Popconfirm, Empty, Alert, InputNumber, Segmented,
 } from "antd";
 import {
-  SearchOutlined,
-  ReloadOutlined,
-  EyeOutlined,
-  FileDoneOutlined,
-  ClockCircleOutlined,
-  CheckCircleOutlined,
-  WarningOutlined,
-  InfoCircleOutlined,
+  SearchOutlined, ReloadOutlined, CheckOutlined, CloseOutlined, StopOutlined,
+  EditOutlined, FileAddOutlined, InboxOutlined, SendOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import { Popover, Divider } from "antd";
-import { brand } from "@/lib/theme";
 import dayjs from "dayjs";
+import { brand } from "@/lib/theme";
+import { useCachedFetch } from "@/lib/useCachedFetch";
+import {
+  numeracionColumn,
+  paginacionEstandar,
+  PAGINATION_PAGE_SIZE,
+  useColumnasOcultas,
+  ColumnasToggleButton,
+  visibleColumns,
+} from "@/lib/tables";
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
 
-interface Requerimiento {
+interface RequerimientoRow {
   id: number;
   ot_id: number;
-  numero_ot: string | null;
-  material_id: number | null;
-  material_codigo: string | null;
-  material_nombre: string | null;
-  stock_actual: number;
   nro_req: string | null;
   item_req: number | null;
-  tipo_codigo: string | null;
-  cantidad: number;
+  tipo_codigo: string;
+  material_codigo: string | null;
   descripcion: string | null;
-  fabricante_codigo: string | null;
+  cantidad: string;
   unidad_medida: string | null;
-  fecha_solicitud: string | null;
-  fecha_requerida: string | null;
-  estado: string | null;
-  estado_cot: string | null;
-  nro_oc: string | null;
-  numero_po: string | null;
-  proveedor_nombre: string | null;
-  precio_unitario: number | null;
+  precio_unitario: string | null;
   moneda: string | null;
-  cliente_nombre: string | null;
-  prioridad_atencion_codigo: string | null;
+  proveedor_id: number | null;
+  fecha_solicitud: string;
+  fecha_requerida: string | null;
+  fecha_entrega_esperada: string | null;
+  status_requerimiento_codigo: string | null;
+  status_cotizacion_codigo: string | null;
+  status_oc_codigo: string | null;
+  status_requerimiento: { codigo: string; nombre: string } | null;
+  status_cotizacion: { codigo: string; nombre: string } | null;
+  status_oc: { codigo: string; nombre: string } | null;
+  proveedor: { id: number; razon_social: string } | null;
+  compra: { id: number; numero_po: string } | null;
+  po_id: number | null;
+  es_adicional: boolean | null;
+  orden_trabajo: {
+    id: number;
+    ot: string | null;
+    cliente: { codigo: string; razon_social: string; nombre_comercial: string | null } | null;
+    codigo_reparacion: { codigo: string; descripcion: string } | null;
+  } | null;
+  material: { codigo: string; descripcion: string; unidad_medida_codigo: string | null } | null;
 }
 
-const estadoReqColor: Record<string, string> = {
-  Pendiente: "gold",
-  REV: "gold",
-  Aprobado: "green",
-  APR: "green",
-  "En PO": "blue",
-  COM: "default",
-  ANU: "red",
-  PRO: "blue",
-};
+interface CatalogOpt { codigo: string; nombre: string; orden?: number | null }
+interface ProveedorOpt { id: number; razon_social: string; ruc: string | null }
+interface UbicacionOpt { codigo: string; nombre: string }
 
-const estadoCotColor: Record<string, string> = {
-  PDT_COT: "gold",
-  PDT_APR: "orange",
-  APR: "green",
-  ANU: "red",
-  DES: "red",
-};
-
-const prioridadColor: Record<string, string> = {
-  E: "volcano",
-  "1": "red",
-  "2": "orange",
-  "3": "cyan",
-};
+const TIPO_COLOR: Record<string, string> = { MAC: "blue", CAD: "orange", SER: "purple" };
+const REQ_COLOR: Record<string, string> = { SIN_APROBACION: "default", APROBADO: "success", DESAPROBADO: "error", ANULADO: "default" };
+const COT_COLOR: Record<string, string> = { PEND_COT: "default", PEND_APROB: "processing", APROBADO: "success", COMPLETO: "success", ANULADO: "error" };
+const OC_COLOR: Record<string, string> = { PEND_OC: "default", PROCESO: "processing", ENTREGADO: "success", COMPLETO: "success", INCOMPLETO: "warning", ANULADO: "error", DEVOLUCION: "warning" };
 
 export default function RequerimientosPage() {
   const router = useRouter();
-  const { message } = App.useApp();
-
-  const [data, setData] = useState<Requerimiento[]>([]);
+  const [rows, setRows] = useState<RequerimientoRow[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
+  const { ocultas, setOcultas } = useColumnasOcultas("requerimientos-list-cols-v1");
+
+  // Filtros
   const [search, setSearch] = useState("");
-  const [estado, setEstado] = useState<string>("");
-  const [tipo, setTipo] = useState<string>("");
+  const [filterOt, setFilterOt] = useState("");
+  const [filterStatusReq, setFilterStatusReq] = useState<string | undefined>();
+  const [filterStatusCot, setFilterStatusCot] = useState<string | undefined>();
+  const [filterStatusOc, setFilterStatusOc] = useState<string | undefined>();
+  const [filterTipo, setFilterTipo] = useState<string | undefined>();
+  const [filterProveedor, setFilterProveedor] = useState<number | undefined>();
+  const [filterFechas, setFilterFechas] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null] | null>(null);
+  const [soloAprobadosSinOC, setSoloAprobadosSinOC] = useState(false);
+
+  // Selección
+  const [selectedKeys, setSelectedKeys] = useState<number[]>([]);
+
+  // Rol
+  const [rol, setRol] = useState<string | null>(null);
+  const isAdmin = rol === "admin";
+
+  const [messageApi, contextHolder] = message.useMessage();
+  const [modalApi, modalCtx] = Modal.useModal();
+
+  // OC modal
+  const [ocOpen, setOcOpen] = useState(false);
+  const [ocSaving, setOcSaving] = useState(false);
+  const [itemsParaOC, setItemsParaOC] = useState<RequerimientoRow[]>([]);
+  const [ocForm] = Form.useForm<{
+    proveedor_id: number;
+    ubicacion_codigo?: string;
+    moneda: string;
+    fecha_entrega_esperada?: dayjs.Dayjs | null;
+    observaciones?: string;
+  }>();
+
+  // Editar modal (admin)
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingRow, setEditingRow] = useState<RequerimientoRow | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editForm] = Form.useForm<{
+    descripcion: string;
+    cantidad: number;
+    unidad_medida?: string;
+    material_codigo?: string;
+    fabricante_codigo?: string;
+    fecha_requerida?: dayjs.Dayjs | null;
+    observaciones?: string;
+  }>();
+
+  // Catálogos cacheados
+  type Wrapped<T> = { data: T[] } | null;
+  const srRes = useCachedFetch<Wrapped<CatalogOpt>>("/api/catalogos?tabla=statusRequerimiento");
+  const scRes = useCachedFetch<Wrapped<CatalogOpt>>("/api/catalogos?tabla=statusCotizacion");
+  const soRes = useCachedFetch<Wrapped<CatalogOpt>>("/api/catalogos?tabla=statusOc");
+  const provRes = useCachedFetch<Wrapped<ProveedorOpt>>("/api/proveedores?limit=500");
+  const ubicRes = useCachedFetch<Wrapped<UbicacionOpt>>("/api/catalogos?tabla=ubicacion");
+  const matsRes = useCachedFetch<Wrapped<{ codigo: string; descripcion: string; fabricante_codigo: string | null; unidad_medida_codigo: string | null }>>("/api/materiales?limit=2000");
+  const materiales = matsRes?.data ?? [];
+  const fabsRes = useCachedFetch<Wrapped<{ codigo: string; nombre: string }>>("/api/catalogos?tabla=fabricante");
+  const fabricantes = fabsRes?.data ?? [];
+
+  const statusReqOpts = (srRes?.data ?? []).map((s) => ({ value: s.codigo, label: s.nombre }));
+  const statusCotOpts = (scRes?.data ?? []).map((s) => ({ value: s.codigo, label: s.nombre }));
+  const statusOcOpts = (soRes?.data ?? []).map((s) => ({ value: s.codigo, label: s.nombre }));
+  const proveedoresOpts = (provRes?.data ?? []).map((p) => ({ value: p.id, label: `${p.razon_social}${p.ruc ? ` (${p.ruc})` : ""}` }));
+  const ubicacionesOpts = (ubicRes?.data ?? []).map((u) => ({ value: u.codigo, label: `${u.codigo} — ${u.nombre}` }));
+
+  useEffect(() => {
+    fetch("/api/me").then((r) => r.ok ? r.json() : null).then((d) => { if (d?.user) setRol(d.user.rol); }).catch(() => { /* noop */ });
+  }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (estado) params.set("estado", estado);
+      const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
       if (search) params.set("search", search);
+      if (filterOt) params.set("ot", filterOt);
+      if (filterStatusReq) params.set("status_req", filterStatusReq);
+      if (filterStatusCot) params.set("status_cot", filterStatusCot);
+      if (filterStatusOc) params.set("status_oc", filterStatusOc);
+      if (filterTipo) params.set("tipo", filterTipo);
+      if (filterProveedor) params.set("proveedor_id", String(filterProveedor));
+      if (filterFechas?.[0]) params.set("fecha_desde", filterFechas[0].toISOString());
+      if (filterFechas?.[1]) params.set("fecha_hasta", filterFechas[1].toISOString());
+      if (soloAprobadosSinOC) params.set("solo_aprobados_sin_oc", "1");
+
       const res = await fetch(`/api/requerimientos?${params}`);
-      const json = await res.json();
-      let rows = json.data as Requerimiento[];
-      if (tipo) rows = rows.filter((r) => (r.tipo_codigo || "MAC") === tipo);
-      setData(rows);
-    } catch {
-      message.error("Error al cargar requerimientos");
+      if (res.ok) {
+        const j = await res.json();
+        setRows(j.data ?? []);
+        setTotal(j.total ?? 0);
+      }
     } finally {
       setLoading(false);
     }
-  }, [estado, search, tipo, message]);
+  }, [page, pageSize, search, filterOt, filterStatusReq, filterStatusCot, filterStatusOc, filterTipo, filterProveedor, filterFechas, soloAprobadosSinOC]);
 
-  useEffect(() => {
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  function clearFilters() {
+    setSearch(""); setFilterOt(""); setFilterStatusReq(undefined); setFilterStatusCot(undefined);
+    setFilterStatusOc(undefined); setFilterTipo(undefined); setFilterProveedor(undefined);
+    setFilterFechas(null); setSoloAprobadosSinOC(false); setPage(1);
+  }
+
+  // Selección candidata para acciones bulk
+  const selectedRows = useMemo(() => rows.filter((r) => selectedKeys.includes(r.id)), [rows, selectedKeys]);
+  const elegiblesAprobar = selectedRows.filter((r) => r.status_requerimiento_codigo === "SIN_APROBACION");
+  const elegiblesOC = selectedRows.filter((r) => r.status_requerimiento_codigo === "APROBADO" && r.po_id == null);
+
+  // ── Helpers que iteran un endpoint POST por cada item ──
+  async function bulkPost(items: RequerimientoRow[], path: (id: number) => string, label: string) {
+    let ok = 0, errs = 0;
+    for (const r of items) {
+      const res = await fetch(path(r.id), { method: "POST" });
+      if (res.ok) ok++; else errs++;
+    }
+    if (ok > 0) messageApi.success(`${label}: ${ok} item(s).`);
+    if (errs > 0) messageApi.warning(`${errs} con error.`);
+    return { ok, errs };
+  }
+  async function aprobarItems(items: RequerimientoRow[]) {
+    await bulkPost(items, (id) => `/api/requerimientos/${id}/aprobar`, "Aprobados");
+    setSelectedKeys([]); fetchData();
+  }
+  async function enviarItems(items: RequerimientoRow[]) {
+    await bulkPost(items, (id) => `/api/requerimientos/${id}/enviar-a-aprobacion`, "Enviados a aprobación");
+    setSelectedKeys([]); fetchData();
+  }
+  async function anularItems(items: RequerimientoRow[]) {
+    let ok = 0, errs = 0;
+    for (const r of items) {
+      const res = await fetch(`/api/requerimientos/${r.id}/anular`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (res.ok) ok++; else errs++;
+    }
+    if (ok > 0) messageApi.success(`Anulados ${ok} item(s).`);
+    if (errs > 0) messageApi.warning(`${errs} con error.`);
+    setSelectedKeys([]); fetchData();
+  }
+  // Wrapper para mantener el botón global compatible con la firma anterior.
+  async function aprobarBulk() { await aprobarItems(elegiblesAprobar); }
+
+  // ── Generar OC ──
+  function abrirOcModal(itemsExplicit?: RequerimientoRow[]) {
+    const items = itemsExplicit ?? elegiblesOC;
+    if (items.length === 0) {
+      messageApi.warning("No hay items APROBADOS sin OC.");
+      return;
+    }
+    const proveedoresEn = new Set(items.map((r) => r.proveedor_id ?? null));
+    if (proveedoresEn.size > 1) {
+      modalApi.warning({
+        title: "Proveedores múltiples",
+        content: "Los items seleccionados tienen proveedores distintos. Una OC se crea con un solo proveedor — vas a tener que elegir uno y los items del otro proveedor irán al mismo OC con ese proveedor.",
+      });
+    }
+    const provId = items.find((r) => r.proveedor_id)?.proveedor_id;
+    const moneda = items.find((r) => r.moneda)?.moneda ?? "USD";
+    setItemsParaOC(items);
+    ocForm.resetFields();
+    ocForm.setFieldsValue({ proveedor_id: provId ?? undefined, moneda });
+    setOcOpen(true);
+  }
+
+  async function onCrearOC() {
+    const values = await ocForm.validateFields().catch(() => null);
+    if (!values) return;
+    setOcSaving(true);
+    try {
+      const payload = {
+        repuesto_ids: itemsParaOC.map((r) => r.id),
+        proveedor_id: values.proveedor_id,
+        ubicacion_codigo: values.ubicacion_codigo ?? null,
+        moneda: values.moneda,
+        fecha_entrega_esperada: values.fecha_entrega_esperada ? values.fecha_entrega_esperada.format("YYYY-MM-DD") : null,
+        observaciones: values.observaciones ?? null,
+      };
+      const res = await fetch("/api/compras/crear-oc", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        messageApi.error(err?.error ?? "Error al generar OC.");
+        return;
+      }
+      const j = await res.json();
+      messageApi.success(j.message ?? "OC creada.");
+      setOcOpen(false);
+      setSelectedKeys([]);
+      fetchData();
+    } finally {
+      setOcSaving(false);
+    }
+  }
+
+  // ── Acciones admin por fila ──
+  async function aprobar(r: RequerimientoRow) {
+    const res = await fetch(`/api/requerimientos/${r.id}/aprobar`, { method: "POST" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      messageApi.error(err?.error ?? "Error.");
+      return;
+    }
+    messageApi.success(`${r.nro_req ?? "Item"} aprobado.`);
     fetchData();
-  }, [fetchData]);
-
-  // KPIs
-  const activos = data.filter((r) => !["COM", "ANU"].includes(r.estado || ""));
-  const pendientes = activos.filter((r) => !r.estado || r.estado === "Pendiente" || r.estado === "REV").length;
-  const aprobados = activos.filter((r) => r.estado === "Aprobado" || r.estado === "APR").length;
-  const enCot = activos.filter((r) => r.estado_cot && !["APR", "ANU", ""].includes(r.estado_cot)).length;
-  const enOC = activos.filter((r) => r.nro_oc).length;
-  const sinStock = activos.filter((r) => r.material_id !== null && !(r.stock_actual > 0)).length;
-
-  // Valores únicos para filtros
-  const valoresUnicos = (campo: keyof Requerimiento) => {
-    const set = new Set<string>();
-    data.forEach((r) => {
-      const v = r[campo];
-      if (v !== null && v !== undefined && v !== "") set.add(String(v));
+  }
+  function desaprobar(r: RequerimientoRow) {
+    let motivo = "";
+    modalApi.confirm({
+      title: `Desaprobar ${r.nro_req ?? "requerimiento"}`,
+      content: (
+        <Input.TextArea rows={3} placeholder="Motivo (opcional)" onChange={(e) => { motivo = e.target.value; }} />
+      ),
+      okText: "Desaprobar", okButtonProps: { danger: true },
+      onOk: async () => {
+        const res = await fetch(`/api/requerimientos/${r.id}/desaprobar`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ motivo: motivo || null }),
+        });
+        if (!res.ok) { const err = await res.json().catch(() => null); messageApi.error(err?.error ?? "Error."); return; }
+        messageApi.success(`Desaprobado.`); fetchData();
+      },
     });
-    return [...set].sort().map((v) => ({ text: v, value: v }));
-  };
+  }
+  function anular(r: RequerimientoRow) {
+    let motivo = "";
+    modalApi.confirm({
+      title: `Anular ${r.nro_req ?? "requerimiento"}`,
+      content: (
+        <Input.TextArea rows={3} placeholder="Motivo (opcional)" onChange={(e) => { motivo = e.target.value; }} />
+      ),
+      okText: "Anular", okButtonProps: { danger: true },
+      onOk: async () => {
+        const res = await fetch(`/api/requerimientos/${r.id}/anular`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ motivo: motivo || null }),
+        });
+        if (!res.ok) { const err = await res.json().catch(() => null); messageApi.error(err?.error ?? "Error."); return; }
+        messageApi.success(`Anulado.`); fetchData();
+      },
+    });
+  }
+  function abrirEditar(r: RequerimientoRow) {
+    setEditingRow(r);
+    editForm.setFieldsValue({
+      descripcion: r.descripcion ?? "",
+      cantidad: Number(r.cantidad),
+      unidad_medida: r.unidad_medida ?? undefined,
+      material_codigo: r.material_codigo ?? undefined,
+      fabricante_codigo: undefined, // OTRepuesto no tiene fabricante directo
+      fecha_requerida: r.fecha_requerida ? dayjs(r.fecha_requerida) : null,
+      observaciones: undefined,
+    });
+    setEditOpen(true);
+  }
+  async function onSaveEdit() {
+    if (!editingRow) return;
+    const values = await editForm.validateFields().catch(() => null);
+    if (!values) return;
+    setEditSaving(true);
+    try {
+      const payload = {
+        ...values,
+        fecha_requerida: values.fecha_requerida ? values.fecha_requerida.format("YYYY-MM-DD") : null,
+      };
+      const res = await fetch(`/api/requerimientos/${editingRow.id}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        messageApi.error(err?.error ?? "Error al guardar.");
+        return;
+      }
+      messageApi.success("Actualizado.");
+      setEditOpen(false);
+      fetchData();
+    } finally {
+      setEditSaving(false);
+    }
+  }
 
-  const popoverContent = (r: Requerimiento) => (
-    <div style={{ maxWidth: 360, fontSize: 12 }}>
-      <div style={{ fontWeight: 600, color: brand.navy, marginBottom: 6 }}>
-        {r.material_nombre || r.descripcion || "Sin descripción"}
-      </div>
-      <Row gutter={[8, 4]}>
-        <Col span={12}><span style={{ color: "#888" }}>OT:</span> <b>{r.numero_ot || "-"}</b></Col>
-        <Col span={12}><span style={{ color: "#888" }}>REQ/Item:</span> <b>{r.nro_req}/{r.item_req}</b></Col>
-        <Col span={12}><span style={{ color: "#888" }}>Código:</span> <b>{r.material_codigo || "-"}</b></Col>
-        <Col span={12}><span style={{ color: "#888" }}>Tipo:</span> <b>{r.tipo_codigo || "MAC"}</b></Col>
-        <Col span={12}><span style={{ color: "#888" }}>Cant:</span> <b>{r.cantidad} {r.unidad_medida || ""}</b></Col>
-        <Col span={12}><span style={{ color: "#888" }}>Stock:</span> <b style={{ color: r.stock_actual > 0 ? "#52c41a" : "#ff4d4f" }}>{r.stock_actual ?? 0}</b></Col>
-        <Col span={12}><span style={{ color: "#888" }}>Fabricante:</span> <b>{r.fabricante_codigo || "-"}</b></Col>
-        <Col span={12}><span style={{ color: "#888" }}>P. Unit:</span> <b>{r.precio_unitario != null ? Number(r.precio_unitario).toFixed(2) : "-"}</b></Col>
-        <Col span={24}><span style={{ color: "#888" }}>Cliente:</span> {r.cliente_nombre || "-"}</Col>
-        <Col span={24}><span style={{ color: "#888" }}>Proveedor:</span> {r.proveedor_nombre || "-"}</Col>
-      </Row>
-      <Divider style={{ margin: "8px 0" }} />
-      <Space size={4} wrap>
-        <Tag color={estadoReqColor[r.estado || "Pendiente"] || "default"}>{r.estado || "Pendiente"}</Tag>
-        {r.estado_cot && <Tag color={estadoCotColor[r.estado_cot] || "default"}>COT: {r.estado_cot}</Tag>}
-        {r.nro_oc && <Tag color="blue">OC: {r.nro_oc}</Tag>}
-      </Space>
-    </div>
-  );
+  // ── Stats ──
+  const stats = useMemo(() => {
+    let aprob = 0, sinAprob = 0, conOC = 0, anul = 0;
+    for (const r of rows) {
+      const sr = r.status_requerimiento_codigo;
+      if (sr === "APROBADO") aprob++;
+      else if (sr === "SIN_APROBACION") sinAprob++;
+      else if (sr === "ANULADO") anul++;
+      if (r.po_id) conOC++;
+    }
+    return { aprob, sinAprob, conOC, anul };
+  }, [rows]);
 
-  const columns: ColumnsType<Requerimiento> = [
+  // ── Agrupación por nro_req ──
+  // Cada grupo es un "Requerimiento" (header) con N items adentro.
+  interface GrupoReq {
+    key: string;
+    nro_req: string | null;
+    ot_id: number;
+    orden_trabajo: RequerimientoRow["orden_trabajo"];
+    fecha_solicitud: string | null;
+    fecha_requerida: string | null;
+    fecha_entrega_esperada: string | null;
+    total_items: number;
+    cantidad_total: number;
+    items: RequerimientoRow[];
+    // Agregados de status (códigos únicos presentes)
+    estados_req: string[];
+    estados_cot: string[];
+    estados_oc: string[];
+    numero_po: string | null; // si todos los items comparten la misma OC
+    proveedor_nombre: string | null; // si todos comparten proveedor
+  }
+
+  function earliest(a: string | null, b: string | null): string | null {
+    if (!a) return b;
+    if (!b) return a;
+    return new Date(a) < new Date(b) ? a : b;
+  }
+
+  const grupos = useMemo<GrupoReq[]>(() => {
+    const map = new Map<string, RequerimientoRow[]>();
+    for (const r of rows) {
+      const key = r.nro_req ?? `__sin_req_${r.id}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(r);
+    }
+    return Array.from(map.entries()).map(([key, items]) => {
+      items.sort((a, b) => (a.item_req ?? 0) - (b.item_req ?? 0));
+      const first = items[0];
+      const setUniq = (vals: (string | undefined | null)[]) =>
+        Array.from(new Set(vals.filter((v): v is string => !!v)));
+      const cantidad_total = items.reduce((s, i) => s + Number(i.cantidad), 0);
+      const numerosPo = setUniq(items.map((i) => i.compra?.numero_po ?? null));
+      const proveedores = setUniq(items.map((i) => i.proveedor?.razon_social ?? null));
+      let fSol: string | null = null;
+      let fReq: string | null = null;
+      let fEnt: string | null = null;
+      for (const i of items) {
+        fSol = earliest(fSol, i.fecha_solicitud);
+        fReq = earliest(fReq, i.fecha_requerida);
+        fEnt = earliest(fEnt, i.fecha_entrega_esperada);
+      }
+      return {
+        key,
+        nro_req: key.startsWith("__sin_req_") ? null : key,
+        ot_id: first.ot_id,
+        orden_trabajo: first.orden_trabajo,
+        fecha_solicitud: fSol,
+        fecha_requerida: fReq,
+        fecha_entrega_esperada: fEnt,
+        total_items: items.length,
+        cantidad_total,
+        items,
+        estados_req: setUniq(items.map((i) => i.status_requerimiento?.codigo)),
+        estados_cot: setUniq(items.map((i) => i.status_cotizacion?.codigo)),
+        estados_oc: setUniq(items.map((i) => i.status_oc?.codigo)),
+        numero_po: numerosPo.length === 1 ? numerosPo[0] : null,
+        proveedor_nombre: proveedores.length === 1 ? proveedores[0] : null,
+      };
+    });
+  }, [rows]);
+
+  // Helper: render un grupo de status como Tag(s). Si todos coinciden, un tag; si hay mezcla, "Mixto".
+  function renderStatusResumen(
+    codes: string[],
+    palette: Record<string, string>,
+    label: (c: string) => string,
+  ) {
+    if (codes.length === 0) return <Text type="secondary" style={{ fontSize: 10 }}>—</Text>;
+    if (codes.length === 1) {
+      const c = codes[0];
+      return <Tag color={palette[c] ?? "default"} style={{ margin: 0, fontSize: 10 }}>{label(c)}</Tag>;
+    }
+    return (
+      <Tooltip title={codes.map(label).join(" / ")}>
+        <Tag color="warning" style={{ margin: 0, fontSize: 10 }}>Mixto ({codes.length})</Tag>
+      </Tooltip>
+    );
+  }
+
+  // Diccionarios de label desde catálogo cacheado (fallback al código si no está)
+  const reqLabel = (c: string) =>
+    (srRes?.data ?? []).find((s) => s.codigo === c)?.nombre ?? c;
+  const cotLabel = (c: string) =>
+    (scRes?.data ?? []).find((s) => s.codigo === c)?.nombre ?? c;
+  const ocLabel = (c: string) =>
+    (soRes?.data ?? []).find((s) => s.codigo === c)?.nombre ?? c;
+
+  // Columnas del nivel "grupo" (header de cada nro_req)
+  const groupColumns: ColumnsType<GrupoReq> = [
+    numeracionColumn<GrupoReq>({ current: page, pageSize }),
     {
-      title: "OT",
-      dataIndex: "numero_ot",
-      width: 130,
-      fixed: "left",
-      filters: valoresUnicos("numero_ot"),
-      filterSearch: true,
-      onFilter: (value, r) => r.numero_ot === value,
-      sorter: (a, b) => (a.numero_ot || "").localeCompare(b.numero_ot || ""),
-      render: (v: string) => (v ? <Tag color={brand.navy}>{v}</Tag> : "-"),
+      title: "OT", key: "ot", width: 110, fixed: "left",
+      render: (_, g) => g.orden_trabajo?.ot ? (
+        <a onClick={() => router.push(`/ordenes-trabajo/${g.ot_id}`)} style={{ fontSize: 11 }}>
+          <Tag color={brand.navy} style={{ margin: 0 }}>{g.orden_trabajo.ot}</Tag>
+        </a>
+      ) : <Tag>#{g.ot_id}</Tag>,
     },
     {
-      title: "Estado REQ",
-      dataIndex: "estado",
-      width: 110,
-      filters: [
-        { text: "Pendiente", value: "Pendiente" },
-        { text: "Aprobado", value: "Aprobado" },
-        { text: "APR", value: "APR" },
-        { text: "En PO", value: "En PO" },
-        { text: "REV", value: "REV" },
-      ],
-      onFilter: (value, r) => (r.estado || "Pendiente") === value,
-      render: (v: string | null) => {
-        const est = v || "Pendiente";
-        return <Tag color={estadoReqColor[est] || "default"}>{est}</Tag>;
+      title: "Nro Req", key: "nro", width: 160,
+      render: (_, g) => (
+        <Space size={4} direction="vertical" style={{ lineHeight: 1.2 }}>
+          <Text strong style={{ fontSize: 12 }}>{g.nro_req ?? "(sin nro)"}</Text>
+          <Text type="secondary" style={{ fontSize: 11 }}>{g.total_items} item(s)</Text>
+        </Space>
+      ),
+    },
+    {
+      title: "Cliente / Cod. Rep.", key: "cliente", width: 200, ellipsis: true,
+      render: (_, g) => (
+        <div style={{ lineHeight: 1.2 }}>
+          <div style={{ fontSize: 12 }}>{g.orden_trabajo?.cliente?.nombre_comercial ?? g.orden_trabajo?.cliente?.razon_social ?? "—"}</div>
+          {g.orden_trabajo?.codigo_reparacion?.codigo && (
+            <Text type="secondary" style={{ fontSize: 10 }}>{g.orden_trabajo.codigo_reparacion.codigo}</Text>
+          )}
+        </div>
+      ),
+    },
+    {
+      title: "Proveedor", key: "prov", width: 140, ellipsis: true,
+      render: (_, g) => g.proveedor_nombre ?? <Text type="secondary">—</Text>,
+    },
+    {
+      title: "REQ", key: "req", width: 110, align: "center",
+      render: (_, g) => renderStatusResumen(g.estados_req, REQ_COLOR, reqLabel),
+    },
+    {
+      title: "COT", key: "cot", width: 110, align: "center",
+      render: (_, g) => renderStatusResumen(g.estados_cot, COT_COLOR, cotLabel),
+    },
+    {
+      title: "OC", key: "oc", width: 140, align: "center",
+      render: (_, g) => (
+        <Space direction="vertical" size={2} style={{ lineHeight: 1 }}>
+          {renderStatusResumen(g.estados_oc, OC_COLOR, ocLabel)}
+          {g.numero_po && (
+            <a onClick={() => router.push(`/compras`)} style={{ fontSize: 10 }} title="Ver compras">
+              <Text code style={{ fontSize: 10 }}>{g.numero_po}</Text>
+            </a>
+          )}
+        </Space>
+      ),
+    },
+    {
+      title: "F. Solicitud", key: "fsol", width: 100,
+      render: (_, g) => g.fecha_solicitud
+        ? <Text style={{ fontSize: 11 }}>{dayjs(g.fecha_solicitud).format("DD/MM/YY")}</Text>
+        : <Text type="secondary">—</Text>,
+    },
+    {
+      title: "F. Requerida", key: "freq", width: 100,
+      render: (_, g) => g.fecha_requerida
+        ? <Text style={{ fontSize: 11 }}>{dayjs(g.fecha_requerida).format("DD/MM/YY")}</Text>
+        : <Text type="secondary">—</Text>,
+    },
+    {
+      title: "F. Entrega", key: "fent", width: 100,
+      render: (_, g) => g.fecha_entrega_esperada
+        ? <Text style={{ fontSize: 11 }}>{dayjs(g.fecha_entrega_esperada).format("DD/MM/YY")}</Text>
+        : <Text type="secondary">—</Text>,
+    },
+    {
+      title: "Acciones grupo", key: "actions_grupo", width: 200, fixed: "right",
+      render: (_, g) => {
+        const borrador = g.items.filter((i) => i.status_requerimiento_codigo === "BORRADOR");
+        const sinAprob = g.items.filter((i) => i.status_requerimiento_codigo === "SIN_APROBACION");
+        const aprobSinOC = g.items.filter(
+          (i) => i.status_requerimiento_codigo === "APROBADO" && i.po_id == null,
+        );
+        const anulables = g.items.filter(
+          (i) => i.status_requerimiento_codigo !== "ANULADO" &&
+                 i.status_requerimiento_codigo !== "DESAPROBADO" &&
+                 i.po_id == null,
+        );
+        return (
+          <Space size={2} wrap>
+            {borrador.length > 0 && (
+              <Tooltip title={`Enviar ${borrador.length} item(s) a aprobación`}>
+                <Popconfirm
+                  title={`Enviar ${borrador.length} item(s) a aprobación?`}
+                  onConfirm={() => enviarItems(borrador)}
+                  okText="Enviar" cancelText="Cancelar"
+                >
+                  <Button size="small" icon={<SendOutlined />}>{borrador.length}</Button>
+                </Popconfirm>
+              </Tooltip>
+            )}
+            {isAdmin && sinAprob.length > 0 && (
+              <Tooltip title={`Aprobar ${sinAprob.length} item(s) del grupo`}>
+                <Popconfirm
+                  title={`Aprobar ${sinAprob.length} item(s)?`}
+                  onConfirm={() => aprobarItems(sinAprob)}
+                  okText="Aprobar" cancelText="Cancelar"
+                >
+                  <Button size="small" type="primary" icon={<CheckOutlined />}>{sinAprob.length}</Button>
+                </Popconfirm>
+              </Tooltip>
+            )}
+            {aprobSinOC.length > 0 && (
+              <Tooltip title={`Generar OC con ${aprobSinOC.length} item(s) del grupo`}>
+                <Button
+                  size="small" type="primary" icon={<FileAddOutlined />}
+                  onClick={() => abrirOcModal(aprobSinOC)}
+                >
+                  OC ({aprobSinOC.length})
+                </Button>
+              </Tooltip>
+            )}
+            {isAdmin && anulables.length > 0 && (
+              <Tooltip title={`Anular ${anulables.length} item(s) del grupo`}>
+                <Popconfirm
+                  title={`Anular ${anulables.length} item(s) del requerimiento ${g.nro_req}?`}
+                  onConfirm={() => anularItems(anulables)}
+                  okText="Anular" cancelText="Cancelar" okButtonProps={{ danger: true }}
+                >
+                  <Button size="small" danger icon={<StopOutlined />} />
+                </Popconfirm>
+              </Tooltip>
+            )}
+          </Space>
+        );
       },
     },
+  ];
+
+  // Columnas del nivel "item" (filas dentro de un grupo expandido)
+  const itemColumns: ColumnsType<RequerimientoRow> = [
     {
-      title: "Estado COT",
-      dataIndex: "estado_cot",
-      width: 110,
-      filters: [
-        { text: "PDT_COT", value: "PDT_COT" },
-        { text: "PDT_APR", value: "PDT_APR" },
-        { text: "APR", value: "APR" },
-        { text: "DES", value: "DES" },
-      ],
-      onFilter: (value, r) => r.estado_cot === value,
-      render: (v: string | null) => (v ? <Tag color={estadoCotColor[v] || "default"}>{v}</Tag> : "-"),
+      title: "Item", key: "item", width: 60, align: "center",
+      render: (_, r) => (
+        <Space size={2} direction="vertical" style={{ lineHeight: 1.1 }}>
+          <Text strong style={{ fontSize: 11 }}>#{r.item_req}</Text>
+          {r.es_adicional && <Tag color="gold" style={{ fontSize: 9, margin: 0 }}>ADIC</Tag>}
+        </Space>
+      ),
     },
     {
-      title: "Tipo",
-      dataIndex: "tipo_codigo",
-      width: 70,
-      align: "center",
-      filters: [
-        { text: "MAC", value: "MAC" },
-        { text: "SER", value: "SER" },
-        { text: "CAD", value: "CAD" },
-      ],
-      onFilter: (value, r) => (r.tipo_codigo || "MAC") === value,
-      render: (v: string | null) => <Tag>{v || "MAC"}</Tag>,
+      title: "Tipo", dataIndex: "tipo_codigo", width: 60, align: "center",
+      render: (v: string) => <Tag color={TIPO_COLOR[v] ?? "default"} style={{ margin: 0 }}>{v}</Tag>,
     },
     {
-      title: "Nro REQ",
-      dataIndex: "nro_req",
-      width: 130,
-      filters: valoresUnicos("nro_req"),
-      filterSearch: true,
-      onFilter: (value, r) => r.nro_req === value,
-      render: (v: string | null) => v || "-",
-    },
-    {
-      title: "Material",
-      width: 240,
-      ellipsis: true,
-      render: (_: unknown, r: Requerimiento) => (
-        <Popover content={popoverContent(r)} placement="right" mouseEnterDelay={0.3} trigger="hover">
-          <div style={{ cursor: "help" }}>
-            <div style={{ fontWeight: 500, fontSize: 13, display: "flex", alignItems: "center", gap: 4 }}>
-              <InfoCircleOutlined style={{ color: brand.cyan, fontSize: 11 }} />
-              {r.material_nombre || r.descripcion || "-"}
-            </div>
-            {r.material_codigo && <div style={{ fontSize: 11, color: "#888", marginLeft: 16 }}>{r.material_codigo}</div>}
+      title: "Material / Descripción", key: "desc", ellipsis: true,
+      render: (_, r) => (
+        <div style={{ lineHeight: 1.2 }}>
+          <div style={{ fontSize: 12 }}>
+            {r.material_codigo && <Tag style={{ fontSize: 10, marginRight: 4 }}>{r.material_codigo}</Tag>}
+            {r.descripcion}
           </div>
-        </Popover>
+        </div>
       ),
     },
     {
-      title: "Cant.",
-      dataIndex: "cantidad",
-      width: 70,
-      align: "center",
-      sorter: (a, b) => Number(a.cantidad) - Number(b.cantidad),
-      render: (v: number) => Number(v).toLocaleString("en", { maximumFractionDigits: 2 }),
+      title: "Qty", key: "qty", width: 90, align: "right",
+      render: (_, r) => `${Number(r.cantidad).toLocaleString()} ${r.unidad_medida ?? ""}`,
     },
     {
-      title: "UM",
-      dataIndex: "unidad_medida",
-      width: 60,
-      align: "center",
+      title: "Precio", key: "precio", width: 100, align: "right",
+      render: (_, r) => r.precio_unitario != null
+        ? `${Number(r.precio_unitario).toFixed(2)} ${r.moneda ?? ""}`
+        : <Text type="secondary">—</Text>,
     },
     {
-      title: "Cliente",
-      dataIndex: "cliente_nombre",
-      width: 140,
-      ellipsis: true,
-      filters: valoresUnicos("cliente_nombre"),
-      filterSearch: true,
-      onFilter: (value, r) => r.cliente_nombre === value,
-      render: (v: string | null) => v || "-",
+      title: "Proveedor", key: "prov", width: 140, ellipsis: true,
+      render: (_, r) => r.proveedor?.razon_social ?? <Text type="secondary">—</Text>,
     },
     {
-      title: "Prioridad",
-      dataIndex: "prioridad_atencion_codigo",
-      width: 90,
-      align: "center",
-      filters: [
-        { text: "E (Emergencia)", value: "E" },
-        { text: "1 (Alta)", value: "1" },
-        { text: "2 (Media)", value: "2" },
-        { text: "3 (Normal)", value: "3" },
-      ],
-      onFilter: (value, r) => r.prioridad_atencion_codigo === value,
-      render: (v: string | null) => (v ? <Tag color={prioridadColor[v] || "default"}>{v}</Tag> : "-"),
+      title: "REQ", key: "req", width: 110, align: "center",
+      render: (_, r) => r.status_requerimiento ? (
+        <Tag color={REQ_COLOR[r.status_requerimiento.codigo] ?? "default"} style={{ margin: 0, fontSize: 10 }}>
+          {r.status_requerimiento.nombre}
+        </Tag>
+      ) : "—",
     },
     {
-      title: "P. Unit.",
-      dataIndex: "precio_unitario",
-      width: 90,
-      align: "right",
-      sorter: (a, b) => Number(a.precio_unitario || 0) - Number(b.precio_unitario || 0),
-      render: (v: number | null) => (v != null ? Number(v).toFixed(2) : "-"),
+      title: "COT", key: "cot", width: 110, align: "center",
+      render: (_, r) => r.status_cotizacion ? (
+        <Tag color={COT_COLOR[r.status_cotizacion.codigo] ?? "default"} style={{ margin: 0, fontSize: 10 }}>
+          {r.status_cotizacion.nombre}
+        </Tag>
+      ) : <Text type="secondary">—</Text>,
     },
     {
-      title: "Nro OC",
-      dataIndex: "nro_oc",
-      width: 110,
-      filters: valoresUnicos("nro_oc"),
-      filterSearch: true,
-      onFilter: (value, r) => r.nro_oc === value,
-      render: (v: string | null) => v ? <Tag color="blue">{v}</Tag> : "-",
-    },
-    {
-      title: "Proveedor",
-      dataIndex: "proveedor_nombre",
-      width: 150,
-      ellipsis: true,
-      filters: valoresUnicos("proveedor_nombre"),
-      filterSearch: true,
-      onFilter: (value, r) => r.proveedor_nombre === value,
-      render: (v: string | null) => v || "-",
-    },
-    {
-      title: "F. Solicitud",
-      dataIndex: "fecha_solicitud",
-      width: 110,
-      sorter: (a, b) => (a.fecha_solicitud || "").localeCompare(b.fecha_solicitud || ""),
-      render: (v: string | null) => (v ? dayjs(v).format("DD/MM/YYYY") : "-"),
-    },
-    {
-      title: "Acciones",
-      width: 80,
-      align: "center",
-      fixed: "right",
-      render: (_: unknown, r: Requerimiento) => (
-        <Tooltip title="Ver detalle">
-          <Button
-            type="text"
-            icon={<EyeOutlined />}
-            onClick={() => router.push(`/requerimientos/detalle?ot_id=${r.ot_id}`)}
-          />
-        </Tooltip>
+      title: "OC", key: "oc", width: 130, align: "center",
+      render: (_, r) => (
+        <Space direction="vertical" size={2} style={{ lineHeight: 1 }}>
+          {r.status_oc ? (
+            <Tag color={OC_COLOR[r.status_oc.codigo] ?? "default"} style={{ margin: 0, fontSize: 10 }}>
+              {r.status_oc.nombre}
+            </Tag>
+          ) : <Text type="secondary">—</Text>}
+          {r.compra?.numero_po && (
+            <a onClick={() => router.push(`/compras`)} style={{ fontSize: 10 }} title="Ver compras">
+              <Text code style={{ fontSize: 10 }}>{r.compra.numero_po}</Text>
+            </a>
+          )}
+        </Space>
       ),
+    },
+    {
+      title: "F. Requerida", key: "freq", width: 100,
+      render: (_, r) => r.fecha_requerida
+        ? <Text style={{ fontSize: 11 }}>{dayjs(r.fecha_requerida).format("DD/MM/YY")}</Text>
+        : <Text type="secondary">—</Text>,
+    },
+    {
+      title: "F. Entrega", key: "fent", width: 100,
+      render: (_, r) => r.fecha_entrega_esperada
+        ? <Text style={{ fontSize: 11 }}>{dayjs(r.fecha_entrega_esperada).format("DD/MM/YY")}</Text>
+        : <Text type="secondary">—</Text>,
+    },
+    {
+      title: "", key: "actions", width: 150, fixed: "right",
+      render: (_, r) => {
+        const sr = r.status_requerimiento_codigo;
+        const tieneOC = r.po_id != null;
+        const canEdit = isAdmin && sr !== "ANULADO" && sr !== "DESAPROBADO" && !tieneOC;
+        const canApprove = isAdmin && sr === "SIN_APROBACION";
+        const canAnular = isAdmin && !tieneOC && sr !== "ANULADO";
+        return (
+          <Space size={0}>
+            {canApprove && (
+              <Tooltip title="Aprobar">
+                <Popconfirm title={`Aprobar item ${r.item_req}?`} onConfirm={() => aprobar(r)} okText="Aprobar" cancelText="Cancelar">
+                  <Button type="text" size="small" icon={<CheckOutlined style={{ color: brand.success }} />} />
+                </Popconfirm>
+              </Tooltip>
+            )}
+            {canApprove && (
+              <Tooltip title="Desaprobar">
+                <Button type="text" size="small" icon={<CloseOutlined style={{ color: brand.error }} />} onClick={() => desaprobar(r)} />
+              </Tooltip>
+            )}
+            {canEdit && (
+              <Tooltip title="Editar">
+                <Button type="text" size="small" icon={<EditOutlined />} onClick={() => abrirEditar(r)} />
+              </Tooltip>
+            )}
+            {canAnular && (
+              <Tooltip title="Anular">
+                <Button type="text" size="small" icon={<StopOutlined />} onClick={() => anular(r)} />
+              </Tooltip>
+            )}
+          </Space>
+        );
+      },
     },
   ];
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      {contextHolder}
+      {modalCtx}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 12 }}>
         <Title level={3} style={{ margin: 0 }}>
-          Requerimientos de Compra
+          <InboxOutlined style={{ marginRight: 8 }} />
+          Requerimientos
         </Title>
         <Space>
-          <Button icon={<FileDoneOutlined />} onClick={() => router.push("/compras")}>
-            Ver Órdenes de Compra
-          </Button>
-          <Button type="primary" icon={<EyeOutlined />} onClick={() => router.push("/requerimientos/detalle")}>
-            Ver Detalle Completo
-          </Button>
+          <Tag color={brand.navy}>Total: {total}</Tag>
+          <Tag>Sin aprob: {stats.sinAprob}</Tag>
+          <Tag color="success">Aprobados: {stats.aprob}</Tag>
+          <Tag color="processing">Con OC: {stats.conOC}</Tag>
+          {stats.anul > 0 && <Tag>Anulados: {stats.anul}</Tag>}
+          <ColumnasToggleButton<GrupoReq>
+            columns={groupColumns}
+            ocultas={ocultas}
+            setOcultas={setOcultas}
+            obligatorias={["__num", "ot", "actions_grupo"]}
+          />
         </Space>
       </div>
 
-      {/* KPI Cards */}
-      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-        <Col xs={12} md={6}>
-          <Card styles={{ body: { padding: 16 } }}>
-            <Statistic title="Pendientes" value={pendientes} prefix={<ClockCircleOutlined style={{ color: "#faad14" }} />} styles={{ content: { color: "#faad14" } }} />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card styles={{ body: { padding: 16 } }}>
-            <Statistic title="Aprobados" value={aprobados} prefix={<CheckCircleOutlined style={{ color: "#52c41a" }} />} styles={{ content: { color: "#52c41a" } }} />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card styles={{ body: { padding: 16 } }}>
-            <Statistic title="En Cotización" value={enCot} styles={{ content: { color: brand.cyan } }} />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card styles={{ body: { padding: 16 } }}>
-            <Statistic title="En OC" value={enOC} prefix={<FileDoneOutlined style={{ color: brand.navy }} />} styles={{ content: { color: brand.navy } }} />
-          </Card>
-        </Col>
-      </Row>
+      {/* Selector de vista por estado del requerimiento */}
+      <Card size="small" style={{ marginBottom: 12 }} styles={{ body: { padding: 12 } }}>
+        <Segmented
+          block
+          value={filterStatusReq ?? "__all"}
+          onChange={(v) => {
+            setFilterStatusReq(v === "__all" ? undefined : (v as string));
+            setPage(1);
+          }}
+          options={[
+            { value: "__all", label: "Todos" },
+            { value: "BORRADOR", label: "Borrador" },
+            { value: "SIN_APROBACION", label: "Sin aprobación" },
+            { value: "APROBADO", label: "Aprobados" },
+            { value: "DESAPROBADO", label: "Desaprobados" },
+            { value: "ANULADO", label: "Anulados" },
+          ]}
+        />
+      </Card>
 
       {/* Filtros */}
-      <Card styles={{ body: { padding: 16 } }} style={{ marginBottom: 16 }}>
-        <Row gutter={[12, 12]}>
-          <Col xs={24} sm={8} md={6}>
+      <Card size="small" style={{ marginBottom: 12 }} styles={{ body: { padding: 12 } }}>
+        <Row gutter={[8, 8]}>
+          <Col xs={24} md={6}>
             <Input
-              placeholder="Buscar material, OT, OC..."
+              placeholder="Buscar (descripción, nro req, OC, material)…"
               prefix={<SearchOutlined />}
-              allowClear
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              allowClear
             />
           </Col>
-          <Col xs={12} sm={6} md={4}>
+          <Col xs={12} md={4}>
+            <Input
+              placeholder="OT"
+              value={filterOt}
+              onChange={(e) => { setFilterOt(e.target.value); setPage(1); }}
+              allowClear
+            />
+          </Col>
+          <Col xs={12} md={4}>
             <Select
               placeholder="Estado REQ"
-              allowClear
-              style={{ width: "100%" }}
-              value={estado || undefined}
-              onChange={(v) => setEstado(v ?? "")}
-              options={[
-                { value: "Pendiente", label: "Pendiente" },
-                { value: "Aprobado", label: "Aprobado" },
-                { value: "En PO", label: "En OC" },
-                { value: "COM", label: "Completado" },
-                { value: "ANU", label: "Anulado" },
-              ]}
+              value={filterStatusReq}
+              onChange={(v) => { setFilterStatusReq(v); setPage(1); }}
+              options={statusReqOpts}
+              allowClear style={{ width: "100%" }}
             />
           </Col>
-          <Col xs={12} sm={6} md={4}>
+          <Col xs={12} md={4}>
+            <Select
+              placeholder="Estado COT"
+              value={filterStatusCot}
+              onChange={(v) => { setFilterStatusCot(v); setPage(1); }}
+              options={statusCotOpts}
+              allowClear style={{ width: "100%" }}
+            />
+          </Col>
+          <Col xs={12} md={3}>
+            <Select
+              placeholder="Estado OC"
+              value={filterStatusOc}
+              onChange={(v) => { setFilterStatusOc(v); setPage(1); }}
+              options={statusOcOpts}
+              allowClear style={{ width: "100%" }}
+            />
+          </Col>
+          <Col xs={12} md={3}>
             <Select
               placeholder="Tipo"
-              allowClear
-              style={{ width: "100%" }}
-              value={tipo || undefined}
-              onChange={(v) => setTipo(v ?? "")}
+              value={filterTipo}
+              onChange={(v) => { setFilterTipo(v); setPage(1); }}
               options={[
-                { value: "MAC", label: "MAC - Material" },
-                { value: "SER", label: "SER - Servicio" },
-                { value: "CAD", label: "CAD - Cargo directo" },
+                { value: "MAC", label: "MAC" },
+                { value: "CAD", label: "CAD" },
+                { value: "SER", label: "SER" },
               ]}
+              allowClear style={{ width: "100%" }}
             />
           </Col>
-          <Col xs={12} sm={6} md={4}>
-            <Button icon={<ReloadOutlined />} onClick={fetchData} block>
-              Actualizar
-            </Button>
+          <Col xs={24} md={6}>
+            <Select
+              placeholder="Proveedor"
+              value={filterProveedor}
+              onChange={(v) => { setFilterProveedor(v); setPage(1); }}
+              options={proveedoresOpts}
+              allowClear showSearch
+              optionFilterProp="label"
+              style={{ width: "100%" }}
+            />
           </Col>
-          {sinStock > 0 && (
-            <Col>
-              <Tag icon={<WarningOutlined />} color="red" style={{ padding: "6px 12px", fontSize: 13 }}>
-                {sinStock} sin stock
-              </Tag>
-            </Col>
-          )}
+          <Col xs={24} md={6}>
+            <DatePicker.RangePicker
+              value={filterFechas as [dayjs.Dayjs, dayjs.Dayjs] | null}
+              onChange={(v) => { setFilterFechas(v as [dayjs.Dayjs | null, dayjs.Dayjs | null] | null); setPage(1); }}
+              placeholder={["Desde", "Hasta"]}
+              format="DD/MM/YYYY"
+              style={{ width: "100%" }}
+            />
+          </Col>
+          <Col xs={24} md={6}>
+            <Space>
+              <Tooltip title="Filtra solo items APROBADOS aún sin OC, listos para crear orden de compra">
+                <Button
+                  type={soloAprobadosSinOC ? "primary" : "default"}
+                  onClick={() => { setSoloAprobadosSinOC((v) => !v); setPage(1); }}
+                  icon={<FileAddOutlined />}
+                >
+                  Listos para OC
+                </Button>
+              </Tooltip>
+              <Button icon={<ReloadOutlined />} onClick={clearFilters}>Limpiar</Button>
+            </Space>
+          </Col>
         </Row>
       </Card>
 
-      <Table
-        rowKey="id"
-        columns={columns}
-        dataSource={data}
-        loading={loading}
-        pagination={{
-          pageSize: 20,
-          showTotal: (t) => `${t} requerimientos`,
-        }}
-        scroll={{ x: 1800 }}
-        size="small"
-      />
+      {/* Bulk toolbar */}
+      {selectedKeys.length > 0 && (
+        <Card
+          size="small"
+          styles={{ body: { padding: 10 } }}
+          style={{ marginBottom: 12, borderColor: brand.cyan, background: "#E6FFFB" }}
+        >
+          <Row align="middle" gutter={12}>
+            <Col flex="auto">
+              <Space>
+                <Tag color={brand.cyan} style={{ fontWeight: 600 }}>{selectedKeys.length} seleccionado(s)</Tag>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  Aprobables: {elegiblesAprobar.length} · Listos para OC: {elegiblesOC.length}
+                </Text>
+              </Space>
+            </Col>
+            <Col>
+              <Space>
+                {isAdmin && elegiblesAprobar.length > 0 && (
+                  <Popconfirm
+                    title={`Aprobar ${elegiblesAprobar.length} requerimiento(s)`}
+                    onConfirm={aprobarBulk}
+                    okText="Aprobar" cancelText="Cancelar"
+                  >
+                    <Button type="primary" icon={<CheckOutlined />}>
+                      Aprobar ({elegiblesAprobar.length})
+                    </Button>
+                  </Popconfirm>
+                )}
+                <Button
+                  icon={<FileAddOutlined />}
+                  type="primary"
+                  disabled={elegiblesOC.length === 0}
+                  onClick={() => abrirOcModal()}
+                >
+                  Generar OC ({elegiblesOC.length})
+                </Button>
+                <Button onClick={() => setSelectedKeys([])}>Cancelar</Button>
+              </Space>
+            </Col>
+          </Row>
+        </Card>
+      )}
+
+      {!isAdmin && (
+        <Alert
+          type="info" showIcon style={{ marginBottom: 12 }}
+          title="Modo lectura para aprobar"
+          description="Solo administradores pueden aprobar/desaprobar/anular requerimientos. Vos podés ver, filtrar y generar OC desde aprobados."
+        />
+      )}
+
+      {rows.length === 0 && !loading ? (
+        <Empty description="No hay requerimientos con esos filtros." />
+      ) : (
+        <Table<GrupoReq>
+          rowKey="key"
+          columns={visibleColumns(groupColumns, ocultas)}
+          dataSource={grupos}
+          loading={loading}
+          size="small"
+          pagination={paginacionEstandar({
+            current: page,
+            pageSize,
+            total,
+            onChange: (p, s) => { setPage(p); setPageSize(s); },
+            label: `items (${grupos.length} requerimiento(s))`,
+          })}
+          scroll={{ x: 1500 }}
+          expandable={{
+            defaultExpandAllRows: false,
+            expandRowByClick: false,
+            expandedRowRender: (g) => {
+              const itemKeysEnGrupo = g.items.map((i) => i.id);
+              const seleccionEnGrupo = selectedKeys.filter((k) => itemKeysEnGrupo.includes(k));
+              return (
+                <Table<RequerimientoRow>
+                  rowKey="id"
+                  columns={itemColumns}
+                  dataSource={g.items}
+                  pagination={false}
+                  size="small"
+                  scroll={{ x: 1400 }}
+                  rowSelection={{
+                    selectedRowKeys: seleccionEnGrupo,
+                    onChange: (keys) => {
+                      const otras = selectedKeys.filter((k) => !itemKeysEnGrupo.includes(k));
+                      setSelectedKeys([...otras, ...(keys as number[])]);
+                    },
+                    getCheckboxProps: (r) => ({ disabled: r.status_requerimiento_codigo === "ANULADO" }),
+                  }}
+                />
+              );
+            },
+          }}
+        />
+      )}
+
+      {/* Modal Generar OC */}
+      <Modal
+        title={`Generar OC con ${itemsParaOC.length} item(s)`}
+        open={ocOpen}
+        onCancel={() => setOcOpen(false)}
+        onOk={onCrearOC}
+        confirmLoading={ocSaving}
+        okText="Generar OC"
+        cancelText="Cancelar"
+        width={620}
+        destroyOnHidden
+      >
+        <Alert
+          type="info" showIcon style={{ marginBottom: 12 }}
+          title="Items elegibles"
+          description={`Solo se incluyen items APROBADOS sin OC: ${itemsParaOC.length} item(s).`}
+        />
+        <Form form={ocForm} layout="vertical">
+          <Form.Item name="proveedor_id" label="Proveedor" rules={[{ required: true, message: "Proveedor requerido" }]}>
+            <Select
+              showSearch optionFilterProp="label"
+              placeholder="Buscá por nombre o RUC…"
+              options={proveedoresOpts}
+            />
+          </Form.Item>
+          <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item name="ubicacion_codigo" label="Ubicación de entrega">
+                <Select
+                  showSearch optionFilterProp="label" allowClear
+                  options={ubicacionesOpts}
+                  placeholder="Opcional"
+                />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
+              <Form.Item name="moneda" label="Moneda" rules={[{ required: true }]}>
+                <Select options={[
+                  { value: "USD", label: "USD" },
+                  { value: "SOL", label: "SOL" },
+                ]} />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
+              <Form.Item name="fecha_entrega_esperada" label="Fecha entrega">
+                <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item name="observaciones" label="Observaciones">
+            <Input.TextArea rows={2} maxLength={300} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* Modal Editar (admin) */}
+      <Modal
+        title={`Editar ${editingRow?.nro_req ?? ""}`}
+        open={editOpen}
+        onCancel={() => setEditOpen(false)}
+        onOk={onSaveEdit}
+        confirmLoading={editSaving}
+        okText="Guardar" cancelText="Cancelar"
+        width={620}
+        destroyOnHidden
+      >
+        <Form form={editForm} layout="vertical">
+          {editingRow?.tipo_codigo === "MAC" && (
+            <Form.Item name="material_codigo" label="Material">
+              <Select
+                showSearch optionFilterProp="label" allowClear
+                options={materiales.map((m) => ({
+                  value: m.codigo,
+                  label: `${m.codigo} — ${m.descripcion}${m.fabricante_codigo ? ` [${m.fabricante_codigo}]` : ""}`,
+                }))}
+              />
+            </Form.Item>
+          )}
+          <Form.Item name="descripcion" label="Descripción" rules={[{ required: true, max: 500 }]}>
+            <Input.TextArea rows={2} maxLength={500} />
+          </Form.Item>
+          <Row gutter={12}>
+            <Col span={8}>
+              <Form.Item name="cantidad" label="Cantidad" rules={[{ required: true }]}>
+                <InputNumber min={0.01} step={1} style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="unidad_medida" label="Unidad">
+                <Input placeholder="UNIDAD" />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="fabricante_codigo" label="Fabricante">
+                <Select
+                  showSearch allowClear optionFilterProp="label"
+                  options={fabricantes.map((f) => ({ value: f.codigo, label: `${f.codigo} — ${f.nombre}` }))}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item name="fecha_requerida" label="Fecha requerida">
+                <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item name="observaciones" label="Observaciones">
+            <Input.TextArea rows={2} />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }

@@ -2,10 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { writeFile, mkdir, unlink } from "fs/promises";
 import path from "path";
+import { validarArchivo, sanitizarNombreArchivo } from "@/lib/file-uploads";
 
 type Params = { params: Promise<{ id: string }> };
-
-const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
 
 // POST — subir informe
 export async function POST(req: NextRequest, { params }: Params) {
@@ -19,14 +18,22 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!existing) {
       return NextResponse.json({ error: "Evaluacion no encontrada" }, { status: 404 });
     }
+    if (["APROBADA", "PENDIENTE_APROBACION"].includes(existing.estado)) {
+      const msg =
+        existing.estado === "APROBADA"
+          ? "La evaluacion esta APROBADA. Debes reabrirla para cambiar el informe."
+          : "La evaluacion esta PENDIENTE DE APROBACION y no se puede modificar.";
+      return NextResponse.json({ error: msg }, { status: 409 });
+    }
 
     const formData = await req.formData();
     const file = formData.get("informe") as File | null;
     if (!file) {
       return NextResponse.json({ error: "No se envio ningun archivo" }, { status: 400 });
     }
-    if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json({ error: "El archivo excede 20 MB" }, { status: 400 });
+    const validacion = validarArchivo(file, "informes");
+    if (!validacion.ok) {
+      return NextResponse.json({ error: validacion.error }, { status: 400 });
     }
 
     // Eliminar archivo anterior si existe
@@ -39,8 +46,8 @@ export async function POST(req: NextRequest, { params }: Params) {
       }
     }
 
-    // Generar nombre unico
-    const ext = path.extname(file.name) || "";
+    // Generar nombre unico (la extensión ya fue validada por validarArchivo).
+    const ext = path.extname(file.name).toLowerCase();
     const uniqueName = `informe-eval-${evalId}-${Date.now()}${ext}`;
 
     const relDir = path.join("uploads", "evaluaciones");
@@ -57,7 +64,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       where: { id: evalId },
       data: {
         informe_archivo: ruta,
-        informe_nombre: file.name,
+        informe_nombre: sanitizarNombreArchivo(file.name),
         informe_fecha_subida: new Date(),
       },
     });
@@ -77,6 +84,13 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
     const existing = await prisma.evaluacionTecnica.findUnique({ where: { id: evalId } });
     if (!existing || !existing.informe_archivo) {
       return NextResponse.json({ error: "No hay informe" }, { status: 404 });
+    }
+    if (["APROBADA", "PENDIENTE_APROBACION"].includes(existing.estado)) {
+      const msg =
+        existing.estado === "APROBADA"
+          ? "La evaluacion esta APROBADA. Debes reabrirla para cambiar el informe."
+          : "La evaluacion esta PENDIENTE DE APROBACION y no se puede modificar.";
+      return NextResponse.json({ error: msg }, { status: 409 });
     }
 
     try {

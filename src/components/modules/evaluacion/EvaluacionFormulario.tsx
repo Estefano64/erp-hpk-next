@@ -1,6 +1,7 @@
 "use client";
 
-import { Card, Row, Col, Input, Checkbox, Radio, InputNumber, Space, Typography, Divider, Image } from "antd";
+import { Card, Row, Col, Input, Checkbox, Radio, InputNumber, Space, Typography, Divider, Image, Upload, Button, App } from "antd";
+import { CameraOutlined, UploadOutlined, DeleteOutlined } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
 
 const { Text } = Typography;
@@ -25,6 +26,10 @@ export const IMG_COMPONENTE: Record<string, string> = {
   tapa: "/Tapa.png",
   piston: "/Piston.png",
   embolo: "/Piston.png",
+  hub: "/Hub.jpeg",
+  spindle: "/Spindle.jpeg",
+  conjunto_freno: "/ConjuntoFreno.jpeg",
+  piston_freno: "/PistonFreno.jpeg",
 };
 
 // ── Detectar modelo desde estrategia ────────────────────────
@@ -47,6 +52,7 @@ interface EvaluacionFormularioProps {
   sistemaMedicion: string;
   datos: Record<string, unknown>;
   onChange: (datos: Record<string, unknown>) => void;
+  readonly?: boolean;
 }
 
 // ── Helper: obtener y setear valor ─────────────────────────
@@ -358,6 +364,167 @@ function ResultadoComponente({
   );
 }
 
+// ── Comprimir imagen a base64 para almacenar en datos_formulario ──
+async function comprimirImagen(file: File, maxWidth = 900, quality = 0.78): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxWidth / img.width);
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return reject(new Error("Canvas no soportado"));
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = () => reject(new Error("No se pudo cargar la imagen"));
+      img.src = ev.target?.result as string;
+    };
+    reader.onerror = () => reject(new Error("No se pudo leer el archivo"));
+    reader.readAsDataURL(file);
+  });
+}
+
+// ── Uploader de fotos por componente ───────────────────────
+interface FotoComponente {
+  name: string;
+  data: string;
+}
+function ImagenesComponente({
+  prefix,
+  etiqueta,
+  datos,
+  onChange,
+}: {
+  prefix: string;
+  etiqueta: string;
+  datos: Record<string, unknown>;
+  onChange: (d: Record<string, unknown>) => void;
+}) {
+  const { message } = App.useApp();
+  const key = `${prefix}_imagenes`;
+  const imagenes = (datos[key] as FotoComponente[] | undefined) || [];
+  const MAX_FOTOS = 6;
+  const lleno = imagenes.length >= MAX_FOTOS;
+
+  const handleUpload = async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      message.warning("Solo se permiten imagenes");
+      return false;
+    }
+    if (file.size > 15 * 1024 * 1024) {
+      message.warning("Imagen demasiado grande (max 15MB)");
+      return false;
+    }
+    // Leemos el estado actual de datos por si hay varios uploads paralelos
+    const actuales = (datos[key] as FotoComponente[] | undefined) || [];
+    if (actuales.length >= MAX_FOTOS) {
+      message.warning(`Maximo ${MAX_FOTOS} fotos por componente`);
+      return false;
+    }
+    try {
+      const data = await comprimirImagen(file);
+      onChange({ ...datos, [key]: [...actuales, { name: file.name, data }] });
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Error al procesar imagen");
+    }
+    return false;
+  };
+
+  const handleDelete = (idx: number) => {
+    onChange({ ...datos, [key]: imagenes.filter((_, i) => i !== idx) });
+  };
+
+  return (
+    <Card
+      size="small"
+      title={
+        <Space>
+          <CameraOutlined style={{ color: brand.cyan }} />
+          <Text strong style={{ fontSize: 12, color: brand.navy }}>
+            Evidencia fotografica — {etiqueta}
+          </Text>
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            ({imagenes.length}/{MAX_FOTOS})
+          </Text>
+        </Space>
+      }
+      style={{ marginTop: 12, background: "#fafcff", borderColor: brand.border }}
+      styles={{ body: { padding: 12 } }}
+    >
+      <Upload
+        beforeUpload={(file) => handleUpload(file as File)}
+        showUploadList={false}
+        multiple
+        accept="image/*"
+        disabled={lleno}
+      >
+        <Button icon={<UploadOutlined />} size="small" disabled={lleno}>
+          {lleno ? `Limite alcanzado (${MAX_FOTOS})` : "Agregar foto"}
+        </Button>
+      </Upload>
+      {imagenes.length > 0 && (
+        <Row gutter={[8, 8]} style={{ marginTop: 10 }}>
+          {imagenes.map((img, idx) => (
+            <Col xs={12} sm={8} md={6} lg={4} key={idx}>
+              <div
+                style={{
+                  position: "relative",
+                  border: `1px solid ${brand.border}`,
+                  borderRadius: 4,
+                  padding: 4,
+                  background: "#fff",
+                }}
+              >
+                <Image
+                  src={img.data}
+                  alt={img.name}
+                  style={{ width: "100%", height: 80, objectFit: "cover", borderRadius: 2 }}
+                  preview={{ mask: "Ver" }}
+                />
+                <Button
+                  danger
+                  type="primary"
+                  size="small"
+                  icon={<DeleteOutlined />}
+                  onClick={() => handleDelete(idx)}
+                  style={{
+                    position: "absolute",
+                    top: 6,
+                    right: 6,
+                    minWidth: 22,
+                    height: 22,
+                    padding: 0,
+                  }}
+                />
+                <div
+                  style={{
+                    fontSize: 10,
+                    color: "#666",
+                    marginTop: 4,
+                    textAlign: "center",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={img.name}
+                >
+                  {img.name}
+                </div>
+              </div>
+            </Col>
+          ))}
+        </Row>
+      )}
+    </Card>
+  );
+}
+
 // ── Checklist Cilindro (compartido) ────────────────────────
 const GRUPOS_CILINDRO: GrupoHallazgos[] = [
   {
@@ -606,6 +773,12 @@ function EtapasTelescopico({
           datos={datos}
           onChange={onChange}
         />
+        <ImagenesComponente
+          prefix={`${prefix}_etapa${i}`}
+          etiqueta={`Etapa ${i}`}
+          datos={datos}
+          onChange={onChange}
+        />
         <ResultadoComponente prefix={`${prefix}_etapa${i}`} label={`Etapa ${i}`} datos={datos} onChange={onChange} />
       </SeccionNum>
     );
@@ -639,7 +812,7 @@ function EtapasTelescopico({
 // ═══════════════════════════════════════════════════════════
 // RENDER PRINCIPAL
 // ═══════════════════════════════════════════════════════════
-export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, onChange }: EvaluacionFormularioProps) {
+export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, onChange, readonly = false }: EvaluacionFormularioProps) {
   const unidad = sistemaMedicion === "Imperial" ? "in" : "mm";
 
   // Prefijo segun tipo
@@ -695,7 +868,7 @@ export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, o
           <SeccionNum num={3} titulo="HUB (Cubo)">
             <Row gutter={16}>
               <Col xs={24} md={8}>
-                <ImagenReferencia componente="cilindro" label="Hub" />
+                <ImagenReferencia componente="hub" label="Hub" />
               </Col>
               <Col xs={24} md={16}>
                 <TablaMedidas
@@ -733,13 +906,14 @@ export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, o
               datos={datos}
               onChange={onChange}
             />
+            <ImagenesComponente prefix={`${p}_hub`} etiqueta="Hub" datos={datos} onChange={onChange} />
             <ResultadoComponente prefix={`${p}_hub`} label="Hub" datos={datos} onChange={onChange} />
           </SeccionNum>
 
           <SeccionNum num={4} titulo="SPINDLE (Muñon)">
             <Row gutter={16}>
               <Col xs={24} md={8}>
-                <ImagenReferencia componente="vastago" label="Spindle" />
+                <ImagenReferencia componente="spindle" label="Spindle" />
               </Col>
               <Col xs={24} md={16}>
                 <TablaMedidas
@@ -772,10 +946,16 @@ export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, o
               datos={datos}
               onChange={onChange}
             />
+            <ImagenesComponente prefix={`${p}_spi`} etiqueta="Spindle" datos={datos} onChange={onChange} />
             <ResultadoComponente prefix={`${p}_spi`} label="Spindle" datos={datos} onChange={onChange} />
           </SeccionNum>
 
           <SeccionNum num={5} titulo="CONJUNTO DE FRENO">
+            <Row gutter={16} style={{ marginBottom: 12 }}>
+              <Col xs={24} md={8}>
+                <ImagenReferencia componente="conjunto_freno" label="Conjunto de Freno" />
+              </Col>
+            </Row>
             <ChecklistHallazgos
               id={`${p}_freno`}
               titulo="Check list - Conjunto de Freno"
@@ -793,10 +973,16 @@ export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, o
               datos={datos}
               onChange={onChange}
             />
+            <ImagenesComponente prefix={`${p}_freno`} etiqueta="Conjunto Freno" datos={datos} onChange={onChange} />
             <ResultadoComponente prefix={`${p}_freno`} label="Conjunto Freno" datos={datos} onChange={onChange} />
           </SeccionNum>
 
           <SeccionNum num={6} titulo="CAJA DE FRENO">
+            <Row gutter={16} style={{ marginBottom: 12 }}>
+              <Col xs={24} md={8}>
+                <ImagenReferencia componente="piston_freno" label="Pistón de Freno" />
+              </Col>
+            </Row>
             <ChecklistHallazgos
               id={`${p}_caja`}
               titulo="Check list - Caja de Freno"
@@ -812,6 +998,7 @@ export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, o
               datos={datos}
               onChange={onChange}
             />
+            <ImagenesComponente prefix={`${p}_caja`} etiqueta="Caja Freno" datos={datos} onChange={onChange} />
             <ResultadoComponente prefix={`${p}_caja`} label="Caja Freno" datos={datos} onChange={onChange} />
           </SeccionNum>
 
@@ -835,6 +1022,7 @@ export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, o
               datos={datos}
               onChange={onChange}
             />
+            <ImagenesComponente prefix={`${p}_gen`} etiqueta="General" datos={datos} onChange={onChange} />
             <ResultadoComponente prefix={`${p}_gen`} label="General" datos={datos} onChange={onChange} />
           </SeccionNum>
         </>
@@ -875,6 +1063,7 @@ export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, o
               </div>
             </Col>
           </Row>
+          <ImagenesComponente prefix={`${p}_acum`} etiqueta="Acumulador" datos={datos} onChange={onChange} />
           <ResultadoComponente prefix={`${p}_acum`} label="Acumulador" datos={datos} onChange={onChange} />
         </SeccionNum>
       );
@@ -924,6 +1113,7 @@ export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, o
           </Col>
         </Row>
         <ChecklistHallazgos id={`${p}_cil`} titulo="Check list - Cilindro" grupos={GRUPOS_CILINDRO} datos={datos} onChange={onChange} />
+        <ImagenesComponente prefix={`${p}_cil`} etiqueta="Cilindro" datos={datos} onChange={onChange} />
         <ResultadoComponente prefix={`${p}_cil`} label="Cilindro" datos={datos} onChange={onChange} />
       </SeccionNum>
     );
@@ -964,6 +1154,7 @@ export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, o
             </Col>
           </Row>
           <ChecklistHallazgos id={`${p}_vas`} titulo="Check list - Vastago" grupos={GRUPOS_VASTAGO} datos={datos} onChange={onChange} />
+          <ImagenesComponente prefix={`${p}_vas`} etiqueta="Vastago" datos={datos} onChange={onChange} />
           <ResultadoComponente prefix={`${p}_vas`} label="Vastago" datos={datos} onChange={onChange} />
         </SeccionNum>
       );
@@ -1002,6 +1193,7 @@ export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, o
             </Col>
           </Row>
           <ChecklistHallazgos id={`${p}_tapa`} titulo="Check list - Tapa" grupos={GRUPOS_TAPA} datos={datos} onChange={onChange} />
+          <ImagenesComponente prefix={`${p}_tapa`} etiqueta="Tapa" datos={datos} onChange={onChange} />
           <ResultadoComponente prefix={`${p}_tapa`} label="Tapa" datos={datos} onChange={onChange} />
         </SeccionNum>
       );
@@ -1038,12 +1230,32 @@ export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, o
           </Col>
         </Row>
         <ChecklistHallazgos id={`${p}_pis`} titulo="Check list - Piston" grupos={GRUPOS_PISTON} datos={datos} onChange={onChange} />
+        <ImagenesComponente prefix={`${p}_pis`} etiqueta={modelo === "acum_embolo" ? "Embolo" : "Piston"} datos={datos} onChange={onChange} />
         <ResultadoComponente prefix={`${p}_pis`} label="Piston" datos={datos} onChange={onChange} />
       </SeccionNum>
     );
 
     return secciones;
   };
+
+  if (readonly) {
+    // Bloquear todos los inputs internos (Input, InputNumber, Checkbox, Radio, button/Upload)
+    // usando <fieldset disabled> que desactiva a nivel DOM.
+    return (
+      <fieldset
+        disabled
+        style={{
+          border: "none",
+          padding: 0,
+          margin: 0,
+          minWidth: 0,
+          opacity: 0.85,
+        }}
+      >
+        {renderSecciones()}
+      </fieldset>
+    );
+  }
 
   return <>{renderSecciones()}</>;
 }

@@ -7,7 +7,6 @@ import {
   Table,
   Button,
   Input,
-  Select,
   Tag,
   Row,
   Col,
@@ -17,7 +16,11 @@ import {
   App,
   Statistic,
   Popconfirm,
+  Segmented,
+  Tabs,
+  Badge,
 } from "antd";
+import RequerimientosAprobadosTab from "@/components/modules/compras/RequerimientosAprobadosTab";
 import {
   SearchOutlined,
   ReloadOutlined,
@@ -28,8 +31,20 @@ import {
   ClockCircleOutlined,
   CheckCircleOutlined,
   InfoCircleOutlined,
+  FilePdfOutlined,
+  FileExcelOutlined,
+  MessageOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
+import {
+  numeracionColumn,
+  paginacionEstandar,
+  PAGINATION_PAGE_SIZE,
+  useColumnasOcultas,
+  ColumnasToggleButton,
+  visibleColumns,
+  filtroPorColumna,
+} from "@/lib/tables";
 import { Popover, Divider } from "antd";
 import { brand } from "@/lib/theme";
 import dayjs from "dayjs";
@@ -55,6 +70,7 @@ interface Compra {
   total: number;
   moneda: string;
   nro_factura: string | null;
+  nro_guia: string | null;
   observaciones: string | null;
   cantidad_items: number;
   usuario_solicita: string;
@@ -76,8 +92,11 @@ export default function ComprasPage() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [estado, setEstado] = useState<string>("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
 
   const [modalId, setModalId] = useState<number | null>(null);
+  const { ocultas, setOcultas } = useColumnasOcultas("compras-list-cols-v1");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -117,6 +136,37 @@ export default function ComprasPage() {
   const recibidas = data.filter((c) => c.estado === "Recibido").length;
   const totalValor = data.reduce((s, c) => s + Number(c.total || 0), 0);
 
+  const exportarExcel = async () => {
+    try {
+      const XLSX = await import("xlsx");
+      const rows = data.map((c) => ({
+        "Nro OC": c.numero_po,
+        Estado: c.estado,
+        Proveedor: c.proveedor_nombre ?? "",
+        Almacén: c.almacen_nombre ?? "",
+        "F. Solicitud": c.fecha_solicitud ? dayjs(c.fecha_solicitud).format("DD/MM/YYYY") : "",
+        "F. Entrega Esp.": c.fecha_entrega_esperada ? dayjs(c.fecha_entrega_esperada).format("DD/MM/YYYY") : "",
+        "F. Entrega Real": c.fecha_entrega_real ? dayjs(c.fecha_entrega_real).format("DD/MM/YYYY") : "",
+        Items: c.cantidad_items,
+        Subtotal: Number(c.subtotal),
+        IGV: Number(c.impuesto),
+        Total: Number(c.total),
+        Moneda: c.moneda,
+        "Nro Guía": c.nro_guia ?? "",
+        "Nro Factura": c.nro_factura ?? "",
+        Comentarios: c.observaciones ?? "",
+        Usuario: c.usuario_solicita ?? "",
+      }));
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Compras");
+      XLSX.writeFile(wb, `Compras-${dayjs().format("YYYYMMDD-HHmm")}.xlsx`);
+      message.success("Excel descargado");
+    } catch {
+      message.error("Error al exportar Excel");
+    }
+  };
+
   // Valores unicos para filtros
   const valoresUnicos = (campo: keyof Compra) => {
     const set = new Set<string>();
@@ -151,7 +201,9 @@ export default function ComprasPage() {
   );
 
   const columns: ColumnsType<Compra> = [
+    numeracionColumn<Compra>({ current: page, pageSize }),
     {
+      key: "numero_po",
       title: "Nro OC",
       dataIndex: "numero_po",
       width: 130,
@@ -170,6 +222,7 @@ export default function ComprasPage() {
       ),
     },
     {
+      key: "estado",
       title: "Estado",
       dataIndex: "estado",
       width: 110,
@@ -184,6 +237,7 @@ export default function ComprasPage() {
       render: (v: string) => <Tag color={estadoColor[v] || "default"}>{v}</Tag>,
     },
     {
+      key: "proveedor_nombre",
       title: "Proveedor",
       dataIndex: "proveedor_nombre",
       width: 200,
@@ -194,6 +248,7 @@ export default function ComprasPage() {
       sorter: (a, b) => (a.proveedor_nombre ?? "").localeCompare(b.proveedor_nombre ?? ""),
     },
     {
+      key: "almacen_nombre",
       title: "Almacén",
       dataIndex: "almacen_nombre",
       width: 140,
@@ -203,6 +258,7 @@ export default function ComprasPage() {
       onFilter: (value, r) => r.almacen_nombre === value,
     },
     {
+      key: "fecha_solicitud",
       title: "F. Solicitud",
       dataIndex: "fecha_solicitud",
       width: 110,
@@ -210,18 +266,21 @@ export default function ComprasPage() {
       sorter: (a, b) => (a.fecha_solicitud ?? "").localeCompare(b.fecha_solicitud ?? ""),
     },
     {
+      key: "fecha_entrega_esperada",
       title: "F. Entrega Esp.",
       dataIndex: "fecha_entrega_esperada",
       width: 120,
       render: (v: string | null) => (v ? dayjs(v).format("DD/MM/YYYY") : "-"),
     },
     {
+      key: "cantidad_items",
       title: "Items",
       dataIndex: "cantidad_items",
       width: 70,
       align: "center",
     },
     {
+      key: "subtotal",
       title: "Subtotal",
       dataIndex: "subtotal",
       width: 110,
@@ -229,6 +288,7 @@ export default function ComprasPage() {
       render: (v: number) => Number(v).toFixed(2),
     },
     {
+      key: "total",
       title: "Total",
       dataIndex: "total",
       width: 120,
@@ -241,25 +301,61 @@ export default function ComprasPage() {
       sorter: (a, b) => Number(a.total) - Number(b.total),
     },
     {
+      key: "nro_guia",
+      title: "Guía",
+      dataIndex: "nro_guia",
+      width: 110,
+      ...filtroPorColumna(data, "nro_guia"),
+      render: (v: string | null) =>
+        v ? <Tag color="cyan">{v}</Tag> : <span style={{ color: "#bbb" }}>—</span>,
+    },
+    {
+      key: "nro_factura",
       title: "Factura",
       dataIndex: "nro_factura",
       width: 130,
-      render: (v: string | null) => v || "-",
+      ...filtroPorColumna(data, "nro_factura"),
+      render: (v: string | null) =>
+        v ? <Tag color="purple">{v}</Tag> : <span style={{ color: "#bbb" }}>—</span>,
     },
     {
+      key: "observaciones",
+      title: "Comentarios",
+      dataIndex: "observaciones",
+      width: 220,
+      ellipsis: true,
+      render: (v: string | null) =>
+        v ? (
+          <Tooltip title={v}>
+            <Space size={4}>
+              <MessageOutlined style={{ color: brand.cyan }} />
+              <span style={{ fontSize: 12 }}>{v}</span>
+            </Space>
+          </Tooltip>
+        ) : (
+          <span style={{ color: "#bbb" }}>—</span>
+        ),
+    },
+    {
+      key: "usuario_solicita",
       title: "Usuario",
       dataIndex: "usuario_solicita",
       width: 120,
+      ...filtroPorColumna(data, "usuario_solicita"),
     },
     {
+      key: "acciones",
       title: "Acciones",
-      width: 100,
+      width: 130,
       align: "center",
       fixed: "right",
       render: (_: unknown, r: Compra) => (
         <Space size={0}>
           <Tooltip title="Ver detalle">
             <Button type="text" icon={<EyeOutlined />} onClick={() => setModalId(r.id)} />
+          </Tooltip>
+          <Tooltip title="Generar PDF (OC)">
+            <Button type="text" icon={<FilePdfOutlined style={{ color: "#cf1322" }} />} onClick={() => window.open(`/api/compras/${r.id}/pdf`, "_blank")} />
           </Tooltip>
           {r.estado === "Pendiente" && (
             <Tooltip title="Eliminar">
@@ -279,21 +375,8 @@ export default function ComprasPage() {
     },
   ];
 
-  return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <Title level={3} style={{ margin: 0 }}>
-          Órdenes de Compra
-        </Title>
-        <Button
-          type="primary"
-          icon={<UnorderedListOutlined />}
-          onClick={() => router.push("/requerimientos")}
-        >
-          Ver Requerimientos
-        </Button>
-      </div>
-
+  const ocsContent = (
+    <>
       {/* KPI Cards */}
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
         <Col xs={12} md={6}>
@@ -339,32 +422,33 @@ export default function ComprasPage() {
         </Col>
       </Row>
 
+      {/* Selector de vista por estado */}
+      <Card styles={{ body: { padding: 12 } }} style={{ marginBottom: 12 }}>
+        <Segmented
+          block
+          value={estado || "__all"}
+          onChange={(v) => { setEstado(v === "__all" ? "" : (v as string)); setPage(1); }}
+          options={[
+            { value: "__all", label: "Todos" },
+            { value: "Pendiente", label: "Pendiente" },
+            { value: "Aprobado", label: "Aprobado" },
+            { value: "En Proceso", label: "En Proceso" },
+            { value: "Recibido", label: "Recibido" },
+            { value: "Cancelado", label: "Cancelado" },
+          ]}
+        />
+      </Card>
+
       {/* Filtros */}
       <Card styles={{ body: { padding: 16 } }} style={{ marginBottom: 16 }}>
         <Row gutter={[12, 12]}>
-          <Col xs={24} sm={8} md={6}>
+          <Col xs={24} sm={16} md={10}>
             <Input
               placeholder="Buscar por OC, factura..."
               prefix={<SearchOutlined />}
               allowClear
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-            />
-          </Col>
-          <Col xs={12} sm={6} md={4}>
-            <Select
-              placeholder="Estado"
-              allowClear
-              style={{ width: "100%" }}
-              value={estado || undefined}
-              onChange={(v) => setEstado(v ?? "")}
-              options={[
-                { value: "Pendiente", label: "Pendiente" },
-                { value: "Aprobado", label: "Aprobado" },
-                { value: "En Proceso", label: "En Proceso" },
-                { value: "Recibido", label: "Recibido" },
-                { value: "Cancelado", label: "Cancelado" },
-              ]}
             />
           </Col>
           <Col xs={12} sm={6} md={4}>
@@ -377,12 +461,74 @@ export default function ComprasPage() {
 
       <Table
         rowKey="id"
-        columns={columns}
+        columns={visibleColumns(columns, ocultas)}
         dataSource={data}
         loading={loading}
-        pagination={{ pageSize: 20, showTotal: (t) => `${t} órdenes de compra` }}
+        pagination={paginacionEstandar({
+          current: page,
+          pageSize,
+          total: data.length,
+          onChange: (p, s) => { setPage(p); setPageSize(s); },
+          label: "órdenes de compra",
+        })}
         scroll={{ x: 1500 }}
         size="small"
+      />
+    </>
+  );
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <Title level={3} style={{ margin: 0 }}>
+          Compras
+        </Title>
+        <Space>
+          <ColumnasToggleButton<Compra>
+            columns={columns}
+            ocultas={ocultas}
+            setOcultas={setOcultas}
+            obligatorias={["__num", "numero_po", "acciones"]}
+          />
+          <Button
+            icon={<FileExcelOutlined />}
+            onClick={exportarExcel}
+            style={{ background: "#1d6f42", color: "#fff", borderColor: "#1d6f42" }}
+          >
+            Descargar Excel
+          </Button>
+          <Button
+            icon={<UnorderedListOutlined />}
+            onClick={() => router.push("/requerimientos")}
+          >
+            Ir a Requerimientos
+          </Button>
+        </Space>
+      </div>
+
+      <Tabs
+        defaultActiveKey="ocs"
+        items={[
+          {
+            key: "ocs",
+            label: (
+              <span>
+                <ShoppingCartOutlined /> Órdenes de Compra
+                <Badge count={data.length} style={{ background: brand.navy, marginLeft: 8 }} showZero />
+              </span>
+            ),
+            children: ocsContent,
+          },
+          {
+            key: "aprobados",
+            label: (
+              <span>
+                <InfoCircleOutlined /> Requerimientos aprobados
+              </span>
+            ),
+            children: <RequerimientosAprobadosTab onOCCreated={fetchData} />,
+          },
+        ]}
       />
 
       <CompraDetalleModal

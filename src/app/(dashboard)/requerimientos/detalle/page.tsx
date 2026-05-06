@@ -33,15 +33,54 @@ import {
   PlusOutlined,
   MinusOutlined,
   InfoCircleOutlined,
+  SettingOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType, TableRowSelection } from "antd/es/table/interface";
-import { Popover, InputNumber, Divider } from "antd";
+import { numeracionColumn } from "@/lib/tables";
+import { Popover, InputNumber, Divider, Checkbox } from "antd";
 import { brand } from "@/lib/theme";
 import dayjs, { Dayjs } from "dayjs";
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
 
+// Shape devuelto por /api/requerimientos (HEAD: anidado)
+interface RequerimientoApi {
+  id: number;
+  ot_id: number;
+  material_id: number | null;
+  material_codigo: string | null;
+  nro_req: string | null;
+  item_req: number | null;
+  tipo_codigo: string | null;
+  cantidad: string | number;
+  descripcion: string | null;
+  fabricante_codigo: string | null;
+  unidad_medida: string | null;
+  fecha_solicitud: string | null;
+  fecha_requerida: string | null;
+  precio_unitario: string | number | null;
+  moneda: string | null;
+  po_id: number | null;
+  nro_oc: string | null;
+  observaciones?: string | null;
+  status_requerimiento_codigo: string | null;
+  status_cotizacion_codigo: string | null;
+  status_oc_codigo: string | null;
+  orden_trabajo: {
+    id: number;
+    ot: string | null;
+    cliente: { codigo: string; razon_social: string; nombre_comercial: string | null } | null;
+  } | null;
+  material: { codigo: string; descripcion: string; unidad_medida_codigo: string | null } | null;
+  proveedor: { id: number; razon_social: string } | null;
+  compra: { id: number; numero_po: string } | null;
+  status_requerimiento: { codigo: string; nombre: string } | null;
+  status_cotizacion: { codigo: string; nombre: string } | null;
+  status_oc: { codigo: string; nombre: string } | null;
+}
+
+// View-model plano para la tabla
 interface Requerimiento {
   id: number;
   ot_id: number;
@@ -49,7 +88,6 @@ interface Requerimiento {
   material_id: number | null;
   material_codigo: string | null;
   material_nombre: string | null;
-  stock_actual: number;
   nro_req: string | null;
   item_req: number | null;
   tipo_codigo: string | null;
@@ -59,10 +97,15 @@ interface Requerimiento {
   unidad_medida: string | null;
   fecha_solicitud: string | null;
   fecha_requerida: string | null;
-  estado: string | null;
-  estado_cot: string | null;
+  status_req: string | null;       // HEAD codes: SIN_APROBACION/APROBADO/DESAPROBADO/ANULADO
+  status_req_label: string | null;
+  status_cot: string | null;       // HEAD codes: PEND_COT/PEND_APROB/APROBADO/COMPLETO/ANULADO
+  status_cot_label: string | null;
+  status_oc: string | null;        // HEAD codes: PEND_OC/PROCESO/ENTREGADO/COMPLETO/INCOMPLETO/ANULADO/DEVOLUCION
+  status_oc_label: string | null;
   nro_oc: string | null;
   numero_po: string | null;
+  po_id: number | null;
   proveedor_nombre: string | null;
   precio_unitario: number | null;
   moneda: string | null;
@@ -70,28 +113,64 @@ interface Requerimiento {
   observaciones?: string | null;
 }
 
-interface CatalogoItem {
-  id: number;
-  razonSocial?: string;
-  nombre?: string;
+function normalize(r: RequerimientoApi): Requerimiento {
+  return {
+    id: r.id,
+    ot_id: r.ot_id,
+    numero_ot: r.orden_trabajo?.ot ?? null,
+    material_id: r.material_id,
+    material_codigo: r.material?.codigo ?? r.material_codigo ?? null,
+    material_nombre: r.material?.descripcion ?? null,
+    nro_req: r.nro_req,
+    item_req: r.item_req,
+    tipo_codigo: r.tipo_codigo,
+    cantidad: Number(r.cantidad),
+    descripcion: r.descripcion,
+    fabricante_codigo: r.fabricante_codigo,
+    unidad_medida: r.unidad_medida ?? r.material?.unidad_medida_codigo ?? null,
+    fecha_solicitud: r.fecha_solicitud,
+    fecha_requerida: r.fecha_requerida,
+    status_req: r.status_requerimiento?.codigo ?? r.status_requerimiento_codigo,
+    status_req_label: r.status_requerimiento?.nombre ?? null,
+    status_cot: r.status_cotizacion?.codigo ?? r.status_cotizacion_codigo,
+    status_cot_label: r.status_cotizacion?.nombre ?? null,
+    status_oc: r.status_oc?.codigo ?? r.status_oc_codigo,
+    status_oc_label: r.status_oc?.nombre ?? null,
+    nro_oc: r.nro_oc,
+    numero_po: r.compra?.numero_po ?? null,
+    po_id: r.po_id,
+    proveedor_nombre: r.proveedor?.razon_social ?? null,
+    precio_unitario: r.precio_unitario != null ? Number(r.precio_unitario) : null,
+    moneda: r.moneda,
+    cliente_nombre: r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? null,
+    observaciones: r.observaciones,
+  };
 }
 
-const estadoReqColor: Record<string, string> = {
-  Pendiente: "gold",
-  REV: "gold",
-  Aprobado: "green",
-  APR: "green",
-  "En PO": "blue",
-  COM: "default",
-  ANU: "red",
-};
+interface ProveedorApi { id: number; razon_social: string }
+interface AlmacenApi { id: string; codigo: string; nombre: string }
 
-const estadoCotColor: Record<string, string> = {
-  PDT_COT: "gold",
-  PDT_APR: "orange",
-  APR: "green",
-  ANU: "red",
-  DES: "red",
+const reqColor: Record<string, string> = {
+  SIN_APROBACION: "default",
+  APROBADO: "success",
+  DESAPROBADO: "error",
+  ANULADO: "default",
+};
+const cotColor: Record<string, string> = {
+  PEND_COT: "default",
+  PEND_APROB: "processing",
+  APROBADO: "success",
+  COMPLETO: "success",
+  ANULADO: "error",
+};
+const ocColor: Record<string, string> = {
+  PEND_OC: "default",
+  PROCESO: "processing",
+  ENTREGADO: "success",
+  COMPLETO: "success",
+  INCOMPLETO: "warning",
+  ANULADO: "error",
+  DEVOLUCION: "warning",
 };
 
 export default function RequerimientosDetallePage() {
@@ -111,8 +190,8 @@ export default function RequerimientosDetallePage() {
   // Modal de Crear OC
   const [modalOpen, setModalOpen] = useState(false);
   const [ocForm] = Form.useForm();
-  const [proveedores, setProveedores] = useState<CatalogoItem[]>([]);
-  const [almacenes, setAlmacenes] = useState<CatalogoItem[]>([]);
+  const [proveedores, setProveedores] = useState<ProveedorApi[]>([]);
+  const [almacenes, setAlmacenes] = useState<AlmacenApi[]>([]);
   const [creatingOC, setCreatingOC] = useState(false);
 
   // Modal de Dividir
@@ -120,12 +199,33 @@ export default function RequerimientosDetallePage() {
   const [partesDividir, setPartesDividir] = useState<number[]>([]);
   const [dividiendo, setDividiendo] = useState(false);
 
+  // Columnas ocultas (persistidas en localStorage)
+  const COLS_STORAGE_KEY = "req-detalle-cols-v1";
+  const [columnasOcultas, setColumnasOcultas] = useState<string[]>([]);
+  const [columnasHidratadas, setColumnasHidratadas] = useState(false);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(COLS_STORAGE_KEY);
+      if (stored) setColumnasOcultas(JSON.parse(stored));
+    } catch { /* ignore */ }
+    setColumnasHidratadas(true);
+  }, []);
+
+  useEffect(() => {
+    if (!columnasHidratadas) return;
+    try {
+      localStorage.setItem(COLS_STORAGE_KEY, JSON.stringify(columnasOcultas));
+    } catch { /* ignore */ }
+  }, [columnasOcultas, columnasHidratadas]);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/requerimientos");
+      const res = await fetch("/api/requerimientos?limit=500");
       const json = await res.json();
-      setAllData(json.data as Requerimiento[]);
+      const raw = (json.data ?? []) as RequerimientoApi[];
+      setAllData(raw.map(normalize));
     } catch {
       message.error("Error al cargar requerimientos");
     } finally {
@@ -141,8 +241,7 @@ export default function RequerimientosDetallePage() {
   }, [fetchData, params]);
 
   useEffect(() => {
-    // Cargar catalogos para el modal
-    Promise.all([fetch("/api/proveedores"), fetch("/api/almacenes")])
+    Promise.all([fetch("/api/proveedores?limit=500"), fetch("/api/almacenes")])
       .then(async ([pr, al]) => {
         if (pr.ok) setProveedores((await pr.json()).data ?? []);
         if (al.ok) setAlmacenes((await al.json()).data ?? []);
@@ -160,24 +259,22 @@ export default function RequerimientosDetallePage() {
     // Filtro rapido
     if (filtroRapido === "pdt_cotizar") {
       rows = rows.filter((r) => {
-        const est = r.estado || "Pendiente";
-        if (["COM", "ANU", "En PO"].includes(est)) return false;
-        if (r.nro_oc) return false;
-        return !r.precio_unitario || !r.estado_cot || r.estado_cot === "PDT_COT";
+        if (r.status_req === "ANULADO" || r.status_req === "DESAPROBADO") return false;
+        if (r.po_id) return false;
+        return !r.precio_unitario || !r.status_cot || r.status_cot === "PEND_COT";
       });
     } else if (filtroRapido === "pdt_pedir") {
       rows = rows.filter((r) => {
-        const est = r.estado || "Pendiente";
-        if (["COM", "ANU"].includes(est)) return false;
-        if (r.nro_oc) return false;
-        return est === "Aprobado" || est === "APR" || r.estado_cot === "APR";
+        if (r.status_req === "ANULADO" || r.status_req === "DESAPROBADO") return false;
+        if (r.po_id) return false;
+        return r.status_req === "APROBADO" || r.status_cot === "APROBADO";
       });
     } else if (filtroRapido === "en_oc") {
-      rows = rows.filter((r) => !!r.nro_oc);
+      rows = rows.filter((r) => r.po_id != null);
     }
 
-    // Estado
-    if (filtroEstado) rows = rows.filter((r) => (r.estado || "Pendiente") === filtroEstado);
+    // Estado REQ
+    if (filtroEstado) rows = rows.filter((r) => (r.status_req ?? "SIN_APROBACION") === filtroEstado);
 
     // Buscar
     if (search) {
@@ -217,7 +314,7 @@ export default function RequerimientosDetallePage() {
       setSelectedRecords(records);
     },
     getCheckboxProps: (r) => ({
-      disabled: !!r.nro_oc || r.estado === "COM" || r.estado === "ANU",
+      disabled: r.po_id != null || r.status_req === "ANULADO" || r.status_req === "DESAPROBADO",
     }),
   };
 
@@ -275,8 +372,8 @@ export default function RequerimientosDetallePage() {
       message.warning("Solo se pueden dividir items con cantidad >= 2");
       return;
     }
-    if (r.nro_oc) {
-      message.warning("No se puede dividir un item que ya esta en una OC");
+    if (r.po_id != null) {
+      message.warning("No se puede dividir un item con OC asignada");
       return;
     }
     // Dividir por defecto en dos partes iguales (o 1-resto si no divide exacto)
@@ -371,11 +468,10 @@ export default function RequerimientosDetallePage() {
         <Col span={12}><Text type="secondary">Código:</Text> <b>{r.material_codigo || "-"}</b></Col>
         <Col span={12}><Text type="secondary">Tipo:</Text> <b>{r.tipo_codigo || "MAC"}</b></Col>
         <Col span={12}><Text type="secondary">Cant:</Text> <b>{r.cantidad} {r.unidad_medida || ""}</b></Col>
-        <Col span={12}><Text type="secondary">Stock:</Text> <b style={{ color: r.stock_actual > 0 ? "#52c41a" : "#ff4d4f" }}>{r.stock_actual ?? 0}</b></Col>
         <Col span={12}><Text type="secondary">Fabricante:</Text> <b>{r.fabricante_codigo || "-"}</b></Col>
         <Col span={12}><Text type="secondary">Moneda:</Text> <b>{r.moneda || "USD"}</b></Col>
-        <Col span={12}><Text type="secondary">P. Unit:</Text> <b>{r.precio_unitario != null ? Number(r.precio_unitario).toFixed(2) : "-"}</b></Col>
-        <Col span={12}><Text type="secondary">Subtotal:</Text> <b>{r.precio_unitario ? (Number(r.precio_unitario) * Number(r.cantidad)).toFixed(2) : "-"}</b></Col>
+        <Col span={12}><Text type="secondary">P. Unit:</Text> <b>{r.precio_unitario != null ? r.precio_unitario.toFixed(2) : "-"}</b></Col>
+        <Col span={12}><Text type="secondary">Subtotal:</Text> <b>{r.precio_unitario ? (r.precio_unitario * r.cantidad).toFixed(2) : "-"}</b></Col>
         <Col span={24}><Text type="secondary">Cliente:</Text> {r.cliente_nombre || "-"}</Col>
         <Col span={24}><Text type="secondary">Proveedor:</Text> {r.proveedor_nombre || "-"}</Col>
         <Col span={12}><Text type="secondary">F. Solicitud:</Text> {r.fecha_solicitud ? dayjs(r.fecha_solicitud).format("DD/MM/YYYY") : "-"}</Col>
@@ -389,16 +485,19 @@ export default function RequerimientosDetallePage() {
         </>
       )}
       <Divider style={{ margin: "8px 0" }} />
-      <Space size={4}>
-        {r.nro_oc && <Tag color="blue">En OC: {r.nro_oc}</Tag>}
-        {r.estado_cot && <Tag color={estadoCotColor[r.estado_cot] || "default"}>COT: {r.estado_cot}</Tag>}
-        <Tag color={estadoReqColor[r.estado || "Pendiente"] || "default"}>{r.estado || "Pendiente"}</Tag>
+      <Space size={4} wrap>
+        {r.numero_po && <Tag color="blue">OC: {r.numero_po}</Tag>}
+        {r.status_oc && <Tag color={ocColor[r.status_oc] || "default"}>OC: {r.status_oc_label || r.status_oc}</Tag>}
+        {r.status_cot && <Tag color={cotColor[r.status_cot] || "default"}>COT: {r.status_cot_label || r.status_cot}</Tag>}
+        {r.status_req && <Tag color={reqColor[r.status_req] || "default"}>{r.status_req_label || r.status_req}</Tag>}
       </Space>
     </div>
   );
 
   const columns: ColumnsType<Requerimiento> = [
+    numeracionColumn<Requerimiento>(),
     {
+      key: "numero_ot",
       title: "OT",
       dataIndex: "numero_ot",
       width: 120,
@@ -409,45 +508,50 @@ export default function RequerimientosDetallePage() {
       render: (v) => (v ? <Tag color={brand.navy}>{v}</Tag> : "-"),
     },
     {
+      key: "status_req",
       title: "Estado REQ",
-      dataIndex: "estado",
-      width: 110,
+      dataIndex: "status_req",
+      width: 120,
       filters: [
-        { text: "Pendiente", value: "Pendiente" },
-        { text: "Aprobado", value: "Aprobado" },
-        { text: "APR", value: "APR" },
-        { text: "En PO", value: "En PO" },
-        { text: "REV", value: "REV" },
+        { text: "Sin aprobación", value: "SIN_APROBACION" },
+        { text: "Aprobado", value: "APROBADO" },
+        { text: "Desaprobado", value: "DESAPROBADO" },
+        { text: "Anulado", value: "ANULADO" },
       ],
-      onFilter: (value, r) => (r.estado || "Pendiente") === value,
-      render: (v: string | null) => {
-        const est = v || "Pendiente";
-        return <Tag color={estadoReqColor[est] || "default"}>{est}</Tag>;
+      onFilter: (value, r) => (r.status_req ?? "SIN_APROBACION") === value,
+      render: (_: unknown, r: Requerimiento) => {
+        const code = r.status_req ?? "SIN_APROBACION";
+        return <Tag color={reqColor[code] || "default"}>{r.status_req_label || code}</Tag>;
       },
     },
     {
+      key: "status_cot",
       title: "Estado COT",
-      dataIndex: "estado_cot",
-      width: 100,
+      dataIndex: "status_cot",
+      width: 110,
       filters: [
-        { text: "PDT_COT", value: "PDT_COT" },
-        { text: "PDT_APR", value: "PDT_APR" },
-        { text: "APR", value: "APR" },
-        { text: "DES", value: "DES" },
+        { text: "Pend. Cot.", value: "PEND_COT" },
+        { text: "Pend. Aprob.", value: "PEND_APROB" },
+        { text: "Aprobado", value: "APROBADO" },
+        { text: "Completo", value: "COMPLETO" },
+        { text: "Anulado", value: "ANULADO" },
       ],
-      onFilter: (value, r) => r.estado_cot === value,
-      render: (v: string | null) => (v ? <Tag color={estadoCotColor[v] || "default"}>{v}</Tag> : "-"),
+      onFilter: (value, r) => r.status_cot === value,
+      render: (_: unknown, r: Requerimiento) =>
+        r.status_cot ? <Tag color={cotColor[r.status_cot] || "default"}>{r.status_cot_label || r.status_cot}</Tag> : "-",
     },
     {
+      key: "nro_oc",
       title: "Nro OC",
-      dataIndex: "nro_oc",
-      width: 110,
-      filters: obtenerValoresUnicos("nro_oc"),
+      dataIndex: "numero_po",
+      width: 120,
+      filters: obtenerValoresUnicos("numero_po"),
       filterSearch: true,
-      onFilter: (value, r) => r.nro_oc === value,
+      onFilter: (value, r) => r.numero_po === value,
       render: (v: string | null) => (v ? <Tag color="blue">{v}</Tag> : "-"),
     },
     {
+      key: "nro_req",
       title: "Nro REQ",
       dataIndex: "nro_req",
       width: 110,
@@ -455,8 +559,9 @@ export default function RequerimientosDetallePage() {
       filterSearch: true,
       onFilter: (value, r) => r.nro_req === value,
     },
-    { title: "Item", dataIndex: "item_req", width: 55, align: "center", sorter: (a, b) => (a.item_req || 0) - (b.item_req || 0) },
+    { key: "item_req", title: "Item", dataIndex: "item_req", width: 55, align: "center", sorter: (a, b) => (a.item_req || 0) - (b.item_req || 0) },
     {
+      key: "tipo_codigo",
       title: "Tipo",
       dataIndex: "tipo_codigo",
       width: 60,
@@ -470,6 +575,7 @@ export default function RequerimientosDetallePage() {
       render: (v) => <Tag>{v || "MAC"}</Tag>,
     },
     {
+      key: "material_codigo",
       title: "Código",
       dataIndex: "material_codigo",
       width: 110,
@@ -478,6 +584,7 @@ export default function RequerimientosDetallePage() {
       onFilter: (value, r) => r.material_codigo === value,
     },
     {
+      key: "descripcion",
       title: "Descripción",
       width: 260,
       ellipsis: true,
@@ -491,13 +598,14 @@ export default function RequerimientosDetallePage() {
       ),
     },
     {
+      key: "cantidad",
       title: "Cant.",
       dataIndex: "cantidad",
       width: 70,
       align: "center",
       sorter: (a, b) => Number(a.cantidad) - Number(b.cantidad),
       render: (v: number, r: Requerimiento) => {
-        const canSplit = Number(v) >= 2 && !r.nro_oc;
+        const canSplit = Number(v) >= 2 && r.po_id == null;
         return (
           <Space size={4}>
             <span style={{ fontWeight: 600 }}>{v}</span>
@@ -515,8 +623,9 @@ export default function RequerimientosDetallePage() {
         );
       },
     },
-    { title: "UM", dataIndex: "unidad_medida", width: 55, align: "center" },
+    { key: "unidad_medida", title: "UM", dataIndex: "unidad_medida", width: 55, align: "center" },
     {
+      key: "cliente_nombre",
       title: "Cliente",
       dataIndex: "cliente_nombre",
       width: 130,
@@ -526,6 +635,7 @@ export default function RequerimientosDetallePage() {
       onFilter: (value, r) => r.cliente_nombre === value,
     },
     {
+      key: "fabricante_codigo",
       title: "Fabricante",
       dataIndex: "fabricante_codigo",
       width: 90,
@@ -535,6 +645,7 @@ export default function RequerimientosDetallePage() {
       onFilter: (value, r) => r.fabricante_codigo === value,
     },
     {
+      key: "proveedor_nombre",
       title: "Proveedor",
       dataIndex: "proveedor_nombre",
       width: 140,
@@ -544,6 +655,7 @@ export default function RequerimientosDetallePage() {
       onFilter: (value, r) => r.proveedor_nombre === value,
     },
     {
+      key: "precio_unitario",
       title: "P. Unit.",
       dataIndex: "precio_unitario",
       width: 80,
@@ -552,6 +664,7 @@ export default function RequerimientosDetallePage() {
       render: (v: number | null) => (v != null ? Number(v).toFixed(2) : "-"),
     },
     {
+      key: "moneda",
       title: "Moneda",
       dataIndex: "moneda",
       width: 65,
@@ -560,6 +673,7 @@ export default function RequerimientosDetallePage() {
       onFilter: (value, r) => r.moneda === value,
     },
     {
+      key: "fecha_solicitud",
       title: "F. Solicitud",
       dataIndex: "fecha_solicitud",
       width: 105,
@@ -567,6 +681,7 @@ export default function RequerimientosDetallePage() {
       render: (v: string | null) => (v ? dayjs(v).format("DD/MM/YYYY") : "-"),
     },
     {
+      key: "fecha_requerida",
       title: "F. Requerida",
       dataIndex: "fecha_requerida",
       width: 105,
@@ -574,6 +689,65 @@ export default function RequerimientosDetallePage() {
       render: (v: string | null) => (v ? dayjs(v).format("DD/MM/YYYY") : "-"),
     },
   ];
+
+  // Filtrar columnas visibles (respetando orden)
+  const columnasVisibles = columns.filter((c) => !columnasOcultas.includes(String(c.key)));
+  const clavesTotales = columns.map((c) => String(c.key));
+  const clavesVisibles = clavesTotales.filter((k) => !columnasOcultas.includes(k));
+
+  // Popover selección de columnas
+  const contenidoColumnas = (
+    <div style={{ minWidth: 240, maxHeight: 420, overflowY: "auto" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+        <Button
+          size="small"
+          type="link"
+          onClick={() => setColumnasOcultas([])}
+          disabled={columnasOcultas.length === 0}
+        >
+          Mostrar todas
+        </Button>
+        <Button
+          size="small"
+          type="link"
+          danger
+          onClick={() => setColumnasOcultas(clavesTotales.filter((k) => k !== "numero_ot"))}
+        >
+          Ocultar todas
+        </Button>
+      </div>
+      <Divider style={{ margin: "4px 0 8px" }} />
+      <Checkbox.Group
+        value={clavesVisibles}
+        onChange={(checkedValues) => {
+          const checked = checkedValues as string[];
+          const obligatorias = ["numero_ot"];
+          const ocultas = clavesTotales.filter(
+            (k) => !checked.includes(k) && !obligatorias.includes(k)
+          );
+          setColumnasOcultas(ocultas);
+        }}
+        style={{ width: "100%" }}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {columns.map((c) => {
+            const k = String(c.key);
+            const obligatoria = k === "numero_ot";
+            return (
+              <Checkbox key={k} value={k} disabled={obligatoria}>
+                <span style={{ fontSize: 13 }}>
+                  {typeof c.title === "string" ? c.title : k}
+                  {obligatoria && (
+                    <span style={{ color: "#999", fontSize: 11, marginLeft: 6 }}>(fija)</span>
+                  )}
+                </span>
+              </Checkbox>
+            );
+          })}
+        </div>
+      </Checkbox.Group>
+    </div>
+  );
 
   return (
     <div>
@@ -591,11 +765,26 @@ export default function RequerimientosDetallePage() {
             {filteredData.length} items de {new Set(filteredData.map((r) => r.ot_id)).size} OT(s)
           </Text>
         </div>
-        {selectedRows.length > 0 && (
-          <Button type="primary" size="large" icon={<FileDoneOutlined />} onClick={abrirModalOC}>
-            Crear OC ({selectedRows.length})
-          </Button>
-        )}
+        <Space>
+          <Popover
+            content={contenidoColumnas}
+            title={
+              <Space>
+                <SettingOutlined style={{ color: brand.navy }} />
+                <span>Columnas visibles ({clavesVisibles.length}/{clavesTotales.length})</span>
+              </Space>
+            }
+            trigger="click"
+            placement="bottomRight"
+          >
+            <Button icon={<SettingOutlined />}>Columnas</Button>
+          </Popover>
+          {selectedRows.length > 0 && (
+            <Button type="primary" size="large" icon={<FileDoneOutlined />} onClick={abrirModalOC}>
+              Crear OC ({selectedRows.length})
+            </Button>
+          )}
+        </Space>
       </div>
 
       {/* KPI Cards */}
@@ -660,17 +849,16 @@ export default function RequerimientosDetallePage() {
           </Col>
           <Col xs={12} sm={6} md={4}>
             <Select
-              placeholder="Estado"
+              placeholder="Estado REQ"
               allowClear
               style={{ width: "100%" }}
               value={filtroEstado}
               onChange={setFiltroEstado}
               options={[
-                { value: "Pendiente", label: "Pendiente" },
-                { value: "Aprobado", label: "Aprobado" },
-                { value: "En PO", label: "En OC" },
-                { value: "COM", label: "Completado" },
-                { value: "ANU", label: "Anulado" },
+                { value: "SIN_APROBACION", label: "Sin aprobación" },
+                { value: "APROBADO", label: "Aprobado" },
+                { value: "DESAPROBADO", label: "Desaprobado" },
+                { value: "ANULADO", label: "Anulado" },
               ]}
             />
           </Col>
@@ -728,7 +916,7 @@ export default function RequerimientosDetallePage() {
       <Table
         rowKey="id"
         rowSelection={rowSelection}
-        columns={columns}
+        columns={columnasVisibles}
         dataSource={filteredData}
         loading={loading}
         pagination={{ pageSize: 25, showTotal: (t) => `${t} registros` }}
@@ -783,7 +971,7 @@ export default function RequerimientosDetallePage() {
                   placeholder="Seleccionar proveedor"
                   showSearch
                   optionFilterProp="label"
-                  options={proveedores.map((p) => ({ value: p.id, label: p.razonSocial }))}
+                  options={proveedores.map((p) => ({ value: p.id, label: p.razon_social }))}
                 />
               </Form.Item>
             </Col>
@@ -791,11 +979,11 @@ export default function RequerimientosDetallePage() {
               <Form.Item
                 label="Almacén destino"
                 name="almacen_id"
-                rules={[{ required: true, message: "Selecciona un almacén" }]}
               >
                 <Select
-                  placeholder="Seleccionar almacén"
-                  options={almacenes.map((a) => ({ value: a.id, label: a.nombre }))}
+                  placeholder="Seleccionar almacén (opcional)"
+                  allowClear
+                  options={almacenes.map((a) => ({ value: a.id, label: `${a.codigo} — ${a.nombre}` }))}
                 />
               </Form.Item>
             </Col>

@@ -33,59 +33,80 @@ async function main() {
   }
   console.log("✓ Monedas creadas");
 
-  // ── TipoCodRep ──────────────────────────────────────
+  // ── TipoCodRep (familias, 6 del Excel 5. Cod Rep) ──
   const tipos = [
     { codigo: "CIL", nombre: "Cilindro" },
     { codigo: "ACU", nombre: "Acumulador" },
     { codigo: "FRE", nombre: "Freno" },
     { codigo: "RUE", nombre: "Rueda" },
+    { codigo: "ENR", nombre: "Enrollador" },
+    { codigo: "LIN", nombre: "Links" },
   ];
   for (const t of tipos) {
     await prisma.tipoCodRep.upsert({
       where: { codigo: t.codigo },
-      update: {},
+      update: { nombre: t.nombre },
       create: t,
     });
   }
-  console.log("✓ TipoCodRep creados");
+  console.log(`✓ ${tipos.length} TipoCodRep creados`);
 
-  // ── CategoriaCodRep ─────────────────────────────────
-  const categorias = [
-    { codigo: "CHVS", nombre: "Cilindro Hidráulico Vástago Simple" },
-    { codigo: "CHP", nombre: "Cilindro Hidráulico de Pistón" },
-    { codigo: "CHT", nombre: "Cilindro Hidráulico de Tolva" },
-    { codigo: "AV", nombre: "Acumulador de Vejiga" },
-    { codigo: "AE", nombre: "Acumulador de Energía" },
-    { codigo: "FS", nombre: "Freno de Servicio" },
-    { codigo: "SD", nombre: "Suspensión Delantera" },
-    { codigo: "RD", nombre: "Rueda Delantera" },
+  // ── CategoriaCodRep (tipos de maquinaria, 6 del Excel) ──
+  const categoriasCodRep = [
+    { codigo: "CAM", nombre: "Camión" },
+    { codigo: "MOT", nombre: "Motoniveladora" },
+    { codigo: "TRU", nombre: "Tractor de Ruedas" },
+    { codigo: "TOR", nombre: "Tractor de Orugas" },
+    { codigo: "EXC", nombre: "Excavadora" },
+    { codigo: "PER", nombre: "Perforadora" },
   ];
-  for (const c of categorias) {
+  for (const c of categoriasCodRep) {
     await prisma.categoriaCodRep.upsert({
       where: { codigo: c.codigo },
-      update: {},
+      update: { nombre: c.nombre },
       create: c,
     });
   }
-  console.log("✓ CategoriaCodRep creadas");
+  console.log(`✓ ${categoriasCodRep.length} CategoriaCodRep creadas`);
 
-  // ── FlotaEquipo ─────────────────────────────────────
-  const flotas = [
-    { codigo: "PER", nombre: "Perforadora" },
-    { codigo: "CAM", nombre: "Camión" },
-    { codigo: "TRU", nombre: "Tractor de Ruedas" },
-    { codigo: "MOT", nombre: "Motoniveladora" },
-    { codigo: "TOR", nombre: "Tractor de Orugas" },
-    { codigo: "EXC", nombre: "Excavadora" },
+  // ── ModeloEvaluacion (9 subtipos, hoja Descripcion tipo del Excel) ──
+  // También usados como modelo de la hoja de evaluación digital (HTML).
+  const modelosEvaluacion = [
+    { codigo: "CHVS", nombre: "Cilindro hidráulico vástago simple" },
+    { codigo: "CHP", nombre: "Cilindro hidráulico pivotado" },
+    { codigo: "CHPDV", nombre: "Cilindro hidráulico de pistón de doble vástago" },
+    { codigo: "CHT", nombre: "Cilindro hidráulico telescópico" },
+    { codigo: "AE", nombre: "Acumulador de émbolo" },
+    { codigo: "AV", nombre: "Acumulador de vejiga" },
+    { codigo: "RD", nombre: "Rueda delantera" },
+    { codigo: "FS", nombre: "Freno de servicio" },
+    { codigo: "SD", nombre: "Suspensión delantera" },
   ];
-  for (const f of flotas) {
-    await prisma.flotaEquipo.upsert({
-      where: { codigo: f.codigo },
-      update: {},
-      create: f,
+  for (const m of modelosEvaluacion) {
+    await prisma.modeloEvaluacion.upsert({
+      where: { codigo: m.codigo },
+      update: { nombre: m.nombre },
+      create: m,
     });
   }
-  console.log("✓ FlotaEquipo creadas");
+  console.log(`✓ ${modelosEvaluacion.length} ModeloEvaluacion creados`);
+
+  // ── FlotaEquipo (42 modelos reales, del Excel Cod Rep col Flota) ──
+  const flotasEquipo = [
+    "16M", "24", "24M", "336DL", "349", "374DL", "374FL", "390DL", "390FL", "6060FS",
+    "793D", "797F", "830AC", "830DC", "830E", "834H", "834K", "844H", "844K", "930E-4SE",
+    "950H", "966H", "966M", "980E", "980E-4SE", "980G", "980H", "988H", "988K", "992K",
+    "994F", "994K", "D11", "D11T", "D475", "D475A", "D8T", "FMA", "HD1500", "MD6640",
+    "PC1250", "PC2000", "PITVIPER 351", "WA900",
+  ];
+  for (const codigo of flotasEquipo) {
+    await prisma.flotaEquipo.upsert({
+      where: { codigo },
+      update: { nombre: codigo },
+      create: { codigo, nombre: codigo },
+    });
+  }
+  console.log(`✓ ${flotasEquipo.length} FlotaEquipo creadas`);
 
   // ── Fabricante ──────────────────────────────────────
   const fabricantes = [
@@ -310,6 +331,7 @@ async function main() {
     { codigo: "mes", nombre: "Mes", abreviatura: "mes" },
     { codigo: "dia", nombre: "Día", abreviatura: "día" },
     { codigo: "km", nombre: "Kilómetros", abreviatura: "km" },
+    { codigo: "sm", nombre: "Semana", abreviatura: "sem" },
     { codigo: "amp", nombre: "Amperaje", abreviatura: "amp" },
     { codigo: "lbf", nombre: "Libras Fuerza", abreviatura: "lbf" },
   ];
@@ -338,6 +360,302 @@ async function main() {
     });
   }
   console.log("✓ Posiciones creadas");
+
+  // ── Componente ──────────────────────────────────────
+  const componentes = [
+    { codigo: "CILINDRO", nombre: "Cilindro" },
+    { codigo: "VASTAGO", nombre: "Vástago" },
+    { codigo: "TAPA", nombre: "Tapa" },
+    { codigo: "EMBOLO", nombre: "Émbolo" },
+    { codigo: "CUERPO INTERMEDIO", nombre: "Cuerpo intermedio" },
+    { codigo: "TAPA POSTERIOR", nombre: "Tapa posterior" },
+    { codigo: "TAPA ROSCADA", nombre: "Tapa roscada" },
+    { codigo: "FRENO", nombre: "Freno" },
+    { codigo: "RUEDA", nombre: "Rueda" },
+    { codigo: "SPINDLE", nombre: "Spindle" },
+    { codigo: "HUB", nombre: "Hub" },
+    { codigo: "CONJUNTO DE FRENO", nombre: "Conjunto de freno" },
+    { codigo: "CAJA DE FRENO", nombre: "Caja de freno" },
+    { codigo: "GENERAL", nombre: "General" },
+  ];
+  for (const c of componentes) {
+    await prisma.componente.upsert({
+      where: { codigo: c.codigo },
+      update: {},
+      create: c,
+    });
+  }
+  console.log(`✓ ${componentes.length} Componentes creados`);
+
+  // ── OperacionReparacion (desde Tablas de planificacion.xlsx) ──
+  // 28 operaciones con clasificación STD (estándar) o NO_STD (no estándar).
+  const operaciones = [
+    // CILINDRO — STD
+    { codigo: "RELC", nombre: "Rellenado de alojamiento de cilindro", componente_codigo: "CILINDRO", clasificacion: "STD" },
+    { codigo: "BARC", nombre: "Barrenado de alojamiento de cilindro", componente_codigo: "CILINDRO", clasificacion: "STD" },
+    { codigo: "BRUC", nombre: "Bruñido de cilindro", componente_codigo: "CILINDRO", clasificacion: "STD" },
+    // CILINDRO — NO_STD
+    { codigo: "COR-C", nombre: "Corte de cilindro", componente_codigo: "CILINDRO", clasificacion: "NO_STD" },
+    { codigo: "MAQ-ENBC", nombre: "Maq. Encastre de brida", componente_codigo: "CILINDRO", clasificacion: "NO_STD" },
+    { codigo: "MAQ-ENCC", nombre: "Maq. Encastre de cáncamo / tapa posterior", componente_codigo: "CILINDRO", clasificacion: "NO_STD" },
+    { codigo: "ENC-TC", nombre: "Encastre de tubo de cilindro", componente_codigo: "CILINDRO", clasificacion: "NO_STD" },
+    { codigo: "SOL-JC", nombre: "Soldadura de juntas de cilindro", componente_codigo: "CILINDRO", clasificacion: "NO_STD" },
+    { codigo: "MAQ-DSALC", nombre: "Maq. Diámetro Salida de cilindro", componente_codigo: "CILINDRO", clasificacion: "NO_STD" },
+    { codigo: "FAB-SC", nombre: "Fabricación de dados/soportes de cilindro", componente_codigo: "CILINDRO", clasificacion: "NO_STD" },
+    { codigo: "SOLD SC", nombre: "Soldadura de dados/soportes de cilindro", componente_codigo: "CILINDRO", clasificacion: "NO_STD" },
+    { codigo: "FAB-BC", nombre: "Fabricación de bocina de cilindro", componente_codigo: "CILINDRO", clasificacion: "NO_STD" },
+    // VASTAGO — STD
+    { codigo: "RELV", nombre: "Rellenado de alojamiento de vástago", componente_codigo: "VASTAGO", clasificacion: "STD" },
+    { codigo: "BARV", nombre: "Barrenado de alojamiento de vástago", componente_codigo: "VASTAGO", clasificacion: "STD" },
+    { codigo: "CROV", nombre: "Cromado de vástago", componente_codigo: "VASTAGO", clasificacion: "STD" },
+    // VASTAGO — NO_STD
+    { codigo: "COR-V", nombre: "Corte de vástago", componente_codigo: "VASTAGO", clasificacion: "NO_STD" },
+    { codigo: "ENC-CV", nombre: "Encastre de cáncamo de vástago", componente_codigo: "VASTAGO", clasificacion: "NO_STD" },
+    { codigo: "ENC-BV", nombre: "Encastre de barra de vástago", componente_codigo: "VASTAGO", clasificacion: "NO_STD" },
+    { codigo: "MAQ-EV", nombre: "Maq. Espiga de vástago", componente_codigo: "VASTAGO", clasificacion: "NO_STD" },
+    { codigo: "SOL-JV", nombre: "Soldadura de junta de vástago", componente_codigo: "VASTAGO", clasificacion: "NO_STD" },
+    { codigo: "MAQ-SV", nombre: "Maq. Soldadura de vástago", componente_codigo: "VASTAGO", clasificacion: "NO_STD" },
+    { codigo: "FAB-BV", nombre: "Fabricación de bocina de vástago", componente_codigo: "VASTAGO", clasificacion: "NO_STD" },
+    // TAPA — STD
+    { codigo: "PUL-T", nombre: "Pulido de tapa", componente_codigo: "TAPA", clasificacion: "STD" },
+    // TAPA — NO_STD
+    { codigo: "REC-T", nombre: "Rectificado de tapa", componente_codigo: "TAPA", clasificacion: "NO_STD" },
+    { codigo: "FAB-T", nombre: "Fabricación de tapa", componente_codigo: "TAPA", clasificacion: "NO_STD" },
+    // EMBOLO (Pistón) — STD
+    { codigo: "PUL-P", nombre: "Pulido de pistón", componente_codigo: "EMBOLO", clasificacion: "STD" },
+    // EMBOLO — NO_STD
+    { codigo: "REC-P", nombre: "Rectificado de pistón", componente_codigo: "EMBOLO", clasificacion: "NO_STD" },
+    { codigo: "FAB-P", nombre: "Fabricación de pistón", componente_codigo: "EMBOLO", clasificacion: "NO_STD" },
+  ];
+  for (const op of operaciones) {
+    await prisma.operacionReparacion.upsert({
+      where: { codigo: op.codigo },
+      update: { nombre: op.nombre, componente_codigo: op.componente_codigo, clasificacion: op.clasificacion },
+      create: op,
+    });
+  }
+  console.log(`✓ ${operaciones.length} Operaciones de Reparación creadas (STD/NO_STD clasificadas)`);
+
+  // ── StatusRequerimiento (desde 7. Log POs) ──────────
+  const statusReq = [
+    { codigo: "SIN_APROBACION", nombre: "Sin aprobación", orden: 1 },
+    { codigo: "APROBADO", nombre: "Aprobado", orden: 2 },
+    { codigo: "DESAPROBADO", nombre: "Desaprobado", orden: 3 },
+    { codigo: "ANULADO", nombre: "Anulado", orden: 4 },
+  ];
+  for (const s of statusReq) {
+    await prisma.statusRequerimiento.upsert({
+      where: { codigo: s.codigo },
+      update: {},
+      create: s,
+    });
+  }
+  console.log(`✓ ${statusReq.length} Status Requerimiento creados`);
+
+  // ── StatusCotizacion ────────────────────────────────
+  const statusCot = [
+    { codigo: "PEND_COT", nombre: "Pendiente de cotización", orden: 1 },
+    { codigo: "PEND_APROB", nombre: "Pendiente de aprobación", orden: 2 },
+    { codigo: "APROBADO", nombre: "Aprobado", orden: 3 },
+    { codigo: "ANULADO", nombre: "Anulado", orden: 4 },
+    { codigo: "COMPLETO", nombre: "Completo", orden: 5 },
+  ];
+  for (const s of statusCot) {
+    await prisma.statusCotizacion.upsert({
+      where: { codigo: s.codigo },
+      update: {},
+      create: s,
+    });
+  }
+  console.log(`✓ ${statusCot.length} Status Cotización creados`);
+
+  // ── StatusOC ────────────────────────────────────────
+  const statusOC = [
+    { codigo: "PEND_OC", nombre: "Pendiente de OC", orden: 1 },
+    { codigo: "PROCESO", nombre: "En proceso", orden: 2 },
+    { codigo: "ENTREGADO", nombre: "Entregado", orden: 3 },
+    { codigo: "INCOMPLETO", nombre: "Incompleto", orden: 4 },
+    { codigo: "COMPLETO", nombre: "Completo", orden: 5 },
+    { codigo: "ANULADO", nombre: "Anulado", orden: 6 },
+    { codigo: "DEVOLUCION", nombre: "Devolución", orden: 7 },
+  ];
+  for (const s of statusOC) {
+    await prisma.statusOC.upsert({
+      where: { codigo: s.codigo },
+      update: {},
+      create: s,
+    });
+  }
+  console.log(`✓ ${statusOC.length} Status OC creados`);
+
+  // ── StatusEstrategia (del Excel 3. Todos - Estrategias) ──
+  const statusEstr = [
+    { codigo: "AC", nombre: "Activo" },
+    { codigo: "PR", nombre: "En proceso" },
+    { codigo: "EL", nombre: "Eliminado" },
+  ];
+  for (const s of statusEstr) {
+    await prisma.statusEstrategia.upsert({
+      where: { codigo: s.codigo },
+      update: {},
+      create: s,
+    });
+  }
+  console.log(`✓ ${statusEstr.length} Status Estrategia creados`);
+
+  // ── TipoEstrategia (del Excel 3. Todos - Estrategias) ──
+  const tipoEstr = [
+    { codigo: "CC", nombre: "Cambio de componente" },
+    { codigo: "MP", nombre: "Mantenimiento preventivo" },
+    { codigo: "RP", nombre: "Reparación" },
+    { codigo: "SG", nombre: "Seguridad" },
+    { codigo: "IN", nombre: "Inspección" },
+    { codigo: "AU", nombre: "Auditoria" },
+    { codigo: "ME", nombre: "Mejora" },
+    { codigo: "CR", nombre: "Control crítico" },
+  ];
+  for (const t of tipoEstr) {
+    await prisma.tipoEstrategia.upsert({
+      where: { codigo: t.codigo },
+      update: {},
+      create: t,
+    });
+  }
+  console.log(`✓ ${tipoEstr.length} Tipo Estrategia creados`);
+
+  // ── TipoTarea (del Excel 4. Task list / hoja Tipo) ──
+  const tipoTarea = [
+    { codigo: "MAC", nombre: "Material catalogado" },
+    { codigo: "CAD", nombre: "Cargo directo" },
+    { codigo: "SER", nombre: "Servicio" },
+  ];
+  for (const t of tipoTarea) {
+    await prisma.tipoTarea.upsert({
+      where: { codigo: t.codigo },
+      update: {},
+      create: t,
+    });
+  }
+  console.log(`✓ ${tipoTarea.length} Tipo Tarea creados`);
+
+  // ── StatusTarea (estados de PlanificacionOT.estado) ──
+  const statusTarea = [
+    { codigo: "abierto", nombre: "Abierto", color: "warning", orden: 1 },
+    { codigo: "programado", nombre: "Programado", color: "processing", orden: 2 },
+    { codigo: "realizado", nombre: "Realizado", color: "success", orden: 3 },
+    { codigo: "correctivo", nombre: "Correctivo", color: "volcano", orden: 4 },
+    { codigo: "cancelado", nombre: "Cancelado", color: "error", orden: 5 },
+  ];
+  for (const s of statusTarea) {
+    await prisma.statusTarea.upsert({
+      where: { codigo: s.codigo },
+      update: { nombre: s.nombre, color: s.color, orden: s.orden },
+      create: s,
+    });
+  }
+  console.log(`✓ ${statusTarea.length} Status Tarea creados`);
+
+  // ── ConjuntoMantenimiento (agrupadores abstractos del Excel Estrategias) ──
+  // Se usan cuando una estrategia aplica a un conjunto, no a un equipo específico.
+  const conjuntos = [
+    { codigo: "TALLER", nombre: "Taller", descripcion: "Edificio del taller (pisos, muros, estructuras)" },
+    { codigo: "HERRAMIENTAS", nombre: "Herramientas", descripcion: "Conjunto de herramientas manuales" },
+    { codigo: "HERR_MEDICION", nombre: "Herramientas de medición", descripcion: "Instrumentos de medición" },
+    { codigo: "MAQUINAS", nombre: "Máquinas y equipos", descripcion: "Conjunto global de máquinas y equipos" },
+    { codigo: "VEHICULOS", nombre: "Vehículos", descripcion: "Conjunto de vehículos" },
+    { codigo: "SEGURIDAD", nombre: "Seguridad", descripcion: "Sistema/programa de seguridad" },
+    { codigo: "INVENTARIO", nombre: "Inventario", descripcion: "Control de inventario" },
+  ];
+  for (const c of conjuntos) {
+    await prisma.conjuntoMantenimiento.upsert({
+      where: { codigo: c.codigo },
+      update: { nombre: c.nombre, descripcion: c.descripcion },
+      create: c,
+    });
+  }
+  console.log(`✓ ${conjuntos.length} Conjuntos de Mantenimiento creados`);
+
+  // ── ConfiguracionCotizacion (singleton con tarifas) ──
+  await prisma.configuracionCotizacion.upsert({
+    where: { id: 1 },
+    update: {},
+    create: {
+      id: 1,
+      tarifa_hora_usd: 25,
+      tarifa_hora_sol: 100,
+      moneda_default_codigo: "USD",
+      igv_porcentaje: 18,
+    },
+  });
+  console.log("✓ Configuración de cotización inicializada");
+
+  // ── Proveedores de ejemplo ──────────────────────────
+  // Vendors reales observados en el Excel 8 (REQ & OC) + distribuidores comunes.
+  // RUCs pueden corregirse desde la UI cuando el equipo los valide.
+  const proveedoresEjemplo = [
+    {
+      ruc: "20100043170",
+      razon_social: "FERREYROS S.A.",
+      nombre_comercial: "Ferreyros",
+      contacto: "Mesa de Ventas",
+      telefono: "+51 1 626-4000",
+      email: "ventas@ferreyros.com.pe",
+      direccion: "Av. Industrial 675, Lima",
+    },
+    {
+      ruc: "20109167429",
+      razon_social: "KOMATSU-MITSUI MAQUINARIAS PERU S.A.",
+      nombre_comercial: "Komatsu Mitsui",
+      contacto: "Post-Venta",
+      telefono: "+51 1 617-5000",
+      email: "postventa@komatsu-mitsui.com.pe",
+      direccion: "Av. Argentina 2201, Callao",
+    },
+    {
+      ruc: "20143231014",
+      razon_social: "BOHLER UDDEHOLM PERU S.A.",
+      nombre_comercial: "Bohler Perú",
+      contacto: "Aceros y Herramentales",
+      telefono: "+51 1 517-3100",
+      email: "ventas@bohler.com.pe",
+      direccion: "Av. Elmer Faucett 1234, Callao",
+    },
+    {
+      ruc: "20512345671",
+      razon_social: "MACHEN PERU S.A.C.",
+      nombre_comercial: "Machen",
+      contacto: "Ventas Técnicas",
+      telefono: "+51 1 480-1111",
+      email: "ventas@machen.pe",
+      direccion: "Av. Los Frutales 220, Ate",
+    },
+    {
+      ruc: "20445566778",
+      razon_social: "HOLDING INDUSTRIAL S.A.",
+      nombre_comercial: "Holding",
+      contacto: "Compras Corporativas",
+      telefono: "+51 54 221-9000",
+      email: "compras@holding.com.pe",
+      direccion: "Variante de Uchumayo Km 5, Arequipa",
+    },
+    {
+      ruc: "20556677889",
+      razon_social: "TRACTO SONI E.I.R.L.",
+      nombre_comercial: "Tracto Soni",
+      contacto: "Servicios de Cromado y Rectificado",
+      telefono: "+51 54 343-5656",
+      email: "servicios@tractosoni.com",
+      direccion: "Calle Industrial 456, Arequipa",
+    },
+  ];
+  for (const prov of proveedoresEjemplo) {
+    await prisma.proveedor.upsert({
+      where: { ruc: prov.ruc },
+      update: {},
+      create: { ...prov, usuario_crea: "seed", usuario_actualiza: "seed" },
+    });
+  }
+  console.log(`✓ ${proveedoresEjemplo.length} Proveedores de ejemplo creados`);
 
   // ── Códigos Reparables (del Excel) ──────────────────
   const codReps = [
@@ -484,28 +802,14 @@ async function main() {
     { desc: "CILINDRO DE SUSPENSION DELANTERA", tipo: "CIL", cat: "SD", flota: "CAM", fab: "KOM", np: "XB3916", pos: "NA", precio: 0.10, moneda: "USD" },
   ];
 
-  let counter = 1;
-  for (const r of codReps) {
-    const codigo = `CR-${String(counter).padStart(4, "0")}`;
-    await prisma.codigoReparacion.upsert({
-      where: { codigo },
-      update: {},
-      create: {
-        codigo,
-        descripcion: r.desc,
-        tipo_codigo: r.tipo,
-        categoria_codigo: r.cat,
-        flota_codigo: r.flota,
-        fabricante_codigo: r.fab,
-        np: r.np.trim(),
-        posicion_codigo: r.pos,
-        precio: r.precio,
-        moneda_codigo: r.moneda,
-      },
-    });
-    counter++;
-  }
-  console.log(`✓ ${counter - 1} Códigos Reparables creados`);
+  // NOTA: Los 139 CodigoReparacion ya NO se crean en este seed.
+  // Se cargan desde el Excel vía `npx tsx scripts/fix-codrep-catalogs.ts`,
+  // porque el mapeo correcto (con ModeloEvaluacion + Categoria + Flota real)
+  // requiere los datos del Excel como fuente de verdad. El seed.ts solo
+  // deja los catálogos listos; el script carga la data.
+  const _unused_codReps = codReps; // silence unused warning on the legacy array above
+  void _unused_codReps;
+  console.log("ℹ  Saltando seed hardcoded de CodigoReparacion. Correr: npx tsx scripts/fix-codrep-catalogs.ts");
 
   // ── Catálogos de Órdenes de Trabajo ──────────────────
 

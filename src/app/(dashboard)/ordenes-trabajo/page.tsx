@@ -12,16 +12,25 @@ import {
   Row,
   Col,
   Card,
+  Tooltip,
 } from "antd";
 import {
   PlusOutlined,
   SearchOutlined,
   ReloadOutlined,
   EyeOutlined,
-  ExperimentOutlined,
+  AuditOutlined,
 } from "@ant-design/icons";
-import { Tooltip } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import {
+  numeracionColumn,
+  paginacionEstandar,
+  PAGINATION_PAGE_SIZE,
+  useColumnasOcultas,
+  ColumnasToggleButton,
+  visibleColumns,
+  filtroPorColumna,
+} from "@/lib/tables";
 import { brand } from "@/lib/theme";
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
@@ -73,11 +82,13 @@ export default function OrdenesTrabajoPage() {
   const [data, setData] = useState<OTRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [filterOtStatus, setFilterOtStatus] = useState("");
   const [filterRecursosStatus, setFilterRecursosStatus] = useState("");
   const [filterTallerStatus, setFilterTallerStatus] = useState("");
+  const { ocultas, setOcultas } = useColumnasOcultas("ordenes-trabajo-list-cols-v1");
 
   const [otStatuses, setOtStatuses] = useState<CatalogOption[]>([]);
   const [recursosStatuses, setRecursosStatuses] = useState<CatalogOption[]>([]);
@@ -89,7 +100,7 @@ export default function OrdenesTrabajoPage() {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams({ page: String(page), limit: "20" });
+    const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
     if (search) params.set("search", search);
     if (filterOtStatus) params.set("ot_status", filterOtStatus);
     if (filterRecursosStatus) params.set("recursos_status", filterRecursosStatus);
@@ -99,7 +110,7 @@ export default function OrdenesTrabajoPage() {
     setData(json.data ?? []);
     setTotal(json.total ?? 0);
     setLoading(false);
-  }, [page, search, filterOtStatus, filterRecursosStatus, filterTallerStatus]);
+  }, [page, pageSize, search, filterOtStatus, filterRecursosStatus, filterTallerStatus]);
 
   useEffect(() => {
     async function loadCatalogs() {
@@ -126,15 +137,29 @@ export default function OrdenesTrabajoPage() {
   }
 
   const columns: ColumnsType<OTRecord> = [
+    numeracionColumn<OTRecord>({ current: page, pageSize }),
     {
+      key: "ot",
       title: "OT",
       dataIndex: "ot",
       width: 150,
       fixed: "left",
       sorter: (a, b) => a.ot.localeCompare(b.ot),
-      render: (v: string) => <Tag color={brand.navy}>{v}</Tag>,
+      ...filtroPorColumna(data, "ot"),
+      render: (v: string, r: OTRecord) => (
+        <Tooltip title="Abrir página de la OT (URL compartible)">
+          <Tag
+            color={brand.navy}
+            style={{ cursor: "pointer" }}
+            onClick={() => router.push(`/ordenes-trabajo/${r.id}`)}
+          >
+            {v}
+          </Tag>
+        </Tooltip>
+      ),
     },
     {
+      key: "cliente",
       title: "Cliente",
       dataIndex: "cliente",
       width: 150,
@@ -143,6 +168,7 @@ export default function OrdenesTrabajoPage() {
       render: (_: unknown, r: OTRecord) => r.cliente?.nombre_comercial ?? r.cliente?.razon_social ?? "-",
     },
     {
+      key: "codigo_reparacion",
       title: "Cod. Rep",
       width: 120,
       ellipsis: true,
@@ -150,19 +176,24 @@ export default function OrdenesTrabajoPage() {
       render: (_: unknown, r: OTRecord) => r.codigo_reparacion?.codigo ?? "-",
     },
     {
+      key: "equipo_codigo",
       title: "Equipo",
       dataIndex: "equipo_codigo",
       width: 100,
       sorter: (a, b) => (a.equipo_codigo ?? "").localeCompare(b.equipo_codigo ?? ""),
+      ...filtroPorColumna(data, "equipo_codigo"),
     },
     {
+      key: "descripcion",
       title: "Descripción",
       dataIndex: "descripcion",
       width: 200,
       ellipsis: true,
       sorter: (a, b) => (a.descripcion ?? "").localeCompare(b.descripcion ?? ""),
+      ...filtroPorColumna(data, "descripcion"),
     },
     {
+      key: "fecha_recepcion",
       title: "Recepción",
       dataIndex: "fecha_recepcion",
       width: 110,
@@ -170,6 +201,7 @@ export default function OrdenesTrabajoPage() {
       render: (v: string | null) => v ? dayjs(v).format("DD/MM/YYYY") : "-",
     },
     {
+      key: "porcentaje_pcr",
       title: "% PCR",
       dataIndex: "porcentaje_pcr",
       width: 80,
@@ -178,6 +210,7 @@ export default function OrdenesTrabajoPage() {
       render: (v: number | null) => v != null ? `${v}%` : "-",
     },
     {
+      key: "prioridad_atencion",
       title: "Prioridad",
       width: 90,
       align: "center",
@@ -190,6 +223,7 @@ export default function OrdenesTrabajoPage() {
         ) : "-",
     },
     {
+      key: "ot_status",
       title: "OT Status",
       width: 120,
       sorter: (a, b) => (a.ot_status?.nombre ?? "").localeCompare(b.ot_status?.nombre ?? ""),
@@ -201,6 +235,7 @@ export default function OrdenesTrabajoPage() {
         ) : "-",
     },
     {
+      key: "recursos_status",
       title: "Recursos",
       width: 160,
       ellipsis: true,
@@ -208,6 +243,7 @@ export default function OrdenesTrabajoPage() {
       render: (_: unknown, r: OTRecord) => r.recursos_status?.nombre ?? "-",
     },
     {
+      key: "taller_status",
       title: "Taller",
       width: 160,
       ellipsis: true,
@@ -215,8 +251,9 @@ export default function OrdenesTrabajoPage() {
       render: (_: unknown, r: OTRecord) => r.taller_status?.nombre ?? "-",
     },
     {
-      title: "Acciones",
-      width: 110,
+      key: "acciones",
+      title: "",
+      width: 90,
       align: "center",
       fixed: "right",
       render: (_: unknown, record: OTRecord) => (
@@ -228,10 +265,10 @@ export default function OrdenesTrabajoPage() {
               onClick={() => { setModalOtId(record.id); setModalOpen(true); }}
             />
           </Tooltip>
-          <Tooltip title="Hoja de Evaluacion">
+          <Tooltip title="Hoja de evaluación">
             <Button
               type="text"
-              icon={<ExperimentOutlined style={{ color: brand.cyan }} />}
+              icon={<AuditOutlined />}
               onClick={() => router.push(`/ordenes-trabajo/${record.id}/evaluacion`)}
             />
           </Tooltip>
@@ -244,9 +281,17 @@ export default function OrdenesTrabajoPage() {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <Title level={3} style={{ margin: 0 }}>Órdenes de Trabajo</Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => router.push("/ordenes-trabajo/nueva")}>
-          Nueva OT
-        </Button>
+        <Space>
+          <ColumnasToggleButton<OTRecord>
+            columns={columns}
+            ocultas={ocultas}
+            setOcultas={setOcultas}
+            obligatorias={["__num", "ot", "acciones"]}
+          />
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => router.push("/ordenes-trabajo/nueva")}>
+            Nueva OT
+          </Button>
+        </Space>
       </div>
 
       <Card styles={{ body: { padding: 16 } }} style={{ marginBottom: 16 }}>
@@ -298,16 +343,16 @@ export default function OrdenesTrabajoPage() {
 
       <Table
         rowKey="id"
-        columns={columns}
+        columns={visibleColumns(columns, ocultas)}
         dataSource={data}
         loading={loading}
-        pagination={{
+        pagination={paginacionEstandar({
           current: page,
-          pageSize: 20,
+          pageSize,
           total,
-          showTotal: (t) => `${t} registros`,
-          onChange: setPage,
-        }}
+          onChange: (p, s) => { setPage(p); setPageSize(s); },
+          label: "órdenes de trabajo",
+        })}
         scroll={{ x: 1500 }}
         size="small"
       />

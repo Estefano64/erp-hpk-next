@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auditOTStatusChange, getAuditUser } from "@/lib/audit";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -42,6 +43,10 @@ export async function PUT(req: NextRequest, { params }: Params) {
     const { id } = await params;
     const body = await req.json();
 
+    // Versioning para concurrencia optimista (opcional: si no viene, se omite el chequeo)
+    const clientVersion: number | undefined = typeof body.version === "number" ? body.version : undefined;
+    delete body.version;
+
     // Recalcular % PCR si se actualizan los valores
     if (body.pcr !== undefined && body.horas !== undefined) {
       if (Number(body.pcr) > 0) {
@@ -60,20 +65,73 @@ export async function PUT(req: NextRequest, { params }: Params) {
       if (body[field]) body[field] = new Date(body[field]);
     }
 
-    const updated = await prisma.ordenTrabajo.update({
-      where: { id: Number(id) },
-      data: body,
-      include: {
-        cliente: true,
-        codigo_reparacion: true,
-        fabricante: true,
-        ot_status: true,
-        recursos_status: true,
-        taller_status: true,
-      },
+    const usuario = (await getAuditUser(req)) ?? "sistema";
+
+    const result = await prisma.$transaction(async (tx) => {
+      const before = await tx.ordenTrabajo.findUnique({
+        where: { id: Number(id) },
+        select: {
+          ot_status_codigo: true,
+          recursos_status_codigo: true,
+          taller_status_codigo: true,
+          version: true,
+        },
+      });
+
+      if (!before) {
+        return { conflict: false, notFound: true } as const;
+      }
+
+      // Concurrencia: si cliente envió version, debe coincidir
+      if (clientVersion !== undefined && clientVersion !== before.version) {
+        return { conflict: true, currentVersion: before.version } as const;
+      }
+
+      // Auto-fill audit fields y bump de version
+      const record = await tx.ordenTrabajo.update({
+        where: { id: Number(id) },
+        data: {
+          ...body,
+          usuario_actualiza: usuario,
+          fecha_actualizacion: new Date(),
+          version: { increment: 1 },
+        },
+        include: {
+          cliente: true,
+          codigo_reparacion: true,
+          fabricante: true,
+          ot_status: true,
+          recursos_status: true,
+          taller_status: true,
+        },
+      });
+
+      await auditOTStatusChange(
+        tx,
+        record.id,
+        before,
+        {
+          ot_status_codigo: record.ot_status_codigo,
+          recursos_status_codigo: record.recursos_status_codigo,
+          taller_status_codigo: record.taller_status_codigo,
+        },
+        usuario,
+      );
+
+      return { conflict: false, record } as const;
     });
 
-    return NextResponse.json({ data: updated });
+    if ("notFound" in result && result.notFound) {
+      return NextResponse.json({ error: "OT no encontrada" }, { status: 404 });
+    }
+    if (result.conflict) {
+      return NextResponse.json(
+        { error: "Conflicto de versión: la OT fue modificada por otro usuario.", currentVersion: result.currentVersion },
+        { status: 409 },
+      );
+    }
+
+    return NextResponse.json({ data: result.record });
   } catch (error) {
     console.error("PUT /api/ordenes-trabajo/[id] error:", error);
     return NextResponse.json({ error: "Error al actualizar OT" }, { status: 500 });

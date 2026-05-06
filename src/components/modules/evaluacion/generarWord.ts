@@ -66,12 +66,16 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
   const otNumero = ot?.ot || "N-D";
 
   // Cargar imagenes de referencia segun el modelo
-  const [logoB64, imgCilindro, imgVastago, imgTapa, imgPiston] = await Promise.all([
-    imagenABase64("/LOGO-HPK-INVERSIONEs.png"),
+  const [logoB64, imgCilindro, imgVastago, imgTapa, imgPiston, imgHub, imgSpindle, imgConjFreno, imgPistonFreno] = await Promise.all([
+    imagenABase64("/logo.png"),
     imagenABase64("/Cilindro.png"),
     imagenABase64("/Vastago.png"),
     imagenABase64("/Tapa.png"),
     imagenABase64("/Piston.png"),
+    imagenABase64("/Hub.jpeg"),
+    imagenABase64("/Spindle.jpeg"),
+    imagenABase64("/ConjuntoFreno.jpeg"),
+    imagenABase64("/PistonFreno.jpeg"),
   ]);
 
   const clienteNombre = ot?.cliente?.nombre_comercial ?? ot?.cliente?.razon_social ?? "-";
@@ -93,6 +97,33 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
     return `<tr><td class="label">${esc(label)}</td><td class="editable" colspan="2">${esc(v(prefix)) || "—"}</td></tr>`;
   };
 
+  // Helper: render de imagenes subidas (max 6, grilla 3x2, altura uniforme)
+  const renderImagenesSubidas = (prefix: string): string => {
+    const imgs = ((datos[`${prefix}_imagenes`] as { name: string; data: string }[] | undefined) || []).slice(0, 6);
+    if (!imgs.length) return "";
+    const COLS = 3;
+    const cells = imgs.map(
+      (img) =>
+        `<td class="foto-cell"><div class="foto-img-wrap"><img src="${img.data}" /></div><div class="foto-caption">${esc(
+          img.name || ""
+        )}</div></td>`
+    );
+    // Completar la ultima fila con celdas vacias para que la grilla quede ordenada
+    while (cells.length % COLS !== 0) {
+      cells.push('<td class="foto-cell foto-vacia"></td>');
+    }
+    const rows: string[] = [];
+    for (let i = 0; i < cells.length; i += COLS) {
+      rows.push(`<tr>${cells.slice(i, i + COLS).join("")}</tr>`);
+    }
+    return `
+      <div class="fotos-subidas">
+        <div class="fotos-titulo">Evidencia fotografica</div>
+        <table class="tabla-fotos"><tbody>${rows.join("")}</tbody></table>
+      </div>
+    `;
+  };
+
   // Helper: seccion con imagen y medidas
   const renderSeccionComponente = (
     numSec: number,
@@ -107,15 +138,36 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
     const recomendaciones = v(`${prefix}_recomendaciones`);
     const hallazgosMarcados = hallazgosChecks.filter((h) => v(h.key));
 
+    // Si hay imagen Y medidas: layout lado a lado (imagen | tabla)
+    // Si solo hay imagen: imagen centrada
+    // Si solo hay medidas: tabla a ancho completo
+    let cabeceraHTML = "";
+    if (imgSrc && medidasHTML) {
+      cabeceraHTML = `
+        <table class="seccion-layout"><tr>
+          <td class="seccion-img-cell">
+            <div class="img-ref-wrap"><img src="${imgSrc}" /><div class="img-caption">Referencia: ${esc(imgLabel)}</div></div>
+          </td>
+          <td class="seccion-med-cell">
+            <table><thead><tr><th>Parametro</th><th>X</th><th>Y</th></tr></thead><tbody>${medidasHTML}</tbody></table>
+          </td>
+        </tr></table>
+      `;
+    } else if (imgSrc) {
+      cabeceraHTML = `<div class="img-ref-wrap solo"><img src="${imgSrc}" /><div class="img-caption">Referencia: ${esc(imgLabel)}</div></div>`;
+    } else if (medidasHTML) {
+      cabeceraHTML = `<table><thead><tr><th>Parametro</th><th>X</th><th>Y</th></tr></thead><tbody>${medidasHTML}</tbody></table>`;
+    }
+
     return `
       <h2><span class="section-num">${numSec}</span> ${esc(titulo)}</h2>
-      ${imgSrc ? `<div class="img-ref-wrap"><img src="${imgSrc}" /><div class="img-caption">Referencia: ${esc(imgLabel)}</div></div>` : ""}
-      ${medidasHTML ? `<table><thead><tr><th>Parametro</th><th>X</th><th>Y</th></tr></thead><tbody>${medidasHTML}</tbody></table>` : ""}
+      ${cabeceraHTML}
       ${
         hallazgosMarcados.length > 0
           ? `<div class="hallazgos"><b>Hallazgos encontrados:</b><ul>${hallazgosMarcados.map((h) => `<li>${esc(h.texto)}</li>`).join("")}</ul></div>`
           : ""
       }
+      ${renderImagenesSubidas(prefix)}
       ${resultado ? `<div class="campo-texto"><b>Resultado</b><div class="textarea-box">${esc(resultado)}</div></div>` : ""}
       ${recomendaciones ? `<div class="campo-texto"><b>Recomendaciones</b><div class="textarea-box">${esc(recomendaciones)}</div></div>` : ""}
     `;
@@ -188,7 +240,7 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
       "Engranaje de sensor presenta corrosion",
       "Lainas de separacion llegaron dañadas",
     ].map((texto, idx) => ({ key: `${p}_hub_g0_${idx}`, texto }));
-    seccionesHTML += renderSeccionComponente(numSec++, "HUB (Cubo)", imgCilindro, "Hub", medidasHub, `${p}_hub`, hallazgosHub);
+    seccionesHTML += renderSeccionComponente(numSec++, "HUB (Cubo)", imgHub, "Hub", medidasHub, `${p}_hub`, hallazgosHub);
 
     // SPINDLE
     const medidasSpi = [
@@ -204,7 +256,7 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
       "Presenta picaduras en alojamiento conico",
       "Alojamientos roscados de pernos de sujecion de bastidor",
     ].map((texto, idx) => ({ key: `${p}_spi_g0_${idx}`, texto }));
-    seccionesHTML += renderSeccionComponente(numSec++, "SPINDLE (Muñon)", imgVastago, "Spindle", medidasSpi, `${p}_spi`, hallazgosSpi);
+    seccionesHTML += renderSeccionComponente(numSec++, "SPINDLE (Muñon)", imgSpindle, "Spindle", medidasSpi, `${p}_spi`, hallazgosSpi);
 
     // CONJUNTO DE FRENO
     const hallazgosFreno = [
@@ -213,14 +265,14 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
       "Pernos de sujecion llegaron elongados",
       "Sellos presentan desgaste",
     ].map((texto, idx) => ({ key: `${p}_freno_g0_${idx}`, texto }));
-    seccionesHTML += renderSeccionComponente(numSec++, "CONJUNTO DE FRENO", "", "", "", `${p}_freno`, hallazgosFreno);
+    seccionesHTML += renderSeccionComponente(numSec++, "CONJUNTO DE FRENO", imgConjFreno, "Conjunto de Freno", "", `${p}_freno`, hallazgosFreno);
 
     // CAJA DE FRENO
     const hallazgosCaja = [
       "Presenta rayas en asientos de sellos",
       "Alojamientos roscados presentan contaminacion",
     ].map((texto, idx) => ({ key: `${p}_caja_g0_${idx}`, texto }));
-    seccionesHTML += renderSeccionComponente(numSec++, "CAJA DE FRENO", "", "", "", `${p}_caja`, hallazgosCaja);
+    seccionesHTML += renderSeccionComponente(numSec++, "CAJA DE FRENO", imgPistonFreno, "Pistón de Freno", "", `${p}_caja`, hallazgosCaja);
 
     // GENERAL
     const hallazgosGen = [
@@ -362,8 +414,8 @@ body { font-family: Calibri, Arial, sans-serif; font-size: 9pt; margin: 0; color
 
 .header-corp { width: 100%; border-bottom: 3pt solid ${AZUL}; margin-bottom: 12pt; padding-bottom: 8pt; }
 .header-corp td { border: none; padding: 0; vertical-align: middle; }
-.header-corp .logo-cell { width: 120pt; text-align: left; }
-.header-corp .logo-cell img { width: 110pt; height: auto; }
+.header-corp .logo-cell { width: 75pt; text-align: left; }
+.header-corp .logo-cell img { width: 65pt; height: auto; max-height: 30pt; }
 .header-corp .titulo-cell { text-align: center; padding: 0 10pt; }
 .header-corp .titulo-cell h1 { font-size: 14pt; color: ${AZUL}; margin: 0 0 3pt; letter-spacing: 1.5pt; font-weight: bold; text-transform: uppercase; }
 .header-corp .titulo-cell p { font-size: 9pt; color: #555; margin: 0; }
@@ -379,9 +431,26 @@ th { background: ${AZUL}; color: #fff; font-weight: 600; text-align: center; fon
 td.label { font-weight: 600; background: ${GRIS_FONDO}; color: #333; white-space: nowrap; width: 30%; }
 td.editable { color: ${AZUL_CLARO}; font-weight: 600; text-align: center; }
 
-.img-ref-wrap { text-align: center; margin: 6pt auto; padding: 4pt; border: 1pt solid #ddd; background: #fafcff; width: 60%; }
-.img-ref-wrap img { width: 220pt; height: auto; max-height: 140pt; }
-.img-ref-wrap .img-caption { font-size: 7.5pt; color: ${AZUL}; margin-top: 3pt; font-weight: 600; letter-spacing: 0.3pt; }
+.img-ref-wrap { text-align: center; margin: 0; padding: 8pt; border: 1pt solid #cfd8e3; background: #fafcff; border-radius: 3pt; }
+.img-ref-wrap img { width: auto; height: auto; max-width: 100%; max-height: 180pt; display: block; margin: 0 auto; }
+.img-ref-wrap .img-caption { font-size: 8.5pt; color: ${AZUL}; margin-top: 6pt; font-weight: 700; letter-spacing: 0.5pt; text-transform: uppercase; }
+
+/* Layout 2 columnas: imagen | medidas (lado a lado en A4 horizontal) */
+.seccion-layout { width: 100%; border-collapse: separate; border-spacing: 0; margin: 6pt 0 8pt; }
+.seccion-layout > tbody > tr > td { border: none; padding: 0; vertical-align: top; }
+.seccion-layout td.seccion-img-cell { width: 35%; padding-right: 10pt; }
+.seccion-layout td.seccion-med-cell { width: 65%; }
+/* Cuando va sola la imagen (sin medidas), centrarla con ancho moderado */
+.img-ref-wrap.solo { width: 55%; margin: 10pt auto; }
+
+.fotos-subidas { margin: 10pt 0 12pt; }
+.fotos-titulo { font-size: 9pt; color: ${AZUL}; font-weight: 700; padding: 5pt 8pt; background: ${GRIS_FONDO}; border-left: 4pt solid ${AZUL}; margin-bottom: 6pt; letter-spacing: 0.4pt; }
+.tabla-fotos { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.tabla-fotos td.foto-cell { border: 0.5pt solid #ccc; padding: 6pt; width: 33.33%; text-align: center; background: #fff; vertical-align: top; }
+.tabla-fotos td.foto-vacia { border: 0; background: transparent; }
+.foto-img-wrap { width: 100%; height: 150pt; text-align: center; overflow: hidden; padding: 2pt; }
+.foto-img-wrap img { max-height: 146pt; max-width: 100%; width: auto; height: auto; vertical-align: middle; }
+.foto-caption { font-size: 7.5pt; color: #555; margin-top: 4pt; font-style: italic; line-height: 1.3; max-height: 22pt; overflow: hidden; }
 
 .hallazgos { margin: 6pt 0; padding: 4pt 8pt; border-left: 3pt solid #c0392b; background: #fef5f5; }
 .hallazgos b { color: #c0392b; font-size: 9pt; }
@@ -398,7 +467,7 @@ td.editable { color: ${AZUL_CLARO}; font-weight: 600; text-align: center; }
 </style></head><body>
 
 <table class="header-corp"><tr>
-    <td class="logo-cell">${logoB64 ? `<img src="${logoB64}" />` : `<b style="font-size:20pt;color:${AZUL}">HP&K</b>`}</td>
+    <td class="logo-cell">${logoB64 ? `<img src="${logoB64}" />` : `<b style="font-size:14pt;color:${AZUL};letter-spacing:1pt">EMPRESA</b>`}</td>
     <td class="titulo-cell">
         <h1>Hoja de Evaluacion Tecnica</h1>
         <p>${esc(tituloModelo)}</p>
@@ -431,7 +500,7 @@ ${
 }
 
 <div class="footer">
-    <div class="empresa">HP&K INVERSIONES S.A.C.</div>
+    <div class="empresa">Hoja de Evaluacion Tecnica</div>
     <div class="detalle">Hoja de Evaluacion Tecnica — ${esc(otNumero)} — Generado el ${fechaHoy}</div>
 </div>
 

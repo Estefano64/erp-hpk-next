@@ -19,6 +19,7 @@ import {
   Upload,
   Tag,
   Alert,
+  Modal,
 } from "antd";
 import {
   ArrowLeftOutlined,
@@ -28,6 +29,12 @@ import {
   DownloadOutlined,
   InfoCircleOutlined,
   LockOutlined,
+  SendOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  EditOutlined,
+  FileDoneOutlined,
+  ClockCircleOutlined,
 } from "@ant-design/icons";
 import type { UploadFile } from "antd/es/upload/interface";
 import { brand } from "@/lib/theme";
@@ -73,7 +80,36 @@ interface Evaluacion {
   informe_nombre: string | null;
   informe_fecha_subida: string | null;
   estado: string;
+  revisado_por?: string | null;
+  fecha_revision?: string | null;
+  comentarios_revision?: string | null;
+  solicitado_revision_por?: string | null;
+  fecha_solicitud_revision?: string | null;
 }
+
+const estadoColorPage: Record<string, string> = {
+  BORRADOR: "default",
+  COMPLETADA: "blue",
+  PENDIENTE_APROBACION: "gold",
+  APROBADA: "green",
+  RECHAZADA: "red",
+};
+
+const estadoLabelPage: Record<string, string> = {
+  BORRADOR: "Borrador",
+  COMPLETADA: "Completada",
+  PENDIENTE_APROBACION: "Pendiente Aprobación",
+  APROBADA: "Aprobada",
+  RECHAZADA: "Rechazada",
+};
+
+const estadoIconPage: Record<string, React.ReactNode> = {
+  BORRADOR: <EditOutlined />,
+  COMPLETADA: <FileDoneOutlined />,
+  PENDIENTE_APROBACION: <ClockCircleOutlined />,
+  APROBADA: <CheckCircleOutlined />,
+  RECHAZADA: <CloseCircleOutlined />,
+};
 
 export default function EvaluacionPage() {
   const params = useParams();
@@ -91,6 +127,11 @@ export default function EvaluacionPage() {
   const [sistemaMedicion, setSistemaMedicion] = useState<string>("Metrico");
   const [modeloBloqueado, setModeloBloqueado] = useState(false);
   const [datosFormulario, setDatosFormulario] = useState<Record<string, unknown>>({});
+
+  // Modal revision
+  const [modalAccion, setModalAccion] = useState<"solicitar" | "aprobar" | "rechazar" | "reabrir" | null>(null);
+  const [accionForm] = Form.useForm();
+  const [procesandoAccion, setProcesandoAccion] = useState(false);
 
   const cargarDatos = useCallback(async () => {
     setLoading(true);
@@ -123,12 +164,6 @@ export default function EvaluacionPage() {
           if (!bloqueado) modeloInicial = ev.modelo_evaluacion;
           setSistemaMedicion(ev.sistema_medicion);
           setDatosFormulario(ev.datos_formulario || {});
-          form.setFieldsValue({
-            evaluado_por: ev.evaluado_por,
-            fecha_evaluacion: ev.fecha_evaluacion ? dayjs(ev.fecha_evaluacion) : null,
-            resultado_general: ev.resultado_general,
-            recomendaciones_general: ev.recomendaciones_general,
-          });
         }
       } catch {
         // No hay evaluacion previa
@@ -141,11 +176,22 @@ export default function EvaluacionPage() {
     } finally {
       setLoading(false);
     }
-  }, [otId, form, message]);
+  }, [otId, message]);
 
   useEffect(() => {
     if (otId) cargarDatos();
   }, [otId, cargarDatos]);
+
+  // Aplicar valores al Form despues de que este montado (cuando loading=false)
+  useEffect(() => {
+    if (loading || !evaluacion) return;
+    form.setFieldsValue({
+      evaluado_por: evaluacion.evaluado_por,
+      fecha_evaluacion: evaluacion.fecha_evaluacion ? dayjs(evaluacion.fecha_evaluacion) : null,
+      resultado_general: evaluacion.resultado_general,
+      recomendaciones_general: evaluacion.recomendaciones_general,
+    });
+  }, [loading, evaluacion, form]);
 
   const handleGuardar = async () => {
     try {
@@ -232,6 +278,48 @@ export default function EvaluacionPage() {
     }
   };
 
+  // Ejecutar accion de revision (solicitar/aprobar/rechazar/reabrir)
+  const ejecutarAccionRevision = async () => {
+    if (!modalAccion || !evaluacion) return;
+    try {
+      const values = accionForm.getFieldsValue();
+      setProcesandoAccion(true);
+      const res = await fetch(`/api/evaluaciones/${evaluacion.id}/revision`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accion: modalAccion,
+          usuario: values.usuario || "Usuario",
+          comentarios: values.comentarios || null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Error");
+
+      const textos: Record<string, string> = {
+        solicitar: "Evaluación enviada a revisión",
+        aprobar: "Evaluación aprobada",
+        rechazar: "Evaluación rechazada",
+        reabrir: "Evaluación reabierta en borrador",
+      };
+      message.success(textos[modalAccion]);
+      setEvaluacion(json.data);
+      setModalAccion(null);
+      accionForm.resetFields();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : "Error");
+    } finally {
+      setProcesandoAccion(false);
+    }
+  };
+
+  // Permisos segun estado
+  const estado = evaluacion?.estado || "BORRADOR";
+  const puedeEditar = ["BORRADOR", "COMPLETADA", "RECHAZADA"].includes(estado);
+  const puedeSolicitar = ["BORRADOR", "COMPLETADA", "RECHAZADA"].includes(estado) && !!evaluacion?.id;
+  const puedeAprobarRechazar = estado === "PENDIENTE_APROBACION";
+  const puedeReabrir = ["APROBADA", "RECHAZADA"].includes(estado);
+
   if (loading) {
     return (
       <div style={{ textAlign: "center", padding: 60 }}>
@@ -241,7 +329,7 @@ export default function EvaluacionPage() {
   }
 
   if (!ot) {
-    return <Alert type="error" message="OT no encontrada" />;
+    return <Alert type="error" title="OT no encontrada" />;
   }
 
   const clienteNombre = ot.cliente?.nombre_comercial ?? ot.cliente?.razon_social ?? "-";
@@ -258,34 +346,129 @@ export default function EvaluacionPage() {
         >
           Volver a Ordenes de Trabajo
         </Button>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
           <div>
             <Title level={3} style={{ margin: 0 }}>
               Hoja de Evaluacion Tecnica
             </Title>
-            <Text type="secondary">
-              OT: <Tag color={brand.navy}>{ot.ot}</Tag>
+            <Space>
+              <Text type="secondary">OT:</Text>
+              <Tag color={brand.navy}>{ot.ot}</Tag>
               {evaluacion && (
-                <Tag color={evaluacion.estado === "COMPLETADA" ? "green" : "orange"}>
-                  {evaluacion.estado}
+                <Tag color={estadoColorPage[estado] || "default"} icon={estadoIconPage[estado]}>
+                  {estadoLabelPage[estado] || estado}
                 </Tag>
               )}
-            </Text>
+            </Space>
           </div>
-          <Space>
+          <Space wrap>
             <Button icon={<FileWordOutlined />} onClick={handleGenerarWord}>
               Descargar Word
             </Button>
-            <Button
-              type="primary"
-              icon={<SaveOutlined />}
-              loading={saving}
-              onClick={handleGuardar}
-            >
-              Guardar Hoja
-            </Button>
+            {puedeEditar && (
+              <Button
+                type="primary"
+                icon={<SaveOutlined />}
+                loading={saving}
+                onClick={handleGuardar}
+              >
+                Guardar Hoja
+              </Button>
+            )}
+            {puedeSolicitar && (
+              <Button
+                icon={<SendOutlined />}
+                style={{ background: brand.cyan, color: "#fff", borderColor: brand.cyan }}
+                onClick={() => setModalAccion("solicitar")}
+              >
+                Enviar a revisión
+              </Button>
+            )}
+            {puedeAprobarRechazar && (
+              <>
+                <Button
+                  icon={<CheckCircleOutlined />}
+                  style={{ background: "#52c41a", color: "#fff", borderColor: "#52c41a" }}
+                  onClick={() => setModalAccion("aprobar")}
+                >
+                  Aprobar
+                </Button>
+                <Button danger icon={<CloseCircleOutlined />} onClick={() => setModalAccion("rechazar")}>
+                  Rechazar
+                </Button>
+              </>
+            )}
+            {puedeReabrir && (
+              <Button icon={<EditOutlined />} onClick={() => setModalAccion("reabrir")}>
+                Reabrir / Editar
+              </Button>
+            )}
           </Space>
         </div>
+
+        {/* Alert con info de revision */}
+        {evaluacion && estado === "PENDIENTE_APROBACION" && (
+          <Alert
+            style={{ marginTop: 12 }}
+            type="warning"
+            showIcon
+            icon={<ClockCircleOutlined />}
+            title="Esta evaluación está pendiente de aprobación"
+            description={
+              evaluacion.solicitado_revision_por
+                ? `Enviada por ${evaluacion.solicitado_revision_por}${
+                    evaluacion.fecha_solicitud_revision
+                      ? ` el ${dayjs(evaluacion.fecha_solicitud_revision).format("DD/MM/YYYY HH:mm")}`
+                      : ""
+                  }`
+                : "Esperando revisión del supervisor"
+            }
+          />
+        )}
+        {evaluacion && estado === "APROBADA" && (
+          <Alert
+            style={{ marginTop: 12 }}
+            type="success"
+            showIcon
+            title="Evaluación aprobada — bloqueada para edición"
+            description={
+              <>
+                Aprobada por <b>{evaluacion.revisado_por}</b>
+                {evaluacion.fecha_revision && ` el ${dayjs(evaluacion.fecha_revision).format("DD/MM/YYYY HH:mm")}`}
+                {evaluacion.comentarios_revision && (
+                  <div style={{ marginTop: 4, fontSize: 12 }}>
+                    <b>Comentarios:</b> {evaluacion.comentarios_revision}
+                  </div>
+                )}
+                <div style={{ marginTop: 6, fontSize: 12 }}>
+                  <LockOutlined /> Los campos están bloqueados. Usa <b>Reabrir / Editar</b> para modificar la evaluación.
+                </div>
+              </>
+            }
+          />
+        )}
+        {evaluacion && estado === "RECHAZADA" && (
+          <Alert
+            style={{ marginTop: 12 }}
+            type="error"
+            showIcon
+            title="Evaluación rechazada"
+            description={
+              <>
+                Rechazada por <b>{evaluacion.revisado_por}</b>
+                {evaluacion.fecha_revision && ` el ${dayjs(evaluacion.fecha_revision).format("DD/MM/YYYY HH:mm")}`}
+                {evaluacion.comentarios_revision && (
+                  <div style={{ marginTop: 4, fontSize: 12 }}>
+                    <b>Motivo:</b> {evaluacion.comentarios_revision}
+                  </div>
+                )}
+                <div style={{ marginTop: 6, fontSize: 12 }}>
+                  Usa <b>Reabrir / Editar</b> para hacer cambios y enviarla nuevamente.
+                </div>
+              </>
+            }
+          />
+        )}
       </div>
 
       {/* ── Seccion 1: Datos Generales ── */}
@@ -366,14 +549,14 @@ export default function EvaluacionPage() {
         }
         style={{ marginBottom: 16 }}
       >
-        <Form form={form} layout="vertical">
+        <Form form={form} layout="vertical" disabled={!puedeEditar}>
           <Row gutter={16}>
             <Col xs={24} md={8}>
               <Form.Item label="Modelo / Tipo de componente">
                 <Select
                   value={modeloEvaluacion}
                   onChange={setModeloEvaluacion}
-                  disabled={modeloBloqueado}
+                  disabled={modeloBloqueado || !puedeEditar}
                   suffixIcon={modeloBloqueado ? <LockOutlined /> : undefined}
                   options={MODELOS_EVALUACION.map((m) => ({
                     label: m.label,
@@ -385,7 +568,7 @@ export default function EvaluacionPage() {
                     type="warning"
                     showIcon
                     icon={<InfoCircleOutlined />}
-                    message="Tipo determinado por la estrategia de la OT"
+                    title="Tipo determinado por la estrategia de la OT"
                     style={{ marginTop: 8 }}
                     banner
                   />
@@ -397,6 +580,7 @@ export default function EvaluacionPage() {
                 <Select
                   value={sistemaMedicion}
                   onChange={setSistemaMedicion}
+                  disabled={!puedeEditar}
                   options={[
                     { label: "Sistema Metrico (mm)", value: "Metrico" },
                     { label: "Sistema Imperial (in)", value: "Imperial" },
@@ -424,6 +608,7 @@ export default function EvaluacionPage() {
         sistemaMedicion={sistemaMedicion}
         datos={datosFormulario}
         onChange={setDatosFormulario}
+        readonly={!puedeEditar}
       />
 
       {/* ── Seccion final: Resultado y Recomendaciones ── */}
@@ -436,7 +621,7 @@ export default function EvaluacionPage() {
         }
         style={{ marginBottom: 16 }}
       >
-        <Form form={form} layout="vertical">
+        <Form form={form} layout="vertical" disabled={!puedeEditar}>
           <Form.Item label="Resultado general de la evaluacion" name="resultado_general">
             <TextArea rows={3} placeholder="Conclusiones generales de la evaluacion del componente..." />
           </Form.Item>
@@ -461,7 +646,7 @@ export default function EvaluacionPage() {
             style={{ marginBottom: 12 }}
             type="success"
             showIcon
-            message={
+            title={
               <Space>
                 <strong>{evaluacion.informe_nombre}</strong>
                 <Text type="secondary" style={{ fontSize: 12 }}>
@@ -481,13 +666,19 @@ export default function EvaluacionPage() {
           showUploadList={false}
           accept=".pdf,.doc,.docx,.xls,.xlsx"
           maxCount={1}
+          disabled={!puedeEditar}
         >
-          <Button icon={<UploadOutlined />} loading={uploading}>
+          <Button icon={<UploadOutlined />} loading={uploading} disabled={!puedeEditar}>
             {evaluacion?.informe_nombre ? "Reemplazar Informe" : "Subir Informe"}
           </Button>
         </Upload>
         <Text type="secondary" style={{ display: "block", marginTop: 8, fontSize: 12 }}>
           Formatos aceptados: PDF, Word, Excel. Maximo 20MB.
+          {!puedeEditar && (
+            <span style={{ color: "#cf1322", marginLeft: 8 }}>
+              <LockOutlined /> Bloqueado mientras la evaluacion este {estadoLabelPage[estado] || estado}. Reabrela para modificar.
+            </span>
+          )}
         </Text>
       </Card>
 
@@ -495,22 +686,98 @@ export default function EvaluacionPage() {
 
       {/* Boton guardar al final */}
       <div style={{ textAlign: "right", marginBottom: 40 }}>
-        <Space>
+        <Space wrap>
           <Button onClick={() => router.push("/ordenes-trabajo")}>Cancelar</Button>
           <Button icon={<FileWordOutlined />} onClick={handleGenerarWord}>
             Descargar Word
           </Button>
-          <Button
-            type="primary"
-            icon={<SaveOutlined />}
-            size="large"
-            loading={saving}
-            onClick={handleGuardar}
-          >
-            Guardar Hoja de Evaluacion
-          </Button>
+          {puedeEditar && (
+            <Button
+              type="primary"
+              icon={<SaveOutlined />}
+              size="large"
+              loading={saving}
+              onClick={handleGuardar}
+            >
+              Guardar Hoja de Evaluacion
+            </Button>
+          )}
+          {puedeSolicitar && (
+            <Button
+              icon={<SendOutlined />}
+              size="large"
+              style={{ background: brand.cyan, color: "#fff", borderColor: brand.cyan }}
+              onClick={() => setModalAccion("solicitar")}
+            >
+              Enviar a revisión
+            </Button>
+          )}
         </Space>
       </div>
+
+      {/* Modal de revisión */}
+      <Modal
+        title={
+          modalAccion === "solicitar"
+            ? <Space><SendOutlined style={{ color: brand.cyan }} />Enviar a revisión</Space>
+            : modalAccion === "aprobar"
+            ? <Space><CheckCircleOutlined style={{ color: "#52c41a" }} />Aprobar Evaluación</Space>
+            : modalAccion === "rechazar"
+            ? <Space><CloseCircleOutlined style={{ color: "#ff4d4f" }} />Rechazar Evaluación</Space>
+            : <Space><EditOutlined />Reabrir Evaluación</Space>
+        }
+        open={!!modalAccion}
+        onCancel={() => setModalAccion(null)}
+        onOk={ejecutarAccionRevision}
+        confirmLoading={procesandoAccion}
+        forceRender
+        okText={
+          modalAccion === "solicitar" ? "Enviar" :
+          modalAccion === "aprobar" ? "Aprobar" :
+          modalAccion === "rechazar" ? "Rechazar" : "Reabrir"
+        }
+        okButtonProps={{ danger: modalAccion === "rechazar", type: "primary" }}
+      >
+        <Form form={accionForm} layout="vertical">
+          <Form.Item
+            label={modalAccion === "solicitar" ? "Tu nombre (evaluador)" : "Tu nombre"}
+            name="usuario"
+            rules={[{ required: true, message: "Ingresa tu nombre" }]}
+          >
+            <Input placeholder="Ej. Juan Pérez" />
+          </Form.Item>
+          {modalAccion !== "reabrir" && (
+            <Form.Item
+              label={
+                modalAccion === "solicitar"
+                  ? "Comentarios para el revisor (opcional)"
+                  : modalAccion === "rechazar"
+                  ? "Motivo del rechazo"
+                  : "Comentarios (opcional)"
+              }
+              name="comentarios"
+              rules={modalAccion === "rechazar" ? [{ required: true, message: "Indica el motivo del rechazo" }] : []}
+            >
+              <Input.TextArea rows={3} placeholder="Observaciones..." />
+            </Form.Item>
+          )}
+          {modalAccion === "solicitar" && (
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              Al enviar a revisión, la evaluación quedará bloqueada hasta que el revisor la apruebe o rechace.
+            </Text>
+          )}
+          {modalAccion === "rechazar" && (
+            <Text type="warning" style={{ fontSize: 12 }}>
+              ⚠ Al rechazar, el evaluador podrá reabrirla y volver a enviarla.
+            </Text>
+          )}
+          {modalAccion === "reabrir" && (
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              La evaluación volverá a estado <b>Borrador</b>. Podrás editarla y enviarla nuevamente a revisión.
+            </Text>
+          )}
+        </Form>
+      </Modal>
     </div>
   );
 }

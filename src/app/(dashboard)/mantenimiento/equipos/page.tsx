@@ -31,6 +31,15 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
 import dayjs from "dayjs";
+import {
+  numeracionColumn,
+  paginacionEstandar,
+  PAGINATION_PAGE_SIZE,
+  useColumnasOcultas,
+  ColumnasToggleButton,
+  visibleColumns,
+  filtroPorColumna,
+} from "@/lib/tables";
 
 const { Title } = Typography;
 const { TextArea } = Input;
@@ -102,12 +111,14 @@ export default function EquiposPage() {
   const [data, setData] = useState<EquipoRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [filterTipo, setFilterTipo] = useState("");
   const [filterArea, setFilterArea] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterCriticidad, setFilterCriticidad] = useState("");
+  const { ocultas, setOcultas } = useColumnasOcultas("equipos-list-cols-v1");
 
   // Catálogos
   const [tipos, setTipos] = useState<Option[]>([]);
@@ -131,7 +142,7 @@ export default function EquiposPage() {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams({ page: String(page), limit: "20" });
+    const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
     if (search) params.set("search", search);
     if (filterTipo) params.set("tipo", filterTipo);
     if (filterArea) params.set("area", filterArea);
@@ -143,7 +154,7 @@ export default function EquiposPage() {
     setData(json.data ?? []);
     setTotal(json.total ?? 0);
     setLoading(false);
-  }, [page, search, filterTipo, filterArea, filterStatus, filterCriticidad]);
+  }, [page, pageSize, search, filterTipo, filterArea, filterStatus, filterCriticidad]);
 
   useEffect(() => {
     async function loadCatalogs() {
@@ -266,16 +277,20 @@ export default function EquiposPage() {
   }
 
   const columns: ColumnsType<EquipoRecord> = [
+    numeracionColumn<EquipoRecord>({ current: page, pageSize }),
     {
+      key: "codigo",
       title: "Código",
       dataIndex: "codigo",
       width: 100,
       fixed: "left",
       sorter: (a, b) => a.codigo.localeCompare(b.codigo),
+      ...filtroPorColumna(data, "codigo"),
       render: (v: string) => <Tag color={brand.navy}>{v}</Tag>,
     },
-    { title: "Descripción", dataIndex: "descripcion", width: 220, ellipsis: true, sorter: (a: EquipoRecord, b: EquipoRecord) => a.descripcion.localeCompare(b.descripcion) },
+    { key: "descripcion", title: "Descripción", dataIndex: "descripcion", width: 220, ellipsis: true, sorter: (a: EquipoRecord, b: EquipoRecord) => a.descripcion.localeCompare(b.descripcion), ...filtroPorColumna(data, "descripcion") },
     {
+      key: "status_codigo",
       title: "Estado",
       dataIndex: "status_codigo",
       width: 100,
@@ -285,6 +300,7 @@ export default function EquiposPage() {
       ),
     },
     {
+      key: "tipo_codigo",
       title: "Tipo",
       dataIndex: "tipo_codigo",
       width: 110,
@@ -292,6 +308,7 @@ export default function EquiposPage() {
       render: (_: string, r: EquipoRecord) => r.tipo?.nombre ?? r.tipo_codigo,
     },
     {
+      key: "area_codigo",
       title: "Área",
       dataIndex: "area_codigo",
       width: 120,
@@ -299,6 +316,7 @@ export default function EquiposPage() {
       render: (_: string, r: EquipoRecord) => r.area?.nombre ?? r.area_codigo,
     },
     {
+      key: "sub_area_codigo",
       title: "Sub Área",
       dataIndex: "sub_area_codigo",
       width: 110,
@@ -306,6 +324,7 @@ export default function EquiposPage() {
       render: (_: string, r: EquipoRecord) => r.sub_area?.nombre ?? r.sub_area_codigo ?? "-",
     },
     {
+      key: "fabricante_codigo",
       title: "Fabricante",
       dataIndex: "fabricante_codigo",
       width: 150,
@@ -313,9 +332,10 @@ export default function EquiposPage() {
       sorter: (a, b) => (a.fabricante?.nombre ?? "").localeCompare(b.fabricante?.nombre ?? ""),
       render: (_: string, r: EquipoRecord) => r.fabricante?.nombre ?? r.fabricante_codigo ?? "-",
     },
-    { title: "Modelo", dataIndex: "modelo", width: 120, ellipsis: true, sorter: (a: EquipoRecord, b: EquipoRecord) => (a.modelo ?? "").localeCompare(b.modelo ?? ""), render: (v: string | null) => v ?? "-" },
-    { title: "N/S", dataIndex: "numero_serie", width: 130, ellipsis: true, render: (v: string | null) => v ?? "-" },
+    { key: "modelo", title: "Modelo", dataIndex: "modelo", width: 120, ellipsis: true, sorter: (a: EquipoRecord, b: EquipoRecord) => (a.modelo ?? "").localeCompare(b.modelo ?? ""), ...filtroPorColumna(data, "modelo"), render: (v: string | null) => v ?? "-" },
+    { key: "numero_serie", title: "N/S", dataIndex: "numero_serie", width: 130, ellipsis: true, ...filtroPorColumna(data, "numero_serie"), render: (v: string | null) => v ?? "-" },
     {
+      key: "capacidad",
       title: "Capacidad",
       width: 100,
       render: (_: unknown, r: EquipoRecord) => {
@@ -325,6 +345,7 @@ export default function EquiposPage() {
       },
     },
     {
+      key: "criticidad_codigo",
       title: "Criticidad",
       dataIndex: "criticidad_codigo",
       width: 90,
@@ -336,6 +357,7 @@ export default function EquiposPage() {
       },
     },
     {
+      key: "precio",
       title: "Precio",
       dataIndex: "precio",
       width: 110,
@@ -347,8 +369,9 @@ export default function EquiposPage() {
         return `${sym} ${Number(v).toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
       },
     },
-    { title: "Cant.", dataIndex: "cantidad", width: 60, align: "center", sorter: (a: EquipoRecord, b: EquipoRecord) => a.cantidad - b.cantidad },
+    { key: "cantidad", title: "Cant.", dataIndex: "cantidad", width: 60, align: "center", sorter: (a: EquipoRecord, b: EquipoRecord) => a.cantidad - b.cantidad },
     {
+      key: "planta_codigo",
       title: "Planta",
       dataIndex: "planta_codigo",
       width: 90,
@@ -356,6 +379,7 @@ export default function EquiposPage() {
       render: (_: string, r: EquipoRecord) => r.planta?.nombre ?? r.planta_codigo,
     },
     {
+      key: "acciones",
       title: "Acciones",
       width: 100,
       align: "center",
@@ -393,9 +417,17 @@ export default function EquiposPage() {
         <Title level={3} style={{ margin: 0 }}>
           Equipos y Herramientas
         </Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-          Nuevo Equipo
-        </Button>
+        <Space>
+          <ColumnasToggleButton<EquipoRecord>
+            columns={columns}
+            ocultas={ocultas}
+            setOcultas={setOcultas}
+            obligatorias={["__num", "codigo", "acciones"]}
+          />
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+            Nuevo Equipo
+          </Button>
+        </Space>
       </div>
 
       {/* Filtros */}
@@ -470,16 +502,16 @@ export default function EquiposPage() {
 
       <Table
         rowKey="equipo_id"
-        columns={columns}
+        columns={visibleColumns(columns, ocultas)}
         dataSource={data}
         loading={loading}
-        pagination={{
+        pagination={paginacionEstandar({
           current: page,
-          pageSize: 20,
+          pageSize,
           total,
-          showTotal: (t) => `${t} equipos`,
-          onChange: setPage,
-        }}
+          onChange: (p, s) => { setPage(p); setPageSize(s); },
+          label: "equipos",
+        })}
         scroll={{ x: 1800 }}
         size="small"
       />

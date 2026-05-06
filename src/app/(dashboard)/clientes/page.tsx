@@ -24,9 +24,22 @@ import {
   DeleteOutlined,
   StopOutlined,
   ReloadOutlined,
+  ImportOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
+import {
+  numeracionColumn,
+  paginacionEstandar,
+  PAGINATION_PAGE_SIZE,
+  useColumnasOcultas,
+  ColumnasToggleButton,
+  visibleColumns,
+  filtroPorColumna,
+} from "@/lib/tables";
+import { ImportarExcelModal } from "@/components/ImportarExcelModal";
+import { EmptyState } from "@/components/EmptyState";
+import { DuplicateHint } from "@/components/DuplicateHint";
 
 const { Title } = Typography;
 
@@ -42,32 +55,47 @@ interface ClienteRecord {
   contacto_principal: string | null;
 }
 
+function ClienteDupHint({ form, excludeId }: { form: ReturnType<typeof Form.useForm>[0]; excludeId?: number }) {
+  const value = (Form.useWatch("razon_social", form) ?? "") as string;
+  return (
+    <DuplicateHint<ClienteRecord>
+      value={value}
+      endpoint="/api/clientes"
+      excludeId={excludeId}
+      mapMatch={(c) => ({ id: c.cliente_id, primary: c.razon_social, secondary: c.codigo })}
+    />
+  );
+}
+
 export default function ClientesPage() {
   const { data: session } = useSession();
   const isAdminUser = (session?.user as { rol?: string } | undefined)?.rol === "admin";
   const [data, setData] = useState<ClienteRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const { ocultas, setOcultas } = useColumnasOcultas("clientes-list-cols-v1");
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ClienteRecord | null>(null);
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const [messageApi, contextHolder] = message.useMessage();
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams({ page: String(page), limit: "20" });
+    const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
     if (search) params.set("search", search);
     const res = await fetch(`/api/clientes?${params}`);
     const json = await res.json();
     setData(json.data ?? []);
     setTotal(json.total ?? 0);
     setLoading(false);
-  }, [page, search]);
+  }, [page, pageSize, search]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -137,19 +165,61 @@ export default function ClientesPage() {
   }
 
   const columns: ColumnsType<ClienteRecord> = [
+    numeracionColumn<ClienteRecord>({ current: page, pageSize }),
     {
+      key: "codigo",
       title: "Código",
       dataIndex: "codigo",
       width: 110,
       sorter: (a, b) => a.codigo.localeCompare(b.codigo),
+      ...filtroPorColumna(data, "codigo"),
       render: (v: string) => <Tag color={brand.navy}>{v}</Tag>,
     },
-    { title: "Razón Social", dataIndex: "razon_social", ellipsis: true, sorter: (a: ClienteRecord, b: ClienteRecord) => a.razon_social.localeCompare(b.razon_social) },
-    { title: "Nombre Comercial", dataIndex: "nombre_comercial", ellipsis: true, sorter: (a: ClienteRecord, b: ClienteRecord) => (a.nombre_comercial ?? "").localeCompare(b.nombre_comercial ?? ""), render: (v: string | null) => v ?? "-" },
-    { title: "RUC", dataIndex: "ruc", width: 130, sorter: (a: ClienteRecord, b: ClienteRecord) => (a.ruc ?? "").localeCompare(b.ruc ?? ""), render: (v: string | null) => v ?? "-" },
-    { title: "Contacto", dataIndex: "contacto_principal", width: 180, ellipsis: true, render: (v: string | null) => v ?? "-" },
-    { title: "Teléfono", dataIndex: "telefono", width: 130, render: (v: string | null) => v ?? "-" },
     {
+      key: "razon_social",
+      title: "Razón Social",
+      dataIndex: "razon_social",
+      ellipsis: true,
+      sorter: (a: ClienteRecord, b: ClienteRecord) => a.razon_social.localeCompare(b.razon_social),
+      ...filtroPorColumna(data, "razon_social"),
+    },
+    {
+      key: "nombre_comercial",
+      title: "Nombre Comercial",
+      dataIndex: "nombre_comercial",
+      ellipsis: true,
+      sorter: (a: ClienteRecord, b: ClienteRecord) => (a.nombre_comercial ?? "").localeCompare(b.nombre_comercial ?? ""),
+      ...filtroPorColumna(data, "nombre_comercial"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "ruc",
+      title: "RUC",
+      dataIndex: "ruc",
+      width: 130,
+      sorter: (a: ClienteRecord, b: ClienteRecord) => (a.ruc ?? "").localeCompare(b.ruc ?? ""),
+      ...filtroPorColumna(data, "ruc"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "contacto_principal",
+      title: "Contacto",
+      dataIndex: "contacto_principal",
+      width: 180,
+      ellipsis: true,
+      ...filtroPorColumna(data, "contacto_principal"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "telefono",
+      title: "Teléfono",
+      dataIndex: "telefono",
+      width: 130,
+      ...filtroPorColumna(data, "telefono"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "acciones",
       title: "Acciones",
       width: 100,
       align: "center",
@@ -184,7 +254,20 @@ export default function ClientesPage() {
       {contextHolder}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <Title level={3} style={{ margin: 0 }}>Clientes</Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nuevo</Button>
+        <Space>
+          <ColumnasToggleButton<ClienteRecord>
+            columns={columns}
+            ocultas={ocultas}
+            setOcultas={setOcultas}
+            obligatorias={["__num", "codigo", "acciones"]}
+          />
+          {isAdminUser && (
+            <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>
+              Importar Excel
+            </Button>
+          )}
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nuevo</Button>
+        </Space>
       </div>
 
       <Card styles={{ body: { padding: 16 } }} style={{ marginBottom: 16 }}>
@@ -206,16 +289,34 @@ export default function ClientesPage() {
 
       <Table
         rowKey="cliente_id"
-        columns={columns}
+        columns={visibleColumns(columns, ocultas)}
         dataSource={data}
         loading={loading}
-        pagination={{
-          current: page,
-          pageSize: 20,
-          total,
-          showTotal: (t) => `${t} registros`,
-          onChange: setPage,
+        locale={{
+          emptyText: !loading && total === 0 && !search ? (
+            <EmptyState
+              title="Aún no hay clientes cargados"
+              description="Importá masivamente desde Excel o creá uno manualmente."
+              primaryAction={isAdminUser ? {
+                label: "Importar desde Excel",
+                icon: <ImportOutlined />,
+                onClick: () => setImportOpen(true),
+              } : undefined}
+              secondaryAction={{
+                label: "Crear manualmente",
+                icon: <PlusOutlined />,
+                onClick: openCreate,
+              }}
+            />
+          ) : undefined,
         }}
+        pagination={paginacionEstandar({
+          current: page,
+          pageSize,
+          total,
+          onChange: (p, s) => { setPage(p); setPageSize(s); },
+          label: "clientes",
+        })}
         scroll={{ x: 900 }}
         size="small"
       />
@@ -229,17 +330,25 @@ export default function ClientesPage() {
         width={700}
         destroyOnHidden
       >
-        <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
+        <div style={{ fontSize: 12, color: brand.textSecondary, marginTop: 12 }}>
+          Los campos con <span style={{ color: "#ff4d4f" }}>*</span> son obligatorios.
+        </div>
+        <Form
+          form={form} layout="vertical" style={{ marginTop: 8 }}
+          validateTrigger={["onChange", "onBlur"]}
+          requiredMark
+        >
           <Row gutter={16}>
             <Col span={8}>
-              <Form.Item name="codigo" label="Código" rules={[{ required: true, message: "Requerido" }]}>
+              <Form.Item name="codigo" label="Código" rules={[{ required: true, message: "El código es obligatorio" }, { max: 10, message: "Máximo 10 caracteres" }]}>
                 <Input disabled={!!editing} />
               </Form.Item>
             </Col>
             <Col span={16}>
-              <Form.Item name="razon_social" label="Razón Social" rules={[{ required: true, message: "Requerido" }]}>
-                <Input />
+              <Form.Item name="razon_social" label="Razón Social" rules={[{ required: true, message: "Razón social obligatoria" }]}>
+                <Input placeholder="Ej. Minera Cuajone S.A." />
               </Form.Item>
+              {!editing && <ClienteDupHint form={form} />}
             </Col>
             <Col span={12}>
               <Form.Item name="nombre_comercial" label="Nombre Comercial">
@@ -262,8 +371,8 @@ export default function ClientesPage() {
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="email" label="Email">
-                <Input />
+              <Form.Item name="email" label="Email" rules={[{ type: "email", message: "Email inválido" }]}>
+                <Input placeholder="contacto@cliente.com" />
               </Form.Item>
             </Col>
             <Col span={8}>
@@ -274,6 +383,27 @@ export default function ClientesPage() {
           </Row>
         </Form>
       </Modal>
+
+      <ImportarExcelModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onSuccess={() => fetchData()}
+        title="Importar clientes desde Excel"
+        endpoint="/api/clientes/bulk"
+        fields={[
+          { key: "codigo", label: "Código", required: true },
+          { key: "razon_social", label: "Razón social", required: true, aliases: ["razonsocial", "nombre"] },
+          { key: "nombre_comercial", label: "Nombre comercial", aliases: ["comercial"] },
+          { key: "ruc", label: "RUC" },
+          { key: "direccion", label: "Dirección" },
+          { key: "telefono", label: "Teléfono", aliases: ["tel", "celular"] },
+          { key: "email", label: "Email", aliases: ["correo"] },
+          { key: "contacto_principal", label: "Contacto", aliases: ["contacto"] },
+        ]}
+        templateRows={[
+          ["CLI001", "Mi Cliente SAC", "MiCliente", "20100123456", "Av. Mina 200, Arequipa", "999999999", "compras@cliente.com", "Pedro Ruiz"],
+        ]}
+      />
     </div>
   );
 }

@@ -27,6 +27,35 @@ export async function PUT(req: NextRequest, { params }: Params) {
     const { id } = await params;
     const body = await req.json();
 
+    // Verificar estado actual: no se puede editar contenido en APROBADA/PENDIENTE_APROBACION
+    const actual = await prisma.evaluacionTecnica.findUnique({
+      where: { id: Number(id) },
+      select: { estado: true },
+    });
+    if (!actual) {
+      return NextResponse.json({ error: "Evaluacion no encontrada" }, { status: 404 });
+    }
+
+    const camposContenido = [
+      "modelo_evaluacion",
+      "sistema_medicion",
+      "fecha_evaluacion",
+      "evaluado_por",
+      "datos_formulario",
+      "resultado_general",
+      "recomendaciones_general",
+    ];
+    const intentaEditarContenido = camposContenido.some((k) => body[k] !== undefined);
+    const bloqueado = ["APROBADA", "PENDIENTE_APROBACION"].includes(actual.estado);
+
+    if (intentaEditarContenido && bloqueado) {
+      const msg =
+        actual.estado === "APROBADA"
+          ? "La evaluacion esta APROBADA. Debes reabrirla para poder editarla."
+          : "La evaluacion esta PENDIENTE DE APROBACION y no se puede editar hasta que sea aprobada o rechazada.";
+      return NextResponse.json({ error: msg }, { status: 409 });
+    }
+
     const data: Record<string, unknown> = {};
     if (body.modelo_evaluacion !== undefined) data.modelo_evaluacion = body.modelo_evaluacion;
     if (body.sistema_medicion !== undefined) data.sistema_medicion = body.sistema_medicion;

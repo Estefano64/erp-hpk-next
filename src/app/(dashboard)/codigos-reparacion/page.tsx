@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   Typography,
@@ -26,9 +27,20 @@ import {
   DeleteOutlined,
   StopOutlined,
   ReloadOutlined,
+  ToolOutlined,
+  InboxOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
+import {
+  numeracionColumn,
+  paginacionEstandar,
+  PAGINATION_PAGE_SIZE,
+  useColumnasOcultas,
+  ColumnasToggleButton,
+  visibleColumns,
+  filtroPorColumna,
+} from "@/lib/tables";
 
 const { Title } = Typography;
 
@@ -58,16 +70,19 @@ interface Option {
 }
 
 export default function CodigosReparacionPage() {
+  const router = useRouter();
   const { data: session } = useSession();
   const isAdminUser = (session?.user as { rol?: string } | undefined)?.rol === "admin";
   const [data, setData] = useState<CodRep[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [filterTipo, setFilterTipo] = useState("");
   const [filterFlota, setFilterFlota] = useState("");
   const [filterFab, setFilterFab] = useState("");
+  const { ocultas, setOcultas } = useColumnasOcultas("codigos-reparacion-list-cols-v1");
 
   // Opciones para selects
   const [tipos, setTipos] = useState<Option[]>([]);
@@ -89,7 +104,7 @@ export default function CodigosReparacionPage() {
     setLoading(true);
     const params = new URLSearchParams({
       page: String(page),
-      limit: "20",
+      limit: String(pageSize),
     });
     if (search) params.set("search", search);
     if (filterTipo) params.set("tipo", filterTipo);
@@ -101,7 +116,7 @@ export default function CodigosReparacionPage() {
     setData(json.data ?? []);
     setTotal(json.total ?? 0);
     setLoading(false);
-  }, [page, search, filterTipo, filterFlota, filterFab]);
+  }, [page, pageSize, search, filterTipo, filterFlota, filterFab]);
 
   // Cargar opciones de selects
   useEffect(() => {
@@ -204,15 +219,19 @@ export default function CodigosReparacionPage() {
   }
 
   const columns: ColumnsType<CodRep> = [
+    numeracionColumn<CodRep>({ current: page, pageSize }),
     {
+      key: "codigo",
       title: "Código",
       dataIndex: "codigo",
       width: 100,
       sorter: (a, b) => a.codigo.localeCompare(b.codigo),
+      ...filtroPorColumna(data, "codigo"),
       render: (v: string) => <Tag color={brand.navy}>{v}</Tag>,
     },
-    { title: "Descripción", dataIndex: "descripcion", ellipsis: true, sorter: (a: CodRep, b: CodRep) => a.descripcion.localeCompare(b.descripcion) },
+    { key: "descripcion", title: "Descripción", dataIndex: "descripcion", ellipsis: true, sorter: (a: CodRep, b: CodRep) => a.descripcion.localeCompare(b.descripcion), ...filtroPorColumna(data, "descripcion") },
     {
+      key: "tipo_codigo",
       title: "Tipo",
       dataIndex: "tipo_codigo",
       width: 80,
@@ -220,13 +239,16 @@ export default function CodigosReparacionPage() {
       render: (_: string, r: CodRep) => r.tipo?.nombre ?? r.tipo_codigo,
     },
     {
+      key: "categoria_codigo",
       title: "Categoría",
       dataIndex: "categoria_codigo",
       width: 100,
       sorter: (a, b) => (a.categoria_codigo ?? "").localeCompare(b.categoria_codigo ?? ""),
+      ...filtroPorColumna(data, "categoria_codigo"),
       render: (_: string, r: CodRep) => r.categoria_codigo,
     },
     {
+      key: "flota_codigo",
       title: "Flota",
       dataIndex: "flota_codigo",
       width: 80,
@@ -234,21 +256,25 @@ export default function CodigosReparacionPage() {
       render: (_: string, r: CodRep) => r.flota?.nombre ?? r.flota_codigo,
     },
     {
+      key: "fabricante_codigo",
       title: "Fabricante",
       dataIndex: "fabricante_codigo",
       width: 100,
       sorter: (a, b) => (a.fabricante?.nombre ?? "").localeCompare(b.fabricante?.nombre ?? ""),
       render: (_: string, r: CodRep) => r.fabricante?.nombre ?? r.fabricante_codigo ?? "-",
     },
-    { title: "NP", dataIndex: "np", width: 140, ellipsis: true, sorter: (a: CodRep, b: CodRep) => (a.np ?? "").localeCompare(b.np ?? "") },
+    { key: "np", title: "NP", dataIndex: "np", width: 140, ellipsis: true, sorter: (a: CodRep, b: CodRep) => (a.np ?? "").localeCompare(b.np ?? ""), ...filtroPorColumna(data, "np") },
     {
+      key: "posicion_codigo",
       title: "Posición",
       dataIndex: "posicion_codigo",
       width: 80,
       sorter: (a, b) => (a.posicion_codigo ?? "").localeCompare(b.posicion_codigo ?? ""),
+      ...filtroPorColumna(data, "posicion_codigo"),
       render: (_: string, r: CodRep) => r.posicion_codigo ?? "-",
     },
     {
+      key: "precio",
       title: "Precio",
       dataIndex: "precio",
       width: 120,
@@ -261,11 +287,24 @@ export default function CodigosReparacionPage() {
       },
     },
     {
+      key: "acciones",
       title: "Acciones",
-      width: 100,
+      width: 130,
       align: "center",
       render: (_: unknown, record: CodRep) => (
         <Space size="small">
+          <Button
+            type="text"
+            icon={<ToolOutlined />}
+            title="Operaciones / HH"
+            onClick={() => router.push(`/codigos-reparacion/${record.cod_rep_id}/operaciones`)}
+          />
+          <Button
+            type="text"
+            icon={<InboxOutlined />}
+            title="Template de requerimientos"
+            onClick={() => router.push(`/codigos-reparacion/${record.cod_rep_id}/requerimientos-template`)}
+          />
           <Button type="text" icon={<EditOutlined />} onClick={() => openEdit(record)} />
           <Popconfirm
             title="¿Desactivar este código?"
@@ -297,9 +336,17 @@ export default function CodigosReparacionPage() {
         <Title level={3} style={{ margin: 0 }}>
           Códigos Reparables
         </Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-          Nuevo
-        </Button>
+        <Space>
+          <ColumnasToggleButton<CodRep>
+            columns={columns}
+            ocultas={ocultas}
+            setOcultas={setOcultas}
+            obligatorias={["__num", "codigo", "acciones"]}
+          />
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+            Nuevo
+          </Button>
+        </Space>
       </div>
 
       <Card styles={{ body: { padding: 16 } }} style={{ marginBottom: 16 }}>
@@ -353,16 +400,16 @@ export default function CodigosReparacionPage() {
 
       <Table
         rowKey="cod_rep_id"
-        columns={columns}
+        columns={visibleColumns(columns, ocultas)}
         dataSource={data}
         loading={loading}
-        pagination={{
+        pagination={paginacionEstandar({
           current: page,
-          pageSize: 20,
+          pageSize,
           total,
-          showTotal: (t) => `${t} registros`,
-          onChange: setPage,
-        }}
+          onChange: (p, s) => { setPage(p); setPageSize(s); },
+          label: "registros",
+        })}
         scroll={{ x: 1100 }}
         size="small"
       />

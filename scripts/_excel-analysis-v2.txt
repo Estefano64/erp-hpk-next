@@ -1,0 +1,1303 @@
+
+========================================
+FILE: 1 Log - material.xlsx
+SHEETS: 8
+
+  [Sheet1] rows=834 headerAt=1 cols=15
+    HEADERS: Usuario | Material | Descripción | Planta | Area | Categoría | Clasificación | Punto de Reposición | Stock Máximo | Und Met | Plazo entrega | Precio | Moneda | Fabricante | NP
+    UNIQUE PER COLUMN (first 10 cols, max 10 values each):
+      [Usuario] distinct=3 → Mirian C., ANGELO, Diego J.
+      [Material] distinct=1 → numeral
+      [Descripción] distinct=830 → Aceite, AK4063, KOMATSU, Aceite, VJ3911, KOMATSU, Aceite, AK4065, KOMATSU, Acero, ACERO H1045 1" X 1-1/4" X 2" LONG, BOHLER, Acero, ACERO H1045 Ø1" X 1-1/4" LONG, BOHLER, Acero, ACERO H1045 Ø3" X 2-1/4" LONG, BOHLER, Acero, ACERO H1045 Ø3-1/4" X 1-1/4" LONG, BOHLER, Acero, ACERO VCL Ø2" X 2-1/4" LONG, BOHLER...
+      [Planta] distinct=1 → AQPTA01
+      [Area] distinct=2 → Producción, Logistica
+      [Categoría] distinct=2 → Repuesto, Consumible
+      [Clasificación] distinct=78 → Aceite, Acero, Adaptador, Anillo, Anillo de desgaste, Anillo de respaldo, Anillo de retención, Arandela...
+      [Punto de Reposición] distinct=0 → 
+      [Stock Máximo] distinct=0 → 
+      [Und Met] distinct=5 → unidad, Kilogramo, cilindro, Metro, Balde
+      [Plazo entrega] distinct=7 → entrega inmediata, 3, 4, 7, 1, 2, 5
+      [Precio] distinct=698 → 297.12, 350.25, 1.80, 2.27, 10.90, 7.30, 4.25, 8.25...
+      [Moneda] distinct=2 → USD, SOL
+      [Fabricante] distinct=44 → KOMATSU, BOHLER, CATERPILLAR, ALTERNATIVO, CAT, MACHEN, 3M, VIS...
+    SAMPLE ROWS:
+      Usuario=Mirian C. · Material=numeral · Descripción=Aceite, AK4063, KOMATSU · Planta=AQPTA01 · Area=Producción · Categoría=Repuesto · Clasificación=Aceite · Und Met=unidad · Precio=297.12 · Moneda=USD · Fabricante=KOMATSU · NP=AK4063
+      Usuario=Mirian C. · Descripción=Aceite, VJ3911, KOMATSU · Planta=AQPTA01 · Area=Producción · Categoría=Repuesto · Clasificación=Aceite · Und Met=unidad · Precio=297.12 · Moneda=USD · Fabricante=KOMATSU · NP=VJ3911
+
+  [Planta] rows=2 headerAt=1 cols=2
+    HEADERS: Codigo | Descripcion
+    VALUES:
+      • AQPTA01 | Taller 1 de reparacion Arequipa
+      • AQPTA02 | Taller 2 de reparacion Arequipa
+
+  [Area] rows=4 headerAt=1 cols=2
+    HEADERS: Codigo | Descripcion
+    VALUES:
+      • PR | Producción
+      • SG | Seguridad
+      • MT | Mantenimiento
+      • AD | Administración
+
+  [Categoria] rows=2 headerAt=5 cols=3
+    HEADERS: CAP | Capital | >$5,000
+    VALUES:
+      • OBS | Obsoleto | baja
+      • FAB | Fabricado
+
+  [Clasificación] rows=83 headerAt=1 cols=2
+    HEADERS: Codigo | Descripcion
+    UNIQUE PER COLUMN (first 10 cols, max 10 values each):
+      [Codigo] distinct=81 → ACEI, ACER, ADAP, ANIL, ADES, AMET, ARES, ARET...
+      [Descripcion] distinct=81 → Aceite, Acero, Adaptador, Anillo, Anillo de desgaste, Anillo metálico, Anillo de respaldo, Anillo de retención...
+    SAMPLE ROWS:
+      Codigo=ACEI · Descripcion=Aceite
+      Codigo=ACER · Descripcion=Acero
+
+  [Und Med] rows=20 headerAt=2 cols=2
+    HEADERS: Codigo | Descripcion
+    VALUES:
+      • amp | Amperaje
+      • año | año
+      • bal | Balde
+      • cil | cilindro
+      • cm | Centímetro
+      • dia | dia
+      • gl | galones
+      • h | Hora
+      • in | Pulgada
+      • kg | Kilogramo
+      • km | Kilometros
+      • lbf | Libras Fuerza
+      • lt | litro
+      • m | Metro
+      • m2 | Metro cuadrado
+      • m3 | Metro cubico
+      • mes | mes
+      • mm | Milímetro
+      • t | Tonelada
+      • und | unidad
+
+  [Moneda] rows=2 headerAt=2 cols=2
+    HEADERS: Codigo | Descripcion
+    VALUES:
+      • USD | Dólar
+      • SOL | Soles
+
+  [Fabricante] rows=41 headerAt=2 cols=2
+    HEADERS: Codigo | Descripcion
+    VALUES:
+      • 3M | 3M
+      • ABR | Abralit
+      • ALD | ALDISE
+      • ALI | Alicorp
+      • ALT | Alternativo
+      • ANS | Ansell
+      • ANY | Anypsa
+      • ARA | Aragcu
+      • BAH | Bahco
+      • BOH | Bohler
+      • C&A | C&A
+      • CAN | Cantesco
+      • CAT | Caterpillar
+      • CLU | Clute
+      • ELI | Elite
+      • ESA | ESAB
+      • FER | Ferrawyy
+      • HEN | Henkel
+      • KLI | Klingspor
+      • KOM | Komatsu
+      • LIN | LINDE
+      • MAC | Machen
+      • NAC | Nacho
+      • NOR | Norton
+      • OER | Oerlikon
+      • PRO | Protec
+      • SDM | Soldimix
+      • SEG | Segpro
+      • SHU | Shurtape
+      • SIL | Siliconi
+      • SOL | Solpack
+      • STE | Steelpro
+      • SUN | SUN
+      • SUN | SUNNEN
+      • TEK | Tekbond
+      • TRA | Trapex
+      • TRU | Truper
+      • UYU | Uyustools
+      • VIS | Vistony
+      • XIA | Xiadal
+      • ZCC | ZCC-CT
+
+========================================
+FILE: 2 Mant - equipos y Herramientos.xlsx
+SHEETS: 8
+
+  [Sheet1] rows=495 headerAt=1 cols=22
+    HEADERS: Usuario | Equipo | Descripcion | Status | Area | Sub Area | Tipo | Fecha de Inicio | Fecha de Fab. | Fabricante | Modelo | N/S | N/P | Capacidad | Und Med | Texto | Planta | Criticidad | Costo ($) | Ubicación | Cantidad | Usuario
+    UNIQUE PER COLUMN (first 10 cols, max 10 values each):
+      [Usuario] distinct=1 → Angelo
+      [Equipo] distinct=494 → MAQ001, MAQ002, MAQ003, MAQ004, MAQ005, MAQ006, MAQ007, MAQ008...
+      [Descripcion] distinct=320 → Banco de Pruebas 1, Banco de Pruebas 2, Prensa Hidráulica 120TN, Torqueador Hidráulico, Bruñidora, Compresor de Aire 1, Fresadora Zayer, Taladro de Banco...
+      [Status] distinct=2 → OPE, INO
+      [Area] distinct=2 → MT, LG
+      [Sub Area] distinct=7 → EVA, BRU, PIN, MAQ, SOL, HER, VEH
+      [Tipo] distinct=3 → MAQ, HER, VEH
+      [Fecha de Inicio] distinct=12 → 1997, 2016, 2023, 2022, 2024, 2018, 2010, 2025...
+      [Fecha de Fab.] distinct=16 → 2019, 2016, 2023, 2022, 2017, 2025, 2018, 1981...
+      [Fabricante] distinct=127 → COLUMBIA C.(HYDARULIC SYSTEMS), CROSS CONTROL, SIGMI, INDPRO, WILSON (EDIPESA), ZAYER(IMPORTACIONES SUTTI), KONE (IMPORTACIONES SUTTI), UNION(IMPORTACIONES SUTTI)...
+      [Modelo] distinct=25 → DTB/M100, W-10380, KM38, WS2-PLUS, 652CC/CV, Flextec 350x, TKM1000, BS-1018B...
+      [N/S] distinct=40 → 1942, U1240106112, U1240407823, 7050, AT13FNO, UNFCFMZ9EF000029, LJ11KDBD0R1101726, LI11R9DE7N3000003...
+      [N/P] distinct=115 → 137-202, 3222-1000, 1108-300W, 500-193-30, 500-172-30B, 500-197-30, 530-115, 1246T0B...
+      [Capacidad] distinct=125 → 5000, 120, 3000, 6, 170, 50, 8, 600...
+    SAMPLE ROWS:
+      Equipo=MAQ001 · Descripcion=Banco de Pruebas 1 · Status=OPE · Area=MT · Sub Area=EVA · Tipo=MAQ · Fecha de Inicio=1997 · Fecha de Fab.=2019 · Fabricante=COLUMBIA C.(HYDARULIC SYSTEMS) · Modelo=DTB/M100 · Capacidad=5000 · Und Med=psi · Texto=maquina · Planta=AQPTA01 · Criticidad=1 · Costo ($)=12,000.00
+      Equipo=MAQ002 · Descripcion=Banco de Pruebas 2 · Status=OPE · Area=MT · Sub Area=EVA · Tipo=MAQ · Fecha de Inicio=2016 · Fecha de Fab.=2016 · Fabricante=CROSS CONTROL · Capacidad=5000 · Und Med=psi · Texto=maquina · Planta=AQPTA01 · Criticidad=1 · Costo ($)=5,000.00
+
+  [Und Med] rows=20 headerAt=2 cols=2
+    HEADERS: Codigo | Descripcion
+    VALUES:
+      • mm | Milímetro
+      • cm | Centímetro
+      • m | Metro
+      • in | Pulgada
+      • kg | Kilogramo
+      • tn | Tonelada
+      • h | Hora
+      • m2 | Metro cuadrado
+      • m3 | Metro cubico
+      • lt | litro
+      • gl | galones
+      • und | unidad
+      • cil | cilindro
+      • año | año
+      • mes | mes
+      • dia | dia
+      • km | Kilometros
+      • amp | Amperaje
+      • psi | libras por pulgada cuadrada
+      • lbf | Libras Fuerza
+
+  [Planta] rows=1 headerAt=1 cols=2
+    HEADERS: Codigo | Descripcion
+    VALUES:
+      • AQPTA01 | Taller de reparacion Arequipa
+
+  [Area] rows=4 headerAt=1 cols=2
+    HEADERS: Codigo | Descripcion
+    VALUES:
+      • PR | Producción
+      • SG | Seguridad
+      • MT | Mantenimiento
+      • AD | Administración
+
+  [Sub Area] rows=12 headerAt=2 cols=2
+    HEADERS: Codigo | Descripcion
+    VALUES:
+      • EVA | Evaluación
+      • BRU | Bruñido
+      • SOL | Soldadura
+      • MAQ | Maquinado
+      • PIN | Pintura
+      • CRO | Cromado
+      • HER | Herramientas
+      • EQP | Equipos
+      • VEH | Vehículos
+      • INF | Infraestructura
+      • ASU | Almacén de Suministros
+      • ARE | Almacén de Repuestos
+
+  [Criticidad] rows=3 headerAt=1 cols=2
+    HEADERS: Codigo | Descripcion
+    VALUES:
+      • 1 | Alta
+      • 2 | Media
+      • 3 | Baja
+
+  [tipo] rows=5 headerAt=1 cols=2
+    HEADERS: Codigo | Descripcion
+    VALUES:
+      • HER | Herramientas
+      • EQP | Equipos
+      • VEH | Vehiculos
+      • INF | Infraestructura
+      • MAQ | Maquinas
+
+  [status] rows=5 headerAt=1 cols=2
+    HEADERS: Codigo | Descripcion
+    VALUES:
+      • OPE | Operativo
+      • INO | Inoperativo
+      • REP | En Reparacion
+      • STD | Stabby
+      • BAJ | Baja
+
+========================================
+FILE: 3. Todos - Estrategias.xlsx
+SHEETS: 7
+
+  [Hoja1] rows=0 headerAt=0 cols=1
+    HEADERS: 
+
+  [Sheet1] rows=107 headerAt=1 cols=10
+    HEADERS: Usuario | Estrategia | Area | Equipo | Actividad | Frecuencia | Und Med | Descripción estrategia | Tipo estrategia | Status
+    UNIQUE PER COLUMN (first 10 cols, max 10 values each):
+      [Usuario] distinct=2 → Diego J., Angelo
+      [Estrategia] distinct=0 → 
+      [Area] distinct=3 → MT, SG, LG
+      [Equipo] distinct=37 → Taller, Maquina & equipos, Vehiculos, Herramientas de medicion, SEGURIDAD, INVENTARIO, Herramientas, Banco de Pruebas 1...
+      [Actividad] distinct=0 → 
+      [Frecuencia] distinct=7 → 12, 24, 6, 3, 1, 36, 5000
+      [Und Med] distinct=3 → mes, sm, km
+      [Descripción estrategia] distinct=24 → PINTURA_PISOS, PINTURA_MUROS, REPARACION_FILTRACIONES, REFUERZO_CARGA, PINTURA_MAQUINAS, PINTURA_ESTRUCTURAS, INSPECCION_SOLDADURAS, RESANE_GRIETAS...
+      [Tipo estrategia] distinct=1 → MP
+      [Status] distinct=2 → AC, PR
+    SAMPLE ROWS:
+      Usuario=Diego J. · Area=MT · Equipo=Taller · Frecuencia=12 · Und Med=mes · Descripción estrategia=PINTURA_PISOS · Tipo estrategia=MP · Status=AC
+      Usuario=Diego J. · Area=MT · Equipo=Taller · Frecuencia=24 · Und Med=mes · Descripción estrategia=PINTURA_MUROS · Tipo estrategia=MP · Status=AC
+
+  [Hoja2] rows=129 headerAt=0 cols=1
+    HEADERS: Prod y Mant
+    UNIQUE PER COLUMN (first 10 cols, max 10 values each):
+      [Prod y Mant] distinct=129 → N/P cod 1, 219-2540, 277-7219, PC1811, PC2732, 58B6020061, SAP5021673, 468-0220...
+    SAMPLE ROWS:
+      Prod y Mant=N/P cod 1
+      Prod y Mant=219-2540
+
+  [Status] rows=3 headerAt=1 cols=2
+    HEADERS: Codigo | Descripcion
+    VALUES:
+      • AC | Activo
+      • PR | En proceso
+      • EL | Eliminado
+
+  [Tipo estrategias] rows=8 headerAt=1 cols=2
+    HEADERS: Codigo | Descripcion
+    VALUES:
+      • CC | Cambio de componente
+      • MP | Mantenimiento preventivo
+      • RP | Reparación
+      • SG | Seguridad
+      • IN | Inspección
+      • AU | Auditoria
+      • ME | Mejora
+      • CR | Control crítico
+
+  [Und Med] rows=18 headerAt=2 cols=2
+    HEADERS: Codigo | Descripcion
+    VALUES:
+      • mm | Milímetro
+      • cm | Centímetro
+      • m | Metro
+      • in | Pulgada
+      • kg | Kilogramo
+      • t | Tonelada
+      • h | Hora
+      • m2 | Metro cuadrado
+      • m3 | Metro cubico
+      • lt | litro
+      • gl | galones
+      • und | unidad
+      • cil | cilindro
+      • año | año
+      • mes | mes
+      • dia | dia
+      • km | Kilometros
+      • sm | SEMANA
+
+  [Area] rows=4 headerAt=1 cols=2
+    HEADERS: Codigo | Descripcion
+    VALUES:
+      • PR | Producción
+      • SG | Seguridad
+      • MT | Mantenimiento
+      • AD | Administración
+
+========================================
+FILE: 4. Log prod - Task list materiales y servicios (toño).xlsx
+SHEETS: 4
+
+  [Task List Materiales] rows=584 headerAt=1 cols=17
+    HEADERS: Usuario | Actividad | Cod Rep | N/P cod 1 | N/P cod 2 | ID TUBO | OD VAS | Descripción | Item | Tipo | Material | Requerimiento | UM | Ref descripcion | NP | Texto | Precio
+    UNIQUE PER COLUMN (first 10 cols, max 10 values each):
+      [Usuario] distinct=1 → Angelo
+      [Actividad] distinct=0 → 
+      [Cod Rep] distinct=0 → 
+      [N/P cod 1] distinct=4 → MP1, MP2, MP3, MP4
+      [N/P cod 2] distinct=30 → Banco de Pruebas 1, Banco de Pruebas 2, Prensa Hidráulica 120TN, Torqueador Hidráulico, Bruñidora, Compresor de Aire 1, Fresadora Zayer, Taladro de Banco...
+      [ID TUBO] distinct=0 → 
+      [OD VAS] distinct=0 → 
+      [Descripción] distinct=76 → Limpieza de tanque hidraulico, reemplazo de filtro y cambio de aceite hidraulico  s/inspección., Limpieza general y minuciosa de máquina., Revisar y ajustar la tensión de la cadena., Ajuste y limpieza de contactos de los tableros de control y fuerza., Verif. estado de aceite y cañerias, deteccion de fuga del sistema. Cambio s/inspeccion, Verificar estado de lampara LED / cambio según inspeccion, Inspeccion de Mangueras hidarulicas/ acoples rapidos / llaves de paso de alta presion., Ajustar pernos de anclaje....
+      [Item] distinct=7 → 1, 2, 3, 4, 5, 6, 7
+      [Tipo] distinct=2 → CAD, SER
+      [Material] distinct=0 → 
+      [Requerimiento] distinct=10 → 3.00, 1.00, 10.00, 2.00, 0.25, 5.00, 0.50, 1.50...
+      [UM] distinct=7 → cil, und, lt, kg, kit, Kg, gal
+      [Ref descripcion] distinct=19 → Aceite hidráulico, Filtro de succion, Filtro de retorno, Disolvente, Trapos industriales / waype, Empaques / O-ring, Cinta teflón, Paños absorbentes (opcional)...
+    SAMPLE ROWS:
+      Usuario=Angelo · N/P cod 1=MP1 · N/P cod 2=Banco de Pruebas 1 · Descripción=Limpieza de tanque hidraulico, reemplazo · Item=1 · Tipo=CAD · Requerimiento=3.00 · UM=cil · Ref descripcion=Aceite hidráulico
+      N/P cod 1=MP1 · N/P cod 2=Banco de Pruebas 1 · Descripción=Limpieza de tanque hidraulico, reemplazo · Item=2 · Tipo=CAD · Requerimiento=1.00 · UM=und · Ref descripcion=Filtro de succion
+
+  [Tipo] rows=3 headerAt=1 cols=3
+    HEADERS: Codigo | Descripcion
+    VALUES:
+      • MAC | Material catalogado
+      • CAD | Cargo directo
+      • SER | Servicio
+
+  [Task List Materiales (2)] rows=1426 headerAt=1 cols=16
+    HEADERS: Usuario | Actividad | Cod Rep | N/P cod 1 | N/P cod 2 | ID TUBO | OD VAS | Descripción | Item | Tipo | Material | Requerimiento | Ref descripcion | NP | Texto | Precio
+    UNIQUE PER COLUMN (first 10 cols, max 10 values each):
+      [Usuario] distinct=2 → JV, Angelo
+      [Actividad] distinct=0 → 
+      [Cod Rep] distinct=0 → 
+      [N/P cod 1] distinct=132 → 219-2540, 277-7219, PC1811, PC2732, 58B6020061, SAP5021673, 468-0220, 273-1733...
+      [N/P cod 2] distinct=11 → 622-0960, 553-0359, 141-2914, 489-2406, 605-8769, 516-8027, 516-8026, 517-3766...
+      [ID TUBO] distinct=46 → 150, 4", 4.750", 120, 5.250", 135, 190, 210...
+      [OD VAS] distinct=31 → 75, 2.5", 2", 3", 145, 230, 160, 130...
+      [Descripción] distinct=135 → Rep, acum direccion, NA, 793D, Rep, acum direccion, NA, 797F, Rep, acum direccion, NA, 830E, Rep, acum direccion, NA, 930E-4SE, Rep, acum direccion, NA, 980E-4SE, Rep, acum freno, NA, 930E-4SE, Rep, Cil articulacion, NA, 24, Rep, Cil articulacion, NA, 16M...
+      [Item] distinct=39 → 1, 2, 3, 4, 5, 6, 7, 8...
+      [Tipo] distinct=2 → MAC, SER
+      [Material] distinct=0 → 
+      [Requerimiento] distinct=19 → 1, 2, 4, 10, 3, 15, 8, 6...
+      [Ref descripcion] distinct=174 → KIT DE BLADDER, VALVULA, SELLO, TAPA DE CONJUNTO DE BLOQUE, SELLO ANILLO, TORNILLO, SELLO ANULAR, TAPON...
+      [NP] distinct=719 → 148-2599, 158-2336, 169-4812, PS35 172.5 X 182.05 X 7.4 NBR, BWR01 171.65 X 180.05 X 13 PTFE C, PS088 164.35 X 180.05 X 6 PTFE + NNBR, PS08C - 151 X 180.05 X10.50 PTFE + NBR, 217-0162...
+    SAMPLE ROWS:
+      Usuario=JV · N/P cod 1=219-2540 · Descripción=Rep, acum direccion, NA, 793D · Item=1 · Tipo=MAC · Requerimiento=1 · Ref descripcion=KIT DE BLADDER · NP=148-2599
+      Usuario=JV · N/P cod 1=219-2540 · Descripción=Rep, acum direccion, NA, 793D · Item=2 · Tipo=MAC · Requerimiento=1 · Ref descripcion=VALVULA · NP=158-2336
+
+  [Hoja4] rows=924 headerAt=2 cols=2
+    HEADERS: Ref descripcion | NP
+    UNIQUE PER COLUMN (first 10 cols, max 10 values each):
+      [Ref descripcion] distinct=327 → ACEITE, Total ACEITE, ACERO, Total ACERO, ACEROS, Total ACEROS, ADAPTADOR, Total ADAPTADOR...
+      [NP] distinct=720 → AK4063, AK4065, VJ3911, ACERO H1045 1" X 1-1/4" X 2" LONG, ACERO H1045 Ø1" X 1-1/4" LONG, ACERO H1045 Ø3" X 2-1/4" LONG, ACERO H1045 Ø3-1/4" X 1-1/4" LONG, ACERO VCL Ø2" X 2-1/4" LONG...
+    SAMPLE ROWS:
+      Ref descripcion=ACEITE · NP=AK4063
+      NP=AK4065
+
+========================================
+FILE: 4. Log prod - Task list materiales y servicios.xlsx
+SHEETS: 4
+  [Hoja1] (empty)
+
+  [Task List Materiales] rows=1399 headerAt=1 cols=16
+    HEADERS: Usuario | Actividad | Cod Rep | N/P cod 1 | N/P cod 2 | ID TUBO | OD VAS | Descripción | Item | Tipo | Material | Requerimiento | Ref descripcion | NP | Texto | Precio
+    UNIQUE PER COLUMN (first 10 cols, max 10 values each):
+      [Usuario] distinct=1 → JV
+      [Actividad] distinct=0 → 
+      [Cod Rep] distinct=0 → 
+      [N/P cod 1] distinct=142 → 219-2540, 277-7219, PC1811, PC2732, 58B6020061, SAP5021673, 468-0220, 605-8796...
+      [N/P cod 2] distinct=9 → 622-0960, 141-2914, 489-2406, 605-8769, 516-8027, 516-8026, 517-3766, 295-5709...
+      [ID TUBO] distinct=46 → 150, 4", 120, 135, 5.250", 4.750", 190, 210...
+      [OD VAS] distinct=32 → 75, 2.5", 2", 3", 145, 230, 160, 130...
+      [Descripción] distinct=131 → Rep, acum direccion, NA, 793D, Rep, acum direccion, NA, 797F, Rep, acum direccion, NA, 830E, Rep, acum direccion, NA, 930E-4SE, Rep, acum direccion, NA, 980E-4SE, Rep, acum freno, NA, 930E-4SE, Rep, Cil articulacion, NA, 24, Rep, Cil articulacion, NA, 16M...
+      [Item] distinct=39 → 1, 2, 3, 4, 5, 6, 7, 8...
+      [Tipo] distinct=2 → MAC, SER
+      [Material] distinct=0 → 
+      [Requerimiento] distinct=19 → 1, 2, 4, 10, 3, 15, 8, 6...
+      [Ref descripcion] distinct=240 → KIT DE BLADDER, VALVULA, SELLO, #NAME?, TAPA DE CONJUNTO DE BLOQUE, SELLO DE ANILLO, TORNILLO, SELLOA ANULAR...
+      [NP] distinct=722 → 148-2599, 158-2336, 169-4812, PS35 172.5 X 182.05 X 7.4 NBR, BWR01 171.65 X 180.05 X 13 PTFE C, PS088 164.35 X 180.05 X 6 PTFE + NNBR, PS08C - 151 X 180.05 X10.50 PTFE + NBR, 217-0162...
+    SAMPLE ROWS:
+      Usuario=JV · N/P cod 1=219-2540 · Descripción=Rep, acum direccion, NA, 793D · Item=1 · Tipo=MAC · Requerimiento=1 · Ref descripcion=KIT DE BLADDER · NP=148-2599
+      Usuario=JV · N/P cod 1=219-2540 · Descripción=Rep, acum direccion, NA, 793D · Item=2 · Tipo=MAC · Requerimiento=1 · Ref descripcion=VALVULA · NP=158-2336
+
+  [Tipo] rows=3 headerAt=1 cols=2
+    HEADERS: Codigo | Descripcion
+    VALUES:
+      • MAC | Material catalogado
+      • CAD | Cargo directo
+      • SER | Servicio
+  [Hoja4] (empty)
+
+========================================
+FILE: 5. Cod Rep.xlsx
+SHEETS: 7
+
+  [Cod Rep] rows=139 headerAt=4 cols=14
+    HEADERS: JV | CILINDRO DE INCLINACION DE BULLDOZER | CIL | CHVS | TRU | 844H | CAT | 109-8832_844H | RH | 19,804.99 | USD | REEMPLAZA | 516-8026
+    UNIQUE PER COLUMN (first 10 cols, max 10 values each):
+      [JV] distinct=1 → JV
+      [CILINDRO DE INCLINACION DE BULLDOZER] distinct=31 → CILINDRO DE INCLINACION DE BULLDOZER, CILINDRO DE LEVANTE, CILINDRO DE INCLINACION, CILINDRO DE LEVANTE DE RIPPER, CILINDRO DE WHEEL LEAN, CILINDRO DE LEVANTE DE TOLVA, CILINDRO TENSOR DE ORUGAS, CILINDRO DE DESPLAZAMIENTO DE VERTEDERA...
+      [CIL] distinct=4 → CIL, ACU, FRE, RUE
+      [CHVS] distinct=8 → CHVS, CHP, CHT, AV, FS, AE, RD, SD...
+      [TRU] distinct=6 → TRU, MOT, CAM, PER, TOR, EXC
+      [844H] distinct=41 → 844K, 844H, 980H, 980G, 24M, 24, 793D, MD6640...
+      [CAT] distinct=3 → CAT, WBM, KOM
+      [109-8832_844H] distinct=139 → 109-8832_844K, 109-8833_844H, 109-8833_844K, 111-8181, 112-5003_980G, 112-5003_980H, 112-5004_980G, 112-5004_980H...
+      [RH] distinct=5 → RH, LH, NA, DEL, POS
+      [19,804.99] distinct=80 → 19,804.99, 22,930.94, 13,259.06, 7,686.79, 0.10, 102,689.73, 15,691.58, 30,791.78...
+      [USD] distinct=2 → USD, -
+      [REEMPLAZA] distinct=4 → REEMPLAZA, -, NO EXISTE, El cod al parecer es komatsu
+      [516-8026] distinct=33 → 516-8026, 516-8027, 2955708, 470-7141, 5247242, 367-9481, 271-9321 Y 357 6019, 553-0359...
+    SAMPLE ROWS:
+      JV=JV · CILINDRO DE INCLINACION DE BULLDOZER=CILINDRO DE INCLINACION DE BULLDOZER · CIL=CIL · CHVS=CHVS · TRU=TRU · 844H=844K · CAT=CAT · 109-8832_844H=109-8832_844K · RH=RH · 19,804.99=19,804.99 · USD=USD · REEMPLAZA=REEMPLAZA · 516-8026=516-8026
+      JV=JV · CILINDRO DE INCLINACION DE BULLDOZER=CILINDRO DE INCLINACION DE BULLDOZER · CIL=CIL · CHVS=CHVS · TRU=TRU · 844H=844H · CAT=CAT · 109-8832_844H=109-8833_844H · RH=LH · 19,804.99=19,804.99 · USD=USD · REEMPLAZA=REEMPLAZA · 516-8026=516-8027
+
+  [Descripcion tipo] rows=9 headerAt=2 cols=2
+    HEADERS: Cod | Descripcion
+    VALUES:
+      • CHVS | Cilindro hidraulico vastago simple
+      • CHP | Cilindro hidraulico pivotado
+      • CHPDV | Cilindro hidraulico de piston de doble vastago
+      • CHT | Cilindro hidraulico telescopico
+      • AE | Acumulador de embolo
+      • AV | Acumulador de vegiga
+      • RD | Rueda delantera
+      • FS | Freno de servicio
+      • SD | Suspension delantera
+
+  [Tipo] rows=6 headerAt=2 cols=2
+    HEADERS: Cod | Descripcion
+    VALUES:
+      • CIL | Cilindro
+      • RUE | Rueda
+      • ENR | Enrrollador
+      • FRE | Frenos
+      • LIN | Links
+      • ACU | Acumulador
+
+  [Categoría] rows=5 headerAt=2 cols=2
+    HEADERS: Cod | Descripcion
+    VALUES:
+      • CAM | Camion
+      • MOT | Motoniveladora
+      • TRU | Tractor de ruedas
+      • TOR | Tractor de orugas
+      • EXC | Excavadora
+
+  [Flota] rows=44 headerAt=2 cols=2
+    HEADERS: Cod | Descripcion
+    VALUES:
+      • 980E-4SE | CAMION KOM 930
+      • 930E-4SE | CAMION KOM 930
+      • 24M
+      • 24
+      • 16M
+      • 374FL
+      • 390DL
+      • 6060FS
+      • PC1250
+      • 374DL
+      • 390FL
+      • 992K
+      • 980H
+      • 966H
+      • 988K
+      • 994K
+      • HD1500
+      • 830AC
+      • 830E
+      • 834K
+      • 844H
+      • 988H
+      • 966M
+      • WA900
+      • 834H
+      • D11T
+      • D11
+      • D475
+      • 844K
+      • PITVIPER 351
+      • 994F
+      • D8T
+      • 950H
+      • D475A
+      • 336DL
+      • 349
+      • PC2000
+      • 980E
+      • MD6640
+      • Flota
+      • PC2000
+      • 980E
+      • MD6640
+      • 980G
+
+  [Fabricante] rows=4 headerAt=2 cols=2
+    HEADERS: Codigo | Descripcion
+    VALUES:
+      • CAT | Caterpillar
+      • KOM | Komatsu
+      • EPI | Epiroc
+      • WBM | WBM
+
+  [Posicion] rows=5 headerAt=2 cols=2
+    HEADERS: Codigo | Descripcion
+    VALUES:
+      • LH | Izquierda
+      • RH | Derecha
+      • NA | No Afecta
+      • DEL | Delantero
+      • POS | Posterior
+
+========================================
+FILE: 5.1 Encabezados.xlsx
+SHEETS: 11
+
+  [Encabezados] rows=1856 headerAt=1 cols=8
+    HEADERS: NP | COD. REP | DESCRIPCION TIPO | COMPONENTE | TRABAJO | QTY | HORAS | HH
+    UNIQUE PER COLUMN (first 10 cols, max 10 values each):
+      [NP] distinct=142 → 2654472188, 106-3722, 109-8832_844H, 109-8832_844K, 109-8833_844H, 109-8833_844K, 111-8181, 112-5003_980G...
+      [COD. REP] distinct=0 → 
+      [DESCRIPCION TIPO] distinct=8 → CHVS, CHP, CHT, AV, FS, AE, RD, SD...
+      [COMPONENTE] distinct=14 → CILINDRO, VASTAGO, TAPA, EMBOLO, CUERPO INTERMEDIO, TAPA ROSCADA, FRENO, RUEDA...
+      [TRABAJO] distinct=55 → Desarmado, Evaluacion, Rellenado de alojamiento, Barrenado de alojamiento, Bruñido, Cromado, Pulido, Armado...
+      [QTY] distinct=2 → 1, 2
+      [HORAS] distinct=0 → 
+      [HH] distinct=1 → 0
+    SAMPLE ROWS:
+      NP=2654472188 · DESCRIPCION TIPO=CHVS · COMPONENTE=CILINDRO · TRABAJO=Desarmado · QTY=1 · HH=0
+      NP=2654472188 · DESCRIPCION TIPO=CHVS · COMPONENTE=CILINDRO · TRABAJO=Evaluacion · QTY=1 · HH=0
+
+  [Cilindros] rows=142 headerAt=0 cols=8
+    HEADERS: Descripcion | Tipo | Descripcion tipo | Categoria | Flota | Fabricante | NP | Posicion
+    UNIQUE PER COLUMN (first 10 cols, max 10 values each):
+      [Descripcion] distinct=32 → CILINDRO DE JACK HYD, CILINDRO DE SUSPENSION POSTERIOR, CILINDRO DE INCLINACION DE BULLDOZER, CILINDRO DE LEVANTE, CILINDRO DE INCLINACION, CILINDRO DE LEVANTE DE RIPPER, CILINDRO DE WHEEL LEAN, CILINDRO DE LEVANTE DE TOLVA...
+      [Tipo] distinct=4 → CIL, ACU, FRE, RUE
+      [Descripcion tipo] distinct=8 → CHVS, CHP, CHT, AV, FS, AE, RD, SD...
+      [Categoria] distinct=6 → PER, CAM, TRU, MOT, TOR, EXC
+      [Flota] distinct=42 → PITVIPER 351, 793D, 844H, 844K, 980H, 980G, 24M, 24...
+      [Fabricante] distinct=4 → EPI, CAT, WBM, KOM
+      [NP] distinct=142 → 2654472188, 106-3722, 109-8832_844H, 109-8832_844K, 109-8833_844H, 109-8833_844K, 111-8181, 112-5003_980G...
+      [Posicion] distinct=5 → NA, RH, LH, DEL, POS
+    SAMPLE ROWS:
+      Descripcion=CILINDRO DE JACK HYD · Tipo=CIL · Descripcion tipo=CHVS · Categoria=PER · Flota=PITVIPER 351 · Fabricante=EPI · NP=2654472188 · Posicion=NA
+      Descripcion=CILINDRO DE SUSPENSION POSTERIOR · Tipo=CIL · Descripcion tipo=CHVS · Categoria=CAM · Flota=793D · Fabricante=CAT · NP=106-3722 · Posicion=NA
+
+  [Descripcion tipo] rows=9 headerAt=2 cols=2
+    HEADERS: Cod | Descripcion
+    VALUES:
+      • CHVS | Cilindro hidraulico vastago simple
+      • CHP | Cilindro hidraulico pivotado
+      • CHPDV | Cilindro hidraulico de piston de doble vastago
+      • CHT | Cilindro hidraulico telescopico
+      • AE | Acumulador de embolo
+      • AV | Acumulador de vegiga
+      • RD | Rueda delantera
+      • FS | Freno de servicio
+      • SD | Suspension delantera
+
+  [AV] rows=6 headerAt=1 cols=3
+    HEADERS: 1 | CILINDRO | Desarmado
+    VALUES:
+      • 2 | CILINDRO | Evaluacion
+      • 3 | CILINDRO | Limpieza
+      • 4 | CILINDRO | Pulido de diámetros de ingreso
+      • 5 | CILINDRO | Armado
+      • 6 | CILINDRO | Prueba Hidráulica
+      • 7 | CILINDRO | Pintura
+
+  [AE] rows=7 headerAt=1 cols=3
+    HEADERS: 1 | CILINDRO | Desarmado
+    VALUES:
+      • 2 | CILINDRO | Evaluacion
+      • 3 | CILINDRO | Bruñido
+      • 4 | CILINDRO | Pulido superficie roscada
+      • 5 | EMBOLO | Pulido
+      • 6 | CILINDRO | Armado
+      • 7 | CILINDRO | Prueba Hidráulica
+      • 8 | CILINDRO | Pintura
+
+  [CHT] rows=18 headerAt=1 cols=3
+    HEADERS: 1 | CILINDRO | Desarmado
+    VALUES:
+      • 2 | CILINDRO | Evaluacion
+      • 3 | CILINDRO | Rellenado de alojamiento
+      • 4 | CILINDRO | Barrenado de alojamiento
+      • 5 | CILINDRO | Bruñido
+      • 6 | VASTAGO | Rellenado de alojamiento
+      • 7 | VASTAGO | Barrenado de alojamiento
+      • 8 | VASTAGO | Cromado
+      • 9 | CUERPO INTERMEDIO | Bruñido
+      • 10 | CUERPO INTERMEDIO | Cromado
+      • 11 | CUERPO INTERMEDIO | Pulido de alojamientos
+      • 12 | TAPA | Pulido
+      • 13 | EMBOLO | Pulido
+      • 14 | TAPA POSTERIOR | Rellenado de alojamiento
+      • 15 | TAPA POSTERIOR | Soldadura de espiga hidráulica
+      • 16 | TAPA POSTERIOR | Barrenado de alojamiento
+      • 17 | CILINDRO | Armado
+      • 18 | CILINDRO | Prueba Hidráulica
+      • 19 | CILINDRO | Pintura
+
+  [CHP] rows=15 headerAt=1 cols=3
+    HEADERS: 1 | CILINDRO | Desarmado
+    VALUES:
+      • 2 | CILINDRO | Evaluacion
+      • 3 | CILINDRO | Rellenado de pivotantes
+      • 4 | CILINDRO | Barrenado de pivotantes
+      • 5 | CILINDRO | Bruñido
+      • 6 | VASTAGO | Rellenado de alojamiento
+      • 7 | VASTAGO | Barrenado de alojamiento
+      • 8 | VASTAGO | Cromado
+      • 9 | TAPA | Pulido
+      • 10 | EMBOLO | Pulido
+      • 11 | CILINDRO | Armado
+      • 12 | CILINDRO | Prueba Hidráulica
+      • 13 | CILINDRO | Pintura
+      • CILINDRO | Armado
+      • CILINDRO | Prueba Hidráulica
+      • CILINDRO | Pintura
+
+  [CHVS] rows=12 headerAt=1 cols=3
+    HEADERS: 1 | CILINDRO | Desarmado
+    VALUES:
+      • 2 | CILINDRO | Evaluacion
+      • 3 | CILINDRO | Rellenado de alojamiento
+      • 4 | CILINDRO | Barrenado de alojamiento
+      • 5 | CILINDRO | Bruñido
+      • 6 | VASTAGO | Rellenado de alojamiento
+      • 7 | VASTAGO | Barrenado de alojamiento
+      • 8 | VASTAGO | Cromado
+      • 9 | TAPA | Pulido
+      • 10 | EMBOLO | Pulido
+      • 11 | CILINDRO | Armado
+      • 12 | CILINDRO | Prueba Hidráulica
+      • 13 | CILINDRO | Pintura
+
+  [SD] rows=9 headerAt=1 cols=3
+    HEADERS: 1 | CILINDRO | Desarmado
+    VALUES:
+      • 2 | CILINDRO | Evaluacion
+      • 5 | CILINDRO | Bruñido
+      • 8 | VASTAGO | Cromado
+      • 8 | VASTAGO | Pulido de superfie cónica
+      • 9 | TAPA | Pulido
+      • 10 | EMBOLO | Pulido
+      • 11 | CILINDRO | Armado
+      • 12 | CILINDRO | Prueba
+      • 13 | CILINDRO | Pintura
+
+  [FS] rows=5 headerAt=1 cols=3
+    HEADERS: 1 | FRENO | Desarmado
+    VALUES:
+      • 2 | FRENO | Evaluacion
+      • 3 | FRENO | Preparacion de componentes para armado
+      • 4 | FRENO | Armado
+      • 5 | FRENO | Prueba
+      • 6 | FRENO | Pintura
+
+  [RD] rows=34 headerAt=1 cols=3
+    HEADERS: 1 | RUEDA | Desarmado
+    VALUES:
+      • 2 | RUEDA | Evaluacion
+      • 3 | SPINDLE | Pulido de asientos de rodamientos.
+      • 4 | SPINDLE | Cambio de rodamientos.
+      • 5 | SPINDLE | Rectificado de alojamientos roscados.
+      • 6 | SPINDLE | Realizar NDT
+      • 7 | SPINDLE | Pulido de alojamiento cónico.
+      • 8 | SPINDLE | Rectificado de alojamientos roscados de sujecion de bastidor.
+      • 9 | HUB | Cambio de pistas conicas de rodamientos.
+      • 10 | HUB | Realizar pulido de alojamientos de pistas.
+      • 11 | HUB | Realizar cambio de Stud.
+      • 12 | HUB | Repasar superficie roscada de Stud.
+      • 13 | HUB | Cambio de lainas de engranaje de sensor.
+      • 14 | HUB | Cambio de sello Duo Cone.
+      • 15 | HUB | Realizar pulido de portasello.
+      • 16 | HUB | Realizar pulido de engranaje sensor.
+      • 17 | HUB | Realizar pulido de corona interior.
+      • 18 | HUB | Realizar limpieza de pernos de sujecion de engranaje interior
+      • 19 | HUB | Realizar cambio de pernos de sujecion de engranaje interior
+      • 20 | HUB | Repasar alojamientos roscados de pernos de sujecion de engranaje interior.
+      • 21 | HUB | Realizar cambio de engranaje.
+      • 22 | CONJUNTO DE FRENO | Realziar pulido de alojamientos de sellos.
+      • 23 | CONJUNTO DE FRENO | Realizar cambio de sellos.
+      • 24 | CONJUNTO DE FRENO | Realizar cambio de resortes.
+      • 25 | CONJUNTO DE FRENO | Realizar cambio de pernos.
+      • 26 | CAJA DE FRENO | Realizar pulido de asientos de sellos
+      • 27 | CAJA DE FRENO | Repasar alojamientos roscados.
+      • 28 | GENERAL | Realizar cambio de discos de friccion (10) según NP Komatsu
+      • 29 | GENERAL | Realizar cambio de placas separadoras (9) según NP Komatsu
+      • 30 | GENERAL | Realizar cambio de dumpers (2) según NP Komatsu
+      • 31 | GENERAL | Realizar cambio de lainas según NP Komatsu
+      • 32 | GENERAL | Realizar pulido de lainas.
+      • 33 | RUEDA | Armado
+      • 34 | RUEDA | Pintura
+      • 35 | RUEDA | Embalado
+
+========================================
+FILE: 6. Ots.xlsx
+SHEETS: 13
+
+  [Sheet1] rows=17 headerAt=2 cols=34
+    HEADERS: OT | Cliente | Estrategia | Cod Rep | Tipo | NP | Descripcion | Fabricante | Flota | Posicion | Equipo | NS | Plaqueteo | WO
+Cliente | PO Cliente | ID viajero | Guia remision
+(llegada) | Empresa que entrega | Fecha de recepcion | PCR | Horas | % PCR | Garantia | Atecion reparacion | Tipo
+Reparacion | Tipo
+Garantia | Prioridad de atención | Contrato
+(dias) | Base Metalica | Comentarios | Fecha requerimiento cliente | OT
+Status | Recursos
+Status | Taller
+Status
+    VALUES:
+      • SPCC Toq | Si | 1111111 | x | x | x | x | x | x | SH001 | 12435 | 44DOSA | 112345 | 440000 | SD-12453 | TD-12355 | MCCH | 2/2/2026 | 15000 | 13000 | 87% | No | Presupuesto | General | NA | 2 | 10 | Si | Llego base rota y sin tapa | 12/2/2026 | Abierta | En revision procesos | Pdt Evaluación
+      • SPCC Cua | Si | Si | Contrato | General | Por definir | 1 | Abierta | En revision procesos | Pdt Evaluación
+      • SPCC Toq | No | No | Presupuesto | Parcial | Cliente | 2 | Cerrada | Recursos solicitados | Programado Evaluación
+      • SPCC Ilo | Emergencia | Eval & Lim | HPK | 3 | No Ejecutada | En cotización | Pdt proceso
+      • Cerro Verde | Vestido | Comercial | E | En aprobación | Programado Proceso
+      • Antapaccay | NA | En espera de recursos | Terminado
+      • Las Bambas | Recursos completos | Entregado
+      • Chinalco | Cobranza
+      • Quellaveco
+      • Unimaq
+      • Triton
+      • Peru Rail
+      • Hudbay
+      • Cosapi
+      • Inkabor
+      • OWM Peru
+      • ICC
+
+  [Imagenes] rows=3 headerAt=0 cols=56
+    HEADERS: FINAL | fesa ykmmp | sire mmg | transporte MMG
+    VALUES:
+      • visualizacion INICIAL | Esta visualizacion
+      • creacion de OT | creacion de OT
+      • FILTRO DENTRO DE MODULO
+
+  [Cliente] rows=16 headerAt=2 cols=2
+    HEADERS: Cod | Descripcion
+    VALUES:
+      • SPCC Cua | Minera Southern Peru Cuajone
+      • SPCC Toq | Minera Southern Peru Toquepala
+      • SPCC Ilo | Refineria Southern Peru Ilo
+      • Cerro Verde | Minera Cerro Verde
+      • Antapaccay | Minera Antapaccay
+      • Las Bambas | Minera Las Bambas
+      • Chinalco | Minera Chinalco
+      • Quellaveco | Minera Quellaveco
+      • Unimaq | Empresa Unimaq
+      • Triton | Empresa Triton
+      • Peru Rail | Empresa Peru Raul
+      • Hudbay | Minera Hudbay
+      • Cosapi | Empresa Cosapi
+      • Inkabor | Empresa Inkabor
+      • OWM Peru | Empresa OWM Peru
+      • ICC | Empresa ICC
+
+  [Estrategia] rows=2 headerAt=0 cols=2
+    HEADERS: Cod | Descripcion
+    VALUES:
+      • Si | Si
+      • No | No
+
+  [Garantia] rows=2 headerAt=0 cols=2
+    HEADERS: Cod | Descripcion
+    VALUES:
+      • Si | Si
+      • No | No
+
+  [Atencion reparacion] rows=3 headerAt=0 cols=2
+    HEADERS: Cod | Descripcion
+    VALUES:
+      • Contrato | Tiene contrato de reparación, solo si tiene adicionales se para por aprobación sino continua.
+      • Presupuesto | Necesita aprobación del cliente despues de evaluación.
+      • Emergencia | No se necesita aprobaciones.
+
+  [Tipo Reparacion] rows=4 headerAt=0 cols=2
+    HEADERS: Cod | Descripcion
+    VALUES:
+      • General | reparación a 0 horas
+      • Parcial | reparación para llegar al PCR
+      • Eval & Lim | Componente sin trabajo, para evaluar
+      • Vestido | Componente llega por partes solo para ensamble
+
+  [Tipo Garantia] rows=4 headerAt=0 cols=2
+    HEADERS: Cod | Descripcion
+    VALUES:
+      • Cliente | No es garantia (operacional, etc).
+      • Por definir | En proceso
+      • HPK | Responsable HPK
+      • Comercial | No es garantia, pero se acepta para mantener los buenos lazos
+
+  [Prioridad Atencion] rows=4 headerAt=0 cols=2
+    HEADERS: Cod | Descripcion
+    VALUES:
+      • 1 | Alta
+      • 2 | Media
+      • 3 | Baja
+      • E | Emergencia
+
+  [Base Metalica] rows=1 headerAt=0 cols=1
+    HEADERS: Si
+    VALUES:
+      • No
+
+  [OT Status] rows=2 headerAt=0 cols=1
+    HEADERS: Abierta
+    VALUES:
+      • Cerrada
+      • No Ejecutada
+
+  [Recursos Status] rows=5 headerAt=0 cols=1
+    HEADERS: En revision procesos
+    VALUES:
+      • Recursos solicitados
+      • En cotización
+      • En aprobación
+      • En espera de recursos
+      • Recursos completos
+
+  [Taller Status] rows=6 headerAt=0 cols=1
+    HEADERS: Pdt Evaluación
+    VALUES:
+      • Programado Evaluación
+      • Pdt proceso
+      • Programado Proceso
+      • Terminado
+      • Entregado
+      • Cobranza
+
+========================================
+FILE: 6.1. Ots VENTAS.xlsx
+SHEETS: 13
+
+  [Sheet1] rows=21 headerAt=2 cols=34
+    HEADERS: OT | Cliente | Tipo | Estrategia | Cod Rep | NP | Descripcion | Fabricante | Flota | Posicion | Equipo | NS | Plaqueteo | WO
+Cliente | PO Cliente | ID viajero | Guia remision
+(llegada) | Empresa que entrega | Fecha de recepcion | PCR | Horas | % PCR | Garantia | Atecion reparacion | Tipo
+Reparacion | Tipo
+Garantia | Prioridad de atención | Contrato
+(dias) | Base Metalica | Comentarios | Fecha requerimiento cliente | OT
+Status | Recursos
+Status | Taller
+Status
+    VALUES:
+      • SPCC Toq | Reparación | Si | 1111111 | x | x | x | x | x | SH001 | 12435 | 44DOSA | 112345 | 440000 | SD-12453 | TD-12355 | MCCH | 2/2/2026 | 15000 | 13000 | 87% | No | Presupuesto | General | NA | 2 | 10 | Si | Llego base rota y sin tapa | 12/2/2026 | Abierta | En revision procesos | Pdt Evaluación
+      • SPCC Cua | Bien | Si | Si | Contrato | General | Por definir | 1 | Abierta | En revision procesos | Pdt Evaluación
+      • SPCC Toq | Reparación | No | No | Presupuesto | Parcial | Cliente | 2 | Cerrada | Recursos solicitados | Programado Evaluación
+      • SPCC Ilo | Servicio | Emergencia | Eval & Lim | HPK | 3 | No Ejecutada | En cotización | Pdt proceso
+      • Cerro Verde | Vestido | Comercial | E | En aprobación | Programado Proceso
+      • Antapaccay | NA | En espera de recursos | Terminado
+      • Las Bambas | Recursos completos | Entregado
+      • Chinalco | Cobranza
+      • Quellaveco
+      • Unimaq
+      • Triton
+      • Peru Rail
+      • Hudbay
+      • Cosapi
+      • Inkabor
+      • OWM Peru
+      • ICC
+      • X | X | X | X | X | X | X | X | X | X | X | X
+      • V000001 | BAMBAS | Bien | SI | 4400669036 | CONTRATO | 1
+      • X | X | X | X | X | X | X | X | X | X | X | X | X | X | X | X | X | X
+      • BAMBAS | Servicio | No
+
+  [Imagenes] rows=3 headerAt=0 cols=56
+    HEADERS: FINAL | fesa ykmmp | sire mmg | transporte MMG
+    VALUES:
+      • visualizacion INICIAL | Esta visualizacion
+      • creacion de OT | creacion de OT
+      • FILTRO DENTRO DE MODULO
+
+  [Cliente] rows=16 headerAt=2 cols=2
+    HEADERS: Cod | Descripcion
+    VALUES:
+      • SPCC Cua | Minera Southern Peru Cuajone
+      • SPCC Toq | Minera Southern Peru Toquepala
+      • SPCC Ilo | Refineria Southern Peru Ilo
+      • Cerro Verde | Minera Cerro Verde
+      • Antapaccay | Minera Antapaccay
+      • Las Bambas | Minera Las Bambas
+      • Chinalco | Minera Chinalco
+      • Quellaveco | Minera Quellaveco
+      • Unimaq | Empresa Unimaq
+      • Triton | Empresa Triton
+      • Peru Rail | Empresa Peru Raul
+      • Hudbay | Minera Hudbay
+      • Cosapi | Empresa Cosapi
+      • Inkabor | Empresa Inkabor
+      • OWM Peru | Empresa OWM Peru
+      • ICC | Empresa ICC
+
+  [Estrategia] rows=2 headerAt=0 cols=2
+    HEADERS: Cod | Descripcion
+    VALUES:
+      • Si | Si
+      • No | No
+
+  [Garantia] rows=2 headerAt=0 cols=2
+    HEADERS: Cod | Descripcion
+    VALUES:
+      • Si | Si
+      • No | No
+
+  [Atencion reparacion] rows=3 headerAt=0 cols=2
+    HEADERS: Cod | Descripcion
+    VALUES:
+      • Contrato | Tiene contrato de reparación, solo si tiene adicionales se para por aprobación sino continua.
+      • Presupuesto | Necesita aprobación del cliente despues de evaluación.
+      • Emergencia | No se necesita aprobaciones.
+
+  [Tipo Reparacion] rows=4 headerAt=0 cols=2
+    HEADERS: Cod | Descripcion
+    VALUES:
+      • General | reparación a 0 horas
+      • Parcial | reparación para llegar al PCR
+      • Eval & Lim | Componente sin trabajo, para evaluar
+      • Vestido | Componente llega por partes solo para ensamble
+
+  [Tipo Garantia] rows=4 headerAt=0 cols=2
+    HEADERS: Cod | Descripcion
+    VALUES:
+      • Cliente | No es garantia (operacional, etc).
+      • Por definir | En proceso
+      • HPK | Responsable HPK
+      • Comercial | No es garantia, pero se acepta para mantener los buenos lazos
+
+  [Prioridad Atencion] rows=4 headerAt=0 cols=2
+    HEADERS: Cod | Descripcion
+    VALUES:
+      • 1 | Alta
+      • 2 | Media
+      • 3 | Baja
+      • E | Emergencia
+
+  [Base Metalica] rows=1 headerAt=0 cols=1
+    HEADERS: Si
+    VALUES:
+      • No
+
+  [OT Status] rows=2 headerAt=0 cols=1
+    HEADERS: Abierta
+    VALUES:
+      • Cerrada
+      • No Ejecutada
+
+  [Recursos Status] rows=5 headerAt=0 cols=1
+    HEADERS: En revision procesos
+    VALUES:
+      • Recursos solicitados
+      • En cotización
+      • En aprobación
+      • En espera de recursos
+      • Recursos completos
+
+  [Taller Status] rows=6 headerAt=0 cols=1
+    HEADERS: Pdt Evaluación
+    VALUES:
+      • Programado Evaluación
+      • Pdt proceso
+      • Programado Proceso
+      • Terminado
+      • Entregado
+      • Cobranza
+
+========================================
+FILE: 7. Log - POs requerimientos.xlsx
+SHEETS: 1
+
+  [VERSION FINAL] rows=20 headerAt=3 cols=37
+    HEADERS: Visulizador opcional (si se selecciona) | OT | Fecha de registro (cuando se ponga recurso solicitado) automatico | Nro. Req | Item Req. | Tipo | Material | Cantidad | Descripción | Texto | Fecha requerida | Fabricante | Estado REQ. | OC | Descripción | Vendor | Valor | Moneda | Cantidad | Fecha estimada de llegada | Estado COT | Fecha de OC | Nro Guia | Nro Factura | Fecha de llegada | Cantidad de llegada | Estado OC | Comentario
+    VALUES:
+      • OT información relacionada por NP del componente | (Se agrupa)
+      • Abrir sobre el cuadro | 3/2/2026 | OT-1 | 1 | MAC | 313131 | 1 | 1 | 6/2/2026 | CAT | SIN APROBACIÓN | 260025 | PENDIENTE DE COTIZACIÓN | PENDIENTE DE OC | INGRESO
+      • KOM | APROBADO | PENDIENTE DE APROBACIÓN | PROCESO | ENTREGADO
+      • ALT | ANULADO | APROBADO | INCOMPLETO | entrega parcial (2/3) | ANULACIÓN
+      • ANULADO | COMPLETO
+      • DESAPROBADO | ANULADO | ¿Por qué?
+      • Datos completos del vendor | imprimir según OC | DEVOLUCIÓN | -> Proceso de devolución
+      • OT | FECHA REG | NRO REQ | ITEM | TIPO | CODIGO | CANT. REQ | MATERIAL | SERVICIO | FECHA REQ. | FABRICANTE | ESTADO REQ | OC | ITEM OC | DESCRIPCION | VENDOR | VALOR | MONEDA | CANTIDAD | FECHA EST. LLEGADA | ESTADO COT | FECHA OC | NRO GUIA | NRO FACTURA | FECHA LLEGADA | CANTIDAD EN TRANSITO | CANTIDAD DISPONIBLE | ESTADO OC | OBSERVACIONES | TRANSACIÓN | ITEM | UBICACIÓN
+      • Visulizador opcional (si se selecciona) | 363525 | 28/11/2025 | 363525-1 | 1 | MAC | CODIGO SEGÚN SOTFWARE | 1 | KIT DE SELLOS, AK4307, KOM | 5/12/2025 | KOM | APROBADO | D260001 | 1 | KIT DE SELLOS, AK4307, KOM | ALMACEN | 150.00 | DOL | 1 | 3/12/2025 | APROBADO | 2/12/2025 | TR48-00001 | FR48-00001 | 3/12/2025 | 0 | 5 | COMPLETO
+      • OT información relacionada por NP del componente | 363525 | 28/11/2025 | 363525-1 | 2 | MAC | CODIGO SEGÚN SOTFWARE | 2 | BEARING, PC1686, KOM | 5/12/2025 | KOM | APROBADO | D260002 | 1 | BEARING, PC1686, KOM | BC BEARING | 245.00 | DOL | 2 | 30/11/2025 | APROBADO | 29/11/2025 | TR48-00003 | FR48-00003 | 30/11/2025 | 0 | 2 | COMPLETO | 260025
+      • Abrir sobre el cuadro | 363525 | 28/11/2025 | 363525-1 | 3 | MAC | CODIGO SEGÚN SOTFWARE | 1 | SELLO,RS17C 82.55 X 96.00 X 10.8 PU RED + NBR + PA, ALT | 5/12/2025 | ALT | APROBADO | D260003 | 1 | SELLO,RS17C 82.55 X 96.00 X 10.8 PU RED + NBR + PA, ALT | MACHEN | 30.00 | DOL | 1 | 1/12/2025 | APROBADO | 30/11/2025 | TR48-00002 | FR48-00002 | 1/12/2025 | 0 | 1 | COMPLETO
+      • 363525 | 28/11/2025 | 363525-1 | 4 | MAC | CODIGO SEGÚN SOTFWARE | 1 | ACERO, ACERO H1045 Ø 6-3/4" X 4" LONG,BOH | 5/12/2025 | BOH | APROBADO | D260004 | 1 | ACERO, ACERO H1045 Ø 6-3/4" X 4" LONG,BOH | BOHLER | 78.00 | DOL | 1 | 1/12/2025 | APROBADO | 30/11/2025 | TR48-00009 | FR48-00009 | 1/12/2025 | 0 | 1 | COMPLETO
+      • 363525 | 4/12/2025 | 353525-C | 6 | SER | CODIGO SEGÚN SOTFWARE | 1 | CROMADO Y RECTIFICADO DE VASTAGO DE OT 363525 DIMENSION 3.25 X 32 | 11/12/2025 | APROBADO | D260005 | 1 | CROMADO Y RECTIFICADO DE VASTAGO DE OT 363525 DIMENSION 3.25 X 32 | TRACTO SONI | 350.00 | DOL | 1 | 11/12/2025 | APROBADO | 10/12/2025 | TR48-00011 | FR48-00011 | 11/12/2025 | 0 | 1 | COMPLETO
+      • 1 | BEARING, PC1686, KOM | KOMATSU
+      • 1 | BEARING, PC1686, KOM | BC BEARING
+      • 1800 | 12 | 2
+      • 2200 | 135
+      • 450 | 1620
+      • 480
+      • 4930
+
+========================================
+FILE: 8. REQ & OC.xlsx
+SHEETS: 2
+
+  [LOG (REQ - OC) RESUMEN] rows=5 headerAt=1 cols=27
+    HEADERS: OT (Orden de Trabajo) | Estado | PO (Orden de pedido) | Número de Parte (Cilindro) | Descripción (Cilindro) | Modelo (Cilindro) | Cliente | Fecha de Registro Requerimiento | Fecha de Tentativa Requerimiento | Fecha de Aprobación Requerimiento | Cantidad de Requerimientos | Cantidad de items | Cantidad de Ordenes de Compra | Valor Total | Moneda | Fecha de OC | Fecha estimada de OT completa | Fecha de OT completa | Ubicación | Fecha de Salida Almacen | Evaluador | Fecha de envio a Mina | GR a Mina | Fecha de Facturación | Factura | Precio sin IGV | Observaciones
+    VALUES:
+      • 370726 | ENTREGADO | 6000073802 | 252-0471 | CILINDRO DE LEVANTE BULLDOZER | D11T | ANTAPACCAY | 5/3/2026 | 20/3/2026 | 5/3/2026 | 2 | 13 | 4 | 1804.56 | USD | 5/3/2026 | 6/3/2026 | 6/3/2026 | 6/3/2026 | R. Yana | Se cogió el KIT de almacen
+      • COMPLETO | Último registro de req. | Última fecha tentativa de req. | Última aprobación de req. | Última fecha de OC colocada | Última fecha estimada | Última fecha completada
+      • INCOMPLETO
+      • ANULADO
+      • ENTREGADO
+
+  [LOG (REQ - OC) DETALLE] rows=14 headerAt=1 cols=28
+    HEADERS: OT (Orden de Trabajo) | Estado Requerimiento | Número de Parte (Cilindro) | Descripción (Cilindro) | Modelo (Cilindro) | Fecha de Registro Requerimiento | Fecha de Tentativa Requerimiento | Fecha de Aprobación Requerimiento | Serie del Requerimiento | Tipo | Codigo | Item Rq | Cantidad | Detalle (Material/Servicio) | Estado Orden de Compra | Vendor | OC (Orden de Compra) | PU sin igv | Valor sin IGV | Moneda | Fecha de OC | Fecha estimada de llegada | Fecha de recepción | Nro. Guia | Nro. Factura | Cantidad en transito | Cantidad disponible | Observaciones
+    VALUES:
+      • 370726 | APROBADO | 252-0471 | CILINDRO DE LEVANTE BULLDOZER | D11T | 9/2/2026 | 24/2/2026 | 9/2/2026 | 370726-1 | MAC | Según software | 1 | 1 | KIT DE SELLOS, 229-5507, CAT | COMPLETO | ALMACEN | NA | 132.86 | 132.86 | USD | 9/2/2026 | 9/2/2026 | 9/2/2026 | se cogió del almacen
+      • 370726 | APROBADO | 252-0471 | CILINDRO DE LEVANTE BULLDOZER | D11T | 9/2/2026 | 24/2/2026 | 9/2/2026 | 370726-1 | MAC | Según software | 2 | 1 | BUJE, 1J-2192, CAT | COMPLETO | FERREYROS | D260055 | 108.46 | 108.46 | USD | 11/2/2026 | 12/2/2026 | 11/2/2026 | TR48-0012456 | FR48-00055901 | 0 | 1
+      • 370726 | APROBADO | 252-0471 | CILINDRO DE LEVANTE BULLDOZER | D11T | 9/2/2026 | 24/2/2026 | 9/2/2026 | 370726-1 | MAC | Según software | 3 | 2 | COJINETE, 200-3926, CAT | COMPLETO | FERREYROS | D260055 | 197.05 | 394.10 | USD | 11/2/2026 | 12/2/2026 | 11/2/2026 | TR48-0012456 | FR48-00055901 | 0 | 2
+      • 370726 | APROBADO | 252-0471 | CILINDRO DE LEVANTE BULLDOZER | D11T | 9/2/2026 | 24/2/2026 | 9/2/2026 | 370726-1 | MAC | Según software | 4 | 2 | INSERT, 9J-0521, CAT | COMPLETO | FERREYROS | D260055 | 154.57 | 309.14 | USD | 11/2/2026 | 12/2/2026 | 11/2/2026 | TR48-0012456 | FR48-00055901 | 0 | 2
+      • 370726 | APROBADO | 252-0471 | CILINDRO DE LEVANTE BULLDOZER | D11T | 9/2/2026 | 24/2/2026 | 9/2/2026 | 370726-1 | MAC | Según software | 5 | 4 | CASQUILLO, 9J-0521, CAT | COMPLETO | FERREYROS | D260055 | 66.84 | 267.36 | USD | 11/2/2026 | 12/2/2026 | 11/2/2026 | TR48-0012456 | FR48-00055901 | 0 | 4
+      • 370726 | APROBADO | 252-0471 | CILINDRO DE LEVANTE BULLDOZER | D11T | 9/2/2026 | 24/2/2026 | 9/2/2026 | 370726-1 | MAC | Según software | 6 | 1 | BARRA CROMADA Ø 4" X 85" LONG, HOLDING | COMPLETO | HOLDING | D260048 | 561.34 | 561.34 | USD | 10/2/2026 | 13/2/2026 | 13/2/2026 | T001-0000152 | F001-00000150 | 0 | 1
+      • 370726 | APROBADO | 252-0471 | CILINDRO DE LEVANTE BULLDOZER | D11T | 9/2/2026 | 24/2/2026 | 9/2/2026 | 370726-1 | MAC | Según software | 7 | 1 | BUR08 101.60 X 117.5 X 2.6 MM PA, MACHEN | COMPLETO | MACHEN | D260058 | 7.00 | 7.00 | USD | 12/2/2026 | 14/2/2026 | 23/2/2026 | TPP1-0007866 | F002-00020604 | 0 | 1
+      • 370726 | APROBADO | 252-0471 | CILINDRO DE LEVANTE BULLDOZER | D11T | 5/3/2026 | 20/3/2026 | 5/3/2026 | 370726-2 | MAC | Según software | 8 | 1 | RS17C 117.80 X 101.60 X 10.4 PU RED + NBR + POM, MACHEN | COMPLETO | MACHEN | A260055 | 24.30 | 24.30 | USD | 5/3/2026 | 6/3/2026 | 6/3/2026 | TPP1-0008050 | F002-00020741 | 0 | 1
+      • ANULADO | MAC | COTIZACIÓN | 1ro: Busqueda en almacen | Asiganación de nro OC | Se jalara de la OC | Se jalara de la OC | Se jalara de la OC | Se jalara de la OC | Se jalara de la OC | Movimientos
+      • APROBADO | Fecha de creacion | Fecha requerida | fecha de aprobacion Rq | SER | PENDIENTE DE OC | 2do: Busqueda por material top vendor
+      • SIN APROBACIÓN | PROCESO | se mostrara un precio referencial | se mostrara una moneda referencial | se mostrara un plazo referencial
+      • COMPLETO | precio editable | moneda editable | plazo editable
+      • ANULADO | cod Material | stock | requerimientos | Pos
+      • DEVOLUCIÓN | mat151 | 5 | 4 | 1 | Se puede usar uno
+
+========================================
+FILE: check list CUADRO DE CILINDROS (EVALUACION) (1).xlsx
+SHEETS: 4
+
+  [CILINDRO HIDRAULICO] rows=140 headerAt=5 cols=16
+    HEADERS: 3 | Diametro Exterior | 1 | PRESENTA RAYADURAS AXIALES _________________ EN INTERIOR DE CILINDRO | LEVES | 1 | REALIZAR BRUÑIDO ___________ DE CILINDRO | MINIMO | PARA LOS INFROMES SOLO COLOCAR REALIZAR BRUÑIDO DE CILINDRO
+    UNIQUE PER COLUMN (first 10 cols, max 10 values each):
+      [3] distinct=15 → 4, 5, 6, 7, 8, 9, 10, 11...
+      [Diametro Exterior] distinct=32 → Longitud Bruñido, Longitud Total, Diametro Ojo, Diámetro Int. Cojinete  / Rotula, Ancho de Ojo, Tomas, Est. de roscas, Pasa a NDT:...
+      [1] distinct=12 → 2, 3, 4, 5, 6, 1, 7, 8...
+      [PRESENTA RAYADURAS AXIALES _________________ EN INTERIOR DE CILINDRO] distinct=66 → PRESENTA RAYADURAS RADIALES _________________ EN INTERIOR DE CILINDRO, DIAMETRO INTERIOR PRESENTA DEFORMACION, MEDIDA INTERNA FUERA DE TOLERANCIA POR _________, DIÁMETRO INTERIOR MUESTRA DESGASTE, DIÁMETRO DE SELLADO MUESTRA DESGASTE, EXTERIOR, PRESENTA GOLPES EN EL EXTERIOR DEL CILINDRO, PRESENTA DESGASTE EN EXTERIOR DEL CILINDRO...
+      [LEVES] distinct=28 → REGULARES, GRAVES, LEVES, SI LA MEDIDA INTERIOR NOMINAL  EXCEDE 0.25 MARCAR AUTOMATICAMENTE, DEJAR EL CAMPO PARA RELLENAR MEDIDA, CORROSION, PICADURAS, DESGASTE, FISURADO...
+      [1] distinct=14 → 2, 3, 4, 5, 6, 7, 8, 9...
+      [REALIZAR BRUÑIDO ___________ DE CILINDRO] distinct=33 → RECUPERAR DIAMETRO DE ALOJAMIENTO CON SOLDADURA, BARRENADO DE ALOJAMIENTO A MEDIDA NOMINAL, RECTIFICADO DE CARAS LATERALES DE CÁNCAMO, REALIZAR CAMBIO / INSTALACION DE, REALIZAR CAMBIO / INSTALACION DE SEGUROS SEAGER, REALIZAR CAMBIO / INSTALACION DE SELLOS LIMPIADORES, REALIZAR PULIDO DE CARA DE BRIDA, NO ESTANDAR...
+      [MINIMO] distinct=14 → REGULAR, COJINETE, ROTULA, SI COLOCA ROTULA, VA ESTA OPCION, SI COLOCA COJINETE, VA ESTA OPCION, CANTIDAD, SELECCIONAR CANTIDAD, SELLO LIMPIADOR...
+    SAMPLE ROWS:
+      3=4 · Diametro Exterior=Longitud Bruñido · LEVES=REGULARES · MINIMO=REGULAR
+      3=5 · Diametro Exterior=Longitud Total · LEVES=GRAVES · 1=2 · REALIZAR BRUÑIDO ___________ DE CILINDRO=RECUPERAR DIAMETRO DE ALOJAMIENTO CON SO
+
+  [CILINDRO (CON TRUNNI] rows=129 headerAt=5 cols=16
+    HEADERS: 4 | Longitud Bruñido | 1 | PRESENTA RAYADURAS AXIALES _________________ EN INTERIOR DE CILINDRO | LEVES | 1 | REALIZAR BRUÑIDO ___________ DE CILINDRO | MINIMO | PARA LOS INFROMES SOLO COLOCAR REALIZAR BRUÑIDO DE CILINDRO
+    UNIQUE PER COLUMN (first 10 cols, max 10 values each):
+      [4] distinct=14 → 5, 6, 7, 8, 9, 10, 11, 1...
+      [Longitud Bruñido] distinct=29 → Longitud Total, Diametro exterior de pivotantes, Diametro exterior de bocinas, Longtud de pivotantes, Tomas, Est. de roscas, Pasa a NDT:, VASTAGO...
+      [1] distinct=12 → 2, 3, 4, 5, 6, 1, 7, 8...
+      [PRESENTA RAYADURAS AXIALES _________________ EN INTERIOR DE CILINDRO] distinct=63 → PRESENTA RAYADURAS RADIALES _________________ EN INTERIOR DE CILINDRO, DIAMETRO INTERIOR PRESENTA DEFORMACION, MEDIDA INTERNA FUERA DE TOLERANCIA POR _________, DIÁMETRO INTERIOR MUESTRA DESGASTE, DIÁMETRO DE SELLADO MUESTRA DESGASTE, EXTERIOR, PRESENTA GOLPES EN EL EXTERIOR DEL CILINDRO, PRESENTA DESGASTE EN EXTERIOR DEL CILINDRO...
+      [LEVES] distinct=26 → REGULARES, GRAVES, LEVES, SI LA MEDIDA INTERIOR NOMINAL  EXCEDE 0.25 MARCAR AUTOMATICAMENTE, DEJAR EL CAMPO PARA RELLENAR MEDIDA, CORROSION, PICADURAS, DESGASTE, FISURADO...
+      [1] distinct=12 → 2, 3, 5, 8, 9, 10, 11, 12...
+      [REALIZAR BRUÑIDO ___________ DE CILINDRO] distinct=35 → RECUPERAR DIAMETRO EXTERIOR DE PIVOTANTES CON SOLDADURA, BARRENADO DE PIVOTANTES A MEDIDA NOMINAL, REALIZAR CAMBIO / INSTALACION DE COJINETES, REALIZAR PULIDO DE CARA DE BRIDA, NO ESTANDAR, RECONSTRUCCIÓN DE PIVOTANTES, REALIZAR CAMBIO DE TUBO, REALIZAR RECTIFICADO DE AGUJEROS ROSCADOS...
+      [MINIMO] distinct=13 → REGULAR, COJINETE, ROTULA, SI COLOCA ROTULA, VA ESTA OPCION, SI COLOCA COJINETE, VA ESTA OPCION, SELECCIONAR CANTIDAD, SELLO LIMPIADOR, SELLO PRINCIPAL...
+    SAMPLE ROWS:
+      4=5 · Longitud Bruñido=Longitud Total · LEVES=REGULARES · MINIMO=REGULAR
+      4=6 · Longitud Bruñido=Diametro exterior de pivotantes · LEVES=GRAVES · 1=2 · REALIZAR BRUÑIDO ___________ DE CILINDRO=RECUPERAR DIAMETRO EXTERIOR DE PIVOTANTE
+
+  [ACUMULADOR] rows=36 headerAt=5 cols=17
+    HEADERS: 2 | Diametro de salida 2 | 1 | DIAMETROS DE INGRESO PRESENTAN CORROSION | 1 | REALIZAR LIMPIEZA DE CILINDRO | PARA LOS INFROMES SOLO COLOCAR REALIZAR BRUÑIDO DE CILINDRO
+    VALUES:
+      • 3 | Diametro Exterior | 2 | BLADDER LLEGO ROTO | 2 | REALIZAR CAMBIO DE BLADDER
+      • 4 | Volumen | 3 | INTERIOR DE CILINDRO PRESENTA CONTAMINACION | 3 | REALIZAR CAMBIO DE VALVULA
+      • 5 | Longitud Total | 4 | LLEGÓ CON ACEITE CONTAMINADO | NO ESTANDAR
+      • 6 | Válvula de muelle | Buena | Mala | N/A | 5 | CONJUNTO DE VÁLVULA LLEGÓ DAÑADO | 4 | REALIZAR CAMBIO DE CONJUNTO DE VÁLVULA
+      • 7 | Pasa a NDT: | Si | No | N/A | 6 | LLEGÓ SIN CONJUNTO DE VALVULA | 5 | REALIZAR CAMBIO DE CILINDRO DE ACUMULADOR
+      • 7 | EXTERIOR PRESENTA GOLPES
+      • ACUMULADOR HIDRÁULICO (SIN BLADDER)
+      • RECOMENDACIONES
+      • CILINDRO | ACUMULADOR HIDRÁULICO (SIN BLADDER) | ACUMULADOR HIDRÁULICO (SIN BLADDER)
+      • 1 | Diametro Interior | 3 puntos de medidas | CILINDRO | ESTANDAR
+      • 2 | Diametro de salida | 1 | PRESENTA RAYADURAS AXIALES _________________ EN INTERIOR DE CILINDRO | LEVES | 1 | REALIZAR BRUÑIDO ___________ DE CILINDRO | MINIMO | PARA LOS INFROMES SOLO COLOCAR REALIZAR BRUÑIDO DE CILINDRO
+      • 3 | Diametro Exterior | REGULARES | REGULAR
+      • 4 | Longitud Bruñido | GRAVES | 2 | REALIZAR PULIDO DE DIÁMETRO DE SALIDA
+      • 5 | Longitud Total | 2 | PRESENTA RAYADURAS RADIALES _________________ EN INTERIOR DE CILINDRO | LEVES | NO ESTANDAR
+      • 6 | Tomas | Buena | Mala | N/A | REGULARES
+      • 7 | Est. de roscas | Buena | Mala | N/A | GRAVES | 3 | REALIZAR CAMBIO DE TUBO
+      • 8 | Pasa a NDT: | Si | No | N/A | 3 | DIAMETRO INTERIOR PRESENTA DEFORMACION | 4 | REALIZAR RECTIFICADO DE SUPERFICIE ROSCADA
+      • 4 | MEDIDA INTERNA FUERA DE TOLERANCIA POR _________ | SI LA MEDIDA INTERIOR NOMINAL  EXCEDE 0.25 MARCAR AUTOMATICAMENTE, DEJAR EL CAMPO PARA RELLENAR MEDIDA
+      • 5 | DIÁMETRO INTERIOR MUESTRA DESGASTE | TAPA
+      • TAPA | PREGUNTAR 1 O 2 TAPAS, SEGÚN ESO DUPLICAR ESPACIOS PARA RELLENAR | 6 | DIÁMETRO DE SELLADO MUESTRA DESGASTE | ESTANDAR
+      • 7 | EXTERIOR PRESENTA GOLPES | 1 | PULIDO DE ALOJAMIENTOS DE TAPA
+      • 1 | Diámetro Sellado | TAPA | 2 | REALIZAR CAMBIO / INSTALACION DE SELLOS
+      • 2 | Longitud Total | 1 | SUPERFICIE ROSCADA PRESENTA | DESGASTE
+      • 3 | Exterior roscado | Si | No | DAÑO | NO ESTANDAR
+      • 4 | Est. de rosca | Buena | Mala | N/A | CORROSION | 1 | RECTIFICADO DE ALOJAMIENTO
+      • 5 | Pasa a NDT: | Si | No | EMBOLO | 2 | REALIZAR FABRICACION DE TAPA
+      • 3 | REALIZAR CAMBIO DE TAPA (NUEVO)
+      • EMBOLO | 1 | DIAMETRO EXTERIOR PRESENTA | GOLPES
+      • 1 | Diámetro Exterior | RAYADURAS | EMBOLO
+      • 3 | Longitud Total | DESGASTE | ESTANDAR
+      • 4 | Pasa a NDT: | Si | No | N/A | 2 | ALOJAMIENTO DE SELLOS PRESENTAN _______ | RAYADURAS | 1 | PULIDO DE ALOJAMIENTOS DE EMBOLO
+      • CORROSION | 2 | REALIZAR CAMBIO / INSTALACION DE SELLOS
+      • 3 | SELLOS PRESENTAN CONTAMINACION | NO ESTANDAR
+      • 1 | RECTIFICADO DE ALOJAMIENTO DE ____________
+      • 2 | REALIZAR FABRICACION DE EMBOLO
+      • 3 | REALIZAR CAMBIO DE EMBOLO (NUEVO)
+
+  [CILINDRO TELESCOPICO] rows=166 headerAt=5 cols=17
+    HEADERS: 3 ETAPAS | 1 camisa fija + 2 camisas móviles + 1 vástago. | 1 | PRESENTA RAYADURAS AXIALES _________________ EN INTERIOR DE CILINDRO | LEVES | 1 | REALIZAR BRUÑIDO ___________ DE CILINDRO | MINIMO | PARA LOS INFROMES SOLO COLOCAR REALIZAR BRUÑIDO DE CILINDRO
+    UNIQUE PER COLUMN (first 10 cols, max 10 values each):
+      [3 ETAPAS] distinct=37 → 4 ETAPAS, CILINDRO (CAMISA FIJA), Diametro interior, Diametro de salida, Diametro Exterior, Longitud Bruñido, Longitud Total, Diametro Ojo...
+      [1 camisa fija + 2 camisas móviles + 1 vástago.] distinct=6 → 1 camisa fija + 3 camisas móviles + 1 vástago., 3 puntos de medidas, Buena, Si, va del 1 al 11, eliminar 6,7,8 Y APERTURAR UNA NUEVA DE NOMBRE: TAPA POSTERIOR
+      [1] distinct=12 → 2, 3, 4, 5, 6, 1, 7, 8...
+      [PRESENTA RAYADURAS AXIALES _________________ EN INTERIOR DE CILINDRO] distinct=68 → PRESENTA RAYADURAS RADIALES _________________ EN INTERIOR DE CILINDRO, DIAMETRO INTERIOR PRESENTA DEFORMACION, MEDIDA INTERNA FUERA DE TOLERANCIA POR _________, DIÁMETRO INTERIOR MUESTRA DESGASTE, DIÁMETRO DE SELLADO MUESTRA DESGASTE, EXTERIOR, PRESENTA GOLPES EN EL EXTERIOR DEL CILINDRO, PRESENTA DESGASTE EN EXTERIOR DEL CILINDRO...
+      [LEVES] distinct=24 → REGULARES, GRAVES, LEVES, SI LA MEDIDA INTERIOR NOMINAL  EXCEDE 0.25 MARCAR AUTOMATICAMENTE, DEJAR EL CAMPO PARA RELLENAR MEDIDA, COLOCAR MEDIDAS DE ITEM 6 DE CILINDRO, INTERIOR DE ALOJAMIENTO, EXTERIOR, COLOCAR MEDIDA DE ITEM 10...
+      [1] distinct=12 → 2, 3, 4, 5, 6, 7, 8, 9...
+      [REALIZAR BRUÑIDO ___________ DE CILINDRO] distinct=39 → REALIZAR PULIDO DE CARA DE BRIDA, REALIZAR PULIDO DE ALOJAMIENTOS, RECUPERAR DIAMETRO DE ALOJAMIENTO CON SOLDADURA, BARRENADO DE ALOJAMIENTO A MEDIDA NOMINAL, RECTIFICADO DE CARAS LATERALES DE CÁNCAMO, REALIZAR CAMBIO / INSTALACION DE ROTULA, REALIZAR CAMBIO / INSTALACION DE SEGUROS SEAGER, NO ESTANDAR...
+    SAMPLE ROWS:
+      3 ETAPAS=4 ETAPAS · 1 camisa fija + 2 camisas móviles + 1 vástago.=1 camisa fija + 3 camisas móviles + 1 vá · LEVES=REGULARES · MINIMO=REGULAR
+      LEVES=GRAVES · 1=2 · REALIZAR BRUÑIDO ___________ DE CILINDRO=REALIZAR PULIDO DE CARA DE BRIDA
+
+========================================
+FILE: Hoja_de_Evaluacion_HPK.xlsx
+SHEETS: 7
+
+  [TIPOS DE CILINDROS] rows=5 headerAt=1 cols=2
+    HEADERS: 1 | CILINDRO HIDRAULICO VASTAGO SIMPLE
+    VALUES:
+      • 2 | CILINDRO HIDRAULICO PIVOTADO
+      • 3 | CILINDRO HIDRAULICO DE PISTON DE DOBLE VASTAGO
+      • 4 | CILINDRO HIDRAULICO TELESCOPICO
+      • 5 | ACUMULADOR DE EMBOLO
+      • 6 | ACUMULADOR DE VEGIGA
+
+  [1] rows=33 headerAt=5 cols=21
+    HEADERS: Diámetro Interior | A1: | A2: | A3: | A4:
+    VALUES:
+      • Diámetro de Salida | B: | X: | Y: | Tomas | Bueno: | Malo: | N/A:
+      • Diámetro Exterior | C: | X: | Y: | Est. de sup. Roscada | Bueno: | Malo: | N/A:
+      • Longitud Bruñido | D: | Bocina STOP 1 | Bueno: | Malo: | N/A:
+      • Longitud Total | E: | Bocina STOP 2 | Bueno: | Malo: | N/A:
+      • Tipo de cancamo | SELLECIONAR: | Convencional | x | Concavo | Estado de cancamo | Bueno: | Malo: | N/A:
+      • Diámetro Ojo | F: | X: | Y: | Pasa a NDT: | SI: | NO: | N/A:
+      • Elemento de sujeción | SELLECIONAR: | Cojinete | x | Rótula | Pin directo
+      • Diám. Int. _________(ahí colocar el elemento de sujecion) | G: | X: | Y:
+      • Ancho de Ojo | - | X: | Y:
+      • VÁSTAGO
+      • REF. VÁSTAGO
+      • Diámetro Espiga | A: | X: | Y: | Flexión | B: | C: | D:
+      • Diámetro Vástago | B: | X: | Y: | C: | X: | Y: | D: | X: | Y: | Esp. Cromo | B: | C: | D:
+      • Longitud Cromo | E: | Estado de cancamo | Bueno: | Malo: | N/A:
+      • Longitud Total | F: | Pasa a NDT: | SI: | NO: | N/A:
+      • Longitud de Espiga | G: | Sensor | SI: | NO:
+      • Tipo de cancamo | SELLECIONAR: | Convencional | x | Concavo
+      • Diám. Ext. Ojo | H: | X: | Y:
+      • Elemento de sujeción | SELLECIONAR: | Cojinete | x | Rótula | Pin directo
+      • Diám. Int. Ojo | I: | X: | Y:
+      • Diám. Int. _________(ahí colocar el elemento de sujecion) | J: | X: | Y:
+      • Ancho de Ojo | - | X: | Y:
+      • TAPA
+      • REF. TAPA
+      • Diámetro Exterior | A: | Pasa a NDT: | SI: | NO: | N/A:
+      • Diámetro Interior | B: | Exterior roscado: | SI: | NO:
+      • Diámetro Sellado | C: | Est. de sup. Roscada | Bueno: | Malo: | N/A:
+      • Longitud Total | D:
+      • EMBOLO
+      • REF. EMBOLO
+      • Diámetro Exterior | A: | Pasa a NDT: | SI: | NO: | N/A:
+      • Diámetro Interior | B: | Interior roscado: | SI: | NO:
+      • Longitud Total | D: | Est. de sup. Roscada | Bueno: | Malo: | N/A:
+
+  [2] rows=31 headerAt=5 cols=21
+    HEADERS: Diámetro Interior | A1: | A2: | A3: | A4:
+    VALUES:
+      • Diámetro de Salida | B: | X: | Y: | Tomas | Bueno: | Malo: | N/A:
+      • Diámetro Exterior | C: | X: | Y: | Est. de sup. Roscada | Bueno: | Malo: | N/A:
+      • Longitud Bruñido | D: | Estado de trunnion | Bueno: | Malo: | N/A:
+      • Longitud Total | E: | Pasa prueba de estanqueidad: | SI: | NO: | N/A:
+      • Diám. Exterior de cojinete | G: | X: | Y: | X: | Y: | Pasa a NDT: | SI: | NO: | N/A:
+      • Diám. Exterior de pivotante | - | X: | Y: | X: | Y:
+      • Longitud de pivotante | -
+      • VÁSTAGO
+      • REF. VÁSTAGO
+      • Diámetro Espiga | A: | X: | Y: | Flexión | B: | C: | D:
+      • Diámetro Vástago | B: | X: | Y: | C: | X: | Y: | D: | X: | Y: | Esp. Cromo | B: | C: | D:
+      • Longitud Cromo | E: | Estado de cancamo | Bueno: | Malo: | N/A:
+      • Longitud Total | F: | Pasa a NDT: | SI: | NO: | N/A:
+      • Longitud de Espiga | G: | Sensor | SI: | NO:
+      • Tipo de cancamo | SELLECIONAR: | Convencional | x | Concavo
+      • Diám. Ext. Ojo | H: | X: | Y:
+      • Elemento de sujeción | SELLECIONAR: | Cojinete | x | Rótula | Pin directo
+      • Diám. Int. Ojo | I: | X: | Y:
+      • Diám. Int. _________(ahí colocar el elemento de sujecion) | J: | X: | Y:
+      • Ancho de Ojo | - | X: | Y:
+      • TAPA
+      • REF. TAPA
+      • Diámetro Exterior | A: | Pasa a NDT: | SI: | NO: | N/A:
+      • Diámetro Interior | B: | Exterior roscado: | SI: | NO:
+      • Diámetro Sellado | C:
+      • Longitud Total | D:
+      • EMBOLO
+      • REF. EMBOLO
+      • Diámetro Exterior | A: | Pasa a NDT: | SI: | NO: | N/A:
+      • Diámetro Interior | B: | Interior roscado: | SI: | NO:
+      • Longitud Total | D:
+
+  [3] rows=29 headerAt=5 cols=21
+    HEADERS: Diámetro Interior | A1: | A2: | A3: | A4:
+    VALUES:
+      • Diámetro de Salida | B: | X: | Y: | Tomas | Bueno: | Malo: | N/A:
+      • Diámetro Exterior | C: | X: | Y: | Est. de sup. Roscada | Bueno: | Malo: | N/A:
+      • Longitud Bruñido | D: | Estado de soporte de sujecion | Bueno: | Malo: | N/A:
+      • Longitud Total | E: | Pasa prueba de estanqueidad: | SI: | NO: | N/A:
+      • Pasa a NDT: | SI: | NO: | N/A:
+      • VÁSTAGO
+      • REF. VÁSTAGO
+      • Diámetro Espiga | A: | X: | Y: | Flexión | B: | C: | D:
+      • Diámetro Vástago | B: | X: | Y: | C: | X: | Y: | D: | X: | Y: | Esp. Cromo | B: | C: | D:
+      • Longitud Cromo | E: | Estado de cancamo | Bueno: | Malo: | N/A:
+      • Longitud Total | F: | Pasa a NDT: | SI: | NO: | N/A:
+      • Longitud de Espiga | G:
+      • Tipo de cancamo | SELLECIONAR: | Convencional | x | N/A
+      • Diám. Ext. Ojo | H: | X: | Y:
+      • Elemento de sujeción | SELLECIONAR: | Cojinete | x | Rótula | Pin directo
+      • Diám. Int. Ojo | I: | X: | Y:
+      • Diám. Int. _________(ahí colocar el elemento de sujecion) | J: | X: | Y:
+      • Ancho de Ojo | - | X: | Y:
+      • TAPA
+      • REF. TAPA
+      • Diámetro Exterior | A 1: | A 2: | Pasa a NDT: | SI: | NO: | N/A:
+      • Diámetro Interior | B 1: | B 2: | Exterior roscado: | SI: | NO:
+      • Diámetro Sellado | C 1: | C 2:
+      • Longitud Total | D 1: | D 2:
+      • EMBOLO
+      • REF. EMBOLO
+      • Diámetro Exterior | A: | Pasa a NDT: | SI: | NO: | N/A:
+      • Diámetro Interior | B: | Interior roscado: | SI: | NO:
+      • Longitud Total | D:
+
+  [4] rows=60 headerAt=2 cols=21
+    HEADERS: FORMULARIO O CONSULTA DE N° DE ETAPAS | camisa movil | Cuerpo intermedio
+    UNIQUE PER COLUMN (first 10 cols, max 10 values each):
+      [FORMULARIO O CONSULTA DE N° DE ETAPAS] distinct=35 → 2 ETAPAS, 3 ETAPAS, 4 ETAPAS, CILINDRO (BOTELLA), REF. CILINDRO, Diámetro Interior, Diámetro de Salida, Diámetro Exterior...
+      [camisa movil] distinct=2 → Pin directo, Y:
+      [Cuerpo intermedio] distinct=2 → A4:, D:
+    SAMPLE ROWS:
+      FORMULARIO O CONSULTA DE N° DE ETAPAS=2 ETAPAS · =1 camisa fija + 1 camisa móvil + 1 vásta
+      FORMULARIO O CONSULTA DE N° DE ETAPAS=3 ETAPAS · =1 camisa fija + 2 camisas móviles + 1 vá
+
+  [5] rows=14 headerAt=5 cols=18
+    HEADERS: Diámetro Interior | A1: | A2: | A3: | A4:
+    VALUES:
+      • Diámetro de Salida | B: | X: | Y: | Tomas | Bueno: | Malo: | N/A:
+      • Diámetro Exterior | C: | X: | Y: | Est. de sup. Roscada | Bueno: | Malo: | N/A:
+      • Longitud Bruñido | D: | Pasa a NDT: | SI: | NO: | N/A:
+      • Longitud Total | E:
+      • Volumen: | GL.
+      • TAPA
+      • REF. TAPA
+      • Diámetro Exterior | A: | Pasa a NDT: | SI: | NO: | N/A:
+      • Diámetro Sellado | B: | Exterior roscado: | SI: | NO:
+      • Longitud Total | C: | Est. de sup. Roscada | Bueno: | Malo: | N/A:
+      • EMBOLO
+      • REF. EMBOLO
+      • Diámetro Exterior | A: | Pasa a NDT: | SI: | NO: | N/A:
+      • Longitud Total | B:
+
+  [6] rows=4 headerAt=5 cols=18
+    HEADERS: Diámetro de Salida 1 | A: | X: | Y:
+    VALUES:
+      • Diámetro de Salida 2 | B: | X: | Y: | Valv. Hid. De Muelle: | Bueno: | Malo: | N/A:
+      • Diámetro Exterior | C: | X: | Y: | Pasa a NDT: | SI: | NO: | N/A:
+      • Longitud Total | D:
+      • Volumen: | E:
+
+========================================
+FILE: Tablas de planificacion.xlsx
+SHEETS: 1
+
+  [Planeamiento] rows=9 headerAt=4 cols=24
+    HEADERS: RELC | Rellenado de alojamiento de cilindro | COR-C | Corte de cilindro | RELV | Rellenado de alojamiento de vástago | COR-V | Corte de vástago | PUL-T | Pulido de tapa | REC-T | Rectificado de tapa | PUL-P | Pulido de pistón | REC-P | Rectificado de pistón
+    VALUES:
+      • BARC | Barrenado de alojamiento de cilindro | MAQ-ENBC | Maq. Encastre de brida | BARV | Barrenado de alojamiento de vástago | ENC-CV | Encastre de cáncamo de vástago | FAB-T | Fabricación de tapa | FAB-P | Fabricación de pistón
+      • BRUC | Bruñido de cilindro | MAQ-ENCC | Maq. Encastre de cáncamo / tapa posterior | CROV | Cromado de vástago | ENC-BV | Encastre de barra de vástago
+      • ENC-TC | Encastre de tubo de cilindro | MAQ-EV | Maq. Espiga de vástago
+      • SOL-JC | Soldadura de juntas de cilindro | SOL-JV | Soldadura de Junta de vástago
+      • RELC | Rellenado de alojamiento de cilindro | RELV | Rellenado de alojamiento de vástago
+      • MAQ-DSALC | Maq. Diam. Salida de cilindro | MAQ-SV | Maq. Soldadura de vástago
+      • FAB-SC | Fab dados/soportes de cilindro | FAB-BV | Fab bocina de vástago
+      • SOLD SC | Sold. Dados soportes de cilindro
+      • FAB-BC | Fab bocina de cilindro

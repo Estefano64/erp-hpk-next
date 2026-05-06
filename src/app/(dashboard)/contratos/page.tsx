@@ -28,6 +28,15 @@ import {
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
+import {
+  numeracionColumn,
+  paginacionEstandar,
+  PAGINATION_PAGE_SIZE,
+  useColumnasOcultas,
+  ColumnasToggleButton,
+  visibleColumns,
+  filtroPorColumna,
+} from "@/lib/tables";
 import dayjs from "dayjs";
 
 const { Title } = Typography;
@@ -62,9 +71,11 @@ export default function ContratosPage() {
   const [data, setData] = useState<ContratoRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [filterCliente, setFilterCliente] = useState("");
+  const { ocultas, setOcultas } = useColumnasOcultas("contratos-list-cols-v1");
 
   const [clientes, setClientes] = useState<ClienteOption[]>([]);
   const [codReps, setCodReps] = useState<CodRepOption[]>([]);
@@ -78,7 +89,7 @@ export default function ContratosPage() {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams({ page: String(page), limit: "20" });
+    const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
     if (search) params.set("search", search);
     if (filterCliente) params.set("cliente", filterCliente);
     const res = await fetch(`/api/contratos?${params}`);
@@ -86,7 +97,7 @@ export default function ContratosPage() {
     setData(json.data ?? []);
     setTotal(json.total ?? 0);
     setLoading(false);
-  }, [page, search, filterCliente]);
+  }, [page, pageSize, search, filterCliente]);
 
   useEffect(() => {
     async function loadOptions() {
@@ -172,14 +183,18 @@ export default function ContratosPage() {
   }
 
   const columns: ColumnsType<ContratoRecord> = [
+    numeracionColumn<ContratoRecord>({ current: page, pageSize }),
     {
+      key: "codigo",
       title: "Código",
       dataIndex: "codigo",
       width: 130,
       sorter: (a, b) => a.codigo.localeCompare(b.codigo),
+      ...filtroPorColumna(data, "codigo"),
       render: (v: string) => <Tag color={brand.navy}>{v}</Tag>,
     },
     {
+      key: "cliente_id",
       title: "Cliente",
       dataIndex: "cliente_id",
       ellipsis: true,
@@ -187,6 +202,7 @@ export default function ContratosPage() {
       render: (_: number, r: ContratoRecord) => r.cliente?.nombre_comercial ?? r.cliente?.razon_social,
     },
     {
+      key: "cod_rep_id",
       title: "Cód. Reparable",
       dataIndex: "cod_rep_id",
       width: 140,
@@ -195,6 +211,7 @@ export default function ContratosPage() {
       ellipsis: true,
     },
     {
+      key: "fecha_inicio",
       title: "Inicio",
       dataIndex: "fecha_inicio",
       width: 110,
@@ -202,6 +219,7 @@ export default function ContratosPage() {
       render: (v: string) => formatDate(v),
     },
     {
+      key: "fecha_termino",
       title: "Término",
       dataIndex: "fecha_termino",
       width: 110,
@@ -209,6 +227,7 @@ export default function ContratosPage() {
       render: (v: string) => formatDate(v),
     },
     {
+      key: "dias_reparacion",
       title: "Días Rep.",
       dataIndex: "dias_reparacion",
       width: 90,
@@ -216,6 +235,7 @@ export default function ContratosPage() {
       sorter: (a, b) => (a.dias_reparacion ?? 0) - (b.dias_reparacion ?? 0),
     },
     {
+      key: "precio",
       title: "Precio",
       dataIndex: "precio",
       width: 120,
@@ -224,6 +244,7 @@ export default function ContratosPage() {
       render: (v: number) => `$ ${Number(v).toLocaleString("en-US", { minimumFractionDigits: 2 })}`,
     },
     {
+      key: "acciones",
       title: "Acciones",
       width: 100,
       align: "center",
@@ -243,7 +264,15 @@ export default function ContratosPage() {
       {contextHolder}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <Title level={3} style={{ margin: 0 }}>Contratos</Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nuevo</Button>
+        <Space>
+          <ColumnasToggleButton<ContratoRecord>
+            columns={columns}
+            ocultas={ocultas}
+            setOcultas={setOcultas}
+            obligatorias={["__num", "codigo", "acciones"]}
+          />
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nuevo</Button>
+        </Space>
       </div>
 
       <Card styles={{ body: { padding: 16 } }} style={{ marginBottom: 16 }}>
@@ -277,16 +306,16 @@ export default function ContratosPage() {
 
       <Table
         rowKey="id"
-        columns={columns}
+        columns={visibleColumns(columns, ocultas)}
         dataSource={data}
         loading={loading}
-        pagination={{
+        pagination={paginacionEstandar({
           current: page,
-          pageSize: 20,
+          pageSize,
           total,
-          showTotal: (t) => `${t} registros`,
-          onChange: setPage,
-        }}
+          onChange: (p, s) => { setPage(p); setPageSize(s); },
+          label: "contratos",
+        })}
         scroll={{ x: 1000 }}
         size="small"
       />

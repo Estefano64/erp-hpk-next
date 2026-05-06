@@ -26,9 +26,22 @@ import {
   DeleteOutlined,
   StopOutlined,
   ReloadOutlined,
+  ImportOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
+import {
+  numeracionColumn,
+  paginacionEstandar,
+  PAGINATION_PAGE_SIZE,
+  useColumnasOcultas,
+  ColumnasToggleButton,
+  visibleColumns,
+  filtroPorColumna,
+} from "@/lib/tables";
+import { ImportarExcelModal } from "@/components/ImportarExcelModal";
+import { EmptyState } from "@/components/EmptyState";
+import { EditableCell, EditableSelectCell } from "@/components/EditableCell";
 
 const { Title } = Typography;
 
@@ -72,6 +85,7 @@ export default function MaterialesPage() {
   const [data, setData] = useState<MaterialRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [filterPlanta, setFilterPlanta] = useState("");
@@ -79,6 +93,7 @@ export default function MaterialesPage() {
   const [filterCategoria, setFilterCategoria] = useState("");
   const [filterClasificacion, setFilterClasificacion] = useState("");
   const [filterFab, setFilterFab] = useState("");
+  const { ocultas, setOcultas } = useColumnasOcultas("materiales-list-cols-v1");
 
   // Opciones para selects
   const [plantas, setPlantas] = useState<Option[]>([]);
@@ -94,6 +109,7 @@ export default function MaterialesPage() {
   const [editing, setEditing] = useState<MaterialRecord | null>(null);
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const [messageApi, contextHolder] = message.useMessage();
 
@@ -101,7 +117,7 @@ export default function MaterialesPage() {
     setLoading(true);
     const params = new URLSearchParams({
       page: String(page),
-      limit: "20",
+      limit: String(pageSize),
     });
     if (search) params.set("search", search);
     if (filterPlanta) params.set("planta", filterPlanta);
@@ -115,7 +131,7 @@ export default function MaterialesPage() {
     setData(json.data ?? []);
     setTotal(json.total ?? 0);
     setLoading(false);
-  }, [page, search, filterPlanta, filterArea, filterCategoria, filterClasificacion, filterFab]);
+  }, [page, pageSize, search, filterPlanta, filterArea, filterCategoria, filterClasificacion, filterFab]);
 
   useEffect(() => {
     async function loadOptions() {
@@ -221,71 +237,141 @@ export default function MaterialesPage() {
     messageApi.error(body?.detail ?? body?.error ?? "Error al eliminar");
   }
 
+  // Update parcial usado por las celdas inline
+  async function patchMaterial(id: number, patch: Record<string, unknown>) {
+    const res = await fetch(`/api/materiales/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      messageApi.error(body?.error ?? "Error al actualizar");
+      throw new Error(body?.error ?? "patch error");
+    }
+    messageApi.success("Actualizado");
+    fetchData();
+  }
+
   const columns: ColumnsType<MaterialRecord> = [
+    numeracionColumn<MaterialRecord>({ current: page, pageSize }),
     {
+      key: "codigo",
       title: "Código",
       dataIndex: "codigo",
       width: 90,
       sorter: (a, b) => a.codigo.localeCompare(b.codigo),
+      ...filtroPorColumna(data, "codigo"),
       render: (v: string) => <Tag color={brand.navy}>{v}</Tag>,
     },
-    { title: "Descripción", dataIndex: "descripcion", ellipsis: true, sorter: (a: MaterialRecord, b: MaterialRecord) => a.descripcion.localeCompare(b.descripcion) },
     {
+      key: "descripcion",
+      title: "Descripción",
+      dataIndex: "descripcion",
+      ellipsis: true,
+      sorter: (a: MaterialRecord, b: MaterialRecord) => a.descripcion.localeCompare(b.descripcion),
+      ...filtroPorColumna(data, "descripcion"),
+    },
+    {
+      key: "planta_codigo",
       title: "Planta",
       dataIndex: "planta_codigo",
       width: 90,
       sorter: (a, b) => (a.planta?.nombre ?? "").localeCompare(b.planta?.nombre ?? ""),
+      ...filtroPorColumna(data, "planta_codigo"),
       render: (_: string, r: MaterialRecord) => r.planta?.nombre ?? r.planta_codigo,
     },
     {
+      key: "area_codigo",
       title: "Área",
       dataIndex: "area_codigo",
       width: 100,
       sorter: (a, b) => (a.area?.nombre ?? "").localeCompare(b.area?.nombre ?? ""),
+      ...filtroPorColumna(data, "area_codigo"),
       render: (_: string, r: MaterialRecord) => r.area?.nombre ?? r.area_codigo,
     },
     {
+      key: "categoria_codigo",
       title: "Categoría",
       dataIndex: "categoria_codigo",
       width: 100,
       sorter: (a, b) => (a.categoria?.nombre ?? "").localeCompare(b.categoria?.nombre ?? ""),
+      ...filtroPorColumna(data, "categoria_codigo"),
       render: (_: string, r: MaterialRecord) => r.categoria?.nombre ?? r.categoria_codigo,
     },
     {
+      key: "clasificacion_codigo",
       title: "Clasificación",
       dataIndex: "clasificacion_codigo",
       width: 110,
       sorter: (a, b) => (a.clasificacion?.nombre ?? "").localeCompare(b.clasificacion?.nombre ?? ""),
+      ...filtroPorColumna(data, "clasificacion_codigo"),
       render: (_: string, r: MaterialRecord) => r.clasificacion?.nombre ?? r.clasificacion_codigo,
     },
     {
+      key: "unidad_medida_codigo",
       title: "Und. Med.",
       dataIndex: "unidad_medida_codigo",
       width: 80,
+      ...filtroPorColumna(data, "unidad_medida_codigo"),
       render: (_: string, r: MaterialRecord) =>
         r.unidad_medida?.abreviatura ?? r.unidad_medida?.nombre ?? r.unidad_medida_codigo,
     },
     {
+      key: "fabricante_codigo",
       title: "Fabricante",
       dataIndex: "fabricante_codigo",
-      width: 100,
+      width: 140,
       sorter: (a, b) => (a.fabricante?.nombre ?? "").localeCompare(b.fabricante?.nombre ?? ""),
-      render: (_: string, r: MaterialRecord) => r.fabricante?.nombre ?? r.fabricante_codigo ?? "-",
+      ...filtroPorColumna(data, "fabricante_codigo"),
+      render: (v: string | null, r: MaterialRecord) => (
+        <EditableSelectCell
+          value={v}
+          options={fabricantes.map((f) => ({ value: f.codigo, label: f.nombre }))}
+          onSave={(next) => patchMaterial(r.material_id, { fabricante_codigo: next })}
+          disabled={!isAdminUser}
+        />
+      ),
     },
-    { title: "NP", dataIndex: "np", width: 120, ellipsis: true, sorter: (a: MaterialRecord, b: MaterialRecord) => (a.np ?? "").localeCompare(b.np ?? ""), render: (v: string | null) => v ?? "-" },
     {
+      key: "np",
+      title: "NP",
+      dataIndex: "np",
+      width: 140,
+      ellipsis: true,
+      sorter: (a: MaterialRecord, b: MaterialRecord) => (a.np ?? "").localeCompare(b.np ?? ""),
+      ...filtroPorColumna(data, "np"),
+      render: (v: string | null, r: MaterialRecord) => (
+        <EditableCell
+          value={v} type="string"
+          onSave={(next) => patchMaterial(r.material_id, { np: next })}
+          disabled={!isAdminUser}
+        />
+      ),
+    },
+    {
+      key: "precio",
       title: "Precio",
       dataIndex: "precio",
-      width: 110,
+      width: 130,
       align: "right",
       sorter: (a, b) => (Number(a.precio) || 0) - (Number(b.precio) || 0),
       render: (v: number | null, r: MaterialRecord) => {
-        if (!v) return "-";
         const sym = r.moneda?.simbolo ?? "$";
-        return `${sym} ${Number(v).toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
+        const display = v != null
+          ? <span>{sym} {Number(v).toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
+          : undefined;
+        return (
+          <EditableCell
+            value={v ?? null} type="number"
+            display={display}
+            onSave={(next) => patchMaterial(r.material_id, { precio: next })}
+            disabled={!isAdminUser}
+          />
+        );
       },
     },
     {
+      key: "acciones",
       title: "Acciones",
       width: 100,
       align: "center",
@@ -322,10 +408,52 @@ export default function MaterialesPage() {
         <Title level={3} style={{ margin: 0 }}>
           Materiales
         </Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-          Nuevo
-        </Button>
+        <Space>
+          <ColumnasToggleButton<MaterialRecord>
+            columns={columns}
+            ocultas={ocultas}
+            setOcultas={setOcultas}
+            obligatorias={["__num", "codigo", "acciones"]}
+          />
+          {isAdminUser && (
+            <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>
+              Importar Excel
+            </Button>
+          )}
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+            Nuevo
+          </Button>
+        </Space>
       </div>
+
+      <ImportarExcelModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onSuccess={() => fetchData()}
+        title="Importar materiales desde Excel"
+        endpoint="/api/materiales/bulk"
+        fields={[
+          { key: "codigo", label: "Código", required: true },
+          { key: "descripcion", label: "Descripción", required: true, aliases: ["nombre"] },
+          { key: "planta_codigo", label: "Planta", required: true, aliases: ["planta"] },
+          { key: "area_codigo", label: "Área", required: true, aliases: ["area"] },
+          { key: "categoria_codigo", label: "Categoría", required: true, aliases: ["categoria"] },
+          { key: "clasificacion_codigo", label: "Clasificación", required: true, aliases: ["clasificacion"] },
+          { key: "unidad_medida_codigo", label: "Unidad medida", required: true, aliases: ["um", "unidad"] },
+          { key: "precio", label: "Precio", type: "number" },
+          { key: "moneda_codigo", label: "Moneda", aliases: ["moneda"] },
+          { key: "fabricante_codigo", label: "Fabricante", aliases: ["fabricante"] },
+          { key: "np", label: "Nº Parte", aliases: ["numero_parte", "np"] },
+          { key: "modelo", label: "Modelo" },
+          { key: "punto_reposicion", label: "Punto reposición", type: "number" },
+          { key: "stock_maximo", label: "Stock máximo", type: "number" },
+          { key: "plazo_entrega", label: "Plazo entrega (días)", type: "number" },
+          { key: "ubicacion", label: "Ubicación física" },
+        ]}
+        templateRows={[
+          ["MAT001", "Sello hidráulico 100mm", "P01", "MEC", "REP", "STK", "UN", 25.50, "USD", "PARKER", "P-100-S", "MOD-A", 5, 50, 14, "A1-B2"],
+        ]}
+      />
 
       <Card styles={{ body: { padding: 16 } }} style={{ marginBottom: 16 }}>
         <Row gutter={[12, 12]}>
@@ -409,16 +537,34 @@ export default function MaterialesPage() {
 
       <Table
         rowKey="material_id"
-        columns={columns}
+        columns={visibleColumns(columns, ocultas)}
         dataSource={data}
         loading={loading}
-        pagination={{
-          current: page,
-          pageSize: 20,
-          total,
-          showTotal: (t) => `${t} registros`,
-          onChange: setPage,
+        locale={{
+          emptyText: !loading && total === 0 && !search && !filterPlanta && !filterArea && !filterCategoria && !filterClasificacion ? (
+            <EmptyState
+              title="Aún no hay materiales cargados"
+              description="Importá masivamente desde Excel (código, descripción, planta, área, UM, precio…) o creá uno manualmente."
+              primaryAction={isAdminUser ? {
+                label: "Importar desde Excel",
+                icon: <ImportOutlined />,
+                onClick: () => setImportOpen(true),
+              } : undefined}
+              secondaryAction={{
+                label: "Crear manualmente",
+                icon: <PlusOutlined />,
+                onClick: openCreate,
+              }}
+            />
+          ) : undefined,
         }}
+        pagination={paginacionEstandar({
+          current: page,
+          pageSize,
+          total,
+          onChange: (p, s) => { setPage(p); setPageSize(s); },
+          label: "materiales",
+        })}
         scroll={{ x: 1200 }}
         size="small"
       />
@@ -432,35 +578,42 @@ export default function MaterialesPage() {
         width={800}
         destroyOnHidden
       >
-        <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
+        <div style={{ fontSize: 12, color: brand.textSecondary, marginTop: 12 }}>
+          Los campos con <span style={{ color: "#ff4d4f" }}>*</span> son obligatorios.
+        </div>
+        <Form
+          form={form} layout="vertical" style={{ marginTop: 8 }}
+          validateTrigger={["onChange", "onBlur"]}
+          requiredMark
+        >
           <Row gutter={16}>
             <Col span={24}>
-              <Form.Item name="descripcion" label="Descripción" rules={[{ required: true, message: "Requerido" }]}>
+              <Form.Item name="descripcion" label="Descripción" rules={[{ required: true, message: "Campo obligatorio" }]}>
                 <Input />
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="planta_codigo" label="Planta" rules={[{ required: true, message: "Requerido" }]}>
+              <Form.Item name="planta_codigo" label="Planta" rules={[{ required: true, message: "Campo obligatorio" }]}>
                 <Select options={plantas.map((p) => ({ value: p.codigo, label: `${p.codigo} - ${p.nombre}` }))} />
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="area_codigo" label="Área" rules={[{ required: true, message: "Requerido" }]}>
+              <Form.Item name="area_codigo" label="Área" rules={[{ required: true, message: "Campo obligatorio" }]}>
                 <Select options={areas.map((a) => ({ value: a.codigo, label: `${a.codigo} - ${a.nombre}` }))} />
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="categoria_codigo" label="Categoría" rules={[{ required: true, message: "Requerido" }]}>
+              <Form.Item name="categoria_codigo" label="Categoría" rules={[{ required: true, message: "Campo obligatorio" }]}>
                 <Select options={categorias.map((c) => ({ value: c.codigo, label: `${c.codigo} - ${c.nombre}` }))} />
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="clasificacion_codigo" label="Clasificación" rules={[{ required: true, message: "Requerido" }]}>
+              <Form.Item name="clasificacion_codigo" label="Clasificación" rules={[{ required: true, message: "Campo obligatorio" }]}>
                 <Select options={clasificaciones.map((c) => ({ value: c.codigo, label: `${c.codigo} - ${c.nombre}` }))} />
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="unidad_medida_codigo" label="Und. Medida" rules={[{ required: true, message: "Requerido" }]}>
+              <Form.Item name="unidad_medida_codigo" label="Und. Medida" rules={[{ required: true, message: "Campo obligatorio" }]}>
                 <Select options={unidades.map((u) => ({ value: u.codigo, label: `${u.codigo} - ${u.nombre}` }))} />
               </Form.Item>
             </Col>
