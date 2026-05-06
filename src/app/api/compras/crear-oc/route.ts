@@ -141,13 +141,15 @@ export async function POST(req: NextRequest) {
       }
 
       // Asignar po_id sólo a los que seguían disponibles (race-safe).
+      // Una vez creada la OC, el item sale de PEND_OC y entra a PROCESO.
       const assigned = await tx.oTRepuesto.updateMany({
         where: { id: { in: repuestos.map((r) => r.id) }, po_id: null },
         data: {
           po_id: compra.id,
           nro_oc: compra.numero_po,
           fecha_oc: new Date(),
-          status_oc_codigo: "PEND_OC",
+          fecha_entrega_esperada: d.fecha_entrega_esperada ? new Date(d.fecha_entrega_esperada) : null,
+          status_oc_codigo: "PROCESO",
         },
       });
       if (assigned.count !== repuestos.length) {

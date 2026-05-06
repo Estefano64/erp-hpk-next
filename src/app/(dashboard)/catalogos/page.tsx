@@ -6,6 +6,7 @@ import { Card, Typography, Tag, Input, Empty, Alert } from "antd";
 import { DatabaseOutlined, SearchOutlined } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
 import { catalogosByCategory, catalogosConfig, type CatalogoConfig } from "@/lib/catalogos-config";
+import { CatalogosHealthPanel } from "@/components/CatalogosHealthPanel";
 
 const { Title, Text } = Typography;
 
@@ -88,6 +89,15 @@ export default function CatalogosIndexPage() {
         title="Gestión de catálogos maestros"
         description="Verificá, agregá o eliminá entradas. Las eliminaciones tienen dos modos: 'desactivar' (soft, recomendado si hay datos relacionados) y 'eliminar' (real, solo si no hay FKs). Solo administradores pueden modificar."
       />
+
+      <Title level={4} style={{ marginTop: 8, marginBottom: 12 }}>
+        Estado de catálogos críticos
+      </Title>
+      <CatalogosHealthPanel />
+
+      <Title level={4} style={{ marginTop: 24, marginBottom: 12 }}>
+        Todos los catálogos
+      </Title>
 
       {filteredCategories.length === 0 ? (
         <Empty description="No hay catálogos que coincidan con la búsqueda." />

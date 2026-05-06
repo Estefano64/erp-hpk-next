@@ -65,6 +65,38 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   }
 }
 
+// PATCH — actualizar solo los campos enviados (inline edit). No toca el resto.
+const PATCHABLE_FIELDS = new Set([
+  "descripcion", "plazo_entrega", "precio", "moneda_codigo",
+  "fabricante_codigo", "np", "modelo", "caja", "ubicacion",
+  "punto_reposicion", "stock_maximo",
+]);
+
+export async function PATCH(req: NextRequest, ctx: Ctx) {
+  try {
+    const { id } = await ctx.params;
+    const body = await req.json();
+    const data: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(body)) {
+      if (!PATCHABLE_FIELDS.has(k)) continue;
+      // string vacío → null (consistente con la convención del PUT)
+      if (typeof v === "string" && v.trim() === "") data[k] = null;
+      else data[k] = v;
+    }
+    if (Object.keys(data).length === 0) {
+      return NextResponse.json({ error: "Sin cambios" }, { status: 400 });
+    }
+    const updated = await prisma.material.update({
+      where: { material_id: Number(id) },
+      data,
+    });
+    return NextResponse.json({ data: updated });
+  } catch (error) {
+    console.error("PATCH /api/materiales/[id] error:", error);
+    return NextResponse.json({ error: "Error al actualizar" }, { status: 500 });
+  }
+}
+
 export async function DELETE(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;

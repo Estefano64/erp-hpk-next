@@ -26,6 +26,7 @@ import {
   DeleteOutlined,
   StopOutlined,
   ReloadOutlined,
+  ImportOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
@@ -38,6 +39,9 @@ import {
   visibleColumns,
   filtroPorColumna,
 } from "@/lib/tables";
+import { ImportarExcelModal } from "@/components/ImportarExcelModal";
+import { EmptyState } from "@/components/EmptyState";
+import { EditableCell, EditableSelectCell } from "@/components/EditableCell";
 
 const { Title } = Typography;
 
@@ -105,6 +109,7 @@ export default function MaterialesPage() {
   const [editing, setEditing] = useState<MaterialRecord | null>(null);
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const [messageApi, contextHolder] = message.useMessage();
 
@@ -232,6 +237,21 @@ export default function MaterialesPage() {
     messageApi.error(body?.detail ?? body?.error ?? "Error al eliminar");
   }
 
+  // Update parcial usado por las celdas inline
+  async function patchMaterial(id: number, patch: Record<string, unknown>) {
+    const res = await fetch(`/api/materiales/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      messageApi.error(body?.error ?? "Error al actualizar");
+      throw new Error(body?.error ?? "patch error");
+    }
+    messageApi.success("Actualizado");
+    fetchData();
+  }
+
   const columns: ColumnsType<MaterialRecord> = [
     numeracionColumn<MaterialRecord>({ current: page, pageSize }),
     {
@@ -300,32 +320,54 @@ export default function MaterialesPage() {
       key: "fabricante_codigo",
       title: "Fabricante",
       dataIndex: "fabricante_codigo",
-      width: 100,
+      width: 140,
       sorter: (a, b) => (a.fabricante?.nombre ?? "").localeCompare(b.fabricante?.nombre ?? ""),
       ...filtroPorColumna(data, "fabricante_codigo"),
-      render: (_: string, r: MaterialRecord) => r.fabricante?.nombre ?? r.fabricante_codigo ?? "-",
+      render: (v: string | null, r: MaterialRecord) => (
+        <EditableSelectCell
+          value={v}
+          options={fabricantes.map((f) => ({ value: f.codigo, label: f.nombre }))}
+          onSave={(next) => patchMaterial(r.material_id, { fabricante_codigo: next })}
+          disabled={!isAdminUser}
+        />
+      ),
     },
     {
       key: "np",
       title: "NP",
       dataIndex: "np",
-      width: 120,
+      width: 140,
       ellipsis: true,
       sorter: (a: MaterialRecord, b: MaterialRecord) => (a.np ?? "").localeCompare(b.np ?? ""),
       ...filtroPorColumna(data, "np"),
-      render: (v: string | null) => v ?? "-",
+      render: (v: string | null, r: MaterialRecord) => (
+        <EditableCell
+          value={v} type="string"
+          onSave={(next) => patchMaterial(r.material_id, { np: next })}
+          disabled={!isAdminUser}
+        />
+      ),
     },
     {
       key: "precio",
       title: "Precio",
       dataIndex: "precio",
-      width: 110,
+      width: 130,
       align: "right",
       sorter: (a, b) => (Number(a.precio) || 0) - (Number(b.precio) || 0),
       render: (v: number | null, r: MaterialRecord) => {
-        if (!v) return "-";
         const sym = r.moneda?.simbolo ?? "$";
-        return `${sym} ${Number(v).toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
+        const display = v != null
+          ? <span>{sym} {Number(v).toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
+          : undefined;
+        return (
+          <EditableCell
+            value={v ?? null} type="number"
+            display={display}
+            onSave={(next) => patchMaterial(r.material_id, { precio: next })}
+            disabled={!isAdminUser}
+          />
+        );
       },
     },
     {
@@ -373,11 +415,45 @@ export default function MaterialesPage() {
             setOcultas={setOcultas}
             obligatorias={["__num", "codigo", "acciones"]}
           />
+          {isAdminUser && (
+            <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>
+              Importar Excel
+            </Button>
+          )}
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
             Nuevo
           </Button>
         </Space>
       </div>
+
+      <ImportarExcelModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onSuccess={() => fetchData()}
+        title="Importar materiales desde Excel"
+        endpoint="/api/materiales/bulk"
+        fields={[
+          { key: "codigo", label: "Código", required: true },
+          { key: "descripcion", label: "Descripción", required: true, aliases: ["nombre"] },
+          { key: "planta_codigo", label: "Planta", required: true, aliases: ["planta"] },
+          { key: "area_codigo", label: "Área", required: true, aliases: ["area"] },
+          { key: "categoria_codigo", label: "Categoría", required: true, aliases: ["categoria"] },
+          { key: "clasificacion_codigo", label: "Clasificación", required: true, aliases: ["clasificacion"] },
+          { key: "unidad_medida_codigo", label: "Unidad medida", required: true, aliases: ["um", "unidad"] },
+          { key: "precio", label: "Precio", type: "number" },
+          { key: "moneda_codigo", label: "Moneda", aliases: ["moneda"] },
+          { key: "fabricante_codigo", label: "Fabricante", aliases: ["fabricante"] },
+          { key: "np", label: "Nº Parte", aliases: ["numero_parte", "np"] },
+          { key: "modelo", label: "Modelo" },
+          { key: "punto_reposicion", label: "Punto reposición", type: "number" },
+          { key: "stock_maximo", label: "Stock máximo", type: "number" },
+          { key: "plazo_entrega", label: "Plazo entrega (días)", type: "number" },
+          { key: "ubicacion", label: "Ubicación física" },
+        ]}
+        templateRows={[
+          ["MAT001", "Sello hidráulico 100mm", "P01", "MEC", "REP", "STK", "UN", 25.50, "USD", "PARKER", "P-100-S", "MOD-A", 5, 50, 14, "A1-B2"],
+        ]}
+      />
 
       <Card styles={{ body: { padding: 16 } }} style={{ marginBottom: 16 }}>
         <Row gutter={[12, 12]}>
@@ -464,6 +540,24 @@ export default function MaterialesPage() {
         columns={visibleColumns(columns, ocultas)}
         dataSource={data}
         loading={loading}
+        locale={{
+          emptyText: !loading && total === 0 && !search && !filterPlanta && !filterArea && !filterCategoria && !filterClasificacion ? (
+            <EmptyState
+              title="Aún no hay materiales cargados"
+              description="Importá masivamente desde Excel (código, descripción, planta, área, UM, precio…) o creá uno manualmente."
+              primaryAction={isAdminUser ? {
+                label: "Importar desde Excel",
+                icon: <ImportOutlined />,
+                onClick: () => setImportOpen(true),
+              } : undefined}
+              secondaryAction={{
+                label: "Crear manualmente",
+                icon: <PlusOutlined />,
+                onClick: openCreate,
+              }}
+            />
+          ) : undefined,
+        }}
         pagination={paginacionEstandar({
           current: page,
           pageSize,
@@ -484,35 +578,42 @@ export default function MaterialesPage() {
         width={800}
         destroyOnHidden
       >
-        <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
+        <div style={{ fontSize: 12, color: brand.textSecondary, marginTop: 12 }}>
+          Los campos con <span style={{ color: "#ff4d4f" }}>*</span> son obligatorios.
+        </div>
+        <Form
+          form={form} layout="vertical" style={{ marginTop: 8 }}
+          validateTrigger={["onChange", "onBlur"]}
+          requiredMark
+        >
           <Row gutter={16}>
             <Col span={24}>
-              <Form.Item name="descripcion" label="Descripción" rules={[{ required: true, message: "Requerido" }]}>
+              <Form.Item name="descripcion" label="Descripción" rules={[{ required: true, message: "Campo obligatorio" }]}>
                 <Input />
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="planta_codigo" label="Planta" rules={[{ required: true, message: "Requerido" }]}>
+              <Form.Item name="planta_codigo" label="Planta" rules={[{ required: true, message: "Campo obligatorio" }]}>
                 <Select options={plantas.map((p) => ({ value: p.codigo, label: `${p.codigo} - ${p.nombre}` }))} />
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="area_codigo" label="Área" rules={[{ required: true, message: "Requerido" }]}>
+              <Form.Item name="area_codigo" label="Área" rules={[{ required: true, message: "Campo obligatorio" }]}>
                 <Select options={areas.map((a) => ({ value: a.codigo, label: `${a.codigo} - ${a.nombre}` }))} />
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="categoria_codigo" label="Categoría" rules={[{ required: true, message: "Requerido" }]}>
+              <Form.Item name="categoria_codigo" label="Categoría" rules={[{ required: true, message: "Campo obligatorio" }]}>
                 <Select options={categorias.map((c) => ({ value: c.codigo, label: `${c.codigo} - ${c.nombre}` }))} />
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="clasificacion_codigo" label="Clasificación" rules={[{ required: true, message: "Requerido" }]}>
+              <Form.Item name="clasificacion_codigo" label="Clasificación" rules={[{ required: true, message: "Campo obligatorio" }]}>
                 <Select options={clasificaciones.map((c) => ({ value: c.codigo, label: `${c.codigo} - ${c.nombre}` }))} />
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="unidad_medida_codigo" label="Und. Medida" rules={[{ required: true, message: "Requerido" }]}>
+              <Form.Item name="unidad_medida_codigo" label="Und. Medida" rules={[{ required: true, message: "Campo obligatorio" }]}>
                 <Select options={unidades.map((u) => ({ value: u.codigo, label: `${u.codigo} - ${u.nombre}` }))} />
               </Form.Item>
             </Col>

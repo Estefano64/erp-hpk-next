@@ -99,6 +99,7 @@ model Fabricante {
   equipos            Equipo[]
   materiales         Material[]
   ordenes_trabajo    OrdenTrabajo[]
+  tareas             Tarea[]
 
   @@map("fabricante")
 }
@@ -628,6 +629,18 @@ model Trabajador {
   @@map("trabajador")
 }
 
+model Servicio {
+  servicio_id Int      @id @default(autoincrement())
+  codigo      String   @unique @db.VarChar(20)
+  nombre      String   @db.VarChar(300)
+  descripcion String?
+  activo      Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now()) @updatedAt
+
+  @@map("servicio")
+}
+
 model ConjuntoMantenimiento {
   conjunto_mantenimiento_id Int          @id @default(autoincrement())
   codigo                    String       @unique @db.VarChar(20)
@@ -654,6 +667,8 @@ model Tarea {
   item_numero       Int
   tipo_codigo       String            @db.VarChar(10)
   material_codigo   String?           @db.VarChar(50)
+  fabricante_codigo String?           @db.VarChar(20)
+  servicio_codigo   String?           @db.VarChar(20)
   requerimiento     Decimal           @db.Decimal(10, 2)
   ref_descripcion   String?
   np                String?           @db.VarChar(100)
@@ -664,6 +679,7 @@ model Tarea {
   codigo_reparacion CodigoReparacion? @relation(fields: [cod_rep_codigo], references: [codigo])
   estrategia        Estrategia?       @relation(fields: [estrategia_id], references: [estrategia_id])
   material          Material?         @relation(fields: [material_codigo], references: [codigo], onDelete: Restrict)
+  fabricante        Fabricante?       @relation(fields: [fabricante_codigo], references: [codigo])
   tipo              TipoTarea         @relation(fields: [tipo_codigo], references: [codigo])
 
   @@index([cod_rep_codigo])

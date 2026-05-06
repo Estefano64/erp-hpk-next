@@ -28,6 +28,7 @@ import {
   StopOutlined,
   ReloadOutlined,
   ToolOutlined,
+  InboxOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
@@ -297,6 +298,12 @@ export default function CodigosReparacionPage() {
             icon={<ToolOutlined />}
             title="Operaciones / HH"
             onClick={() => router.push(`/codigos-reparacion/${record.cod_rep_id}/operaciones`)}
+          />
+          <Button
+            type="text"
+            icon={<InboxOutlined />}
+            title="Template de requerimientos"
+            onClick={() => router.push(`/codigos-reparacion/${record.cod_rep_id}/requerimientos-template`)}
           />
           <Button type="text" icon={<EditOutlined />} onClick={() => openEdit(record)} />
           <Popconfirm

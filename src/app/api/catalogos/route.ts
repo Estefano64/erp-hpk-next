@@ -35,6 +35,7 @@ const allowed: Record<string, keyof typeof prisma> = {
   statusEstrategia: "statusEstrategia",
   tipoTarea: "tipoTarea",
   conjuntoMantenimiento: "conjuntoMantenimiento",
+  servicio: "servicio",
   statusRequerimiento: "statusRequerimiento",
   statusCotizacion: "statusCotizacion",
   statusOc: "statusOC",

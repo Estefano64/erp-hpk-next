@@ -379,6 +379,19 @@ export const catalogosConfig: CatalogoConfig[] = [
       activo,
     ],
   },
+  {
+    id: "servicio",
+    label: "Servicios",
+    description: "Servicios externos / tercerizados (autocomplete cuando se elige tipo SER en requerimientos).",
+    category: "Operaciones",
+    pkField: "servicio_id",
+    uniqueField: "codigo",
+    fields: [
+      ...codigoNombre(20, 300),
+      { key: "descripcion", label: "Descripción", type: "text" },
+      activo,
+    ],
+  },
 
   // ── Workflow ───────────────────────────────────────────────────────────
   {
