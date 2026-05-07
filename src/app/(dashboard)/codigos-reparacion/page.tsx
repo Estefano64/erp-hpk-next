@@ -41,6 +41,7 @@ import {
   visibleColumns,
   filtroPorColumna,
 } from "@/lib/tables";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
 const { Title } = Typography;
 
@@ -343,6 +344,56 @@ export default function CodigosReparacionPage() {
             setOcultas={setOcultas}
             obligatorias={["__num", "codigo", "acciones"]}
           />
+          <ExportarExcelButton<CodRep>
+            endpoint="/api/codigos-reparacion"
+            filename="Codigos-Reparacion"
+            columns={[
+              { label: "Código", value: (r) => r.codigo },
+              { label: "Descripción", value: (r) => r.descripcion },
+              { label: "Tipo", value: (r) => r.tipo?.nombre ?? r.tipo_codigo },
+              { label: "Categoría", value: (r) => r.categoria?.nombre ?? r.categoria_codigo },
+              { label: "Flota", value: (r) => r.flota?.nombre ?? r.flota_codigo },
+              { label: "Fabricante", value: (r) => r.fabricante?.nombre ?? r.fabricante_codigo ?? "" },
+              { label: "Nº Parte", value: (r) => r.np ?? "" },
+              { label: "Posición", value: (r) => r.posicion?.nombre ?? r.posicion_codigo ?? "" },
+              { label: "Precio", value: (r) => r.precio != null ? Number(r.precio) : "" },
+              { label: "Moneda", value: (r) => r.moneda_codigo ?? "" },
+            ]}
+          />
+          <ExportarExcelButton<{
+            tarea_id: number;
+            cod_rep_codigo: string | null;
+            item_numero: number;
+            tipo_codigo: string;
+            actividad_codigo: string;
+            material_codigo: string | null;
+            fabricante_codigo: string | null;
+            descripcion: string;
+            requerimiento: number | string;
+            np: string | null;
+            precio: number | string | null;
+            material?: { codigo: string; descripcion: string } | null;
+            tipo?: { nombre: string } | null;
+            fabricante?: { nombre: string } | null;
+          }>
+            endpoint="/api/tareas"
+            filename="Tareas-Templates"
+            columns={[
+              { label: "Cod_Rep", value: (r) => r.cod_rep_codigo ?? "" },
+              { label: "Item", value: (r) => r.item_numero },
+              { label: "Tipo", value: (r) => r.tipo?.nombre ?? r.tipo_codigo },
+              { label: "Actividad", value: (r) => r.actividad_codigo },
+              { label: "Material", value: (r) => r.material_codigo ?? "" },
+              { label: "Material descripción", value: (r) => r.material?.descripcion ?? "" },
+              { label: "Fabricante", value: (r) => r.fabricante?.nombre ?? r.fabricante_codigo ?? "" },
+              { label: "Descripción tarea", value: (r) => r.descripcion },
+              { label: "Cantidad", value: (r) => Number(r.requerimiento) },
+              { label: "Nº Parte", value: (r) => r.np ?? "" },
+              { label: "Precio", value: (r) => r.precio != null ? Number(r.precio) : "" },
+            ]}
+          >
+            Descargar Tareas
+          </ExportarExcelButton>
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
             Nuevo
           </Button>

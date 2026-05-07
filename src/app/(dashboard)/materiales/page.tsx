@@ -42,6 +42,7 @@ import {
 import { ImportarExcelModal } from "@/components/ImportarExcelModal";
 import { EmptyState } from "@/components/EmptyState";
 import { EditableCell, EditableSelectCell } from "@/components/EditableCell";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
 const { Title } = Typography;
 
@@ -414,6 +415,29 @@ export default function MaterialesPage() {
             ocultas={ocultas}
             setOcultas={setOcultas}
             obligatorias={["__num", "codigo", "acciones"]}
+          />
+          <ExportarExcelButton<MaterialRecord>
+            endpoint="/api/materiales"
+            filename="Materiales"
+            columns={[
+              { label: "Código", value: (r) => r.codigo },
+              { label: "Descripción", value: (r) => r.descripcion },
+              { label: "Planta", value: (r) => r.planta_codigo },
+              { label: "Área", value: (r) => r.area_codigo },
+              { label: "Categoría", value: (r) => r.categoria_codigo },
+              { label: "Clasificación", value: (r) => r.clasificacion_codigo },
+              { label: "Unidad medida", value: (r) => r.unidad_medida_codigo },
+              { label: "Precio", value: (r) => r.precio != null ? Number(r.precio) : "" },
+              { label: "Moneda", value: (r) => r.moneda_codigo ?? "" },
+              { label: "Fabricante", value: (r) => r.fabricante_codigo ?? "" },
+              { label: "Nº Parte", value: (r) => r.np ?? "" },
+              { label: "Modelo", value: (r) => r.modelo ?? "" },
+              { label: "Punto reposición", value: (r) => r.punto_reposicion != null ? Number(r.punto_reposicion) : "" },
+              { label: "Stock máximo", value: (r) => r.stock_maximo != null ? Number(r.stock_maximo) : "" },
+              { label: "Stock actual", value: (r) => r.stock_actual != null ? Number(r.stock_actual) : "" },
+              { label: "Plazo entrega (días)", value: (r) => r.plazo_entrega ?? "" },
+              { label: "Ubicación", value: (r) => r.ubicacion ?? "" },
+            ]}
           />
           {isAdminUser && (
             <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>

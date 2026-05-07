@@ -40,6 +40,7 @@ import {
 import { ImportarExcelModal } from "@/components/ImportarExcelModal";
 import { EmptyState } from "@/components/EmptyState";
 import { DuplicateHint } from "@/components/DuplicateHint";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
 const { Title } = Typography;
 
@@ -262,6 +263,19 @@ export default function ProveedoresPage() {
             ocultas={ocultas}
             setOcultas={setOcultas}
             obligatorias={["__num", "ruc", "acciones"]}
+          />
+          <ExportarExcelButton<ProveedorRecord>
+            endpoint="/api/proveedores"
+            filename="Proveedores"
+            columns={[
+              { label: "RUC", value: (r) => r.ruc },
+              { label: "Razón social", value: (r) => r.razon_social },
+              { label: "Nombre comercial", value: (r) => r.nombre_comercial ?? "" },
+              { label: "Contacto", value: (r) => r.contacto ?? "" },
+              { label: "Teléfono", value: (r) => r.telefono ?? "" },
+              { label: "Email", value: (r) => r.email ?? "" },
+              { label: "Dirección", value: (r) => r.direccion ?? "" },
+            ]}
           />
           {isAdminUser && (
             <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>

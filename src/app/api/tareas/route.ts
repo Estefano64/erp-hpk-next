@@ -4,27 +4,34 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { isAdmin } from "@/lib/audit";
 
-// GET /api/tareas?cod_rep_codigo=CR-0027 — lista de items del template
+// GET /api/tareas — lista de items con paginación.
+// Query: cod_rep_codigo, tipo, page, limit
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = req.nextUrl;
     const codRep = searchParams.get("cod_rep_codigo")?.trim();
     const tipo = searchParams.get("tipo")?.trim();
+    const page = Math.max(1, Number(searchParams.get("page") ?? 1));
+    const limit = Math.min(5000, Math.max(1, Number(searchParams.get("limit") ?? 200)));
     const where: Record<string, unknown> = {};
     if (codRep) where.cod_rep_codigo = codRep;
     if (tipo) where.tipo_codigo = tipo;
 
-    const data = await prisma.tarea.findMany({
-      where,
-      include: {
-        material: { select: { codigo: true, descripcion: true, fabricante_codigo: true, unidad_medida_codigo: true, precio: true, moneda_codigo: true } },
-        tipo: { select: { codigo: true, nombre: true } },
-        fabricante: { select: { codigo: true, nombre: true } },
-      },
-      orderBy: [{ cod_rep_codigo: "asc" }, { item_numero: "asc" }],
-      take: codRep ? 1000 : 200,
-    });
-    return NextResponse.json({ data, total: data.length });
+    const [data, total] = await Promise.all([
+      prisma.tarea.findMany({
+        where,
+        include: {
+          material: { select: { codigo: true, descripcion: true, fabricante_codigo: true, unidad_medida_codigo: true, precio: true, moneda_codigo: true } },
+          tipo: { select: { codigo: true, nombre: true } },
+          fabricante: { select: { codigo: true, nombre: true } },
+        },
+        orderBy: [{ cod_rep_codigo: "asc" }, { item_numero: "asc" }],
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      prisma.tarea.count({ where }),
+    ]);
+    return NextResponse.json({ data, total, page });
   } catch (error) {
     console.error("GET /api/tareas error:", error);
     return NextResponse.json({ error: "Error al obtener template" }, { status: 500 });

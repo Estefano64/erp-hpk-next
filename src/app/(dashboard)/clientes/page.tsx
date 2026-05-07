@@ -40,6 +40,7 @@ import {
 import { ImportarExcelModal } from "@/components/ImportarExcelModal";
 import { EmptyState } from "@/components/EmptyState";
 import { DuplicateHint } from "@/components/DuplicateHint";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
 const { Title } = Typography;
 
@@ -260,6 +261,20 @@ export default function ClientesPage() {
             ocultas={ocultas}
             setOcultas={setOcultas}
             obligatorias={["__num", "codigo", "acciones"]}
+          />
+          <ExportarExcelButton<ClienteRecord>
+            endpoint="/api/clientes"
+            filename="Clientes"
+            columns={[
+              { label: "Código", value: (r) => r.codigo },
+              { label: "Razón social", value: (r) => r.razon_social },
+              { label: "Nombre comercial", value: (r) => r.nombre_comercial ?? "" },
+              { label: "RUC", value: (r) => r.ruc ?? "" },
+              { label: "Dirección", value: (r) => r.direccion ?? "" },
+              { label: "Teléfono", value: (r) => r.telefono ?? "" },
+              { label: "Email", value: (r) => r.email ?? "" },
+              { label: "Contacto", value: (r) => r.contacto_principal ?? "" },
+            ]}
           />
           {isAdminUser && (
             <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>

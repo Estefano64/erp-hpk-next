@@ -40,6 +40,7 @@ import {
   visibleColumns,
   filtroPorColumna,
 } from "@/lib/tables";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
 const { Title } = Typography;
 const { TextArea } = Input;
@@ -423,6 +424,34 @@ export default function EquiposPage() {
             ocultas={ocultas}
             setOcultas={setOcultas}
             obligatorias={["__num", "codigo", "acciones"]}
+          />
+          <ExportarExcelButton<EquipoRecord>
+            endpoint="/api/equipos"
+            filename="Equipos"
+            columns={[
+              { label: "Código", value: (r) => r.codigo },
+              { label: "Descripción", value: (r) => r.descripcion },
+              { label: "Status", value: (r) => r.status?.nombre ?? r.status_codigo },
+              { label: "Tipo", value: (r) => r.tipo?.nombre ?? r.tipo_codigo },
+              { label: "Planta", value: (r) => r.planta?.nombre ?? r.planta_codigo },
+              { label: "Área", value: (r) => r.area?.nombre ?? r.area_codigo },
+              { label: "Sub-área", value: (r) => r.sub_area?.nombre ?? r.sub_area_codigo ?? "" },
+              { label: "Fabricante", value: (r) => r.fabricante?.nombre ?? r.fabricante_codigo ?? "" },
+              { label: "Modelo", value: (r) => r.modelo ?? "" },
+              { label: "Nº Serie", value: (r) => r.numero_serie ?? "" },
+              { label: "Nº Parte", value: (r) => r.numero_parte ?? "" },
+              { label: "Capacidad", value: (r) => r.capacidad ?? "" },
+              { label: "UM Capacidad", value: (r) => r.unidad_medida?.abreviatura ?? r.unidad_medida_codigo ?? "" },
+              { label: "Criticidad", value: (r) => r.criticidad?.nombre ?? r.criticidad_codigo ?? "" },
+              { label: "Cantidad", value: (r) => r.cantidad },
+              { label: "Precio", value: (r) => r.precio != null ? Number(r.precio) : "" },
+              { label: "Moneda", value: (r) => r.moneda_codigo ?? "" },
+              { label: "Ubicación", value: (r) => r.ubicacion?.nombre ?? r.ubicacion_codigo ?? "" },
+              { label: "Responsable", value: (r) => r.usuario_responsable ?? "" },
+              { label: "Fecha inicio", value: (r) => r.fecha_inicio ?? "" },
+              { label: "Fecha fabricación", value: (r) => r.fecha_fabricacion ?? "" },
+              { label: "Observaciones", value: (r) => r.observaciones ?? "" },
+            ]}
           />
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
             Nuevo Equipo

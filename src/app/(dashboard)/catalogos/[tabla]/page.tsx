@@ -14,6 +14,7 @@ import type { ColumnsType } from "antd/es/table";
 import { numeracionColumn } from "@/lib/tables";
 import { brand } from "@/lib/theme";
 import { catalogosById, type FieldDef } from "@/lib/catalogos-config";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
 const { Title, Text } = Typography;
 
@@ -290,6 +291,20 @@ export default function CatalogoCrudPage() {
         </div>
         <Space>
           <Button icon={<ReloadOutlined />} onClick={fetchData}>Refrescar</Button>
+          <ExportarExcelButton<CatalogRow>
+            endpoint={`/api/catalogos?tabla=${cfg.id}&incluirInactivos=1`}
+            filename={cfg.label}
+            columns={cfg.fields.map((f) => ({
+              label: f.label,
+              value: (r) => {
+                const v = r[f.key];
+                if (v === null || v === undefined) return "";
+                if (f.type === "boolean") return v ? "Sí" : "No";
+                if (typeof v === "object") return JSON.stringify(v);
+                return v as string | number;
+              },
+            }))}
+          />
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nuevo</Button>
         </Space>
       </div>
