@@ -30,6 +30,9 @@ import {
   ColumnasToggleButton,
   visibleColumns,
   filtroPorColumna,
+  useRangoFechas,
+  RangoFechasFiltro,
+  dentroDeRango,
 } from "@/lib/tables";
 import { brand } from "@/lib/theme";
 import { useRouter } from "next/navigation";
@@ -89,6 +92,7 @@ export default function OrdenesTrabajoPage() {
   const [filterRecursosStatus, setFilterRecursosStatus] = useState("");
   const [filterTallerStatus, setFilterTallerStatus] = useState("");
   const { ocultas, setOcultas } = useColumnasOcultas("ordenes-trabajo-list-cols-v1");
+  const { rango: rangoRecepcion, setRango: setRangoRecepcion } = useRangoFechas();
 
   const [otStatuses, setOtStatuses] = useState<CatalogOption[]>([]);
   const [recursosStatuses, setRecursosStatuses] = useState<CatalogOption[]>([]);
@@ -173,6 +177,10 @@ export default function OrdenesTrabajoPage() {
       width: 120,
       ellipsis: true,
       sorter: (a, b) => (a.codigo_reparacion?.codigo ?? "").localeCompare(b.codigo_reparacion?.codigo ?? ""),
+      filters: [...new Set(data.map((r) => r.codigo_reparacion?.codigo).filter(Boolean) as string[])]
+        .sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => r.codigo_reparacion?.codigo === value,
       render: (_: unknown, r: OTRecord) => r.codigo_reparacion?.codigo ?? "-",
     },
     {
@@ -215,6 +223,10 @@ export default function OrdenesTrabajoPage() {
       width: 90,
       align: "center",
       sorter: (a, b) => (a.prioridad_atencion?.codigo ?? "").localeCompare(b.prioridad_atencion?.codigo ?? ""),
+      filters: [...new Set(data.map((r) => r.prioridad_atencion?.nombre).filter(Boolean) as string[])]
+        .sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => r.prioridad_atencion?.nombre === value,
       render: (_: unknown, r: OTRecord) =>
         r.prioridad_atencion ? (
           <Tag color={prioridadColor[r.prioridad_atencion.codigo] ?? "default"}>
@@ -227,6 +239,10 @@ export default function OrdenesTrabajoPage() {
       title: "OT Status",
       width: 120,
       sorter: (a, b) => (a.ot_status?.nombre ?? "").localeCompare(b.ot_status?.nombre ?? ""),
+      filters: [...new Set(data.map((r) => r.ot_status?.nombre).filter(Boolean) as string[])]
+        .sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => r.ot_status?.nombre === value,
       render: (_: unknown, r: OTRecord) =>
         r.ot_status ? (
           <Tag color={otStatusColor[r.ot_status_codigo ?? ""] ?? "default"}>
@@ -240,6 +256,10 @@ export default function OrdenesTrabajoPage() {
       width: 160,
       ellipsis: true,
       sorter: (a, b) => (a.recursos_status?.nombre ?? "").localeCompare(b.recursos_status?.nombre ?? ""),
+      filters: [...new Set(data.map((r) => r.recursos_status?.nombre).filter(Boolean) as string[])]
+        .sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => r.recursos_status?.nombre === value,
       render: (_: unknown, r: OTRecord) => r.recursos_status?.nombre ?? "-",
     },
     {
@@ -248,6 +268,10 @@ export default function OrdenesTrabajoPage() {
       width: 160,
       ellipsis: true,
       sorter: (a, b) => (a.taller_status?.nombre ?? "").localeCompare(b.taller_status?.nombre ?? ""),
+      filters: [...new Set(data.map((r) => r.taller_status?.nombre).filter(Boolean) as string[])]
+        .sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => r.taller_status?.nombre === value,
       render: (_: unknown, r: OTRecord) => r.taller_status?.nombre ?? "-",
     },
     {
@@ -338,13 +362,20 @@ export default function OrdenesTrabajoPage() {
           <Col xs={12} sm={6} md={3}>
             <Button icon={<ReloadOutlined />} onClick={clearFilters}>Limpiar</Button>
           </Col>
+          <Col xs={24}>
+            <RangoFechasFiltro
+              label="Fecha de recepción"
+              value={rangoRecepcion}
+              onChange={setRangoRecepcion}
+            />
+          </Col>
         </Row>
       </Card>
 
       <Table
         rowKey="id"
         columns={visibleColumns(columns, ocultas)}
-        dataSource={data}
+        dataSource={data.filter((r) => dentroDeRango(r, "fecha_recepcion", rangoRecepcion))}
         loading={loading}
         pagination={paginacionEstandar({
           current: page,

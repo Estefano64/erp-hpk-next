@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { parseDateOnly } from "@/lib/dates";
 
 // Genera el siguiente código OT-YYYY-XXXX
 async function generarNumeroOT(): Promise<string> {
@@ -99,17 +100,17 @@ export async function POST(req: NextRequest) {
       if (contrato) {
         contratoDias = contrato.dias_reparacion;
         if (body.fecha_recepcion) {
-          const recepcion = new Date(body.fecha_recepcion);
+          const recepcion = parseDateOnly(body.fecha_recepcion)!;
           fechaRequerimiento = new Date(recepcion);
           fechaRequerimiento.setDate(fechaRequerimiento.getDate() + contrato.dias_reparacion);
         }
       }
     } else if (body.fecha_requerimiento_cliente) {
       // Presupuesto o Emergencia: fecha manual, días calculados
-      fechaRequerimiento = new Date(body.fecha_requerimiento_cliente);
+      fechaRequerimiento = parseDateOnly(body.fecha_requerimiento_cliente);
       if (body.fecha_recepcion) {
-        const recepcion = new Date(body.fecha_recepcion);
-        const diff = Math.ceil((fechaRequerimiento.getTime() - recepcion.getTime()) / (1000 * 60 * 60 * 24));
+        const recepcion = parseDateOnly(body.fecha_recepcion)!;
+        const diff = Math.ceil((fechaRequerimiento!.getTime() - recepcion.getTime()) / (1000 * 60 * 60 * 24));
         contratoDias = diff;
       }
     }
@@ -171,7 +172,7 @@ export async function POST(req: NextRequest) {
         id_viajero: body.id_viajero || null,
         guia_remision: body.guia_remision || null,
         empresa_entrega: body.empresa_entrega || null,
-        fecha_recepcion: body.fecha_recepcion ? new Date(body.fecha_recepcion) : null,
+        fecha_recepcion: parseDateOnly(body.fecha_recepcion),
         pcr: body.pcr ?? null,
         horas: body.horas ?? null,
         porcentaje_pcr: porcentajePcr,

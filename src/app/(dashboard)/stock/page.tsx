@@ -291,8 +291,20 @@ export default function StockPage() {
       dataIndex: "punto_reposicion",
       width: 90,
       align: "right",
+      sorter: (a, b) => Number(a.punto_reposicion) - Number(b.punto_reposicion),
+      filters: [...new Set(data.map((r) => Number(r.punto_reposicion)))]
+        .sort((a, b) => a - b).map((v) => ({ text: String(v), value: String(v) })),
+      filterSearch: true,
+      onFilter: (value, r) => String(Number(r.punto_reposicion)) === value,
     },
-    { key: "stock_maximo", title: "Máximo", dataIndex: "stock_maximo", width: 80, align: "right" },
+    {
+      key: "stock_maximo", title: "Máximo", dataIndex: "stock_maximo", width: 80, align: "right",
+      sorter: (a, b) => Number(a.stock_maximo) - Number(b.stock_maximo),
+      filters: [...new Set(data.map((r) => Number(r.stock_maximo)))]
+        .sort((a, b) => a - b).map((v) => ({ text: String(v), value: String(v) })),
+      filterSearch: true,
+      onFilter: (value, r) => String(Number(r.stock_maximo)) === value,
+    },
     {
       key: "por_solicitar",
       title: "Por Solicitar",

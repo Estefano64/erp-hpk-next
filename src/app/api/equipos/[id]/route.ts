@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser, isAdmin } from "@/lib/audit";
+import { parseDateOnly } from "@/lib/dates";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -44,7 +45,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
     // Formatear fechas si vienen como string
     for (const field of ["fecha_inicio", "fecha_fabricacion"]) {
-      if (body[field]) body[field] = new Date(body[field]);
+      if (body[field]) body[field] = parseDateOnly(body[field]);
     }
 
     const usuario = await getAuditUser(req);

@@ -106,7 +106,7 @@ export function CatalogosHealthPanel() {
                   </Text>
                 )
               ) : (
-                <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                <Space orientation="vertical" size={4} style={{ width: "100%" }}>
                   {gapsConItems.map((g) => {
                     const pct = c.total > 0 ? Math.round((g.count / c.total) * 100) : 0;
                     const inner = (

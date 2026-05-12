@@ -47,7 +47,16 @@ import {
   PaperClipOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import { numeracionColumn } from "@/lib/tables";
+import {
+  numeracionColumn,
+  useColumnasOcultas,
+  ColumnasToggleButton,
+  visibleColumns,
+  filtroPorColumna,
+  useRangoFechas,
+  RangoFechasFiltro,
+  dentroDeRango,
+} from "@/lib/tables";
 import { brand } from "@/lib/theme";
 import dayjs, { Dayjs } from "dayjs";
 
@@ -159,6 +168,7 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
   const [search, setSearch] = useState("");
   const [desde, setDesde] = useState<Dayjs | null>(null);
   const [hasta, setHasta] = useState<Dayjs | null>(null);
+  const { ocultas, setOcultas } = useColumnasOcultas("movimientos-historial-cols-v1");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -220,13 +230,19 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
   const columns: ColumnsType<Movimiento> = [
     numeracionColumn<Movimiento>(),
     {
+      key: "fecha_movimiento",
       title: "Fecha",
       dataIndex: "fecha_movimiento",
       width: 110,
       sorter: (a, b) => (a.fecha_movimiento || "").localeCompare(b.fecha_movimiento || ""),
+      filters: [...new Set(filtered.map((r) => r.fecha_movimiento ? dayjs(r.fecha_movimiento).format("YYYY-MM-DD") : "").filter(Boolean))]
+        .sort().map((v) => ({ text: dayjs(v).format("DD/MM/YYYY"), value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => (r.fecha_movimiento ? dayjs(r.fecha_movimiento).format("YYYY-MM-DD") : "") === value,
       render: (v: string) => dayjs(v).format("DD/MM/YYYY"),
     },
     {
+      key: "tipo_movimiento",
       title: "Tipo",
       dataIndex: "tipo_movimiento",
       width: 100,
@@ -242,18 +258,26 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
         </Tag>
       ),
     },
-    { title: "Código", dataIndex: "material_codigo", width: 110 },
+    { key: "material_codigo", title: "Código", dataIndex: "material_codigo", width: 110, ...filtroPorColumna(filtered, "material_codigo") },
     {
+      key: "material_nombre",
       title: "Material",
       dataIndex: "material_nombre",
       width: 280,
       ellipsis: true,
+      ...filtroPorColumna(filtered, "material_nombre"),
     },
     {
+      key: "cantidad",
       title: "Cantidad",
       dataIndex: "cantidad",
       width: 110,
       align: "right",
+      sorter: (a, b) => Number(a.cantidad) - Number(b.cantidad),
+      filters: [...new Set(filtered.map((r) => Number(r.cantidad)))]
+        .sort((a, b) => a - b).map((v) => ({ text: String(v), value: String(v) })),
+      filterSearch: true,
+      onFilter: (value, r) => String(Number(r.cantidad)) === value,
       render: (v: number, r: Movimiento) => (
         <span style={{ fontWeight: 600, color: r.tipo_movimiento === "SALIDA" ? "#cf1322" : "#389e0d" }}>
           {r.tipo_movimiento === "SALIDA" ? "-" : "+"}
@@ -263,18 +287,26 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
       ),
     },
     {
+      key: "stock_actual",
       title: "Stock Final",
       dataIndex: "stock_actual",
       width: 110,
       align: "right",
+      sorter: (a, b) => Number(a.stock_actual ?? 0) - Number(b.stock_actual ?? 0),
+      filters: [...new Set(filtered.map((r) => r.stock_actual).filter((v): v is number => v != null))]
+        .sort((a, b) => a - b).map((v) => ({ text: String(v), value: String(v) })),
+      filterSearch: true,
+      onFilter: (value, r) => String(r.stock_actual ?? "") === value,
       render: (v: number | null) => (v != null ? Number(v).toLocaleString() : "-"),
     },
-    { title: "Documento Ref.", dataIndex: "documento_referencia", width: 150 },
-    { title: "Usuario", dataIndex: "usuario", width: 110 },
+    { key: "documento_referencia", title: "Documento Ref.", dataIndex: "documento_referencia", width: 150, ...filtroPorColumna(filtered, "documento_referencia") },
+    { key: "usuario", title: "Usuario", dataIndex: "usuario", width: 110, ...filtroPorColumna(filtered, "usuario") },
     {
+      key: "observacion",
       title: "Observación",
       dataIndex: "observacion",
       ellipsis: true,
+      ...filtroPorColumna(filtered, "observacion"),
     },
   ];
 
@@ -329,12 +361,21 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
         </Row>
       </Card>
 
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+        <ColumnasToggleButton<Movimiento>
+          columns={columns}
+          ocultas={ocultas}
+          setOcultas={setOcultas}
+          obligatorias={["__num", "fecha_movimiento", "tipo_movimiento"]}
+        />
+      </div>
+
       <Table
         rowKey="id"
-        columns={columns}
+        columns={visibleColumns(columns, ocultas)}
         dataSource={filtered}
         loading={loading}
-        pagination={{ pageSize: 25 }}
+        pagination={{ pageSize: 25, placement: ["topEnd", "bottomEnd"] }}
         size="small"
         scroll={{ x: 1200 }}
       />
@@ -377,6 +418,8 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
   const [search, setSearch] = useState("");
   const [filtroProv, setFiltroProv] = useState<string | undefined>();
   const [filtroEstado, setFiltroEstado] = useState<string | undefined>();
+  const { ocultas: ingresoOcultas, setOcultas: setIngresoOcultas } = useColumnasOcultas("movimientos-ingreso-cols-v1");
+  const { rango: rangoEntrega, setRango: setRangoEntrega } = useRangoFechas();
 
   const fetchPOs = useCallback(async () => {
     setLoading(true);
@@ -494,15 +537,18 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
 
   const columnasItems: ColumnsType<ItemFila> = [
     {
+      key: "numero_po",
       title: "OC",
       dataIndex: "numero_po",
       width: 110,
       fixed: "left",
       render: (v: string) => <Tag color={brand.navy}>{v}</Tag>,
       filters: [...new Set(filasAplanadas.map((r) => r.numero_po))].sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
       onFilter: (value, r) => r.numero_po === value,
     },
     {
+      key: "estado",
       title: "Estado",
       dataIndex: "estado",
       width: 100,
@@ -513,20 +559,24 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
       ),
     },
     {
+      key: "proveedor_nombre",
       title: "Proveedor",
       dataIndex: "proveedor_nombre",
       width: 180,
       ellipsis: true,
       filters: proveedoresUnicos.map((v) => ({ text: v, value: v })),
+      filterSearch: true,
       onFilter: (value, r) => r.proveedor_nombre === value,
       render: (v: string | null) => v || "-",
     },
-    { title: "Código", dataIndex: "codigo", width: 110 },
+    { key: "codigo", title: "Código", dataIndex: "codigo", width: 110, ...filtroPorColumna(filasAplanadas, "codigo") },
     {
+      key: "descripcion",
       title: "Material",
       dataIndex: "descripcion",
       width: 280,
       ellipsis: true,
+      ...filtroPorColumna(filasAplanadas, "descripcion"),
       render: (v: string | null, r) => (
         <Tooltip title={r.observaciones_compra ? `Comentarios OC: ${r.observaciones_compra}` : v}>
           <span>{v || "-"}</span>
@@ -534,10 +584,12 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
       ),
     },
     {
+      key: "cantidad",
       title: "Cant.",
       dataIndex: "cantidad",
       width: 80,
       align: "right",
+      sorter: (a, b) => a.cantidad - b.cantidad,
       render: (v: number, r) => (
         <span>
           <b>{v}</b> <span style={{ color: "#888" }}>{r.unidad_medida}</span>
@@ -545,16 +597,28 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
       ),
     },
     {
+      key: "precio_unitario",
       title: "P. Unit.",
       dataIndex: "precio_unitario",
       width: 90,
       align: "right",
+      sorter: (a, b) => (a.precio_unitario ?? 0) - (b.precio_unitario ?? 0),
       render: (v: number | null, r) => (v != null ? `${r.moneda} ${v.toFixed(2)}` : "-"),
     },
     {
+      key: "subtotal",
       title: "Subtotal",
       width: 110,
       align: "right",
+      sorter: (a, b) => (a.precio_unitario ?? 0) * a.cantidad - (b.precio_unitario ?? 0) * b.cantidad,
+      filters: [...new Set(filasAplanadas.map((r) =>
+        r.precio_unitario != null ? Number((r.precio_unitario * r.cantidad).toFixed(2)) : 0
+      ))].sort((a, b) => a - b).map((v) => ({ text: v.toFixed(2), value: String(v) })),
+      filterSearch: true,
+      onFilter: (value, r) => {
+        const sub = r.precio_unitario != null ? Number((r.precio_unitario * r.cantidad).toFixed(2)) : 0;
+        return String(sub) === value;
+      },
       render: (_, r) =>
         r.precio_unitario != null ? (
           <b style={{ color: brand.navy }}>
@@ -563,19 +627,24 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
         ) : "-",
     },
     {
+      key: "almacen_nombre",
       title: "Almacén",
       dataIndex: "almacen_nombre",
       width: 130,
       ellipsis: true,
+      ...filtroPorColumna(filasAplanadas, "almacen_nombre"),
       render: (v: string | null) => v || "-",
     },
     {
+      key: "fecha_entrega_esperada",
       title: "F. Entrega",
       dataIndex: "fecha_entrega_esperada",
       width: 110,
+      sorter: (a, b) => (a.fecha_entrega_esperada || "").localeCompare(b.fecha_entrega_esperada || ""),
       render: (v: string | null) => (v ? dayjs(v).format("DD/MM/YYYY") : "-"),
     },
     {
+      key: "acciones",
       title: "Acciones",
       width: 110,
       fixed: "right",
@@ -660,13 +729,27 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
         <Alert type="info" title="No hay órdenes de compra pendientes de recepción" showIcon />
       )}
 
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+        <RangoFechasFiltro
+          label="Fecha entrega esperada"
+          value={rangoEntrega}
+          onChange={setRangoEntrega}
+        />
+        <ColumnasToggleButton<ItemFila>
+          columns={columnasItems}
+          ocultas={ingresoOcultas}
+          setOcultas={setIngresoOcultas}
+          obligatorias={["numero_po", "descripcion", "acciones"]}
+        />
+      </div>
+
       <Table
         rowKey="id"
         size="small"
         loading={loading}
-        dataSource={filasFiltradas}
-        columns={columnasItems}
-        pagination={{ pageSize: 25, showTotal: (t) => `${t} items` }}
+        dataSource={filasFiltradas.filter((r) => dentroDeRango(r, "fecha_entrega_esperada", rangoEntrega))}
+        columns={visibleColumns(columnasItems, ingresoOcultas)}
+        pagination={{ pageSize: 25, showTotal: (t) => `${t} items`, placement: ["topEnd", "bottomEnd"] }}
         scroll={{ x: 1500 }}
       />
 

@@ -12,6 +12,15 @@ import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { brand } from "@/lib/theme";
 import { useTabSync } from "@/lib/useTabSync";
+import {
+  useColumnasOcultas,
+  ColumnasToggleButton,
+  visibleColumns,
+  filtroPorColumna,
+  useRangoFechas,
+  RangoFechasFiltro,
+  dentroDeRango,
+} from "@/lib/tables";
 
 interface Props {
   otId: number;
@@ -65,6 +74,9 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
   const [parte, setParte] = useState<string | null>(null);
   const [tipoTarea, setTipoTarea] = useState<string>("Estandar");
   const [messageApi, contextHolder] = message.useMessage();
+  const { ocultas, setOcultas } = useColumnasOcultas("ot-tareas-cols-v1");
+  const { rango: rangoInicio, setRango: setRangoInicio } = useRangoFechas();
+  const { rango: rangoFin, setRango: setRangoFin } = useRangoFechas();
 
   const fetchRows = useCallback(async () => {
     setLoading(true);
@@ -258,65 +270,119 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
     : [];
   const usarTextoLibre = parte !== null && operacionesFiltradas.length === 0;
 
+  // Helpers para filtros de columnas con valores no-string
+  const ordenesUnicos = [...new Set(rows.map((r) => r.orden).filter((v): v is number => v != null))]
+    .sort((a, b) => a - b).map((v) => ({ text: String(v), value: String(v) }));
+  const horasUnicas = [...new Set(rows.map((r) => r.horas_estimadas).filter(Boolean) as string[])]
+    .sort().map((v) => ({ text: Number(v).toFixed(2), value: v }));
+  const fechasInicioUnicas = [...new Set(rows.map((r) => r.fecha_inicio).filter(Boolean) as string[])]
+    .sort().map((v) => ({ text: dayjs(v).format("DD/MM/YY"), value: v }));
+  const fechasFinUnicas = [...new Set(rows.map((r) => r.fecha_fin).filter(Boolean) as string[])]
+    .sort().map((v) => ({ text: dayjs(v).format("DD/MM/YY"), value: v }));
+  const fechasInicioRealUnicas = [...new Set(rows.map((r) => r.fecha_inicio_real).filter(Boolean) as string[])]
+    .sort().map((v) => ({ text: dayjs(v).format("DD/MM HH:mm"), value: v }));
+  const fechasFinRealUnicas = [...new Set(rows.map((r) => r.fecha_fin_real).filter(Boolean) as string[])]
+    .sort().map((v) => ({ text: dayjs(v).format("DD/MM HH:mm"), value: v }));
+  const createdUnicos = [...new Set(rows.map((r) => r.created_at).filter(Boolean) as string[])]
+    .sort().map((v) => ({ text: dayjs(v).format("DD/MM/YY HH:mm"), value: v }));
+
   const columns: ColumnsType<PlanRow> = [
-    { title: "N°", dataIndex: "orden", width: 50, align: "center" },
     {
+      key: "orden", title: "N°", dataIndex: "orden", width: 50, align: "center",
+      sorter: (a, b) => (a.orden ?? 0) - (b.orden ?? 0),
+      filters: ordenesUnicos, filterSearch: true,
+      onFilter: (value, r) => String(r.orden ?? "") === value,
+    },
+    {
+      key: "componente",
       title: "Parte", dataIndex: "componente", width: 110,
+      ...filtroPorColumna(rows, "componente"),
       render: (v: string) => <Tag color={brand.cyan}>{v}</Tag>,
     },
-    { title: "Tarea", dataIndex: "descripcion", ellipsis: true,
+    { key: "descripcion", title: "Tarea", dataIndex: "descripcion", ellipsis: true,
+      ...filtroPorColumna(rows, "descripcion"),
       render: (v: string, r) => {
         const code = (r.operacion_codigo ?? "").trim();
         const desc = (v ?? "").trim();
-        // No prefijar si es fallback (EVAL/CUSTOM) o si el código === descripción (autogenerado sin match)
         const isFallback = !code || code === "EVAL" || code === "CUSTOM" || code.toLowerCase() === desc.toLowerCase();
         return <div style={{ fontWeight: 500 }}>{isFallback ? desc : `${code} - ${desc}`}</div>;
       },
     },
-    { title: "Tipo", dataIndex: "tipo_reparacion", width: 100, render: (v: string | null) => v ?? "Estandar" },
-    { title: "Qty", key: "qty", width: 60, align: "center", render: () => 1 },
-    { title: "HE", key: "he", width: 55, align: "center", render: () => <span style={{ color: brand.textSecondary }}>—</span> },
-    { title: "Qty HE", key: "qty_he", width: 60, align: "center", render: () => <span style={{ color: brand.textSecondary }}>—</span> },
+    { key: "tipo_reparacion", title: "Tipo", dataIndex: "tipo_reparacion", width: 100,
+      filters: [
+        { text: "Estandar", value: "Estandar" },
+        { text: "NoEstandar", value: "NoEstandar" },
+      ],
+      onFilter: (value, r) => (r.tipo_reparacion ?? "Estandar") === value,
+      render: (v: string | null) => v ?? "Estandar",
+    },
+    { key: "qty", title: "Qty", width: 60, align: "center", render: () => 1 },
+    { key: "he", title: "HE", width: 55, align: "center", render: () => <span style={{ color: brand.textSecondary }}>—</span> },
+    { key: "qty_he", title: "Qty HE", width: 60, align: "center", render: () => <span style={{ color: brand.textSecondary }}>—</span> },
     {
+      key: "horas_estimadas",
       title: "Dur.(hrs)", dataIndex: "horas_estimadas", width: 80, align: "right",
+      sorter: (a, b) => Number(a.horas_estimadas ?? 0) - Number(b.horas_estimadas ?? 0),
+      filters: horasUnicas, filterSearch: true,
+      onFilter: (value, r) => String(r.horas_estimadas ?? "") === value,
       render: (v: string | null) => v == null ? <span style={{ color: brand.textSecondary }}>—</span> : Number(v).toFixed(2),
     },
     {
-      title: "HH", key: "hh", width: 70, align: "right",
+      key: "hh", title: "HH", width: 70, align: "right",
       render: () => <span style={{ color: brand.textSecondary }}>—</span>,
     },
     {
+      key: "fecha_inicio",
       title: "Inicio Est.", dataIndex: "fecha_inicio", width: 100,
+      sorter: (a, b) => (a.fecha_inicio || "").localeCompare(b.fecha_inicio || ""),
+      filters: fechasInicioUnicas, filterSearch: true,
+      onFilter: (value, r) => r.fecha_inicio === value,
       render: (v: string | null) => v ? dayjs(v).format("DD/MM/YY") : <span style={{ color: brand.textSecondary }}>—</span>,
     },
     {
+      key: "fecha_fin",
       title: "Fin Est.", dataIndex: "fecha_fin", width: 100,
+      sorter: (a, b) => (a.fecha_fin || "").localeCompare(b.fecha_fin || ""),
+      filters: fechasFinUnicas, filterSearch: true,
+      onFilter: (value, r) => r.fecha_fin === value,
       render: (v: string | null) => v ? dayjs(v).format("DD/MM/YY") : <span style={{ color: brand.textSecondary }}>—</span>,
     },
     {
+      key: "maquina",
       title: "Equipo", dataIndex: "maquina", width: 130,
+      ...filtroPorColumna(rows, "maquina"),
       render: (v: string | null) => v ?? <span style={{ color: brand.textSecondary }}>—</span>,
     },
     {
+      key: "tecnico",
       title: "Operario", dataIndex: "tecnico", width: 120,
+      ...filtroPorColumna(rows, "tecnico"),
       render: (v: string | null) => v ?? <span style={{ color: brand.textSecondary }}>—</span>,
     },
     {
+      key: "fecha_inicio_real",
       title: "Inicio Real", dataIndex: "fecha_inicio_real", width: 110,
+      sorter: (a, b) => (a.fecha_inicio_real || "").localeCompare(b.fecha_inicio_real || ""),
+      filters: fechasInicioRealUnicas, filterSearch: true,
+      onFilter: (value, r) => r.fecha_inicio_real === value,
       render: (v: string | null) => v
         ? <span style={{ fontSize: 11 }}>{dayjs(v).format("DD/MM HH:mm")}</span>
         : <span style={{ color: brand.textSecondary }}>—</span>,
     },
     {
+      key: "fecha_fin_real",
       title: "Fin Real", dataIndex: "fecha_fin_real", width: 110,
+      sorter: (a, b) => (a.fecha_fin_real || "").localeCompare(b.fecha_fin_real || ""),
+      filters: fechasFinRealUnicas, filterSearch: true,
+      onFilter: (value, r) => r.fecha_fin_real === value,
       render: (v: string | null) => v
         ? <span style={{ fontSize: 11 }}>{dayjs(v).format("DD/MM HH:mm")}</span>
         : <span style={{ color: brand.textSecondary }}>—</span>,
     },
     {
-      title: "Dur. Real", key: "dur_real", width: 90, align: "right",
+      key: "dur_real",
+      title: "Dur. Real", width: 90, align: "right",
       render: (_: unknown, r: PlanRow) => {
-        // Si hay ambas fechas reales, calcular duración (resta sin descontar almuerzo)
         if (r.fecha_inicio_real && r.fecha_fin_real) {
           const h = dayjs(r.fecha_fin_real).diff(dayjs(r.fecha_inicio_real), "minute") / 60;
           return <span>{h.toFixed(2)}</span>;
@@ -326,18 +392,26 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
       },
     },
     {
+      key: "estado",
       title: "Estado Tarea", dataIndex: "estado", width: 120,
+      filters: estadosCat.map((e) => ({ text: e.nombre, value: e.codigo })),
+      onFilter: (value, r) => (r.estado ?? "abierto") === value,
       render: (v: string | null) => {
         const cat = estadosCat.find((e) => e.codigo === (v ?? "abierto"));
         return <Tag color={cat?.color ?? "default"}>{cat?.nombre ?? v ?? "-"}</Tag>;
       },
     },
     {
+      key: "created_at",
       title: "Creado", dataIndex: "created_at", width: 120,
+      sorter: (a, b) => (a.created_at || "").localeCompare(b.created_at || ""),
+      filters: createdUnicos, filterSearch: true,
+      onFilter: (value, r) => r.created_at === value,
       render: (v: string) => dayjs(v).format("DD/MM/YY HH:mm"),
     },
     {
-      title: "Acc.", key: "acc", width: 130, align: "center", fixed: "right",
+      key: "acc",
+      title: "Acc.", width: 130, align: "center", fixed: "right",
       render: (_: unknown, r: PlanRow) => {
         const realizada = r.estado === "realizado";
         const iniciada = !!r.fecha_inicio_real;
@@ -374,6 +448,12 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
           Planeamiento de Operaciones
         </Typography.Title>
         <Space>
+          <ColumnasToggleButton<PlanRow>
+            columns={columns}
+            ocultas={ocultas}
+            setOcultas={setOcultas}
+            obligatorias={["orden", "descripcion", "acc"]}
+          />
           <Button
             icon={<ReloadOutlined />}
             onClick={handleAutogenerar}
@@ -393,6 +473,15 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
         <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 4 }}>Progreso General</div>
         <Progress percent={progreso} size="small" />
       </Card>
+
+      <Row gutter={[12, 8]} style={{ marginBottom: 12 }}>
+        <Col xs={24} md={12}>
+          <RangoFechasFiltro label="Inicio estimado" value={rangoInicio} onChange={setRangoInicio} />
+        </Col>
+        <Col xs={24} md={12}>
+          <RangoFechasFiltro label="Fin estimado" value={rangoFin} onChange={setRangoFin} />
+        </Col>
+      </Row>
 
       {formOpen && (
         <Card
@@ -467,8 +556,11 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
 
       <Table
         rowKey="id"
-        columns={columns}
-        dataSource={rows}
+        columns={visibleColumns(columns, ocultas)}
+        dataSource={rows.filter((r) =>
+          dentroDeRango(r, "fecha_inicio", rangoInicio) &&
+          dentroDeRango(r, "fecha_fin", rangoFin)
+        )}
         pagination={false}
         size="small"
         loading={loading}

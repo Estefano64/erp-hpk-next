@@ -39,6 +39,9 @@ import {
   ColumnasToggleButton,
   visibleColumns,
   filtroPorColumna,
+  useRangoFechas,
+  RangoFechasFiltro,
+  dentroDeRango,
 } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
@@ -120,6 +123,8 @@ export default function EquiposPage() {
   const [filterStatus, setFilterStatus] = useState("");
   const [filterCriticidad, setFilterCriticidad] = useState("");
   const { ocultas, setOcultas } = useColumnasOcultas("equipos-list-cols-v1");
+  const { rango: rangoIni, setRango: setRangoIni } = useRangoFechas();
+  const { rango: rangoFab, setRango: setRangoFab } = useRangoFechas();
 
   // Catálogos
   const [tipos, setTipos] = useState<Option[]>([]);
@@ -296,6 +301,10 @@ export default function EquiposPage() {
       dataIndex: "status_codigo",
       width: 100,
       sorter: (a, b) => (a.status?.nombre ?? "").localeCompare(b.status?.nombre ?? ""),
+      filters: [...new Set(data.map((r) => r.status?.nombre ?? r.status_codigo).filter(Boolean) as string[])]
+        .sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => (r.status?.nombre ?? r.status_codigo) === value,
       render: (v: string, r: EquipoRecord) => (
         <Tag color={statusColors[v] ?? "default"}>{r.status?.nombre ?? v}</Tag>
       ),
@@ -306,6 +315,10 @@ export default function EquiposPage() {
       dataIndex: "tipo_codigo",
       width: 110,
       sorter: (a, b) => (a.tipo?.nombre ?? "").localeCompare(b.tipo?.nombre ?? ""),
+      filters: [...new Set(data.map((r) => r.tipo?.nombre ?? r.tipo_codigo).filter(Boolean) as string[])]
+        .sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => (r.tipo?.nombre ?? r.tipo_codigo) === value,
       render: (_: string, r: EquipoRecord) => r.tipo?.nombre ?? r.tipo_codigo,
     },
     {
@@ -314,6 +327,10 @@ export default function EquiposPage() {
       dataIndex: "area_codigo",
       width: 120,
       sorter: (a, b) => (a.area?.nombre ?? "").localeCompare(b.area?.nombre ?? ""),
+      filters: [...new Set(data.map((r) => r.area?.nombre ?? r.area_codigo).filter(Boolean) as string[])]
+        .sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => (r.area?.nombre ?? r.area_codigo) === value,
       render: (_: string, r: EquipoRecord) => r.area?.nombre ?? r.area_codigo,
     },
     {
@@ -322,6 +339,10 @@ export default function EquiposPage() {
       dataIndex: "sub_area_codigo",
       width: 110,
       sorter: (a, b) => (a.sub_area?.nombre ?? "").localeCompare(b.sub_area?.nombre ?? ""),
+      filters: [...new Set(data.map((r) => r.sub_area?.nombre ?? r.sub_area_codigo).filter(Boolean) as string[])]
+        .sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => (r.sub_area?.nombre ?? r.sub_area_codigo) === value,
       render: (_: string, r: EquipoRecord) => r.sub_area?.nombre ?? r.sub_area_codigo ?? "-",
     },
     {
@@ -331,6 +352,10 @@ export default function EquiposPage() {
       width: 150,
       ellipsis: true,
       sorter: (a, b) => (a.fabricante?.nombre ?? "").localeCompare(b.fabricante?.nombre ?? ""),
+      filters: [...new Set(data.map((r) => r.fabricante?.nombre ?? r.fabricante_codigo).filter(Boolean) as string[])]
+        .sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => (r.fabricante?.nombre ?? r.fabricante_codigo) === value,
       render: (_: string, r: EquipoRecord) => r.fabricante?.nombre ?? r.fabricante_codigo ?? "-",
     },
     { key: "modelo", title: "Modelo", dataIndex: "modelo", width: 120, ellipsis: true, sorter: (a: EquipoRecord, b: EquipoRecord) => (a.modelo ?? "").localeCompare(b.modelo ?? ""), ...filtroPorColumna(data, "modelo"), render: (v: string | null) => v ?? "-" },
@@ -339,6 +364,10 @@ export default function EquiposPage() {
       key: "capacidad",
       title: "Capacidad",
       width: 100,
+      filters: [...new Set(data.map((r) => r.capacidad).filter(Boolean) as string[])]
+        .sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => String(r.capacidad ?? "") === value,
       render: (_: unknown, r: EquipoRecord) => {
         if (!r.capacidad) return "-";
         const und = r.unidad_medida?.abreviatura ?? r.unidad_medida_codigo ?? "";
@@ -352,6 +381,10 @@ export default function EquiposPage() {
       width: 90,
       align: "center",
       sorter: (a, b) => (a.criticidad_codigo ?? "").localeCompare(b.criticidad_codigo ?? ""),
+      filters: [...new Set(data.map((r) => r.criticidad?.nombre ?? r.criticidad_codigo).filter(Boolean) as string[])]
+        .sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => (r.criticidad?.nombre ?? r.criticidad_codigo) === value,
       render: (v: string | null, r: EquipoRecord) => {
         if (!v) return "-";
         return <Tag color={criticidadColors[v] ?? "default"}>{r.criticidad?.nombre ?? v}</Tag>;
@@ -364,19 +397,34 @@ export default function EquiposPage() {
       width: 110,
       align: "right",
       sorter: (a, b) => (Number(a.precio) || 0) - (Number(b.precio) || 0),
+      filters: [...new Set(data.map((r) => r.precio).filter((v): v is number => v != null))]
+        .sort((a, b) => a - b).map((v) => ({ text: Number(v).toFixed(2), value: String(v) })),
+      filterSearch: true,
+      onFilter: (value, r) => String(r.precio ?? "") === value,
       render: (v: number | null, r: EquipoRecord) => {
         if (v == null) return "-";
         const sym = r.moneda?.simbolo ?? "$";
         return `${sym} ${Number(v).toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
       },
     },
-    { key: "cantidad", title: "Cant.", dataIndex: "cantidad", width: 60, align: "center", sorter: (a: EquipoRecord, b: EquipoRecord) => a.cantidad - b.cantidad },
+    {
+      key: "cantidad", title: "Cant.", dataIndex: "cantidad", width: 60, align: "center",
+      sorter: (a: EquipoRecord, b: EquipoRecord) => a.cantidad - b.cantidad,
+      filters: [...new Set(data.map((r) => r.cantidad))].sort((a, b) => a - b)
+        .map((v) => ({ text: String(v), value: String(v) })),
+      filterSearch: true,
+      onFilter: (value, r) => String(r.cantidad) === value,
+    },
     {
       key: "planta_codigo",
       title: "Planta",
       dataIndex: "planta_codigo",
       width: 90,
       sorter: (a, b) => (a.planta?.nombre ?? "").localeCompare(b.planta?.nombre ?? ""),
+      filters: [...new Set(data.map((r) => r.planta?.nombre ?? r.planta_codigo).filter(Boolean) as string[])]
+        .sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => (r.planta?.nombre ?? r.planta_codigo) === value,
       render: (_: string, r: EquipoRecord) => r.planta?.nombre ?? r.planta_codigo,
     },
     {
@@ -526,13 +574,22 @@ export default function EquiposPage() {
               Limpiar
             </Button>
           </Col>
+          <Col xs={24} md={12}>
+            <RangoFechasFiltro label="Fecha de inicio" value={rangoIni} onChange={setRangoIni} />
+          </Col>
+          <Col xs={24} md={12}>
+            <RangoFechasFiltro label="Fecha de fabricación" value={rangoFab} onChange={setRangoFab} />
+          </Col>
         </Row>
       </Card>
 
       <Table
         rowKey="equipo_id"
         columns={visibleColumns(columns, ocultas)}
-        dataSource={data}
+        dataSource={data.filter((r) =>
+          dentroDeRango(r, "fecha_inicio", rangoIni) &&
+          dentroDeRango(r, "fecha_fabricacion", rangoFab)
+        )}
         loading={loading}
         pagination={paginacionEstandar({
           current: page,

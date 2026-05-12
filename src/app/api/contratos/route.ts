@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { parseDateOnly } from "@/lib/dates";
 
 export async function GET(req: NextRequest) {
   try {
@@ -48,8 +49,8 @@ export async function POST(req: NextRequest) {
         codigo: body.codigo,
         cliente_id: body.cliente_id,
         cod_rep_id: body.cod_rep_id || null,
-        fecha_inicio: new Date(body.fecha_inicio),
-        fecha_termino: new Date(body.fecha_termino),
+        fecha_inicio: parseDateOnly(body.fecha_inicio)!,
+        fecha_termino: parseDateOnly(body.fecha_termino)!,
         dias_reparacion: body.dias_reparacion,
         precio: body.precio,
       },

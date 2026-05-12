@@ -13,6 +13,15 @@ import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { brand } from "@/lib/theme";
 import { useCachedFetch } from "@/lib/useCachedFetch";
+import {
+  useColumnasOcultas,
+  ColumnasToggleButton,
+  visibleColumns,
+  filtroPorColumna,
+  useRangoFechas,
+  RangoFechasFiltro,
+  dentroDeRango,
+} from "@/lib/tables";
 
 const { Text } = Typography;
 
@@ -98,6 +107,9 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
   const isAdmin = rol === "admin";
   const [messageApi, contextHolder] = message.useMessage();
   const [modalApi, modalCtx] = Modal.useModal();
+  const { ocultas, setOcultas } = useColumnasOcultas("ot-requerimientos-cols-v1");
+  const { rango: rangoSol, setRango: setRangoSol } = useRangoFechas();
+  const { rango: rangoReq, setRango: setRangoReq } = useRangoFechas();
 
   // Modal crear/editar
   const [modalOpen, setModalOpen] = useState(false);
@@ -336,24 +348,48 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
   }, [rows]);
   const hayBorradores = stats.borrador > 0;
 
+  // Valores únicos para filtros derivados de relaciones
+  const reqStatusValores = [...new Set(rows.map((r) => r.status_requerimiento?.nombre).filter(Boolean) as string[])]
+    .sort().map((v) => ({ text: v, value: v }));
+  const cotStatusValores = [...new Set(rows.map((r) => r.status_cotizacion?.nombre).filter(Boolean) as string[])]
+    .sort().map((v) => ({ text: v, value: v }));
+  const ocStatusValores = [...new Set(rows.map((r) => r.status_oc?.nombre).filter(Boolean) as string[])]
+    .sort().map((v) => ({ text: v, value: v }));
+
   // ── Columnas ──
   const columns: ColumnsType<RequerimientoRow> = [
-    { title: "#", dataIndex: "item_req", width: 50, align: "center" },
+    {
+      key: "item_req", title: "#", dataIndex: "item_req", width: 50, align: "center",
+      sorter: (a, b) => (a.item_req ?? 0) - (b.item_req ?? 0),
+      filters: [...new Set(rows.map((r) => r.item_req).filter((v): v is number => v != null))]
+        .sort((a, b) => a - b).map((v) => ({ text: String(v), value: String(v) })),
+      filterSearch: true,
+      onFilter: (value, r) => String(r.item_req) === value,
+    },
     {
       title: "Nro Req", key: "nro", width: 130,
+      ...filtroPorColumna(rows, "nro_req"),
       render: (_, r) => (
-        <Space size={4} direction="vertical" style={{ lineHeight: 1.2 }}>
+        <Space size={4} orientation="vertical" style={{ lineHeight: 1.2 }}>
           <Text strong style={{ fontSize: 11 }}>{r.nro_req ?? "—"}</Text>
           {r.es_adicional && <Tag color="gold" style={{ fontSize: 9, margin: 0 }}>ADICIONAL</Tag>}
         </Space>
       ),
     },
     {
+      key: "tipo_codigo",
       title: "Tipo", dataIndex: "tipo_codigo", width: 70, align: "center",
+      filters: [
+        { text: "MAC", value: "MAC" },
+        { text: "CAD", value: "CAD" },
+        { text: "SER", value: "SER" },
+      ],
+      onFilter: (value, r) => r.tipo_codigo === value,
       render: (v: string) => <Tag color={TIPO_COLOR[v] ?? "default"} style={{ margin: 0 }}>{v}</Tag>,
     },
     {
       title: "Material / Descripción", key: "desc", ellipsis: true,
+      ...filtroPorColumna(rows, "material_codigo"),
       render: (_, r) => (
         <div style={{ lineHeight: 1.3 }}>
           <div style={{ fontSize: 12 }}>
@@ -370,16 +406,28 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
     },
     {
       title: "Qty", key: "qty", width: 80, align: "right",
+      sorter: (a, b) => Number(a.cantidad) - Number(b.cantidad),
+      filters: [...new Set(rows.map((r) => Number(r.cantidad)))]
+        .sort((a, b) => a - b).map((v) => ({ text: String(v), value: String(v) })),
+      filterSearch: true,
+      onFilter: (value, r) => String(Number(r.cantidad)) === value,
       render: (_, r) => `${Number(r.cantidad).toLocaleString()} ${r.unidad_medida ?? ""}`,
     },
     {
       title: "Precio", key: "precio", width: 110, align: "right",
+      sorter: (a, b) => Number(a.precio_unitario ?? 0) - Number(b.precio_unitario ?? 0),
+      filters: [...new Set(rows.map((r) => r.precio_unitario).filter(Boolean) as string[])]
+        .sort().map((v) => ({ text: Number(v).toFixed(2), value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => String(r.precio_unitario ?? "") === value,
       render: (_, r) => r.precio_unitario != null
         ? `${Number(r.precio_unitario).toFixed(2)} ${r.moneda ?? ""}`
         : <Text type="secondary">—</Text>,
     },
     {
       title: "REQ", key: "req", width: 110, align: "center",
+      filters: reqStatusValores, filterSearch: true,
+      onFilter: (value, r) => r.status_requerimiento?.nombre === value,
       render: (_, r) => r.status_requerimiento ? (
         <Tag color={REQ_COLOR[r.status_requerimiento.codigo] ?? "default"} style={{ margin: 0, fontSize: 10 }}>
           {r.status_requerimiento.nombre}
@@ -388,6 +436,8 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
     },
     {
       title: "COT", key: "cot", width: 110, align: "center",
+      filters: cotStatusValores, filterSearch: true,
+      onFilter: (value, r) => r.status_cotizacion?.nombre === value,
       render: (_, r) => r.status_cotizacion ? (
         <Tag color={COT_COLOR[r.status_cotizacion.codigo] ?? "default"} style={{ margin: 0, fontSize: 10 }}>
           {r.status_cotizacion.nombre}
@@ -396,8 +446,10 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
     },
     {
       title: "OC", key: "oc", width: 130, align: "center",
+      filters: ocStatusValores, filterSearch: true,
+      onFilter: (value, r) => r.status_oc?.nombre === value,
       render: (_, r) => (
-        <Space direction="vertical" size={2} style={{ lineHeight: 1 }}>
+        <Space orientation="vertical" size={2} style={{ lineHeight: 1 }}>
           {r.status_oc ? (
             <Tag color={OC_COLOR[r.status_oc.codigo] ?? "default"} style={{ margin: 0, fontSize: 10 }}>
               {r.status_oc.nombre}
@@ -488,6 +540,12 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
                 </Button>
               </Popconfirm>
             )}
+            <ColumnasToggleButton<RequerimientoRow>
+              columns={columns}
+              ocultas={ocultas}
+              setOcultas={setOcultas}
+              obligatorias={["item_req", "desc"]}
+            />
             <Button icon={<ReloadOutlined />} onClick={fetchData}>Refrescar</Button>
             {codRepCodigo && (
               <Tooltip title={`Copia los items del template del cod_rep ${codRepCodigo}`}>
@@ -511,16 +569,28 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
         />
       )}
 
+      <Row gutter={[12, 8]} style={{ marginBottom: 12 }}>
+        <Col xs={24} md={12}>
+          <RangoFechasFiltro label="Fecha solicitud" value={rangoSol} onChange={setRangoSol} />
+        </Col>
+        <Col xs={24} md={12}>
+          <RangoFechasFiltro label="Fecha requerida" value={rangoReq} onChange={setRangoReq} />
+        </Col>
+      </Row>
+
       {rows.length === 0 ? (
         <Empty description="Sin requerimientos. Aplicá el template o agregá un adicional manual." />
       ) : (
         <Table
           rowKey="id"
-          columns={columns}
-          dataSource={rows}
+          columns={visibleColumns(columns, ocultas)}
+          dataSource={rows.filter((r) =>
+            dentroDeRango(r, "fecha_solicitud", rangoSol) &&
+            dentroDeRango(r, "fecha_requerida", rangoReq)
+          )}
           loading={loading}
           size="small"
-          pagination={{ pageSize: 50, showTotal: (t) => `${t} items` }}
+          pagination={{ pageSize: 50, showTotal: (t) => `${t} items`, placement: ["topEnd", "bottomEnd"] }}
           scroll={{ x: 1300 }}
           rowClassName={(r) => r.status_requerimiento_codigo === "ANULADO" ? "req-anulado" : ""}
         />

@@ -17,12 +17,19 @@ import {
   Button,
   Input,
   DatePicker,
+  Popconfirm,
   App,
 } from "antd";
-import { EditOutlined, SaveOutlined, CloseOutlined, PrinterOutlined } from "@ant-design/icons";
+import { EditOutlined, SaveOutlined, CloseOutlined, PrinterOutlined, CheckOutlined } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
 import dayjs, { Dayjs } from "dayjs";
 import type { ColumnsType } from "antd/es/table";
+import {
+  useColumnasOcultas,
+  ColumnasToggleButton,
+  visibleColumns,
+  filtroPorColumna,
+} from "@/lib/tables";
 
 const { Text } = Typography;
 
@@ -95,6 +102,17 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
   const [nroFactura, setNroFactura] = useState<string>("");
   const [nroGuia, setNroGuia] = useState<string>("");
   const [observaciones, setObservaciones] = useState<string>("");
+  const [aceptando, setAceptando] = useState(false);
+  const { ocultas: itemsOcultas, setOcultas: setItemsOcultas } = useColumnasOcultas("compra-detalle-items-cols-v1");
+
+  const [rol, setRol] = useState<string | null>(null);
+  const isAdmin = rol === "admin";
+  useEffect(() => {
+    fetch("/api/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.user) setRol(d.user.rol); })
+      .catch(() => { /* noop */ });
+  }, []);
 
   const cargar = useCallback(async () => {
     if (!compraId) return;
@@ -149,46 +167,113 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
     }
   };
 
+  const aceptarOC = async () => {
+    if (!compra) return;
+    try {
+      setAceptando(true);
+      const res = await fetch(`/api/compras/${compra.id}/aceptar`, { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Error al aceptar OC");
+      message.success("OC aceptada");
+      cargar();
+      onUpdated?.();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : "Error al aceptar OC");
+    } finally {
+      setAceptando(false);
+    }
+  };
+
+  const items = compra?.ot_repuestos ?? [];
   const columnsItems: ColumnsType<CompraDetalle["ot_repuestos"][0]> = [
     {
+      key: "ot",
       title: "OT",
       width: 110,
+      filters: [...new Set(items.map((r) => r.orden_trabajo?.ot).filter(Boolean) as string[])]
+        .sort()
+        .map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => r.orden_trabajo?.ot === value,
       render: (_, r) => (r.orden_trabajo ? <Tag color={brand.navy}>{r.orden_trabajo.ot}</Tag> : "-"),
     },
-    { title: "Nro REQ", dataIndex: "nro_req", width: 110 },
-    { title: "Item", dataIndex: "item_req", width: 55, align: "center" },
+    { key: "nro_req", title: "Nro REQ", dataIndex: "nro_req", width: 110, ...filtroPorColumna(items, "nro_req") },
     {
+      key: "item_req", title: "Item", dataIndex: "item_req", width: 55, align: "center",
+      sorter: (a, b) => (a.item_req ?? 0) - (b.item_req ?? 0),
+      filters: [...new Set(items.map((r) => r.item_req).filter((v): v is number => v != null))]
+        .sort((a, b) => a - b).map((v) => ({ text: String(v), value: String(v) })),
+      filterSearch: true,
+      onFilter: (value, r) => String(r.item_req) === value,
+    },
+    {
+      key: "codigo",
       title: "Código",
       width: 100,
+      filters: [...new Set(items.map((r) => r.material?.codigo).filter(Boolean) as string[])]
+        .sort()
+        .map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => r.material?.codigo === value,
       render: (_, r) => r.material?.codigo ?? "-",
     },
     {
+      key: "descripcion",
       title: "Descripción",
       width: 250,
       ellipsis: true,
+      filters: [...new Set(items.map((r) => r.material?.descripcion ?? r.descripcion).filter(Boolean) as string[])]
+        .sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => (r.material?.descripcion ?? r.descripcion) === value,
       render: (_, r) => r.material?.descripcion ?? r.descripcion ?? "-",
     },
-    { title: "Cant.", dataIndex: "cantidad", width: 70, align: "center" },
     {
+      key: "cantidad", title: "Cant.", dataIndex: "cantidad", width: 70, align: "center",
+      sorter: (a, b) => Number(a.cantidad) - Number(b.cantidad),
+      filters: [...new Set(items.map((r) => Number(r.cantidad)))]
+        .sort((a, b) => a - b).map((v) => ({ text: String(v), value: String(v) })),
+      filterSearch: true,
+      onFilter: (value, r) => String(Number(r.cantidad)) === value,
+    },
+    {
+      key: "precio_unitario",
       title: "P. Unit.",
       dataIndex: "precio_unitario",
       width: 90,
       align: "right",
+      sorter: (a, b) => Number(a.precio_unitario ?? 0) - Number(b.precio_unitario ?? 0),
+      filters: [...new Set(items.map((r) => Number(r.precio_unitario ?? 0)))]
+        .sort((a, b) => a - b).map((v) => ({ text: v.toFixed(2), value: String(v) })),
+      filterSearch: true,
+      onFilter: (value, r) => String(Number(r.precio_unitario ?? 0)) === value,
       render: (v) => (v != null ? Number(v).toFixed(2) : "-"),
     },
     {
+      key: "subtotal",
       title: "Subtotal",
       width: 100,
       align: "right",
+      sorter: (a, b) => Number(a.precio_unitario ?? 0) * Number(a.cantidad) - Number(b.precio_unitario ?? 0) * Number(b.cantidad),
+      filters: [...new Set(items.map((r) =>
+        r.precio_unitario != null ? Number((Number(r.precio_unitario) * Number(r.cantidad)).toFixed(2)) : 0
+      ))].sort((a, b) => a - b).map((v) => ({ text: v.toFixed(2), value: String(v) })),
+      filterSearch: true,
+      onFilter: (value, r) => {
+        const sub = r.precio_unitario != null ? Number((Number(r.precio_unitario) * Number(r.cantidad)).toFixed(2)) : 0;
+        return String(sub) === value;
+      },
       render: (_, r) =>
         r.precio_unitario != null
           ? (Number(r.precio_unitario) * Number(r.cantidad)).toFixed(2)
           : "-",
     },
     {
+      key: "estado",
       title: "Estado",
       dataIndex: "estado",
       width: 100,
+      ...filtroPorColumna(items, "estado"),
       render: (v: string) => <Tag>{v}</Tag>,
     },
   ];
@@ -224,6 +309,24 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
           </div>
         </div>
         <Space>
+          {isAdmin && compra?.estado === "Pendiente" && !editing && (
+            <Popconfirm
+              title={`¿Aceptar la OC ${compra.numero_po}?`}
+              description="La OC pasará a En Proceso y se registrará tu usuario como aprobador."
+              onConfirm={aceptarOC}
+              okText="Aceptar"
+              cancelText="Cancelar"
+            >
+              <Button
+                icon={<CheckOutlined />}
+                loading={aceptando}
+                size="small"
+                style={{ background: "#52c41a", border: "none", color: brand.white }}
+              >
+                Aceptar OC
+              </Button>
+            </Popconfirm>
+          )}
           {!editing ? (
             <Button
               icon={<EditOutlined />}
@@ -366,10 +469,21 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
           </Card>
 
           {/* Items de la OC */}
-          <Card size="small" title={`Items de la OC (${compra.ot_repuestos.length})`}>
+          <Card
+            size="small"
+            title={`Items de la OC (${compra.ot_repuestos.length})`}
+            extra={
+              <ColumnasToggleButton<CompraDetalle["ot_repuestos"][0]>
+                columns={columnsItems}
+                ocultas={itemsOcultas}
+                setOcultas={setItemsOcultas}
+                obligatorias={["ot", "descripcion"]}
+              />
+            }
+          >
             <Table
               rowKey="id"
-              columns={columnsItems}
+              columns={visibleColumns(columnsItems, itemsOcultas)}
               dataSource={compra.ot_repuestos}
               pagination={false}
               size="small"

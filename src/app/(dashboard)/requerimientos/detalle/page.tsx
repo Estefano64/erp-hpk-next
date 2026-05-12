@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Typography,
@@ -19,6 +19,8 @@ import {
   App,
   Statistic,
   Tooltip,
+  Popconfirm,
+  Alert,
 } from "antd";
 import {
   ArrowLeftOutlined,
@@ -34,9 +36,21 @@ import {
   MinusOutlined,
   InfoCircleOutlined,
   SettingOutlined,
+  InboxOutlined,
+  SendOutlined,
+  CheckOutlined,
+  CloseOutlined,
+  StopOutlined,
+  FileAddOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType, TableRowSelection } from "antd/es/table/interface";
-import { numeracionColumn } from "@/lib/tables";
+import {
+  numeracionColumn,
+  useColumnasRedimensionables,
+  useRangoFechas,
+  RangoFechasFiltro,
+  dentroDeRango,
+} from "@/lib/tables";
 import { Popover, InputNumber, Divider, Checkbox } from "antd";
 import { brand } from "@/lib/theme";
 import dayjs, { Dayjs } from "dayjs";
@@ -72,7 +86,7 @@ interface RequerimientoApi {
     ot: string | null;
     cliente: { codigo: string; razon_social: string; nombre_comercial: string | null } | null;
   } | null;
-  material: { codigo: string; descripcion: string; unidad_medida_codigo: string | null } | null;
+  material: { codigo: string; descripcion: string; unidad_medida_codigo: string | null; stock_actual?: string | number | null } | null;
   proveedor: { id: number; razon_social: string } | null;
   compra: { id: number; numero_po: string } | null;
   status_requerimiento: { codigo: string; nombre: string } | null;
@@ -111,6 +125,7 @@ interface Requerimiento {
   moneda: string | null;
   cliente_nombre: string | null;
   observaciones?: string | null;
+  stock_actual?: number;
 }
 
 function normalize(r: RequerimientoApi): Requerimiento {
@@ -144,6 +159,7 @@ function normalize(r: RequerimientoApi): Requerimiento {
     moneda: r.moneda,
     cliente_nombre: r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? null,
     observaciones: r.observaciones,
+    stock_actual: r.material?.stock_actual != null ? Number(r.material.stock_actual) : undefined,
   };
 }
 
@@ -173,27 +189,20 @@ const ocColor: Record<string, string> = {
   DEVOLUCION: "warning",
 };
 
-// useSearchParams requiere Suspense en Next 15+ para que el build no falle
-// al prerenderizar. Wrapper exportado abajo.
 export default function RequerimientosDetallePage() {
-  return (
-    <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>
-      <RequerimientosDetalleInner />
-    </Suspense>
-  );
-}
-
-function RequerimientosDetalleInner() {
   const router = useRouter();
   const params = useSearchParams();
   const { message } = App.useApp();
 
   const [allData, setAllData] = useState<Requerimiento[]>([]);
   const [loading, setLoading] = useState(false);
+  const { rango: rangoSol, setRango: setRangoSol } = useRangoFechas();
+  const { rango: rangoReq, setRango: setRangoReq } = useRangoFechas();
   const [search, setSearch] = useState("");
   const [filtroOt, setFiltroOt] = useState<string | undefined>(undefined);
   const [filtroEstado, setFiltroEstado] = useState<string | undefined>(undefined);
   const [filtroRapido, setFiltroRapido] = useState<string>("todos");
+  const [filtroNroReq, setFiltroNroReq] = useState<string | undefined>(undefined);
   const [selectedRows, setSelectedRows] = useState<number[]>([]);
   const [selectedRecords, setSelectedRecords] = useState<Requerimiento[]>([]);
 
@@ -208,6 +217,17 @@ function RequerimientosDetalleInner() {
   const [modalDividir, setModalDividir] = useState<Requerimiento | null>(null);
   const [partesDividir, setPartesDividir] = useState<number[]>([]);
   const [dividiendo, setDividiendo] = useState(false);
+
+  // Rol (para mostrar acciones admin de aprobar/desaprobar/anular)
+  const [rol, setRol] = useState<string | null>(null);
+  const isAdmin = rol === "admin";
+
+  useEffect(() => {
+    fetch("/api/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.user) setRol(d.user.rol); })
+      .catch(() => { /* noop */ });
+  }, []);
 
   // Columnas ocultas (persistidas en localStorage)
   const COLS_STORAGE_KEY = "req-detalle-cols-v1";
@@ -245,9 +265,11 @@ function RequerimientosDetalleInner() {
 
   useEffect(() => {
     fetchData();
-    // Pre-filtrar por OT si viene en URL
+    // Pre-filtrar por OT y/o nro_req si vienen en la URL
     const otId = params.get("ot_id");
     if (otId) setFiltroOt(otId);
+    const nroReq = params.get("nro_req");
+    if (nroReq) setFiltroNroReq(nroReq);
   }, [fetchData, params]);
 
   useEffect(() => {
@@ -266,25 +288,25 @@ function RequerimientosDetalleInner() {
     // Por OT
     if (filtroOt) rows = rows.filter((r) => String(r.ot_id) === String(filtroOt));
 
+    // Por nro_req (cuando se llega desde el listado vía ojito)
+    if (filtroNroReq) rows = rows.filter((r) => (r.nro_req ?? "") === filtroNroReq);
+
     // Filtro rapido
-    if (filtroRapido === "pdt_cotizar") {
-      rows = rows.filter((r) => {
-        if (r.status_req === "ANULADO" || r.status_req === "DESAPROBADO") return false;
-        if (r.po_id) return false;
-        return !r.precio_unitario || !r.status_cot || r.status_cot === "PEND_COT";
-      });
-    } else if (filtroRapido === "pdt_pedir") {
-      rows = rows.filter((r) => {
-        if (r.status_req === "ANULADO" || r.status_req === "DESAPROBADO") return false;
-        if (r.po_id) return false;
-        return r.status_req === "APROBADO" || r.status_cot === "APROBADO";
-      });
+    if (filtroRapido === "listos_oc") {
+      // Items APROBADOS aún sin OC, listos para crear orden de compra.
+      rows = rows.filter((r) => r.status_req === "APROBADO" && r.po_id == null);
     } else if (filtroRapido === "en_oc") {
       rows = rows.filter((r) => r.po_id != null);
     }
 
     // Estado REQ
     if (filtroEstado) rows = rows.filter((r) => (r.status_req ?? "SIN_APROBACION") === filtroEstado);
+
+    // Rango de fechas
+    rows = rows.filter((r) =>
+      dentroDeRango(r, "fecha_solicitud", rangoSol) &&
+      dentroDeRango(r, "fecha_requerida", rangoReq)
+    );
 
     // Buscar
     if (search) {
@@ -295,7 +317,7 @@ function RequerimientosDetalleInner() {
     }
 
     return rows;
-  }, [allData, filtroOt, filtroRapido, filtroEstado, search]);
+  }, [allData, filtroOt, filtroNroReq, filtroRapido, filtroEstado, search, rangoSol, rangoReq]);
 
   const otOptions = useMemo(() => {
     const map = new Map<number, string>();
@@ -398,6 +420,113 @@ function RequerimientosDetalleInner() {
     setPartesDividir([]);
   };
 
+  // ── Consumir de almacén ──
+  // Marca el requerimiento como satisfecho desde stock interno: crea SALIDA y descuenta stock.
+  const consumirDeAlmacen = async (r: Requerimiento) => {
+    try {
+      const res = await fetch(`/api/requerimientos/${r.id}/consumir-de-almacen`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Error al consumir de almacén");
+      message.success(json.message || "Consumido de almacén");
+      await fetchData();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : "Error al consumir de almacén");
+    }
+  };
+
+  // ── Acciones del flujo de aprobación ──
+  const enviarAAprobacion = async (r: Requerimiento) => {
+    try {
+      const res = await fetch(`/api/requerimientos/${r.id}/enviar-a-aprobacion`, { method: "POST" });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(json?.error || "Error al enviar a aprobación");
+      message.success(`${r.nro_req ?? "Item"} enviado a aprobación`);
+      await fetchData();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : "Error");
+    }
+  };
+
+  const aprobarItem = async (r: Requerimiento) => {
+    try {
+      const res = await fetch(`/api/requerimientos/${r.id}/aprobar`, { method: "POST" });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(json?.error || "Error al aprobar");
+      message.success(`${r.nro_req ?? "Item"} aprobado`);
+      await fetchData();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : "Error");
+    }
+  };
+
+  const desaprobarItem = (r: Requerimiento) => {
+    let motivo = "";
+    Modal.confirm({
+      title: `Desaprobar ${r.nro_req ?? "requerimiento"}`,
+      content: (
+        <Input.TextArea
+          rows={3}
+          placeholder="Motivo (opcional)"
+          onChange={(e) => { motivo = e.target.value; }}
+        />
+      ),
+      okText: "Desaprobar",
+      okButtonProps: { danger: true },
+      cancelText: "Cancelar",
+      onOk: async () => {
+        try {
+          const res = await fetch(`/api/requerimientos/${r.id}/desaprobar`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ motivo: motivo || null }),
+          });
+          const json = await res.json().catch(() => null);
+          if (!res.ok) throw new Error(json?.error || "Error al desaprobar");
+          message.success(`${r.nro_req ?? "Item"} desaprobado`);
+          await fetchData();
+        } catch (err: unknown) {
+          message.error(err instanceof Error ? err.message : "Error");
+        }
+      },
+    });
+  };
+
+  const anularItem = (r: Requerimiento) => {
+    let motivo = "";
+    Modal.confirm({
+      title: `Anular ${r.nro_req ?? "requerimiento"}`,
+      content: (
+        <Input.TextArea
+          rows={3}
+          placeholder="Motivo (opcional)"
+          onChange={(e) => { motivo = e.target.value; }}
+        />
+      ),
+      okText: "Anular",
+      okButtonProps: { danger: true },
+      cancelText: "Cancelar",
+      onOk: async () => {
+        try {
+          const res = await fetch(`/api/requerimientos/${r.id}/anular`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ motivo: motivo || null }),
+          });
+          const json = await res.json().catch(() => null);
+          if (!res.ok) throw new Error(json?.error || "Error al anular");
+          message.success(`${r.nro_req ?? "Item"} anulado`);
+          await fetchData();
+        } catch (err: unknown) {
+          message.error(err instanceof Error ? err.message : "Error");
+        }
+      },
+    });
+  };
+
   const sugerenciaDividir = (cantidad: number): number[][] => {
     // Ej para 4: [[1,1,1,1], [1,3], [2,2]]
     const sugs: number[][] = [];
@@ -498,7 +627,6 @@ function RequerimientosDetalleInner() {
       <Space size={4} wrap>
         {r.numero_po && <Tag color="blue">OC: {r.numero_po}</Tag>}
         {r.status_oc && <Tag color={ocColor[r.status_oc] || "default"}>OC: {r.status_oc_label || r.status_oc}</Tag>}
-        {r.status_cot && <Tag color={cotColor[r.status_cot] || "default"}>COT: {r.status_cot_label || r.status_cot}</Tag>}
         {r.status_req && <Tag color={reqColor[r.status_req] || "default"}>{r.status_req_label || r.status_req}</Tag>}
       </Space>
     </div>
@@ -533,22 +661,6 @@ function RequerimientosDetalleInner() {
         const code = r.status_req ?? "SIN_APROBACION";
         return <Tag color={reqColor[code] || "default"}>{r.status_req_label || code}</Tag>;
       },
-    },
-    {
-      key: "status_cot",
-      title: "Estado COT",
-      dataIndex: "status_cot",
-      width: 110,
-      filters: [
-        { text: "Pend. Cot.", value: "PEND_COT" },
-        { text: "Pend. Aprob.", value: "PEND_APROB" },
-        { text: "Aprobado", value: "APROBADO" },
-        { text: "Completo", value: "COMPLETO" },
-        { text: "Anulado", value: "ANULADO" },
-      ],
-      onFilter: (value, r) => r.status_cot === value,
-      render: (_: unknown, r: Requerimiento) =>
-        r.status_cot ? <Tag color={cotColor[r.status_cot] || "default"}>{r.status_cot_label || r.status_cot}</Tag> : "-",
     },
     {
       key: "nro_oc",
@@ -698,10 +810,120 @@ function RequerimientosDetalleInner() {
       sorter: (a, b) => (a.fecha_requerida || "").localeCompare(b.fecha_requerida || ""),
       render: (v: string | null) => (v ? dayjs(v).format("DD/MM/YYYY") : "-"),
     },
+    {
+      key: "acciones",
+      title: "Acciones",
+      width: 150,
+      fixed: "right",
+      align: "center",
+      render: (_: unknown, r: Requerimiento) => {
+        // Estados:
+        //   - BORRADOR: técnico puede enviar a aprobación.
+        //   - SIN_APROBACION: admin puede aprobar / desaprobar.
+        //   - APROBADO sin OC: admin puede anular; cualquier rol puede consumir de almacén.
+        //   - ANULADO / DESAPROBADO / con OC: solo lectura.
+        const sr = r.status_req;
+        const sinOC = r.po_id == null && !r.nro_oc;
+        const noAnulado = sr !== "ANULADO" && sr !== "DESAPROBADO";
+        const noStockEstado = r.status_oc !== "ANULADO" && r.status_oc !== "DEVOLUCION";
+
+        const puedeEnviar = sr === "BORRADOR" && sinOC;
+        const puedeAprobar = isAdmin && sr === "SIN_APROBACION" && sinOC;
+        const puedeDesaprobar = isAdmin && sr === "SIN_APROBACION" && sinOC;
+        const puedeAnular = isAdmin && noAnulado && sinOC;
+
+        // Consumir de almacén: requiere material, sin OC, no anulado, stock suficiente.
+        const hayMaterial = r.material_id != null;
+        const stockOk = (r.stock_actual ?? 0) >= Number(r.cantidad);
+        const puedeConsumir = hayMaterial && sinOC && noStockEstado && stockOk && noAnulado;
+        const motivoDeshab = !hayMaterial
+          ? "Sin material vinculado"
+          : !sinOC
+          ? "Ya está asignado a una OC"
+          : !noStockEstado || !noAnulado
+          ? `Estado ${sr ?? r.status_oc} no permite consumir`
+          : !stockOk
+          ? `Stock insuficiente (${r.stock_actual ?? 0} / ${r.cantidad})`
+          : "";
+
+        return (
+          <Space size={4} wrap>
+            {puedeEnviar && (
+              <Tooltip title="Enviar a aprobación">
+                <Popconfirm
+                  title="Enviar a aprobación"
+                  description="El item pasará a estado SIN_APROBACION y quedará pendiente de revisión."
+                  okText="Enviar"
+                  cancelText="Cancelar"
+                  onConfirm={() => enviarAAprobacion(r)}
+                >
+                  <Button size="small" icon={<SendOutlined />} />
+                </Popconfirm>
+              </Tooltip>
+            )}
+            {puedeAprobar && (
+              <Tooltip title="Aprobar">
+                <Popconfirm
+                  title="Aprobar requerimiento"
+                  okText="Aprobar"
+                  cancelText="Cancelar"
+                  onConfirm={() => aprobarItem(r)}
+                >
+                  <Button size="small" type="primary" icon={<CheckOutlined />} />
+                </Popconfirm>
+              </Tooltip>
+            )}
+            {puedeDesaprobar && (
+              <Tooltip title="Desaprobar">
+                <Button
+                  size="small"
+                  danger
+                  icon={<CloseOutlined />}
+                  onClick={() => desaprobarItem(r)}
+                />
+              </Tooltip>
+            )}
+            {puedeAnular && (
+              <Tooltip title="Anular">
+                <Button
+                  size="small"
+                  icon={<StopOutlined />}
+                  onClick={() => anularItem(r)}
+                />
+              </Tooltip>
+            )}
+            <Tooltip title={puedeConsumir ? "Consumir esta cantidad del stock interno (genera SALIDA)" : motivoDeshab}>
+              <Popconfirm
+                title="Consumir de almacén"
+                description={
+                  <div style={{ maxWidth: 280 }}>
+                    Se creará un movimiento <b>SALIDA</b> de <b>{r.cantidad}</b> unidad(es) y el item quedará marcado como entregado desde stock interno.
+                  </div>
+                }
+                okText="Consumir"
+                cancelText="Cancelar"
+                disabled={!puedeConsumir}
+                onConfirm={() => consumirDeAlmacen(r)}
+              >
+                <Button
+                  size="small"
+                  icon={<InboxOutlined />}
+                  disabled={!puedeConsumir}
+                />
+              </Popconfirm>
+            </Tooltip>
+          </Space>
+        );
+      },
+    },
   ];
 
+  // Hacer las columnas redimensionables (drag horizontal en el borde derecho del header).
+  const { columnas: columnasResizable, components: tableComponents } =
+    useColumnasRedimensionables<Requerimiento>(columns, "req-detalle-cols-widths-v1");
+
   // Filtrar columnas visibles (respetando orden)
-  const columnasVisibles = columns.filter((c) => !columnasOcultas.includes(String(c.key)));
+  const columnasVisibles = columnasResizable.filter((c) => !columnasOcultas.includes(String(c.key)));
   const clavesTotales = columns.map((c) => String(c.key));
   const clavesVisibles = clavesTotales.filter((k) => !columnasOcultas.includes(k));
 
@@ -880,6 +1102,7 @@ function RequerimientosDetalleInner() {
                 setFiltroOt(undefined);
                 setFiltroEstado(undefined);
                 setFiltroRapido("todos");
+                setFiltroNroReq(undefined);
               }}
               block
             >
@@ -894,22 +1117,16 @@ function RequerimientosDetalleInner() {
             <Text type="secondary" style={{ fontSize: 12 }}>
               <FilterOutlined /> Filtro rápido:
             </Text>
-            <Button
-              size="small"
-              type={filtroRapido === "pdt_cotizar" ? "primary" : "default"}
-              icon={<TagOutlined />}
-              onClick={() => setFiltroRapido(filtroRapido === "pdt_cotizar" ? "todos" : "pdt_cotizar")}
-            >
-              Pdt Cotizar
-            </Button>
-            <Button
-              size="small"
-              type={filtroRapido === "pdt_pedir" ? "primary" : "default"}
-              icon={<ShoppingCartOutlined />}
-              onClick={() => setFiltroRapido(filtroRapido === "pdt_pedir" ? "todos" : "pdt_pedir")}
-            >
-              Pdt Pedir (sin OC)
-            </Button>
+            <Tooltip title="Filtra solo items APROBADOS aún sin OC, listos para crear orden de compra">
+              <Button
+                size="small"
+                type={filtroRapido === "listos_oc" ? "primary" : "default"}
+                icon={<FileAddOutlined />}
+                onClick={() => setFiltroRapido(filtroRapido === "listos_oc" ? "todos" : "listos_oc")}
+              >
+                Listos para OC
+              </Button>
+            </Tooltip>
             <Button
               size="small"
               type={filtroRapido === "en_oc" ? "primary" : "default"}
@@ -922,17 +1139,50 @@ function RequerimientosDetalleInner() {
         </div>
       </Card>
 
+      {/* Filtros por rango de fecha */}
+      <Row gutter={[12, 8]} style={{ marginBottom: 12 }}>
+        <Col xs={24} md={12}>
+          <RangoFechasFiltro label="Fecha solicitud" value={rangoSol} onChange={setRangoSol} />
+        </Col>
+        <Col xs={24} md={12}>
+          <RangoFechasFiltro label="Fecha requerida" value={rangoReq} onChange={setRangoReq} />
+        </Col>
+      </Row>
+
+      {/* Aviso del resaltado por stock */}
+      <Alert
+        type="warning"
+        showIcon
+        style={{ marginBottom: 12 }}
+        title="Las filas en amarillo indican items con stock disponible en almacén — se pueden entregar sin generar OC."
+      />
+
       {/* Tabla */}
       <Table
         rowKey="id"
         rowSelection={rowSelection}
         columns={columnasVisibles}
+        components={tableComponents}
         dataSource={filteredData}
         loading={loading}
-        pagination={{ pageSize: 25, showTotal: (t) => `${t} registros` }}
+        pagination={{ pageSize: 25, showTotal: (t) => `${t} registros`, placement: ["topEnd", "bottomEnd"] }}
         scroll={{ x: 2000 }}
         size="small"
+        rowClassName={(r) => {
+          const tieneStock = r.material_id != null
+            && r.po_id == null
+            && r.status_req !== "ANULADO"
+            && r.status_req !== "DESAPROBADO"
+            && (r.stock_actual ?? 0) >= Number(r.cantidad ?? 0)
+            && (r.stock_actual ?? 0) > 0;
+          return tieneStock ? "req-row-stock" : "";
+        }}
       />
+
+      <style jsx global>{`
+        .req-row-stock > td { background: #FFFBE6 !important; }
+        .req-row-stock:hover > td { background: #FFF1B8 !important; }
+      `}</style>
 
       {/* Modal Crear OC */}
       <Modal

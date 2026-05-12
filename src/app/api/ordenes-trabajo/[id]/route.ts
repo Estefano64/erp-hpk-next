@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auditOTStatusChange, getAuditUser } from "@/lib/audit";
+import { parseDateOnly } from "@/lib/dates";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -62,7 +63,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
       "fecha_facturacion", "fecha_req_1", "fecha_req_2",
     ];
     for (const field of dateFields) {
-      if (body[field]) body[field] = new Date(body[field]);
+      if (body[field]) body[field] = parseDateOnly(body[field]);
     }
 
     const usuario = (await getAuditUser(req)) ?? "sistema";

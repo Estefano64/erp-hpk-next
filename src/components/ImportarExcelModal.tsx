@@ -339,7 +339,7 @@ export function ImportarExcelModal({
 
           <Table
             size="small"
-            pagination={{ pageSize: 5, showSizeChanger: false }}
+            pagination={{ pageSize: 5, showSizeChanger: false, placement: ["topEnd", "bottomEnd"] }}
             dataSource={payloadRows.slice(0, 50).map((r, i) => ({ ...r, _key: i }))}
             rowKey="_key"
             columns={fields

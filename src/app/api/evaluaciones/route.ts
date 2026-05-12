@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { parseDateOnly } from "@/lib/dates";
 
 const ESTADOS_VALIDOS = ["BORRADOR", "COMPLETADA", "PENDIENTE_APROBACION", "APROBADA", "RECHAZADA"] as const;
 
@@ -70,7 +71,7 @@ export async function POST(req: NextRequest) {
       ot_id: d.ot_id,
       modelo_evaluacion: d.modelo_evaluacion,
       sistema_medicion: d.sistema_medicion || "Metrico",
-      fecha_evaluacion: d.fecha_evaluacion ? new Date(d.fecha_evaluacion) : null,
+      fecha_evaluacion: parseDateOnly(d.fecha_evaluacion),
       evaluado_por: d.evaluado_por || null,
       datos_formulario: (d.datos_formulario ?? {}) as Prisma.InputJsonValue,
       resultado_general: d.resultado_general || null,
