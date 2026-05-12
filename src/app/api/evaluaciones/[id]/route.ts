@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { parseDateOnly } from "@/lib/dates";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -59,7 +60,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     const data: Record<string, unknown> = {};
     if (body.modelo_evaluacion !== undefined) data.modelo_evaluacion = body.modelo_evaluacion;
     if (body.sistema_medicion !== undefined) data.sistema_medicion = body.sistema_medicion;
-    if (body.fecha_evaluacion !== undefined) data.fecha_evaluacion = body.fecha_evaluacion ? new Date(body.fecha_evaluacion) : null;
+    if (body.fecha_evaluacion !== undefined) data.fecha_evaluacion = parseDateOnly(body.fecha_evaluacion);
     if (body.evaluado_por !== undefined) data.evaluado_por = body.evaluado_por;
     if (body.datos_formulario !== undefined) data.datos_formulario = body.datos_formulario;
     if (body.resultado_general !== undefined) data.resultado_general = body.resultado_general;

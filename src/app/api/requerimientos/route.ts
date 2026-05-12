@@ -80,7 +80,7 @@ export async function GET(req: NextRequest) {
               codigo_reparacion: { select: { codigo: true, descripcion: true } },
             },
           },
-          material: { select: { codigo: true, descripcion: true, unidad_medida_codigo: true } },
+          material: { select: { codigo: true, descripcion: true, unidad_medida_codigo: true, stock_actual: true } },
           status_requerimiento: { select: { codigo: true, nombre: true } },
           status_cotizacion: { select: { codigo: true, nombre: true } },
           status_oc: { select: { codigo: true, nombre: true } },

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { parseDateOnly } from "@/lib/dates";
 
 const Schema = z.object({
   repuesto_ids: z.array(z.coerce.number().int().positive()).min(1),
@@ -110,7 +111,7 @@ export async function POST(req: NextRequest) {
               proveedor_id: d.proveedor_id,
               ubicacion_codigo,
               fecha_solicitud: new Date(),
-              fecha_entrega_esperada: d.fecha_entrega_esperada ? new Date(d.fecha_entrega_esperada) : null,
+              fecha_entrega_esperada: parseDateOnly(d.fecha_entrega_esperada),
               status_oc_codigo: "PEND_OC",
               subtotal,
               impuesto,
@@ -148,7 +149,7 @@ export async function POST(req: NextRequest) {
           po_id: compra.id,
           nro_oc: compra.numero_po,
           fecha_oc: new Date(),
-          fecha_entrega_esperada: d.fecha_entrega_esperada ? new Date(d.fecha_entrega_esperada) : null,
+          fecha_entrega_esperada: parseDateOnly(d.fecha_entrega_esperada),
           status_oc_codigo: "PROCESO",
         },
       });

@@ -6,7 +6,15 @@ import {
 } from "antd";
 import { SearchOutlined, ReloadOutlined, CalendarOutlined, InfoCircleOutlined, SaveOutlined, UndoOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import { numeracionColumn } from "@/lib/tables";
+import {
+  numeracionColumn,
+  useColumnasOcultas,
+  ColumnasToggleButton,
+  visibleColumns,
+  useRangoFechas,
+  RangoFechasFiltro,
+  dentroDeRango,
+} from "@/lib/tables";
 import dayjs, { Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
 import { brand } from "@/lib/theme";
@@ -96,6 +104,9 @@ export default function PlanificacionPage() {
   const [bulkSemana, setBulkSemana] = useState<string | undefined>();
   const [messageApi, contextHolder] = message.useMessage();
   const debounceTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  const { ocultas, setOcultas } = useColumnasOcultas("planificacion-cols-v1");
+  const { rango: rangoInicio, setRango: setRangoInicio } = useRangoFechas();
+  const { rango: rangoFin, setRango: setRangoFin } = useRangoFechas();
 
   // Capacidad teórica por semana (referencia para color)
   const CAPACIDAD_SEMANA = 45;
@@ -378,32 +389,89 @@ export default function PlanificacionPage() {
     [trabajadores],
   );
 
+  // Valores únicos para filtros de cabecera (estilo Excel)
+  const otValores = [...new Set(rows.map((r) => r.orden_trabajo?.ot).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: v, value: v }));
+  const clienteValores = [...new Set(rows.map((r) => r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: v, value: v }));
+  const flotaValores = [...new Set(rows.map((r) => r.orden_trabajo?.codigo_reparacion?.flota?.codigo).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: v, value: v }));
+  const otDescValores = [...new Set(rows.map((r) => r.orden_trabajo?.descripcion).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: v, value: v }));
+  const fechaRecepValores = [...new Set(rows.map((r) => r.orden_trabajo?.fecha_recepcion).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: dayjs(v).format("DD/MM/YY"), value: v }));
+  const prioridadValores = [...new Set(rows.map((r) => r.orden_trabajo?.prioridad_atencion?.nombre).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: v, value: v }));
+  const tallerValores = [...new Set(rows.map((r) => r.orden_trabajo?.taller_status?.nombre).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: v, value: v }));
+  const componenteValores = [...new Set(rows.map((r) => r.componente).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: v, value: v }));
+  const ordenValores = [...new Set(rows.map((r) => r.orden).filter((v): v is number => v != null))]
+    .sort((a, b) => a - b).map((v) => ({ text: String(v), value: String(v) }));
+  const descValores = [...new Set(rows.map((r) => r.descripcion).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: v, value: v }));
+  const semanaValores = [...new Set(rows.map((r) => r.semana_plan).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: v, value: v }));
+  const tecnicoValores = [...new Set(rows.map((r) => r.tecnico).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: v, value: v }));
+  const maquinaValores = [...new Set(rows.map((r) => r.maquina).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: v, value: v }));
+  const inicioValores = [...new Set(rows.map((r) => r.fecha_inicio).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: dayjs(v).format("DD/MM/YY HH:mm"), value: v }));
+  const finValores = [...new Set(rows.map((r) => r.fecha_fin).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: dayjs(v).format("DD/MM/YY HH:mm"), value: v }));
+  const inicioRealValores = [...new Set(rows.map((r) => r.fecha_inicio_real).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: dayjs(v).format("DD/MM HH:mm"), value: v }));
+  const finRealValores = [...new Set(rows.map((r) => r.fecha_fin_real).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: dayjs(v).format("DD/MM HH:mm"), value: v }));
+  const durEstValores = [...new Set(rows.map((r) => r.horas_estimadas).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: Number(v).toFixed(2), value: v }));
+  const qtyValores = [...new Set(rows.map((r) => r.qty_personal ?? 1))]
+    .sort((a, b) => a - b).map((v) => ({ text: String(v), value: String(v) }));
+  const qtyHeValores = [...new Set(rows.map((r) => r.horas_extras_qty).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: v, value: v }));
+  const estadoValores = [...new Set(rows.map((r) => r.estado).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: v, value: v }));
+
   const columns: ColumnsType<PlanRow> = [
     numeracionColumn<PlanRow>(),
     {
       title: "OT", key: "ot", width: 100, fixed: "left",
+      filters: otValores, filterSearch: true,
+      onFilter: (value, r) => r.orden_trabajo?.ot === value,
       render: (_, r) => r.orden_trabajo?.ot
         ? <Tag color={brand.navy}>{r.orden_trabajo.ot}</Tag>
         : <Tag>#{r.ot_id}</Tag>,
     },
     {
       title: "Cliente", key: "cliente", width: 140, ellipsis: true,
+      filters: clienteValores, filterSearch: true,
+      onFilter: (value, r) => (r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social) === value,
       render: (_, r) => r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "-",
     },
     {
       title: "Flota", key: "flota", width: 100,
+      filters: flotaValores, filterSearch: true,
+      onFilter: (value, r) => r.orden_trabajo?.codigo_reparacion?.flota?.codigo === value,
       render: (_, r) => r.orden_trabajo?.codigo_reparacion?.flota?.codigo ?? "-",
     },
     {
       title: "Descripción", key: "otDesc", width: 200, ellipsis: true,
+      filters: otDescValores, filterSearch: true,
+      onFilter: (value, r) => r.orden_trabajo?.descripcion === value,
       render: (_, r) => r.orden_trabajo?.descripcion ?? "-",
     },
     {
       title: "F. Rec.", key: "recep", width: 95,
+      sorter: (a, b) => (a.orden_trabajo?.fecha_recepcion ?? "").localeCompare(b.orden_trabajo?.fecha_recepcion ?? ""),
+      filters: fechaRecepValores, filterSearch: true,
+      onFilter: (value, r) => r.orden_trabajo?.fecha_recepcion === value,
       render: (_, r) => r.orden_trabajo?.fecha_recepcion ? dayjs(r.orden_trabajo.fecha_recepcion).format("DD/MM/YY") : "-",
     },
     {
       title: "Prioridad", key: "prior", width: 110, align: "center",
+      filters: prioridadValores,
+      onFilter: (value, r) => r.orden_trabajo?.prioridad_atencion?.nombre === value,
       render: (_, r) => {
         const p = r.orden_trabajo?.prioridad_atencion;
         if (!p) return "-";
@@ -413,14 +481,26 @@ export default function PlanificacionPage() {
     },
     {
       title: "Taller Status", key: "taller", width: 140, ellipsis: true,
+      filters: tallerValores, filterSearch: true,
+      onFilter: (value, r) => r.orden_trabajo?.taller_status?.nombre === value,
       render: (_, r) => r.orden_trabajo?.taller_status ? <Tag>{r.orden_trabajo.taller_status.nombre}</Tag> : "-",
     },
-    { title: "N°", dataIndex: "orden", width: 50, align: "center" },
     {
+      key: "orden", title: "N°", dataIndex: "orden", width: 50, align: "center",
+      sorter: (a, b) => (a.orden ?? 0) - (b.orden ?? 0),
+      filters: ordenValores, filterSearch: true,
+      onFilter: (value, r) => String(r.orden ?? "") === value,
+    },
+    {
+      key: "componente",
       title: "Parte", dataIndex: "componente", width: 100,
+      filters: componenteValores, filterSearch: true,
+      onFilter: (value, r) => r.componente === value,
       render: (v: string) => <Tag color={brand.cyan}>{v}</Tag>,
     },
-    { title: "Tarea", dataIndex: "descripcion", width: 250, ellipsis: true,
+    { key: "descripcion", title: "Tarea", dataIndex: "descripcion", width: 250, ellipsis: true,
+      filters: descValores, filterSearch: true,
+      onFilter: (value, r) => r.descripcion === value,
       render: (v: string, r) => {
         const code = (r.operacion_codigo ?? "").trim();
         const desc = (v ?? "").trim();
@@ -430,6 +510,8 @@ export default function PlanificacionPage() {
     },
     {
       title: "Semana", key: "semana", width: 160,
+      filters: semanaValores, filterSearch: true,
+      onFilter: (value, r) => r.semana_plan === value,
       render: (_, r) => (
         <Select
           value={r.semana_plan ?? undefined}
@@ -446,6 +528,8 @@ export default function PlanificacionPage() {
     },
     {
       title: "Operario", key: "tecnico", width: 220,
+      filters: tecnicoValores, filterSearch: true,
+      onFilter: (value, r) => r.tecnico === value,
       render: (_, r) => (
         <Select
           value={r.tecnico ?? undefined}
@@ -462,6 +546,8 @@ export default function PlanificacionPage() {
     },
     {
       title: "Equipo", key: "maquina", width: 220,
+      filters: maquinaValores, filterSearch: true,
+      onFilter: (value, r) => r.maquina === value,
       render: (_, r) => (
         <Select
           value={r.maquina ?? undefined}
@@ -478,6 +564,8 @@ export default function PlanificacionPage() {
     },
     {
       title: "Inicio Est.", key: "inicio", width: 155,
+      filters: inicioValores, filterSearch: true,
+      onFilter: (value, r) => r.fecha_inicio === value,
       render: (_, r) => (
         <DatePicker
           value={r.fecha_inicio ? dayjs(r.fecha_inicio) : null}
@@ -494,6 +582,8 @@ export default function PlanificacionPage() {
     },
     {
       title: "Dur. (hrs)", key: "dur", width: 90, align: "right",
+      filters: durEstValores, filterSearch: true,
+      onFilter: (value, r) => String(r.horas_estimadas ?? "") === value,
       render: (_, r) => (
         <InputNumber
           value={r.horas_estimadas != null ? Number(r.horas_estimadas) : undefined}
@@ -510,6 +600,11 @@ export default function PlanificacionPage() {
     },
     {
       title: "HE", key: "he", width: 55, align: "center",
+      filters: [
+        { text: "Sí", value: "true" },
+        { text: "No", value: "false" },
+      ],
+      onFilter: (value, r) => String(!!r.horas_extras) === value,
       render: (_, r) => (
         <Checkbox
           checked={!!r.horas_extras}
@@ -526,6 +621,8 @@ export default function PlanificacionPage() {
     },
     {
       title: "Qty HE", key: "qtyhe", width: 80, align: "right",
+      filters: qtyHeValores, filterSearch: true,
+      onFilter: (value, r) => String(r.horas_extras_qty ?? "") === value,
       render: (_, r) => (
         <InputNumber
           value={r.horas_extras_qty != null ? Number(r.horas_extras_qty) : undefined}
@@ -540,6 +637,8 @@ export default function PlanificacionPage() {
     },
     {
       title: "Fin Est.", key: "fin", width: 155,
+      filters: finValores, filterSearch: true,
+      onFilter: (value, r) => r.fecha_fin === value,
       render: (_, r) => {
         // Con HE activo: editable manual. Sin HE: calculado (solo lectura).
         if (r.horas_extras) {
@@ -563,6 +662,8 @@ export default function PlanificacionPage() {
     },
     {
       title: "Qty", key: "qty", width: 60, align: "center",
+      filters: qtyValores, filterSearch: true,
+      onFilter: (value, r) => String(r.qty_personal ?? 1) === value,
       render: (_, r) => (
         <InputNumber
           value={r.qty_personal ?? 1}
@@ -590,13 +691,21 @@ export default function PlanificacionPage() {
       },
     },
     {
+      key: "fecha_inicio_real",
       title: "Inicio Real", dataIndex: "fecha_inicio_real", width: 110,
+      sorter: (a, b) => (a.fecha_inicio_real || "").localeCompare(b.fecha_inicio_real || ""),
+      filters: inicioRealValores, filterSearch: true,
+      onFilter: (value, r) => r.fecha_inicio_real === value,
       render: (v: string | null) => v
         ? <span style={{ fontSize: 11, color: brand.success }}>{dayjs(v).format("DD/MM HH:mm")}</span>
         : <span style={{ color: brand.textSecondary }}>—</span>,
     },
     {
+      key: "fecha_fin_real",
       title: "Fin Real", dataIndex: "fecha_fin_real", width: 110,
+      sorter: (a, b) => (a.fecha_fin_real || "").localeCompare(b.fecha_fin_real || ""),
+      filters: finRealValores, filterSearch: true,
+      onFilter: (value, r) => r.fecha_fin_real === value,
       render: (v: string | null) => v
         ? <span style={{ fontSize: 11, color: brand.success }}>{dayjs(v).format("DD/MM HH:mm")}</span>
         : <span style={{ color: brand.textSecondary }}>—</span>,
@@ -613,6 +722,8 @@ export default function PlanificacionPage() {
     },
     {
       title: "Estado", key: "estado", width: 130,
+      filters: estadoValores, filterSearch: true,
+      onFilter: (value, r) => (r.estado ?? "abierto") === value,
       render: (_, r) => (
         <Select
           value={r.estado ?? "abierto"}
@@ -697,6 +808,12 @@ export default function PlanificacionPage() {
               </Popconfirm>
             </>
           )}
+          <ColumnasToggleButton<PlanRow>
+            columns={columns}
+            ocultas={ocultas}
+            setOcultas={setOcultas}
+            obligatorias={["__num", "ot", "descripcion"]}
+          />
           <span style={{ fontSize: 12, color: brand.textSecondary }}>
             {total} tareas {savingId ? " · guardando…" : ""}
           </span>
@@ -759,6 +876,12 @@ export default function PlanificacionPage() {
               setSearch(""); setFilterSemana(undefined); setFilterEstado(undefined);
               setFilterTecnico(undefined); setFilterMaquina(undefined);
             }} block>Limpiar</Button>
+          </Col>
+          <Col xs={24} md={12}>
+            <RangoFechasFiltro label="Fecha de inicio" value={rangoInicio} onChange={setRangoInicio} />
+          </Col>
+          <Col xs={24} md={12}>
+            <RangoFechasFiltro label="Fecha de fin" value={rangoFin} onChange={setRangoFin} />
           </Col>
         </Row>
       </Card>
@@ -832,11 +955,14 @@ export default function PlanificacionPage() {
 
       <Table
         rowKey="id"
-        columns={columns}
-        dataSource={rows}
+        columns={visibleColumns(columns, ocultas)}
+        dataSource={rows.filter((r) =>
+          dentroDeRango(r, "fecha_inicio", rangoInicio) &&
+          dentroDeRango(r, "fecha_fin", rangoFin)
+        )}
         loading={loading}
         size="small"
-        pagination={{ pageSize: 50, showTotal: (t) => `${t} tareas` }}
+        pagination={{ pageSize: 50, showTotal: (t) => `${t} tareas`, placement: ["topEnd", "bottomEnd"] }}
         scroll={{ x: 2400, y: 600 }}
         rowSelection={{
           selectedRowKeys: selectedKeys,

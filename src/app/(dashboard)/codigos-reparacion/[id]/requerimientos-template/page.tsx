@@ -13,6 +13,11 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
 import { useCachedFetch } from "@/lib/useCachedFetch";
+import {
+  useColumnasOcultas,
+  ColumnasToggleButton,
+  visibleColumns,
+} from "@/lib/tables";
 
 const { Title, Text } = Typography;
 
@@ -79,6 +84,7 @@ export default function TemplateRequerimientosPage() {
   const [savingId, setSavingId] = useState<number | null>(null);
   const [messageApi, contextHolder] = message.useMessage();
   const debounceTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  const { ocultas, setOcultas } = useColumnasOcultas("codrep-req-template-cols-v1");
 
   // Modal nueva
   const [modalOpen, setModalOpen] = useState(false);
@@ -273,6 +279,22 @@ export default function TemplateRequerimientosPage() {
     return { ...counts, total };
   }, [rows]);
 
+  // Valores únicos para filtros
+  const materialValores = [...new Set(rows.map((r) => r.material_codigo).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: v, value: v }));
+  const descValores = [...new Set(rows.map((r) => r.descripcion).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: v, value: v }));
+  const fabValores = [...new Set(rows.map((r) => r.fabricante_codigo).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: v, value: v }));
+  const npValores = [...new Set(rows.map((r) => r.np).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: v, value: v }));
+  const textoValores = [...new Set(rows.map((r) => r.texto).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: v, value: v }));
+  const qtyValores = [...new Set(rows.map((r) => Number(r.requerimiento)))]
+    .sort((a, b) => a - b).map((v) => ({ text: String(v), value: String(v) }));
+  const precioValores = [...new Set(rows.map((r) => r.precio).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: Number(v).toFixed(2), value: v }));
+
   // Columnas
   const columns: ColumnsType<TareaRow> = [
     {
@@ -290,6 +312,12 @@ export default function TemplateRequerimientosPage() {
     },
     {
       title: "Tipo", key: "tipo", width: 110,
+      filters: [
+        { text: "MAC", value: "MAC" },
+        { text: "CAD", value: "CAD" },
+        { text: "SER", value: "SER" },
+      ],
+      onFilter: (value, r) => (drafts[r.tarea_id]?.tipo_codigo ?? r.tipo_codigo) === value,
       render: (_, r) => (
         <Select
           value={drafts[r.tarea_id]?.tipo_codigo ?? r.tipo_codigo}
@@ -306,6 +334,8 @@ export default function TemplateRequerimientosPage() {
     },
     {
       title: "Material", key: "material", width: 240,
+      filters: materialValores, filterSearch: true,
+      onFilter: (value, r) => (drafts[r.tarea_id]?.material_codigo ?? r.material_codigo) === value,
       render: (_, r) => {
         const isMac = (drafts[r.tarea_id]?.tipo_codigo ?? r.tipo_codigo) === "MAC";
         if (!isMac) return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
@@ -329,6 +359,8 @@ export default function TemplateRequerimientosPage() {
     },
     {
       title: "Descripción", key: "desc",
+      filters: descValores, filterSearch: true,
+      onFilter: (value, r) => (drafts[r.tarea_id]?.descripcion ?? r.descripcion) === value,
       render: (_, r) => (
         <Input
           value={drafts[r.tarea_id]?.descripcion ?? r.descripcion}
@@ -340,6 +372,8 @@ export default function TemplateRequerimientosPage() {
     },
     {
       title: "Fabricante", key: "fab", width: 180,
+      filters: fabValores, filterSearch: true,
+      onFilter: (value, r) => (drafts[r.tarea_id]?.fabricante_codigo ?? r.fabricante_codigo) === value,
       render: (_, r) => (
         <Select
           value={drafts[r.tarea_id]?.fabricante_codigo ?? r.fabricante_codigo ?? undefined}
@@ -356,6 +390,8 @@ export default function TemplateRequerimientosPage() {
     },
     {
       title: "N/P", key: "np", width: 130,
+      filters: npValores, filterSearch: true,
+      onFilter: (value, r) => (drafts[r.tarea_id]?.np ?? r.np) === value,
       render: (_, r) => (
         <Input
           value={drafts[r.tarea_id]?.np ?? r.np ?? ""}
@@ -367,6 +403,8 @@ export default function TemplateRequerimientosPage() {
     },
     {
       title: "Texto", key: "texto", width: 160,
+      filters: textoValores, filterSearch: true,
+      onFilter: (value, r) => (drafts[r.tarea_id]?.texto ?? r.texto) === value,
       render: (_, r) => (
         <Input
           value={drafts[r.tarea_id]?.texto ?? r.texto ?? ""}
@@ -378,6 +416,8 @@ export default function TemplateRequerimientosPage() {
     },
     {
       title: "Qty", key: "qty", width: 80, align: "right",
+      filters: qtyValores, filterSearch: true,
+      onFilter: (value, r) => String(drafts[r.tarea_id]?.requerimiento ?? Number(r.requerimiento)) === value,
       render: (_, r) => (
         <InputNumber
           value={drafts[r.tarea_id]?.requerimiento ?? Number(r.requerimiento)}
@@ -391,6 +431,8 @@ export default function TemplateRequerimientosPage() {
     },
     {
       title: "Precio", key: "precio", width: 100, align: "right",
+      filters: precioValores, filterSearch: true,
+      onFilter: (value, r) => String(drafts[r.tarea_id]?.precio ?? r.precio ?? "") === value,
       render: (_, r) => (
         <InputNumber
           value={drafts[r.tarea_id]?.precio ?? (r.precio != null ? Number(r.precio) : undefined)}
@@ -456,6 +498,14 @@ export default function TemplateRequerimientosPage() {
           <Col><Tag color="orange">CAD: {stats.CAD}</Tag></Col>
           <Col><Tag color="purple">SER: {stats.SER}</Tag></Col>
           <Col>
+            <ColumnasToggleButton<TareaRow>
+              columns={columns}
+              ocultas={ocultas}
+              setOcultas={setOcultas}
+              obligatorias={["orden", "tipo", "desc", "actions"]}
+            />
+          </Col>
+          <Col>
             <Button type="primary" icon={<PlusOutlined />} onClick={abrirCrear}>
               Agregar item
             </Button>
@@ -465,7 +515,7 @@ export default function TemplateRequerimientosPage() {
 
       <Table
         rowKey="tarea_id"
-        columns={columns}
+        columns={visibleColumns(columns, ocultas)}
         dataSource={rows}
         size="small"
         pagination={false}

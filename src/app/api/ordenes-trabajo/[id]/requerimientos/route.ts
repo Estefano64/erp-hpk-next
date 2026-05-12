@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { nextNroReq, nextItemReq } from "@/lib/requerimientos";
+import { parseDateOnly } from "@/lib/dates";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -95,7 +96,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           texto: d.texto ?? null,
           fabricante_codigo: d.fabricante_codigo ?? null,
           unidad_medida: d.unidad_medida ?? "UNIDAD",
-          fecha_requerida: d.fecha_requerida ? new Date(d.fecha_requerida) : null,
+          fecha_requerida: parseDateOnly(d.fecha_requerida),
           precio_unitario: d.precio_unitario ?? null,
           moneda: d.moneda ?? "USD",
           observaciones: d.observaciones ?? null,

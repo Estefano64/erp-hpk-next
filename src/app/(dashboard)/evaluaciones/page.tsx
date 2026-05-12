@@ -41,6 +41,9 @@ import {
   ColumnasToggleButton,
   visibleColumns,
   filtroPorColumna,
+  useRangoFechas,
+  RangoFechasFiltro,
+  dentroDeRango,
 } from "@/lib/tables";
 import dayjs from "dayjs";
 
@@ -109,6 +112,7 @@ export default function EvaluacionesPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
   const { ocultas, setOcultas } = useColumnasOcultas("evaluaciones-list-cols-v1");
+  const { rango: rangoEval, setRango: setRangoEval } = useRangoFechas();
 
   // Modal aprobar/rechazar
   const [modalAccion, setModalAccion] = useState<{ evalItem: Evaluacion; accion: "aprobar" | "rechazar" | "solicitar" } | null>(null);
@@ -135,6 +139,7 @@ export default function EvaluacionesPage() {
   // Filtrar datos
   const filtered = data.filter((ev) => {
     if (filtroEstado && ev.estado !== filtroEstado) return false;
+    if (!dentroDeRango(ev, "fecha_evaluacion", rangoEval)) return false;
     if (!search) return true;
     const lc = search.toLowerCase();
     return (
@@ -463,6 +468,9 @@ export default function EvaluacionesPage() {
             <Button icon={<ReloadOutlined />} onClick={fetchData} block>
               Actualizar
             </Button>
+          </Col>
+          <Col xs={24}>
+            <RangoFechasFiltro label="Fecha de evaluación" value={rangoEval} onChange={setRangoEval} />
           </Col>
         </Row>
       </Card>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
+import { parseDateOnly } from "@/lib/dates";
 
 const equipoIncludes = {
   status: true,
@@ -89,8 +90,8 @@ export async function POST(req: NextRequest) {
         area_codigo: body.area_codigo,
         sub_area_codigo: body.sub_area_codigo || null,
         tipo_codigo: body.tipo_codigo,
-        fecha_inicio: body.fecha_inicio ? new Date(body.fecha_inicio) : null,
-        fecha_fabricacion: body.fecha_fabricacion ? new Date(body.fecha_fabricacion) : null,
+        fecha_inicio: parseDateOnly(body.fecha_inicio),
+        fecha_fabricacion: parseDateOnly(body.fecha_fabricacion),
         fabricante_codigo: body.fabricante_codigo || null,
         modelo: body.modelo || null,
         numero_serie: body.numero_serie || null,

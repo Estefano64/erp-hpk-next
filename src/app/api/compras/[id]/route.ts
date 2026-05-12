@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
+import { parseDateOnly } from "@/lib/dates";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -120,7 +121,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     if (body.moneda !== undefined) data.moneda_codigo = body.moneda;
     if (body.moneda_codigo !== undefined) data.moneda_codigo = body.moneda_codigo;
     for (const k of ["fecha_entrega_esperada", "fecha_entrega_real"]) {
-      if (body[k] !== undefined) data[k] = body[k] ? new Date(body[k]) : null;
+      if (body[k] !== undefined) data[k] = parseDateOnly(body[k]);
     }
     for (const k of ["nro_factura", "nro_guia", "observaciones", "usuario_aprueba"]) {
       if (body[k] !== undefined) data[k] = body[k];

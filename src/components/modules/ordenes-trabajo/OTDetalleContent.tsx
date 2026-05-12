@@ -561,7 +561,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
       <div>
         {/* ── Validaciones (warnings / info) ── */}
         {validaciones.length > 0 && (
-          <Space direction="vertical" size={8} style={{ width: "100%", marginBottom: 16 }}>
+          <Space orientation="vertical" size={8} style={{ width: "100%", marginBottom: 16 }}>
             {validaciones.map((v, i) => (
               <Alert key={i} type={v.type} showIcon title={v.message} description={v.description} />
             ))}

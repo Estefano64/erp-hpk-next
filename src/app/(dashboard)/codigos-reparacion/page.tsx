@@ -237,6 +237,10 @@ export default function CodigosReparacionPage() {
       dataIndex: "tipo_codigo",
       width: 80,
       sorter: (a, b) => (a.tipo?.nombre ?? "").localeCompare(b.tipo?.nombre ?? ""),
+      filters: [...new Set(data.map((r) => r.tipo?.nombre ?? r.tipo_codigo).filter(Boolean) as string[])]
+        .sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => (r.tipo?.nombre ?? r.tipo_codigo) === value,
       render: (_: string, r: CodRep) => r.tipo?.nombre ?? r.tipo_codigo,
     },
     {
@@ -254,6 +258,10 @@ export default function CodigosReparacionPage() {
       dataIndex: "flota_codigo",
       width: 80,
       sorter: (a, b) => (a.flota?.nombre ?? "").localeCompare(b.flota?.nombre ?? ""),
+      filters: [...new Set(data.map((r) => r.flota?.nombre ?? r.flota_codigo).filter(Boolean) as string[])]
+        .sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => (r.flota?.nombre ?? r.flota_codigo) === value,
       render: (_: string, r: CodRep) => r.flota?.nombre ?? r.flota_codigo,
     },
     {
@@ -262,6 +270,10 @@ export default function CodigosReparacionPage() {
       dataIndex: "fabricante_codigo",
       width: 100,
       sorter: (a, b) => (a.fabricante?.nombre ?? "").localeCompare(b.fabricante?.nombre ?? ""),
+      filters: [...new Set(data.map((r) => r.fabricante?.nombre ?? r.fabricante_codigo).filter(Boolean) as string[])]
+        .sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => (r.fabricante?.nombre ?? r.fabricante_codigo) === value,
       render: (_: string, r: CodRep) => r.fabricante?.nombre ?? r.fabricante_codigo ?? "-",
     },
     { key: "np", title: "NP", dataIndex: "np", width: 140, ellipsis: true, sorter: (a: CodRep, b: CodRep) => (a.np ?? "").localeCompare(b.np ?? ""), ...filtroPorColumna(data, "np") },
@@ -281,6 +293,10 @@ export default function CodigosReparacionPage() {
       width: 120,
       align: "right",
       sorter: (a, b) => (Number(a.precio) || 0) - (Number(b.precio) || 0),
+      filters: [...new Set(data.map((r) => r.precio).filter((v): v is number => v != null))]
+        .sort((a, b) => a - b).map((v) => ({ text: Number(v).toFixed(2), value: String(v) })),
+      filterSearch: true,
+      onFilter: (value, r) => String(r.precio ?? "") === value,
       render: (v: number | null, r: CodRep) => {
         if (!v) return "-";
         const sym = r.moneda?.simbolo ?? "$";

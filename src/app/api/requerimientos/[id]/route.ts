@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { isAdmin } from "@/lib/audit";
 import { ESTADOS_REQ_LOCKED_DELETE } from "@/lib/requerimientos";
+import { parseDateOnly } from "@/lib/dates";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -75,7 +76,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       if (v !== undefined) updates[k] = v === "" ? null : v;
     }
     if (d.fecha_requerida !== undefined) {
-      updates.fecha_requerida = d.fecha_requerida ? new Date(d.fecha_requerida) : null;
+      updates.fecha_requerida = parseDateOnly(d.fecha_requerida);
     }
     if (d.material_codigo !== undefined && current.tipo_codigo === "MAC") {
       if (d.material_codigo) {

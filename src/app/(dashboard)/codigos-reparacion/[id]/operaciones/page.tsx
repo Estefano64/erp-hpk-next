@@ -13,6 +13,11 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
 import { useCachedFetch } from "@/lib/useCachedFetch";
+import {
+  useColumnasOcultas,
+  ColumnasToggleButton,
+  visibleColumns,
+} from "@/lib/tables";
 
 interface OperacionRow {
   operacion_cod_rep_id: number;
@@ -58,6 +63,7 @@ export default function OperacionesCodRepPage() {
   const [savingId, setSavingId] = useState<number | null>(null);
   const [messageApi, contextHolder] = message.useMessage();
   const debounceTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  const { ocultas, setOcultas } = useColumnasOcultas("codrep-operaciones-cols-v1");
 
   // Modal nueva operación
   const [modalOpen, setModalOpen] = useState(false);
@@ -238,6 +244,20 @@ export default function OperacionesCodRepPage() {
   const totalHH = rows.reduce((a, r) => a + Number(r.hh ?? 0), 0);
   const totalHoras = rows.reduce((a, r) => a + Number(r.horas ?? 0), 0);
 
+  // Valores únicos para filtros
+  const componenteValores = [...new Set(rows.map((r) => r.componente_codigo).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: v, value: v }));
+  const trabajoValores = [...new Set(rows.map((r) => r.trabajo).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: v, value: v }));
+  const opCatValores = [...new Set(rows.map((r) => r.operacion_reparacion_codigo).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: v, value: v }));
+  const qtyValores = [...new Set(rows.map((r) => r.qty))]
+    .sort((a, b) => a - b).map((v) => ({ text: String(v), value: String(v) }));
+  const horasValores = [...new Set(rows.map((r) => r.horas).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: Number(v).toFixed(2), value: v }));
+  const hhValores = [...new Set(rows.map((r) => r.hh).filter(Boolean) as string[])].sort()
+    .map((v) => ({ text: Number(v).toFixed(2), value: v }));
+
   const columns: ColumnsType<OperacionRow> = [
     {
       title: "#", key: "orden", width: 70, align: "center",
@@ -254,6 +274,8 @@ export default function OperacionesCodRepPage() {
     },
     {
       title: "Componente", key: "componente", width: 200,
+      filters: componenteValores, filterSearch: true,
+      onFilter: (value, r) => (drafts[r.operacion_cod_rep_id]?.componente_codigo ?? r.componente_codigo) === value,
       render: (_, r) => (
         <Select
           value={drafts[r.operacion_cod_rep_id]?.componente_codigo ?? r.componente_codigo}
@@ -268,6 +290,8 @@ export default function OperacionesCodRepPage() {
     },
     {
       title: "Trabajo", key: "trabajo", ellipsis: true,
+      filters: trabajoValores, filterSearch: true,
+      onFilter: (value, r) => (drafts[r.operacion_cod_rep_id]?.trabajo ?? r.trabajo) === value,
       render: (_, r) => (
         <Input
           value={drafts[r.operacion_cod_rep_id]?.trabajo ?? r.trabajo}
@@ -279,6 +303,8 @@ export default function OperacionesCodRepPage() {
     },
     {
       title: "Op. (catálogo)", key: "op", width: 200,
+      filters: opCatValores, filterSearch: true,
+      onFilter: (value, r) => (drafts[r.operacion_cod_rep_id]?.operacion_reparacion_codigo ?? r.operacion_reparacion_codigo) === value,
       render: (_, r) => (
         <Select
           value={drafts[r.operacion_cod_rep_id]?.operacion_reparacion_codigo ?? r.operacion_reparacion_codigo ?? undefined}
@@ -295,6 +321,8 @@ export default function OperacionesCodRepPage() {
     },
     {
       title: "QTY", key: "qty", width: 80, align: "center",
+      filters: qtyValores, filterSearch: true,
+      onFilter: (value, r) => String(drafts[r.operacion_cod_rep_id]?.qty ?? r.qty) === value,
       render: (_, r) => (
         <InputNumber
           value={drafts[r.operacion_cod_rep_id]?.qty ?? r.qty}
@@ -308,6 +336,8 @@ export default function OperacionesCodRepPage() {
     },
     {
       title: "HORAS", key: "horas", width: 100, align: "right",
+      filters: horasValores, filterSearch: true,
+      onFilter: (value, r) => String(drafts[r.operacion_cod_rep_id]?.horas ?? r.horas ?? "") === value,
       render: (_, r) => {
         const current = drafts[r.operacion_cod_rep_id]?.horas ?? (r.horas != null ? Number(r.horas) : null);
         return (
@@ -325,6 +355,8 @@ export default function OperacionesCodRepPage() {
     },
     {
       title: "HH", key: "hh", width: 100, align: "right",
+      filters: hhValores, filterSearch: true,
+      onFilter: (value, r) => String(drafts[r.operacion_cod_rep_id]?.hh ?? r.hh ?? "") === value,
       render: (_, r) => {
         const current = drafts[r.operacion_cod_rep_id]?.hh ?? (r.hh != null ? Number(r.hh) : null);
         return (
@@ -413,6 +445,14 @@ export default function OperacionesCodRepPage() {
             <div style={{ fontWeight: 600, color: brand.cyan }}>{totalHH.toFixed(2)}</div>
           </Col>
           <Col>
+            <ColumnasToggleButton<OperacionRow>
+              columns={columns}
+              ocultas={ocultas}
+              setOcultas={setOcultas}
+              obligatorias={["orden", "componente", "trabajo", "actions"]}
+            />
+          </Col>
+          <Col>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
               Agregar operación
             </Button>
@@ -422,7 +462,7 @@ export default function OperacionesCodRepPage() {
 
       <Table
         rowKey="operacion_cod_rep_id"
-        columns={columns}
+        columns={visibleColumns(columns, ocultas)}
         dataSource={rows}
         pagination={false}
         size="small"

@@ -1,10 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Table, Tag, Empty, Typography, Spin } from "antd";
+import { Table, Tag, Empty, Typography, Spin, Space } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { brand } from "@/lib/theme";
+import {
+  useColumnasOcultas,
+  ColumnasToggleButton,
+  visibleColumns,
+  filtroPorColumna,
+  useRangoFechas,
+  RangoFechasFiltro,
+  dentroDeRango,
+} from "@/lib/tables";
 
 const { Text } = Typography;
 
@@ -30,6 +39,8 @@ const tipoColor: Record<string, string> = {
 export default function OTHistorialTab({ otId }: { otId: number }) {
   const [data, setData] = useState<HistorialRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const { ocultas, setOcultas } = useColumnasOcultas("ot-historial-cols-v1");
+  const { rango: rangoFecha, setRango: setRangoFecha } = useRangoFechas();
 
   useEffect(() => {
     let alive = true;
@@ -50,21 +61,29 @@ export default function OTHistorialTab({ otId }: { otId: number }) {
 
   const columns: ColumnsType<HistorialRecord> = [
     {
+      key: "createdAt",
       title: "Cuándo", dataIndex: "createdAt", width: 160,
+      sorter: (a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""),
       render: (v: string) => (
         <div style={{ fontSize: 12, fontWeight: 500 }}>{dayjs(v).format("DD/MM/YY HH:mm")}</div>
       ),
     },
     {
+      key: "tipo_operacion",
       title: "Operación", dataIndex: "tipo_operacion", width: 150,
+      ...filtroPorColumna(data, "tipo_operacion"),
       render: (v: string) => <Tag color={tipoColor[v] ?? "default"}>{v.replace(/_/g, " ")}</Tag>,
     },
     {
+      key: "descripcion",
       title: "Descripción", dataIndex: "descripcion",
+      ...filtroPorColumna(data, "descripcion"),
       render: (v: string) => <span style={{ fontSize: 13 }}>{v}</span>,
     },
     {
+      key: "usuario",
       title: "Usuario", dataIndex: "usuario", width: 140,
+      ...filtroPorColumna(data, "usuario"),
       render: (v: string) => <Text style={{ fontSize: 12 }}>{v}</Text>,
     },
   ];
@@ -76,17 +95,30 @@ export default function OTHistorialTab({ otId }: { otId: number }) {
     return <Empty description="Sin movimientos registrados todavía." />;
   }
 
+  const datosFiltrados = data.filter((r) => dentroDeRango(r, "createdAt", rangoFecha));
+
   return (
     <div>
-      <div style={{ marginBottom: 12, fontSize: 12, color: brand.textSecondary }}>
-        Últimos <strong>{data.length}</strong> movimientos (más reciente primero).
+      <div style={{ marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <span style={{ fontSize: 12, color: brand.textSecondary }}>
+          Últimos <strong>{datosFiltrados.length}</strong> movimientos (más reciente primero).
+        </span>
+        <Space wrap>
+          <RangoFechasFiltro label="Cuándo" value={rangoFecha} onChange={setRangoFecha} />
+          <ColumnasToggleButton<HistorialRecord>
+            columns={columns}
+            ocultas={ocultas}
+            setOcultas={setOcultas}
+            obligatorias={["createdAt"]}
+          />
+        </Space>
       </div>
       <Table
         rowKey="id"
         size="small"
-        columns={columns}
-        dataSource={data}
-        pagination={{ pageSize: 20, showTotal: (t) => `${t} eventos` }}
+        columns={visibleColumns(columns, ocultas)}
+        dataSource={datosFiltrados}
+        pagination={{ pageSize: 20, showTotal: (t) => `${t} eventos`, placement: ["topEnd", "bottomEnd"] }}
         loading={loading}
       />
     </div>

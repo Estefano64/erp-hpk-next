@@ -11,7 +11,13 @@ import {
   EyeInvisibleOutlined, SearchOutlined, ReloadOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import { numeracionColumn } from "@/lib/tables";
+import {
+  numeracionColumn,
+  useColumnasOcultas,
+  ColumnasToggleButton,
+  visibleColumns,
+  filtroPorColumna,
+} from "@/lib/tables";
 import { brand } from "@/lib/theme";
 import { catalogosById, type FieldDef } from "@/lib/catalogos-config";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
@@ -38,6 +44,7 @@ export default function CatalogoCrudPage() {
   const [fkOptions, setFkOptions] = useState<Record<string, { value: string; label: string }[]>>({});
   const [form] = Form.useForm();
   const [messageApi, contextHolder] = message.useMessage();
+  const { ocultas, setOcultas } = useColumnasOcultas(`catalogo-${tabla}-cols-v1`);
 
   const fetchData = useCallback(async () => {
     if (!cfg) return;
@@ -179,7 +186,7 @@ export default function CatalogoCrudPage() {
     );
   }
 
-  // Columnas dinámicas
+  // Columnas dinámicas — todas con filtro tipo Excel basado en los datos cargados
   const columns: ColumnsType<CatalogRow> = cfg.fields.map<ColumnsType<CatalogRow>[number]>((f) => {
     const base = {
       title: f.label,
@@ -191,6 +198,11 @@ export default function CatalogoCrudPage() {
         ...base,
         width: 90,
         align: "center",
+        filters: [
+          { text: "Activo", value: "true" },
+          { text: "Inactivo", value: "false" },
+        ],
+        onFilter: (value, r) => String(r[f.key] === true) === value,
         render: (v: boolean) => v ? <Tag color="success">Activo</Tag> : <Tag>Inactivo</Tag>,
       };
     }
@@ -198,14 +210,19 @@ export default function CatalogoCrudPage() {
       return {
         ...base,
         width: 110,
+        ...filtroPorColumna(data, f.key as keyof CatalogRow),
         render: (v: string | null) => v ? (
           <Tag color={v} style={{ fontSize: 11 }}>{v}</Tag>
         ) : <Text type="secondary">—</Text>,
       };
     }
     if (f.type === "select-fk") {
+      const fkOpts = fkOptions[f.key] ?? [];
       return {
         ...base,
+        filters: fkOpts.map((o) => ({ text: o.label, value: o.value })),
+        filterSearch: true,
+        onFilter: (value, r) => String(r[f.key] ?? "") === value,
         render: (v: string | null) => {
           if (!v) return <Text type="secondary">—</Text>;
           const opt = fkOptions[f.key]?.find((o) => o.value === v);
@@ -216,6 +233,8 @@ export default function CatalogoCrudPage() {
     if (f.type === "select") {
       return {
         ...base,
+        filters: (f.options ?? []).map((o) => ({ text: o.label, value: String(o.value) })),
+        onFilter: (value, r) => String(r[f.key] ?? "") === value,
         render: (v: string | null) => {
           const opt = f.options?.find((o) => String(o.value) === String(v));
           return opt ? <Tag>{opt.label}</Tag> : v ?? "—";
@@ -223,9 +242,15 @@ export default function CatalogoCrudPage() {
       };
     }
     if (f.type === "number") {
-      return { ...base, width: 90, align: "right" };
+      return {
+        ...base, width: 90, align: "right",
+        sorter: (a, b) => Number(a[f.key] ?? 0) - Number(b[f.key] ?? 0),
+      };
     }
-    return base;
+    return {
+      ...base,
+      ...filtroPorColumna(data, f.key as keyof CatalogRow),
+    };
   });
 
   // Columna de acciones
@@ -290,6 +315,12 @@ export default function CatalogoCrudPage() {
           )}
         </div>
         <Space>
+          <ColumnasToggleButton<CatalogRow>
+            columns={[numeracionColumn<CatalogRow>(), ...columns]}
+            ocultas={ocultas}
+            setOcultas={setOcultas}
+            obligatorias={["__num"]}
+          />
           <Button icon={<ReloadOutlined />} onClick={fetchData}>Refrescar</Button>
           <ExportarExcelButton<CatalogRow>
             endpoint={`/api/catalogos?tabla=${cfg.id}&incluirInactivos=1`}
@@ -329,11 +360,11 @@ export default function CatalogoCrudPage() {
 
       <Table
         rowKey={cfg.pkField}
-        columns={[numeracionColumn<CatalogRow>(), ...columns]}
+        columns={visibleColumns([numeracionColumn<CatalogRow>(), ...columns], ocultas)}
         dataSource={filtered}
         loading={loading}
         size="small"
-        pagination={{ pageSize: 50, showTotal: (t) => `${t} registros` }}
+        pagination={{ pageSize: 50, showTotal: (t) => `${t} registros`, placement: ["topEnd", "bottomEnd"] }}
         scroll={{ x: 800 }}
         rowClassName={(r) => r.activo === false ? "cat-row-inactive" : ""}
       />

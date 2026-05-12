@@ -11,6 +11,12 @@ import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { brand } from "@/lib/theme";
 import { useCachedFetch } from "@/lib/useCachedFetch";
+import {
+  useColumnasOcultas,
+  ColumnasToggleButton,
+  visibleColumns,
+  filtroPorColumna,
+} from "@/lib/tables";
 
 const { Text } = Typography;
 
@@ -51,6 +57,7 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
   const [selectedKeys, setSelectedKeys] = useState<number[]>([]);
   const [messageApi, contextHolder] = message.useMessage();
   const [modalApi, modalCtx] = Modal.useModal();
+  const { ocultas, setOcultas } = useColumnasOcultas("compras-req-aprob-cols-v1");
 
   // OC modal
   const [ocOpen, setOcOpen] = useState(false);
@@ -141,9 +148,21 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
     }
   }
 
+  const otValores = [...new Set(rows.map((r) => r.orden_trabajo?.ot).filter(Boolean) as string[])]
+    .sort()
+    .map((v) => ({ text: v, value: v }));
+  const clienteValores = [...new Set(rows.map((r) => r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social).filter(Boolean) as string[])]
+    .sort()
+    .map((v) => ({ text: v, value: v }));
+  const provValores = [...new Set(rows.map((r) => r.proveedor?.razon_social).filter(Boolean) as string[])]
+    .sort()
+    .map((v) => ({ text: v, value: v }));
+
   const columns: ColumnsType<Row> = [
     {
       title: "OT", key: "ot", width: 110,
+      filters: otValores, filterSearch: true,
+      onFilter: (value, r) => r.orden_trabajo?.ot === value,
       render: (_, r) => r.orden_trabajo?.ot ? (
         <a onClick={() => router.push(`/ordenes-trabajo/${r.ot_id}`)}>
           <Tag color={brand.navy} style={{ margin: 0 }}>{r.orden_trabajo.ot}</Tag>
@@ -152,8 +171,9 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
     },
     {
       title: "Nro Req / Item", key: "nro", width: 130,
+      ...filtroPorColumna(rows, "nro_req"),
       render: (_, r) => (
-        <Space size={4} direction="vertical" style={{ lineHeight: 1.1 }}>
+        <Space size={4} orientation="vertical" style={{ lineHeight: 1.1 }}>
           <Text strong style={{ fontSize: 11 }}>{r.nro_req ?? "—"}</Text>
           <Text type="secondary" style={{ fontSize: 10 }}>Item {r.item_req}</Text>
         </Space>
@@ -161,14 +181,23 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
     },
     {
       title: "Cliente", key: "cliente", width: 160, ellipsis: true,
+      filters: clienteValores, filterSearch: true,
+      onFilter: (value, r) => (r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social) === value,
       render: (_, r) => r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "—",
     },
     {
-      title: "Tipo", dataIndex: "tipo_codigo", width: 60, align: "center",
+      title: "Tipo", key: "tipo_codigo", dataIndex: "tipo_codigo", width: 60, align: "center",
+      filters: [
+        { text: "MAC", value: "MAC" },
+        { text: "CAD", value: "CAD" },
+        { text: "SER", value: "SER" },
+      ],
+      onFilter: (value, r) => r.tipo_codigo === value,
       render: (v: string) => <Tag color={TIPO_COLOR[v] ?? "default"} style={{ margin: 0 }}>{v}</Tag>,
     },
     {
       title: "Material / Descripción", key: "desc", ellipsis: true,
+      ...filtroPorColumna(rows, "material_codigo"),
       render: (_, r) => (
         <div style={{ lineHeight: 1.2 }}>
           {r.material_codigo && <Tag style={{ fontSize: 10, marginRight: 4 }}>{r.material_codigo}</Tag>}
@@ -178,20 +207,37 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
     },
     {
       title: "Qty", key: "qty", width: 90, align: "right",
+      sorter: (a, b) => Number(a.cantidad) - Number(b.cantidad),
+      filters: [...new Set(rows.map((r) => Number(r.cantidad)))]
+        .sort((a, b) => a - b).map((v) => ({ text: String(v), value: String(v) })),
+      filterSearch: true,
+      onFilter: (value, r) => String(Number(r.cantidad)) === value,
       render: (_, r) => `${Number(r.cantidad).toLocaleString()} ${r.unidad_medida ?? ""}`,
     },
     {
       title: "Precio est.", key: "precio", width: 110, align: "right",
+      sorter: (a, b) => Number(a.precio_unitario ?? 0) - Number(b.precio_unitario ?? 0),
+      filters: [...new Set(rows.map((r) => r.precio_unitario).filter(Boolean) as string[])]
+        .sort().map((v) => ({ text: Number(v).toFixed(2), value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => String(r.precio_unitario ?? "") === value,
       render: (_, r) => r.precio_unitario != null
         ? `${Number(r.precio_unitario).toFixed(2)} ${r.moneda ?? ""}`
         : <Text type="secondary">—</Text>,
     },
     {
       title: "Proveedor sugerido", key: "prov", width: 160, ellipsis: true,
+      filters: provValores, filterSearch: true,
+      onFilter: (value, r) => r.proveedor?.razon_social === value,
       render: (_, r) => r.proveedor?.razon_social ?? <Text type="secondary">—</Text>,
     },
     {
-      title: "Solicitado", dataIndex: "fecha_solicitud", width: 90,
+      title: "Solicitado", key: "fecha_solicitud", dataIndex: "fecha_solicitud", width: 90,
+      sorter: (a, b) => (a.fecha_solicitud || "").localeCompare(b.fecha_solicitud || ""),
+      filters: [...new Set(rows.map((r) => r.fecha_solicitud).filter(Boolean) as string[])]
+        .sort().map((v) => ({ text: dayjs(v).format("DD/MM/YY"), value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => r.fecha_solicitud === value,
       render: (v: string) => v ? <Text style={{ fontSize: 11 }}>{dayjs(v).format("DD/MM/YY")}</Text> : "—",
     },
   ];
@@ -236,6 +282,12 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
             {selectedKeys.length > 0 && (
               <Tag color={brand.cyan} style={{ fontWeight: 600 }}>{selectedKeys.length} seleccionado(s)</Tag>
             )}
+            <ColumnasToggleButton<Row>
+              columns={columns}
+              ocultas={ocultas}
+              setOcultas={setOcultas}
+              obligatorias={["ot", "desc"]}
+            />
             <Button icon={<ReloadOutlined />} onClick={fetchData}>Refrescar</Button>
             <Button
               type="primary"
@@ -264,11 +316,11 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
       ) : (
         <Table
           rowKey="id"
-          columns={columns}
+          columns={visibleColumns(columns, ocultas)}
           dataSource={rows}
           loading={loading}
           size="small"
-          pagination={{ pageSize: 50, showTotal: (t) => `${t} items` }}
+          pagination={{ pageSize: 50, showTotal: (t) => `${t} items`, placement: ["topEnd", "bottomEnd"] }}
           scroll={{ x: 1200 }}
           rowSelection={{
             selectedRowKeys: selectedKeys,

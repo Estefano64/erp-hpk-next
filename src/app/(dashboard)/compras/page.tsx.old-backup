@@ -304,6 +304,7 @@ export default function ComprasPage() {
           total,
           showTotal: (t) => `${t} compras`,
           onChange: setPage,
+          placement: ["topEnd", "bottomEnd"],
         }}
         scroll={{ x: 1100 }}
         size="small"

@@ -34,6 +34,7 @@ import {
   FilePdfOutlined,
   FileExcelOutlined,
   MessageOutlined,
+  CheckOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import {
@@ -44,6 +45,9 @@ import {
   ColumnasToggleButton,
   visibleColumns,
   filtroPorColumna,
+  useRangoFechas,
+  RangoFechasFiltro,
+  dentroDeRango,
 } from "@/lib/tables";
 import { Popover, Divider } from "antd";
 import { brand } from "@/lib/theme";
@@ -97,6 +101,17 @@ export default function ComprasPage() {
 
   const [modalId, setModalId] = useState<number | null>(null);
   const { ocultas, setOcultas } = useColumnasOcultas("compras-list-cols-v1");
+  const { rango: rangoSolicitud, setRango: setRangoSolicitud } = useRangoFechas();
+  const { rango: rangoEntrega, setRango: setRangoEntrega } = useRangoFechas();
+
+  const [rol, setRol] = useState<string | null>(null);
+  const isAdmin = rol === "admin";
+  useEffect(() => {
+    fetch("/api/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.user) setRol(d.user.rol); })
+      .catch(() => { /* noop */ });
+  }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -124,6 +139,18 @@ export default function ComprasPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Error al eliminar");
       message.success("Compra eliminada");
+      fetchData();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : "Error");
+    }
+  }
+
+  async function handleAceptar(id: number) {
+    try {
+      const res = await fetch(`/api/compras/${id}/aceptar`, { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Error al aceptar OC");
+      message.success("OC aceptada");
       fetchData();
     } catch (err: unknown) {
       message.error(err instanceof Error ? err.message : "Error");
@@ -270,6 +297,11 @@ export default function ComprasPage() {
       title: "F. Entrega Esp.",
       dataIndex: "fecha_entrega_esperada",
       width: 120,
+      sorter: (a, b) => (a.fecha_entrega_esperada ?? "").localeCompare(b.fecha_entrega_esperada ?? ""),
+      filters: [...new Set(data.map((r) => r.fecha_entrega_esperada).filter(Boolean) as string[])]
+        .sort().map((v) => ({ text: dayjs(v).format("DD/MM/YYYY"), value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => r.fecha_entrega_esperada === value,
       render: (v: string | null) => (v ? dayjs(v).format("DD/MM/YYYY") : "-"),
     },
     {
@@ -278,6 +310,11 @@ export default function ComprasPage() {
       dataIndex: "cantidad_items",
       width: 70,
       align: "center",
+      sorter: (a, b) => a.cantidad_items - b.cantidad_items,
+      filters: [...new Set(data.map((r) => r.cantidad_items))].sort((a, b) => a - b)
+        .map((v) => ({ text: String(v), value: String(v) })),
+      filterSearch: true,
+      onFilter: (value, r) => String(r.cantidad_items) === value,
     },
     {
       key: "subtotal",
@@ -285,6 +322,11 @@ export default function ComprasPage() {
       dataIndex: "subtotal",
       width: 110,
       align: "right",
+      sorter: (a, b) => Number(a.subtotal) - Number(b.subtotal),
+      filters: [...new Set(data.map((r) => Number(r.subtotal)))].sort((a, b) => a - b)
+        .map((v) => ({ text: v.toFixed(2), value: String(v) })),
+      filterSearch: true,
+      onFilter: (value, r) => String(Number(r.subtotal)) === value,
       render: (v: number) => Number(v).toFixed(2),
     },
     {
@@ -357,6 +399,19 @@ export default function ComprasPage() {
           <Tooltip title="Generar PDF (OC)">
             <Button type="text" icon={<FilePdfOutlined style={{ color: "#cf1322" }} />} onClick={() => window.open(`/api/compras/${r.id}/pdf`, "_blank")} />
           </Tooltip>
+          {isAdmin && r.estado === "Pendiente" && (
+            <Tooltip title="Aceptar OC (pasa a En Proceso)">
+              <Popconfirm
+                title={`¿Aceptar la OC ${r.numero_po}?`}
+                description="La OC quedará en estado En Proceso y registrará tu usuario como aprobador."
+                onConfirm={() => handleAceptar(r.id)}
+                okText="Aceptar"
+                cancelText="Cancelar"
+              >
+                <Button type="text" icon={<CheckOutlined style={{ color: "#52c41a" }} />} />
+              </Popconfirm>
+            </Tooltip>
+          )}
           {r.estado === "Pendiente" && (
             <Tooltip title="Eliminar">
               <Popconfirm
@@ -456,13 +511,22 @@ export default function ComprasPage() {
               Actualizar
             </Button>
           </Col>
+          <Col xs={24} md={12}>
+            <RangoFechasFiltro label="Fecha solicitud" value={rangoSolicitud} onChange={setRangoSolicitud} />
+          </Col>
+          <Col xs={24} md={12}>
+            <RangoFechasFiltro label="Fecha entrega esperada" value={rangoEntrega} onChange={setRangoEntrega} />
+          </Col>
         </Row>
       </Card>
 
       <Table
         rowKey="id"
         columns={visibleColumns(columns, ocultas)}
-        dataSource={data}
+        dataSource={data.filter((r) =>
+          dentroDeRango(r, "fecha_solicitud", rangoSolicitud) &&
+          dentroDeRango(r, "fecha_entrega_esperada", rangoEntrega)
+        )}
         loading={loading}
         pagination={paginacionEstandar({
           current: page,

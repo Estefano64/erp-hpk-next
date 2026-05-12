@@ -36,6 +36,9 @@ import {
   ColumnasToggleButton,
   visibleColumns,
   filtroPorColumna,
+  useRangoFechas,
+  RangoFechasFiltro,
+  dentroDeRango,
 } from "@/lib/tables";
 import dayjs from "dayjs";
 
@@ -76,6 +79,8 @@ export default function ContratosPage() {
   const [search, setSearch] = useState("");
   const [filterCliente, setFilterCliente] = useState("");
   const { ocultas, setOcultas } = useColumnasOcultas("contratos-list-cols-v1");
+  const { rango: rangoInicio, setRango: setRangoInicio } = useRangoFechas();
+  const { rango: rangoTermino, setRango: setRangoTermino } = useRangoFechas();
 
   const [clientes, setClientes] = useState<ClienteOption[]>([]);
   const [codReps, setCodReps] = useState<CodRepOption[]>([]);
@@ -199,6 +204,10 @@ export default function ContratosPage() {
       dataIndex: "cliente_id",
       ellipsis: true,
       sorter: (a, b) => (a.cliente?.nombre_comercial ?? a.cliente?.razon_social ?? "").localeCompare(b.cliente?.nombre_comercial ?? b.cliente?.razon_social ?? ""),
+      filters: [...new Set(data.map((r) => r.cliente?.nombre_comercial ?? r.cliente?.razon_social).filter(Boolean) as string[])]
+        .sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => (r.cliente?.nombre_comercial ?? r.cliente?.razon_social) === value,
       render: (_: number, r: ContratoRecord) => r.cliente?.nombre_comercial ?? r.cliente?.razon_social,
     },
     {
@@ -206,6 +215,10 @@ export default function ContratosPage() {
       title: "Cód. Reparable",
       dataIndex: "cod_rep_id",
       width: 140,
+      filters: [...new Set(data.map((r) => r.codigo_reparacion?.codigo).filter(Boolean) as string[])]
+        .sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => r.codigo_reparacion?.codigo === value,
       render: (_: number | null, r: ContratoRecord) =>
         r.codigo_reparacion ? `${r.codigo_reparacion.codigo} - ${r.codigo_reparacion.descripcion}` : "-",
       ellipsis: true,
@@ -216,6 +229,10 @@ export default function ContratosPage() {
       dataIndex: "fecha_inicio",
       width: 110,
       sorter: (a, b) => a.fecha_inicio.localeCompare(b.fecha_inicio),
+      filters: [...new Set(data.map((r) => r.fecha_inicio).filter(Boolean))]
+        .sort().map((v) => ({ text: formatDate(v), value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => r.fecha_inicio === value,
       render: (v: string) => formatDate(v),
     },
     {
@@ -224,6 +241,10 @@ export default function ContratosPage() {
       dataIndex: "fecha_termino",
       width: 110,
       sorter: (a, b) => a.fecha_termino.localeCompare(b.fecha_termino),
+      filters: [...new Set(data.map((r) => r.fecha_termino).filter(Boolean))]
+        .sort().map((v) => ({ text: formatDate(v), value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => r.fecha_termino === value,
       render: (v: string) => formatDate(v),
     },
     {
@@ -233,6 +254,10 @@ export default function ContratosPage() {
       width: 90,
       align: "center",
       sorter: (a, b) => (a.dias_reparacion ?? 0) - (b.dias_reparacion ?? 0),
+      filters: [...new Set(data.map((r) => r.dias_reparacion))].sort((a, b) => a - b)
+        .map((v) => ({ text: String(v), value: String(v) })),
+      filterSearch: true,
+      onFilter: (value, r) => String(r.dias_reparacion) === value,
     },
     {
       key: "precio",
@@ -301,13 +326,22 @@ export default function ContratosPage() {
           <Col xs={12} sm={6} md={3}>
             <Button icon={<ReloadOutlined />} onClick={() => { setSearch(""); setFilterCliente(""); setPage(1); }}>Limpiar</Button>
           </Col>
+          <Col xs={24} md={12}>
+            <RangoFechasFiltro label="Fecha inicio" value={rangoInicio} onChange={setRangoInicio} />
+          </Col>
+          <Col xs={24} md={12}>
+            <RangoFechasFiltro label="Fecha término" value={rangoTermino} onChange={setRangoTermino} />
+          </Col>
         </Row>
       </Card>
 
       <Table
         rowKey="id"
         columns={visibleColumns(columns, ocultas)}
-        dataSource={data}
+        dataSource={data.filter((r) =>
+          dentroDeRango(r, "fecha_inicio", rangoInicio) &&
+          dentroDeRango(r, "fecha_termino", rangoTermino)
+        )}
         loading={loading}
         pagination={paginacionEstandar({
           current: page,
