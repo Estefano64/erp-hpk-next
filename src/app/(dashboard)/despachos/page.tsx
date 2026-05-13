@@ -14,7 +14,7 @@ import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
 import {
   numeracionColumn, useColumnasOcultas, ColumnasToggleButton, visibleColumns,
-  filtroPorColumna, STICKY_HEADER,
+  filtroPorColumna, STICKY_HEADER, useColumnasRedimensionables,
 } from "@/lib/tables";
 
 const { Title, Text } = Typography;
@@ -120,8 +120,8 @@ export default function DespachosPage() {
       <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
         <Col xs={12} md={6}><Card><Statistic title="OTs pendientes" value={grupos.length} prefix={<InboxOutlined style={{ color: brand.navy }} />} /></Card></Col>
         <Col xs={12} md={6}><Card><Statistic title="Items totales" value={totalItems} /></Card></Col>
-        <Col xs={12} md={6}><Card><Statistic title="Con stock" value={totalConStock} valueStyle={{ color: "#52c41a" }} prefix={<CheckCircleOutlined style={{ color: "#52c41a" }} />} /></Card></Col>
-        <Col xs={12} md={6}><Card><Statistic title="Sin stock" value={totalSinStock} valueStyle={{ color: totalSinStock > 0 ? "#cf1322" : "#bfbfbf" }} prefix={<WarningOutlined style={{ color: totalSinStock > 0 ? "#cf1322" : "#bfbfbf" }} />} /></Card></Col>
+        <Col xs={12} md={6}><Card><Statistic title="Con stock" value={totalConStock} styles={{ content: { color: "#52c41a" } }} prefix={<CheckCircleOutlined style={{ color: "#52c41a" }} />} /></Card></Col>
+        <Col xs={12} md={6}><Card><Statistic title="Sin stock" value={totalSinStock} styles={{ content: { color: totalSinStock > 0 ? "#cf1322" : "#bfbfbf" } }} prefix={<WarningOutlined style={{ color: totalSinStock > 0 ? "#cf1322" : "#bfbfbf" }} />} /></Card></Col>
       </Row>
 
       {grupos.length === 0 && !loading ? (
@@ -196,6 +196,9 @@ function GrupoCard({
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents } =
+    useColumnasRedimensionables<Item>(columns, "despachos-list-cols-widths-v1");
+
   // Solo items con stock pueden seleccionarse
   const itemsConStock = grupo.items.filter((i) => {
     const st = Number(i.material?.stock_actual ?? 0);
@@ -249,7 +252,8 @@ function GrupoCard({
       <Table<Item>
         rowKey="id"
         size="small"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={grupo.items}
         sticky={STICKY_HEADER}
         pagination={false}

@@ -92,6 +92,7 @@ export async function GET(req: NextRequest) {
     const data = records.map((r: R) => ({
       id: r.id,
       numero_po: r.numero_po,
+      nombre: r.nombre ?? null,
       numero_req: r.numero_req,
       ot_id: r.ot_id,
       ot_numero: r.orden_trabajo?.ot ?? null,

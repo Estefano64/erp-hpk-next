@@ -30,6 +30,7 @@ import {
   ColumnasToggleButton,
   visibleColumns,
   filtroPorColumna,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 
 const { Text } = Typography;
@@ -279,6 +280,12 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
     },
   ];
 
+  const { columnas: columnsItemsResizable, components: itemsTableComponents } =
+    useColumnasRedimensionables<CompraDetalle["ot_repuestos"][0]>(
+      columnsItems,
+      "compra-detalle-items-cols-widths-v1",
+    );
+
   return (
     <Modal
       open={open}
@@ -484,7 +491,8 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
           >
             <Table
               rowKey="id"
-              columns={visibleColumns(columnsItems, itemsOcultas)}
+              columns={visibleColumns(columnsItemsResizable, itemsOcultas)}
+              components={itemsTableComponents}
               dataSource={compra.ot_repuestos}
               pagination={false}
               size="small"

@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Typography, Button, Space, Tag, Card, Modal, Descriptions, Tooltip, message, Empty, DatePicker, Collapse, Segmented, Slider, Alert,
+  Typography, Button, Space, Tag, Card, Modal, Descriptions, Tooltip, message, Empty, DatePicker, Collapse, Segmented, Slider, Alert, Popover, Divider, Select,
 } from "antd";
 import {
   CalendarOutlined, LeftOutlined, RightOutlined, UserOutlined, ToolOutlined, AimOutlined,
   SettingOutlined, RollbackOutlined, UnorderedListOutlined, WarningFilled, ZoomInOutlined, ZoomOutOutlined,
-  PrinterOutlined,
+  PrinterOutlined, BgColorsOutlined, FilterOutlined, ClearOutlined,
 } from "@ant-design/icons";
 import dayjs, { Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
@@ -36,6 +36,7 @@ interface PlanRow {
   version: number;
   qty_personal: number | null;
   semana_plan: string | null;
+  trabajo_externo: boolean | null;
   orden_trabajo: {
     id: number;
     ot: string | null;
@@ -121,6 +122,8 @@ export default function ProgramacionSemanalPage() {
   const router = useRouter();
   const [lunes, setLunes] = useState<Dayjs>(() => dayjs().startOf("isoWeek"));
   const [view, setView] = useState<"equipo" | "operario">("equipo");
+  const [filtroEquipos, setFiltroEquipos] = useState<string[]>([]);
+  const [filtroOperarios, setFiltroOperarios] = useState<string[]>([]);
   const [rows, setRows] = useState<PlanRow[]>([]);
   const [allRows, setAllRows] = useState<PlanRow[]>([]); // para "sin semana asignada"
   const [trabajadores, setTrabajadores] = useState<Trabajador[]>([]);
@@ -227,38 +230,54 @@ export default function ProgramacionSemanalPage() {
     return c?.nombre ?? est ?? "-";
   }, [estadosCat]);
 
+  // ── Filas filtradas: aplican filtros de equipos y operarios sobre las tareas ──
+  const rowsFiltradas = useMemo(() => {
+    if (filtroEquipos.length === 0 && filtroOperarios.length === 0) return rows;
+    return rows.filter((r) => {
+      if (filtroEquipos.length > 0 && (!r.maquina || !filtroEquipos.includes(r.maquina))) return false;
+      if (filtroOperarios.length > 0 && (!r.tecnico || !filtroOperarios.includes(r.tecnico))) return false;
+      return true;
+    });
+  }, [rows, filtroEquipos, filtroOperarios]);
+
   // ── Agrupación por recurso ──
   const recursos = useMemo(() => {
     if (view === "equipo") {
-      return equipos.map((e) => ({
+      const lista = filtroEquipos.length > 0
+        ? equipos.filter((e) => filtroEquipos.includes(e.codigo))
+        : equipos;
+      return lista.map((e) => ({
         key: e.codigo,
         label: e.descripcion ?? e.codigo,
         sub: e.codigo,
       }));
     }
-    return trabajadores.map((t) => ({
+    const lista = filtroOperarios.length > 0
+      ? trabajadores.filter((t) => filtroOperarios.includes(t.nombre))
+      : trabajadores;
+    return lista.map((t) => ({
       key: t.nombre,
       label: t.nombre,
       sub: t.area,
     }));
-  }, [view, equipos, trabajadores]);
+  }, [view, equipos, trabajadores, filtroEquipos, filtroOperarios]);
 
   const tareasPorRecurso = useMemo(() => {
     const map = new Map<string, PlanRow[]>();
-    for (const r of rows) {
+    for (const r of rowsFiltradas) {
       const key = view === "equipo" ? r.maquina : r.tecnico;
       if (!key) continue;
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(r);
     }
     return map;
-  }, [rows, view]);
+  }, [rowsFiltradas, view]);
 
   // Carga (HH planificadas) por recurso para la semana
   const CAPACIDAD_SEMANA = 45; // 9h/día * 5 días
   const cargaPorRecurso = useMemo(() => {
     const map = new Map<string, number>();
-    for (const r of rows) {
+    for (const r of rowsFiltradas) {
       const key = view === "equipo" ? r.maquina : r.tecnico;
       if (!key) continue;
       const dur = Number(r.horas_estimadas ?? 0);
@@ -266,7 +285,7 @@ export default function ProgramacionSemanalPage() {
       map.set(key, (map.get(key) ?? 0) + dur * qty);
     }
     return map;
-  }, [rows, view]);
+  }, [rowsFiltradas, view]);
 
   // Posición X de "ahora" si la semana actual es la mostrada
   const lineaHoy = useMemo(() => {
@@ -690,6 +709,7 @@ export default function ProgramacionSemanalPage() {
           }}
           data-color={color}
           data-conflict={hasConflict ? "1" : "0"}
+          data-externo={r.trabajo_externo ? "1" : "0"}
         >
           {/* Indicador de continuación desde semana anterior */}
           {continuaDeAntes && (
@@ -813,6 +833,46 @@ export default function ProgramacionSemanalPage() {
 
       {/* Toolbar */}
       <Card size="small" styles={{ body: { padding: "8px 16px" } }} style={{ marginBottom: 8 }}>
+        {/* Fila de filtros */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
+          <FilterOutlined style={{ color: brand.textSecondary }} />
+          <span style={{ fontSize: 12, color: brand.textSecondary, fontWeight: 500 }}>Filtros:</span>
+          <Select
+            mode="multiple"
+            allowClear
+            placeholder="Máquinas (todas)"
+            value={filtroEquipos}
+            onChange={setFiltroEquipos}
+            options={equipos.map((e) => ({ value: e.codigo, label: e.descripcion ?? e.codigo }))}
+            optionFilterProp="label"
+            maxTagCount="responsive"
+            size="small"
+            style={{ minWidth: 220, maxWidth: 380 }}
+            suffixIcon={<ToolOutlined />}
+          />
+          <Select
+            mode="multiple"
+            allowClear
+            placeholder="Operarios (todos)"
+            value={filtroOperarios}
+            onChange={setFiltroOperarios}
+            options={trabajadores.map((t) => ({ value: t.nombre, label: `${t.nombre} — ${t.area}` }))}
+            optionFilterProp="label"
+            maxTagCount="responsive"
+            size="small"
+            style={{ minWidth: 220, maxWidth: 380 }}
+            suffixIcon={<UserOutlined />}
+          />
+          {(filtroEquipos.length > 0 || filtroOperarios.length > 0) && (
+            <Button
+              size="small"
+              icon={<ClearOutlined />}
+              onClick={() => { setFiltroEquipos([]); setFiltroOperarios([]); }}
+            >
+              Limpiar filtros
+            </Button>
+          )}
+        </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
           <Space>
             {selectedIds.size > 0 && (
@@ -826,6 +886,77 @@ export default function ProgramacionSemanalPage() {
             </span>
           </Space>
           <Space size="middle">
+            <Popover
+              trigger="click"
+              placement="bottomRight"
+              title={<span><BgColorsOutlined style={{ marginRight: 6 }} />Leyenda de colores</span>}
+              content={
+                <div style={{ minWidth: 260, fontSize: 12 }}>
+                  <div style={{ fontWeight: 600, color: brand.navy, marginBottom: 6 }}>Estado de la tarea</div>
+                  {estadosCat.length === 0 ? (
+                    <div style={{ color: brand.textSecondary, fontSize: 11, marginBottom: 8 }}>
+                      Sin estados cargados. Definí colores en Catálogos → statusTarea.
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
+                      {estadosCat.map((e) => (
+                        <div key={e.codigo} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <Tag color={e.color ?? "default"} style={{ margin: 0, minWidth: 90, textAlign: "center" }}>
+                            {e.nombre}
+                          </Tag>
+                          <span style={{ color: brand.textSecondary, fontSize: 11 }}>{e.codigo}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <Divider style={{ margin: "8px 0" }} />
+                  <div style={{ fontWeight: 600, color: brand.navy, marginBottom: 6 }}>Carga por recurso (%)</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ display: "inline-block", width: 18, height: 12, background: "#52C41A", borderRadius: 2 }} />
+                      <span>≤ 70% — Holgura</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ display: "inline-block", width: 18, height: 12, background: "#1677FF", borderRadius: 2 }} />
+                      <span>71% – 90% — Carga normal</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ display: "inline-block", width: 18, height: 12, background: "#FA8C16", borderRadius: 2 }} />
+                      <span>91% – 100% — Cerca del tope</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ display: "inline-block", width: 18, height: 12, background: "#F5222D", borderRadius: 2 }} />
+                      <span>&gt; 100% — Sobrecarga</span>
+                    </div>
+                  </div>
+                  <Divider style={{ margin: "8px 0" }} />
+                  <div style={{ fontWeight: 600, color: brand.navy, marginBottom: 6 }}>Otros</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{
+                        display: "inline-block",
+                        width: 22, height: 14,
+                        borderRadius: 3,
+                        background: "#8c8c8c",
+                        backgroundImage: "repeating-linear-gradient(45deg, rgba(255,255,255,0.35) 0 4px, transparent 4px 8px)",
+                        boxShadow: "inset 0 0 0 2px #FAAD14",
+                      }} />
+                      <span>🤝 Trabajo derivado a tercero (servicio externo)</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <WarningFilled style={{ color: "#ff4d4f", fontSize: 13 }} />
+                      <span>Conflicto de horarios entre tareas</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ display: "inline-block", width: 18, height: 12, border: `2px dashed ${brand.cyan}`, borderRadius: 2 }} />
+                      <span>Tarea seleccionada (Shift+Click)</span>
+                    </div>
+                  </div>
+                </div>
+              }
+            >
+              <Button size="small" icon={<BgColorsOutlined />}>Leyenda</Button>
+            </Popover>
             <Button size="small" icon={<PrinterOutlined />} onClick={() => setPrintModalOpen(true)}>Imprimir</Button>
             <span style={{ fontSize: 12, color: brand.textSecondary }}>
               <ZoomOutOutlined /> Zoom
@@ -1010,6 +1141,7 @@ export default function ProgramacionSemanalPage() {
                 onClick={() => { if (!drag) setSelectedTask(t); }}
                 className="psg-pool-card psg-pool-card-semana"
                 data-color={estadoColor(t.estado)}
+                data-externo={t.trabajo_externo ? "1" : "0"}
                 style={{ opacity: drag?.taskId === t.id ? 0.25 : 1 }}
               >
                 <div style={{ fontWeight: 600, fontSize: 12 }}>
@@ -1070,6 +1202,7 @@ export default function ProgramacionSemanalPage() {
               onClick={() => { if (!drag) setSelectedTask(t); }}
               className="psg-pool-card"
               data-color={estadoColor(t.estado)}
+              data-externo={t.trabajo_externo ? "1" : "0"}
               style={{ opacity: drag?.taskId === t.id ? 0.25 : 1 }}
             >
               <div style={{ fontWeight: 600, fontSize: 12 }}>
@@ -1352,6 +1485,35 @@ export default function ProgramacionSemanalPage() {
         .psg-task-block[data-color="volcano"] { background: #B855E5; }
         .psg-task-block[data-color="error"] { background: #F5222D; opacity: 0.7; }
         .psg-task-block[data-conflict="1"] { outline: 2px solid #ff4d4f; }
+
+        /* Trabajo derivado a tercero: stripes diagonales + borde dorado para distinguir. */
+        .psg-task-block[data-externo="1"] {
+          background-image: repeating-linear-gradient(
+            45deg,
+            rgba(255, 255, 255, 0.18) 0 6px,
+            transparent 6px 12px
+          );
+          box-shadow: inset 0 0 0 2px #FAAD14, 0 1px 2px rgba(0,0,0,0.15);
+        }
+        .psg-task-block[data-externo="1"]::before {
+          content: "🤝";
+          position: absolute;
+          top: 2px;
+          right: 4px;
+          font-size: 10px;
+          line-height: 1;
+          pointer-events: none;
+          opacity: 0.95;
+          text-shadow: 0 0 2px rgba(0,0,0,0.4);
+        }
+        .psg-pool-card[data-externo="1"] {
+          background-image: repeating-linear-gradient(
+            45deg,
+            rgba(255, 255, 255, 0.18) 0 6px,
+            transparent 6px 12px
+          );
+          box-shadow: inset 0 0 0 2px #FAAD14, 0 1px 2px rgba(0,0,0,0.15);
+        }
         .psg-task-selected {
           box-shadow: 0 0 0 3px ${brand.cyan}, 0 1px 4px rgba(0,0,0,0.2) !important;
         }

@@ -16,7 +16,7 @@ import { formatDateOnly } from "@/lib/dates";
 import {
   numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE,
   useColumnasOcultas, ColumnasToggleButton, visibleColumns, filtroPorColumna,
-  STICKY_HEADER,
+  STICKY_HEADER, useColumnasRedimensionables,
 } from "@/lib/tables";
 
 const { Title, Text } = Typography;
@@ -114,6 +114,7 @@ function TabCatalogo() {
 
   const openEdit = (h: Herramienta) => {
     setEditing(h);
+    form.resetFields();
     form.setFieldsValue({
       codigo: h.codigo,
       nombre: h.nombre,
@@ -197,13 +198,16 @@ function TabCatalogo() {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents } =
+    useColumnasRedimensionables<Herramienta>(columns, "herramientas-catalogo-cols-widths-v1");
+
   return (
     <>
       <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
         <Col xs={12} md={6}><Card><Statistic title="Total herramientas" value={data.length} prefix={<ToolOutlined style={{ color: brand.navy }} />} /></Card></Col>
         <Col xs={12} md={6}><Card><Statistic title="Stock total" value={totalStock} /></Card></Col>
-        <Col xs={12} md={6}><Card><Statistic title="Asignadas" value={totalAsignadas} valueStyle={{ color: "#fa8c16" }} /></Card></Col>
-        <Col xs={12} md={6}><Card><Statistic title="Disponibles" value={disponibles} valueStyle={{ color: disponibles > 0 ? "#52c41a" : "#cf1322" }} /></Card></Col>
+        <Col xs={12} md={6}><Card><Statistic title="Asignadas" value={totalAsignadas} styles={{ content: { color: "#fa8c16" } }} /></Card></Col>
+        <Col xs={12} md={6}><Card><Statistic title="Disponibles" value={disponibles} styles={{ content: { color: disponibles > 0 ? "#52c41a" : "#cf1322" } }} /></Card></Col>
       </Row>
 
       <Card size="small" style={{ marginBottom: 12 }}>
@@ -219,7 +223,8 @@ function TabCatalogo() {
       <Card size="small" extra={<ColumnasToggleButton<Herramienta> columns={columns} ocultas={ocultas} setOcultas={setOcultas} obligatorias={["__num", "codigo", "acciones"]} />}>
         <Table<Herramienta>
           rowKey="id"
-          columns={visibleColumns(columns, ocultas)}
+          columns={visibleColumns(columnsResizable, ocultas)}
+          components={tableComponents}
           dataSource={data}
           loading={loading}
           size="small"
@@ -240,7 +245,6 @@ function TabCatalogo() {
         confirmLoading={saving}
         okText="Guardar"
         cancelText="Cancelar"
-        destroyOnHidden
       >
         <Form form={form} layout="vertical">
           <Form.Item name="codigo" label="Código" rules={[{ required: true, max: 20 }]}>
@@ -467,12 +471,15 @@ function TabPrestamos() {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents } =
+    useColumnasRedimensionables<Prestamo>(columns, "herramientas-prestamos-cols-widths-v1");
+
   return (
     <>
       <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
-        <Col xs={12} md={6}><Card><Statistic title="Prestadas" value={totalPrestadas} prefix={<ClockCircleOutlined style={{ color: "#1890ff" }} />} valueStyle={{ color: "#1890ff" }} /></Card></Col>
-        <Col xs={12} md={6}><Card><Statistic title="Vencidas" value={vencidas} prefix={<WarningOutlined style={{ color: "#cf1322" }} />} valueStyle={{ color: vencidas > 0 ? "#cf1322" : "#bfbfbf" }} /></Card></Col>
-        <Col xs={12} md={6}><Card><Statistic title="Devueltas" value={totalDevueltas} prefix={<CheckCircleOutlined style={{ color: "#52c41a" }} />} valueStyle={{ color: "#52c41a" }} /></Card></Col>
+        <Col xs={12} md={6}><Card><Statistic title="Prestadas" value={totalPrestadas} prefix={<ClockCircleOutlined style={{ color: "#1890ff" }} />} styles={{ content: { color: "#1890ff" } }} /></Card></Col>
+        <Col xs={12} md={6}><Card><Statistic title="Vencidas" value={vencidas} prefix={<WarningOutlined style={{ color: "#cf1322" }} />} styles={{ content: { color: vencidas > 0 ? "#cf1322" : "#bfbfbf" } }} /></Card></Col>
+        <Col xs={12} md={6}><Card><Statistic title="Devueltas" value={totalDevueltas} prefix={<CheckCircleOutlined style={{ color: "#52c41a" }} />} styles={{ content: { color: "#52c41a" } }} /></Card></Col>
         <Col xs={12} md={6}><Card><Statistic title="Total" value={data.length} /></Card></Col>
       </Row>
 
@@ -496,7 +503,8 @@ function TabPrestamos() {
         ) : (
           <Table<Prestamo>
             rowKey="id"
-            columns={visibleColumns(columns, ocultas)}
+            columns={visibleColumns(columnsResizable, ocultas)}
+            components={tableComponents}
             dataSource={data}
             loading={loading}
             size="small"
@@ -521,7 +529,6 @@ function TabPrestamos() {
         okText="Registrar"
         cancelText="Cancelar"
         width={620}
-        destroyOnHidden
       >
         <Form form={form} layout="vertical">
           <Form.Item name="herramienta_id" label="Herramienta" rules={[{ required: true }]}>
@@ -619,7 +626,6 @@ function TabPrestamos() {
         confirmLoading={saving}
         okText="Confirmar devolución"
         cancelText="Cancelar"
-        destroyOnHidden
       >
         {devolverModal && (
           <>

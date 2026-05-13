@@ -24,6 +24,7 @@ const UpdateSchema = z.object({
   qty_personal: z.coerce.number().int().min(1).optional(),
   horas_extras: z.boolean().optional(),
   horas_extras_qty: z.coerce.number().min(0).optional().nullable(),
+  trabajo_externo: z.boolean().optional(),
   orden: z.coerce.number().int().min(0).optional(),
   // Versioning para concurrencia optimista
   version: z.coerce.number().int().min(1).optional(),
@@ -148,9 +149,13 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       const finalDur = input.horas_estimadas !== undefined ? Number(input.horas_estimadas ?? 0) : Number(current.horas_estimadas ?? 0);
       const finalQty = input.qty_personal !== undefined ? Number(input.qty_personal ?? 1) : Number(current.qty_personal ?? 1);
       const finalIni = data.fecha_inicio !== undefined ? (data.fecha_inicio as Date | null) : current.fecha_inicio;
-      if (!finalHE && finalIni && finalDur > 0) {
-        const fin = calcularFinEstimado(finalIni, finalDur * Math.max(1, finalQty));
-        data.fecha_fin = fin;
+      if (!finalHE) {
+        if (finalIni && finalDur > 0) {
+          data.fecha_fin = calcularFinEstimado(finalIni, finalDur * Math.max(1, finalQty));
+        } else {
+          // Sin fecha de inicio o sin duración no hay Fin Estimado posible.
+          data.fecha_fin = null;
+        }
       }
 
       // ── 7) Auto-transiciones de estado ──

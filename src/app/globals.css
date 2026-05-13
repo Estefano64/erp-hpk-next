@@ -59,8 +59,7 @@ body {
   padding-left: 16px !important;
 }
 
-/* Resize handle: línea sutil 1px SIEMPRE visible (idle), se intensifica al hover.
-   Hit area = 10px (todo el span), línea visible = 1-2px. cursor: col-resize sobre toda la zona. */
+/* Resize handle: línea sutil 1px SIEMPRE visible (idle), se intensifica al hover. */
 .react-resizable-handle {
   background: linear-gradient(
     to right,
@@ -74,7 +73,6 @@ body {
   border: none !important;
   transition: background 0.15s;
 }
-/* Hover en cualquier parte del header: la línea se vuelve más visible (navy). */
 .ant-table-thead > tr > th:hover .react-resizable-handle {
   background: linear-gradient(
     to right,
@@ -86,7 +84,6 @@ body {
     transparent 100%
   ) !important;
 }
-/* Hover directo en el handle: cyan brillante + 2px de grosor (señal fuerte). */
 .react-resizable-handle:hover {
   background: linear-gradient(
     to right,
@@ -99,18 +96,38 @@ body {
   ) !important;
 }
 
-/* Celdas fijas (fixed left/right) con fondo sólido para que no se "transparenten"
-   sobre las celdas que pasan por debajo al scrollear horizontalmente. */
+/* Columnas fijas (Acciones a la derecha / NRO a la izquierda): mantener fondo
+   opaco siempre para que las columnas que pasan por debajo en el scroll
+   horizontal no se vean a través. */
 .ant-table-cell-fix-left,
 .ant-table-cell-fix-right {
   background-color: #ffffff !important;
+  z-index: 3 !important;
 }
-.ant-table-thead > tr > th.ant-table-cell-fix-left,
-.ant-table-thead > tr > th.ant-table-cell-fix-right {
+.ant-table-tbody > tr:hover > .ant-table-cell-fix-left,
+.ant-table-tbody > tr:hover > .ant-table-cell-fix-right,
+.ant-table-tbody > tr.ant-table-row-hover > .ant-table-cell-fix-left,
+.ant-table-tbody > tr.ant-table-row-hover > .ant-table-cell-fix-right,
+.ant-table-tbody > tr > .ant-table-cell-fix-left.ant-table-cell-row-hover,
+.ant-table-tbody > tr > .ant-table-cell-fix-right.ant-table-cell-row-hover {
   background-color: #fafafa !important;
 }
-.ant-table-tbody > tr:hover > td.ant-table-cell-fix-left,
-.ant-table-tbody > tr:hover > td.ant-table-cell-fix-right {
+.ant-table-tbody > tr.ant-table-row-selected > .ant-table-cell-fix-left,
+.ant-table-tbody > tr.ant-table-row-selected > .ant-table-cell-fix-right {
+  background-color: #e6f4ff !important;
+}
+.ant-table-thead > tr > .ant-table-cell-fix-left,
+.ant-table-thead > tr > .ant-table-cell-fix-right {
   background-color: #fafafa !important;
+  z-index: 5 !important;
+}
+/* Cualquier contenido (Tags, badges, etc.) dentro de una celda no debe poder
+   escaparse de los límites de la celda. */
+.ant-table-tbody > tr > td {
+  overflow: hidden !important;
+  contain: paint;
+}
+.ant-table-tbody > tr > td > * {
+  max-width: 100%;
 }
 

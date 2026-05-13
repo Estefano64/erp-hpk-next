@@ -18,6 +18,10 @@ import {
   Row,
   Col,
   Card,
+  Drawer,
+  Descriptions,
+  Statistic,
+  Empty,
 } from "antd";
 import {
   PlusOutlined,
@@ -27,7 +31,9 @@ import {
   StopOutlined,
   ReloadOutlined,
   ImportOutlined,
+  EyeOutlined,
 } from "@ant-design/icons";
+import dayjs from "dayjs";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
 import {
@@ -81,6 +87,17 @@ interface Option {
   nombre: string;
 }
 
+interface HistoricoRow {
+  key: string;
+  proveedor_id: number;
+  proveedor_razon_social: string;
+  precio_unitario: number;
+  moneda: string | null;
+  cantidad: number;
+  fecha: string | null;
+  numero_po: string;
+}
+
 export default function MaterialesPage() {
   const { data: session } = useSession();
   const isAdminUser = (session?.user as { rol?: string } | undefined)?.rol === "admin";
@@ -98,6 +115,9 @@ export default function MaterialesPage() {
   const { ocultas, setOcultas } = useColumnasOcultas("materiales-list-cols-v2", [
     "stock_actual", "stock_maximo", "punto_reposicion", "ubicacion", "caja", "modelo", "plazo_entrega",
   ]);
+  const [detalle, setDetalle] = useState<MaterialRecord | null>(null);
+  const [historicoMaterial, setHistoricoMaterial] = useState<HistoricoRow[]>([]);
+  const [loadingHistorico, setLoadingHistorico] = useState(false);
 
   // Opciones para selects
   const [plantas, setPlantas] = useState<Option[]>([]);
@@ -169,6 +189,22 @@ export default function MaterialesPage() {
     setEditing(null);
     form.resetFields();
     setModalOpen(true);
+  }
+
+  async function openDetalle(record: MaterialRecord) {
+    setDetalle(record);
+    setHistoricoMaterial([]);
+    setLoadingHistorico(true);
+    try {
+      const res = await fetch("/api/compras/historico");
+      if (res.ok) {
+        const json = await res.json();
+        const filas = (json.data ?? []).filter((r: { material_id: number }) => r.material_id === record.material_id);
+        setHistoricoMaterial(filas);
+      }
+    } finally {
+      setLoadingHistorico(false);
+    }
   }
 
   function openEdit(record: MaterialRecord) {
@@ -416,10 +452,11 @@ export default function MaterialesPage() {
     {
       key: "acciones",
       title: "Acciones",
-      width: 100,
+      width: 130,
       align: "center",
       render: (_: unknown, record: MaterialRecord) => (
         <Space size="small">
+          <Button type="text" icon={<EyeOutlined />} title="Ver detalle" onClick={() => openDetalle(record)} />
           <Button type="text" icon={<EditOutlined />} onClick={() => openEdit(record)} />
           <Popconfirm
             title="¿Desactivar este material?"
@@ -731,6 +768,87 @@ export default function MaterialesPage() {
           </Row>
         </Form>
       </Modal>
+
+      <Drawer
+        title={detalle ? `${detalle.codigo} — ${detalle.descripcion}` : ""}
+        open={!!detalle}
+        onClose={() => setDetalle(null)}
+        size={620}
+      >
+        {detalle && (
+          <div>
+            <Row gutter={12} style={{ marginBottom: 16 }}>
+              <Col span={8}>
+                <Statistic
+                  title="Stock actual"
+                  value={detalle.stock_actual != null ? Number(detalle.stock_actual) : 0}
+                  suffix={detalle.unidad_medida?.abreviatura ?? detalle.unidad_medida_codigo}
+                />
+              </Col>
+              <Col span={8}>
+                <Statistic
+                  title="Pto. reposición"
+                  value={detalle.punto_reposicion != null ? Number(detalle.punto_reposicion) : "—"}
+                />
+              </Col>
+              <Col span={8}>
+                <Statistic
+                  title="Stock máximo"
+                  value={detalle.stock_maximo != null ? Number(detalle.stock_maximo) : "—"}
+                />
+              </Col>
+            </Row>
+
+            <Descriptions size="small" column={2} bordered styles={{ label: { fontWeight: 600, width: 140 } }}>
+              <Descriptions.Item label="Código">{detalle.codigo}</Descriptions.Item>
+              <Descriptions.Item label="NP">{detalle.np ?? "—"}</Descriptions.Item>
+              <Descriptions.Item label="Descripción" span={2}>{detalle.descripcion}</Descriptions.Item>
+              <Descriptions.Item label="Planta">{detalle.planta?.nombre ?? detalle.planta_codigo}</Descriptions.Item>
+              <Descriptions.Item label="Área">{detalle.area?.nombre ?? detalle.area_codigo}</Descriptions.Item>
+              <Descriptions.Item label="Categoría">{detalle.categoria?.nombre ?? detalle.categoria_codigo}</Descriptions.Item>
+              <Descriptions.Item label="Clasificación">{detalle.clasificacion?.nombre ?? detalle.clasificacion_codigo}</Descriptions.Item>
+              <Descriptions.Item label="Unidad medida">{detalle.unidad_medida?.nombre ?? detalle.unidad_medida_codigo}</Descriptions.Item>
+              <Descriptions.Item label="Fabricante">{detalle.fabricante?.nombre ?? detalle.fabricante_codigo ?? "—"}</Descriptions.Item>
+              <Descriptions.Item label="Modelo">{detalle.modelo ?? "—"}</Descriptions.Item>
+              <Descriptions.Item label="Caja">{detalle.caja ?? "—"}</Descriptions.Item>
+              <Descriptions.Item label="Ubicación">{detalle.ubicacion ?? "—"}</Descriptions.Item>
+              <Descriptions.Item label="Plazo entrega">{detalle.plazo_entrega != null ? `${detalle.plazo_entrega} días` : "—"}</Descriptions.Item>
+              <Descriptions.Item label="Precio referencia" span={2}>
+                {detalle.precio != null
+                  ? `${detalle.moneda?.simbolo ?? detalle.moneda_codigo ?? ""} ${Number(detalle.precio).toLocaleString("es-PE", { minimumFractionDigits: 2 })}`
+                  : "—"}
+              </Descriptions.Item>
+            </Descriptions>
+
+            <Title level={5} style={{ marginTop: 20, color: brand.navy }}>Histórico de compras por proveedor</Title>
+            {loadingHistorico ? (
+              <div style={{ padding: 16, textAlign: "center", color: brand.textSecondary }}>Cargando…</div>
+            ) : historicoMaterial.length === 0 ? (
+              <Empty description="Sin compras registradas para este material." />
+            ) : (
+              <Table<HistoricoRow>
+                rowKey="key"
+                size="small"
+                pagination={false}
+                dataSource={historicoMaterial}
+                columns={[
+                  { key: "proveedor", title: "Proveedor", dataIndex: "proveedor_razon_social", render: (v: string) => <span style={{ fontSize: 12, fontWeight: 500 }}>{v}</span> },
+                  {
+                    key: "precio", title: "Último precio", dataIndex: "precio_unitario", align: "right",
+                    render: (v: number, r) => {
+                      const sym = r.moneda === "USD" ? "$" : r.moneda === "PEN" || r.moneda === "SOL" ? "S/" : "";
+                      return <span style={{ fontWeight: 600 }}>{sym} {v.toLocaleString("es-PE", { minimumFractionDigits: 2 })}</span>;
+                    },
+                  },
+                  { key: "cantidad", title: "Cant.", dataIndex: "cantidad", align: "right", render: (v: number) => v.toLocaleString("es-PE") },
+                  { key: "fecha", title: "Fecha", dataIndex: "fecha", render: (v: string | null) => v ? dayjs(v).format("DD/MM/YY") : "—" },
+                  { key: "po", title: "PO", dataIndex: "numero_po", render: (v: string) => <Tag>{v}</Tag> },
+                ]}
+              />
+            )}
+          </div>
+        )}
+      </Drawer>
     </div>
   );
 }

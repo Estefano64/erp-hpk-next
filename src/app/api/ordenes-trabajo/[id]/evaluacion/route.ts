@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getPlantilla } from "@/lib/evaluacion-templates";
+import { detectarTipoCilindro } from "@/lib/cod-rep-tipos";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -35,6 +36,8 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
             codigo: true,
             descripcion: true,
             np: true,
+            flota_codigo: true,
+            posicion_codigo: true,
             modelo_evaluacion_codigo: true,
             modelo_evaluacion: { select: { codigo: true, nombre: true } },
           },
@@ -44,7 +47,19 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
 
     if (!ot) return NextResponse.json({ error: "OT no encontrada" }, { status: 404 });
 
-    const modeloCodigo = ot.codigo_reparacion?.modelo_evaluacion_codigo ?? null;
+    // 1. Si la BD ya tiene asignado el modelo_evaluacion_codigo, lo usamos directo.
+    // 2. Si no, intentamos detectar el tipo de cilindro contra el catálogo del Excel
+    //    (5. Cod Rep) usando descripción / NP / flota como llave.
+    const modeloAsignado = ot.codigo_reparacion?.modelo_evaluacion_codigo ?? null;
+    const deteccion = !modeloAsignado && ot.codigo_reparacion
+      ? detectarTipoCilindro({
+          descripcion: ot.codigo_reparacion.descripcion,
+          np: ot.codigo_reparacion.np,
+          flota: ot.codigo_reparacion.flota_codigo,
+          posicion: ot.codigo_reparacion.posicion_codigo,
+        })
+      : null;
+    const modeloCodigo = modeloAsignado ?? deteccion?.codigo ?? null;
     const plantilla = modeloCodigo ? getPlantilla(modeloCodigo) : null;
 
     // Buscar o crear la fila PlanificacionOT que sirve de bucket para las capturas
@@ -84,6 +99,8 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
         },
         codigo_reparacion: ot.codigo_reparacion,
         modelo_evaluacion_codigo: modeloCodigo,
+        modelo_evaluacion_origen: modeloAsignado ? "catalogo_cod_rep" : (deteccion?.codigo ? `detectado_${deteccion.via}` : "no_detectado"),
+        deteccion: deteccion ?? null,
         plantilla,
         planificacion_eval_id: planEvalId,
         capturas,

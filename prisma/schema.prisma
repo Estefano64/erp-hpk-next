@@ -872,6 +872,7 @@ model Compra {
   id                     Int             @id @default(autoincrement())
   numero_po              String          @unique @db.VarChar(50)
   numero_req             String?         @db.VarChar(50)
+  nombre                 String?         @db.VarChar(300)
   ot_id                  Int?
   proveedor_id           Int
   fecha_solicitud        DateTime        @default(now()) @db.Date
@@ -959,7 +960,7 @@ model Herramienta {
   asignadas Int                    @default(0)
   estado    String                 @default("Disponible") @db.VarChar(15)
   createdAt DateTime               @default(now())
-  updatedAt DateTime               @updatedAt
+  updatedAt DateTime                @updatedAt
   prestamos PrestamoHerramienta[]
 
   @@map("herramientas")
@@ -970,8 +971,8 @@ model PrestamoHerramienta {
   herramienta_id            Int
   cantidad                  Int           @default(1)
   prestado_a                String        @db.VarChar(100)
-  ot_id                     Int?
   trabajador_id             Int?
+  ot_id                     Int?
   fecha_entrega             DateTime      @default(now()) @db.Date
   fecha_devolucion_prevista DateTime?     @db.Date
   fecha_devolucion_real     DateTime?     @db.Date
@@ -981,9 +982,9 @@ model PrestamoHerramienta {
   usuario_recibe            String?       @db.VarChar(100)
   createdAt                 DateTime      @default(now())
   updatedAt                 DateTime      @updatedAt
-  herramienta               Herramienta   @relation(fields: [herramienta_id], references: [id])
-  orden_trabajo             OrdenTrabajo? @relation(fields: [ot_id], references: [id])
-  trabajador                Trabajador?   @relation(fields: [trabajador_id], references: [trabajador_id])
+  herramienta               Herramienta   @relation(fields: [herramienta_id], references: [id], onDelete: Restrict)
+  orden_trabajo             OrdenTrabajo? @relation(fields: [ot_id], references: [id], onDelete: SetNull)
+  trabajador                Trabajador?   @relation(fields: [trabajador_id], references: [trabajador_id], onDelete: SetNull)
 
   @@index([herramienta_id])
   @@index([estado])
@@ -1119,6 +1120,7 @@ model PlanificacionOT {
   qty_personal         Int?                     @default(1)
   horas_extras         Boolean?                 @default(false)
   horas_extras_qty     Decimal?                 @db.Decimal(5, 1)
+  trabajo_externo      Boolean?                 @default(false)
   version              Int                      @default(1)
   created_at           DateTime                 @default(now())
   updated_at           DateTime                 @updatedAt

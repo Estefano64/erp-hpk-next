@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Typography, Card, Table, Tag, Space, Button, Input, Select, DatePicker, Row, Col,
   Modal, Form, message, Tooltip, Popconfirm, Empty, Alert, InputNumber, Segmented,
-  Popover, Divider, Flex,
+  Popover, Divider, Flex, Switch,
 } from "antd";
 import {
   SearchOutlined, ReloadOutlined, CheckOutlined, CloseOutlined, StopOutlined,
@@ -30,6 +30,7 @@ import {
   useRangoFechas,
   RangoFechasFiltro,
   dentroDeRango,
+  filtroPorColumna,
 } from "@/lib/tables";
 
 const { Title, Text } = Typography;
@@ -627,11 +628,38 @@ export default function RequerimientosPage() {
   const ocLabel = (c: string) =>
     (soRes?.data ?? []).find((s) => s.codigo === c)?.nombre ?? c;
 
+  // Data filtrada que se va a renderizar — la usamos como base para los filtros tipo Excel.
+  const gruposFiltrados = useMemo(() => grupos.filter((g) =>
+    dentroDeRango(g, "fecha_solicitud", rangoSol) &&
+    dentroDeRango(g, "fecha_requerida", rangoReq)
+  ), [grupos, rangoSol, rangoReq]);
+
+  // Helper local: filtros únicos sobre una proyección arbitraria (rutas anidadas).
+  function filtroProyectado(
+    data: GrupoReq[],
+    pick: (g: GrupoReq) => string | null | undefined,
+  ) {
+    const set = new Set<string>();
+    for (const g of data) {
+      const v = pick(g);
+      if (v == null || v === "") continue;
+      set.add(String(v));
+    }
+    return {
+      filters: [...set].sort((a, b) => a.localeCompare(b)).map((v) => ({ text: v, value: v })),
+      filterSearch: true as const,
+      onFilter: (value: boolean | React.Key, record: GrupoReq) =>
+        String(pick(record) ?? "") === value,
+    };
+  }
+
   // Columnas del nivel "grupo" (header de cada nro_req)
   const groupColumns: ColumnsType<GrupoReq> = [
     numeracionColumn<GrupoReq>({ current: page, pageSize }),
     {
-      title: "OT", key: "ot", width: 110, fixed: "left",
+      title: "OT", key: "ot", width: 110, fixed: "left", align: "center",
+      ...filtroProyectado(gruposFiltrados, (g) => g.orden_trabajo?.ot ?? null),
+      sorter: (a, b) => (a.orden_trabajo?.ot ?? "").localeCompare(b.orden_trabajo?.ot ?? ""),
       render: (_, g) => g.orden_trabajo?.ot ? (
         <a onClick={() => router.push(`/ordenes-trabajo/${g.ot_id}`)} style={{ fontSize: 11 }}>
           <Tag color={brand.navy} style={{ margin: 0 }}>{g.orden_trabajo.ot}</Tag>
@@ -639,7 +667,9 @@ export default function RequerimientosPage() {
       ) : <Tag>#{g.ot_id}</Tag>,
     },
     {
-      title: "Nro Req", key: "nro", width: 160,
+      title: "Nro Req", key: "nro", width: 160, align: "center",
+      ...filtroPorColumna(gruposFiltrados, "nro_req"),
+      sorter: (a, b) => (a.nro_req ?? "").localeCompare(b.nro_req ?? ""),
       render: (_, g) => (
         <Flex vertical gap={4} style={{ lineHeight: 1.2 }}>
           <Text strong style={{ fontSize: 12 }}>{g.nro_req ?? "(sin nro)"}</Text>
@@ -648,7 +678,13 @@ export default function RequerimientosPage() {
       ),
     },
     {
-      title: "Cliente / Cod. Rep.", key: "cliente", width: 200, ellipsis: true,
+      title: "Cliente / Cod. Rep.", key: "cliente", width: 200, ellipsis: true, align: "left",
+      ...filtroProyectado(gruposFiltrados, (g) =>
+        g.orden_trabajo?.cliente?.nombre_comercial ?? g.orden_trabajo?.cliente?.razon_social ?? null,
+      ),
+      sorter: (a, b) =>
+        (a.orden_trabajo?.cliente?.nombre_comercial ?? a.orden_trabajo?.cliente?.razon_social ?? "")
+          .localeCompare(b.orden_trabajo?.cliente?.nombre_comercial ?? b.orden_trabajo?.cliente?.razon_social ?? ""),
       render: (_, g) => (
         <div style={{ lineHeight: 1.2 }}>
           <div style={{ fontSize: 12 }}>{g.orden_trabajo?.cliente?.nombre_comercial ?? g.orden_trabajo?.cliente?.razon_social ?? "—"}</div>
@@ -659,15 +695,36 @@ export default function RequerimientosPage() {
       ),
     },
     {
-      title: "Proveedor", key: "prov", width: 140, ellipsis: true,
+      title: "Proveedor", key: "prov", width: 140, ellipsis: true, align: "left",
+      ...filtroPorColumna(gruposFiltrados, "proveedor_nombre"),
+      sorter: (a, b) => (a.proveedor_nombre ?? "").localeCompare(b.proveedor_nombre ?? ""),
       render: (_, g) => g.proveedor_nombre ?? <Text type="secondary">—</Text>,
     },
     {
       title: "REQ", key: "req", width: 110, align: "center",
+      // Filtros estáticos por estado conocido (resumen mixto no mapea a un solo valor).
+      filters: [
+        { text: "Sin aprobación", value: "SIN_APROBACION" },
+        { text: "Aprobado", value: "APROBADO" },
+        { text: "Desaprobado", value: "DESAPROBADO" },
+        { text: "Anulado", value: "ANULADO" },
+        { text: "Borrador", value: "BORRADOR" },
+      ],
+      onFilter: (value, g) => g.estados_req.includes(String(value)),
       render: (_, g) => renderStatusResumen(g.estados_req, REQ_COLOR, reqLabel),
     },
     {
       title: "OC", key: "oc", width: 140, align: "center",
+      filters: [
+        { text: "Pendiente OC", value: "PEND_OC" },
+        { text: "En proceso", value: "PROCESO" },
+        { text: "Entregado", value: "ENTREGADO" },
+        { text: "Completo", value: "COMPLETO" },
+        { text: "Incompleto", value: "INCOMPLETO" },
+        { text: "Anulado", value: "ANULADO" },
+        { text: "Devolución", value: "DEVOLUCION" },
+      ],
+      onFilter: (value, g) => g.estados_oc.includes(String(value)),
       render: (_, g) => (
         <Flex vertical gap={2} align="center" style={{ lineHeight: 1 }}>
           {renderStatusResumen(g.estados_oc, OC_COLOR, ocLabel)}
@@ -685,7 +742,9 @@ export default function RequerimientosPage() {
           <span>F. Solicitud</span>
         </Tooltip>
       ),
-      key: "fsol", width: 100,
+      key: "fsol", width: 100, align: "center",
+      sorter: (a, b) => (a.fecha_solicitud ? new Date(a.fecha_solicitud).getTime() : 0)
+        - (b.fecha_solicitud ? new Date(b.fecha_solicitud).getTime() : 0),
       render: (_, g) => g.fecha_solicitud
         ? <Text style={{ fontSize: 11 }}>{formatDateOnlyShort(g.fecha_solicitud)}</Text>
         : <Text type="secondary">—</Text>,
@@ -696,19 +755,23 @@ export default function RequerimientosPage() {
           <span>F. Requerida</span>
         </Tooltip>
       ),
-      key: "freq", width: 100,
+      key: "freq", width: 100, align: "center",
+      sorter: (a, b) => (a.fecha_requerida ? new Date(a.fecha_requerida).getTime() : 0)
+        - (b.fecha_requerida ? new Date(b.fecha_requerida).getTime() : 0),
       render: (_, g) => g.fecha_requerida
         ? <Text style={{ fontSize: 11 }}>{formatDateOnlyShort(g.fecha_requerida)}</Text>
         : <Text type="secondary">—</Text>,
     },
     {
-      title: "F. Entrega", key: "fent", width: 100,
+      title: "F. Entrega", key: "fent", width: 100, align: "center",
+      sorter: (a, b) => (a.fecha_entrega_esperada ? new Date(a.fecha_entrega_esperada).getTime() : 0)
+        - (b.fecha_entrega_esperada ? new Date(b.fecha_entrega_esperada).getTime() : 0),
       render: (_, g) => g.fecha_entrega_esperada
         ? <Text style={{ fontSize: 11 }}>{formatDateOnlyShort(g.fecha_entrega_esperada)}</Text>
         : <Text type="secondary">—</Text>,
     },
     {
-      title: "Acciones", key: "actions_grupo", width: 200, fixed: "right",
+      title: "Acciones", key: "actions_grupo", width: 200, fixed: "right", align: "center",
       render: (_, g) => {
         const borrador = g.items.filter((i) => i.status_requerimiento_codigo === "BORRADOR");
         const sinAprob = g.items.filter((i) => i.status_requerimiento_codigo === "SIN_APROBACION");
@@ -1197,7 +1260,17 @@ export default function RequerimientosPage() {
             />
           </Col>
           <Col xs={24} md={6}>
-            <Button icon={<ReloadOutlined />} onClick={clearFilters}>Limpiar</Button>
+            <Space>
+              <Tooltip title="Muestra solo los requerimientos aprobados que aún no tienen orden de compra emitida — listos para generar OC.">
+                <Switch
+                  checked={soloAprobadosSinOC}
+                  onChange={(v) => { setSoloAprobadosSinOC(v); setPage(1); }}
+                  checkedChildren="Listos para OC"
+                  unCheckedChildren="Listos para OC"
+                />
+              </Tooltip>
+              <Button icon={<ReloadOutlined />} onClick={clearFilters}>Limpiar</Button>
+            </Space>
           </Col>
         </Row>
       </Card>
@@ -1259,14 +1332,11 @@ export default function RequerimientosPage() {
         <Empty description="No hay requerimientos con esos filtros." />
       ) : (
         <TableDragWrapper>
-                  <Table<GrupoReq>
+          <Table<GrupoReq>
             rowKey="key"
             columns={visibleColumns(groupColumnsResizable, ocultas)}
             components={tableComponents}
-            dataSource={grupos.filter((g) =>
-              dentroDeRango(g, "fecha_solicitud", rangoSol) &&
-              dentroDeRango(g, "fecha_requerida", rangoReq)
-            )}
+            dataSource={gruposFiltrados}
             loading={loading}
             size="small"
             pagination={paginacionEstandar({
