@@ -42,6 +42,7 @@ import {
   useRangoFechas,
   RangoFechasFiltro,
   dentroDeRango,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
@@ -459,6 +460,9 @@ export default function EquiposPage() {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents } =
+    useColumnasRedimensionables<EquipoRecord>(columns, "mantenimiento-equipos-cols-widths-v1");
+
   return (
     <div>
       {contextHolder}
@@ -585,7 +589,8 @@ export default function EquiposPage() {
 
       <Table
         rowKey="equipo_id"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={data.filter((r) =>
           dentroDeRango(r, "fecha_inicio", rangoIni) &&
           dentroDeRango(r, "fecha_fabricacion", rangoFab)

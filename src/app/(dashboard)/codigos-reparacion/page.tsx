@@ -40,6 +40,7 @@ import {
   ColumnasToggleButton,
   visibleColumns,
   filtroPorColumna,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
@@ -346,6 +347,9 @@ export default function CodigosReparacionPage() {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents } =
+    useColumnasRedimensionables<CodRep>(columns, "codigos-reparacion-list-cols-widths-v1");
+
   return (
     <div>
       {contextHolder}
@@ -467,7 +471,8 @@ export default function CodigosReparacionPage() {
 
       <Table
         rowKey="cod_rep_id"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={data}
         loading={loading}
         pagination={paginacionEstandar({

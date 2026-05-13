@@ -17,6 +17,7 @@ import {
   useColumnasOcultas,
   ColumnasToggleButton,
   visibleColumns,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 
 interface OperacionRow {
@@ -401,6 +402,9 @@ export default function OperacionesCodRepPage() {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents } =
+    useColumnasRedimensionables<OperacionRow>(columns, "codrep-operaciones-cols-widths-v1");
+
   if (loading) return <Spin size="large" />;
   if (!codRep) return <Alert type="error" title="CodRep no encontrado" />;
 
@@ -462,7 +466,8 @@ export default function OperacionesCodRepPage() {
 
       <Table
         rowKey="operacion_cod_rep_id"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={rows}
         pagination={false}
         size="small"

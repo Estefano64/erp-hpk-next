@@ -15,7 +15,7 @@ import { brand } from "@/lib/theme";
 import {
   numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE,
   useColumnasOcultas, ColumnasToggleButton, visibleColumns, filtroPorColumna,
-  STICKY_HEADER,
+  STICKY_HEADER, useColumnasRedimensionables,
 } from "@/lib/tables";
 
 const { Title, Text } = Typography;
@@ -196,6 +196,9 @@ function TabCatalogo() {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents } =
+    useColumnasRedimensionables<Herramienta>(columns, "herramientas-catalogo-cols-widths-v1");
+
   return (
     <>
       <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
@@ -218,7 +221,8 @@ function TabCatalogo() {
       <Card size="small" extra={<ColumnasToggleButton<Herramienta> columns={columns} ocultas={ocultas} setOcultas={setOcultas} obligatorias={["__num", "codigo", "acciones"]} />}>
         <Table<Herramienta>
           rowKey="id"
-          columns={visibleColumns(columns, ocultas)}
+          columns={visibleColumns(columnsResizable, ocultas)}
+          components={tableComponents}
           dataSource={data}
           loading={loading}
           size="small"
@@ -466,6 +470,9 @@ function TabPrestamos() {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents } =
+    useColumnasRedimensionables<Prestamo>(columns, "herramientas-prestamos-cols-widths-v1");
+
   return (
     <>
       <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
@@ -495,7 +502,8 @@ function TabPrestamos() {
         ) : (
           <Table<Prestamo>
             rowKey="id"
-            columns={visibleColumns(columns, ocultas)}
+            columns={visibleColumns(columnsResizable, ocultas)}
+            components={tableComponents}
             dataSource={data}
             loading={loading}
             size="small"

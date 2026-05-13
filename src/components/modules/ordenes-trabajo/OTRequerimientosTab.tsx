@@ -21,6 +21,7 @@ import {
   useRangoFechas,
   RangoFechasFiltro,
   dentroDeRango,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 
 const { Text } = Typography;
@@ -510,6 +511,9 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents } =
+    useColumnasRedimensionables<RequerimientoRow>(columns, "ot-requerimientos-cols-widths-v1");
+
   return (
     <div>
       {contextHolder}
@@ -583,7 +587,8 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
       ) : (
         <Table
           rowKey="id"
-          columns={visibleColumns(columns, ocultas)}
+          columns={visibleColumns(columnsResizable, ocultas)}
+          components={tableComponents}
           dataSource={rows.filter((r) =>
             dentroDeRango(r, "fecha_solicitud", rangoSol) &&
             dentroDeRango(r, "fecha_requerida", rangoReq)

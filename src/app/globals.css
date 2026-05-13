@@ -37,3 +37,26 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #bfbfbf;
 }
+
+/* Columnas fijas (Acciones a la derecha / NRO a la izquierda): mantener fondo
+   opaco siempre, incluso al hover, para que las columnas que pasan por debajo
+   en el scroll horizontal no se vean a través de los botones. */
+.ant-table-cell-fix-left,
+.ant-table-cell-fix-right {
+  background-color: #ffffff !important;
+}
+.ant-table-tbody > tr:hover > .ant-table-cell-fix-left,
+.ant-table-tbody > tr:hover > .ant-table-cell-fix-right,
+.ant-table-tbody > tr.ant-table-row-hover > .ant-table-cell-fix-left,
+.ant-table-tbody > tr.ant-table-row-hover > .ant-table-cell-fix-right {
+  background-color: #fafafa !important;
+}
+.ant-table-tbody > tr.ant-table-row-selected > .ant-table-cell-fix-left,
+.ant-table-tbody > tr.ant-table-row-selected > .ant-table-cell-fix-right {
+  background-color: #e6f4ff !important;
+}
+/* En cabecera (sticky header) las celdas fijas también deben ser opacas. */
+.ant-table-thead > tr > .ant-table-cell-fix-left,
+.ant-table-thead > tr > .ant-table-cell-fix-right {
+  background-color: #fafafa !important;
+}

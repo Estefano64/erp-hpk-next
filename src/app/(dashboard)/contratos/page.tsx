@@ -39,6 +39,7 @@ import {
   useRangoFechas,
   RangoFechasFiltro,
   dentroDeRango,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 import dayjs from "dayjs";
 
@@ -284,6 +285,9 @@ export default function ContratosPage() {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents } =
+    useColumnasRedimensionables<ContratoRecord>(columns, "contratos-list-cols-widths-v1");
+
   return (
     <div>
       {contextHolder}
@@ -337,7 +341,8 @@ export default function ContratosPage() {
 
       <Table
         rowKey="id"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={data.filter((r) =>
           dentroDeRango(r, "fecha_inicio", rangoInicio) &&
           dentroDeRango(r, "fecha_termino", rangoTermino)

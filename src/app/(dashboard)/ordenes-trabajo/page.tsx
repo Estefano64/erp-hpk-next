@@ -33,6 +33,7 @@ import {
   useRangoFechas,
   RangoFechasFiltro,
   dentroDeRango,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 import { brand } from "@/lib/theme";
 import { useRouter } from "next/navigation";
@@ -301,6 +302,9 @@ export default function OrdenesTrabajoPage() {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents } =
+    useColumnasRedimensionables<OTRecord>(columns, "ordenes-trabajo-list-cols-widths-v1");
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
@@ -374,7 +378,8 @@ export default function OrdenesTrabajoPage() {
 
       <Table
         rowKey="id"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={data.filter((r) => dentroDeRango(r, "fecha_recepcion", rangoRecepcion))}
         loading={loading}
         pagination={paginacionEstandar({

@@ -412,28 +412,52 @@ function ImagenesComponente({
   const MAX_FOTOS = 6;
   const lleno = imagenes.length >= MAX_FOTOS;
 
-  const handleUpload = async (file: File) => {
-    if (!file.type.startsWith("image/")) {
-      message.warning("Solo se permiten imagenes");
-      return false;
+  // Procesa todo el batch de archivos en una sola pasada. Esto evita el bug
+  // de las llamadas paralelas a onChange con un mismo snapshot de `datos`
+  // (que terminaba descartando todas las imágenes salvo la última del batch).
+  const handleUploadBatch = async (files: File[]) => {
+    // 1. Filtrar por tipo y tamaño antes de procesar nada.
+    const validos: File[] = [];
+    let descartadosPorTipo = 0;
+    let descartadosPorTamano = 0;
+    for (const f of files) {
+      if (!f.type.startsWith("image/")) { descartadosPorTipo++; continue; }
+      if (f.size > 15 * 1024 * 1024) { descartadosPorTamano++; continue; }
+      validos.push(f);
     }
-    if (file.size > 15 * 1024 * 1024) {
-      message.warning("Imagen demasiado grande (max 15MB)");
-      return false;
-    }
-    // Leemos el estado actual de datos por si hay varios uploads paralelos
+    if (descartadosPorTipo > 0) message.warning(`${descartadosPorTipo} archivo(s) descartado(s): no son imágenes.`);
+    if (descartadosPorTamano > 0) message.warning(`${descartadosPorTamano} archivo(s) descartado(s): > 15MB.`);
+    if (validos.length === 0) return;
+
+    // 2. Calcular cuántos caben en el espacio restante.
     const actuales = (datos[key] as FotoComponente[] | undefined) || [];
-    if (actuales.length >= MAX_FOTOS) {
-      message.warning(`Maximo ${MAX_FOTOS} fotos por componente`);
-      return false;
+    const espacioDisponible = MAX_FOTOS - actuales.length;
+    if (espacioDisponible <= 0) {
+      message.warning(`Máximo ${MAX_FOTOS} fotos por componente`);
+      return;
     }
-    try {
-      const data = await comprimirImagen(file);
-      onChange({ ...datos, [key]: [...actuales, { name: file.name, data }] });
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : "Error al procesar imagen");
+    const aProcesar = validos.slice(0, espacioDisponible);
+    if (validos.length > espacioDisponible) {
+      message.warning(`Se aceptaron ${espacioDisponible} de las ${validos.length} imágenes (límite ${MAX_FOTOS}).`);
     }
-    return false;
+
+    // 3. Comprimir en paralelo y acumular sólo las que tuvieron éxito.
+    const resultados = await Promise.allSettled(
+      aProcesar.map(async (f) => ({ name: f.name, data: await comprimirImagen(f) }))
+    );
+    const nuevas: FotoComponente[] = [];
+    let errores = 0;
+    for (const r of resultados) {
+      if (r.status === "fulfilled") nuevas.push(r.value);
+      else errores++;
+    }
+    if (errores > 0) message.error(`${errores} imagen(es) no se pudieron procesar.`);
+
+    // 4. Un solo onChange con todas las imágenes nuevas concatenadas.
+    if (nuevas.length > 0) {
+      onChange({ ...datos, [key]: [...actuales, ...nuevas] });
+      message.success(`${nuevas.length} imagen(es) cargada(s).`);
+    }
   };
 
   const handleDelete = (idx: number) => {
@@ -458,14 +482,23 @@ function ImagenesComponente({
       styles={{ body: { padding: 12 } }}
     >
       <Upload
-        beforeUpload={(file) => handleUpload(file as File)}
+        // antd llama beforeUpload una vez por archivo, pero el segundo argumento
+        // `fileList` trae todo el batch. Disparamos el procesamiento sólo en el
+        // primer archivo del batch (file === fileList[0]) y retornamos `false`
+        // en todos para que antd no auto-suba.
+        beforeUpload={(file, fileList) => {
+          if (file === fileList[0]) {
+            handleUploadBatch(fileList as File[]);
+          }
+          return false;
+        }}
         showUploadList={false}
         multiple
         accept="image/*"
         disabled={lleno}
       >
         <Button icon={<UploadOutlined />} size="small" disabled={lleno}>
-          {lleno ? `Limite alcanzado (${MAX_FOTOS})` : "Agregar foto"}
+          {lleno ? `Límite alcanzado (${MAX_FOTOS})` : `Agregar fotos (varias a la vez)`}
         </Button>
       </Upload>
       {imagenes.length > 0 && (

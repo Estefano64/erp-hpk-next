@@ -18,6 +18,7 @@ import { brand } from "@/lib/theme";
 import {
   numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE,
   useColumnasOcultas, ColumnasToggleButton, visibleColumns, filtroPorColumna,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 import { useCachedFetch } from "@/lib/useCachedFetch";
 
@@ -538,6 +539,14 @@ export default function AceptacionesPage() {
     },
   ];
 
+  // Columnas redimensionables — una llamada por tabla, con su propio storage-key.
+  const { columnas: ocColumnsResizable, components: ocTableComponents } =
+    useColumnasRedimensionables<OCPendiente>(ocColumns, "aceptaciones-oc-cols-widths-v1");
+  const { columnas: rqColumnsResizable, components: rqTableComponents } =
+    useColumnasRedimensionables<ReqPendiente>(rqColumns, "aceptaciones-rq-cols-widths-v1");
+  const { columnas: histColumnsResizable, components: histTableComponents } =
+    useColumnasRedimensionables<HistorialItem>(histColumns, "aceptaciones-hist-cols-widths-v1");
+
   const totalPendientes = useMemo(() => ocs.length + reqs.length, [ocs, reqs]);
 
   return (
@@ -696,7 +705,8 @@ export default function AceptacionesPage() {
                     ) : (
                       <Table<OCPendiente>
                         rowKey="id"
-                        columns={visibleColumns(ocColumns, ocultasOC)}
+                        columns={visibleColumns(ocColumnsResizable, ocultasOC)}
+                        components={ocTableComponents}
                         dataSource={ocs}
                         loading={loading}
                         size="small"
@@ -754,7 +764,8 @@ export default function AceptacionesPage() {
                     ) : (
                       <Table<ReqPendiente>
                         rowKey="id"
-                        columns={visibleColumns(rqColumns, ocultasRQ)}
+                        columns={visibleColumns(rqColumnsResizable, ocultasRQ)}
+                        components={rqTableComponents}
                         dataSource={reqs}
                         loading={loading}
                         size="small"
@@ -807,7 +818,8 @@ export default function AceptacionesPage() {
                 ) : (
                   <Table<HistorialItem>
                     rowKey={(h) => `${h.tipo}-${h.id}`}
-                    columns={visibleColumns(histColumns, ocultasHist)}
+                    columns={visibleColumns(histColumnsResizable, ocultasHist)}
+                    components={histTableComponents}
                     dataSource={historial}
                     loading={loading}
                     size="small"

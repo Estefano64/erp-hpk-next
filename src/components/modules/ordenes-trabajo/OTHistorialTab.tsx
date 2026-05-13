@@ -13,6 +13,7 @@ import {
   useRangoFechas,
   RangoFechasFiltro,
   dentroDeRango,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 
 const { Text } = Typography;
@@ -88,6 +89,9 @@ export default function OTHistorialTab({ otId }: { otId: number }) {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents } =
+    useColumnasRedimensionables<HistorialRecord>(columns, "ot-historial-cols-widths-v1");
+
   if (loading && data.length === 0) {
     return <div style={{ textAlign: "center", padding: 40 }}><Spin /></div>;
   }
@@ -116,7 +120,8 @@ export default function OTHistorialTab({ otId }: { otId: number }) {
       <Table
         rowKey="id"
         size="small"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={datosFiltrados}
         pagination={{ pageSize: 20, showTotal: (t) => `${t} eventos`, placement: ["topEnd", "bottomEnd"] }}
         loading={loading}

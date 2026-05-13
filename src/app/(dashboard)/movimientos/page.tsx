@@ -56,6 +56,7 @@ import {
   useRangoFechas,
   RangoFechasFiltro,
   dentroDeRango,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 import { brand } from "@/lib/theme";
 import dayjs, { Dayjs } from "dayjs";
@@ -310,6 +311,9 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents } =
+    useColumnasRedimensionables<Movimiento>(columns, "movimientos-historial-cols-widths-v1");
+
   return (
     <div>
       <Card styles={{ body: { padding: 16 } }} style={{ marginBottom: 12 }}>
@@ -372,7 +376,8 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
 
       <Table
         rowKey="id"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={filtered}
         loading={loading}
         pagination={{ pageSize: 25, placement: ["topEnd", "bottomEnd"] }}
@@ -662,6 +667,9 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
     },
   ];
 
+  const { columnas: columnasItemsResizable, components: ingresoTableComponents } =
+    useColumnasRedimensionables<ItemFila>(columnasItems, "movimientos-ingreso-cols-widths-v1");
+
   return (
     <div>
       {/* KPIs */}
@@ -748,7 +756,8 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
         size="small"
         loading={loading}
         dataSource={filasFiltradas.filter((r) => dentroDeRango(r, "fecha_entrega_esperada", rangoEntrega))}
-        columns={visibleColumns(columnasItems, ingresoOcultas)}
+        columns={visibleColumns(columnasItemsResizable, ingresoOcultas)}
+        components={ingresoTableComponents}
         pagination={{ pageSize: 25, showTotal: (t) => `${t} items`, placement: ["topEnd", "bottomEnd"] }}
         scroll={{ x: 1500 }}
       />

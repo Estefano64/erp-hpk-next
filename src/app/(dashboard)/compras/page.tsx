@@ -48,6 +48,7 @@ import {
   useRangoFechas,
   RangoFechasFiltro,
   dentroDeRango,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 import { Popover, Divider } from "antd";
 import { brand } from "@/lib/theme";
@@ -430,6 +431,9 @@ export default function ComprasPage() {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents } =
+    useColumnasRedimensionables<Compra>(columns, "compras-list-cols-widths-v1");
+
   const ocsContent = (
     <>
       {/* KPI Cards */}
@@ -522,7 +526,8 @@ export default function ComprasPage() {
 
       <Table
         rowKey="id"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={data.filter((r) =>
           dentroDeRango(r, "fecha_solicitud", rangoSolicitud) &&
           dentroDeRango(r, "fecha_entrega_esperada", rangoEntrega)

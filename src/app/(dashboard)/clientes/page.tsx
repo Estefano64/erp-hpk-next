@@ -36,6 +36,7 @@ import {
   ColumnasToggleButton,
   visibleColumns,
   filtroPorColumna,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 import { ImportarExcelModal } from "@/components/ImportarExcelModal";
 import { EmptyState } from "@/components/EmptyState";
@@ -250,6 +251,9 @@ export default function ClientesPage() {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents } =
+    useColumnasRedimensionables<ClienteRecord>(columns, "clientes-list-cols-widths-v1");
+
   return (
     <div>
       {contextHolder}
@@ -304,7 +308,8 @@ export default function ClientesPage() {
 
       <Table
         rowKey="cliente_id"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={data}
         loading={loading}
         locale={{

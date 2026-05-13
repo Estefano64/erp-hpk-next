@@ -63,6 +63,10 @@ export function paginacionEstandar(
   };
 }
 
+// Sticky header pegado debajo del navbar del dashboard (altura del Header en layout.tsx es 56px).
+// Usar como: <Table sticky={STICKY_HEADER} ... />
+export const STICKY_HEADER = { offsetHeader: 56 } as const;
+
 export type EstadoVista<T extends string> = { value: T | "__all"; label: string; color?: string };
 
 // Helper para extraer la opción "Todos" + las opciones individuales para Segmented.

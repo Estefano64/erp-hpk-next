@@ -14,6 +14,7 @@ import {
   useRangoFechas,
   RangoFechasFiltro,
   dentroDeRango,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 import dayjs, { Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
@@ -737,6 +738,9 @@ export default function PlanificacionPage() {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents } =
+    useColumnasRedimensionables<PlanRow>(columns, "operaciones-planificacion-cols-widths-v1");
+
   const tecnicosUnicos = useMemo(() => {
     const s = new Set<string>();
     for (const r of rows) if (r.tecnico) s.add(r.tecnico);
@@ -955,7 +959,8 @@ export default function PlanificacionPage() {
 
       <Table
         rowKey="id"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={rows.filter((r) =>
           dentroDeRango(r, "fecha_inicio", rangoInicio) &&
           dentroDeRango(r, "fecha_fin", rangoFin)

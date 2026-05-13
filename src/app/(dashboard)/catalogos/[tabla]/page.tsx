@@ -17,6 +17,7 @@ import {
   ColumnasToggleButton,
   visibleColumns,
   filtroPorColumna,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 import { brand } from "@/lib/theme";
 import { catalogosById, type FieldDef } from "@/lib/catalogos-config";
@@ -175,19 +176,10 @@ export default function CatalogoCrudPage() {
     fetchData();
   }
 
-  if (!cfg) {
-    return (
-      <Card>
-        <Alert type="error" showIcon title={`Catálogo "${tabla}" no existe.`} />
-        <Button style={{ marginTop: 12 }} icon={<ArrowLeftOutlined />} onClick={() => router.push("/catalogos")}>
-          Volver al índice
-        </Button>
-      </Card>
-    );
-  }
-
   // Columnas dinámicas — todas con filtro tipo Excel basado en los datos cargados
-  const columns: ColumnsType<CatalogRow> = cfg.fields.map<ColumnsType<CatalogRow>[number]>((f) => {
+  // Si no hay cfg todavía, construimos un arreglo vacío para que el hook
+  // de redimensionables se llame de forma incondicional (regla de hooks).
+  const columns: ColumnsType<CatalogRow> = (cfg?.fields ?? []).map<ColumnsType<CatalogRow>[number]>((f) => {
     const base = {
       title: f.label,
       key: f.key,
@@ -253,48 +245,69 @@ export default function CatalogoCrudPage() {
     };
   });
 
-  // Columna de acciones
-  columns.push({
-    title: "",
-    key: "actions",
-    width: 120,
-    fixed: "right",
-    render: (_, r) => {
-      const id = r[cfg.pkField] as number;
-      return (
-        <Space size={0}>
-          <Tooltip title="Editar">
-            <Button type="text" size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
-          </Tooltip>
-          {r.activo !== false && (
+  // Columna de acciones (sólo si hay cfg)
+  if (cfg) {
+    const pkField = cfg.pkField;
+    columns.push({
+      title: "",
+      key: "actions",
+      width: 120,
+      fixed: "right",
+      render: (_, r) => {
+        const id = r[pkField] as number;
+        return (
+          <Space size={0}>
+            <Tooltip title="Editar">
+              <Button type="text" size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
+            </Tooltip>
+            {r.activo !== false && (
+              <Popconfirm
+                title="Desactivar este registro"
+                description="Marca como inactivo. Mantiene la FK intacta."
+                onConfirm={() => handleDelete(id, true)}
+                okText="Desactivar"
+                cancelText="Cancelar"
+              >
+                <Tooltip title="Desactivar (soft)">
+                  <Button type="text" size="small" icon={<EyeInvisibleOutlined />} />
+                </Tooltip>
+              </Popconfirm>
+            )}
             <Popconfirm
-              title="Desactivar este registro"
-              description="Marca como inactivo. Mantiene la FK intacta."
-              onConfirm={() => handleDelete(id, true)}
-              okText="Desactivar"
+              title="Eliminar permanentemente"
+              description="Borra el registro de la base de datos. Falla si hay relaciones."
+              onConfirm={() => handleDelete(id, false)}
+              okText="Eliminar"
+              okButtonProps={{ danger: true }}
               cancelText="Cancelar"
             >
-              <Tooltip title="Desactivar (soft)">
-                <Button type="text" size="small" icon={<EyeInvisibleOutlined />} />
+              <Tooltip title="Eliminar (hard)">
+                <Button type="text" size="small" danger icon={<DeleteOutlined />} />
               </Tooltip>
             </Popconfirm>
-          )}
-          <Popconfirm
-            title="Eliminar permanentemente"
-            description="Borra el registro de la base de datos. Falla si hay relaciones."
-            onConfirm={() => handleDelete(id, false)}
-            okText="Eliminar"
-            okButtonProps={{ danger: true }}
-            cancelText="Cancelar"
-          >
-            <Tooltip title="Eliminar (hard)">
-              <Button type="text" size="small" danger icon={<DeleteOutlined />} />
-            </Tooltip>
-          </Popconfirm>
-        </Space>
-      );
-    },
-  });
+          </Space>
+        );
+      },
+    });
+  }
+
+  // Hook redimensionable (debe llamarse incondicionalmente, antes de cualquier return).
+  // Incluye la columna de numeración para que el hook pueda mapear todas las columnas
+  // del Table real por su `key`.
+  const todasLasColumnas: ColumnsType<CatalogRow> = [numeracionColumn<CatalogRow>(), ...columns];
+  const { columnas: columnsResizable, components: tableComponents } =
+    useColumnasRedimensionables<CatalogRow>(todasLasColumnas, "catalogos-dynamic-cols-widths-v1");
+
+  if (!cfg) {
+    return (
+      <Card>
+        <Alert type="error" showIcon title={`Catálogo "${tabla}" no existe.`} />
+        <Button style={{ marginTop: 12 }} icon={<ArrowLeftOutlined />} onClick={() => router.push("/catalogos")}>
+          Volver al índice
+        </Button>
+      </Card>
+    );
+  }
 
   return (
     <div>
@@ -360,7 +373,8 @@ export default function CatalogoCrudPage() {
 
       <Table
         rowKey={cfg.pkField}
-        columns={visibleColumns([numeracionColumn<CatalogRow>(), ...columns], ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={filtered}
         loading={loading}
         size="small"

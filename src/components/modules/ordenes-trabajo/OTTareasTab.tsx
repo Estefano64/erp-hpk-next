@@ -20,6 +20,7 @@ import {
   useRangoFechas,
   RangoFechasFiltro,
   dentroDeRango,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 
 interface Props {
@@ -438,6 +439,9 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents } =
+    useColumnasRedimensionables<PlanRow>(columns, "ot-tareas-cols-widths-v1");
+
   return (
     <div>
       {contextHolder}
@@ -556,7 +560,8 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
 
       <Table
         rowKey="id"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={rows.filter((r) =>
           dentroDeRango(r, "fecha_inicio", rangoInicio) &&
           dentroDeRango(r, "fecha_fin", rangoFin)

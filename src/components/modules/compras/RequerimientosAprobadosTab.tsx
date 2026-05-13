@@ -16,6 +16,7 @@ import {
   ColumnasToggleButton,
   visibleColumns,
   filtroPorColumna,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 
 const { Text } = Typography;
@@ -242,6 +243,9 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents } =
+    useColumnasRedimensionables<Row>(columns, "compras-req-aprobados-cols-widths-v1");
+
   return (
     <div>
       {contextHolder}
@@ -316,7 +320,8 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
       ) : (
         <Table
           rowKey="id"
-          columns={visibleColumns(columns, ocultas)}
+          columns={visibleColumns(columnsResizable, ocultas)}
+          components={tableComponents}
           dataSource={rows}
           loading={loading}
           size="small"

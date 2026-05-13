@@ -17,6 +17,7 @@ import {
   useColumnasOcultas,
   ColumnasToggleButton,
   visibleColumns,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 
 const { Title, Text } = Typography;
@@ -465,6 +466,9 @@ export default function TemplateRequerimientosPage() {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents } =
+    useColumnasRedimensionables<TareaRow>(columns, "codrep-requerimientos-template-cols-widths-v1");
+
   if (loading) return <Spin size="large" />;
   if (!codRep) return <Alert type="error" title="CodRep no encontrado" />;
 
@@ -515,7 +519,8 @@ export default function TemplateRequerimientosPage() {
 
       <Table
         rowKey="tarea_id"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={rows}
         size="small"
         pagination={false}
