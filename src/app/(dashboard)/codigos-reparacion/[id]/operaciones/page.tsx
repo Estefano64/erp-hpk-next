@@ -273,9 +273,10 @@ export default function OperacionesCodRepPage() {
       ),
     },
     {
-      title: "Componente", key: "componente", width: 200,
+      title: "Componente", key: "componente", width: 200, align: "left",
       filters: componenteValores, filterSearch: true,
       onFilter: (value, r) => (drafts[r.operacion_cod_rep_id]?.componente_codigo ?? r.componente_codigo) === value,
+      sorter: (a, b) => (a.componente_codigo ?? "").localeCompare(b.componente_codigo ?? ""),
       render: (_, r) => (
         <Select
           value={drafts[r.operacion_cod_rep_id]?.componente_codigo ?? r.componente_codigo}
@@ -289,9 +290,10 @@ export default function OperacionesCodRepPage() {
       ),
     },
     {
-      title: "Trabajo", key: "trabajo", ellipsis: true,
+      title: "Trabajo", key: "trabajo", ellipsis: true, align: "left",
       filters: trabajoValores, filterSearch: true,
       onFilter: (value, r) => (drafts[r.operacion_cod_rep_id]?.trabajo ?? r.trabajo) === value,
+      sorter: (a, b) => (a.trabajo ?? "").localeCompare(b.trabajo ?? ""),
       render: (_, r) => (
         <Input
           value={drafts[r.operacion_cod_rep_id]?.trabajo ?? r.trabajo}
@@ -302,9 +304,10 @@ export default function OperacionesCodRepPage() {
       ),
     },
     {
-      title: "Op. (catálogo)", key: "op", width: 200,
+      title: "Op. (catálogo)", key: "op", width: 200, align: "left",
       filters: opCatValores, filterSearch: true,
       onFilter: (value, r) => (drafts[r.operacion_cod_rep_id]?.operacion_reparacion_codigo ?? r.operacion_reparacion_codigo) === value,
+      sorter: (a, b) => (a.operacion_reparacion_codigo ?? "").localeCompare(b.operacion_reparacion_codigo ?? ""),
       render: (_, r) => (
         <Select
           value={drafts[r.operacion_cod_rep_id]?.operacion_reparacion_codigo ?? r.operacion_reparacion_codigo ?? undefined}
@@ -320,9 +323,10 @@ export default function OperacionesCodRepPage() {
       ),
     },
     {
-      title: "QTY", key: "qty", width: 80, align: "center",
+      title: "QTY", key: "qty", width: 80, align: "right",
       filters: qtyValores, filterSearch: true,
       onFilter: (value, r) => String(drafts[r.operacion_cod_rep_id]?.qty ?? r.qty) === value,
+      sorter: (a, b) => Number(a.qty) - Number(b.qty),
       render: (_, r) => (
         <InputNumber
           value={drafts[r.operacion_cod_rep_id]?.qty ?? r.qty}
@@ -338,6 +342,7 @@ export default function OperacionesCodRepPage() {
       title: "HORAS", key: "horas", width: 100, align: "right",
       filters: horasValores, filterSearch: true,
       onFilter: (value, r) => String(drafts[r.operacion_cod_rep_id]?.horas ?? r.horas ?? "") === value,
+      sorter: (a, b) => Number(a.horas ?? 0) - Number(b.horas ?? 0),
       render: (_, r) => {
         const current = drafts[r.operacion_cod_rep_id]?.horas ?? (r.horas != null ? Number(r.horas) : null);
         return (
@@ -357,6 +362,7 @@ export default function OperacionesCodRepPage() {
       title: "HH", key: "hh", width: 100, align: "right",
       filters: hhValores, filterSearch: true,
       onFilter: (value, r) => String(drafts[r.operacion_cod_rep_id]?.hh ?? r.hh ?? "") === value,
+      sorter: (a, b) => Number(a.hh ?? 0) - Number(b.hh ?? 0),
       render: (_, r) => {
         const current = drafts[r.operacion_cod_rep_id]?.hh ?? (r.hh != null ? Number(r.hh) : null);
         return (

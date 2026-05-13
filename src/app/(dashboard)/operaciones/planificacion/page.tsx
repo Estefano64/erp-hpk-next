@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Typography, Card, Table, Tag, Input, Select, Space, Button, DatePicker, InputNumber, Checkbox, message, Row, Col, Alert, Switch, Popconfirm,
+  Typography, Card, Table, Tag, Input, Select, Space, Button, DatePicker, InputNumber, Checkbox, message, Row, Col, Alert, Switch, Popconfirm, Tooltip,
 } from "antd";
 import { SearchOutlined, ReloadOutlined, CalendarOutlined, InfoCircleOutlined, SaveOutlined, UndoOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
@@ -23,6 +23,48 @@ import { calcularFinEstimado, calcularHH } from "@/lib/planification-hours";
 import { useTabSync } from "@/lib/useTabSync";
 
 dayjs.extend(isoWeek);
+
+// Lista de formatos aceptados al escribir (el primero es el que se muestra).
+// Cubre "3-5 13:00", "3-5 13", "3-5", "3/5/26 13:00", etc.
+const FECHA_FORMATOS: string[] = [
+  "DD/MM/YY HH:mm",
+  "D-M-YY HH:mm", "D-M-YY HH", "D-M-YY",
+  "D-M HH:mm", "D-M HH", "D-M",
+  "D/M/YY HH:mm", "D/M/YY HH", "D/M/YY",
+  "D/M HH:mm", "D/M HH", "D/M",
+  "DD-MM-YY HH:mm", "DD-MM HH:mm", "DD-MM",
+];
+
+/**
+ * Normaliza atajos comunes al escribir fechas:
+ *  - "3-5 13:" → "3-5 13:00"   (colón sin minutos → :00)
+ *  - "3-5 13"  → "3-5 13:00"   (solo hora → :00)
+ *  - "3-5"     → "3-5"         (sin hora, lo dejamos)
+ * Devuelve el texto procesado para que el DatePicker pueda parsearlo con los formatos arriba.
+ */
+function normalizarTextoFecha(raw: string): string {
+  if (!raw) return raw;
+  let t = raw.trim();
+  // "13:" o "13:0" → "13:00"
+  t = t.replace(/(\d{1,2}):(\d{0,1})$/, (_, h, m) => `${h}:${m ? `${m}0`.slice(0, 2) : "00"}`);
+  return t;
+}
+
+/**
+ * Parsea texto a Dayjs probando los formatos cortos.
+ * Rellena el año al actual si el formato no lo incluye.
+ */
+function parseFechaSmart(raw: string): Dayjs | null {
+  const t = normalizarTextoFecha(raw);
+  if (!t) return null;
+  for (const f of FECHA_FORMATOS) {
+    const d = dayjs(t, f, true);
+    if (!d.isValid()) continue;
+    // Si el formato no llevaba año, dayjs ya usó el año actual.
+    return d.second(0).millisecond(0);
+  }
+  return null;
+}
 
 interface PlanRow {
   id: number;
@@ -46,6 +88,7 @@ interface PlanRow {
   qty_personal: number | null;
   horas_extras: boolean | null;
   horas_extras_qty: string | null;
+  trabajo_externo: boolean | null;
   orden_trabajo: {
     id: number;
     ot: string | null;
@@ -158,8 +201,8 @@ export default function PlanificacionPage() {
 
   const persistPatch = useCallback(async (id: number, patch: Record<string, unknown>) => {
     setSavingId(id);
+    const current = rows.find((r) => r.id === id);
     try {
-      const current = rows.find((r) => r.id === id);
       const res = await fetch(`/api/planificacion/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -188,6 +231,14 @@ export default function PlanificacionPage() {
       notifySync();
     } catch (e) {
       messageApi.error(e instanceof Error ? e.message : "Error al guardar");
+      // Refrescar desde la BD para que el optimistic update no quede desincronizado.
+      try {
+        const ref = await fetch(`/api/planificacion/${id}`);
+        if (ref.ok) {
+          const j = await ref.json();
+          if (j?.data) setRows((prev) => prev.map((r) => r.id === id ? { ...r, ...j.data } : r));
+        }
+      } catch { /* ignore */ }
     } finally {
       setSavingId(null);
     }
@@ -304,6 +355,9 @@ export default function PlanificacionPage() {
     const horasTotalTarea = duracion * qty;
     if (inicio && horasTotalTarea > 0) {
       out.fecha_fin = calcularFinEstimado(inicio, horasTotalTarea).toISOString();
+    } else {
+      // Sin fecha de inicio (o duración 0): el Fin estimado no tiene sentido, lo limpiamos.
+      out.fecha_fin = null;
     }
     return out;
   }
@@ -437,11 +491,23 @@ export default function PlanificacionPage() {
   const columns: ColumnsType<PlanRow> = [
     numeracionColumn<PlanRow>(),
     {
-      title: "OT", key: "ot", width: 100, fixed: "left",
+      title: "OT", key: "ot", width: 130, fixed: "left", ellipsis: true,
       filters: otValores, filterSearch: true,
       onFilter: (value, r) => r.orden_trabajo?.ot === value,
       render: (_, r) => r.orden_trabajo?.ot
-        ? <Tag color={brand.navy}>{r.orden_trabajo.ot}</Tag>
+        ? (
+          <Tag style={{
+            background: brand.navy,
+            color: "#fff",
+            border: "none",
+            maxWidth: "100%",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}>
+            {r.orden_trabajo.ot}
+          </Tag>
+        )
         : <Tag>#{r.ot_id}</Tag>,
     },
     {
@@ -494,10 +560,25 @@ export default function PlanificacionPage() {
     },
     {
       key: "componente",
-      title: "Parte", dataIndex: "componente", width: 100,
+      title: "Parte", dataIndex: "componente", width: 140, ellipsis: true,
       filters: componenteValores, filterSearch: true,
       onFilter: (value, r) => r.componente === value,
-      render: (v: string) => <Tag color={brand.cyan}>{v}</Tag>,
+      render: (v: string) => (
+        <Tooltip title={v}>
+          <Tag style={{
+            background: brand.cyan,
+            color: "#fff",
+            border: "none",
+            maxWidth: "100%",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            margin: 0,
+          }}>
+            {v}
+          </Tag>
+        </Tooltip>
+      ),
     },
     { key: "descripcion", title: "Tarea", dataIndex: "descripcion", width: 250, ellipsis: true,
       filters: descValores, filterSearch: true,
@@ -571,12 +652,26 @@ export default function PlanificacionPage() {
         <DatePicker
           value={r.fecha_inicio ? dayjs(r.fecha_inicio) : null}
           showTime={{ format: "HH:mm" }}
-          format="DD/MM/YY HH:mm"
+          format={FECHA_FORMATOS}
           size="small"
           style={{ width: "100%" }}
+          placeholder="3-5 13:00"
           onChange={(d: Dayjs | null) => {
             const patch = recalcularFin(r, { fecha_inicio: d ? d.toISOString() : null });
             updateField(r.id, patch as Record<string, unknown>);
+          }}
+          onBlur={(e) => {
+            // Fallback: si el usuario escribió "3-5 13:" o similar y AntD no parseó, intentamos nosotros.
+            const raw = (e.target as HTMLInputElement | null)?.value ?? "";
+            if (!raw) return;
+            // Si ya coincide con la fecha actual, no hacemos nada.
+            const actual = r.fecha_inicio ? dayjs(r.fecha_inicio).format("DD/MM/YY HH:mm") : "";
+            if (raw === actual) return;
+            const parsed = parseFechaSmart(raw);
+            if (parsed && parsed.isValid()) {
+              const patch = recalcularFin(r, { fecha_inicio: parsed.toISOString() });
+              updateField(r.id, patch as Record<string, unknown>);
+            }
           }}
         />
       ),
@@ -611,12 +706,39 @@ export default function PlanificacionPage() {
           checked={!!r.horas_extras}
           onChange={(e) => {
             const checked = e.target.checked;
-            // Al marcar: deja editar Fin manualmente. Al desmarcar: recalcular.
-            const patch = checked
-              ? { horas_extras: true }
-              : recalcularFin({ ...r, horas_extras: false }, { horas_extras: false });
-            updateField(r.id, patch as Record<string, unknown>);
+            if (checked) {
+              // Al marcar: HE=true + auto-set Qty HE a 1 si está vacío
+              // (el backend exige Qty HE > 0 cuando HE está activo).
+              const qtyActual = r.horas_extras_qty != null ? Number(r.horas_extras_qty) : 0;
+              const patch: Record<string, unknown> = { horas_extras: true };
+              if (!(qtyActual > 0)) patch.horas_extras_qty = "1";
+              updateField(r.id, patch);
+            } else {
+              // Al desmarcar: HE=false + limpiar Qty HE + recalcular Fin.
+              const patch = recalcularFin({ ...r, horas_extras: false }, { horas_extras: false });
+              (patch as Record<string, unknown>).horas_extras_qty = null;
+              updateField(r.id, patch as Record<string, unknown>);
+            }
           }}
+        />
+      ),
+    },
+    {
+      title: (
+        <Tooltip title="Trabajo derivado a un servicio tercero (no se ejecuta en el taller).">
+          <span>Tercero</span>
+        </Tooltip>
+      ),
+      key: "trabajo_externo", width: 90, align: "center",
+      filters: [
+        { text: "Sí", value: "true" },
+        { text: "No", value: "false" },
+      ],
+      onFilter: (value, r) => String(!!r.trabajo_externo) === value,
+      render: (_, r) => (
+        <Checkbox
+          checked={!!r.trabajo_externo}
+          onChange={(e) => updateField(r.id, { trabajo_externo: e.target.checked })}
         />
       ),
     },
@@ -647,10 +769,21 @@ export default function PlanificacionPage() {
             <DatePicker
               value={r.fecha_fin ? dayjs(r.fecha_fin) : null}
               showTime={{ format: "HH:mm" }}
-              format="DD/MM/YY HH:mm"
+              format={FECHA_FORMATOS}
               size="small"
               style={{ width: "100%" }}
+              placeholder="3-5 13:00"
               onChange={(d: Dayjs | null) => updateField(r.id, { fecha_fin: d ? d.toISOString() : null })}
+              onBlur={(e) => {
+                const raw = (e.target as HTMLInputElement | null)?.value ?? "";
+                if (!raw) return;
+                const actual = r.fecha_fin ? dayjs(r.fecha_fin).format("DD/MM/YY HH:mm") : "";
+                if (raw === actual) return;
+                const parsed = parseFechaSmart(raw);
+                if (parsed && parsed.isValid()) {
+                  updateField(r.id, { fecha_fin: parsed.toISOString() });
+                }
+              }}
             />
           );
         }
@@ -986,9 +1119,54 @@ export default function PlanificacionPage() {
       />
 
       <style jsx global>{`
-        .plan-row-done > td { background: #F6FFED !important; }
-        .plan-row-cancel > td { background: #FFF1F0 !important; color: #999 !important; text-decoration: line-through; }
-        .plan-row-pending > td { background: #FFFBE6 !important; box-shadow: inset 3px 0 0 #FAAD14; }
+        /* Color de fila por estado — solo celdas NO fijas. Las celdas fijas
+           (NRO, OT) se quedan siempre blancas opacas para que nada se vea por detrás. */
+        .plan-row-done > td:not(.ant-table-cell-fix-left):not(.ant-table-cell-fix-right) {
+          background-color: #F6FFED !important;
+        }
+        .plan-row-cancel > td:not(.ant-table-cell-fix-left):not(.ant-table-cell-fix-right) {
+          background-color: #FFF1F0 !important;
+          color: #999 !important;
+          text-decoration: line-through;
+        }
+        .plan-row-pending > td:not(.ant-table-cell-fix-left):not(.ant-table-cell-fix-right) {
+          background-color: #FFFBE6 !important;
+          box-shadow: inset 3px 0 0 #FAAD14;
+        }
+        /* Hover: oscurecer color de fondo de celdas no-fijas; las fijas se manejan en globals.css. */
+        .ant-table-tbody > tr.plan-row-done:hover > td:not(.ant-table-cell-fix-left):not(.ant-table-cell-fix-right) {
+          background-color: #d9f7be !important;
+        }
+        .ant-table-tbody > tr.plan-row-cancel:hover > td:not(.ant-table-cell-fix-left):not(.ant-table-cell-fix-right) {
+          background-color: #ffccc7 !important;
+        }
+        .ant-table-tbody > tr.plan-row-pending:hover > td:not(.ant-table-cell-fix-left):not(.ant-table-cell-fix-right) {
+          background-color: #fff1b8 !important;
+        }
+        /* Las celdas fijas: SIEMPRE blanco opaco. Cubrimos todas las variantes
+           que usa antd v6 para hover (clase, :hover, row-hover). */
+        .ant-table-tbody > tr > td.ant-table-cell-fix-left,
+        .ant-table-tbody > tr > td.ant-table-cell-fix-right,
+        .ant-table-tbody > tr:hover > td.ant-table-cell-fix-left,
+        .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right,
+        .ant-table-tbody > tr.ant-table-row-hover > td.ant-table-cell-fix-left,
+        .ant-table-tbody > tr.ant-table-row-hover > td.ant-table-cell-fix-right,
+        .ant-table-tbody > tr > td.ant-table-cell-fix-left.ant-table-cell-row-hover,
+        .ant-table-tbody > tr > td.ant-table-cell-fix-right.ant-table-cell-row-hover,
+        .ant-table-tbody > tr.plan-row-done > td.ant-table-cell-fix-left,
+        .ant-table-tbody > tr.plan-row-done > td.ant-table-cell-fix-right,
+        .ant-table-tbody > tr.plan-row-cancel > td.ant-table-cell-fix-left,
+        .ant-table-tbody > tr.plan-row-cancel > td.ant-table-cell-fix-right,
+        .ant-table-tbody > tr.plan-row-pending > td.ant-table-cell-fix-left,
+        .ant-table-tbody > tr.plan-row-pending > td.ant-table-cell-fix-right,
+        .ant-table-tbody > tr.plan-row-done:hover > td.ant-table-cell-fix-left,
+        .ant-table-tbody > tr.plan-row-done:hover > td.ant-table-cell-fix-right,
+        .ant-table-tbody > tr.plan-row-cancel:hover > td.ant-table-cell-fix-left,
+        .ant-table-tbody > tr.plan-row-cancel:hover > td.ant-table-cell-fix-right,
+        .ant-table-tbody > tr.plan-row-pending:hover > td.ant-table-cell-fix-left,
+        .ant-table-tbody > tr.plan-row-pending:hover > td.ant-table-cell-fix-right {
+          background-color: #ffffff !important;
+        }
       `}</style>
     </div>
   );

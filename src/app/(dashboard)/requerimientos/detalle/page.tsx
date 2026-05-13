@@ -379,6 +379,7 @@ export default function RequerimientosDetallePage() {
             ? (values.fecha_entrega_esperada as Dayjs).format("YYYY-MM-DD")
             : null,
           observaciones: values.observaciones,
+          nombre: values.nombre ?? null,
           usuario: "Logistica",
         }),
       });
@@ -1264,6 +1265,13 @@ export default function RequerimientosDetallePage() {
               </Form.Item>
             </Col>
           </Row>
+          <Form.Item
+            label="Nombre OC (opcional)"
+            name="nombre"
+            tooltip="Si lo dejás vacío, se autogenera como 'OT {códigos} · {Proveedor}'."
+          >
+            <Input placeholder="Ej: Repuestos cilindro hidráulico - OT 12345" maxLength={300} />
+          </Form.Item>
           <Form.Item label="Observaciones" name="observaciones">
             <TextArea rows={2} placeholder="Notas adicionales..." />
           </Form.Item>

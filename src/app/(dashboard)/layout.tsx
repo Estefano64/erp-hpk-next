@@ -44,6 +44,7 @@ function buildMenuItems(_rol: string | null): MenuProps["items"] {
         { key: "/contratos", label: "Contratos" },
         { key: "/operaciones/planificacion", label: "Planificación" },
         { key: "/operaciones/programacion-semanal", label: "Programación semanal" },
+        { key: "/operaciones/programacion-dashboard", label: "Dashboard Programación" },
       ],
     },
     {
@@ -64,8 +65,10 @@ function buildMenuItems(_rol: string | null): MenuProps["items"] {
         { key: "/proveedores", label: "Proveedores" },
         { key: "/requerimientos", label: "Requerimientos" },
         { key: "/compras", label: "Compras" },
+        { key: "/compras/historico", label: "Histórico de Compras" },
         { key: "/stock", label: "Stock" },
         { key: "/movimientos", label: "Movimientos" },
+        { key: "/herramientas", label: "Herramientas" },
       ],
     },
     { key: "/reportes", icon: <BarChartOutlined />, label: "Reportes" },

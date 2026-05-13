@@ -10,6 +10,7 @@ const Schema = z.object({
   moneda: z.string().trim().optional().nullable(),
   fecha_entrega_esperada: z.string().optional().nullable(),
   observaciones: z.string().optional().nullable(),
+  nombre: z.string().trim().max(300).optional().nullable(),
   ubicacion_codigo: z.string().optional().nullable(),
   almacen_id: z.string().optional().nullable(),
   usuario: z.string().trim().optional().nullable(),
@@ -55,6 +56,7 @@ export async function POST(req: NextRequest) {
       // Cargamos sólo requerimientos que NO estén ya asignados a una OC.
       const repuestos = await tx.oTRepuesto.findMany({
         where: { id: { in: d.repuesto_ids }, po_id: null },
+        include: { orden_trabajo: { select: { ot: true } } },
       });
       if (repuestos.length === 0) {
         throw Object.assign(
@@ -99,6 +101,22 @@ export async function POST(req: NextRequest) {
       const impuesto = subtotal.mul(IGV_PCT);
       const total = subtotal.mul(ONE_PLUS_IGV);
 
+      // Construir el nombre descriptivo: "OT-{codigos} · {Proveedor}".
+      // Si vino del cliente lo respetamos; si no, lo auto-generamos.
+      const otsUnicas = [...new Set(repuestos.map((r) => r.orden_trabajo?.ot).filter(Boolean) as string[])];
+      const proveedor = await tx.proveedor.findUnique({
+        where: { id: d.proveedor_id },
+        select: { razon_social: true, nombre_comercial: true },
+      });
+      const provLabel = proveedor?.nombre_comercial ?? proveedor?.razon_social ?? `Prov.${d.proveedor_id}`;
+      const otsLabel = otsUnicas.length === 0
+        ? "Sin OT"
+        : otsUnicas.length <= 3
+        ? `OT ${otsUnicas.join(", ")}`
+        : `OT ${otsUnicas.slice(0, 3).join(", ")} +${otsUnicas.length - 3}`;
+      const nombreAuto = `${otsLabel} · ${provLabel}`;
+      const nombreFinal = (d.nombre?.trim() || nombreAuto).slice(0, 300);
+
       // Generar numero_po con reintento por colisión P2002.
       let compraCreada: Awaited<ReturnType<typeof tx.compra.create>> | null = null;
       let lastError: unknown = null;
@@ -108,6 +126,7 @@ export async function POST(req: NextRequest) {
           compraCreada = await tx.compra.create({
             data: {
               numero_po,
+              nombre: nombreFinal,
               proveedor_id: d.proveedor_id,
               ubicacion_codigo,
               fecha_solicitud: new Date(),

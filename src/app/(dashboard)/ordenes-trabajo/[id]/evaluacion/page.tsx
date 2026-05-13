@@ -39,6 +39,7 @@ import {
 import type { UploadFile } from "antd/es/upload/interface";
 import { brand } from "@/lib/theme";
 import dayjs, { Dayjs } from "dayjs";
+import { detectarTipoCilindro, COD_REP_TIPO_A_MODELO_EVAL, type DeteccionTipo } from "@/lib/cod-rep-tipos";
 import EvaluacionFormulario, {
   MODELOS_EVALUACION,
   detectarModeloDesdeEstrategia,
@@ -124,6 +125,7 @@ export default function EvaluacionPage() {
   const [ot, setOt] = useState<OTDetalle | null>(null);
   const [evaluacion, setEvaluacion] = useState<Evaluacion | null>(null);
   const [modeloEvaluacion, setModeloEvaluacion] = useState<string>("cil_vastago_simple");
+  const [deteccionExcel, setDeteccionExcel] = useState<DeteccionTipo | null>(null);
   const [sistemaMedicion, setSistemaMedicion] = useState<string>("Metrico");
   const [modeloBloqueado, setModeloBloqueado] = useState(false);
   const [datosFormulario, setDatosFormulario] = useState<Record<string, unknown>>({});
@@ -145,6 +147,8 @@ export default function EvaluacionPage() {
       // Determinar modelo de evaluacion
       let modeloInicial = "cil_vastago_simple";
       let bloqueado = false;
+
+      // 1) Si la OT tiene estrategia, usar la detección heurística por tipo.
       if (otData.estrategia && otData.tipo) {
         const detectado = detectarModeloDesdeEstrategia(otData.tipo);
         if (detectado) {
@@ -152,6 +156,26 @@ export default function EvaluacionPage() {
           bloqueado = true;
         }
       }
+
+      // 2) Si todavía no hay un modelo "fijo", buscar en el catálogo del Excel
+      //    (5. Cod Rep) por descripción / NP / flota. Esto detecta CHVS/CHT/etc
+      //    y lo convierte al código que usa el formulario (cil_vastago_simple, etc.).
+      if (!bloqueado) {
+        const deteccion = detectarTipoCilindro({
+          descripcion: otData.codigo_reparacion?.descripcion ?? otData.descripcion,
+          np: otData.np,
+          flota: otData.cod_rep_flota,
+          posicion: otData.cod_rep_posicion,
+        });
+        setDeteccionExcel(deteccion);
+        if (deteccion.codigo) {
+          const modeloFormulario = COD_REP_TIPO_A_MODELO_EVAL[deteccion.codigo];
+          if (modeloFormulario) modeloInicial = modeloFormulario;
+        }
+      } else {
+        setDeteccionExcel(null);
+      }
+
       setModeloBloqueado(bloqueado);
 
       // Intentar cargar evaluacion existente
@@ -569,6 +593,32 @@ export default function EvaluacionPage() {
                     showIcon
                     icon={<InfoCircleOutlined />}
                     title="Tipo determinado por la estrategia de la OT"
+                    style={{ marginTop: 8 }}
+                    banner
+                  />
+                )}
+                {!modeloBloqueado && deteccionExcel?.codigo && (
+                  <Alert
+                    type={deteccionExcel.via === "np" || deteccionExcel.via === "descripcion+flota" ? "success" : "info"}
+                    showIcon
+                    title={`Tipo detectado: ${deteccionExcel.codigo}${deteccionExcel.nombre ? ` — ${deteccionExcel.nombre}` : ""}`}
+                    description={
+                      <span style={{ fontSize: 11 }}>
+                        Detectado vía <b>{deteccionExcel.via === "np" ? "número de parte" : deteccionExcel.via === "descripcion+flota" ? "descripción + flota" : "descripción"}</b>
+                        {deteccionExcel.candidatos > 1 ? ` · ${deteccionExcel.candidatos} coincidencias en catálogo` : ""}. Verificá que sea el correcto antes de continuar.
+                      </span>
+                    }
+                    style={{ marginTop: 8 }}
+                    banner
+                  />
+                )}
+                {!modeloBloqueado && !deteccionExcel?.codigo && (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    icon={<InfoCircleOutlined />}
+                    title="No se pudo detectar automáticamente el tipo"
+                    description={<span style={{ fontSize: 11 }}>Seleccioná manualmente el modelo apropiado.</span>}
                     style={{ marginTop: 8 }}
                     banner
                   />

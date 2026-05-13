@@ -60,6 +60,7 @@ const { Title } = Typography;
 interface Compra {
   id: number;
   numero_po: string;
+  nombre: string | null;
   numero_req: string | null;
   ot_id: number | null;
   ot_numero: string | null;
@@ -247,6 +248,18 @@ export default function ComprasPage() {
             <Tag color={brand.navy}>{v}</Tag>
           </div>
         </Popover>
+      ),
+    },
+    {
+      key: "nombre",
+      title: "Nombre OC",
+      dataIndex: "nombre",
+      width: 240,
+      sorter: (a, b) => (a.nombre || "").localeCompare(b.nombre || ""),
+      render: (v: string | null) => v ? (
+        <span style={{ fontSize: 12, color: "#1C2B5B" }}>{v}</span>
+      ) : (
+        <span style={{ fontSize: 11, color: "#bbb", fontStyle: "italic" }}>—</span>
       ),
     },
     {
