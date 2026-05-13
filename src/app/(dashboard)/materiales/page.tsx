@@ -38,6 +38,7 @@ import {
   ColumnasToggleButton,
   visibleColumns,
   filtroPorColumna,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 import { ImportarExcelModal } from "@/components/ImportarExcelModal";
 import { EmptyState } from "@/components/EmptyState";
@@ -259,7 +260,7 @@ export default function MaterialesPage() {
       key: "codigo",
       title: "Código",
       dataIndex: "codigo",
-      width: 90,
+      width: 110,
       sorter: (a, b) => a.codigo.localeCompare(b.codigo),
       ...filtroPorColumna(data, "codigo"),
       render: (v: string) => <Tag color={brand.navy}>{v}</Tag>,
@@ -268,6 +269,7 @@ export default function MaterialesPage() {
       key: "descripcion",
       title: "Descripción",
       dataIndex: "descripcion",
+      width: 280,
       ellipsis: true,
       sorter: (a: MaterialRecord, b: MaterialRecord) => a.descripcion.localeCompare(b.descripcion),
       ...filtroPorColumna(data, "descripcion"),
@@ -276,10 +278,12 @@ export default function MaterialesPage() {
       key: "planta_codigo",
       title: "Planta",
       dataIndex: "planta_codigo",
-      width: 90,
-      sorter: (a, b) => (a.planta?.nombre ?? "").localeCompare(b.planta?.nombre ?? ""),
+      width: 110,
+      sorter: (a, b) => (a.planta_codigo ?? "").localeCompare(b.planta_codigo ?? ""),
       ...filtroPorColumna(data, "planta_codigo"),
-      render: (_: string, r: MaterialRecord) => r.planta?.nombre ?? r.planta_codigo,
+      render: (v: string, r: MaterialRecord) => (
+        <span title={r.planta?.nombre ?? ""}>{v ?? "-"}</span>
+      ),
     },
     {
       key: "area_codigo",
@@ -294,7 +298,7 @@ export default function MaterialesPage() {
       key: "categoria_codigo",
       title: "Categoría",
       dataIndex: "categoria_codigo",
-      width: 100,
+      width: 140,
       sorter: (a, b) => (a.categoria?.nombre ?? "").localeCompare(b.categoria?.nombre ?? ""),
       ...filtroPorColumna(data, "categoria_codigo"),
       render: (_: string, r: MaterialRecord) => r.categoria?.nombre ?? r.categoria_codigo,
@@ -303,7 +307,7 @@ export default function MaterialesPage() {
       key: "clasificacion_codigo",
       title: "Clasificación",
       dataIndex: "clasificacion_codigo",
-      width: 110,
+      width: 170,
       sorter: (a, b) => (a.clasificacion?.nombre ?? "").localeCompare(b.clasificacion?.nombre ?? ""),
       ...filtroPorColumna(data, "clasificacion_codigo"),
       render: (_: string, r: MaterialRecord) => r.clasificacion?.nombre ?? r.clasificacion_codigo,
@@ -312,7 +316,7 @@ export default function MaterialesPage() {
       key: "unidad_medida_codigo",
       title: "Und. Med.",
       dataIndex: "unidad_medida_codigo",
-      width: 80,
+      width: 110,
       ...filtroPorColumna(data, "unidad_medida_codigo"),
       render: (_: string, r: MaterialRecord) =>
         r.unidad_medida?.abreviatura ?? r.unidad_medida?.nombre ?? r.unidad_medida_codigo,
@@ -402,6 +406,9 @@ export default function MaterialesPage() {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+    useColumnasRedimensionables<MaterialRecord>(columns, "materiales-list-cols-widths-v1");
+
   return (
     <div>
       {contextHolder}
@@ -416,6 +423,9 @@ export default function MaterialesPage() {
             setOcultas={setOcultas}
             obligatorias={["__num", "codigo", "acciones"]}
           />
+          <Button onClick={resetAnchos} title="Restablecer anchos de columna al diseño original">
+            Restablecer anchos
+          </Button>
           <ExportarExcelButton<MaterialRecord>
             endpoint="/api/materiales"
             filename="Materiales"
@@ -561,7 +571,8 @@ export default function MaterialesPage() {
 
       <Table
         rowKey="material_id"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={data}
         loading={loading}
         locale={{
@@ -590,6 +601,7 @@ export default function MaterialesPage() {
           label: "materiales",
         })}
         scroll={{ x: 1200 }}
+        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
         size="small"
       />
 

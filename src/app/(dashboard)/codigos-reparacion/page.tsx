@@ -40,6 +40,7 @@ import {
   ColumnasToggleButton,
   visibleColumns,
   filtroPorColumna,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
@@ -346,6 +347,9 @@ export default function CodigosReparacionPage() {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+    useColumnasRedimensionables<CodRep>(columns, "codrep-list-cols-widths-v1");
+
   return (
     <div>
       {contextHolder}
@@ -360,6 +364,7 @@ export default function CodigosReparacionPage() {
             setOcultas={setOcultas}
             obligatorias={["__num", "codigo", "acciones"]}
           />
+          <Button onClick={resetAnchos}>Restablecer anchos</Button>
           <ExportarExcelButton<CodRep>
             endpoint="/api/codigos-reparacion"
             filename="Codigos-Reparacion"
@@ -467,7 +472,8 @@ export default function CodigosReparacionPage() {
 
       <Table
         rowKey="cod_rep_id"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={data}
         loading={loading}
         pagination={paginacionEstandar({
@@ -478,6 +484,7 @@ export default function CodigosReparacionPage() {
           label: "registros",
         })}
         scroll={{ x: 1100 }}
+        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
         size="small"
       />
 

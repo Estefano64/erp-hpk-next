@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = req.nextUrl;
-    const limit = Math.min(500, Math.max(1, Number(searchParams.get("limit") ?? 200)));
+    const limit = Math.min(10000, Math.max(1, Number(searchParams.get("limit") ?? 200)));
     const search = searchParams.get("search")?.trim();
     const area = searchParams.get("area")?.trim();
     const activos = searchParams.get("activos") !== "false";

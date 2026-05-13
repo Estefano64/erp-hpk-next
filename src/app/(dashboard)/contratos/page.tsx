@@ -39,6 +39,7 @@ import {
   useRangoFechas,
   RangoFechasFiltro,
   dentroDeRango,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 import dayjs from "dayjs";
 
@@ -284,6 +285,9 @@ export default function ContratosPage() {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+    useColumnasRedimensionables<ContratoRecord>(columns, "contratos-list-cols-widths-v1");
+
   return (
     <div>
       {contextHolder}
@@ -296,6 +300,7 @@ export default function ContratosPage() {
             setOcultas={setOcultas}
             obligatorias={["__num", "codigo", "acciones"]}
           />
+          <Button onClick={resetAnchos}>Restablecer anchos</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nuevo</Button>
         </Space>
       </div>
@@ -337,7 +342,8 @@ export default function ContratosPage() {
 
       <Table
         rowKey="id"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={data.filter((r) =>
           dentroDeRango(r, "fecha_inicio", rangoInicio) &&
           dentroDeRango(r, "fecha_termino", rangoTermino)
@@ -351,6 +357,7 @@ export default function ContratosPage() {
           label: "contratos",
         })}
         scroll={{ x: 1000 }}
+        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
         size="small"
       />
 

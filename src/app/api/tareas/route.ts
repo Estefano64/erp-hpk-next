@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
     const codRep = searchParams.get("cod_rep_codigo")?.trim();
     const tipo = searchParams.get("tipo")?.trim();
     const page = Math.max(1, Number(searchParams.get("page") ?? 1));
-    const limit = Math.min(5000, Math.max(1, Number(searchParams.get("limit") ?? 200)));
+    const limit = Math.min(10000, Math.max(1, Number(searchParams.get("limit") ?? 200)));
     const where: Record<string, unknown> = {};
     if (codRep) where.cod_rep_codigo = codRep;
     if (tipo) where.tipo_codigo = tipo;

@@ -29,6 +29,12 @@ interface CatalogOption {
   nombre: string;
 }
 
+interface FabricanteOption {
+  fabricante_id: number;
+  codigo: string;
+  nombre: string;
+}
+
 interface ClienteOption {
   cliente_id: number;
   codigo: string;
@@ -60,6 +66,10 @@ export default function NuevaOTPage() {
   const [atencionReparaciones, setAtencionReparaciones] = useState<CatalogOption[]>([]);
   const [prioridades, setPrioridades] = useState<CatalogOption[]>([]);
   const [tipoGarantias, setTipoGarantias] = useState<CatalogOption[]>([]);
+  const [tiposCodRep, setTiposCodRep] = useState<CatalogOption[]>([]);
+  const [fabricantes, setFabricantes] = useState<FabricanteOption[]>([]);
+  const [flotas, setFlotas] = useState<CatalogOption[]>([]);
+  const [posiciones, setPosiciones] = useState<CatalogOption[]>([]);
 
   // Estado del form para lógica condicional
   const [estrategia, setEstrategia] = useState(false);
@@ -76,13 +86,17 @@ export default function NuevaOTPage() {
 
   useEffect(() => {
     async function loadCatalogs() {
-      const [cliRes, crRes, tipoRepRes, atencionRes, prioRes, tipoGarRes] = await Promise.all([
+      const [cliRes, crRes, tipoRepRes, atencionRes, prioRes, tipoGarRes, tipoCRRes, fabRes, flotaRes, posRes] = await Promise.all([
         fetch("/api/clientes?limit=100"),
         fetch("/api/codigos-reparacion?limit=500"),
         fetch("/api/catalogos?tabla=tipoReparacion"),
         fetch("/api/catalogos?tabla=atencionReparacion"),
         fetch("/api/catalogos?tabla=prioridadAtencion"),
         fetch("/api/catalogos?tabla=tipoGarantia"),
+        fetch("/api/catalogos?tabla=tipoCodRep"),
+        fetch("/api/catalogos?tabla=fabricante"),
+        fetch("/api/catalogos?tabla=flotaEquipo"),
+        fetch("/api/catalogos?tabla=posicion"),
       ]);
       if (cliRes.ok) setClientes((await cliRes.json()).data ?? []);
       if (crRes.ok) setCodReps((await crRes.json()).data ?? []);
@@ -90,6 +104,10 @@ export default function NuevaOTPage() {
       if (atencionRes.ok) setAtencionReparaciones((await atencionRes.json()).data ?? []);
       if (prioRes.ok) setPrioridades((await prioRes.json()).data ?? []);
       if (tipoGarRes.ok) setTipoGarantias((await tipoGarRes.json()).data ?? []);
+      if (tipoCRRes.ok) setTiposCodRep((await tipoCRRes.json()).data ?? []);
+      if (fabRes.ok) setFabricantes((await fabRes.json()).data ?? []);
+      if (flotaRes.ok) setFlotas((await flotaRes.json()).data ?? []);
+      if (posRes.ok) setPosiciones((await posRes.json()).data ?? []);
     }
     loadCatalogs();
   }, []);
@@ -185,6 +203,13 @@ export default function NuevaOTPage() {
         id_cliente: values.id_cliente,
         estrategia: estrategia,
         id_cod_rep: estrategia ? values.id_cod_rep : null,
+        // Si NO hay estrategia, mandar los campos manuales. Si sí hay, el backend deriva del cod_rep.
+        tipo: estrategia ? null : (values.tipo || null),
+        np: estrategia ? null : (values.np || null),
+        descripcion: estrategia ? null : (values.descripcion || null),
+        id_fabricante: estrategia ? null : (values.id_fabricante || null),
+        cod_rep_flota: estrategia ? null : (values.cod_rep_flota || null),
+        cod_rep_posicion: estrategia ? null : (values.cod_rep_posicion || null),
         equipo_codigo: values.equipo_codigo || null,
         ns: values.ns || null,
         plaqueteo: values.plaqueteo || null,
@@ -199,7 +224,7 @@ export default function NuevaOTPage() {
         garantia_codigo: garantia ? "Si" : "No",
         atencion_reparacion_codigo: values.atencion_reparacion_codigo || null,
         tipo_reparacion_codigo: values.tipo_reparacion_codigo || null,
-        tipo_garantia_codigo: garantia ? "Por definir" : (values.tipo_garantia_codigo || "NA"),
+        tipo_garantia_codigo: garantia ? (values.tipo_garantia_codigo || null) : "NA",
         prioridad_atencion_codigo: values.prioridad_atencion_codigo || null,
         base_metalica_codigo: values.base_metalica ? "Si" : "No",
         comentarios: values.comentarios || null,
@@ -285,8 +310,9 @@ export default function NuevaOTPage() {
             </Col>
           </Row>
 
-          {/* Campos autocompletados del Cod Rep */}
-          {selectedCodRep && (
+          {/* Si hay estrategia + cod_rep → mostrar info read-only del cod_rep.
+              Si NO hay estrategia → inputs editables manualmente. */}
+          {estrategia && selectedCodRep && (
             <Descriptions
               bordered
               size="small"
@@ -300,6 +326,56 @@ export default function NuevaOTPage() {
               <Descriptions.Item label="Flota">{selectedCodRep.flota?.nombre ?? "-"}</Descriptions.Item>
               <Descriptions.Item label="Posición">{selectedCodRep.posicion?.nombre ?? "-"}</Descriptions.Item>
             </Descriptions>
+          )}
+          {!estrategia && (
+            <Row gutter={16}>
+              <Col xs={12} md={8}>
+                <Form.Item name="tipo" label="Tipo" rules={[{ required: true, message: "Requerido" }]}>
+                  <Select
+                    placeholder="Seleccionar tipo"
+                    showSearch optionFilterProp="label"
+                    options={tiposCodRep.map((t) => ({ value: t.codigo, label: t.nombre }))}
+                  />
+                </Form.Item>
+              </Col>
+              <Col xs={12} md={8}>
+                <Form.Item name="np" label="N/P">
+                  <Input placeholder="Ej. 219-2540" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={8}>
+                <Form.Item name="descripcion" label="Descripción" rules={[{ required: true, message: "Requerido" }]}>
+                  <Input placeholder="Ej. ACUMULADOR DE DIRECCION" />
+                </Form.Item>
+              </Col>
+              <Col xs={12} md={8}>
+                <Form.Item name="id_fabricante" label="Fabricante">
+                  <Select
+                    placeholder="Seleccionar"
+                    allowClear showSearch optionFilterProp="label"
+                    options={fabricantes.map((f) => ({ value: f.fabricante_id, label: f.nombre }))}
+                  />
+                </Form.Item>
+              </Col>
+              <Col xs={12} md={8}>
+                <Form.Item name="cod_rep_flota" label="Flota">
+                  <Select
+                    placeholder="Seleccionar"
+                    allowClear showSearch optionFilterProp="label"
+                    options={flotas.map((f) => ({ value: f.codigo, label: f.codigo }))}
+                  />
+                </Form.Item>
+              </Col>
+              <Col xs={12} md={8}>
+                <Form.Item name="cod_rep_posicion" label="Posición">
+                  <Select
+                    placeholder="Seleccionar"
+                    allowClear showSearch optionFilterProp="label"
+                    options={posiciones.map((p) => ({ value: p.codigo, label: p.nombre }))}
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
           )}
         </Card>
 
@@ -397,9 +473,9 @@ export default function NuevaOTPage() {
                   onChange={(e) => {
                     setGarantia(e.target.checked);
                     if (e.target.checked) {
-                      form.setFieldValue("tipo_garantia_codigo", "Por definir");
-                    } else {
                       form.setFieldValue("tipo_garantia_codigo", undefined);
+                    } else {
+                      form.setFieldValue("tipo_garantia_codigo", "NA");
                     }
                   }}
                 >
@@ -432,12 +508,17 @@ export default function NuevaOTPage() {
               </Form.Item>
             </Col>
             <Col xs={12} md={6}>
-              <Form.Item name="tipo_garantia_codigo" label="Tipo Garantía">
+              <Form.Item
+                name="tipo_garantia_codigo"
+                label="Tipo Garantía"
+                rules={garantia ? [{ required: true, message: "Seleccioná un tipo" }] : []}
+              >
                 <Select
-                  placeholder="Seleccionar"
-                  disabled={garantia}
-                  value={garantia ? "Por definir" : undefined}
-                  options={tipoGarantias.map((t) => ({ value: t.codigo, label: t.nombre }))}
+                  placeholder={garantia ? "Seleccionar" : "NA"}
+                  disabled={!garantia}
+                  options={tipoGarantias
+                    .filter((t) => t.codigo !== "NA")
+                    .map((t) => ({ value: t.codigo, label: t.nombre }))}
                 />
               </Form.Item>
             </Col>

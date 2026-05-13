@@ -37,3 +37,17 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #bfbfbf;
 }
+
+/* Cabeceras de tabla siempre en una sola línea (drag manual para ensanchar si se necesita). */
+.ant-table-thead > tr > th,
+.ant-table-thead > tr > th *,
+.ant-table-thead .ant-table-column-title {
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  overflow-wrap: normal !important;
+}
+.ant-table-thead > tr > th {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+

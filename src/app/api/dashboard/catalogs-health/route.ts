@@ -20,12 +20,17 @@ export async function GET() {
       cliTotal, cliSinRuc, cliSinContacto, cliSinTel,
       // Proveedor
       provTotal, provSinContacto, provSinTel, provSinEmail,
-      // CodigoReparacion
+      // CodigoReparacion (servicios para OTs)
       crTotal, crSinPrecio, crSinFab, crSinTareas,
+      // Tareas de reparación (con cod_rep)
+      tareaRepMacSinMat, tareaRepMacTotal,
       // Equipo
       eqTotal, eqSinFab, eqSinSerie, eqSinPrecio, eqSinUbic,
-      // Tarea
-      tareaTotal, tareaMacSinMat, tareaSinPrecio,
+      // Mantenimiento taller (estrategias + tareas mantenimiento)
+      estrTotal, estrSinEquipo, estrSinTareas,
+      tareaMantSinMat, tareaMantMacTotal,
+      // Servicios (separados)
+      svcRepTotal, svcMntTotal,
       // Fabricante / Ubicacion (catálogos chicos, solo total)
       fabTotal, ubicTotal,
     ] = await Promise.all([
@@ -49,15 +54,23 @@ export async function GET() {
       prisma.codigoReparacion.count({ where: { activo: true, fabricante_codigo: null } }),
       prisma.codigoReparacion.count({ where: { activo: true, tareas: { none: {} } } }),
 
+      prisma.tarea.count({ where: { cod_rep_codigo: { not: null }, tipo_codigo: "MAC", material_codigo: null } }),
+      prisma.tarea.count({ where: { cod_rep_codigo: { not: null }, tipo_codigo: "MAC" } }),
+
       prisma.equipo.count({ where: { activo: true } }),
       prisma.equipo.count({ where: { activo: true, fabricante_codigo: null } }),
       prisma.equipo.count({ where: { activo: true, numero_serie: null } }),
       prisma.equipo.count({ where: { activo: true, OR: [{ precio: null }, { precio: 0 }] } }),
       prisma.equipo.count({ where: { activo: true, ubicacion_codigo: null } }),
 
-      prisma.tarea.count(),
-      prisma.tarea.count({ where: { tipo_codigo: "MAC", material_codigo: null } }),
-      prisma.tarea.count({ where: { OR: [{ precio: null }, { precio: 0 }] } }),
+      prisma.estrategia.count(),
+      prisma.estrategia.count({ where: { equipo_codigo: null } }),
+      prisma.estrategia.count({ where: { tareas: { none: {} } } }),
+      prisma.tarea.count({ where: { estrategia_id: { not: null }, tipo_codigo: "MAC", material_codigo: null } }),
+      prisma.tarea.count({ where: { estrategia_id: { not: null }, tipo_codigo: "MAC" } }),
+
+      prisma.servicioReparacion.count({ where: { activo: true } }),
+      prisma.servicioMantenimiento.count({ where: { activo: true } }),
 
       prisma.fabricante.count({ where: { activo: true } }),
       prisma.ubicacion.count({ where: { activo: true } }),
@@ -103,15 +116,23 @@ export async function GET() {
         href: "/codigos-reparacion",
         total: crTotal,
         gaps: [
-          { key: "sin_tareas", label: "Sin tareas (template vacío)", count: crSinTareas, href: "/codigos-reparacion?gap=sin_tareas" },
-          { key: "sin_precio", label: "Sin precio", count: crSinPrecio, href: "/codigos-reparacion?gap=sin_precio" },
-          { key: "sin_fabricante", label: "Sin fabricante", count: crSinFab, href: "/codigos-reparacion?gap=sin_fabricante" },
+          { key: "sin_tareas", label: "Sin tareas (template vacío)", count: crSinTareas },
+          { key: "sin_precio", label: "Sin precio", count: crSinPrecio },
+          { key: "sin_fabricante", label: "Sin fabricante", count: crSinFab },
+          { key: "tareas_mac_sin_mat", label: "Tareas MAC sin material vinculado", count: tareaRepMacSinMat, denominator: tareaRepMacTotal },
         ],
       },
       {
+        key: "servicio_reparacion",
+        label: "Servicios de Reparación (OT)",
+        href: "/catalogos/servicioReparacion",
+        total: svcRepTotal,
+        gaps: [],
+      },
+      {
         key: "equipo",
-        label: "Equipos",
-        href: "/catalogos?tab=equipos",
+        label: "Equipos del Taller",
+        href: "/mantenimiento/equipos",
         total: eqTotal,
         gaps: [
           { key: "sin_fabricante", label: "Sin fabricante", count: eqSinFab },
@@ -121,26 +142,34 @@ export async function GET() {
         ],
       },
       {
-        key: "tarea",
-        label: "Tareas (templates)",
-        href: "/codigos-reparacion",
-        total: tareaTotal,
+        key: "estrategia",
+        label: "Estrategias de Mantenimiento",
+        href: "/catalogos/estrategia",
+        total: estrTotal,
         gaps: [
-          { key: "mac_sin_material", label: "MAC sin material asignado", count: tareaMacSinMat },
-          { key: "sin_precio", label: "Sin precio", count: tareaSinPrecio },
+          { key: "sin_equipo", label: "Sin equipo asignado", count: estrSinEquipo },
+          { key: "sin_tareas", label: "Sin tareas (template vacío)", count: estrSinTareas },
+          { key: "mac_sin_material", label: "Tareas MAC sin material vinculado", count: tareaMantSinMat, denominator: tareaMantMacTotal },
         ],
+      },
+      {
+        key: "servicio_mantenimiento",
+        label: "Servicios de Mantenimiento Taller",
+        href: "/catalogos/servicioMantenimiento",
+        total: svcMntTotal,
+        gaps: [],
       },
       {
         key: "fabricante",
         label: "Fabricantes",
-        href: "/catalogos?tab=fabricantes",
+        href: "/catalogos/fabricante",
         total: fabTotal,
         gaps: [],
       },
       {
         key: "ubicacion",
         label: "Ubicaciones",
-        href: "/catalogos?tab=ubicaciones",
+        href: "/catalogos/ubicacion",
         total: ubicTotal,
         gaps: [],
       },

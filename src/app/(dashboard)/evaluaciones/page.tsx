@@ -44,6 +44,7 @@ import {
   useRangoFechas,
   RangoFechasFiltro,
   dentroDeRango,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 import dayjs from "dayjs";
 
@@ -338,6 +339,9 @@ export default function EvaluacionesPage() {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+    useColumnasRedimensionables<Evaluacion>(columns, "evaluaciones-list-cols-widths-v1");
+
   const tituloModal: Record<string, string> = {
     solicitar: "Solicitar Revisión",
     aprobar: "Aprobar Evaluación",
@@ -363,6 +367,7 @@ export default function EvaluacionesPage() {
             setOcultas={setOcultas}
             obligatorias={["__num", "ot", "acciones"]}
           />
+          <Button onClick={resetAnchos}>Restablecer anchos</Button>
         </Space>
       </div>
 
@@ -477,7 +482,8 @@ export default function EvaluacionesPage() {
 
       <Table
         rowKey="id"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={filtered}
         loading={loading}
         pagination={paginacionEstandar({
@@ -488,6 +494,7 @@ export default function EvaluacionesPage() {
           label: "evaluaciones",
         })}
         scroll={{ x: 1700 }}
+        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
         size="small"
       />
 

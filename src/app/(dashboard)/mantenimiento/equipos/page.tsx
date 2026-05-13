@@ -42,6 +42,7 @@ import {
   useRangoFechas,
   RangoFechasFiltro,
   dentroDeRango,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
@@ -459,6 +460,9 @@ export default function EquiposPage() {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+    useColumnasRedimensionables<EquipoRecord>(columns, "equipos-list-cols-widths-v1");
+
   return (
     <div>
       {contextHolder}
@@ -473,6 +477,7 @@ export default function EquiposPage() {
             setOcultas={setOcultas}
             obligatorias={["__num", "codigo", "acciones"]}
           />
+          <Button onClick={resetAnchos}>Restablecer anchos</Button>
           <ExportarExcelButton<EquipoRecord>
             endpoint="/api/equipos"
             filename="Equipos"
@@ -585,7 +590,8 @@ export default function EquiposPage() {
 
       <Table
         rowKey="equipo_id"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={data.filter((r) =>
           dentroDeRango(r, "fecha_inicio", rangoIni) &&
           dentroDeRango(r, "fecha_fabricacion", rangoFab)
@@ -599,6 +605,7 @@ export default function EquiposPage() {
           label: "equipos",
         })}
         scroll={{ x: 1800 }}
+        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
         size="small"
       />
 

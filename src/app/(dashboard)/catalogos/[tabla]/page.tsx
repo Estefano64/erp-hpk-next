@@ -17,6 +17,7 @@ import {
   ColumnasToggleButton,
   visibleColumns,
   filtroPorColumna,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 import { brand } from "@/lib/theme";
 import { catalogosById, type FieldDef } from "@/lib/catalogos-config";
@@ -296,6 +297,10 @@ export default function CatalogoCrudPage() {
     },
   });
 
+  const allColumns = [numeracionColumn<CatalogRow>(), ...columns];
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+    useColumnasRedimensionables<CatalogRow>(allColumns, `catalogos-${cfg.id}-cols-widths-v1`);
+
   return (
     <div>
       {contextHolder}
@@ -316,11 +321,12 @@ export default function CatalogoCrudPage() {
         </div>
         <Space>
           <ColumnasToggleButton<CatalogRow>
-            columns={[numeracionColumn<CatalogRow>(), ...columns]}
+            columns={allColumns}
             ocultas={ocultas}
             setOcultas={setOcultas}
             obligatorias={["__num"]}
           />
+          <Button onClick={resetAnchos}>Restablecer anchos</Button>
           <Button icon={<ReloadOutlined />} onClick={fetchData}>Refrescar</Button>
           <ExportarExcelButton<CatalogRow>
             endpoint={`/api/catalogos?tabla=${cfg.id}&incluirInactivos=1`}
@@ -360,12 +366,14 @@ export default function CatalogoCrudPage() {
 
       <Table
         rowKey={cfg.pkField}
-        columns={visibleColumns([numeracionColumn<CatalogRow>(), ...columns], ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={filtered}
         loading={loading}
         size="small"
         pagination={{ pageSize: 50, showTotal: (t) => `${t} registros`, placement: ["topEnd", "bottomEnd"] }}
         scroll={{ x: 800 }}
+        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
         rowClassName={(r) => r.activo === false ? "cat-row-inactive" : ""}
       />
 

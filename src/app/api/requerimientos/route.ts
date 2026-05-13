@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
   try {
     const sp = req.nextUrl.searchParams;
     const page = Math.max(1, Number(sp.get("page") ?? 1));
-    const limit = Math.min(500, Math.max(1, Number(sp.get("limit") ?? 100)));
+    const limit = Math.min(10000, Math.max(1, Number(sp.get("limit") ?? 100)));
 
     const where: Record<string, unknown> = {};
     const otId = sp.get("ot_id");

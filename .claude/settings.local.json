@@ -6,7 +6,21 @@
       "Bash(node _analyze.mjs)",
       "Bash(npx tsx *)",
       "Bash(node -e ' *)",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Bash(python *)",
+      "Bash(PGPASSWORD=admin \"/c/Program Files/PostgreSQL/18/bin/psql.exe\" -h localhost -p 5433 -U postgres -d erp_hpyk -c \"\\\\d tarea\")",
+      "Bash(PGPASSWORD=admin /c/Program Files/PostgreSQL/18/bin/psql.exe *)",
+      "Bash(PGPASSWORD=admin \"/c/Program Files/PostgreSQL/18/bin/psql.exe\" -h localhost -p 5433 -U postgres -d erp_hpyk -c \"SELECT codigo, descripcion, tipo_codigo FROM equipo WHERE LOWER\\(descripcion\\) LIKE '%banco%' OR codigo LIKE '%MP%' ORDER BY codigo LIMIT 20;\")",
+      "Bash(PGPASSWORD=admin \"/c/Program Files/PostgreSQL/18/bin/psql.exe\" -h localhost -p 5433 -U postgres -d erp_hpyk -c \"SELECT codigo, equipo_codigo, descripcion FROM estrategia WHERE codigo LIKE 'MP%' OR descripcion LIKE '%MP%' OR descripcion LIKE '%Banco%' LIMIT 20;\")",
+      "Bash(PGPASSWORD=admin \"/c/Program Files/PostgreSQL/18/bin/psql.exe\" -h localhost -p 5433 -U postgres -d erp_hpyk -c \"SELECT DISTINCT np_cod1, np_cod2 FROM tarea WHERE cod_rep_codigo IS NULL AND np_cod1 LIKE 'MP%' ORDER BY np_cod1;\")",
+      "Bash(PGPASSWORD=admin \"/c/Program Files/PostgreSQL/18/bin/psql.exe\" -h localhost -p 5433 -U postgres -d erp_hpyk -c \"SELECT cod_rep_codigo, COUNT\\(*\\) AS ops FROM operacion_cod_rep WHERE cod_rep_codigo IN \\('CR-0131','CR-0034','CR-0041','CR-0058','CR-0046'\\) GROUP BY 1 ORDER BY 1;\")",
+      "Bash(PGPASSWORD=admin \"/c/Program Files/PostgreSQL/18/bin/psql.exe\" -h localhost -p 5433 -U postgres -d erp_hpyk -c \"SELECT componente_codigo, operacion_reparacion_codigo, trabajo, qty, horas, hh, orden FROM operacion_cod_rep WHERE cod_rep_codigo='CR-0046' ORDER BY orden;\")",
+      "Bash(PGPASSWORD=admin \"/c/Program Files/PostgreSQL/18/bin/psql.exe\" -h localhost -p 5433 -U postgres -d erp_hpyk -A -t -F\",\" -c \"SELECT t.cod_rep_codigo, cr.descripcion, cr.flota_codigo, t.np, COALESCE\\(t.ref_descripcion,''\\) FROM tarea t JOIN codigo_reparacion cr ON cr.codigo=t.cod_rep_codigo WHERE t.tipo_codigo='MAC' AND t.material_codigo IS NULL AND t.np IS NOT NULL ORDER BY t.cod_rep_codigo, t.np;\" cat /c/Users/HP/Documents/HPK-ERP-NEXT/materiales_faltantes_20260513.csv)",
+      "Bash(PGPASSWORD=admin \"/c/Program Files/PostgreSQL/18/bin/psql.exe\" -h localhost -p 5433 -U postgres -d erp_hpyk)",
+      "Bash('/c/Program Files/PostgreSQL/18/bin/psql.exe' -h localhost -p 5433 -U postgres -d erp_hpyk -c ' *)",
+      "Bash(taskkill //F //IM node.exe)",
+      "Bash(PGPASSWORD=admin \"/c/Program Files/PostgreSQL/18/bin/psql.exe\" -h localhost -p 5433 -U postgres -d erp_hpyk -f \"prisma/migrations/20260513090000_split_servicio/migration.sql\")",
+      "Bash(PGPASSWORD=admin \"/c/Program Files/PostgreSQL/18/bin/psql.exe\" -h localhost -p 5433 -U postgres -d erp_hpyk -c \"SELECT 'servicio_reparacion' AS tabla, COUNT\\(*\\) FROM servicio_reparacion UNION ALL SELECT 'servicio_mantenimiento', COUNT\\(*\\) FROM servicio_mantenimiento;\")"
     ]
   }
 }

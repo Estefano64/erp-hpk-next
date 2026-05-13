@@ -16,6 +16,7 @@ import {
   ColumnasToggleButton,
   visibleColumns,
   filtroPorColumna,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 
 const { Text } = Typography;
@@ -242,6 +243,9 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+    useColumnasRedimensionables<Row>(columns, "compras-reqaprob-cols-widths-v1");
+
   return (
     <div>
       {contextHolder}
@@ -288,6 +292,7 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
               setOcultas={setOcultas}
               obligatorias={["ot", "desc"]}
             />
+          <Button onClick={resetAnchos}>Restablecer anchos</Button>
             <Button icon={<ReloadOutlined />} onClick={fetchData}>Refrescar</Button>
             <Button
               type="primary"
@@ -316,12 +321,14 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
       ) : (
         <Table
           rowKey="id"
-          columns={visibleColumns(columns, ocultas)}
+          columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
           dataSource={rows}
           loading={loading}
           size="small"
           pagination={{ pageSize: 50, showTotal: (t) => `${t} items`, placement: ["topEnd", "bottomEnd"] }}
           scroll={{ x: 1200 }}
+          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
           rowSelection={{
             selectedRowKeys: selectedKeys,
             onChange: (keys) => setSelectedKeys(keys as number[]),

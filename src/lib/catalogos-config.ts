@@ -47,12 +47,10 @@ export interface CatalogoConfig {
   description?: string;
   /** Agrupador en el índice. */
   category:
-    | "General"
-    | "Equipos"
-    | "Estados OT"
-    | "Reparación"
-    | "Operaciones"
-    | "Workflow";
+    | "Datos maestros"
+    | "Reparación (OT)"
+    | "Mantenimiento Taller"
+    | "Estados / Workflow";
   /** Nombre del campo PK (e.g., "planta_id"). */
   pkField: string;
   /** Campo único legible (típicamente "codigo"). */
@@ -78,7 +76,7 @@ export const catalogosConfig: CatalogoConfig[] = [
     id: "planta",
     label: "Plantas",
     description: "Sedes / plantas de la organización.",
-    category: "General",
+    category: "Datos maestros",
     pkField: "planta_id",
     uniqueField: "codigo",
     fields: [
@@ -91,7 +89,7 @@ export const catalogosConfig: CatalogoConfig[] = [
     id: "area",
     label: "Áreas",
     description: "Áreas operativas dentro de una planta.",
-    category: "General",
+    category: "Datos maestros",
     pkField: "area_id",
     uniqueField: "codigo",
     fields: [
@@ -103,7 +101,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "subArea",
     label: "Sub-Áreas",
-    category: "General",
+    category: "Datos maestros",
     pkField: "sub_area_id",
     uniqueField: "codigo",
     fields: [
@@ -115,7 +113,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "ubicacion",
     label: "Ubicaciones",
-    category: "General",
+    category: "Datos maestros",
     pkField: "ubicacion_id",
     uniqueField: "codigo",
     fields: [
@@ -127,7 +125,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "unidadMedida",
     label: "Unidades de medida",
-    category: "General",
+    category: "Datos maestros",
     pkField: "unidad_medida_id",
     uniqueField: "codigo",
     fields: [
@@ -139,7 +137,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "moneda",
     label: "Monedas",
-    category: "General",
+    category: "Datos maestros",
     pkField: "moneda_id",
     uniqueField: "codigo",
     fields: [
@@ -151,7 +149,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "categoria",
     label: "Categorías (Materiales)",
-    category: "General",
+    category: "Datos maestros",
     pkField: "categoria_id",
     uniqueField: "codigo",
     fields: [...codigoNombre(10), activo],
@@ -159,7 +157,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "clasificacion",
     label: "Clasificaciones",
-    category: "General",
+    category: "Datos maestros",
     pkField: "clasificacion_id",
     uniqueField: "codigo",
     fields: [...codigoNombre(10), activo],
@@ -169,7 +167,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "tipoEquipo",
     label: "Tipos de equipo",
-    category: "Equipos",
+    category: "Datos maestros",
     pkField: "tipo_equipo_id",
     uniqueField: "codigo",
     fields: [...codigoNombre(10), activo],
@@ -177,7 +175,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "statusEquipo",
     label: "Estados de equipo",
-    category: "Equipos",
+    category: "Mantenimiento Taller",
     pkField: "status_equipo_id",
     uniqueField: "codigo",
     fields: [...codigoNombre(10), activo],
@@ -185,7 +183,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "criticidad",
     label: "Criticidades",
-    category: "Equipos",
+    category: "Mantenimiento Taller",
     pkField: "criticidad_id",
     uniqueField: "codigo",
     fields: [
@@ -197,7 +195,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "fabricante",
     label: "Fabricantes",
-    category: "Equipos",
+    category: "Datos maestros",
     pkField: "fabricante_id",
     uniqueField: "codigo",
     fields: [
@@ -209,7 +207,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "flotaEquipo",
     label: "Flotas de equipo",
-    category: "Equipos",
+    category: "Reparación (OT)",
     pkField: "flota_equipo_id",
     uniqueField: "codigo",
     fields: [...codigoNombre(20), activo],
@@ -219,7 +217,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "otStatus",
     label: "Estado OT",
-    category: "Estados OT",
+    category: "Estados / Workflow",
     pkField: "ot_status_id",
     uniqueField: "codigo",
     orderByPK: true,
@@ -228,7 +226,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "recursosStatus",
     label: "Estado Recursos",
-    category: "Estados OT",
+    category: "Estados / Workflow",
     pkField: "recursos_status_id",
     uniqueField: "codigo",
     orderByPK: true,
@@ -237,7 +235,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "tallerStatus",
     label: "Estado Taller",
-    category: "Estados OT",
+    category: "Estados / Workflow",
     pkField: "taller_status_id",
     uniqueField: "codigo",
     orderByPK: true,
@@ -248,7 +246,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "atencionReparacion",
     label: "Atención reparación",
-    category: "Reparación",
+    category: "Reparación (OT)",
     pkField: "atencion_reparacion_id",
     uniqueField: "codigo",
     orderByPK: true,
@@ -257,7 +255,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "tipoReparacion",
     label: "Tipos de reparación",
-    category: "Reparación",
+    category: "Reparación (OT)",
     pkField: "tipo_reparacion_id",
     uniqueField: "codigo",
     orderByPK: true,
@@ -266,7 +264,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "tipoGarantia",
     label: "Tipos de garantía",
-    category: "Reparación",
+    category: "Reparación (OT)",
     pkField: "tipo_garantia_id",
     uniqueField: "codigo",
     orderByPK: true,
@@ -275,7 +273,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "garantia",
     label: "Garantía (Sí/No)",
-    category: "Reparación",
+    category: "Reparación (OT)",
     pkField: "garantia_id",
     uniqueField: "codigo",
     orderByPK: true,
@@ -284,7 +282,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "prioridadAtencion",
     label: "Prioridad de atención",
-    category: "Reparación",
+    category: "Reparación (OT)",
     pkField: "prioridad_atencion_id",
     uniqueField: "codigo",
     orderByPK: true,
@@ -297,7 +295,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "baseMetalica",
     label: "Base metálica (Sí/No)",
-    category: "Reparación",
+    category: "Reparación (OT)",
     pkField: "base_metalica_id",
     uniqueField: "codigo",
     orderByPK: true,
@@ -306,7 +304,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "tipoCodRep",
     label: "Tipos Cod. Reparable",
-    category: "Reparación",
+    category: "Reparación (OT)",
     pkField: "tipo_cod_rep_id",
     uniqueField: "codigo",
     fields: [...codigoNombre(10), activo],
@@ -314,7 +312,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "categoriaCodRep",
     label: "Categorías Cod. Reparable",
-    category: "Reparación",
+    category: "Reparación (OT)",
     pkField: "categoria_cod_rep_id",
     uniqueField: "codigo",
     fields: [...codigoNombre(10), activo],
@@ -322,7 +320,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "posicion",
     label: "Posiciones",
-    category: "Reparación",
+    category: "Reparación (OT)",
     pkField: "posicion_id",
     uniqueField: "codigo",
     fields: [...codigoNombre(10), activo],
@@ -330,7 +328,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "modeloEvaluacion",
     label: "Modelos de evaluación",
-    category: "Reparación",
+    category: "Reparación (OT)",
     pkField: "modelo_evaluacion_id",
     uniqueField: "codigo",
     fields: [...codigoNombre(10, 200), activo],
@@ -340,7 +338,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "componente",
     label: "Componentes",
-    category: "Operaciones",
+    category: "Reparación (OT)",
     pkField: "componente_id",
     uniqueField: "codigo",
     fields: [...codigoNombre(30), activo],
@@ -348,7 +346,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "operacionReparacion",
     label: "Operaciones de reparación",
-    category: "Operaciones",
+    category: "Reparación (OT)",
     pkField: "operacion_reparacion_id",
     uniqueField: "codigo",
     fields: [
@@ -370,7 +368,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "conjuntoMantenimiento",
     label: "Conjuntos de mantenimiento",
-    category: "Operaciones",
+    category: "Mantenimiento Taller",
     pkField: "conjunto_mantenimiento_id",
     uniqueField: "codigo",
     fields: [
@@ -380,11 +378,35 @@ export const catalogosConfig: CatalogoConfig[] = [
     ],
   },
   {
-    id: "servicio",
-    label: "Servicios",
-    description: "Servicios externos / tercerizados (autocomplete cuando se elige tipo SER en requerimientos).",
-    category: "Operaciones",
-    pkField: "servicio_id",
+    id: "estrategia",
+    label: "Estrategias de mantenimiento",
+    description: "Planes de mantenimiento preventivo (MP1-MP4) por equipo del taller.",
+    category: "Mantenimiento Taller",
+    pkField: "estrategia_id",
+    uniqueField: "codigo",
+    displayField: "descripcion",
+    fields: [
+      { key: "codigo", label: "Código", type: "string", required: true, maxLength: 50 },
+      { key: "descripcion", label: "Descripción", type: "string", required: true, maxLength: 200, hint: "Ej. MP1, MP2..." },
+      { key: "actividad_codigo", label: "Actividad", type: "string", required: true, maxLength: 50, hint: "Ej. MP1, MP2..." },
+      { key: "frecuencia", label: "Frecuencia", type: "number", required: true, hint: "Cantidad de unidades (ej. 3 meses)" },
+      { key: "unidad_medida_codigo", label: "Unidad", type: "select-fk", fkTabla: "unidadMedida", required: true },
+      { key: "area_codigo", label: "Área", type: "select-fk", fkTabla: "area", required: true },
+      { key: "equipo_codigo", label: "Equipo", type: "select-fk", fkTabla: "equipo", fkLabelField: "descripcion" },
+      { key: "conjunto_codigo", label: "Conjunto", type: "select-fk", fkTabla: "conjuntoMantenimiento" },
+      { key: "tipo_estrategia_codigo", label: "Tipo", type: "select-fk", fkTabla: "tipoEstrategia", required: true },
+      { key: "status_codigo", label: "Estado", type: "select-fk", fkTabla: "statusEstrategia", required: true },
+      activo,
+    ],
+  },
+
+  // ── Workflow ───────────────────────────────────────────────────────────
+  {
+    id: "servicioReparacion",
+    label: "Servicios de Reparación (OT)",
+    description: "Servicios externos / tercerizados que se asignan a tareas tipo SER de un código reparable.",
+    category: "Reparación (OT)",
+    pkField: "servicio_reparacion_id",
     uniqueField: "codigo",
     fields: [
       ...codigoNombre(20, 300),
@@ -392,13 +414,24 @@ export const catalogosConfig: CatalogoConfig[] = [
       activo,
     ],
   },
-
-  // ── Workflow ───────────────────────────────────────────────────────────
+  {
+    id: "servicioMantenimiento",
+    label: "Servicios de Mantenimiento Taller",
+    description: "Servicios para mantenimiento de equipos del taller (estrategias MP1-MP4).",
+    category: "Mantenimiento Taller",
+    pkField: "servicio_mantenimiento_id",
+    uniqueField: "codigo",
+    fields: [
+      ...codigoNombre(20, 300),
+      { key: "descripcion", label: "Descripción", type: "text" },
+      activo,
+    ],
+  },
   {
     id: "statusTarea",
     label: "Estados de tarea",
     description: "Estados de planificación: abierto, programado, realizado, etc.",
-    category: "Workflow",
+    category: "Estados / Workflow",
     pkField: "status_tarea_id",
     uniqueField: "codigo",
     orderByPK: true,
@@ -412,7 +445,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "tipoTarea",
     label: "Tipos de tarea",
-    category: "Workflow",
+    category: "Estados / Workflow",
     pkField: "tipo_tarea_id",
     uniqueField: "codigo",
     fields: [...codigoNombre(10), activo],
@@ -420,7 +453,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "statusRequerimiento",
     label: "Estados de requerimiento",
-    category: "Workflow",
+    category: "Estados / Workflow",
     pkField: "status_requerimiento_id",
     uniqueField: "codigo",
     orderByPK: true,
@@ -433,7 +466,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "statusCotizacion",
     label: "Estados de cotización",
-    category: "Workflow",
+    category: "Estados / Workflow",
     pkField: "status_cotizacion_id",
     uniqueField: "codigo",
     orderByPK: true,
@@ -446,7 +479,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "statusOc",
     label: "Estados de OC",
-    category: "Workflow",
+    category: "Estados / Workflow",
     pkField: "status_oc_id",
     uniqueField: "codigo",
     orderByPK: true,
@@ -459,7 +492,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "statusEstrategia",
     label: "Estados de estrategia",
-    category: "Workflow",
+    category: "Mantenimiento Taller",
     pkField: "status_estrategia_id",
     uniqueField: "codigo",
     fields: [...codigoNombre(10), activo],
@@ -467,7 +500,7 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "tipoEstrategia",
     label: "Tipos de estrategia",
-    category: "Workflow",
+    category: "Mantenimiento Taller",
     pkField: "tipo_estrategia_id",
     uniqueField: "codigo",
     fields: [...codigoNombre(10), activo],

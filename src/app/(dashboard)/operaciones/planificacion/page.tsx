@@ -14,6 +14,7 @@ import {
   useRangoFechas,
   RangoFechasFiltro,
   dentroDeRango,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 import dayjs, { Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
@@ -749,6 +750,9 @@ export default function PlanificacionPage() {
     return [...s].sort();
   }, [rows]);
 
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+    useColumnasRedimensionables<PlanRow>(columns, "planificacion-cols-widths-v1");
+
   return (
     <div>
       {contextHolder}
@@ -814,6 +818,7 @@ export default function PlanificacionPage() {
             setOcultas={setOcultas}
             obligatorias={["__num", "ot", "descripcion"]}
           />
+          <Button onClick={resetAnchos}>Restablecer anchos</Button>
           <span style={{ fontSize: 12, color: brand.textSecondary }}>
             {total} tareas {savingId ? " · guardando…" : ""}
           </span>
@@ -955,7 +960,8 @@ export default function PlanificacionPage() {
 
       <Table
         rowKey="id"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={rows.filter((r) =>
           dentroDeRango(r, "fecha_inicio", rangoInicio) &&
           dentroDeRango(r, "fecha_fin", rangoFin)
@@ -963,7 +969,8 @@ export default function PlanificacionPage() {
         loading={loading}
         size="small"
         pagination={{ pageSize: 50, showTotal: (t) => `${t} tareas`, placement: ["topEnd", "bottomEnd"] }}
-        scroll={{ x: 2400, y: 600 }}
+        scroll={{ x: 2400 }}
+        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
         rowSelection={{
           selectedRowKeys: selectedKeys,
           onChange: (keys) => setSelectedKeys(keys as number[]),

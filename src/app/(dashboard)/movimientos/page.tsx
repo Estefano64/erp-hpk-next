@@ -56,6 +56,7 @@ import {
   useRangoFechas,
   RangoFechasFiltro,
   dentroDeRango,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 import { brand } from "@/lib/theme";
 import dayjs, { Dayjs } from "dayjs";
@@ -310,6 +311,9 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+    useColumnasRedimensionables<Movimiento>(columns, "movimientos-list-cols-widths-v1");
+
   return (
     <div>
       <Card styles={{ body: { padding: 16 } }} style={{ marginBottom: 12 }}>
@@ -368,16 +372,19 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
           setOcultas={setOcultas}
           obligatorias={["__num", "fecha_movimiento", "tipo_movimiento"]}
         />
+        <Button onClick={resetAnchos}>Restablecer anchos</Button>
       </div>
 
       <Table
         rowKey="id"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={filtered}
         loading={loading}
         pagination={{ pageSize: 25, placement: ["topEnd", "bottomEnd"] }}
         size="small"
         scroll={{ x: 1200 }}
+        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
       />
     </div>
   );
@@ -662,6 +669,9 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
     },
   ];
 
+  const { columnas: itemsResizable, components: itemsComponents, resetAnchos: resetItemsAnchos } =
+    useColumnasRedimensionables<ItemFila>(columnasItems, "movimientos-items-cols-widths-v1");
+
   return (
     <div>
       {/* KPIs */}
@@ -741,6 +751,7 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
           setOcultas={setIngresoOcultas}
           obligatorias={["numero_po", "descripcion", "acciones"]}
         />
+        <Button onClick={resetItemsAnchos}>Restablecer anchos</Button>
       </div>
 
       <Table
@@ -748,9 +759,11 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
         size="small"
         loading={loading}
         dataSource={filasFiltradas.filter((r) => dentroDeRango(r, "fecha_entrega_esperada", rangoEntrega))}
-        columns={visibleColumns(columnasItems, ingresoOcultas)}
+        columns={visibleColumns(itemsResizable, ingresoOcultas)}
+        components={itemsComponents}
         pagination={{ pageSize: 25, showTotal: (t) => `${t} items`, placement: ["topEnd", "bottomEnd"] }}
         scroll={{ x: 1500 }}
+        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
       />
 
       {/* Modal Recibir */}

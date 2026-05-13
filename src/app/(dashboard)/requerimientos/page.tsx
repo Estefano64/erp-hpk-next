@@ -1234,6 +1234,7 @@ export default function RequerimientosPage() {
             placement: ["topEnd", "bottomEnd"],
           })}
           scroll={{ x: 1500 }}
+          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
         />
       )}
 

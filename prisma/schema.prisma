@@ -375,6 +375,7 @@ model Cliente {
   telefono           String?        @db.VarChar(50)
   email              String?        @db.VarChar(100)
   contacto_principal String?        @db.VarChar(200)
+  nota               String?        @db.VarChar(300)
   activo             Boolean        @default(true)
   usuario_crea       String?        @db.VarChar(100)
   usuario_actualiza  String?        @db.VarChar(100)
@@ -592,6 +593,7 @@ model Estrategia {
   equipo                  Equipo?                @relation(fields: [equipo_codigo], references: [codigo])
   conjunto                ConjuntoMantenimiento? @relation(fields: [conjunto_codigo], references: [codigo])
   status                  StatusEstrategia       @relation(fields: [status_codigo], references: [codigo])
+  activo                  Boolean                @default(true)
   tipo                    TipoEstrategia         @relation(fields: [tipo_estrategia_codigo], references: [codigo])
   unidad_medida           UnidadMedida           @relation(fields: [unidad_medida_codigo], references: [codigo])
   tareas                  Tarea[]
@@ -629,16 +631,28 @@ model Trabajador {
   @@map("trabajador")
 }
 
-model Servicio {
-  servicio_id Int      @id @default(autoincrement())
-  codigo      String   @unique @db.VarChar(20)
-  nombre      String   @db.VarChar(300)
-  descripcion String?
-  activo      Boolean  @default(true)
-  created_at  DateTime @default(now())
-  updated_at  DateTime @default(now()) @updatedAt
+model ServicioReparacion {
+  servicio_reparacion_id Int      @id @default(autoincrement())
+  codigo                 String   @unique @db.VarChar(20)
+  nombre                 String   @db.VarChar(300)
+  descripcion            String?
+  activo                 Boolean  @default(true)
+  created_at             DateTime @default(now())
+  updated_at             DateTime @default(now()) @updatedAt
 
-  @@map("servicio")
+  @@map("servicio_reparacion")
+}
+
+model ServicioMantenimiento {
+  servicio_mantenimiento_id Int      @id @default(autoincrement())
+  codigo                    String   @unique @db.VarChar(20)
+  nombre                    String   @db.VarChar(300)
+  descripcion               String?
+  activo                    Boolean  @default(true)
+  created_at                DateTime @default(now())
+  updated_at                DateTime @default(now()) @updatedAt
+
+  @@map("servicio_mantenimiento")
 }
 
 model ConjuntoMantenimiento {

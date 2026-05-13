@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Table, Tag, Empty, Typography, Spin, Space } from "antd";
+import { Table, Tag, Empty, Typography, Spin, Space, Button } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { brand } from "@/lib/theme";
@@ -13,6 +13,7 @@ import {
   useRangoFechas,
   RangoFechasFiltro,
   dentroDeRango,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 
 const { Text } = Typography;
@@ -88,6 +89,9 @@ export default function OTHistorialTab({ otId }: { otId: number }) {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+    useColumnasRedimensionables<HistorialRecord>(columns, "ot-hist-cols-widths-v1");
+
   if (loading && data.length === 0) {
     return <div style={{ textAlign: "center", padding: 40 }}><Spin /></div>;
   }
@@ -111,15 +115,18 @@ export default function OTHistorialTab({ otId }: { otId: number }) {
             setOcultas={setOcultas}
             obligatorias={["createdAt"]}
           />
+          <Button onClick={resetAnchos}>Restablecer anchos</Button>
         </Space>
       </div>
       <Table
         rowKey="id"
         size="small"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={datosFiltrados}
         pagination={{ pageSize: 20, showTotal: (t) => `${t} eventos`, placement: ["topEnd", "bottomEnd"] }}
         loading={loading}
+        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
       />
     </div>
   );

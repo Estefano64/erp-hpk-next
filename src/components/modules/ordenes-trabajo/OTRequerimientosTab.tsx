@@ -21,6 +21,7 @@ import {
   useRangoFechas,
   RangoFechasFiltro,
   dentroDeRango,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 
 const { Text } = Typography;
@@ -133,7 +134,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
   const materiales = matsRes?.data ?? [];
   const fabsRes = useCachedFetch<Wrapped<{ codigo: string; nombre: string }>>("/api/catalogos?tabla=fabricante");
   const fabricantes = fabsRes?.data ?? [];
-  const sersRes = useCachedFetch<Wrapped<{ codigo: string; nombre: string; descripcion: string | null }>>("/api/catalogos?tabla=servicio");
+  const sersRes = useCachedFetch<Wrapped<{ codigo: string; nombre: string; descripcion: string | null }>>("/api/catalogos?tabla=servicioReparacion");
   const servicios = sersRes?.data ?? [];
 
   // Rol del usuario (para acciones admin)
@@ -510,6 +511,9 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+    useColumnasRedimensionables<RequerimientoRow>(columns, "ot-req-cols-widths-v1");
+
   return (
     <div>
       {contextHolder}
@@ -546,6 +550,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
               setOcultas={setOcultas}
               obligatorias={["item_req", "desc"]}
             />
+          <Button onClick={resetAnchos}>Restablecer anchos</Button>
             <Button icon={<ReloadOutlined />} onClick={fetchData}>Refrescar</Button>
             {codRepCodigo && (
               <Tooltip title={`Copia los items del template del cod_rep ${codRepCodigo}`}>
@@ -583,7 +588,8 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
       ) : (
         <Table
           rowKey="id"
-          columns={visibleColumns(columns, ocultas)}
+          columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
           dataSource={rows.filter((r) =>
             dentroDeRango(r, "fecha_solicitud", rangoSol) &&
             dentroDeRango(r, "fecha_requerida", rangoReq)
@@ -592,6 +598,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
           size="small"
           pagination={{ pageSize: 50, showTotal: (t) => `${t} items`, placement: ["topEnd", "bottomEnd"] }}
           scroll={{ x: 1300 }}
+          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
           rowClassName={(r) => r.status_requerimiento_codigo === "ANULADO" ? "req-anulado" : ""}
         />
       )}

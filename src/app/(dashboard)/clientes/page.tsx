@@ -36,11 +36,13 @@ import {
   ColumnasToggleButton,
   visibleColumns,
   filtroPorColumna,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 import { ImportarExcelModal } from "@/components/ImportarExcelModal";
 import { EmptyState } from "@/components/EmptyState";
 import { DuplicateHint } from "@/components/DuplicateHint";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
+import { RucLookupInput } from "@/components/RucLookupInput";
 
 const { Title } = Typography;
 
@@ -54,6 +56,7 @@ interface ClienteRecord {
   telefono: string | null;
   email: string | null;
   contacto_principal: string | null;
+  nota: string | null;
 }
 
 function ClienteDupHint({ form, excludeId }: { form: ReturnType<typeof Form.useForm>[0]; excludeId?: number }) {
@@ -117,6 +120,7 @@ export default function ClientesPage() {
       telefono: record.telefono,
       email: record.email,
       contacto_principal: record.contacto_principal,
+      nota: record.nota,
     });
     setModalOpen(true);
   }
@@ -220,6 +224,15 @@ export default function ClientesPage() {
       render: (v: string | null) => v ?? "-",
     },
     {
+      key: "nota",
+      title: "Nota",
+      dataIndex: "nota",
+      width: 200,
+      ellipsis: true,
+      ...filtroPorColumna(data, "nota"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
       key: "acciones",
       title: "Acciones",
       width: 100,
@@ -250,6 +263,9 @@ export default function ClientesPage() {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+    useColumnasRedimensionables<ClienteRecord>(columns, "clientes-list-cols-widths-v1");
+
   return (
     <div>
       {contextHolder}
@@ -262,6 +278,7 @@ export default function ClientesPage() {
             setOcultas={setOcultas}
             obligatorias={["__num", "codigo", "acciones"]}
           />
+          <Button onClick={resetAnchos}>Restablecer anchos</Button>
           <ExportarExcelButton<ClienteRecord>
             endpoint="/api/clientes"
             filename="Clientes"
@@ -274,6 +291,7 @@ export default function ClientesPage() {
               { label: "Teléfono", value: (r) => r.telefono ?? "" },
               { label: "Email", value: (r) => r.email ?? "" },
               { label: "Contacto", value: (r) => r.contacto_principal ?? "" },
+              { label: "Nota", value: (r) => r.nota ?? "" },
             ]}
           />
           {isAdminUser && (
@@ -304,7 +322,8 @@ export default function ClientesPage() {
 
       <Table
         rowKey="cliente_id"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={data}
         loading={loading}
         locale={{
@@ -333,6 +352,7 @@ export default function ClientesPage() {
           label: "clientes",
         })}
         scroll={{ x: 900 }}
+        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
         size="small"
       />
 
@@ -355,8 +375,19 @@ export default function ClientesPage() {
         >
           <Row gutter={16}>
             <Col span={8}>
-              <Form.Item name="codigo" label="Código" rules={[{ required: true, message: "El código es obligatorio" }, { max: 10, message: "Máximo 10 caracteres" }]}>
-                <Input disabled={!!editing} />
+              <Form.Item
+                name="ruc"
+                label="RUC"
+                rules={[
+                  { required: true, message: "El RUC es obligatorio" },
+                  { pattern: /^\d{11}$/, message: "Debe tener 11 dígitos numéricos" },
+                ]}
+              >
+                <RucLookupInput
+                  form={form}
+                  fieldName="ruc"
+                  targets={{ razonSocial: "razon_social", direccion: "direccion" }}
+                />
               </Form.Item>
             </Col>
             <Col span={16}>
@@ -365,18 +396,18 @@ export default function ClientesPage() {
               </Form.Item>
               {!editing && <ClienteDupHint form={form} />}
             </Col>
-            <Col span={12}>
+            <Col span={24}>
               <Form.Item name="nombre_comercial" label="Nombre Comercial">
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="ruc" label="RUC">
                 <Input />
               </Form.Item>
             </Col>
             <Col span={24}>
               <Form.Item name="direccion" label="Dirección">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="contacto_principal" label="Contacto Principal">
                 <Input />
               </Form.Item>
             </Col>
@@ -390,9 +421,9 @@ export default function ClientesPage() {
                 <Input placeholder="contacto@cliente.com" />
               </Form.Item>
             </Col>
-            <Col span={8}>
-              <Form.Item name="contacto_principal" label="Contacto Principal">
-                <Input />
+            <Col span={24}>
+              <Form.Item name="nota" label="Nota" extra="Útil para distinguir sedes con mismo RUC (ej. Cuajone, Toquepala, Ilo).">
+                <Input maxLength={300} />
               </Form.Item>
             </Col>
           </Row>
@@ -406,17 +437,18 @@ export default function ClientesPage() {
         title="Importar clientes desde Excel"
         endpoint="/api/clientes/bulk"
         fields={[
-          { key: "codigo", label: "Código", required: true },
+          { key: "codigo", label: "Código" },
           { key: "razon_social", label: "Razón social", required: true, aliases: ["razonsocial", "nombre"] },
           { key: "nombre_comercial", label: "Nombre comercial", aliases: ["comercial"] },
-          { key: "ruc", label: "RUC" },
+          { key: "ruc", label: "RUC", required: true },
           { key: "direccion", label: "Dirección" },
           { key: "telefono", label: "Teléfono", aliases: ["tel", "celular"] },
           { key: "email", label: "Email", aliases: ["correo"] },
           { key: "contacto_principal", label: "Contacto", aliases: ["contacto"] },
+          { key: "nota", label: "Nota", aliases: ["sede", "sucursal"] },
         ]}
         templateRows={[
-          ["CLI001", "Mi Cliente SAC", "MiCliente", "20100123456", "Av. Mina 200, Arequipa", "999999999", "compras@cliente.com", "Pedro Ruiz"],
+          ["", "Mi Cliente SAC", "MiCliente", "20100123456", "Av. Mina 200, Arequipa", "999999999", "compras@cliente.com", "Pedro Ruiz", "Sede Lima"],
         ]}
       />
     </div>

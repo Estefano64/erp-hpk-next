@@ -11,12 +11,10 @@ import { CatalogosHealthPanel } from "@/components/CatalogosHealthPanel";
 const { Title, Text } = Typography;
 
 const categoryColors: Record<string, string> = {
-  "General": brand.navy,
-  "Equipos": brand.cyan,
-  "Estados OT": "#722ED1",
-  "Reparación": "#FA8C16",
-  "Operaciones": "#13C2C2",
-  "Workflow": "#52C41A",
+  "Datos maestros": brand.navy,
+  "Reparación (OT)": "#FA8C16",
+  "Mantenimiento Taller": brand.cyan,
+  "Estados / Workflow": "#52C41A",
 };
 
 export default function CatalogosIndexPage() {

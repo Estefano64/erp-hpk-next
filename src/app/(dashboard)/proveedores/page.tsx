@@ -36,11 +36,13 @@ import {
   ColumnasToggleButton,
   visibleColumns,
   filtroPorColumna,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 import { ImportarExcelModal } from "@/components/ImportarExcelModal";
 import { EmptyState } from "@/components/EmptyState";
 import { DuplicateHint } from "@/components/DuplicateHint";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
+import { RucLookupInput } from "@/components/RucLookupInput";
 
 const { Title } = Typography;
 
@@ -252,6 +254,9 @@ export default function ProveedoresPage() {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+    useColumnasRedimensionables<ProveedorRecord>(columns, "proveedores-list-cols-widths-v1");
+
   return (
     <div>
       {contextHolder}
@@ -264,6 +269,7 @@ export default function ProveedoresPage() {
             setOcultas={setOcultas}
             obligatorias={["__num", "ruc", "acciones"]}
           />
+          <Button onClick={resetAnchos}>Restablecer anchos</Button>
           <ExportarExcelButton<ProveedorRecord>
             endpoint="/api/proveedores"
             filename="Proveedores"
@@ -325,7 +331,8 @@ export default function ProveedoresPage() {
 
       <Table
         rowKey="id"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={data}
         loading={loading}
         locale={{
@@ -354,6 +361,7 @@ export default function ProveedoresPage() {
           label: "proveedores",
         })}
         scroll={{ x: 900 }}
+        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
         size="small"
       />
 
@@ -384,7 +392,11 @@ export default function ProveedoresPage() {
                   { pattern: /^\d{11}$/, message: "Debe tener 11 dígitos numéricos" },
                 ]}
               >
-                <Input maxLength={11} />
+                <RucLookupInput
+                  form={form}
+                  fieldName="ruc"
+                  targets={{ razonSocial: "razon_social", direccion: "direccion" }}
+                />
               </Form.Item>
             </Col>
             <Col span={16}>

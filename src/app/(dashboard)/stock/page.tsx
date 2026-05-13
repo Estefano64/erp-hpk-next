@@ -39,6 +39,7 @@ import {
   ColumnasToggleButton,
   visibleColumns,
   filtroPorColumna,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 import dayjs from "dayjs";
 
@@ -358,6 +359,9 @@ export default function StockPage() {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+    useColumnasRedimensionables<StockItem>(columns, "stock-list-cols-widths-v1");
+
   const exportarStockExcel = async () => {
     try {
       const XLSX = await import("xlsx");
@@ -408,6 +412,7 @@ export default function StockPage() {
             setOcultas={setOcultas}
             obligatorias={["__num", "codigo", "descripcion"]}
           />
+          <Button onClick={resetAnchos}>Restablecer anchos</Button>
           <Button
             icon={<FileExcelOutlined />}
             onClick={exportarStockExcel}
@@ -499,7 +504,8 @@ export default function StockPage() {
 
       <Table
         rowKey="material_id"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={data}
         loading={loading}
         pagination={paginacionEstandar({
@@ -510,6 +516,7 @@ export default function StockPage() {
           label: "materiales",
         })}
         scroll={{ x: 1700 }}
+        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
         size="small"
       />
     </div>

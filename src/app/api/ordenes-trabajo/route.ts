@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = req.nextUrl;
     const page = Math.max(1, Number(searchParams.get("page") ?? 1));
-    const limit = Math.min(100, Math.max(1, Number(searchParams.get("limit") ?? 20)));
+    const limit = Math.min(10000, Math.max(1, Number(searchParams.get("limit") ?? 20)));
     const search = searchParams.get("search")?.trim() ?? "";
     const otStatus = searchParams.get("ot_status") ?? "";
     const recursosStatus = searchParams.get("recursos_status") ?? "";
@@ -121,7 +121,7 @@ export async function POST(req: NextRequest) {
       porcentajePcr = Number(((Number(body.horas) / Number(body.pcr)) * 100).toFixed(2));
     }
 
-    // Auto-completar datos del código reparable
+    // Datos del cilindro: si hay cod_rep, deriva de ahí; si no, usa los valores manuales del body.
     let tipo: string | null = null;
     let np: string | null = null;
     let descripcion: string | null = null;
@@ -142,15 +142,17 @@ export async function POST(req: NextRequest) {
         codRepFlota = codRep.flota?.nombre ?? null;
         codRepPosicion = codRep.posicion?.nombre ?? null;
       }
+    } else {
+      tipo = body.tipo ?? null;
+      np = body.np ?? null;
+      descripcion = body.descripcion ?? null;
+      idFabricante = body.id_fabricante ? Number(body.id_fabricante) : null;
+      codRepFlota = body.cod_rep_flota ?? null;
+      codRepPosicion = body.cod_rep_posicion ?? null;
     }
 
-    // Tipo Garantía automático
-    let tipoGarantiaCodigo = body.tipo_garantia_codigo ?? null;
-    if (body.garantia_codigo === "Si") {
-      tipoGarantiaCodigo = "Por definir";
-    } else if (body.garantia_codigo === "No" && !tipoGarantiaCodigo) {
-      tipoGarantiaCodigo = "NA";
-    }
+    // Tipo garantía: confiar en lo que envía el form (form ya lo envía como "NA" si garantia=false).
+    const tipoGarantiaCodigo = body.tipo_garantia_codigo ?? (body.garantia_codigo === "No" ? "NA" : null);
 
     const created = await prisma.ordenTrabajo.create({
       data: {

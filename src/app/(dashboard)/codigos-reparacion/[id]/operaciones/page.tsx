@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
-  Typography, Card, Table, Button, Space, Tag, InputNumber, Input, message, Spin, Alert, Progress, Row, Col,
+  Typography, Card, Table, Button, Space, Tag, InputNumber, Input, message, Spin, Alert, Row, Col,
   Select, Modal, Form, Tooltip, Popconfirm,
 } from "antd";
 import {
@@ -17,6 +17,7 @@ import {
   useColumnasOcultas,
   ColumnasToggleButton,
   visibleColumns,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 
 interface OperacionRow {
@@ -240,7 +241,6 @@ export default function OperacionesCodRepPage() {
     }
   }
 
-  const completados = rows.filter((r) => r.horas != null && Number(r.horas) > 0).length;
   const totalHH = rows.reduce((a, r) => a + Number(r.hh ?? 0), 0);
   const totalHoras = rows.reduce((a, r) => a + Number(r.horas ?? 0), 0);
 
@@ -401,10 +401,11 @@ export default function OperacionesCodRepPage() {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+    useColumnasRedimensionables<OperacionRow>(columns, "codrep-ops-cols-widths-v1");
+
   if (loading) return <Spin size="large" />;
   if (!codRep) return <Alert type="error" title="CodRep no encontrado" />;
-
-  const progreso = rows.length > 0 ? Math.round((completados / rows.length) * 100) : 0;
 
   return (
     <div>
@@ -431,12 +432,6 @@ export default function OperacionesCodRepPage() {
             <div style={{ fontSize: 12, color: brand.textSecondary }}>NP: {codRep.np ?? "-"}</div>
           </Col>
           <Col>
-            <div style={{ fontSize: 12 }}>Progreso</div>
-            <div style={{ width: 200 }}>
-              <Progress percent={progreso} size="small" />
-            </div>
-          </Col>
-          <Col>
             <div style={{ fontSize: 12 }}>Total HORAS</div>
             <div style={{ fontWeight: 600 }}>{totalHoras.toFixed(2)}</div>
           </Col>
@@ -451,6 +446,7 @@ export default function OperacionesCodRepPage() {
               setOcultas={setOcultas}
               obligatorias={["orden", "componente", "trabajo", "actions"]}
             />
+          <Button onClick={resetAnchos}>Restablecer anchos</Button>
           </Col>
           <Col>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
@@ -462,11 +458,13 @@ export default function OperacionesCodRepPage() {
 
       <Table
         rowKey="operacion_cod_rep_id"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={rows}
         pagination={false}
         size="small"
         scroll={{ x: 1200 }}
+        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
       />
 
       <Modal

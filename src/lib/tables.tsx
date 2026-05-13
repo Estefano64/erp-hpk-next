@@ -30,7 +30,22 @@ export function numeracionColumn<T>(opts: NumeracionOpts = {}): ColumnType<T> {
 }
 
 export const PAGINATION_PAGE_SIZE = 20;
-export const PAGINATION_PAGE_SIZE_OPTIONS = ["10", "20", "50", "100"];
+const PAGINATION_BASE_OPTIONS = [10, 20, 50, 100, 500, 1000];
+export const PAGINATION_PAGE_SIZE_OPTIONS = PAGINATION_BASE_OPTIONS.map(String);
+
+// Devuelve solo las opciones que tienen sentido dado el total (las que son <= total),
+// más una opción "Todos" si el total supera la opción más grande mostrada.
+function dynamicPageSizeOptions(total: number): string[] {
+  if (total <= 0) return ["10"];
+  const visible = PAGINATION_BASE_OPTIONS.filter((opt, i) => {
+    // Mantener siempre la primera (10) para flexibilidad; agregar el resto si total la rebasa.
+    if (i === 0) return true;
+    return total > PAGINATION_BASE_OPTIONS[i - 1];
+  });
+  const max = visible[visible.length - 1];
+  if (total > max) visible.push(total);
+  return visible.map(String);
+}
 
 // Configuración de paginación común. `current`, `pageSize`, `total` y `onChange` se
 // pasan desde la página; el resto sale de aquí.
@@ -54,7 +69,7 @@ export function paginacionEstandar(
     current,
     pageSize,
     total,
-    pageSizeOptions: PAGINATION_PAGE_SIZE_OPTIONS,
+    pageSizeOptions: dynamicPageSizeOptions(total),
     showSizeChanger: true,
     showTotal: (t) => `${t.toLocaleString("es-PE")} ${label}`,
     onChange,
@@ -349,6 +364,7 @@ function ResizableTitle(props: ResizableTitleProps) {
             userSelect: "none",
           }}
           onClick={(e) => e.stopPropagation()}
+          title="Arrastrar para cambiar ancho"
         />
       }
       onResize={onResize}

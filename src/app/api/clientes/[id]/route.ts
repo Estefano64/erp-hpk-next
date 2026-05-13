@@ -29,6 +29,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         telefono: body.telefono || null,
         email: body.email || null,
         contacto_principal: body.contacto_principal || null,
+        nota: body.nota || null,
         usuario_actualiza: usuario,
       },
     });

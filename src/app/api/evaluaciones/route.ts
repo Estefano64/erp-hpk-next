@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const otId = searchParams.get("ot_id");
     const page = Math.max(1, Number(searchParams.get("page") ?? 1));
-    const limit = Math.min(200, Math.max(1, Number(searchParams.get("limit") ?? 100)));
+    const limit = Math.min(10000, Math.max(1, Number(searchParams.get("limit") ?? 100)));
 
     const where = otId ? { ot_id: Number(otId) } : {};
     const [records, total] = await Promise.all([

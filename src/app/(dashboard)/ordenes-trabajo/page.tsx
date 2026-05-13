@@ -33,6 +33,7 @@ import {
   useRangoFechas,
   RangoFechasFiltro,
   dentroDeRango,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 import { brand } from "@/lib/theme";
 import { useRouter } from "next/navigation";
@@ -301,6 +302,9 @@ export default function OrdenesTrabajoPage() {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+    useColumnasRedimensionables<OTRecord>(columns, "ot-list-cols-widths-v1");
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
@@ -312,6 +316,7 @@ export default function OrdenesTrabajoPage() {
             setOcultas={setOcultas}
             obligatorias={["__num", "ot", "acciones"]}
           />
+          <Button onClick={resetAnchos}>Restablecer anchos</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => router.push("/ordenes-trabajo/nueva")}>
             Nueva OT
           </Button>
@@ -374,7 +379,8 @@ export default function OrdenesTrabajoPage() {
 
       <Table
         rowKey="id"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={data.filter((r) => dentroDeRango(r, "fecha_recepcion", rangoRecepcion))}
         loading={loading}
         pagination={paginacionEstandar({
@@ -385,6 +391,7 @@ export default function OrdenesTrabajoPage() {
           label: "órdenes de trabajo",
         })}
         scroll={{ x: 1500 }}
+        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
         size="small"
       />
 

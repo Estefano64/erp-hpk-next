@@ -17,6 +17,7 @@ import {
   useColumnasOcultas,
   ColumnasToggleButton,
   visibleColumns,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 
 const { Title, Text } = Typography;
@@ -56,6 +57,7 @@ interface MaterialOpt {
   unidad_medida_codigo: string | null;
   precio: string | null;
   moneda_codigo: string | null;
+  np: string | null;
 }
 
 const TIPO_COLOR: Record<string, string> = { MAC: "blue", CAD: "orange", SER: "purple" };
@@ -109,7 +111,7 @@ export default function TemplateRequerimientosPage() {
   const materiales = matsRes?.data ?? [];
   const fabsRes = useCachedFetch<Wrapped<{ codigo: string; nombre: string }>>("/api/catalogos?tabla=fabricante");
   const fabricantes = fabsRes?.data ?? [];
-  const sersRes = useCachedFetch<Wrapped<{ codigo: string; nombre: string; descripcion: string | null }>>("/api/catalogos?tabla=servicio");
+  const sersRes = useCachedFetch<Wrapped<{ codigo: string; nombre: string; descripcion: string | null }>>("/api/catalogos?tabla=servicioReparacion");
   const servicios = sersRes?.data ?? [];
 
   const fetchCodRep = useCallback(async () => {
@@ -266,23 +268,49 @@ export default function TemplateRequerimientosPage() {
     }
   }
 
-  // Stats
+  // Stats — incluye totales por moneda (USD, SOL, y "Sin moneda" para precios manuales sin material)
   const stats = useMemo(() => {
     const counts = { MAC: 0, CAD: 0, SER: 0 };
     let total = 0;
+    const totalPorMoneda: Record<string, number> = {};
+    const matByCode = new Map(materiales.map((m) => [m.codigo, m] as const));
     for (const r of rows) {
       if (r.tipo_codigo === "MAC") counts.MAC++;
       else if (r.tipo_codigo === "CAD") counts.CAD++;
       else if (r.tipo_codigo === "SER") counts.SER++;
       total++;
+      const draft = drafts[r.tarea_id];
+      const matCode = draft?.material_codigo ?? r.material_codigo;
+      let precio: number | null = null;
+      let moneda: string = "—";
+      if (matCode) {
+        const mat = matByCode.get(matCode);
+        if (mat?.precio != null) {
+          precio = Number(mat.precio);
+          moneda = mat.moneda_codigo ?? "—";
+        }
+      }
+      if (precio == null) {
+        const p = draft?.precio ?? (r.precio != null ? Number(r.precio) : null);
+        if (p != null && !Number.isNaN(p)) precio = p;
+      }
+      const qty = draft?.requerimiento ?? Number(r.requerimiento ?? 0);
+      if (precio != null && !Number.isNaN(qty)) {
+        totalPorMoneda[moneda] = (totalPorMoneda[moneda] ?? 0) + precio * qty;
+      }
     }
-    return { ...counts, total };
-  }, [rows]);
+    return { ...counts, total, totalPorMoneda };
+  }, [rows, drafts, materiales]);
+
+  // Helper: material efectivo (draft tiene prioridad sobre el guardado).
+  const getEffectiveMaterial = (r: TareaRow): MaterialOpt | null => {
+    const code = drafts[r.tarea_id]?.material_codigo ?? r.material_codigo;
+    if (!code) return null;
+    return materiales.find((m) => m.codigo === code) ?? null;
+  };
 
   // Valores únicos para filtros
   const materialValores = [...new Set(rows.map((r) => r.material_codigo).filter(Boolean) as string[])].sort()
-    .map((v) => ({ text: v, value: v }));
-  const descValores = [...new Set(rows.map((r) => r.descripcion).filter(Boolean) as string[])].sort()
     .map((v) => ({ text: v, value: v }));
   const fabValores = [...new Set(rows.map((r) => r.fabricante_codigo).filter(Boolean) as string[])].sort()
     .map((v) => ({ text: v, value: v }));
@@ -345,7 +373,7 @@ export default function TemplateRequerimientosPage() {
             onChange={(v) => updateImmediate(r.tarea_id, { material_codigo: v ?? null })}
             options={materiales.map((m) => ({
               value: m.codigo,
-              label: `${m.codigo} — ${m.descripcion}${m.fabricante_codigo ? ` [${m.fabricante_codigo}]` : ""}`,
+              label: `${m.codigo} — ${m.descripcion}${m.np ? ` · NP ${m.np}` : ""}${m.fabricante_codigo ? ` [${m.fabricante_codigo}]` : ""}`,
             }))}
             allowClear
             showSearch
@@ -358,61 +386,70 @@ export default function TemplateRequerimientosPage() {
       },
     },
     {
-      title: "Descripción", key: "desc",
-      filters: descValores, filterSearch: true,
-      onFilter: (value, r) => (drafts[r.tarea_id]?.descripcion ?? r.descripcion) === value,
-      render: (_, r) => (
-        <Input
-          value={drafts[r.tarea_id]?.descripcion ?? r.descripcion}
-          size="small"
-          onChange={(e) => updateDebounced(r.tarea_id, { descripcion: e.target.value })}
-          placeholder="Descripción del item…"
-        />
-      ),
-    },
-    {
       title: "Fabricante", key: "fab", width: 180,
       filters: fabValores, filterSearch: true,
       onFilter: (value, r) => (drafts[r.tarea_id]?.fabricante_codigo ?? r.fabricante_codigo) === value,
-      render: (_, r) => (
-        <Select
-          value={drafts[r.tarea_id]?.fabricante_codigo ?? r.fabricante_codigo ?? undefined}
-          onChange={(v) => updateImmediate(r.tarea_id, { fabricante_codigo: v ?? null })}
-          options={fabricantes.map((f) => ({ value: f.codigo, label: `${f.codigo} — ${f.nombre}` }))}
-          allowClear
-          showSearch
-          optionFilterProp="label"
-          size="small"
-          style={{ width: "100%" }}
-          placeholder="—"
-        />
-      ),
+      render: (_, r) => {
+        const mat = getEffectiveMaterial(r);
+        if (mat) {
+          return mat.fabricante_codigo
+            ? <Tag color="default" style={{ margin: 0 }}>{mat.fabricante_codigo}</Tag>
+            : <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
+        }
+        return (
+          <Select
+            value={drafts[r.tarea_id]?.fabricante_codigo ?? r.fabricante_codigo ?? undefined}
+            onChange={(v) => updateImmediate(r.tarea_id, { fabricante_codigo: v ?? null })}
+            options={fabricantes.map((f) => ({ value: f.codigo, label: `${f.codigo} — ${f.nombre}` }))}
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            size="small"
+            style={{ width: "100%" }}
+            placeholder="—"
+          />
+        );
+      },
     },
     {
       title: "N/P", key: "np", width: 130,
       filters: npValores, filterSearch: true,
       onFilter: (value, r) => (drafts[r.tarea_id]?.np ?? r.np) === value,
-      render: (_, r) => (
-        <Input
-          value={drafts[r.tarea_id]?.np ?? r.np ?? ""}
-          size="small"
-          onChange={(e) => updateDebounced(r.tarea_id, { np: e.target.value || null })}
-          placeholder="—"
-        />
-      ),
+      render: (_, r) => {
+        const mat = getEffectiveMaterial(r);
+        if (mat) {
+          return mat.np
+            ? <Text style={{ fontSize: 12 }}>{mat.np}</Text>
+            : <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
+        }
+        return (
+          <Input
+            value={drafts[r.tarea_id]?.np ?? r.np ?? ""}
+            size="small"
+            onChange={(e) => updateDebounced(r.tarea_id, { np: e.target.value || null })}
+            placeholder="—"
+          />
+        );
+      },
     },
     {
       title: "Texto", key: "texto", width: 160,
       filters: textoValores, filterSearch: true,
       onFilter: (value, r) => (drafts[r.tarea_id]?.texto ?? r.texto) === value,
-      render: (_, r) => (
-        <Input
-          value={drafts[r.tarea_id]?.texto ?? r.texto ?? ""}
-          size="small"
-          onChange={(e) => updateDebounced(r.tarea_id, { texto: e.target.value || null })}
-          placeholder="—"
-        />
-      ),
+      render: (_, r) => {
+        const tipo = drafts[r.tarea_id]?.tipo_codigo ?? r.tipo_codigo;
+        if (tipo !== "SER") {
+          return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
+        }
+        return (
+          <Input
+            value={drafts[r.tarea_id]?.texto ?? r.texto ?? ""}
+            size="small"
+            onChange={(e) => updateDebounced(r.tarea_id, { texto: e.target.value || null })}
+            placeholder="—"
+          />
+        );
+      },
     },
     {
       title: "Qty", key: "qty", width: 80, align: "right",
@@ -433,17 +470,25 @@ export default function TemplateRequerimientosPage() {
       title: "Precio", key: "precio", width: 100, align: "right",
       filters: precioValores, filterSearch: true,
       onFilter: (value, r) => String(drafts[r.tarea_id]?.precio ?? r.precio ?? "") === value,
-      render: (_, r) => (
-        <InputNumber
-          value={drafts[r.tarea_id]?.precio ?? (r.precio != null ? Number(r.precio) : undefined)}
-          min={0}
-          step={0.01}
-          size="small"
-          style={{ width: "100%" }}
-          placeholder="—"
-          onChange={(v) => updateDebounced(r.tarea_id, { precio: v == null ? null : Number(v) })}
-        />
-      ),
+      render: (_, r) => {
+        const mat = getEffectiveMaterial(r);
+        if (mat) {
+          return mat.precio != null
+            ? <Text style={{ fontSize: 12 }}>{Number(mat.precio).toFixed(2)}</Text>
+            : <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
+        }
+        return (
+          <InputNumber
+            value={drafts[r.tarea_id]?.precio ?? (r.precio != null ? Number(r.precio) : undefined)}
+            min={0}
+            step={0.01}
+            size="small"
+            style={{ width: "100%" }}
+            placeholder="—"
+            onChange={(v) => updateDebounced(r.tarea_id, { precio: v == null ? null : Number(v) })}
+          />
+        );
+      },
     },
     {
       title: "", key: "saving", width: 30, align: "center",
@@ -464,6 +509,9 @@ export default function TemplateRequerimientosPage() {
       ),
     },
   ];
+
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+    useColumnasRedimensionables<TareaRow>(columns, "codrep-req-cols-widths-v1");
 
   if (loading) return <Spin size="large" />;
   if (!codRep) return <Alert type="error" title="CodRep no encontrado" />;
@@ -497,6 +545,17 @@ export default function TemplateRequerimientosPage() {
           <Col><Tag color="blue">MAC: {stats.MAC}</Tag></Col>
           <Col><Tag color="orange">CAD: {stats.CAD}</Tag></Col>
           <Col><Tag color="purple">SER: {stats.SER}</Tag></Col>
+          {Object.entries(stats.totalPorMoneda).map(([moneda, monto]) => {
+            const simbolo = moneda === "USD" ? "$" : moneda === "SOL" ? "S/" : moneda === "—" ? "" : moneda;
+            const label = moneda === "—" ? "Sin moneda" : moneda;
+            return (
+              <Col key={moneda}>
+                <Tag color={brand.cyan} style={{ fontSize: 13, padding: "2px 10px" }}>
+                  {label}: {simbolo}{simbolo && " "}{monto.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </Tag>
+              </Col>
+            );
+          })}
           <Col>
             <ColumnasToggleButton<TareaRow>
               columns={columns}
@@ -504,6 +563,7 @@ export default function TemplateRequerimientosPage() {
               setOcultas={setOcultas}
               obligatorias={["orden", "tipo", "desc", "actions"]}
             />
+          <Button onClick={resetAnchos}>Restablecer anchos</Button>
           </Col>
           <Col>
             <Button type="primary" icon={<PlusOutlined />} onClick={abrirCrear}>
@@ -515,11 +575,13 @@ export default function TemplateRequerimientosPage() {
 
       <Table
         rowKey="tarea_id"
-        columns={visibleColumns(columns, ocultas)}
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
         dataSource={rows}
         size="small"
         pagination={false}
         scroll={{ x: 1300 }}
+        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
       />
 
       <Modal
@@ -556,7 +618,7 @@ export default function TemplateRequerimientosPage() {
                 onChange={onMaterialSelect}
                 options={materiales.map((m) => ({
                   value: m.codigo,
-                  label: `${m.codigo} — ${m.descripcion}${m.fabricante_codigo ? ` [${m.fabricante_codigo}]` : ""}`,
+                  label: `${m.codigo} — ${m.descripcion}${m.np ? ` · NP ${m.np}` : ""}${m.fabricante_codigo ? ` [${m.fabricante_codigo}]` : ""}`,
                 }))}
               />
             </Form.Item>

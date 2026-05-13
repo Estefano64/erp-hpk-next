@@ -18,6 +18,7 @@ import { brand } from "@/lib/theme";
 import {
   numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE,
   useColumnasOcultas, ColumnasToggleButton, visibleColumns, filtroPorColumna,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 import { useCachedFetch } from "@/lib/useCachedFetch";
 
@@ -538,6 +539,13 @@ export default function AceptacionesPage() {
     },
   ];
 
+  const { columnas: ocColumnsRz, components: ocComponents, resetAnchos: resetOcAnchos } =
+    useColumnasRedimensionables<OCPendiente>(ocColumns, "aceptaciones-oc-cols-widths-v1");
+  const { columnas: rqColumnsRz, components: rqComponents, resetAnchos: resetRqAnchos } =
+    useColumnasRedimensionables<ReqPendiente>(rqColumns, "aceptaciones-rq-cols-widths-v1");
+  const { columnas: histColumnsRz, components: histComponents, resetAnchos: resetHistAnchos } =
+    useColumnasRedimensionables<HistorialItem>(histColumns, "aceptaciones-hist-cols-widths-v1");
+
   const totalPendientes = useMemo(() => ocs.length + reqs.length, [ocs, reqs]);
 
   return (
@@ -688,6 +696,7 @@ export default function AceptacionesPage() {
                           setOcultas={setOcultasOC}
                           obligatorias={["__num", "numero_po", "acciones"]}
                         />
+                        <Button onClick={resetOcAnchos}>Restablecer anchos</Button>
                       </Space>
                     }
                   >
@@ -696,7 +705,8 @@ export default function AceptacionesPage() {
                     ) : (
                       <Table<OCPendiente>
                         rowKey="id"
-                        columns={visibleColumns(ocColumns, ocultasOC)}
+                        columns={visibleColumns(ocColumnsRz, ocultasOC)}
+                        components={ocComponents}
                         dataSource={ocs}
                         loading={loading}
                         size="small"
@@ -711,6 +721,7 @@ export default function AceptacionesPage() {
                           placement: ["topEnd", "bottomEnd"],
                         })}
                         scroll={{ x: 1100 }}
+                        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
                       />
                     )}
                   </Card>
@@ -746,6 +757,7 @@ export default function AceptacionesPage() {
                           setOcultas={setOcultasRQ}
                           obligatorias={["__num", "nro_req", "acciones"]}
                         />
+                        <Button onClick={resetRqAnchos}>Restablecer anchos</Button>
                       </Space>
                     }
                   >
@@ -754,7 +766,8 @@ export default function AceptacionesPage() {
                     ) : (
                       <Table<ReqPendiente>
                         rowKey="id"
-                        columns={visibleColumns(rqColumns, ocultasRQ)}
+                        columns={visibleColumns(rqColumnsRz, ocultasRQ)}
+                        components={rqComponents}
                         dataSource={reqs}
                         loading={loading}
                         size="small"
@@ -769,6 +782,7 @@ export default function AceptacionesPage() {
                           placement: ["topEnd", "bottomEnd"],
                         })}
                         scroll={{ x: 1300 }}
+                        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
                       />
                     )}
                   </Card>
@@ -794,12 +808,15 @@ export default function AceptacionesPage() {
                   </Space>
                 }
                 extra={
-                  <ColumnasToggleButton<HistorialItem>
-                    columns={histColumns}
-                    ocultas={ocultasHist}
-                    setOcultas={setOcultasHist}
-                    obligatorias={["__num", "tipo", "ref"]}
-                  />
+                  <Space>
+                    <ColumnasToggleButton<HistorialItem>
+                      columns={histColumns}
+                      ocultas={ocultasHist}
+                      setOcultas={setOcultasHist}
+                      obligatorias={["__num", "tipo", "ref"]}
+                    />
+                    <Button onClick={resetHistAnchos}>Restablecer anchos</Button>
+                  </Space>
                 }
               >
                 {historial.length === 0 ? (
@@ -807,7 +824,8 @@ export default function AceptacionesPage() {
                 ) : (
                   <Table<HistorialItem>
                     rowKey={(h) => `${h.tipo}-${h.id}`}
-                    columns={visibleColumns(histColumns, ocultasHist)}
+                    columns={visibleColumns(histColumnsRz, ocultasHist)}
+                    components={histComponents}
                     dataSource={historial}
                     loading={loading}
                     size="small"
@@ -818,6 +836,7 @@ export default function AceptacionesPage() {
                       placement: ["topEnd", "bottomEnd"],
                     })}
                     scroll={{ x: 1100 }}
+                    sticky={{ offsetHeader: 56, offsetScroll: 0 }}
                   />
                 )}
               </Card>

@@ -1167,6 +1167,7 @@ export default function RequerimientosDetallePage() {
         loading={loading}
         pagination={{ pageSize: 25, showTotal: (t) => `${t} registros`, placement: ["topEnd", "bottomEnd"] }}
         scroll={{ x: 2000 }}
+        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
         size="small"
         rowClassName={(r) => {
           const tieneStock = r.material_id != null
