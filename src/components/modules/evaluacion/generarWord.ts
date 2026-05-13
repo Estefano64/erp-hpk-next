@@ -97,6 +97,43 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
     return `<tr><td class="label">${esc(label)}</td><td class="editable" colspan="2">${esc(v(prefix)) || "—"}</td></tr>`;
   };
 
+  // Helper: tabla de checks (Bueno/Malo/N-A o SI/NO/N-A)
+  // Cada item -> una fila en la tabla. Se muestra el valor marcado (o "—" si no hay).
+  type CheckItem = { key: string; label: string; tipo?: "bm" | "sn" };
+  const renderChecksTable = (prefix: string, items: CheckItem[], titulo?: string): string => {
+    if (!items.length) return "";
+    const rows = items
+      .map((it) => {
+        const valor = v(`${prefix}_${it.key}`);
+        const cabecera = it.tipo === "sn" ? ["SI", "NO", "NA"] : ["Bueno", "Malo", "NA"];
+        const marca = (op: string) => (valor === op ? "X" : "");
+        return `<tr>
+          <td class="label">${esc(it.label)}</td>
+          <td class="editable">${marca(cabecera[0])}</td>
+          <td class="editable">${marca(cabecera[1])}</td>
+          <td class="editable">${marca(cabecera[2])}</td>
+        </tr>`;
+      })
+      .join("");
+    // Cabeceras: si hay items mezclados (sn y bm), usar el primero como referencia visual
+    const primerTipo = items[0]?.tipo === "sn" ? ["SI", "NO", "NA"] : ["Bueno", "Malo", "NA"];
+    return `${titulo ? `<div class="campo-texto"><b>${esc(titulo)}</b></div>` : ""}
+      <table><thead>
+        <tr>
+          <th style="width:40%">Verificación</th>
+          <th>${primerTipo[0]}</th>
+          <th>${primerTipo[1]}</th>
+          <th>${primerTipo[2]}</th>
+        </tr>
+      </thead><tbody>${rows}</tbody></table>`;
+  };
+
+  // Helper: campo radio (Convencional/Concavo, Cojinete/Rotula/Pin, etc.) -> linea simple
+  const renderRadioLinea = (key: string, label: string): string => {
+    const val = v(key);
+    return `<tr><td class="label">${esc(label)}</td><td class="editable" colspan="2">${esc(val) || "—"}</td></tr>`;
+  };
+
   // Helper: render de imagenes subidas (max 6, grilla 3x2, altura uniforme)
   const renderImagenesSubidas = (prefix: string): string => {
     const imgs = ((datos[`${prefix}_imagenes`] as { name: string; data: string }[] | undefined) || []).slice(0, 6);
@@ -191,8 +228,104 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
   let numSec = 2;
   let saltarEstandar = false;
 
-  // ── TELESCOPICO: Etapas dinamicas ──
+  // ── TELESCOPICO: Cilindro principal, Vastago principal, Etapas dinamicas, Tapas secundarias ──
   if (modeloEvaluacion === "cil_telescopico") {
+    // ─── Cilindro principal ───
+    const tipoAnclajeCil = v(`${p}_cil_tipo_anclaje`);
+    const conCancamo = tipoAnclajeCil === "Con Cáncamo";
+    const medidasCilTelBase = [
+      renderMedida(`${p}_cil_a1`, "A1 (Interior)", "xy"),
+      renderMedida(`${p}_cil_a2`, "A2 (Interior)", "xy"),
+      renderMedida(`${p}_cil_a3`, "A3 (Interior)", "xy"),
+      renderMedida(`${p}_cil_a4`, "A4 (Interior)", "xy"),
+      renderMedida(`${p}_cil_dsal`, "Diametro Salida (B)", "xy"),
+      renderMedida(`${p}_cil_dext`, "Diametro Exterior (C)", "xy"),
+      renderMedida(`${p}_cil_lbru`, "Longitud Bruñido (D)", "single"),
+      renderMedida(`${p}_cil_ltot`, "Longitud Total (E)", "single"),
+      renderRadioLinea(`${p}_cil_tipo_anclaje`, "Tipo de anclaje"),
+    ].join("");
+    const medidasCilTelExtra = conCancamo
+      ? [
+          renderMedida(`${p}_cil_dojo_f`, "Diámetro Ojo F", "xy"),
+          renderRadioLinea(`${p}_cil_elem_sujecion`, "Elemento de sujeción"),
+          renderMedida(`${p}_cil_dint_g`, "Diám. Int. G", "xy"),
+          renderMedida(`${p}_cil_ancho_ojo`, "Ancho de Ojo", "xy"),
+        ].join("")
+      : "";
+    seccionesHTML += renderSeccionComponente(
+      numSec++,
+      "Cilindro Principal (Botella)",
+      imgCilindro,
+      "Cilindro Principal",
+      medidasCilTelBase + medidasCilTelExtra,
+      `${p}_cil`,
+      []
+    );
+    seccionesHTML += renderChecksTable(
+      `${p}_cil`,
+      [
+        { key: "tomas", label: "Tomas" },
+        { key: "roscada", label: "Estado de sup. Roscada" },
+        { key: "estado_cancamo", label: "Estado de cáncamo" },
+        { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+      ],
+      "Checks - Cilindro Principal"
+    );
+
+    // ─── Vastago principal ───
+    const medidasVasTel = [
+      renderMedida(`${p}_vas_desp`, "Diametro Espiga (A)", "xy"),
+      renderMedida(`${p}_vas_dext`, "Diametro Exterior (B)", "xy"),
+      renderMedida(`${p}_vas_dsell`, "Diametro Sellado (C)", "xy"),
+      renderMedida(`${p}_vas_dcoj`, "Diametro Cojinete (D)", "xy"),
+      renderMedida(`${p}_vas_lcro`, "Longitud Cromo (E)", "single"),
+      renderMedida(`${p}_vas_ltot`, "Longitud Total (F)", "single"),
+      renderMedida(`${p}_vas_long_espiga_g`, "Longitud de Espiga G", "single"),
+      renderMedida(`${p}_vas_dext_ojo_h`, "Diám. Ext. Ojo H", "xy"),
+      renderRadioLinea(`${p}_vas_elem_sujecion`, "Elemento de sujeción"),
+      renderMedida(`${p}_vas_dint_ojo_i`, "Diám. Int. Ojo I", "xy"),
+      renderMedida(`${p}_vas_dint_j`, "Diám. Int. J", "xy"),
+      renderMedida(`${p}_vas_ancho_ojo`, "Ancho de Ojo", "xy"),
+    ].join("");
+    seccionesHTML += renderSeccionComponente(
+      numSec++,
+      "Vástago Principal",
+      imgVastago,
+      "Vástago Principal",
+      medidasVasTel,
+      `${p}_vas`,
+      []
+    );
+    // Flexion / Esp. Cromo vastago principal
+    const tflxB = v(`${p}_vas_flexion_b`);
+    const tflxC = v(`${p}_vas_flexion_c`);
+    const tflxD = v(`${p}_vas_flexion_d`);
+    const tecB = v(`${p}_vas_esp_cromo_b`);
+    const tecC = v(`${p}_vas_esp_cromo_c`);
+    const tecD = v(`${p}_vas_esp_cromo_d`);
+    if (tflxB || tflxC || tflxD || tecB || tecC || tecD) {
+      seccionesHTML += `
+        <div class="campo-texto"><b>Flexión y Espesor de Cromo (Vástago Principal)</b></div>
+        <table><thead>
+          <tr><th>Parámetro</th><th>B</th><th>C</th><th>D</th></tr>
+        </thead><tbody>
+          <tr><td class="label">Flexión</td><td class="editable">${esc(tflxB) || "—"}</td><td class="editable">${esc(tflxC) || "—"}</td><td class="editable">${esc(tflxD) || "—"}</td></tr>
+          <tr><td class="label">Esp. Cromo</td><td class="editable">${esc(tecB) || "—"}</td><td class="editable">${esc(tecC) || "—"}</td><td class="editable">${esc(tecD) || "—"}</td></tr>
+        </tbody></table>
+      `;
+    }
+    seccionesHTML += renderChecksTable(
+      `${p}_vas`,
+      [
+        { key: "estado_cromo", label: "Estado del cromo" },
+        { key: "chk_estado_cancamo", label: "Estado de cáncamo" },
+        { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+        { key: "sensor", label: "Sensor", tipo: "sn" },
+      ],
+      "Checks - Vástago Principal"
+    );
+
+    // ─── Etapas ───
     const numEtapas = Number(datos[`${p}_num_etapas`] || 2);
     for (let i = 1; i <= numEtapas; i++) {
       const medidas = [
@@ -207,15 +340,117 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
         renderMedida(`${p}_etapa${i}_ltot`, "Longitud Total (F)", "single"),
       ].join("");
       seccionesHTML += renderSeccionComponente(numSec++, `Etapa ${i} - Cuerpo intermedio`, imgCilindro, `Etapa ${i}`, medidas, `${p}_etapa${i}`, []);
+
+      // Cuerpo intermedio: 3 lecturas X/Y (Interior y Exterior)
+      const dintRows = [1, 2, 3]
+        .map((n) => {
+          const x = v(`${p}_etapa${i}_cuerpo_dint_${n}_x`);
+          const y = v(`${p}_etapa${i}_cuerpo_dint_${n}_y`);
+          return `<tr><td class="label">Diám. Interior - Lectura ${n}</td><td class="editable">${esc(x) || "—"}</td><td class="editable">${esc(y) || "—"}</td></tr>`;
+        })
+        .join("");
+      const dextRows = [1, 2, 3]
+        .map((n) => {
+          const x = v(`${p}_etapa${i}_cuerpo_dext_${n}_x`);
+          const y = v(`${p}_etapa${i}_cuerpo_dext_${n}_y`);
+          return `<tr><td class="label">Diám. Exterior - Lectura ${n}</td><td class="editable">${esc(x) || "—"}</td><td class="editable">${esc(y) || "—"}</td></tr>`;
+        })
+        .join("");
+      seccionesHTML += `
+        <div class="campo-texto"><b>Cuerpo Intermedio - 3 lecturas X/Y (Etapa ${i})</b></div>
+        <table><thead>
+          <tr><th>Parámetro</th><th>X</th><th>Y</th></tr>
+        </thead><tbody>${dintRows}${dextRows}</tbody></table>
+      `;
+
+      // Flexion y Esp. Cromo 1/2/3
+      const cflx1 = v(`${p}_etapa${i}_cuerpo_flexion_1`);
+      const cflx2 = v(`${p}_etapa${i}_cuerpo_flexion_2`);
+      const cflx3 = v(`${p}_etapa${i}_cuerpo_flexion_3`);
+      const cec1 = v(`${p}_etapa${i}_cuerpo_esp_cromo_1`);
+      const cec2 = v(`${p}_etapa${i}_cuerpo_esp_cromo_2`);
+      const cec3 = v(`${p}_etapa${i}_cuerpo_esp_cromo_3`);
+      if (cflx1 || cflx2 || cflx3 || cec1 || cec2 || cec3) {
+        seccionesHTML += `
+          <div class="campo-texto"><b>Flexión y Espesor de Cromo (Etapa ${i})</b></div>
+          <table><thead>
+            <tr><th>Parámetro</th><th>1</th><th>2</th><th>3</th></tr>
+          </thead><tbody>
+            <tr><td class="label">Flexión</td><td class="editable">${esc(cflx1) || "—"}</td><td class="editable">${esc(cflx2) || "—"}</td><td class="editable">${esc(cflx3) || "—"}</td></tr>
+            <tr><td class="label">Esp. Cromo</td><td class="editable">${esc(cec1) || "—"}</td><td class="editable">${esc(cec2) || "—"}</td><td class="editable">${esc(cec3) || "—"}</td></tr>
+          </tbody></table>
+        `;
+      }
+
+      // Checks por etapa
+      seccionesHTML += renderChecksTable(
+        `${p}_etapa${i}`,
+        [
+          { key: "estado_cromo", label: "Estado del cromo" },
+          { key: "sup_roscada", label: "Est. de sup. Roscada" },
+          { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+          { key: "diam_salida_roscado", label: "Diám. Salida Roscado", tipo: "sn" },
+        ],
+        `Checks - Etapa ${i}`
+      );
     }
-    // Tapas secundarias
+
+    // ─── Tapa Roscada Secundaria (estructurada) ───
+    seccionesHTML += renderSeccionComponente(
+      numSec++,
+      "Tapa Roscada Secundaria",
+      imgTapa,
+      "Tapa Roscada Secundaria",
+      [
+        renderMedida(`${p}_tapa_sec_a`, "Medida A", "single"),
+        renderMedida(`${p}_tapa_sec_b`, "Medida B", "single"),
+        renderMedida(`${p}_tapa_sec_c`, "Medida C", "single"),
+        renderMedida(`${p}_tapa_sec_d`, "Medida D", "single"),
+      ].join(""),
+      `${p}_tapa_sec`,
+      []
+    );
+    seccionesHTML += renderChecksTable(
+      `${p}_tapa_sec`,
+      [
+        { key: "sup_roscada", label: "Est. de sup. Roscada" },
+        { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+      ],
+      "Checks - Tapa Roscada Secundaria"
+    );
     const tapaSec = v(`${p}_tapa_secundaria`);
-    const tapaPost = v(`${p}_tapa_posterior`);
-    if (tapaSec || tapaPost) {
-      seccionesHTML += `<h2><span class="section-num">${numSec++}</span> Tapas Secundarias</h2>`;
-      if (tapaSec) seccionesHTML += `<div class="campo-texto"><b>Tapa roscada secundaria</b><div class="textarea-box">${esc(tapaSec)}</div></div>`;
-      if (tapaPost) seccionesHTML += `<div class="campo-texto"><b>Tapa posterior de sujecion</b><div class="textarea-box">${esc(tapaPost)}</div></div>`;
+    if (tapaSec) {
+      seccionesHTML += `<div class="campo-texto"><b>Detalle adicional - Tapa roscada secundaria</b><div class="textarea-box">${esc(tapaSec)}</div></div>`;
     }
+
+    // ─── Tapa Posterior de Sujeción (estructurada) ───
+    seccionesHTML += renderSeccionComponente(
+      numSec++,
+      "Tapa Posterior de Sujeción",
+      imgTapa,
+      "Tapa Posterior de Sujeción",
+      [
+        renderMedida(`${p}_tapa_post_dsell`, "Diám. Sellado", "single"),
+        renderMedida(`${p}_tapa_post_dint_ojo`, "Diám. Int. Ojo", "single"),
+        renderMedida(`${p}_tapa_post_dint_rotula`, "Diám. Int. Rótula", "single"),
+        renderMedida(`${p}_tapa_post_ancho_ojo`, "Ancho de Ojo", "single"),
+      ].join(""),
+      `${p}_tapa_post`,
+      []
+    );
+    seccionesHTML += renderChecksTable(
+      `${p}_tapa_post`,
+      [
+        { key: "est_soldadura", label: "Est. de soldadura" },
+        { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+      ],
+      "Checks - Tapa Posterior"
+    );
+    const tapaPost = v(`${p}_tapa_posterior`);
+    if (tapaPost) {
+      seccionesHTML += `<div class="campo-texto"><b>Detalle adicional - Tapa posterior</b><div class="textarea-box">${esc(tapaPost)}</div></div>`;
+    }
+
     saltarEstandar = true;
   }
 
@@ -291,13 +526,27 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
   // ── ACUMULADOR DE VEJIGA ──
   if (modeloEvaluacion === "acum_vejiga") {
     const medidas = [
-      renderMedida(`${p}_dext`, "Diametro Exterior (A)", "single"),
+      renderMedida(`${p}_dext`, "Diametro Exterior (A) - simple", "single"),
       renderMedida(`${p}_dint`, "Diametro Interior (B)", "single"),
       renderMedida(`${p}_ltot`, "Longitud Total (C)", "single"),
-      renderMedida(`${p}_dsal1`, "Diametro salida 1", "single"),
-      renderMedida(`${p}_dsal2`, "Diametro salida 2", "single"),
+      renderMedida(`${p}_dsal1`, "Diametro salida 1 - simple", "single"),
+      renderMedida(`${p}_dsal2`, "Diametro salida 2 - simple", "single"),
+      // Pares X/Y (segun Excel)
+      renderMedida(`${p}_acumv_dsal1`, "Diámetro de Salida 1 (A)", "xy"),
+      renderMedida(`${p}_acumv_dsal2`, "Diámetro de Salida 2 (B)", "xy"),
+      renderMedida(`${p}_acumv_dext`, "Diámetro Exterior (C)", "xy"),
+      renderMedida(`${p}_acumv_volumen_e`, "Volumen (E) [GL]", "single"),
     ].join("");
-    seccionesHTML += renderSeccionComponente(numSec++, "Acumulador de Vejiga", imgCilindro, "Acumulador (A,B,C)", medidas, `${p}_acum`, []);
+    seccionesHTML += renderSeccionComponente(numSec++, "Acumulador de Vejiga", imgCilindro, "Acumulador (A,B,C,E)", medidas, `${p}_acum`, []);
+    seccionesHTML += renderChecksTable(
+      `${p}_acum`,
+      [
+        { key: "valv_muelle", label: "Válvula hidráulica de muelle" },
+        { key: "estado_vejiga", label: "Estado vejiga" },
+        { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+      ],
+      "Checks - Acumulador de Vejiga"
+    );
     saltarEstandar = true;
   }
 
@@ -338,8 +587,16 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
   }
 
   if (!saltarEstandar) {
-    // Cilindro
-    const medidasCil = [
+    // Detectar variantes
+    const esCilHidraulico =
+      modeloEvaluacion === "cil_vastago_simple" ||
+      modeloEvaluacion === "cil_pivotado" ||
+      modeloEvaluacion === "cil_doble_vastago";
+    const esPivotado = modeloEvaluacion === "cil_pivotado";
+    const esDobleVastago = modeloEvaluacion === "cil_doble_vastago";
+
+    // Cilindro - medidas base
+    const medidasCilBase = [
       renderMedida(`${p}_cil_a1`, "A1 (Interior)", "xy"),
       renderMedida(`${p}_cil_a2`, "A2 (Interior)", "xy"),
       renderMedida(`${p}_cil_a3`, "A3 (Interior)", "xy"),
@@ -349,6 +606,17 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
       renderMedida(`${p}_cil_lbru`, "Longitud Bruñido (D)", "single"),
       renderMedida(`${p}_cil_ltot`, "Longitud Total (E)", "single"),
     ].join("");
+    // Extras de cancamo y elemento de sujecion (solo CHVS/CHP/CHPDV)
+    const medidasCilExtra = esCilHidraulico
+      ? [
+          renderRadioLinea(`${p}_cil_tipo_cancamo`, "Tipo de cáncamo"),
+          renderMedida(`${p}_cil_dojo_f`, "Diámetro Ojo F", "xy"),
+          renderRadioLinea(`${p}_cil_elem_sujecion`, "Elemento de sujeción"),
+          renderMedida(`${p}_cil_dint_g`, "Diám. Int. G", "xy"),
+          renderMedida(`${p}_cil_ancho_ojo`, "Ancho de Ojo", "xy"),
+        ].join("")
+      : "";
+    const medidasCil = medidasCilBase + medidasCilExtra;
     const hallazgosCil = [
       ["Cilindro Interior", ["Presenta rayaduras axiales en interior", "Presenta rayaduras radiales en interior", "Diametro interior presenta deformacion", "Medida interna fuera de tolerancia", "Diametro interior muestra desgaste", "Diametro de sellado muestra desgaste"]],
       ["Cilindro Exterior", ["Presenta golpes en el exterior del cilindro", "Presenta desgaste en exterior del cilindro", "Presenta deformacion en exterior de cilindro", "Presenta depositos de soldadura ajenos al diseño"]],
@@ -357,16 +625,84 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
     );
     seccionesHTML += renderSeccionComponente(numSec++, "Cilindro (Botella)", imgCilindro, "Cilindro (A1-A4, C, D, E)", medidasCil, `${p}_cil`, hallazgosCil);
 
+    // Extras CHP: dos lecturas X/Y de cojinete y pivotante + longitud pivotante
+    if (esPivotado) {
+      const cojX1 = v(`${p}_cil_dext_cojinete_g_1_x`);
+      const cojY1 = v(`${p}_cil_dext_cojinete_g_1_y`);
+      const cojX2 = v(`${p}_cil_dext_cojinete_g_2_x`);
+      const cojY2 = v(`${p}_cil_dext_cojinete_g_2_y`);
+      const pivX1 = v(`${p}_cil_dext_pivotante_1_x`);
+      const pivY1 = v(`${p}_cil_dext_pivotante_1_y`);
+      const pivX2 = v(`${p}_cil_dext_pivotante_2_x`);
+      const pivY2 = v(`${p}_cil_dext_pivotante_2_y`);
+      const longPiv = v(`${p}_cil_long_pivotante`);
+      seccionesHTML += `
+        <div class="campo-texto"><b>Cilindro Pivotado - Dos lecturas X/Y</b></div>
+        <table><thead>
+          <tr><th>Parámetro</th><th>Lectura</th><th>X</th><th>Y</th></tr>
+        </thead><tbody>
+          <tr><td class="label" rowspan="2">Diám. Ext. Cojinete G</td><td class="editable">Lectura 1</td><td class="editable">${esc(cojX1) || "—"}</td><td class="editable">${esc(cojY1) || "—"}</td></tr>
+          <tr><td class="editable">Lectura 2</td><td class="editable">${esc(cojX2) || "—"}</td><td class="editable">${esc(cojY2) || "—"}</td></tr>
+          <tr><td class="label" rowspan="2">Diám. Ext. Pivotante</td><td class="editable">Lectura 1</td><td class="editable">${esc(pivX1) || "—"}</td><td class="editable">${esc(pivY1) || "—"}</td></tr>
+          <tr><td class="editable">Lectura 2</td><td class="editable">${esc(pivX2) || "—"}</td><td class="editable">${esc(pivY2) || "—"}</td></tr>
+          <tr><td class="label" colspan="2">Longitud de Pivotante</td><td class="editable" colspan="2">${esc(longPiv) || "—"}</td></tr>
+        </tbody></table>
+      `;
+    }
+
+    // Checks de cilindro - segun variante
+    if (esCilHidraulico || modeloEvaluacion === "suspension_delantera") {
+      const cilChecks: CheckItem[] = [
+        { key: "tomas", label: "Tomas" },
+        { key: "roscada", label: "Estado de sup. Roscada" },
+      ];
+      if (esCilHidraulico) {
+        cilChecks.push(
+          { key: "bocina_stop_1", label: "Bocina STOP 1" },
+          { key: "bocina_stop_2", label: "Bocina STOP 2" },
+          { key: "estado_cancamo", label: "Estado de cáncamo" }
+        );
+      }
+      if (esPivotado) {
+        cilChecks.push(
+          { key: "estado_trunnion", label: "Estado de trunnion" },
+          { key: "pasa_estanqueidad", label: "Pasa prueba de estanqueidad", tipo: "sn" }
+        );
+      }
+      if (esDobleVastago) {
+        cilChecks.push(
+          { key: "estado_soporte_sujecion", label: "Estado de soporte de sujeción" },
+          { key: "pasa_estanqueidad", label: "Pasa prueba de estanqueidad", tipo: "sn" }
+        );
+      }
+      if (modeloEvaluacion === "suspension_delantera") {
+        cilChecks.push({ key: "est_cartelas", label: "Est. de cartelas" });
+      }
+      cilChecks.push({ key: "ndt", label: "Pasa a NDT", tipo: "sn" });
+      seccionesHTML += renderChecksTable(`${p}_cil`, cilChecks, "Checks - Cilindro");
+    }
+
     // Vastago
     if (!modeloEvaluacion.startsWith("acum")) {
-      const medidasVas = [
+      const muestraCancamoVastago = esCilHidraulico; // CHVS/CHP/CHPDV
+      const medidasVasBase = [
         renderMedida(`${p}_vas_desp`, "Diametro Espiga (A)", "xy"),
         renderMedida(`${p}_vas_dext`, "Diametro Exterior (B)", "xy"),
         renderMedida(`${p}_vas_dsell`, "Diametro Sellado (C)", "xy"),
         renderMedida(`${p}_vas_dcoj`, "Diametro Cojinete (D)", "xy"),
         renderMedida(`${p}_vas_lcro`, "Longitud Cromo (E)", "single"),
         renderMedida(`${p}_vas_ltot`, "Longitud Total (F)", "single"),
+        renderMedida(`${p}_vas_long_espiga_g`, "Longitud de Espiga G", "single"),
       ].join("");
+      const medidasVasExtra = [
+        ...(muestraCancamoVastago ? [renderRadioLinea(`${p}_vas_tipo_cancamo`, "Tipo de cáncamo")] : []),
+        renderMedida(`${p}_vas_dext_ojo_h`, "Diám. Ext. Ojo H", "xy"),
+        renderRadioLinea(`${p}_vas_elem_sujecion`, "Elemento de sujeción"),
+        renderMedida(`${p}_vas_dint_ojo_i`, "Diám. Int. Ojo I", "xy"),
+        renderMedida(`${p}_vas_dint_j`, "Diám. Int. J", "xy"),
+        renderMedida(`${p}_vas_ancho_ojo`, "Ancho de Ojo", "xy"),
+      ].join("");
+      const medidasVas = medidasVasBase + medidasVasExtra;
       const hallazgosVas = [
         ["Cojinete", ["Presenta corrosion en exterior de cojinete", "Presenta picaduras en exterior de cojinete", "Presenta desgaste en exterior de cojinete", "Cojinete llego fisurado", "Llego sin cojinete"]],
         ["Rotula", ["Presenta corrosion en interior de rotula", "Presenta picaduras en interior de rotula", "Presenta desgaste en interior de rotula"]],
@@ -374,22 +710,119 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
         (items as string[]).map((texto, idx) => ({ key: `${p}_vas_g${gi}_${idx}`, texto }))
       );
       seccionesHTML += renderSeccionComponente(numSec++, "Vastago", imgVastago, "Vastago (A-J)", medidasVas, `${p}_vas`, hallazgosVas);
+
+      // Flexion y Esp. Cromo (B, C, D)
+      const flxB = v(`${p}_vas_flexion_b`);
+      const flxC = v(`${p}_vas_flexion_c`);
+      const flxD = v(`${p}_vas_flexion_d`);
+      const ecB = v(`${p}_vas_esp_cromo_b`);
+      const ecC = v(`${p}_vas_esp_cromo_c`);
+      const ecD = v(`${p}_vas_esp_cromo_d`);
+      if (flxB || flxC || flxD || ecB || ecC || ecD) {
+        seccionesHTML += `
+          <div class="campo-texto"><b>Flexión y Espesor de Cromo (Vástago)</b></div>
+          <table><thead>
+            <tr><th>Parámetro</th><th>B</th><th>C</th><th>D</th></tr>
+          </thead><tbody>
+            <tr><td class="label">Flexión</td><td class="editable">${esc(flxB) || "—"}</td><td class="editable">${esc(flxC) || "—"}</td><td class="editable">${esc(flxD) || "—"}</td></tr>
+            <tr><td class="label">Esp. Cromo</td><td class="editable">${esc(ecB) || "—"}</td><td class="editable">${esc(ecC) || "—"}</td><td class="editable">${esc(ecD) || "—"}</td></tr>
+          </tbody></table>
+        `;
+      }
+
+      // Checks de vastago
+      const vasChecks: CheckItem[] = [
+        { key: "estado_cromo", label: "Estado del cromo" },
+      ];
+      if (muestraCancamoVastago) {
+        vasChecks.push({ key: "chk_estado_cancamo", label: "Estado de cáncamo" });
+      }
+      vasChecks.push(
+        { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+        { key: "sensor", label: "Sensor", tipo: "sn" }
+      );
+      seccionesHTML += renderChecksTable(`${p}_vas`, vasChecks, "Checks - Vástago");
     }
 
-    // Tapa
-    if (!modeloEvaluacion.startsWith("acum") && modeloEvaluacion !== "suspension_delantera") {
-      const medidasTapa = [
-        renderMedida(`${p}_tapa_dext`, "Diametro Exterior (A)", "single"),
-        renderMedida(`${p}_tapa_dint`, "Diametro Interior (B)", "single"),
-        renderMedida(`${p}_tapa_dsell`, "Diametro Sellado (C)", "single"),
-        renderMedida(`${p}_tapa_ltot`, "Longitud Total (D)", "single"),
-      ].join("");
+    // Tapa (incluye SD ahora)
+    if (!modeloEvaluacion.startsWith("acum")) {
+      const tapaA1 = v(`${p}_tapa_dext`);
+      const tapaB1 = v(`${p}_tapa_dint`);
+      const tapaC1 = v(`${p}_tapa_dsell`);
+      const tapaD1 = v(`${p}_tapa_ltot`);
+
+      let medidasTapaHTML = "";
+      if (esDobleVastago) {
+        // Tabla con 2 juegos: A | B | C | D
+        const tapaA2 = v(`${p}_tapa_a2`);
+        const tapaB2 = v(`${p}_tapa_b2`);
+        const tapaC2 = v(`${p}_tapa_c2`);
+        const tapaD2 = v(`${p}_tapa_d2`);
+        medidasTapaHTML = `
+          <table><thead>
+            <tr>
+              <th>Tapa</th>
+              <th>A (Diám. Exterior)</th>
+              <th>B (Diám. Interior)</th>
+              <th>C (Diám. Sellado)</th>
+              <th>D (Longitud Total)</th>
+            </tr>
+          </thead><tbody>
+            <tr><td class="label">Juego 1</td><td class="editable">${esc(tapaA1) || "—"}</td><td class="editable">${esc(tapaB1) || "—"}</td><td class="editable">${esc(tapaC1) || "—"}</td><td class="editable">${esc(tapaD1) || "—"}</td></tr>
+            <tr><td class="label">Juego 2</td><td class="editable">${esc(tapaA2) || "—"}</td><td class="editable">${esc(tapaB2) || "—"}</td><td class="editable">${esc(tapaC2) || "—"}</td><td class="editable">${esc(tapaD2) || "—"}</td></tr>
+          </tbody></table>
+        `;
+      } else {
+        const medidasTapa = [
+          renderMedida(`${p}_tapa_dext`, "Diametro Exterior (A)", "single"),
+          renderMedida(`${p}_tapa_dint`, "Diametro Interior (B)", "single"),
+          renderMedida(`${p}_tapa_dsell`, "Diametro Sellado (C)", "single"),
+          renderMedida(`${p}_tapa_ltot`, "Longitud Total (D)", "single"),
+        ].join("");
+        medidasTapaHTML = medidasTapa;
+      }
+
       const hallazgosTapa = [
         ["Tapa", ["Tapa presenta rayaduras", "Tapa presenta deformacion", "Tapa fuera de tolerancia", "Roscas de tapa danadas"]],
       ].flatMap(([, items], gi) =>
         (items as string[]).map((texto, idx) => ({ key: `${p}_tapa_g${gi}_${idx}`, texto }))
       );
-      seccionesHTML += renderSeccionComponente(numSec++, "Tapa", imgTapa, "Tapa (A, B, C, D)", medidasTapa, `${p}_tapa`, hallazgosTapa);
+
+      // Renderizar con layout estandar (imagen + medidas a la derecha)
+      // Para doble vastago, medidasTapaHTML ya es una tabla completa (no formato fila X/Y),
+      // por eso renderizamos manualmente cuando es esDobleVastago.
+      if (esDobleVastago) {
+        seccionesHTML += `
+          <h2><span class="section-num">${numSec++}</span> Tapa</h2>
+          <table class="seccion-layout"><tr>
+            <td class="seccion-img-cell">
+              <div class="img-ref-wrap"><img src="${imgTapa}" /><div class="img-caption">Referencia: Tapa (A, B, C, D)</div></div>
+            </td>
+            <td class="seccion-med-cell">${medidasTapaHTML}</td>
+          </tr></table>
+        `;
+        // Hallazgos, fotos y resultado a mano (consistente con renderSeccionComponente)
+        const hallazgosMarcados = hallazgosTapa.filter((h) => v(h.key));
+        if (hallazgosMarcados.length > 0) {
+          seccionesHTML += `<div class="hallazgos"><b>Hallazgos encontrados:</b><ul>${hallazgosMarcados
+            .map((h) => `<li>${esc(h.texto)}</li>`)
+            .join("")}</ul></div>`;
+        }
+        seccionesHTML += renderImagenesSubidas(`${p}_tapa`);
+        const resTapa = v(`${p}_tapa_resultado`);
+        const recTapa = v(`${p}_tapa_recomendaciones`);
+        if (resTapa) seccionesHTML += `<div class="campo-texto"><b>Resultado</b><div class="textarea-box">${esc(resTapa)}</div></div>`;
+        if (recTapa) seccionesHTML += `<div class="campo-texto"><b>Recomendaciones</b><div class="textarea-box">${esc(recTapa)}</div></div>`;
+      } else {
+        seccionesHTML += renderSeccionComponente(numSec++, "Tapa", imgTapa, "Tapa (A, B, C, D)", medidasTapaHTML, `${p}_tapa`, hallazgosTapa);
+      }
+
+      // Checks de tapa (todos los modelos con tapa)
+      const tapaChecks: CheckItem[] = [
+        { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+        { key: "ext_roscado", label: "Exterior roscado", tipo: "sn" },
+      ];
+      seccionesHTML += renderChecksTable(`${p}_tapa`, tapaChecks, "Checks - Tapa");
     }
 
     // Piston/Embolo

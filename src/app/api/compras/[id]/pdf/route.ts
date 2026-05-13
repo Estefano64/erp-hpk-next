@@ -103,8 +103,10 @@ export async function GET(_req: NextRequest, { params }: Params) {
   .header-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
   .header-table td { vertical-align: top; padding: 2px 4px; font-size: 8.5pt; border: none; }
   .company-info { width: 60%; }
-  .company-name { font-size: 13pt; font-weight: bold; color: #1C2B5B; }
-  .company-data { font-size: 8pt; color: #333; line-height: 1.4; }
+  .company-header { display: flex; align-items: center; gap: 12px; }
+  .company-logo { width: 90px; height: auto; max-height: 60px; object-fit: contain; }
+  .company-text .company-name { font-size: 13pt; font-weight: bold; color: #1C2B5B; line-height: 1.1; }
+  .company-data { font-size: 8pt; color: #333; line-height: 1.4; margin-top: 4px; }
   .oc-info { width: 40%; }
   .oc-info table { width: 100%; border-collapse: collapse; }
   .oc-info td { border: 1pt solid #333; padding: 3px 6px; font-size: 8.5pt; }
@@ -155,7 +157,24 @@ export async function GET(_req: NextRequest, { params }: Params) {
   .notas ol { margin: 0; padding-left: 18px; }
 
   /* Pie */
-  .pie { margin-top: 14px; text-align: center; font-size: 7pt; color: #666; border-top: 1pt solid #ddd; padding-top: 4px; }
+  .pie {
+    margin-top: 14px; padding-top: 4px;
+    font-size: 7pt; color: #666;
+    border-top: 1pt solid #ddd;
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  }
+  .pie .usuario { text-align: left; font-weight: 600; color: #1C2B5B; }
+  .pie .formato { text-align: right; }
+
+  /* Pie fijo que aparece en cada página al imprimir */
+  .pie-fijo {
+    position: fixed; bottom: 0.3cm; left: 1cm; right: 1cm;
+    font-size: 6.5pt; color: #666;
+    border-top: 1pt solid #ddd; padding-top: 3px;
+    display: flex; justify-content: space-between;
+  }
+  .pie-fijo .usuario { font-weight: 600; color: #1C2B5B; }
+  @media screen { .pie-fijo { display: none; } }
 </style>
 </head>
 <body>
@@ -163,8 +182,11 @@ export async function GET(_req: NextRequest, { params }: Params) {
 <div class="no-print">
   <button onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button>
   <span style="margin-left:10px;font-size:11px;color:#666">
-    (Usa "Guardar como PDF" en el dialogo de impresion)
+    (Usa "Guardar como PDF" en el diálogo de impresión)
   </span>
+  <div style="margin-top:6px;font-size:11px;color:#cf1322">
+    💡 En "Más configuraciones" del diálogo, <b>desmarca "Encabezados y pies"</b> para ocultar la URL del navegador (localhost/...).
+  </div>
 </div>
 
 <div class="container">
@@ -173,20 +195,22 @@ export async function GET(_req: NextRequest, { params }: Params) {
   <table class="header-table">
     <tr>
       <td class="company-info">
-        <div class="company-name">EMPRESA S.A.C.</div>
-        <div class="company-data">
-          RUC: ________________<br/>
-          Direccion de la empresa<br/>
-          Telf. ________________<br/>
-          ventas@empresa.com<br/>
-          www.empresa.com
+        <div class="company-header">
+          <img src="/LOGO-HPK-INVERSIONEs.png" alt="HpyK" class="company-logo" />
+          <div class="company-text">
+            <div class="company-name">HpyK INVERSIONES S.A.C.</div>
+            <div class="company-data">
+              Parque Industrial Rio Seco Mz C lote 17<br/>
+              Cerro Colorado - Arequipa - Perú<br/>
+              ventas@hpkinv.com
+            </div>
+          </div>
         </div>
       </td>
       <td class="oc-info">
         <table>
           <tr><td class="lbl">ORDEN DE COMPRA N°:</td><td><b>${esc(compra.numero_po)}</b></td></tr>
           <tr><td class="lbl">Proyecto:</td><td>AREQUIPA</td></tr>
-          <tr><td class="lbl">C.Costo:</td><td></td></tr>
           <tr><td class="lbl">OT:</td><td>${esc(otReferencias || "-")}</td></tr>
           <tr><td class="lbl">REQ:</td><td>OPERACIONES</td></tr>
         </table>
@@ -277,9 +301,9 @@ export async function GET(_req: NextRequest, { params }: Params) {
   <!-- Nota factura -->
   <div class="factura-box">
     <div class="titulo">Facturar a:</div>
-    <div>EMPRESA S.A.C. — RUC: ________________</div>
-    <div>Direccion de la empresa</div>
-    <div style="margin-top:4px"><b>Entregar en:</b> Direccion de entrega</div>
+    <div>HpyK INVERSIONES S.A.C.</div>
+    <div>Parque Industrial Rio Seco Mz C lote 17 — Cerro Colorado, Arequipa - Perú</div>
+    <div style="margin-top:4px"><b>Entregar en:</b> ${esc(compra.ubicacion?.descripcion ?? compra.ubicacion?.nombre ?? "Parque Industrial Rio Seco Mz C lote 17 Cerro Colorado-Arequipa-Perú")}</div>
   </div>
 
   <!-- Firmas -->
@@ -313,8 +337,17 @@ export async function GET(_req: NextRequest, { params }: Params) {
     </ol>
   </div>
 
-  <div class="pie">FORMATO OC - Version: 01</div>
+  <div class="pie">
+    <span class="usuario">Elaborado por: ${esc(compra.usuario_solicita ?? "—")}</span>
+    <span class="formato">FORMATO OC - Versión: 01</span>
+  </div>
 
+</div>
+
+<!-- Pie fijo que se repite en cada página impresa -->
+<div class="pie-fijo">
+  <span class="usuario">Elaborado por: ${esc(compra.usuario_solicita ?? "—")}</span>
+  <span>OC ${esc(compra.numero_po)} · HpyK INVERSIONES S.A.C.</span>
 </div>
 
 <script>

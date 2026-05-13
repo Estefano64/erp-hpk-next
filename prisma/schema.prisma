@@ -617,14 +617,15 @@ model ConfiguracionCotizacion {
 }
 
 model Trabajador {
-  trabajador_id Int      @id @default(autoincrement())
-  nombre        String   @db.VarChar(200)
-  dni           String?  @db.VarChar(20)
-  area          String   @db.VarChar(50)
-  puesto        String   @db.VarChar(100)
-  activo        Boolean  @default(true)
-  created_at    DateTime @default(now())
-  updated_at    DateTime @default(now()) @updatedAt
+  trabajador_id Int                    @id @default(autoincrement())
+  nombre        String                 @db.VarChar(200)
+  dni           String?                @db.VarChar(20)
+  area          String                 @db.VarChar(50)
+  puesto        String                 @db.VarChar(100)
+  activo        Boolean                @default(true)
+  created_at    DateTime               @default(now())
+  updated_at    DateTime               @default(now()) @updatedAt
+  prestamos     PrestamoHerramienta[]
 
   @@index([dni])
   @@index([area])
@@ -827,6 +828,7 @@ model OrdenTrabajo {
   repuestos                   OTRepuesto[]
   planificaciones             PlanificacionOT[]
   evaluaciones_tecnicas       EvaluacionTecnica[]
+  prestamos_herramientas      PrestamoHerramienta[]
 
   @@map("orden_trabajo")
 }
@@ -870,6 +872,7 @@ model Compra {
   id                     Int             @id @default(autoincrement())
   numero_po              String          @unique @db.VarChar(50)
   numero_req             String?         @db.VarChar(50)
+  nombre                 String?         @db.VarChar(300)
   ot_id                  Int?
   proveedor_id           Int
   fecha_solicitud        DateTime        @default(now()) @db.Date
@@ -950,16 +953,44 @@ model MovimientoInventario {
 }
 
 model Herramienta {
-  id        Int      @id @default(autoincrement())
-  codigo    String   @unique @db.VarChar(20)
-  nombre    String   @db.VarChar(100)
-  stock     Int      @default(0)
-  asignadas Int      @default(0)
-  estado    String   @default("Disponible") @db.VarChar(15)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id        Int                    @id @default(autoincrement())
+  codigo    String                 @unique @db.VarChar(20)
+  nombre    String                 @db.VarChar(100)
+  stock     Int                    @default(0)
+  asignadas Int                    @default(0)
+  estado    String                 @default("Disponible") @db.VarChar(15)
+  createdAt DateTime               @default(now())
+  updatedAt DateTime                @updatedAt
+  prestamos PrestamoHerramienta[]
 
   @@map("herramientas")
+}
+
+model PrestamoHerramienta {
+  id                        Int           @id @default(autoincrement())
+  herramienta_id            Int
+  cantidad                  Int           @default(1)
+  prestado_a                String        @db.VarChar(100)
+  trabajador_id             Int?
+  ot_id                     Int?
+  fecha_entrega             DateTime      @default(now()) @db.Date
+  fecha_devolucion_prevista DateTime?     @db.Date
+  fecha_devolucion_real     DateTime?     @db.Date
+  estado                    String        @default("PRESTADA") @db.VarChar(20)
+  observaciones             String?
+  usuario_entrega           String        @db.VarChar(100)
+  usuario_recibe            String?       @db.VarChar(100)
+  createdAt                 DateTime      @default(now())
+  updatedAt                 DateTime      @updatedAt
+  herramienta               Herramienta   @relation(fields: [herramienta_id], references: [id], onDelete: Restrict)
+  orden_trabajo             OrdenTrabajo? @relation(fields: [ot_id], references: [id], onDelete: SetNull)
+  trabajador                Trabajador?   @relation(fields: [trabajador_id], references: [trabajador_id], onDelete: SetNull)
+
+  @@index([herramienta_id])
+  @@index([estado])
+  @@index([ot_id])
+  @@index([trabajador_id])
+  @@map("prestamos_herramientas")
 }
 
 model OTHistorial {
@@ -1071,6 +1102,7 @@ model PlanificacionOT {
   qty_personal         Int?                     @default(1)
   horas_extras         Boolean?                 @default(false)
   horas_extras_qty     Decimal?                 @db.Decimal(5, 1)
+  trabajo_externo      Boolean?                 @default(false)
   version              Int                      @default(1)
   created_at           DateTime                 @default(now())
   updated_at           DateTime                 @updatedAt

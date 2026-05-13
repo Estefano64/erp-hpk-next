@@ -339,13 +339,14 @@ export default function TemplateRequerimientosPage() {
       ),
     },
     {
-      title: "Tipo", key: "tipo", width: 110,
+      title: "Tipo", key: "tipo", width: 110, align: "center",
       filters: [
         { text: "MAC", value: "MAC" },
         { text: "CAD", value: "CAD" },
         { text: "SER", value: "SER" },
       ],
       onFilter: (value, r) => (drafts[r.tarea_id]?.tipo_codigo ?? r.tipo_codigo) === value,
+      sorter: (a, b) => (a.tipo_codigo ?? "").localeCompare(b.tipo_codigo ?? ""),
       render: (_, r) => (
         <Select
           value={drafts[r.tarea_id]?.tipo_codigo ?? r.tipo_codigo}
@@ -361,9 +362,10 @@ export default function TemplateRequerimientosPage() {
       ),
     },
     {
-      title: "Material", key: "material", width: 240,
+      title: "Material", key: "material", width: 240, align: "left",
       filters: materialValores, filterSearch: true,
       onFilter: (value, r) => (drafts[r.tarea_id]?.material_codigo ?? r.material_codigo) === value,
+      sorter: (a, b) => (a.material_codigo ?? "").localeCompare(b.material_codigo ?? ""),
       render: (_, r) => {
         const isMac = (drafts[r.tarea_id]?.tipo_codigo ?? r.tipo_codigo) === "MAC";
         if (!isMac) return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
@@ -386,9 +388,10 @@ export default function TemplateRequerimientosPage() {
       },
     },
     {
-      title: "Fabricante", key: "fab", width: 180,
+      title: "Fabricante", key: "fab", width: 180, align: "center",
       filters: fabValores, filterSearch: true,
       onFilter: (value, r) => (drafts[r.tarea_id]?.fabricante_codigo ?? r.fabricante_codigo) === value,
+      sorter: (a, b) => (a.fabricante_codigo ?? "").localeCompare(b.fabricante_codigo ?? ""),
       render: (_, r) => {
         const mat = getEffectiveMaterial(r);
         if (mat) {
@@ -412,9 +415,10 @@ export default function TemplateRequerimientosPage() {
       },
     },
     {
-      title: "N/P", key: "np", width: 130,
+      title: "N/P", key: "np", width: 130, align: "center",
       filters: npValores, filterSearch: true,
       onFilter: (value, r) => (drafts[r.tarea_id]?.np ?? r.np) === value,
+      sorter: (a, b) => (a.np ?? "").localeCompare(b.np ?? ""),
       render: (_, r) => {
         const mat = getEffectiveMaterial(r);
         if (mat) {
@@ -433,9 +437,10 @@ export default function TemplateRequerimientosPage() {
       },
     },
     {
-      title: "Texto", key: "texto", width: 160,
+      title: "Texto", key: "texto", width: 160, align: "left",
       filters: textoValores, filterSearch: true,
       onFilter: (value, r) => (drafts[r.tarea_id]?.texto ?? r.texto) === value,
+      sorter: (a, b) => (a.texto ?? "").localeCompare(b.texto ?? ""),
       render: (_, r) => {
         const tipo = drafts[r.tarea_id]?.tipo_codigo ?? r.tipo_codigo;
         if (tipo !== "SER") {
@@ -455,6 +460,7 @@ export default function TemplateRequerimientosPage() {
       title: "Qty", key: "qty", width: 80, align: "right",
       filters: qtyValores, filterSearch: true,
       onFilter: (value, r) => String(drafts[r.tarea_id]?.requerimiento ?? Number(r.requerimiento)) === value,
+      sorter: (a, b) => Number(a.requerimiento ?? 0) - Number(b.requerimiento ?? 0),
       render: (_, r) => (
         <InputNumber
           value={drafts[r.tarea_id]?.requerimiento ?? Number(r.requerimiento)}
@@ -470,6 +476,7 @@ export default function TemplateRequerimientosPage() {
       title: "Precio", key: "precio", width: 100, align: "right",
       filters: precioValores, filterSearch: true,
       onFilter: (value, r) => String(drafts[r.tarea_id]?.precio ?? r.precio ?? "") === value,
+      sorter: (a, b) => Number(a.precio ?? 0) - Number(b.precio ?? 0),
       render: (_, r) => {
         const mat = getEffectiveMaterial(r);
         if (mat) {

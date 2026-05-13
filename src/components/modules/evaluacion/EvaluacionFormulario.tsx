@@ -218,6 +218,69 @@ function TablaMedidas({
   );
 }
 
+// ── Radio inline (opciones simples horizontales) ───────────
+function RadioInline({
+  name,
+  label,
+  opciones,
+  datos,
+  onChange,
+}: {
+  name: string;
+  label: string;
+  opciones: string[];
+  datos: Record<string, unknown>;
+  onChange: (d: Record<string, unknown>) => void;
+}) {
+  const v = useValor(datos, onChange);
+  const val = v.get(name) as string | undefined;
+  return (
+    <div style={{ marginBottom: 4 }}>
+      <Text strong style={{ fontSize: 12, display: "block" }}>{label}</Text>
+      <Radio.Group
+        size="small"
+        value={val}
+        onChange={(e) => v.set(name, e.target.value)}
+      >
+        {opciones.map((op) => (
+          <Radio key={op} value={op} style={{ fontSize: 12 }}>
+            {op}
+          </Radio>
+        ))}
+      </Radio.Group>
+    </div>
+  );
+}
+
+// ── Par X/Y con label ─────────────────────────────────────
+function ParXY({
+  prefix,
+  label,
+  datos,
+  onChange,
+}: {
+  prefix: string;
+  label: string;
+  datos: Record<string, unknown>;
+  onChange: (d: Record<string, unknown>) => void;
+}) {
+  return (
+    <div style={{ marginBottom: 4 }}>
+      <Text strong style={{ fontSize: 12, display: "block" }}>{label}</Text>
+      <Row gutter={4}>
+        <Col span={12}>
+          <Text type="secondary" style={{ fontSize: 10 }}>X</Text>
+          <InputMedida name={`${prefix}_x`} datos={datos} onChange={onChange} />
+        </Col>
+        <Col span={12}>
+          <Text type="secondary" style={{ fontSize: 10 }}>Y</Text>
+          <InputMedida name={`${prefix}_y`} datos={datos} onChange={onChange} />
+        </Col>
+      </Row>
+    </div>
+  );
+}
+
 // ── Tabla de checks Bueno/Malo/NA ──────────────────────────
 interface ItemCheck {
   key: string;
@@ -412,28 +475,50 @@ function ImagenesComponente({
   const MAX_FOTOS = 6;
   const lleno = imagenes.length >= MAX_FOTOS;
 
-  const handleUpload = async (file: File) => {
-    if (!file.type.startsWith("image/")) {
-      message.warning("Solo se permiten imagenes");
-      return false;
+  // Procesa el lote ENTERO de un solo onChange para evitar la race condition
+  // donde cada beforeUpload por archivo lee `datos` desincronizado y pisa los
+  // anteriores. Acá comprimimos todas las imágenes en paralelo y hacemos UN solo
+  // setState con el array final.
+  const handleUploadBatch = async (files: File[]) => {
+    const tipos = files.filter((f) => !f.type.startsWith("image/"));
+    if (tipos.length > 0) {
+      message.warning(`${tipos.length} archivo(s) ignorado(s) — solo se permiten imágenes`);
     }
-    if (file.size > 15 * 1024 * 1024) {
-      message.warning("Imagen demasiado grande (max 15MB)");
-      return false;
+    const grandes = files.filter((f) => f.type.startsWith("image/") && f.size > 15 * 1024 * 1024);
+    if (grandes.length > 0) {
+      message.warning(`${grandes.length} imagen(es) demasiado grande(s) (max 15MB) — ignoradas`);
     }
-    // Leemos el estado actual de datos por si hay varios uploads paralelos
+    const validos = files.filter((f) => f.type.startsWith("image/") && f.size <= 15 * 1024 * 1024);
+    if (validos.length === 0) return;
+
     const actuales = (datos[key] as FotoComponente[] | undefined) || [];
-    if (actuales.length >= MAX_FOTOS) {
-      message.warning(`Maximo ${MAX_FOTOS} fotos por componente`);
-      return false;
+    const espacioDisponible = MAX_FOTOS - actuales.length;
+    if (espacioDisponible <= 0) {
+      message.warning(`Límite alcanzado (${MAX_FOTOS} fotos por componente)`);
+      return;
     }
+    if (validos.length > espacioDisponible) {
+      message.info(`Solo se agregarán las primeras ${espacioDisponible} imágenes (límite ${MAX_FOTOS})`);
+    }
+    const aProcesar = validos.slice(0, espacioDisponible);
+
     try {
-      const data = await comprimirImagen(file);
-      onChange({ ...datos, [key]: [...actuales, { name: file.name, data }] });
+      const resultados = await Promise.allSettled(
+        aProcesar.map(async (f) => ({ name: f.name, data: await comprimirImagen(f) })),
+      );
+      const nuevas = resultados
+        .filter((r): r is PromiseFulfilledResult<FotoComponente> => r.status === "fulfilled")
+        .map((r) => r.value);
+      const fallidas = resultados.length - nuevas.length;
+      if (fallidas > 0) {
+        message.error(`${fallidas} imagen(es) fallaron al procesar`);
+      }
+      if (nuevas.length > 0) {
+        onChange({ ...datos, [key]: [...actuales, ...nuevas] });
+      }
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "Error al procesar imagen");
+      message.error(err instanceof Error ? err.message : "Error al procesar imágenes");
     }
-    return false;
   };
 
   const handleDelete = (idx: number) => {
@@ -458,14 +543,22 @@ function ImagenesComponente({
       styles={{ body: { padding: 12 } }}
     >
       <Upload
-        beforeUpload={(file) => handleUpload(file as File)}
+        beforeUpload={(file, fileList) => {
+          // beforeUpload se dispara una vez por archivo seleccionado. Procesamos
+          // el batch entero SOLO en la primera invocación (file === fileList[0])
+          // para que sea un único onChange con todas las imágenes.
+          if (file === fileList[0]) {
+            handleUploadBatch(fileList as File[]);
+          }
+          return false;
+        }}
         showUploadList={false}
         multiple
         accept="image/*"
         disabled={lleno}
       >
         <Button icon={<UploadOutlined />} size="small" disabled={lleno}>
-          {lleno ? `Limite alcanzado (${MAX_FOTOS})` : "Agregar foto"}
+          {lleno ? `Limite alcanzado (${MAX_FOTOS})` : "Agregar fotos (varias a la vez)"}
         </Button>
       </Upload>
       {imagenes.length > 0 && (
@@ -753,12 +846,59 @@ function EtapasTelescopico({
               datos={datos}
               onChange={onChange}
             />
+            <Divider style={{ margin: "8px 0" }}>
+              <Text style={{ fontSize: 11 }}>Diámetro Interior (3 lecturas X/Y)</Text>
+            </Divider>
+            <Row gutter={8}>
+              <Col span={8}>
+                <ParXY prefix={`${prefix}_etapa${i}_cuerpo_dint_1`} label="Lectura 1" datos={datos} onChange={onChange} />
+              </Col>
+              <Col span={8}>
+                <ParXY prefix={`${prefix}_etapa${i}_cuerpo_dint_2`} label="Lectura 2" datos={datos} onChange={onChange} />
+              </Col>
+              <Col span={8}>
+                <ParXY prefix={`${prefix}_etapa${i}_cuerpo_dint_3`} label="Lectura 3" datos={datos} onChange={onChange} />
+              </Col>
+            </Row>
+            <Divider style={{ margin: "8px 0" }}>
+              <Text style={{ fontSize: 11 }}>Diámetro Exterior (3 lecturas X/Y)</Text>
+            </Divider>
+            <Row gutter={8}>
+              <Col span={8}>
+                <ParXY prefix={`${prefix}_etapa${i}_cuerpo_dext_1`} label="Lectura 1" datos={datos} onChange={onChange} />
+              </Col>
+              <Col span={8}>
+                <ParXY prefix={`${prefix}_etapa${i}_cuerpo_dext_2`} label="Lectura 2" datos={datos} onChange={onChange} />
+              </Col>
+              <Col span={8}>
+                <ParXY prefix={`${prefix}_etapa${i}_cuerpo_dext_3`} label="Lectura 3" datos={datos} onChange={onChange} />
+              </Col>
+            </Row>
+            <Divider style={{ margin: "8px 0" }}>
+              <Text style={{ fontSize: 11 }}>Flexión y Espesor de Cromo (numéricos)</Text>
+            </Divider>
+            <Row gutter={8}>
+              {([1, 2, 3] as const).map((n) => (
+                <Col span={4} key={`fx${n}`}>
+                  <Text strong style={{ fontSize: 11 }}>Flexión {n}</Text>
+                  <InputMedida name={`${prefix}_etapa${i}_cuerpo_flexion_${n}`} datos={datos} onChange={onChange} />
+                </Col>
+              ))}
+              {([1, 2, 3] as const).map((n) => (
+                <Col span={4} key={`ec${n}`}>
+                  <Text strong style={{ fontSize: 11 }}>Esp. Cromo {n}</Text>
+                  <InputMedida name={`${prefix}_etapa${i}_cuerpo_esp_cromo_${n}`} datos={datos} onChange={onChange} />
+                </Col>
+              ))}
+            </Row>
             <div style={{ marginTop: 12 }}>
               <TablaChecks
                 prefix={`${prefix}_etapa${i}`}
                 items={[
                   { key: "estado_cromo", label: "Estado del cromo" },
+                  { key: "sup_roscada", label: "Est. de sup. Roscada" },
                   { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                  { key: "diam_salida_roscado", label: "Diam. Salida Roscado", tipo: "sn" },
                 ]}
                 datos={datos}
                 onChange={onChange}
@@ -832,30 +972,256 @@ export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, o
   const renderSecciones = () => {
     // ── CILINDRO TELESCOPICO ── (etapas dinamicas)
     if (modelo === "cil_telescopico") {
+      const tipoAnclajeCil = (datos[`${p}_cil_tipo_anclaje`] as string) || "";
       return (
         <>
-          <EtapasTelescopico prefix={p} unidad={unidad} datos={datos} onChange={onChange} />
-          <SeccionNum num="T" titulo="Tapas Secundarias (opcional)">
+          {/* Cilindro principal (botella) */}
+          <SeccionNum num={3} titulo="Cilindro Principal (Botella)">
             <Row gutter={16}>
-              <Col xs={24} md={12}>
-                <Text strong style={{ fontSize: 12 }}>Tapa roscada secundaria (detalle)</Text>
-                <TextArea
-                  rows={2}
-                  placeholder="Medidas y condicion..."
-                  value={(datos[`${p}_tapa_secundaria`] as string) || ""}
-                  onChange={(e) => onChange({ ...datos, [`${p}_tapa_secundaria`]: e.target.value })}
-                />
+              <Col xs={24} md={8}>
+                <ImagenReferencia componente="cilindro" label="Cilindro Principal" />
               </Col>
-              <Col xs={24} md={12}>
-                <Text strong style={{ fontSize: 12 }}>Tapa posterior de sujecion (detalle)</Text>
-                <TextArea
-                  rows={2}
-                  placeholder="Medidas y condicion..."
-                  value={(datos[`${p}_tapa_posterior`] as string) || ""}
-                  onChange={(e) => onChange({ ...datos, [`${p}_tapa_posterior`]: e.target.value })}
+              <Col xs={24} md={16}>
+                <TablaA1A4 prefix={`${p}_cil`} datos={datos} onChange={onChange} />
+                <Divider style={{ margin: "8px 0" }} />
+                <TablaMedidas
+                  filas={[
+                    { prefix: `${p}_cil_dsal`, label: `Diametro Salida (B) [${unidad}]`, tipo: "xy" },
+                    { prefix: `${p}_cil_dext`, label: `Diametro Exterior (C) [${unidad}]`, tipo: "xy" },
+                    { prefix: `${p}_cil_lbru`, label: `Longitud Bruñido (D) [${unidad}]`, tipo: "single" },
+                    { prefix: `${p}_cil_ltot`, label: `Longitud Total (E) [${unidad}]`, tipo: "single" },
+                  ]}
+                  datos={datos}
+                  onChange={onChange}
                 />
+                <Divider style={{ margin: "8px 0" }} />
+                <RadioInline
+                  name={`${p}_cil_tipo_anclaje`}
+                  label="Tipo de anclaje"
+                  opciones={["Con Cáncamo", "Sin Cáncamo"]}
+                  datos={datos}
+                  onChange={onChange}
+                />
+                {tipoAnclajeCil === "Con Cáncamo" && (
+                  <>
+                    <Row gutter={8} style={{ marginTop: 8 }}>
+                      <Col xs={24} md={12}>
+                        <ParXY prefix={`${p}_cil_dojo_f`} label={`Diámetro Ojo F [${unidad}]`} datos={datos} onChange={onChange} />
+                      </Col>
+                      <Col xs={24} md={12}>
+                        <RadioInline
+                          name={`${p}_cil_elem_sujecion`}
+                          label="Elemento de sujeción"
+                          opciones={["Cojinete", "Rótula", "Pin directo"]}
+                          datos={datos}
+                          onChange={onChange}
+                        />
+                      </Col>
+                    </Row>
+                    <Row gutter={8}>
+                      <Col xs={24} md={12}>
+                        <ParXY prefix={`${p}_cil_dint_g`} label={`Diám. Int. G [${unidad}]`} datos={datos} onChange={onChange} />
+                      </Col>
+                      <Col xs={24} md={12}>
+                        <ParXY prefix={`${p}_cil_ancho_ojo`} label={`Ancho de Ojo [${unidad}]`} datos={datos} onChange={onChange} />
+                      </Col>
+                    </Row>
+                  </>
+                )}
+                <div style={{ marginTop: 12 }}>
+                  <TablaChecks
+                    prefix={`${p}_cil`}
+                    items={[
+                      { key: "tomas", label: "Tomas" },
+                      { key: "roscada", label: "Estado de sup. Roscada" },
+                      { key: "estado_cancamo", label: "Estado de cancamo" },
+                      { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                    ]}
+                    datos={datos}
+                    onChange={onChange}
+                  />
+                </div>
               </Col>
             </Row>
+            <ChecklistHallazgos id={`${p}_cil`} titulo="Check list - Cilindro Principal" grupos={GRUPOS_CILINDRO} datos={datos} onChange={onChange} />
+            <ImagenesComponente prefix={`${p}_cil`} etiqueta="Cilindro Principal" datos={datos} onChange={onChange} />
+            <ResultadoComponente prefix={`${p}_cil`} label="Cilindro Principal" datos={datos} onChange={onChange} />
+          </SeccionNum>
+
+          {/* Vastago principal */}
+          <SeccionNum num={4} titulo="Vástago Principal">
+            <Row gutter={16}>
+              <Col xs={24} md={8}>
+                <ImagenReferencia componente="vastago" label="Vástago Principal" />
+              </Col>
+              <Col xs={24} md={16}>
+                <TablaMedidas
+                  filas={[
+                    { prefix: `${p}_vas_desp`, label: `Diametro Espiga (A) [${unidad}]`, tipo: "xy" },
+                    { prefix: `${p}_vas_dext`, label: `Diametro Exterior (B) [${unidad}]`, tipo: "xy" },
+                    { prefix: `${p}_vas_dsell`, label: `Diametro Sellado (C) [${unidad}]`, tipo: "xy" },
+                    { prefix: `${p}_vas_dcoj`, label: `Diametro Cojinete (D) [${unidad}]`, tipo: "xy" },
+                    { prefix: `${p}_vas_lcro`, label: `Longitud Cromo (E) [${unidad}]`, tipo: "single" },
+                    { prefix: `${p}_vas_ltot`, label: `Longitud Total (F) [${unidad}]`, tipo: "single" },
+                  ]}
+                  datos={datos}
+                  onChange={onChange}
+                />
+                <Row gutter={8} style={{ marginTop: 8 }}>
+                  <Col xs={24} md={8}>
+                    <Text strong style={{ fontSize: 12 }}>Longitud de Espiga G [{unidad}]</Text>
+                    <InputMedida name={`${p}_vas_long_espiga_g`} datos={datos} onChange={onChange} />
+                  </Col>
+                </Row>
+                <Divider style={{ margin: "8px 0" }} />
+                <Row gutter={8}>
+                  <Col xs={24} md={12}>
+                    <ParXY prefix={`${p}_vas_dext_ojo_h`} label={`Diám. Ext. Ojo H [${unidad}]`} datos={datos} onChange={onChange} />
+                  </Col>
+                  <Col xs={24} md={12}>
+                    <RadioInline
+                      name={`${p}_vas_elem_sujecion`}
+                      label="Elemento de sujeción"
+                      opciones={["Cojinete", "Rótula", "Pin directo"]}
+                      datos={datos}
+                      onChange={onChange}
+                    />
+                  </Col>
+                </Row>
+                <Row gutter={8}>
+                  <Col xs={24} md={8}>
+                    <ParXY prefix={`${p}_vas_dint_ojo_i`} label={`Diám. Int. Ojo I [${unidad}]`} datos={datos} onChange={onChange} />
+                  </Col>
+                  <Col xs={24} md={8}>
+                    <ParXY prefix={`${p}_vas_dint_j`} label={`Diám. Int. J [${unidad}]`} datos={datos} onChange={onChange} />
+                  </Col>
+                  <Col xs={24} md={8}>
+                    <ParXY prefix={`${p}_vas_ancho_ojo`} label={`Ancho de Ojo [${unidad}]`} datos={datos} onChange={onChange} />
+                  </Col>
+                </Row>
+                <Divider style={{ margin: "8px 0" }}>
+                  <Text style={{ fontSize: 11 }}>Flexión y Espesor de Cromo</Text>
+                </Divider>
+                <Row gutter={8}>
+                  {(["b", "c", "d"] as const).map((s) => (
+                    <Col span={4} key={`fx-${s}`}>
+                      <Text strong style={{ fontSize: 11 }}>Flexión {s.toUpperCase()}</Text>
+                      <InputMedida name={`${p}_vas_flexion_${s}`} datos={datos} onChange={onChange} />
+                    </Col>
+                  ))}
+                  {(["b", "c", "d"] as const).map((s) => (
+                    <Col span={4} key={`ec-${s}`}>
+                      <Text strong style={{ fontSize: 11 }}>Esp. Cromo {s.toUpperCase()}</Text>
+                      <InputMedida name={`${p}_vas_esp_cromo_${s}`} datos={datos} onChange={onChange} />
+                    </Col>
+                  ))}
+                </Row>
+                <div style={{ marginTop: 12 }}>
+                  <TablaChecks
+                    prefix={`${p}_vas`}
+                    items={[
+                      { key: "estado_cromo", label: "Estado del cromo" },
+                      { key: "chk_estado_cancamo", label: "Estado de cancamo" },
+                      { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                      { key: "sensor", label: "Sensor", tipo: "sn" },
+                    ]}
+                    datos={datos}
+                    onChange={onChange}
+                  />
+                </div>
+              </Col>
+            </Row>
+            <ChecklistHallazgos id={`${p}_vas`} titulo="Check list - Vástago Principal" grupos={GRUPOS_VASTAGO} datos={datos} onChange={onChange} />
+            <ImagenesComponente prefix={`${p}_vas`} etiqueta="Vástago Principal" datos={datos} onChange={onChange} />
+            <ResultadoComponente prefix={`${p}_vas`} label="Vástago Principal" datos={datos} onChange={onChange} />
+          </SeccionNum>
+
+          <EtapasTelescopico prefix={p} unidad={unidad} datos={datos} onChange={onChange} />
+
+          <SeccionNum num="T1" titulo="Tapa Roscada Secundaria">
+            <Row gutter={16}>
+              <Col xs={24} md={8}>
+                <ImagenReferencia componente="tapa" label="Tapa Roscada Secundaria" />
+              </Col>
+              <Col xs={24} md={16}>
+                <TablaMedidas
+                  filas={[
+                    { prefix: `${p}_tapa_sec_a`, label: `Medida A [${unidad}]`, tipo: "single" },
+                    { prefix: `${p}_tapa_sec_b`, label: `Medida B [${unidad}]`, tipo: "single" },
+                    { prefix: `${p}_tapa_sec_c`, label: `Medida C [${unidad}]`, tipo: "single" },
+                    { prefix: `${p}_tapa_sec_d`, label: `Medida D [${unidad}]`, tipo: "single" },
+                  ]}
+                  datos={datos}
+                  onChange={onChange}
+                />
+                <div style={{ marginTop: 12 }}>
+                  <TablaChecks
+                    prefix={`${p}_tapa_sec`}
+                    items={[
+                      { key: "sup_roscada", label: "Est. de sup. Roscada" },
+                      { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                    ]}
+                    datos={datos}
+                    onChange={onChange}
+                  />
+                </div>
+                {/* Detalle libre - retrocompatibilidad con datos previos */}
+                <div style={{ marginTop: 12 }}>
+                  <Text strong style={{ fontSize: 12 }}>Detalle adicional (opcional)</Text>
+                  <TextArea
+                    rows={2}
+                    placeholder="Medidas y condicion..."
+                    value={(datos[`${p}_tapa_secundaria`] as string) || ""}
+                    onChange={(e) => onChange({ ...datos, [`${p}_tapa_secundaria`]: e.target.value })}
+                  />
+                </div>
+              </Col>
+            </Row>
+            <ImagenesComponente prefix={`${p}_tapa_sec`} etiqueta="Tapa Roscada Secundaria" datos={datos} onChange={onChange} />
+            <ResultadoComponente prefix={`${p}_tapa_sec`} label="Tapa Roscada Secundaria" datos={datos} onChange={onChange} />
+          </SeccionNum>
+
+          <SeccionNum num="T2" titulo="Tapa Posterior de Sujeción">
+            <Row gutter={16}>
+              <Col xs={24} md={8}>
+                <ImagenReferencia componente="tapa" label="Tapa Posterior de Sujeción" />
+              </Col>
+              <Col xs={24} md={16}>
+                <TablaMedidas
+                  filas={[
+                    { prefix: `${p}_tapa_post_dsell`, label: `Diám. Sellado [${unidad}]`, tipo: "single" },
+                    { prefix: `${p}_tapa_post_dint_ojo`, label: `Diám. Int. Ojo [${unidad}]`, tipo: "single" },
+                    { prefix: `${p}_tapa_post_dint_rotula`, label: `Diám. Int. Rótula [${unidad}]`, tipo: "single" },
+                    { prefix: `${p}_tapa_post_ancho_ojo`, label: `Ancho de Ojo [${unidad}]`, tipo: "single" },
+                  ]}
+                  datos={datos}
+                  onChange={onChange}
+                />
+                <div style={{ marginTop: 12 }}>
+                  <TablaChecks
+                    prefix={`${p}_tapa_post`}
+                    items={[
+                      { key: "est_soldadura", label: "Est. de soldadura" },
+                      { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                    ]}
+                    datos={datos}
+                    onChange={onChange}
+                  />
+                </div>
+                {/* Detalle libre - retrocompatibilidad */}
+                <div style={{ marginTop: 12 }}>
+                  <Text strong style={{ fontSize: 12 }}>Detalle adicional (opcional)</Text>
+                  <TextArea
+                    rows={2}
+                    placeholder="Medidas y condicion..."
+                    value={(datos[`${p}_tapa_posterior`] as string) || ""}
+                    onChange={(e) => onChange({ ...datos, [`${p}_tapa_posterior`]: e.target.value })}
+                  />
+                </div>
+              </Col>
+            </Row>
+            <ImagenesComponente prefix={`${p}_tapa_post`} etiqueta="Tapa Posterior" datos={datos} onChange={onChange} />
+            <ResultadoComponente prefix={`${p}_tapa_post`} label="Tapa Posterior" datos={datos} onChange={onChange} />
           </SeccionNum>
         </>
       );
@@ -1035,20 +1401,39 @@ export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, o
         <SeccionNum num={3} titulo="Acumulador de Vejiga">
           <Row gutter={16}>
             <Col xs={24} md={8}>
-              <ImagenReferencia componente="cilindro" label="Acumulador (A,B,C)" />
+              <ImagenReferencia componente="cilindro" label="Acumulador (A,B,C,E)" />
             </Col>
             <Col xs={24} md={16}>
+              {/* Singles existentes (compatibilidad con evaluaciones previas) */}
               <TablaMedidas
                 filas={[
-                  { prefix: `${p}_dext`, label: `Diametro Exterior (A) [${unidad}]`, tipo: "single" },
+                  { prefix: `${p}_dext`, label: `Diametro Exterior (A) - simple [${unidad}]`, tipo: "single" },
                   { prefix: `${p}_dint`, label: `Diametro Interior (B) [${unidad}]`, tipo: "single" },
                   { prefix: `${p}_ltot`, label: `Longitud Total (C) [${unidad}]`, tipo: "single" },
-                  { prefix: `${p}_dsal1`, label: `Diametro salida 1 [${unidad}]`, tipo: "single" },
-                  { prefix: `${p}_dsal2`, label: `Diametro salida 2 [${unidad}]`, tipo: "single" },
+                  { prefix: `${p}_dsal1`, label: `Diametro salida 1 - simple [${unidad}]`, tipo: "single" },
+                  { prefix: `${p}_dsal2`, label: `Diametro salida 2 - simple [${unidad}]`, tipo: "single" },
                 ]}
                 datos={datos}
                 onChange={onChange}
               />
+              <Divider style={{ margin: "8px 0" }}>
+                <Text style={{ fontSize: 11 }}>Lecturas X/Y (según Excel)</Text>
+              </Divider>
+              <TablaMedidas
+                filas={[
+                  { prefix: `${p}_acumv_dsal1`, label: `Diámetro de Salida 1 (A) [${unidad}]`, tipo: "xy" },
+                  { prefix: `${p}_acumv_dsal2`, label: `Diámetro de Salida 2 (B) [${unidad}]`, tipo: "xy" },
+                  { prefix: `${p}_acumv_dext`, label: `Diámetro Exterior (C) [${unidad}]`, tipo: "xy" },
+                ]}
+                datos={datos}
+                onChange={onChange}
+              />
+              <Row gutter={8} style={{ marginTop: 8 }}>
+                <Col xs={24} md={8}>
+                  <Text strong style={{ fontSize: 12 }}>Volumen (E) [GL]</Text>
+                  <InputMedida name={`${p}_acumv_volumen_e`} datos={datos} onChange={onChange} />
+                </Col>
+              </Row>
               <div style={{ marginTop: 12 }}>
                 <TablaChecks
                   prefix={`${p}_acum`}
@@ -1079,6 +1464,8 @@ export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, o
     }
 
     // Cilindro (Botella)
+    const esCilHidraulico = modelo === "cil_vastago_simple" || modelo === "cil_pivotado" || modelo === "cil_doble_vastago";
+    const esPivotado = modelo === "cil_pivotado";
     secciones.push(
       <SeccionNum key="cil" num={3} titulo="Cilindro (Botella)">
         <Row gutter={16}>
@@ -1098,13 +1485,86 @@ export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, o
               datos={datos}
               onChange={onChange}
             />
+            {/* Extras de cancamo y sujeción - solo cilindros hidraulicos (CHVS/CHP/CHPDV) */}
+            {esCilHidraulico && (
+              <>
+                <Divider style={{ margin: "8px 0" }}>
+                  <Text style={{ fontSize: 11 }}>Cáncamo y elemento de sujeción</Text>
+                </Divider>
+                <Row gutter={8}>
+                  <Col xs={24} md={12}>
+                    <RadioInline
+                      name={`${p}_cil_tipo_cancamo`}
+                      label="Tipo de cancamo"
+                      opciones={["Convencional", "Concavo"]}
+                      datos={datos}
+                      onChange={onChange}
+                    />
+                  </Col>
+                  <Col xs={24} md={12}>
+                    <RadioInline
+                      name={`${p}_cil_elem_sujecion`}
+                      label="Elemento de sujeción"
+                      opciones={["Cojinete", "Rótula", "Pin directo"]}
+                      datos={datos}
+                      onChange={onChange}
+                    />
+                  </Col>
+                </Row>
+                <Row gutter={8}>
+                  <Col xs={24} md={8}>
+                    <ParXY prefix={`${p}_cil_dojo_f`} label={`Diámetro Ojo F [${unidad}]`} datos={datos} onChange={onChange} />
+                  </Col>
+                  <Col xs={24} md={8}>
+                    <ParXY prefix={`${p}_cil_dint_g`} label={`Diám. Int. G [${unidad}]`} datos={datos} onChange={onChange} />
+                  </Col>
+                  <Col xs={24} md={8}>
+                    <ParXY prefix={`${p}_cil_ancho_ojo`} label={`Ancho de Ojo [${unidad}]`} datos={datos} onChange={onChange} />
+                  </Col>
+                </Row>
+              </>
+            )}
+            {/* Extras para CHP: dos lecturas de pivotante */}
+            {esPivotado && (
+              <>
+                <Divider style={{ margin: "8px 0" }}>
+                  <Text style={{ fontSize: 11 }}>Pivotante - dos lecturas X/Y</Text>
+                </Divider>
+                <Row gutter={8}>
+                  <Col xs={24} md={12}>
+                    <ParXY prefix={`${p}_cil_dext_cojinete_g_1`} label={`Diám. Ext. Cojinete G - Lectura 1 [${unidad}]`} datos={datos} onChange={onChange} />
+                  </Col>
+                  <Col xs={24} md={12}>
+                    <ParXY prefix={`${p}_cil_dext_cojinete_g_2`} label={`Diám. Ext. Cojinete G - Lectura 2 [${unidad}]`} datos={datos} onChange={onChange} />
+                  </Col>
+                </Row>
+                <Row gutter={8}>
+                  <Col xs={24} md={12}>
+                    <ParXY prefix={`${p}_cil_dext_pivotante_1`} label={`Diám. Ext. Pivotante - Lectura 1 [${unidad}]`} datos={datos} onChange={onChange} />
+                  </Col>
+                  <Col xs={24} md={12}>
+                    <ParXY prefix={`${p}_cil_dext_pivotante_2`} label={`Diám. Ext. Pivotante - Lectura 2 [${unidad}]`} datos={datos} onChange={onChange} />
+                  </Col>
+                </Row>
+                <Row gutter={8}>
+                  <Col xs={24} md={8}>
+                    <Text strong style={{ fontSize: 12 }}>Longitud de Pivotante [{unidad}]</Text>
+                    <InputMedida name={`${p}_cil_long_pivotante`} datos={datos} onChange={onChange} />
+                  </Col>
+                </Row>
+              </>
+            )}
             <div style={{ marginTop: 12 }}>
               <TablaChecks
                 prefix={`${p}_cil`}
                 items={[
                   { key: "tomas", label: "Tomas" },
                   { key: "roscada", label: "Estado de sup. Roscada" },
-                  { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                  ...(esCilHidraulico ? [{ key: "bocina_stop_1", label: "Bocina STOP 1" }, { key: "bocina_stop_2", label: "Bocina STOP 2" }, { key: "estado_cancamo", label: "Estado de cancamo" }] : []),
+                  ...(esPivotado ? [{ key: "estado_trunnion", label: "Estado de trunnion" }, { key: "pasa_estanqueidad", label: "Pasa prueba de estanqueidad", tipo: "sn" as const }] : []),
+                  ...(modelo === "cil_doble_vastago" ? [{ key: "estado_soporte_sujecion", label: "Estado de soporte de sujeción" }, { key: "pasa_estanqueidad", label: "Pasa prueba de estanqueidad", tipo: "sn" as const }] : []),
+                  ...(modelo === "suspension_delantera" ? [{ key: "est_cartelas", label: "Est. De cartelas" }] : []),
+                  { key: "ndt", label: "Pasa a NDT", tipo: "sn" as const },
                 ]}
                 datos={datos}
                 onChange={onChange}
@@ -1120,6 +1580,11 @@ export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, o
 
     // Vastago (excepto acumuladores)
     if (!modelo.startsWith("acum")) {
+      // Opciones cancamo: CHPDV usa Convencional/N-A; CHVS y CHP usan Convencional/Concavo
+      const opcionesCancamoVastago = modelo === "cil_doble_vastago"
+        ? ["Convencional", "N-A"]
+        : ["Convencional", "Concavo"];
+      const muestraCancamoVastago = modelo === "cil_vastago_simple" || modelo === "cil_pivotado" || modelo === "cil_doble_vastago";
       secciones.push(
         <SeccionNum key="vas" num={4} titulo="Vastago">
           <Row gutter={16}>
@@ -1139,13 +1604,80 @@ export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, o
                 datos={datos}
                 onChange={onChange}
               />
+              <Row gutter={8} style={{ marginTop: 8 }}>
+                <Col xs={24} md={8}>
+                  <Text strong style={{ fontSize: 12 }}>Longitud de Espiga G [{unidad}]</Text>
+                  <InputMedida name={`${p}_vas_long_espiga_g`} datos={datos} onChange={onChange} />
+                </Col>
+              </Row>
+              {muestraCancamoVastago && (
+                <>
+                  <Divider style={{ margin: "8px 0" }}>
+                    <Text style={{ fontSize: 11 }}>Cáncamo y elemento de sujeción</Text>
+                  </Divider>
+                  <Row gutter={8}>
+                    <Col xs={24} md={12}>
+                      <RadioInline
+                        name={`${p}_vas_tipo_cancamo`}
+                        label="Tipo de cancamo"
+                        opciones={opcionesCancamoVastago}
+                        datos={datos}
+                        onChange={onChange}
+                      />
+                    </Col>
+                    <Col xs={24} md={12}>
+                      <RadioInline
+                        name={`${p}_vas_elem_sujecion`}
+                        label="Elemento de sujeción"
+                        opciones={["Cojinete", "Rótula", "Pin directo"]}
+                        datos={datos}
+                        onChange={onChange}
+                      />
+                    </Col>
+                  </Row>
+                </>
+              )}
+              <Row gutter={8}>
+                <Col xs={24} md={8}>
+                  <ParXY prefix={`${p}_vas_dext_ojo_h`} label={`Diám. Ext. Ojo H [${unidad}]`} datos={datos} onChange={onChange} />
+                </Col>
+                <Col xs={24} md={8}>
+                  <ParXY prefix={`${p}_vas_dint_ojo_i`} label={`Diám. Int. Ojo I [${unidad}]`} datos={datos} onChange={onChange} />
+                </Col>
+                <Col xs={24} md={8}>
+                  <ParXY prefix={`${p}_vas_dint_j`} label={`Diám. Int. J [${unidad}]`} datos={datos} onChange={onChange} />
+                </Col>
+              </Row>
+              <Row gutter={8}>
+                <Col xs={24} md={8}>
+                  <ParXY prefix={`${p}_vas_ancho_ojo`} label={`Ancho de Ojo [${unidad}]`} datos={datos} onChange={onChange} />
+                </Col>
+              </Row>
+              <Divider style={{ margin: "8px 0" }}>
+                <Text style={{ fontSize: 11 }}>Flexión y Espesor de Cromo</Text>
+              </Divider>
+              <Row gutter={8}>
+                {(["b", "c", "d"] as const).map((s) => (
+                  <Col span={4} key={`fx-${s}`}>
+                    <Text strong style={{ fontSize: 11 }}>Flexión {s.toUpperCase()}</Text>
+                    <InputMedida name={`${p}_vas_flexion_${s}`} datos={datos} onChange={onChange} />
+                  </Col>
+                ))}
+                {(["b", "c", "d"] as const).map((s) => (
+                  <Col span={4} key={`ec-${s}`}>
+                    <Text strong style={{ fontSize: 11 }}>Esp. Cromo {s.toUpperCase()}</Text>
+                    <InputMedida name={`${p}_vas_esp_cromo_${s}`} datos={datos} onChange={onChange} />
+                  </Col>
+                ))}
+              </Row>
               <div style={{ marginTop: 12 }}>
                 <TablaChecks
                   prefix={`${p}_vas`}
                   items={[
                     { key: "estado_cromo", label: "Estado del cromo" },
-                    { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
-                    { key: "sensor", label: "Sensor", tipo: "sn" },
+                    ...(muestraCancamoVastago ? [{ key: "chk_estado_cancamo", label: "Estado de cancamo" }] : []),
+                    { key: "ndt", label: "Pasa a NDT", tipo: "sn" as const },
+                    { key: "sensor", label: "Sensor", tipo: "sn" as const },
                   ]}
                   datos={datos}
                   onChange={onChange}
@@ -1161,7 +1693,8 @@ export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, o
     }
 
     // Tapa
-    if (!modelo.startsWith("acum") && modelo !== "suspension_delantera") {
+    if (!modelo.startsWith("acum")) {
+      const esDobleVastago = modelo === "cil_doble_vastago";
       secciones.push(
         <SeccionNum key="tapa" num={5} titulo="Tapa">
           <Row gutter={16}>
@@ -1171,14 +1704,32 @@ export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, o
             <Col xs={24} md={16}>
               <TablaMedidas
                 filas={[
-                  { prefix: `${p}_tapa_dext`, label: `Diametro Exterior (A) [${unidad}]`, tipo: "single" },
-                  { prefix: `${p}_tapa_dint`, label: `Diametro Interior (B) [${unidad}]`, tipo: "single" },
-                  { prefix: `${p}_tapa_dsell`, label: `Diametro Sellado (C) [${unidad}]`, tipo: "single" },
-                  { prefix: `${p}_tapa_ltot`, label: `Longitud Total (D) [${unidad}]`, tipo: "single" },
+                  { prefix: `${p}_tapa_dext`, label: `Diametro Exterior (A${esDobleVastago ? "1" : ""}) [${unidad}]`, tipo: "single" },
+                  { prefix: `${p}_tapa_dint`, label: `Diametro Interior (B${esDobleVastago ? "1" : ""}) [${unidad}]`, tipo: "single" },
+                  { prefix: `${p}_tapa_dsell`, label: `Diametro Sellado (C${esDobleVastago ? "1" : ""}) [${unidad}]`, tipo: "single" },
+                  { prefix: `${p}_tapa_ltot`, label: `Longitud Total (D${esDobleVastago ? "1" : ""}) [${unidad}]`, tipo: "single" },
                 ]}
                 datos={datos}
                 onChange={onChange}
               />
+              {/* Segundo juego para Cilindro de Doble Vastago */}
+              {esDobleVastago && (
+                <>
+                  <Divider style={{ margin: "8px 0" }}>
+                    <Text style={{ fontSize: 11 }}>Tapa - Segundo juego (A2, B2, C2, D2)</Text>
+                  </Divider>
+                  <TablaMedidas
+                    filas={[
+                      { prefix: `${p}_tapa_a2`, label: `Diametro Exterior (A2) [${unidad}]`, tipo: "single" },
+                      { prefix: `${p}_tapa_b2`, label: `Diametro Interior (B2) [${unidad}]`, tipo: "single" },
+                      { prefix: `${p}_tapa_c2`, label: `Diametro Sellado (C2) [${unidad}]`, tipo: "single" },
+                      { prefix: `${p}_tapa_d2`, label: `Longitud Total (D2) [${unidad}]`, tipo: "single" },
+                    ]}
+                    datos={datos}
+                    onChange={onChange}
+                  />
+                </>
+              )}
               <div style={{ marginTop: 12 }}>
                 <TablaChecks
                   prefix={`${p}_tapa`}

@@ -7,6 +7,8 @@ import {
 } from "antd";
 import { InboxOutlined, FileExcelOutlined, CopyOutlined, CheckCircleOutlined } from "@ant-design/icons";
 import * as XLSX from "xlsx";
+import type { ColumnsType } from "antd/es/table";
+import { useColumnasRedimensionables } from "@/lib/tables";
 
 const { Text, Paragraph } = Typography;
 const { Dragger } = Upload;
@@ -144,6 +146,47 @@ export function ImportarExcelModal({
     .map((f) => f.label);
 
   const canSubmit = matrix.length > 1 && requiredFaltantes.length === 0 && payloadRows.length > 0;
+
+  type MappingRow = { key: number; idx: number; header: string; mapping: string | undefined };
+  const mappingColumns: ColumnsType<MappingRow> = [
+    { key: "header", title: "Columna Excel", dataIndex: "header", render: (v: string, _r, i) => v || <Text type="secondary">(col {i + 1})</Text> },
+    {
+      key: "mapping", title: "Campo", dataIndex: "mapping", width: 280,
+      render: (v: string | undefined, r: { idx: number }) => (
+        <Select
+          style={{ width: "100%" }}
+          placeholder="(ignorar)"
+          allowClear
+          value={v ?? undefined}
+          onChange={(val) => {
+            const m = { ...mapping };
+            if (val) m[String(r.idx)] = val;
+            else delete m[String(r.idx)];
+            // Asegurar unicidad: si el field ya estaba mapeado a otra col, quitarlo
+            Object.entries(m).forEach(([k, vv]) => {
+              if (k !== String(r.idx) && vv === val) delete m[k];
+            });
+            setMapping(m);
+          }}
+          options={fields.map((f) => ({
+            value: f.key,
+            label: <span>{f.label}{f.required && <Text type="danger"> *</Text>}{f.type === "number" && <Tag style={{ marginLeft: 6, fontSize: 10 }}>num</Tag>}</span>,
+          }))}
+        />
+      ),
+    },
+  ];
+
+  const { columnas: mappingColumnsResizable, components: mappingTableComponents } =
+    useColumnasRedimensionables<MappingRow>(mappingColumns, "importar-excel-mapping-cols-widths-v1");
+
+  type PreviewRow = Record<string, unknown> & { _key: number };
+  const previewColumns: ColumnsType<PreviewRow> = fields
+    .filter((f) => camposMapeados.has(f.key))
+    .map((f) => ({ title: f.label, dataIndex: f.key, key: f.key, ellipsis: true }));
+
+  const { columnas: previewColumnsResizable, components: previewTableComponents } =
+    useColumnasRedimensionables<PreviewRow>(previewColumns, "importar-excel-preview-cols-widths-v1");
 
   async function submit() {
     setSubmitting(true);
@@ -287,34 +330,8 @@ export function ImportarExcelModal({
             size="small"
             pagination={false}
             dataSource={headers.map((h, idx) => ({ key: idx, idx, header: h, mapping: mapping[String(idx)] }))}
-            columns={[
-              { title: "Columna Excel", dataIndex: "header", key: "header", render: (v: string, _r, i) => v || <Text type="secondary">(col {i + 1})</Text> },
-              {
-                title: "Campo", dataIndex: "mapping", key: "mapping", width: 280,
-                render: (v: string | undefined, r: { idx: number }) => (
-                  <Select
-                    style={{ width: "100%" }}
-                    placeholder="(ignorar)"
-                    allowClear
-                    value={v ?? undefined}
-                    onChange={(val) => {
-                      const m = { ...mapping };
-                      if (val) m[String(r.idx)] = val;
-                      else delete m[String(r.idx)];
-                      // Asegurar unicidad: si el field ya estaba mapeado a otra col, quitarlo
-                      Object.entries(m).forEach(([k, vv]) => {
-                        if (k !== String(r.idx) && vv === val) delete m[k];
-                      });
-                      setMapping(m);
-                    }}
-                    options={fields.map((f) => ({
-                      value: f.key,
-                      label: <span>{f.label}{f.required && <Text type="danger"> *</Text>}{f.type === "number" && <Tag style={{ marginLeft: 6, fontSize: 10 }}>num</Tag>}</span>,
-                    }))}
-                  />
-                ),
-              },
-            ]}
+            columns={mappingColumnsResizable}
+            components={mappingTableComponents}
           />
 
           <Divider style={{ margin: "16px 0" }}>
@@ -342,9 +359,8 @@ export function ImportarExcelModal({
             pagination={{ pageSize: 5, showSizeChanger: false, placement: ["topEnd", "bottomEnd"] }}
             dataSource={payloadRows.slice(0, 50).map((r, i) => ({ ...r, _key: i }))}
             rowKey="_key"
-            columns={fields
-              .filter((f) => camposMapeados.has(f.key))
-              .map((f) => ({ title: f.label, dataIndex: f.key, key: f.key, ellipsis: true }))}
+            columns={previewColumnsResizable}
+            components={previewTableComponents}
             scroll={{ x: 600 }}
           />
         </>
