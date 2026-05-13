@@ -35,6 +35,8 @@ const tipoColor: Record<string, string> = {
   REPROGRAMACION: "orange",
   CREACION: "green",
   ELIMINACION: "red",
+  REQUERIMIENTO: "cyan",
+  TAREAS_GENERADAS: "purple",
 };
 
 export default function OTHistorialTab({ otId }: { otId: number }) {
@@ -89,7 +91,7 @@ export default function OTHistorialTab({ otId }: { otId: number }) {
     },
   ];
 
-  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
     useColumnasRedimensionables<HistorialRecord>(columns, "ot-hist-cols-widths-v1");
 
   if (loading && data.length === 0) {
@@ -118,16 +120,18 @@ export default function OTHistorialTab({ otId }: { otId: number }) {
           <Button onClick={resetAnchos}>Restablecer anchos</Button>
         </Space>
       </div>
-      <Table
-        rowKey="id"
-        size="small"
-        columns={visibleColumns(columnsResizable, ocultas)}
-        components={tableComponents}
-        dataSource={datosFiltrados}
-        pagination={{ pageSize: 20, showTotal: (t) => `${t} eventos`, placement: ["topEnd", "bottomEnd"] }}
-        loading={loading}
-        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-      />
+      <TableDragWrapper>
+              <Table
+          rowKey="id"
+          size="small"
+          columns={visibleColumns(columnsResizable, ocultas)}
+          components={tableComponents}
+          dataSource={datosFiltrados}
+          pagination={{ pageSize: 20, showTotal: (t) => `${t} eventos`, placement: ["topEnd", "bottomEnd"] }}
+          loading={loading}
+          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+        />
+      </TableDragWrapper>
     </div>
   );
 }

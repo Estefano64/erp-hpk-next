@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auditOTStatusChange, getAuditUser } from "@/lib/audit";
+import { auditOTChange, AUDIT_OT_SELECT_FIELDS, getAuditUser } from "@/lib/audit";
 import { parseDateOnly } from "@/lib/dates";
 
 type Params = { params: Promise<{ id: string }> };
@@ -71,12 +71,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     const result = await prisma.$transaction(async (tx) => {
       const before = await tx.ordenTrabajo.findUnique({
         where: { id: Number(id) },
-        select: {
-          ot_status_codigo: true,
-          recursos_status_codigo: true,
-          taller_status_codigo: true,
-          version: true,
-        },
+        select: { version: true, ...AUDIT_OT_SELECT_FIELDS },
       });
 
       if (!before) {
@@ -107,17 +102,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
         },
       });
 
-      await auditOTStatusChange(
-        tx,
-        record.id,
-        before,
-        {
-          ot_status_codigo: record.ot_status_codigo,
-          recursos_status_codigo: record.recursos_status_codigo,
-          taller_status_codigo: record.taller_status_codigo,
-        },
-        usuario,
-      );
+      await auditOTChange(tx, record.id, before as unknown as Record<string, unknown>, record as unknown as Record<string, unknown>, usuario);
 
       return { conflict: false, record } as const;
     });

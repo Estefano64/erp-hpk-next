@@ -18,6 +18,7 @@ import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { brand } from "@/lib/theme";
 import { useCachedFetch } from "@/lib/useCachedFetch";
+import { formatDateOnly, formatDateOnlyShort } from "@/lib/dates";
 import {
   numeracionColumn,
   paginacionEstandar,
@@ -67,6 +68,8 @@ interface RequerimientoRow {
     codigo_reparacion: { codigo: string; descripcion: string } | null;
   } | null;
   material: { codigo: string; descripcion: string; unidad_medida_codigo: string | null; stock_actual: string | number | null } | null;
+  observaciones?: string | null;
+  adjuntos?: { id: number; nombre_archivo: string; ruta: string; tamano: number }[];
 }
 
 interface CatalogOpt { codigo: string; nombre: string; orden?: number | null }
@@ -506,9 +509,9 @@ export default function RequerimientosPage() {
         Subtotal: r.precio_unitario != null ? Number(r.precio_unitario) * Number(r.cantidad) : "",
         "Nro OC": r.compra?.numero_po ?? "",
         Proveedor: r.proveedor?.razon_social ?? "",
-        "F. Solicitud": r.fecha_solicitud ? dayjs(r.fecha_solicitud).format("DD/MM/YYYY") : "",
-        "F. Requerida": r.fecha_requerida ? dayjs(r.fecha_requerida).format("DD/MM/YYYY") : "",
-        "F. Entrega": r.fecha_entrega_esperada ? dayjs(r.fecha_entrega_esperada).format("DD/MM/YYYY") : "",
+        "F. Solicitud": r.fecha_solicitud ? formatDateOnly(r.fecha_solicitud) : "",
+        "F. Requerida": r.fecha_requerida ? formatDateOnly(r.fecha_requerida) : "",
+        "F. Entrega": r.fecha_entrega_esperada ? formatDateOnly(r.fecha_entrega_esperada) : "",
       }));
       const ws = XLSX.utils.json_to_sheet(data);
       const wb = XLSX.utils.book_new();
@@ -684,7 +687,7 @@ export default function RequerimientosPage() {
       ),
       key: "fsol", width: 100,
       render: (_, g) => g.fecha_solicitud
-        ? <Text style={{ fontSize: 11 }}>{dayjs(g.fecha_solicitud).format("DD/MM/YY")}</Text>
+        ? <Text style={{ fontSize: 11 }}>{formatDateOnlyShort(g.fecha_solicitud)}</Text>
         : <Text type="secondary">—</Text>,
     },
     {
@@ -695,13 +698,13 @@ export default function RequerimientosPage() {
       ),
       key: "freq", width: 100,
       render: (_, g) => g.fecha_requerida
-        ? <Text style={{ fontSize: 11 }}>{dayjs(g.fecha_requerida).format("DD/MM/YY")}</Text>
+        ? <Text style={{ fontSize: 11 }}>{formatDateOnlyShort(g.fecha_requerida)}</Text>
         : <Text type="secondary">—</Text>,
     },
     {
       title: "F. Entrega", key: "fent", width: 100,
       render: (_, g) => g.fecha_entrega_esperada
-        ? <Text style={{ fontSize: 11 }}>{dayjs(g.fecha_entrega_esperada).format("DD/MM/YY")}</Text>
+        ? <Text style={{ fontSize: 11 }}>{formatDateOnlyShort(g.fecha_entrega_esperada)}</Text>
         : <Text type="secondary">—</Text>,
     },
     {
@@ -767,7 +770,7 @@ export default function RequerimientosPage() {
   ];
 
   // Hacer las columnas redimensionables (drag horizontal en el borde derecho del header).
-  const { columnas: groupColumnsResizable, components: tableComponents } =
+  const { columnas: groupColumnsResizable, components: tableComponents , TableDragWrapper } =
     useColumnasRedimensionables<GrupoReq>(groupColumns, "requerimientos-list-cols-widths-v1");
 
   // Columnas del nivel "item" (filas dentro de un grupo expandido)
@@ -811,12 +814,32 @@ export default function RequerimientosPage() {
         <Col span={24}><span style={{ color: "#888" }}>Proveedor:</span> {r.proveedor?.razon_social ?? "-"}</Col>
         <Col span={24}>
           <span style={{ color: "#888" }}>F. Solicitud:</span>{" "}
-          {r.fecha_solicitud ? dayjs(r.fecha_solicitud).format("DD/MM/YYYY") : "-"}
+          {r.fecha_solicitud ? formatDateOnly(r.fecha_solicitud) : "-"}
         </Col>
         <Col span={24}>
           <span style={{ color: "#888" }}>F. Requerida:</span>{" "}
-          {r.fecha_requerida ? dayjs(r.fecha_requerida).format("DD/MM/YYYY") : "-"}
+          {r.fecha_requerida ? formatDateOnly(r.fecha_requerida) : "-"}
         </Col>
+        {r.observaciones && (
+          <Col span={24}>
+            <span style={{ color: "#888" }}>Observaciones:</span>{" "}
+            <span style={{ fontStyle: "italic" }}>{r.observaciones}</span>
+          </Col>
+        )}
+        {r.adjuntos && r.adjuntos.length > 0 && (
+          <Col span={24}>
+            <div style={{ color: "#888", marginBottom: 4 }}>Adjuntos ({r.adjuntos.length}):</div>
+            <Space size={4} wrap>
+              {r.adjuntos.map((a) => (
+                <Tag key={a.id} style={{ fontSize: 10, margin: 0 }}>
+                  <a href={a.ruta} target="_blank" rel="noopener noreferrer">
+                    📎 {a.nombre_archivo} ({(a.tamano / 1024).toFixed(1)} KB)
+                  </a>
+                </Tag>
+              ))}
+            </Space>
+          </Col>
+        )}
       </Row>
       <Divider style={{ margin: "8px 0" }} />
       <Space size={4} wrap>
@@ -859,6 +882,26 @@ export default function RequerimientosPage() {
               {r.material_codigo && <Tag style={{ fontSize: 10, marginRight: 4 }}>{r.material_codigo}</Tag>}
               {r.descripcion}
             </div>
+            {r.observaciones && (
+              <div style={{ fontSize: 10, color: "#888", fontStyle: "italic", marginTop: 2 }}>
+                {r.observaciones}
+              </div>
+            )}
+            {r.adjuntos && r.adjuntos.length > 0 && (
+              <div style={{ marginTop: 4 }}>
+                <Space size={4} wrap>
+                  {r.adjuntos.map((a) => (
+                    <Tooltip key={a.id} title={`${a.nombre_archivo} (${(a.tamano / 1024).toFixed(1)} KB)`}>
+                      <Tag style={{ fontSize: 10, margin: 0 }}>
+                        <a href={a.ruta} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+                          📎 {a.nombre_archivo.length > 18 ? `${a.nombre_archivo.slice(0, 15)}...` : a.nombre_archivo}
+                        </a>
+                      </Tag>
+                    </Tooltip>
+                  ))}
+                </Space>
+              </div>
+            )}
           </div>
         </Popover>
       ),
@@ -905,13 +948,13 @@ export default function RequerimientosPage() {
     {
       title: "F. Requerida", key: "freq", width: 100,
       render: (_, r) => r.fecha_requerida
-        ? <Text style={{ fontSize: 11 }}>{dayjs(r.fecha_requerida).format("DD/MM/YY")}</Text>
+        ? <Text style={{ fontSize: 11 }}>{formatDateOnlyShort(r.fecha_requerida)}</Text>
         : <Text type="secondary">—</Text>,
     },
     {
       title: "F. Entrega", key: "fent", width: 100,
       render: (_, r) => r.fecha_entrega_esperada
-        ? <Text style={{ fontSize: 11 }}>{dayjs(r.fecha_entrega_esperada).format("DD/MM/YY")}</Text>
+        ? <Text style={{ fontSize: 11 }}>{formatDateOnlyShort(r.fecha_entrega_esperada)}</Text>
         : <Text type="secondary">—</Text>,
     },
     {
@@ -1215,27 +1258,29 @@ export default function RequerimientosPage() {
       {rows.length === 0 && !loading ? (
         <Empty description="No hay requerimientos con esos filtros." />
       ) : (
-        <Table<GrupoReq>
-          rowKey="key"
-          columns={visibleColumns(groupColumnsResizable, ocultas)}
-          components={tableComponents}
-          dataSource={grupos.filter((g) =>
-            dentroDeRango(g, "fecha_solicitud", rangoSol) &&
-            dentroDeRango(g, "fecha_requerida", rangoReq)
-          )}
-          loading={loading}
-          size="small"
-          pagination={paginacionEstandar({
-            current: page,
-            pageSize,
-            total,
-            onChange: (p, s) => { setPage(p); setPageSize(s); },
-            label: `items (${grupos.length} requerimiento(s))`,
-            placement: ["topEnd", "bottomEnd"],
-          })}
-          scroll={{ x: 1500 }}
-          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-        />
+        <TableDragWrapper>
+                  <Table<GrupoReq>
+            rowKey="key"
+            columns={visibleColumns(groupColumnsResizable, ocultas)}
+            components={tableComponents}
+            dataSource={grupos.filter((g) =>
+              dentroDeRango(g, "fecha_solicitud", rangoSol) &&
+              dentroDeRango(g, "fecha_requerida", rangoReq)
+            )}
+            loading={loading}
+            size="small"
+            pagination={paginacionEstandar({
+              current: page,
+              pageSize,
+              total,
+              onChange: (p, s) => { setPage(p); setPageSize(s); },
+              label: `items (${grupos.length} requerimiento(s))`,
+              placement: ["topEnd", "bottomEnd"],
+            })}
+            scroll={{ x: 1500 }}
+            sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+          />
+        </TableDragWrapper>
       )}
 
       {/* Modal Editar (admin) */}

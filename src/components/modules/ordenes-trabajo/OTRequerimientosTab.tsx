@@ -3,14 +3,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Table, Button, Tag, Space, Modal, Form, Input, InputNumber, Select, DatePicker,
-  message, Popconfirm, Tooltip, Empty, Alert, Row, Col, Typography, Radio,
+  message, Popconfirm, Tooltip, Empty, Alert, Row, Col, Typography, Radio, Card, Popover,
 } from "antd";
 import {
-  PlusOutlined, ReloadOutlined,
+  PlusOutlined, ReloadOutlined, CloseOutlined, SaveOutlined,
   EditOutlined, DeleteOutlined, FileSyncOutlined, SendOutlined,
+  PaperClipOutlined, CalendarOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
+import { formatDateOnly } from "@/lib/dates";
 import { brand } from "@/lib/theme";
 import { useCachedFetch } from "@/lib/useCachedFetch";
 import {
@@ -50,12 +52,15 @@ interface RequerimientoRow {
   status_cotizacion: { codigo: string; nombre: string } | null;
   status_oc: { codigo: string; nombre: string } | null;
   proveedor: { id: number; razon_social: string } | null;
-  compra: { id: number; numero_po: string } | null;
+  compra: { id: number; numero_po: string; fecha_entrega_esperada: string | null } | null;
+  adjuntos?: { id: number; nombre_archivo: string; ruta: string; tamano: number }[];
   po_id: number | null;
   nro_oc: string | null;
   es_adicional: boolean | null;
   observaciones: string | null;
   usuario_solicita: string;
+  usuario_envia: string | null;
+  fecha_envio_aprobacion: string | null;
   usuario_aprueba: string | null;
   fecha_aprobacion: string | null;
 }
@@ -68,11 +73,14 @@ interface MaterialOpt {
   unidad_medida_codigo: string | null;
   precio: string | null;
   moneda_codigo: string | null;
+  np: string | null;
 }
 
 interface Props {
   otId: number;
   codRepCodigo: string | null;
+  /** Fecha de recepción de la OT (para validar que fecha_requerida no sea anterior). */
+  otFechaRecepcion?: string | null;
   onUpdated?: () => void;
 }
 
@@ -101,21 +109,227 @@ const OC_COLOR: Record<string, string> = {
   DEVOLUCION: "warning",
 };
 
-export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: Props) {
+export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepcion, onUpdated }: Props) {
   const [rows, setRows] = useState<RequerimientoRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [rol, setRol] = useState<string | null>(null);
   const isAdmin = rol === "admin";
   const [messageApi, contextHolder] = message.useMessage();
   const [modalApi, modalCtx] = Modal.useModal();
-  const { ocultas, setOcultas } = useColumnasOcultas("ot-requerimientos-cols-v1");
+  const { ocultas, setOcultas } = useColumnasOcultas("ot-requerimientos-cols-v2");
   const { rango: rangoSol, setRango: setRangoSol } = useRangoFechas();
   const { rango: rangoReq, setRango: setRangoReq } = useRangoFechas();
 
-  // Modal crear/editar
+  // Modal solo para editar 1 item
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  type Adjunto = { id: number; nombre_archivo: string; ruta: string; tamano: number; fecha_subida: string };
+  const [editAdjuntos, setEditAdjuntos] = useState<Adjunto[]>([]);
+  const [uploadingFile, setUploadingFile] = useState(false);
+
+  async function fetchAdjuntos(itemId: number) {
+    try {
+      const res = await fetch(`/api/requerimientos/${itemId}/adjuntos`);
+      if (res.ok) {
+        const j = await res.json();
+        setEditAdjuntos(j.data ?? []);
+      }
+    } catch { /* noop */ }
+  }
+  async function subirAdjuntoExistente(file: File) {
+    if (!editingId) return;
+    setUploadingFile(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`/api/requerimientos/${editingId}/adjuntos`, { method: "POST", body: fd });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        messageApi.error(err?.error ?? "Error al subir archivo.");
+        return;
+      }
+      messageApi.success("Archivo adjuntado.");
+      await fetchAdjuntos(editingId);
+    } finally {
+      setUploadingFile(false);
+    }
+  }
+  async function eliminarAdjunto(adjuntoId: number) {
+    if (!editingId) return;
+    const res = await fetch(`/api/requerimientos/${editingId}/adjuntos`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ adjunto_id: adjuntoId }),
+    });
+    if (!res.ok) {
+      messageApi.error("Error al eliminar adjunto.");
+      return;
+    }
+    setEditAdjuntos((prev) => prev.filter((a) => a.id !== adjuntoId));
+  }
+
+  // Draft inline: crear nuevo requerimiento con múltiples items
+  type DraftItem = {
+    id: string; // local UUID
+    tipo_codigo: "MAC" | "CAD" | "SER";
+    material_codigo?: string;
+    servicio_codigo?: string;
+    descripcion: string;
+    cantidad: number;
+    unidad_medida?: string;
+    fabricante_codigo?: string;
+    fecha_requerida?: dayjs.Dayjs | null;
+    observaciones?: string;
+    archivos?: File[]; // archivos pendientes de subir
+  };
+  const [draftOpen, setDraftOpen] = useState(false);
+  const [draftItems, setDraftItems] = useState<DraftItem[]>([]);
+  const [savingDraft, setSavingDraft] = useState(false);
+  // Si está seteado, los items del draft se agregan a este nro_req (en vez de crear uno nuevo).
+  const [draftAppendToNroReq, setDraftAppendToNroReq] = useState<string | null>(null);
+
+  function abrirDraft(appendToNroReq: string | null = null) {
+    setDraftAppendToNroReq(appendToNroReq);
+    setDraftItems([{
+      id: crypto.randomUUID(),
+      tipo_codigo: "MAC",
+      descripcion: "",
+      cantidad: 1,
+    }]);
+    setDraftOpen(true);
+  }
+  function cerrarDraft() {
+    setDraftOpen(false);
+    setDraftItems([]);
+    setDraftAppendToNroReq(null);
+  }
+  function agregarItemDraft() {
+    setDraftItems((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        tipo_codigo: "MAC",
+        descripcion: "",
+        cantidad: 1,
+      },
+    ]);
+  }
+  function quitarItemDraft(id: string) {
+    setDraftItems((prev) => prev.filter((it) => it.id !== id));
+  }
+  function actualizarDraftItem(id: string, patch: Partial<DraftItem>) {
+    setDraftItems((prev) => prev.map((it) => {
+      if (it.id !== id) return it;
+      let next = { ...it, ...patch };
+      // Si cambió el tipo: limpiar TODOS los datos dependientes del tipo
+      // (material/servicio/descripción/fabricante/cantidad/UM) para evitar arrastrar datos del tipo anterior.
+      if (patch.tipo_codigo && patch.tipo_codigo !== it.tipo_codigo) {
+        next = {
+          ...next,
+          material_codigo: undefined,
+          servicio_codigo: undefined,
+          descripcion: "",
+          fabricante_codigo: undefined,
+          cantidad: 1,
+          unidad_medida: undefined,
+        };
+      }
+      // Si cambió material_codigo: auto-llenar descripcion/fabricante/unidad
+      if (patch.material_codigo && patch.material_codigo !== it.material_codigo) {
+        const m = materiales.find((x) => x.codigo === patch.material_codigo);
+        if (m) {
+          next.descripcion = m.descripcion;
+          next.fabricante_codigo = m.fabricante_codigo ?? undefined;
+          next.unidad_medida = m.unidad_medida_codigo ?? next.unidad_medida ?? "UNIDAD";
+        }
+      }
+      // Si cambió servicio_codigo: auto-llenar descripcion
+      if (patch.servicio_codigo && patch.servicio_codigo !== it.servicio_codigo) {
+        const s = servicios.find((x) => x.codigo === patch.servicio_codigo);
+        if (s) {
+          next.descripcion = s.nombre;
+        }
+      }
+      return next;
+    }));
+  }
+  async function guardarDraft() {
+    // Validar
+    const errors: string[] = [];
+    const fechaRecepcion = otFechaRecepcion ? dayjs(String(otFechaRecepcion).slice(0, 10)) : null;
+    for (const [idx, it] of draftItems.entries()) {
+      if (!it.descripcion?.trim()) errors.push(`Item ${idx + 1}: descripción requerida`);
+      if (!it.cantidad || it.cantidad <= 0) errors.push(`Item ${idx + 1}: cantidad debe ser > 0`);
+      if (it.tipo_codigo === "MAC" && !it.material_codigo) errors.push(`Item ${idx + 1}: tipo MAC requiere material`);
+      if (fechaRecepcion && it.fecha_requerida && it.fecha_requerida.isBefore(fechaRecepcion, "day")) {
+        errors.push(`Item ${idx + 1}: F. requerida no puede ser anterior a la recepción de la OT.`);
+      }
+    }
+    if (errors.length > 0) {
+      messageApi.error(errors[0]);
+      return;
+    }
+    setSavingDraft(true);
+    try {
+      const payload = {
+        items: draftItems.map((it) => ({
+          tipo_codigo: it.tipo_codigo,
+          material_codigo: it.material_codigo ?? null,
+          cantidad: it.cantidad,
+          descripcion: it.descripcion,
+          unidad_medida: it.unidad_medida ?? "UNIDAD",
+          fabricante_codigo: it.fabricante_codigo ?? null,
+          fecha_requerida: it.fecha_requerida ? it.fecha_requerida.format("YYYY-MM-DD") : null,
+          observaciones: it.observaciones ?? null,
+        })),
+        nro_req: draftAppendToNroReq ?? undefined,
+      };
+      const res = await fetch(`/api/ordenes-trabajo/${otId}/requerimientos/bulk`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        messageApi.error(err?.error ?? "Error al crear requerimiento.");
+        return;
+      }
+      const j = await res.json();
+      // Subir archivos de cada item (si los hay). j.items viene en el mismo orden de payload.items
+      const itemsCreados: { id: number; item_req: number }[] = j.items ?? [];
+      let archivosSubidos = 0;
+      let archivosFallidos = 0;
+      for (let i = 0; i < draftItems.length; i++) {
+        const archivos = draftItems[i].archivos ?? [];
+        if (archivos.length === 0) continue;
+        const creado = itemsCreados[i];
+        if (!creado) continue;
+        for (const file of archivos) {
+          const fd = new FormData();
+          fd.append("file", file);
+          try {
+            const r = await fetch(`/api/requerimientos/${creado.id}/adjuntos`, { method: "POST", body: fd });
+            if (r.ok) archivosSubidos++;
+            else archivosFallidos++;
+          } catch {
+            archivosFallidos++;
+          }
+        }
+      }
+      messageApi.success(
+        (draftAppendToNroReq
+          ? `Agregados ${j.creados} item(s) a ${j.nro_req}.`
+          : `Requerimiento ${j.nro_req} creado con ${j.creados} item(s).`) +
+        (archivosSubidos > 0 ? ` ${archivosSubidos} archivo(s) subido(s).` : "") +
+        (archivosFallidos > 0 ? ` ${archivosFallidos} archivo(s) fallaron.` : "")
+      );
+      cerrarDraft();
+      fetchData();
+      onUpdated?.();
+    } finally {
+      setSavingDraft(false);
+    }
+  }
   const [form] = Form.useForm<{
     tipo_codigo: "MAC" | "CAD" | "SER";
     material_codigo?: string;
@@ -125,6 +339,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
     fabricante_codigo?: string;
     fecha_requerida?: dayjs.Dayjs | null;
     observaciones?: string;
+    nro_req?: string | null;
   }>();
   const tipoSeleccionado = Form.useWatch("tipo_codigo", form);
 
@@ -136,6 +351,8 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
   const fabricantes = fabsRes?.data ?? [];
   const sersRes = useCachedFetch<Wrapped<{ codigo: string; nombre: string; descripcion: string | null }>>("/api/catalogos?tabla=servicioReparacion");
   const servicios = sersRes?.data ?? [];
+  const umsRes = useCachedFetch<Wrapped<{ codigo: string; nombre: string; abreviatura?: string }>>("/api/catalogos?tabla=unidadMedida");
+  const unidades = umsRes?.data ?? [];
 
   // Rol del usuario (para acciones admin)
   useEffect(() => {
@@ -232,6 +449,8 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
   }
   function abrirEditar(r: RequerimientoRow) {
     setEditingId(r.id);
+    setEditAdjuntos([]);
+    fetchAdjuntos(r.id);
     form.setFieldsValue({
       tipo_codigo: r.tipo_codigo as "MAC" | "CAD" | "SER",
       material_codigo: r.material_codigo ?? undefined,
@@ -264,7 +483,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
       observaciones: s.descripcion ?? form.getFieldValue("observaciones") ?? undefined,
     });
   }
-  async function onSubmit() {
+  async function onSubmit(keepOpen = false) {
     const values = await form.validateFields().catch(() => null);
     if (!values) return;
     setSaving(true);
@@ -286,37 +505,81 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
         messageApi.error(err?.error ?? "Error al guardar.");
         return;
       }
-      messageApi.success(editingId ? "Requerimiento actualizado." : "Requerimiento creado.");
-      setModalOpen(false);
+      const j = await res.json().catch(() => null);
+      messageApi.success(editingId ? "Requerimiento actualizado." : "Item creado.");
       fetchData();
       onUpdated?.();
+      if (keepOpen && !editingId) {
+        // Mantener nro_req del item recién creado para agregar más al mismo requerimiento
+        const nroReq = j?.data?.nro_req ?? values.nro_req;
+        form.resetFields();
+        form.setFieldsValue({ tipo_codigo: "MAC", cantidad: 1, nro_req: nroReq });
+      } else {
+        setModalOpen(false);
+      }
     } finally {
       setSaving(false);
     }
   }
 
-  // ── Enviar a aprobación (cualquier usuario) ──
-  async function enviarAprobacion(r: RequerimientoRow) {
-    const res = await fetch(`/api/requerimientos/${r.id}/enviar-a-aprobacion`, { method: "POST" });
-    if (!res.ok) {
-      const err = await res.json().catch(() => null);
-      messageApi.error(err?.error ?? "Error al enviar.");
-      return;
-    }
-    messageApi.success(`${r.nro_req ?? "Item"} enviado a aprobación.`);
-    fetchData();
-    onUpdated?.();
-  }
+  // ── Enviar a aprobación ──
+  // En la UI siempre enviamos el requerimiento completo (todos los items de un nro_req).
   async function enviarTodosBorrador() {
     const borradores = rows.filter((r) => r.status_requerimiento_codigo === "BORRADOR");
     if (borradores.length === 0) return;
+    const gruposUnicos = [...new Set(borradores.map((r) => r.nro_req).filter((n): n is string => !!n))];
     let ok = 0, errs = 0;
-    for (const r of borradores) {
-      const res = await fetch(`/api/requerimientos/${r.id}/enviar-a-aprobacion`, { method: "POST" });
+    for (const nro of gruposUnicos) {
+      const res = await fetch(
+        `/api/ordenes-trabajo/${otId}/requerimientos/${encodeURIComponent(nro)}/enviar`,
+        { method: "POST" },
+      );
       if (res.ok) ok++; else errs++;
     }
     if (ok > 0) messageApi.success(`${ok} requerimiento(s) enviados a aprobación.`);
     if (errs > 0) messageApi.warning(`${errs} con error.`);
+    fetchData();
+    onUpdated?.();
+  }
+  async function setFechaRequeridaGrupo(nroReq: string, fecha: dayjs.Dayjs | null) {
+    const res = await fetch(
+      `/api/ordenes-trabajo/${otId}/requerimientos/${encodeURIComponent(nroReq)}/fecha-requerida`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fecha_requerida: fecha ? fecha.format("YYYY-MM-DD") : null }),
+      },
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      messageApi.error(err?.error ?? "Error al actualizar fecha requerida.");
+      return;
+    }
+    const j = await res.json().catch(() => null);
+    messageApi.success(
+      fecha
+        ? `Fecha requerida actualizada en ${j?.data?.actualizados ?? 0} item(s).`
+        : `Fecha requerida limpiada en ${j?.data?.actualizados ?? 0} item(s).`,
+    );
+    fetchData();
+    onUpdated?.();
+  }
+  async function enviarGrupo(nroReq: string) {
+    const res = await fetch(
+      `/api/ordenes-trabajo/${otId}/requerimientos/${encodeURIComponent(nroReq)}/enviar`,
+      { method: "POST" },
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      messageApi.error(err?.error ?? "Error al enviar requerimiento.");
+      return;
+    }
+    const j = await res.json().catch(() => null);
+    const enviados = j?.data?.enviados ?? 0;
+    messageApi.success(
+      `${nroReq} enviado a aprobación (${enviados} item${enviados !== 1 ? "s" : ""}).` +
+      (j?.data?.promovido ? " OT: Recursos solicitados." : ""),
+    );
     fetchData();
     onUpdated?.();
   }
@@ -389,41 +652,74 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
       render: (v: string) => <Tag color={TIPO_COLOR[v] ?? "default"} style={{ margin: 0 }}>{v}</Tag>,
     },
     {
-      title: "Material / Descripción", key: "desc", ellipsis: true,
+      title: "Cód. Material", key: "material_codigo", width: 120,
       ...filtroPorColumna(rows, "material_codigo"),
+      render: (_, r) => r.material_codigo
+        ? <Tag style={{ fontSize: 10, margin: 0 }}>{r.material_codigo}</Tag>
+        : <Text type="secondary" style={{ fontSize: 11 }}>—</Text>,
+    },
+    {
+      title: "Descripción", key: "desc", width: 280, ellipsis: true,
+      ...filtroPorColumna(rows, "descripcion"),
       render: (_, r) => (
         <div style={{ lineHeight: 1.3 }}>
-          <div style={{ fontSize: 12 }}>
-            {r.material_codigo && <Tag style={{ fontSize: 10 }}>{r.material_codigo}</Tag>}
-            {r.descripcion}
-          </div>
+          <div style={{ fontSize: 12 }}>{r.descripcion}</div>
           {r.fabricante_codigo && (
-            <Text type="secondary" style={{ fontSize: 10 }}>
-              {r.fabricante_codigo}
-            </Text>
+            <Text type="secondary" style={{ fontSize: 10 }}>{r.fabricante_codigo}</Text>
           )}
         </div>
       ),
     },
     {
-      title: "Qty", key: "qty", width: 80, align: "right",
+      title: "Cant.", key: "qty", width: 80, align: "right",
       sorter: (a, b) => Number(a.cantidad) - Number(b.cantidad),
       filters: [...new Set(rows.map((r) => Number(r.cantidad)))]
         .sort((a, b) => a - b).map((v) => ({ text: String(v), value: String(v) })),
       filterSearch: true,
       onFilter: (value, r) => String(Number(r.cantidad)) === value,
-      render: (_, r) => `${Number(r.cantidad).toLocaleString()} ${r.unidad_medida ?? ""}`,
+      render: (_, r) => Number(r.cantidad).toLocaleString(),
     },
     {
-      title: "Precio", key: "precio", width: 110, align: "right",
-      sorter: (a, b) => Number(a.precio_unitario ?? 0) - Number(b.precio_unitario ?? 0),
-      filters: [...new Set(rows.map((r) => r.precio_unitario).filter(Boolean) as string[])]
-        .sort().map((v) => ({ text: Number(v).toFixed(2), value: v })),
-      filterSearch: true,
-      onFilter: (value, r) => String(r.precio_unitario ?? "") === value,
-      render: (_, r) => r.precio_unitario != null
-        ? `${Number(r.precio_unitario).toFixed(2)} ${r.moneda ?? ""}`
+      title: "U.M.", key: "unidad_medida", width: 90,
+      ...filtroPorColumna(rows, "unidad_medida"),
+      render: (_, r) => r.unidad_medida
+        ? <Text style={{ fontSize: 12 }}>{r.unidad_medida}</Text>
         : <Text type="secondary">—</Text>,
+    },
+    {
+      title: "F. Requerida", key: "fecha_requerida", width: 120,
+      sorter: (a, b) => (a.fecha_requerida ?? "").localeCompare(b.fecha_requerida ?? ""),
+      render: (_, r) => r.fecha_requerida
+        ? <Text style={{ fontSize: 12 }}>{formatDateOnly(r.fecha_requerida)}</Text>
+        : <Text type="secondary">—</Text>,
+    },
+    {
+      title: "Observaciones / Adjuntos", key: "observaciones", width: 240,
+      render: (_, r) => (
+        <div style={{ lineHeight: 1.3 }}>
+          {r.observaciones && (
+            <div style={{ fontSize: 12, marginBottom: r.adjuntos?.length ? 4 : 0 }}>
+              {r.observaciones}
+            </div>
+          )}
+          {r.adjuntos && r.adjuntos.length > 0 && (
+            <Space size={4} wrap>
+              {r.adjuntos.map((a) => (
+                <Tooltip key={a.id} title={`${a.nombre_archivo} (${(a.tamano / 1024).toFixed(1)} KB)`}>
+                  <Tag style={{ fontSize: 10, margin: 0, cursor: "pointer" }}>
+                    <a href={a.ruta} target="_blank" rel="noopener noreferrer" style={{ color: "inherit" }}>
+                      <PaperClipOutlined /> {a.nombre_archivo.length > 18 ? a.nombre_archivo.slice(0, 15) + "…" : a.nombre_archivo}
+                    </a>
+                  </Tag>
+                </Tooltip>
+              ))}
+            </Space>
+          )}
+          {!r.observaciones && (!r.adjuntos || r.adjuntos.length === 0) && (
+            <Text type="secondary">—</Text>
+          )}
+        </div>
+      ),
     },
     {
       title: "REQ", key: "req", width: 110, align: "center",
@@ -436,6 +732,24 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
       ) : "—",
     },
     {
+      title: "F. Enviado", key: "fecha_envio_aprobacion", width: 110,
+      sorter: (a, b) => (a.fecha_envio_aprobacion ?? "").localeCompare(b.fecha_envio_aprobacion ?? ""),
+      render: (_, r) => r.fecha_envio_aprobacion ? (
+        <Tooltip title={r.usuario_envia ? `Enviado por ${r.usuario_envia}` : undefined}>
+          <Text style={{ fontSize: 11 }}>{formatDateOnly(r.fecha_envio_aprobacion)}</Text>
+        </Tooltip>
+      ) : <Text type="secondary">—</Text>,
+    },
+    {
+      title: "F. Aprobado", key: "fecha_aprobacion", width: 110,
+      sorter: (a, b) => (a.fecha_aprobacion ?? "").localeCompare(b.fecha_aprobacion ?? ""),
+      render: (_, r) => r.fecha_aprobacion ? (
+        <Tooltip title={r.usuario_aprueba ? `Aprobado por ${r.usuario_aprueba}` : undefined}>
+          <Text style={{ fontSize: 11 }}>{formatDateOnly(r.fecha_aprobacion)}</Text>
+        </Tooltip>
+      ) : <Text type="secondary">—</Text>,
+    },
+    {
       title: "COT", key: "cot", width: 110, align: "center",
       filters: cotStatusValores, filterSearch: true,
       onFilter: (value, r) => r.status_cotizacion?.nombre === value,
@@ -446,48 +760,38 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
       ) : "—",
     },
     {
-      title: "OC", key: "oc", width: 130, align: "center",
+      title: "OC", key: "oc", width: 150, align: "center",
       filters: ocStatusValores, filterSearch: true,
       onFilter: (value, r) => r.status_oc?.nombre === value,
       render: (_, r) => (
-        <Space orientation="vertical" size={2} style={{ lineHeight: 1 }}>
+        <Space orientation="vertical" size={2} style={{ lineHeight: 1.2 }}>
           {r.status_oc ? (
             <Tag color={OC_COLOR[r.status_oc.codigo] ?? "default"} style={{ margin: 0, fontSize: 10 }}>
               {r.status_oc.nombre}
             </Tag>
-          ) : "—"}
+          ) : <Text type="secondary">—</Text>}
           {r.compra?.numero_po && (
             <Text style={{ fontSize: 10 }} code>{r.compra.numero_po}</Text>
+          )}
+          {r.compra?.fecha_entrega_esperada && (
+            <Text type="secondary" style={{ fontSize: 10 }}>
+              📦 Llega: {formatDateOnly(r.compra.fecha_entrega_esperada)}
+            </Text>
           )}
         </Space>
       ),
     },
     {
-      title: "", key: "actions", width: 180, fixed: "right",
+      title: "", key: "actions", width: 130, fixed: "right",
       render: (_, r) => {
         const sr = r.status_requerimiento_codigo;
-        // En el tab OT solo permitimos editar/eliminar/enviar mientras está en BORRADOR.
-        // Los demás estados se gestionan desde el módulo /requerimientos por admin.
+        // En el tab OT solo permitimos editar/eliminar mientras está en BORRADOR.
+        // El envío a aprobación es a nivel de requerimiento completo (botón en la cabecera del card).
         const isBorrador = sr === "BORRADOR";
-        const canSend = isBorrador;
         const canEdit = isBorrador;
         const canDelete = isBorrador;
-        // Aprobar/desaprobar/anular solo desde el módulo global (cuando ya fueron enviados).
-        // Acá no los mostramos para evitar confusión.
         return (
           <Space size={0}>
-            {canSend && (
-              <Tooltip title="Enviar a aprobación">
-                <Popconfirm
-                  title="Enviar a aprobación"
-                  description="Una vez enviado, no se puede editar más desde acá. Solo un admin puede modificarlo desde el módulo Requerimientos."
-                  onConfirm={() => enviarAprobacion(r)}
-                  okText="Enviar" cancelText="Cancelar"
-                >
-                  <Button type="text" size="small" icon={<SendOutlined style={{ color: brand.cyan }} />} />
-                </Popconfirm>
-              </Tooltip>
-            )}
             {canEdit && (
               <Tooltip title="Editar">
                 <Button type="text" size="small" icon={<EditOutlined />} onClick={() => abrirEditar(r)} />
@@ -511,7 +815,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
     },
   ];
 
-  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
     useColumnasRedimensionables<RequerimientoRow>(columns, "ot-req-cols-widths-v1");
 
   return (
@@ -559,8 +863,8 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
                 </Button>
               </Tooltip>
             )}
-            <Button type="primary" icon={<PlusOutlined />} onClick={abrirCrear}>
-              Agregar adicional
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => abrirDraft()} disabled={draftOpen}>
+              Nuevo Requerimiento
             </Button>
           </Space>
         </Col>
@@ -570,8 +874,236 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
         <Alert
           type="info" showIcon style={{ marginBottom: 12 }}
           title="Sin cod_rep asignado"
-          description="Esta OT no tiene código de reparación, por lo que no hay template para aplicar. Agregá los items manualmente con el botón 'Agregar adicional'."
+          description="Esta OT no tiene código de reparación, por lo que no hay template para aplicar. Agregá los items manualmente con 'Nuevo Requerimiento'."
         />
+      )}
+
+      {/* ── Draft inline: nuevo requerimiento con múltiples items ── */}
+      {draftOpen && (
+        <Card
+          size="small"
+          style={{ marginBottom: 16, borderColor: brand.cyan, background: "#F0FAFB" }}
+          styles={{ body: { padding: 16 } }}
+          title={
+            <Space>
+              <span style={{ fontWeight: 600 }}>
+                {draftAppendToNroReq ? `Agregar items a ${draftAppendToNroReq}` : "Nuevo Requerimiento"}
+              </span>
+              <Tag color="orange">BORRADOR</Tag>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                ({draftItems.length} item{draftItems.length !== 1 ? "s" : ""})
+              </Text>
+            </Space>
+          }
+          extra={
+            <Button size="small" type="text" icon={<CloseOutlined />} onClick={cerrarDraft} aria-label="Cerrar" />
+          }
+        >
+          <Table
+            dataSource={draftItems}
+            rowKey="id"
+            pagination={false}
+            size="small"
+            scroll={{ x: 1200 }}
+            columns={[
+              {
+                title: "Ítem", key: "n", width: 50, align: "center",
+                render: (_: unknown, _r: DraftItem, idx: number) => idx + 1,
+              },
+              {
+                title: "Tipo", key: "tipo", width: 80,
+                render: (_: unknown, r: DraftItem) => (
+                  <Select
+                    size="small" style={{ width: "100%" }}
+                    value={r.tipo_codigo}
+                    onChange={(v) => actualizarDraftItem(r.id, { tipo_codigo: v as "MAC" | "CAD" | "SER", material_codigo: undefined })}
+                    options={[
+                      { value: "MAC", label: "MAC" },
+                      { value: "CAD", label: "CAD" },
+                      { value: "SER", label: "SER" },
+                    ]}
+                  />
+                ),
+              },
+              {
+                title: "Material / Servicio", key: "mat", width: 240,
+                render: (_: unknown, r: DraftItem) => {
+                  if (r.tipo_codigo === "MAC") {
+                    return (
+                      <Select
+                        size="small" style={{ width: "100%" }}
+                        placeholder="Buscar material…"
+                        showSearch optionFilterProp="label" allowClear
+                        value={r.material_codigo}
+                        onChange={(v) => actualizarDraftItem(r.id, { material_codigo: v })}
+                        options={materiales.map((m) => ({
+                          value: m.codigo,
+                          label: `${m.codigo} — ${m.descripcion}${m.np ? ` · NP ${m.np}` : ""}`,
+                        }))}
+                      />
+                    );
+                  }
+                  if (r.tipo_codigo === "SER") {
+                    return (
+                      <Select
+                        size="small" style={{ width: "100%" }}
+                        placeholder="Buscar servicio…"
+                        showSearch optionFilterProp="label" allowClear
+                        value={r.servicio_codigo}
+                        onChange={(v) => actualizarDraftItem(r.id, { servicio_codigo: v })}
+                        options={servicios.map((s) => ({
+                          value: s.codigo,
+                          label: `${s.codigo} — ${s.nombre}`,
+                        }))}
+                      />
+                    );
+                  }
+                  return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
+                },
+              },
+              {
+                title: "Descripción *", key: "desc", width: 250,
+                render: (_: unknown, r: DraftItem) => (
+                  <Input
+                    size="small"
+                    placeholder="Descripción"
+                    value={r.descripcion}
+                    onChange={(e) => actualizarDraftItem(r.id, { descripcion: e.target.value })}
+                  />
+                ),
+              },
+              {
+                title: "Marca", key: "marca", width: 140,
+                render: (_: unknown, r: DraftItem) => (
+                  <Select
+                    size="small" style={{ width: "100%" }}
+                    placeholder="Marca" allowClear showSearch optionFilterProp="label"
+                    value={r.fabricante_codigo}
+                    onChange={(v) => actualizarDraftItem(r.id, { fabricante_codigo: v })}
+                    options={fabricantes.map((f) => ({ value: f.codigo, label: f.nombre }))}
+                  />
+                ),
+              },
+              {
+                title: "Cant. *", key: "cant", width: 80, align: "right",
+                render: (_: unknown, r: DraftItem) => (
+                  <InputNumber
+                    size="small" style={{ width: "100%" }}
+                    min={0.01} step={1}
+                    value={r.cantidad}
+                    onChange={(v) => actualizarDraftItem(r.id, { cantidad: Number(v ?? 0) })}
+                  />
+                ),
+              },
+              {
+                title: "U.M.", key: "um", width: 110,
+                render: (_: unknown, r: DraftItem) => (
+                  <Select
+                    size="small" style={{ width: "100%" }}
+                    placeholder="U.M."
+                    showSearch optionFilterProp="label" allowClear
+                    value={r.unidad_medida}
+                    onChange={(v) => actualizarDraftItem(r.id, { unidad_medida: v })}
+                    options={unidades.map((u) => ({
+                      value: u.codigo,
+                      label: `${u.nombre}${u.abreviatura ? ` (${u.abreviatura})` : ""}`,
+                    }))}
+                  />
+                ),
+              },
+              {
+                title: "F. requerida", key: "freq", width: 130,
+                render: (_: unknown, r: DraftItem) => (
+                  <DatePicker
+                    size="small" style={{ width: "100%" }}
+                    format="DD/MM/YYYY"
+                    value={r.fecha_requerida ?? null}
+                    onChange={(d) => actualizarDraftItem(r.id, { fecha_requerida: d })}
+                    disabledDate={(current) => {
+                      if (!otFechaRecepcion || !current) return false;
+                      return current.isBefore(dayjs(String(otFechaRecepcion).slice(0, 10)), "day");
+                    }}
+                  />
+                ),
+              },
+              {
+                title: "Observaciones / Adjuntos", key: "obs",
+                render: (_: unknown, r: DraftItem) => (
+                  <div>
+                    <Space.Compact style={{ width: "100%" }}>
+                      <Input
+                        size="small"
+                        placeholder="Obs."
+                        value={r.observaciones ?? ""}
+                        onChange={(e) => actualizarDraftItem(r.id, { observaciones: e.target.value })}
+                      />
+                      <Tooltip title="Adjuntar archivo(s)">
+                        <Button
+                          size="small"
+                          icon={<PaperClipOutlined />}
+                          onClick={() => {
+                            const input = document.createElement("input");
+                            input.type = "file";
+                            input.multiple = true;
+                            input.onchange = (e) => {
+                              const files = Array.from((e.target as HTMLInputElement).files ?? []);
+                              if (files.length === 0) return;
+                              actualizarDraftItem(r.id, {
+                                archivos: [...(r.archivos ?? []), ...files],
+                              });
+                            };
+                            input.click();
+                          }}
+                        />
+                      </Tooltip>
+                    </Space.Compact>
+                    {(r.archivos ?? []).length > 0 && (
+                      <Space size={4} wrap style={{ marginTop: 4 }}>
+                        {(r.archivos ?? []).map((f, i) => (
+                          <Tag
+                            key={i}
+                            closable
+                            onClose={() => actualizarDraftItem(r.id, {
+                              archivos: (r.archivos ?? []).filter((_, j) => j !== i),
+                            })}
+                            style={{ fontSize: 10, margin: 0 }}
+                          >
+                            <PaperClipOutlined /> {f.name.length > 20 ? f.name.slice(0, 17) + "…" : f.name}
+                          </Tag>
+                        ))}
+                      </Space>
+                    )}
+                  </div>
+                ),
+              },
+              {
+                title: "", key: "del", width: 40, align: "center",
+                render: (_: unknown, r: DraftItem) => (
+                  <Button
+                    type="text" size="small" danger icon={<DeleteOutlined />}
+                    disabled={draftItems.length === 1}
+                    onClick={() => quitarItemDraft(r.id)}
+                  />
+                ),
+              },
+            ]}
+          />
+          <Row justify="space-between" align="middle" style={{ marginTop: 12 }}>
+            <Col>
+              <Button icon={<PlusOutlined />} onClick={agregarItemDraft}>
+                Agregar otro ítem
+              </Button>
+            </Col>
+            <Col>
+              <Space>
+                <Button onClick={cerrarDraft}>Cancelar</Button>
+                <Button type="primary" icon={<SaveOutlined />} loading={savingDraft} onClick={guardarDraft}>
+                  Guardar Requerimiento
+                </Button>
+              </Space>
+            </Col>
+          </Row>
+        </Card>
       )}
 
       <Row gutter={[12, 8]} style={{ marginBottom: 12 }}>
@@ -584,22 +1116,20 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
       </Row>
 
       {rows.length === 0 ? (
-        <Empty description="Sin requerimientos. Aplicá el template o agregá un adicional manual." />
+        <Empty description="Sin requerimientos. Aplicá el template o agregá uno nuevo." />
       ) : (
-        <Table
-          rowKey="id"
-          columns={visibleColumns(columnsResizable, ocultas)}
-        components={tableComponents}
-          dataSource={rows.filter((r) =>
+        <RequerimientosAgrupados
+          rows={rows.filter((r) =>
             dentroDeRango(r, "fecha_solicitud", rangoSol) &&
             dentroDeRango(r, "fecha_requerida", rangoReq)
           )}
+          columns={visibleColumns(columnsResizable, ocultas, ["item_req", "desc"])}
+          components={tableComponents}
           loading={loading}
-          size="small"
-          pagination={{ pageSize: 50, showTotal: (t) => `${t} items`, placement: ["topEnd", "bottomEnd"] }}
-          scroll={{ x: 1300 }}
-          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-          rowClassName={(r) => r.status_requerimiento_codigo === "ANULADO" ? "req-anulado" : ""}
+          onAddItems={(nro) => abrirDraft(nro)}
+          onEnviarGrupo={enviarGrupo}
+          onSetFechaRequerida={setFechaRequeridaGrupo}
+          otFechaRecepcion={otFechaRecepcion}
         />
       )}
 
@@ -608,14 +1138,50 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
         title={editingId ? "Editar requerimiento" : "Nuevo requerimiento adicional"}
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
-        onOk={onSubmit}
         confirmLoading={saving}
-        okText={editingId ? "Guardar" : "Crear"}
-        cancelText="Cancelar"
         width={680}
         destroyOnHidden
+        footer={[
+          <Button key="cancel" onClick={() => setModalOpen(false)}>Cancelar</Button>,
+          ...(editingId
+            ? [<Button key="save" type="primary" loading={saving} onClick={() => onSubmit(false)}>Guardar</Button>]
+            : [
+                <Button key="saveAdd" loading={saving} onClick={() => onSubmit(true)}>Guardar y agregar otro</Button>,
+                <Button key="save" type="primary" loading={saving} onClick={() => onSubmit(false)}>Guardar y cerrar</Button>,
+              ]),
+        ]}
       >
         <Form form={form} layout="vertical">
+          {!editingId && (
+            <Form.Item
+              name="nro_req"
+              label="Requerimiento"
+              extra="Crear uno nuevo o agregar este item a uno existente (solo BORRADOR / SIN_APROBACION)."
+              initialValue={null}
+            >
+              <Select
+                placeholder="Crear nuevo requerimiento"
+                allowClear
+                options={[
+                  ...(() => {
+                    // Agrupar items por nro_req y mostrar los editables
+                    const byReq = new Map<string, RequerimientoRow[]>();
+                    for (const r of rows) {
+                      if (!r.nro_req) continue;
+                      const status = r.status_requerimiento_codigo ?? "BORRADOR";
+                      if (!["BORRADOR", "SIN_APROBACION"].includes(status)) continue;
+                      if (!byReq.has(r.nro_req)) byReq.set(r.nro_req, []);
+                      byReq.get(r.nro_req)!.push(r);
+                    }
+                    return [...byReq.entries()].map(([nro, items]) => ({
+                      value: nro,
+                      label: `${nro} — ${items.length} item${items.length !== 1 ? "s" : ""}`,
+                    }));
+                  })(),
+                ]}
+              />
+            </Form.Item>
+          )}
           <Form.Item
             name="tipo_codigo"
             label="Tipo"
@@ -697,13 +1263,74 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
             </Col>
           </Row>
 
-          <Form.Item name="fecha_requerida" label="Fecha requerida">
-            <DatePicker style={{ width: 200 }} format="DD/MM/YYYY" />
+          <Form.Item
+            name="fecha_requerida"
+            label="Fecha requerida"
+            rules={[
+              () => ({
+                validator(_, value) {
+                  if (!value || !otFechaRecepcion) return Promise.resolve();
+                  const recep = dayjs(String(otFechaRecepcion).slice(0, 10));
+                  if (value.isBefore(recep, "day")) {
+                    return Promise.reject(new Error("No puede ser anterior a la recepción de la OT"));
+                  }
+                  return Promise.resolve();
+                },
+              }),
+            ]}
+          >
+            <DatePicker
+              style={{ width: 200 }}
+              format="DD/MM/YYYY"
+              disabledDate={(current) => {
+                if (!otFechaRecepcion || !current) return false;
+                return current.isBefore(dayjs(String(otFechaRecepcion).slice(0, 10)), "day");
+              }}
+            />
           </Form.Item>
 
           <Form.Item name="observaciones" label="Observaciones">
             <Input.TextArea rows={2} />
           </Form.Item>
+
+          {editingId && (
+            <Form.Item label="Adjuntos">
+              <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+                <Button
+                  size="small" icon={<PaperClipOutlined />} loading={uploadingFile}
+                  onClick={() => {
+                    const input = document.createElement("input");
+                    input.type = "file";
+                    input.multiple = true;
+                    input.onchange = async (e) => {
+                      const files = Array.from((e.target as HTMLInputElement).files ?? []);
+                      for (const f of files) await subirAdjuntoExistente(f);
+                    };
+                    input.click();
+                  }}
+                >
+                  Subir archivo(s)
+                </Button>
+                {editAdjuntos.length === 0 ? (
+                  <Text type="secondary" style={{ fontSize: 12 }}>Sin adjuntos.</Text>
+                ) : (
+                  <Space size={4} wrap>
+                    {editAdjuntos.map((a) => (
+                      <Tag
+                        key={a.id}
+                        closable
+                        onClose={(e) => { e.preventDefault(); eliminarAdjunto(a.id); }}
+                        style={{ fontSize: 11, margin: 0 }}
+                      >
+                        <PaperClipOutlined />{" "}
+                        <a href={a.ruta} target="_blank" rel="noopener noreferrer">{a.nombre_archivo}</a>
+                      </Tag>
+                    ))}
+                  </Space>
+                )}
+              </Space>
+            </Form.Item>
+          )}
         </Form>
       </Modal>
 
@@ -711,5 +1338,198 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, onUpdated }: P
         .req-anulado > td { background: #FFF1F0 !important; opacity: 0.7; }
       `}</style>
     </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Componente: items agrupados por nro_req como Cards colapsables.
+// ───────────────────────────────────────────────────────────────────────────
+function RequerimientosAgrupados({
+  rows,
+  columns,
+  components,
+  loading,
+  onAddItems,
+  onEnviarGrupo,
+  onSetFechaRequerida,
+  otFechaRecepcion,
+}: {
+  rows: RequerimientoRow[];
+  columns: ColumnsType<RequerimientoRow>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  components?: any;
+  loading: boolean;
+  onAddItems?: (nroReq: string) => void;
+  onEnviarGrupo?: (nroReq: string) => void;
+  onSetFechaRequerida?: (nroReq: string, fecha: dayjs.Dayjs | null) => Promise<void>;
+  otFechaRecepcion?: string | Date | null;
+}) {
+  // Agrupar por nro_req (preservando orden por fecha desc del primer item de cada grupo)
+  const groups = useMemo(() => {
+    const m = new Map<string, RequerimientoRow[]>();
+    for (const r of rows) {
+      const key = r.nro_req ?? "(sin nro)";
+      if (!m.has(key)) m.set(key, []);
+      m.get(key)!.push(r);
+    }
+    // Ordenar grupos: primero por fecha_solicitud desc del item más reciente
+    return [...m.entries()]
+      .map(([nro, items]) => {
+        const sorted = [...items].sort((a, b) => (a.item_req ?? 0) - (b.item_req ?? 0));
+        return { nro, items: sorted };
+      })
+      .sort((a, b) => (b.items[0]?.fecha_solicitud ?? "").localeCompare(a.items[0]?.fecha_solicitud ?? ""));
+  }, [rows]);
+
+  // Estado de colapso por grupo
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  function toggle(nro: string) {
+    setCollapsed((prev) => ({ ...prev, [nro]: !prev[nro] }));
+  }
+
+  if (loading && rows.length === 0) return <div style={{ padding: 16 }}><Text type="secondary">Cargando…</Text></div>;
+
+  return (
+    <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+      {groups.map(({ nro, items }) => {
+        const first = items[0];
+        const status = first?.status_requerimiento?.nombre ?? first?.status_requerimiento_codigo ?? "BORRADOR";
+        const statusColor = REQ_COLOR[first?.status_requerimiento_codigo ?? "BORRADOR"] ?? "default";
+        const isCollapsed = !!collapsed[nro];
+        const hasBorrador = items.some((i) => i.status_requerimiento_codigo === "BORRADOR");
+        const allEditable = items.every(
+          (i) => i.status_requerimiento_codigo === "BORRADOR" || i.status_requerimiento_codigo === "SIN_APROBACION",
+        );
+        const isRealReq = nro !== "(sin nro)";
+        const cantBorradores = items.filter((i) => i.status_requerimiento_codigo === "BORRADOR").length;
+        return (
+          <Card
+            key={nro}
+            size="small"
+            styles={{ body: { padding: isCollapsed ? 0 : 0 } }}
+            title={
+              <Space size={8}>
+                <Button
+                  type="text" size="small"
+                  icon={<span style={{ fontSize: 12 }}>{isCollapsed ? "▶" : "▼"}</span>}
+                  onClick={() => toggle(nro)}
+                />
+                <Text strong style={{ fontSize: 13 }}>{nro}</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {items.length} ítem{items.length !== 1 ? "s" : ""}
+                  {first?.fecha_solicitud ? ` · ${dayjs(first.fecha_solicitud).format("DD/MM/YYYY")}` : ""}
+                </Text>
+              </Space>
+            }
+            extra={
+              <Space size={6}>
+                {isRealReq && allEditable && onSetFechaRequerida && (
+                  <FechaRequeridaBulkButton
+                    nroReq={nro}
+                    onApply={onSetFechaRequerida}
+                    otFechaRecepcion={otFechaRecepcion}
+                  />
+                )}
+                {isRealReq && allEditable && onAddItems && (
+                  <Tooltip title="Agregar más items a este requerimiento">
+                    <Button size="small" icon={<PlusOutlined />} onClick={() => onAddItems(nro)}>
+                      Agregar items
+                    </Button>
+                  </Tooltip>
+                )}
+                {isRealReq && hasBorrador && onEnviarGrupo && (
+                  <Popconfirm
+                    title={`Enviar ${nro} a aprobación`}
+                    description={`Se enviarán los ${cantBorradores} item(s) en BORRADOR. Después no se podrá editar desde acá.`}
+                    onConfirm={() => onEnviarGrupo(nro)}
+                    okText="Enviar" cancelText="Cancelar"
+                  >
+                    <Button size="small" type="primary" icon={<SendOutlined />}>
+                      Enviar requerimiento ({cantBorradores})
+                    </Button>
+                  </Popconfirm>
+                )}
+                <Tag color={statusColor}>{status}</Tag>
+              </Space>
+            }
+          >
+            {!isCollapsed && (
+              <Table
+                rowKey="id"
+                columns={columns.filter((c) => (c as { key?: React.Key }).key !== "nro")}
+                components={components as never}
+                dataSource={items}
+                pagination={false}
+                size="small"
+                scroll={{ x: 1920 }}
+                rowClassName={(r) => r.status_requerimiento_codigo === "ANULADO" ? "req-anulado" : ""}
+              />
+            )}
+          </Card>
+        );
+      })}
+    </Space>
+  );
+}
+
+// Botón con Popover que abre un DatePicker para setear fecha_requerida en todos los items del grupo.
+function FechaRequeridaBulkButton({
+  nroReq,
+  onApply,
+  otFechaRecepcion,
+}: {
+  nroReq: string;
+  onApply: (nroReq: string, fecha: dayjs.Dayjs | null) => Promise<void>;
+  otFechaRecepcion?: string | Date | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const [fecha, setFecha] = useState<dayjs.Dayjs | null>(null);
+  const [saving, setSaving] = useState(false);
+  const minDate = otFechaRecepcion ? dayjs(String(otFechaRecepcion).slice(0, 10)) : null;
+
+  async function aplicar() {
+    setSaving(true);
+    try {
+      await onApply(nroReq, fecha);
+      setOpen(false);
+      setFecha(null);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={setOpen}
+      trigger="click"
+      placement="bottomRight"
+      content={
+        <div style={{ width: 240 }}>
+          <Text strong style={{ fontSize: 12, display: "block", marginBottom: 6 }}>
+            Fecha requerida para todo {nroReq}
+          </Text>
+          <DatePicker
+            value={fecha}
+            onChange={setFecha}
+            format="DD/MM/YYYY"
+            style={{ width: "100%" }}
+            disabledDate={(d) => !!minDate && d.isBefore(minDate, "day")}
+          />
+          <Space style={{ marginTop: 10, width: "100%", justifyContent: "flex-end" }}>
+            <Button size="small" onClick={() => { setOpen(false); setFecha(null); }}>
+              Cancelar
+            </Button>
+            <Button size="small" type="primary" onClick={aplicar} loading={saving} disabled={!fecha}>
+              Aplicar a todos
+            </Button>
+          </Space>
+        </div>
+      }
+    >
+      <Tooltip title="Fijar fecha requerida en todos los items del requerimiento">
+        <Button size="small" icon={<CalendarOutlined />}>F. Requerida</Button>
+      </Tooltip>
+    </Popover>
   );
 }

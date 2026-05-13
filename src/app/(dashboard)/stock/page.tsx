@@ -359,7 +359,7 @@ export default function StockPage() {
     },
   ];
 
-  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
     useColumnasRedimensionables<StockItem>(columns, "stock-list-cols-widths-v1");
 
   const exportarStockExcel = async () => {
@@ -502,23 +502,25 @@ export default function StockPage() {
         </Row>
       </Card>
 
-      <Table
-        rowKey="material_id"
-        columns={visibleColumns(columnsResizable, ocultas)}
-        components={tableComponents}
-        dataSource={data}
-        loading={loading}
-        pagination={paginacionEstandar({
-          current: page,
-          pageSize,
-          total: data.length,
-          onChange: (p, s) => { setPage(p); setPageSize(s); },
-          label: "materiales",
-        })}
-        scroll={{ x: 1700 }}
-        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-        size="small"
-      />
+      <TableDragWrapper>
+              <Table
+          rowKey="material_id"
+          columns={visibleColumns(columnsResizable, ocultas)}
+          components={tableComponents}
+          dataSource={data}
+          loading={loading}
+          pagination={paginacionEstandar({
+            current: page,
+            pageSize,
+            total: data.length,
+            onChange: (p, s) => { setPage(p); setPageSize(s); },
+            label: "materiales",
+          })}
+          scroll={{ x: 1700 }}
+          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+          size="small"
+        />
+      </TableDragWrapper>
     </div>
   );
 }

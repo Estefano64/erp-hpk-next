@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { getAuditUser } from "@/lib/audit";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -42,6 +43,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       return NextResponse.json({ error: "Validación", detail: parsed.error.flatten() }, { status: 400 });
     }
 
+    const usuario = (await getAuditUser(req)) ?? "sistema";
     const resultado = await prisma.$transaction(async (tx) => {
       const ot = await tx.ordenTrabajo.findUnique({
         where: { id: otId },
@@ -84,6 +86,17 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       }));
 
       await tx.planificacionOT.createMany({ data: rows });
+
+      // Historial
+      await tx.oTHistorial.create({
+        data: {
+          ot_id: otId,
+          tipo_operacion: "TAREAS_GENERADAS",
+          descripcion: `Planificación generada desde ${ot.codigo_reparacion.codigo}: ${rows.length} tarea(s)${existentes > 0 ? ` (reemplazó ${existentes} anteriores)` : ""}.`,
+          usuario,
+        },
+      });
+
       return { inserted: rows.length, cod_rep: ot.codigo_reparacion.codigo };
     });
 

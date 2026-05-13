@@ -617,14 +617,15 @@ model ConfiguracionCotizacion {
 }
 
 model Trabajador {
-  trabajador_id Int      @id @default(autoincrement())
-  nombre        String   @db.VarChar(200)
-  dni           String?  @db.VarChar(20)
-  area          String   @db.VarChar(50)
-  puesto        String   @db.VarChar(100)
-  activo        Boolean  @default(true)
-  created_at    DateTime @default(now())
-  updated_at    DateTime @default(now()) @updatedAt
+  trabajador_id Int                    @id @default(autoincrement())
+  nombre        String                 @db.VarChar(200)
+  dni           String?                @db.VarChar(20)
+  area          String                 @db.VarChar(50)
+  puesto        String                 @db.VarChar(100)
+  activo        Boolean                @default(true)
+  created_at    DateTime               @default(now())
+  updated_at    DateTime               @default(now()) @updatedAt
+  prestamos     PrestamoHerramienta[]
 
   @@index([dni])
   @@index([area])
@@ -827,6 +828,7 @@ model OrdenTrabajo {
   repuestos                   OTRepuesto[]
   planificaciones             PlanificacionOT[]
   evaluaciones_tecnicas       EvaluacionTecnica[]
+  prestamos_herramientas      PrestamoHerramienta[]
 
   @@map("orden_trabajo")
 }
@@ -950,16 +952,44 @@ model MovimientoInventario {
 }
 
 model Herramienta {
-  id        Int      @id @default(autoincrement())
-  codigo    String   @unique @db.VarChar(20)
-  nombre    String   @db.VarChar(100)
-  stock     Int      @default(0)
-  asignadas Int      @default(0)
-  estado    String   @default("Disponible") @db.VarChar(15)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id        Int                    @id @default(autoincrement())
+  codigo    String                 @unique @db.VarChar(20)
+  nombre    String                 @db.VarChar(100)
+  stock     Int                    @default(0)
+  asignadas Int                    @default(0)
+  estado    String                 @default("Disponible") @db.VarChar(15)
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+  prestamos PrestamoHerramienta[]
 
   @@map("herramientas")
+}
+
+model PrestamoHerramienta {
+  id                        Int           @id @default(autoincrement())
+  herramienta_id            Int
+  cantidad                  Int           @default(1)
+  prestado_a                String        @db.VarChar(100)
+  ot_id                     Int?
+  trabajador_id             Int?
+  fecha_entrega             DateTime      @default(now()) @db.Date
+  fecha_devolucion_prevista DateTime?     @db.Date
+  fecha_devolucion_real     DateTime?     @db.Date
+  estado                    String        @default("PRESTADA") @db.VarChar(20)
+  observaciones             String?
+  usuario_entrega           String        @db.VarChar(100)
+  usuario_recibe            String?       @db.VarChar(100)
+  createdAt                 DateTime      @default(now())
+  updatedAt                 DateTime      @updatedAt
+  herramienta               Herramienta   @relation(fields: [herramienta_id], references: [id])
+  orden_trabajo             OrdenTrabajo? @relation(fields: [ot_id], references: [id])
+  trabajador                Trabajador?   @relation(fields: [trabajador_id], references: [trabajador_id])
+
+  @@index([herramienta_id])
+  @@index([estado])
+  @@index([ot_id])
+  @@index([trabajador_id])
+  @@map("prestamos_herramientas")
 }
 
 model OTHistorial {
@@ -1027,6 +1057,8 @@ model OTRepuesto {
   ubicacion                   String?              @db.VarChar(50)
   observaciones               String?
   usuario_solicita            String               @db.VarChar(100)
+  usuario_envia               String?              @db.VarChar(100)
+  fecha_envio_aprobacion      DateTime?            @db.Date
   usuario_aprueba             String?              @db.VarChar(100)
   fecha_aprobacion            DateTime?            @db.Date
   createdAt                   DateTime             @default(now())
@@ -1038,6 +1070,7 @@ model OTRepuesto {
   status_requerimiento        StatusRequerimiento? @relation(fields: [status_requerimiento_codigo], references: [codigo])
   status_cotizacion           StatusCotizacion?    @relation(fields: [status_cotizacion_codigo], references: [codigo])
   status_oc                   StatusOC?            @relation(fields: [status_oc_codigo], references: [codigo])
+  adjuntos                    OTRepuestoAdjunto[]
 
   @@index([ot_id])
   @@index([nro_req])
@@ -1046,6 +1079,21 @@ model OTRepuesto {
   @@index([po_id])
   @@index([nro_oc])
   @@map("ot_repuestos")
+}
+
+model OTRepuestoAdjunto {
+  id              Int        @id @default(autoincrement())
+  ot_repuesto_id  Int
+  nombre_archivo  String     @db.VarChar(255)
+  ruta            String     @db.VarChar(500)
+  tipo_mime       String     @db.VarChar(100)
+  tamano          Int
+  usuario_sube    String?    @db.VarChar(100)
+  fecha_subida    DateTime   @default(now())
+  ot_repuesto     OTRepuesto @relation(fields: [ot_repuesto_id], references: [id], onDelete: Cascade)
+
+  @@index([ot_repuesto_id])
+  @@map("ot_repuesto_adjunto")
 }
 
 model PlanificacionOT {

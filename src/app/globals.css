@@ -51,3 +51,66 @@ body {
   text-overflow: ellipsis;
 }
 
+/* Drag handle de columna: aparece al hacer hover sobre el header. */
+.ant-table-thead > tr > th:hover .col-drag-handle {
+  opacity: 1 !important;
+}
+.ant-table-thead > tr > th {
+  padding-left: 16px !important;
+}
+
+/* Resize handle: línea sutil 1px SIEMPRE visible (idle), se intensifica al hover.
+   Hit area = 10px (todo el span), línea visible = 1-2px. cursor: col-resize sobre toda la zona. */
+.react-resizable-handle {
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    transparent 45%,
+    rgba(0, 0, 0, 0.08) 45%,
+    rgba(0, 0, 0, 0.08) 55%,
+    transparent 55%,
+    transparent 100%
+  ) !important;
+  border: none !important;
+  transition: background 0.15s;
+}
+/* Hover en cualquier parte del header: la línea se vuelve más visible (navy). */
+.ant-table-thead > tr > th:hover .react-resizable-handle {
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    transparent 40%,
+    rgba(28, 43, 91, 0.4) 40%,
+    rgba(28, 43, 91, 0.4) 60%,
+    transparent 60%,
+    transparent 100%
+  ) !important;
+}
+/* Hover directo en el handle: cyan brillante + 2px de grosor (señal fuerte). */
+.react-resizable-handle:hover {
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    transparent 35%,
+    rgba(17, 160, 182, 1) 35%,
+    rgba(17, 160, 182, 1) 65%,
+    transparent 65%,
+    transparent 100%
+  ) !important;
+}
+
+/* Celdas fijas (fixed left/right) con fondo sólido para que no se "transparenten"
+   sobre las celdas que pasan por debajo al scrollear horizontalmente. */
+.ant-table-cell-fix-left,
+.ant-table-cell-fix-right {
+  background-color: #ffffff !important;
+}
+.ant-table-thead > tr > th.ant-table-cell-fix-left,
+.ant-table-thead > tr > th.ant-table-cell-fix-right {
+  background-color: #fafafa !important;
+}
+.ant-table-tbody > tr:hover > td.ant-table-cell-fix-left,
+.ant-table-tbody > tr:hover > td.ant-table-cell-fix-right {
+  background-color: #fafafa !important;
+}
+

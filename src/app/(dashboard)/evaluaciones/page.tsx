@@ -48,6 +48,7 @@ import {
 } from "@/lib/tables";
 import dayjs from "dayjs";
 
+import { formatDateOnly } from "@/lib/dates";
 const { Title, Text } = Typography;
 const { TextArea } = Input;
 
@@ -256,7 +257,7 @@ export default function EvaluacionesPage() {
       dataIndex: "fecha_evaluacion",
       width: 120,
       sorter: (a, b) => (a.fecha_evaluacion || "").localeCompare(b.fecha_evaluacion || ""),
-      render: (v: string | null) => (v ? dayjs(v).format("DD/MM/YYYY") : "-"),
+      render: (v: string | null) => (v ? formatDateOnly(v) : "-"),
     },
     {
       key: "solicitado_revision_por",
@@ -282,7 +283,7 @@ export default function EvaluacionesPage() {
       dataIndex: "fecha_revision",
       width: 120,
       sorter: (a, b) => (a.fecha_revision || "").localeCompare(b.fecha_revision || ""),
-      render: (v: string | null) => (v ? dayjs(v).format("DD/MM/YYYY") : "-"),
+      render: (v: string | null) => (v ? formatDateOnly(v) : "-"),
     },
     {
       key: "informe_nombre",
@@ -339,7 +340,7 @@ export default function EvaluacionesPage() {
     },
   ];
 
-  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
     useColumnasRedimensionables<Evaluacion>(columns, "evaluaciones-list-cols-widths-v1");
 
   const tituloModal: Record<string, string> = {
@@ -480,23 +481,25 @@ export default function EvaluacionesPage() {
         </Row>
       </Card>
 
-      <Table
-        rowKey="id"
-        columns={visibleColumns(columnsResizable, ocultas)}
-        components={tableComponents}
-        dataSource={filtered}
-        loading={loading}
-        pagination={paginacionEstandar({
-          current: page,
-          pageSize,
-          total: data.length,
-          onChange: (p, s) => { setPage(p); setPageSize(s); },
-          label: "evaluaciones",
-        })}
-        scroll={{ x: 1700 }}
-        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-        size="small"
-      />
+      <TableDragWrapper>
+              <Table
+          rowKey="id"
+          columns={visibleColumns(columnsResizable, ocultas)}
+          components={tableComponents}
+          dataSource={filtered}
+          loading={loading}
+          pagination={paginacionEstandar({
+            current: page,
+            pageSize,
+            total: data.length,
+            onChange: (p, s) => { setPage(p); setPageSize(s); },
+            label: "evaluaciones",
+          })}
+          scroll={{ x: 1700 }}
+          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+          size="small"
+        />
+      </TableDragWrapper>
 
       {/* Modal Accion */}
       <Modal

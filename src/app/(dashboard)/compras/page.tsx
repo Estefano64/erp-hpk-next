@@ -55,6 +55,7 @@ import { brand } from "@/lib/theme";
 import dayjs from "dayjs";
 import CompraDetalleModal from "@/components/modules/compras/CompraDetalleModal";
 
+import { formatDateOnly } from "@/lib/dates";
 const { Title } = Typography;
 
 interface Compra {
@@ -101,7 +102,9 @@ export default function ComprasPage() {
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
 
   const [modalId, setModalId] = useState<number | null>(null);
-  const { ocultas, setOcultas } = useColumnasOcultas("compras-list-cols-v1");
+  const { ocultas, setOcultas } = useColumnasOcultas("compras-list-cols-v2", [
+    "numero_req", "ot_numero", "fecha_entrega_real", "impuesto", "moneda",
+  ]);
   const { rango: rangoSolicitud, setRango: setRangoSolicitud } = useRangoFechas();
   const { rango: rangoEntrega, setRango: setRangoEntrega } = useRangoFechas();
 
@@ -172,9 +175,9 @@ export default function ComprasPage() {
         Estado: c.estado,
         Proveedor: c.proveedor_nombre ?? "",
         Almacén: c.almacen_nombre ?? "",
-        "F. Solicitud": c.fecha_solicitud ? dayjs(c.fecha_solicitud).format("DD/MM/YYYY") : "",
-        "F. Entrega Esp.": c.fecha_entrega_esperada ? dayjs(c.fecha_entrega_esperada).format("DD/MM/YYYY") : "",
-        "F. Entrega Real": c.fecha_entrega_real ? dayjs(c.fecha_entrega_real).format("DD/MM/YYYY") : "",
+        "F. Solicitud": c.fecha_solicitud ? formatDateOnly(c.fecha_solicitud) : "",
+        "F. Entrega Esp.": c.fecha_entrega_esperada ? formatDateOnly(c.fecha_entrega_esperada) : "",
+        "F. Entrega Real": c.fecha_entrega_real ? formatDateOnly(c.fecha_entrega_real) : "",
         Items: c.cantidad_items,
         Subtotal: Number(c.subtotal),
         IGV: Number(c.impuesto),
@@ -213,9 +216,9 @@ export default function ComprasPage() {
         <Col span={12}><span style={{ color: "#888" }}>Almacén:</span> <b>{r.almacen_nombre || "-"}</b></Col>
         <Col span={12}><span style={{ color: "#888" }}>Items:</span> <b>{r.cantidad_items}</b></Col>
         <Col span={12}><span style={{ color: "#888" }}>Moneda:</span> <b>{r.moneda}</b></Col>
-        <Col span={24}><span style={{ color: "#888" }}>F. Solicitud:</span> <b>{dayjs(r.fecha_solicitud).format("DD/MM/YYYY")}</b></Col>
-        <Col span={24}><span style={{ color: "#888" }}>F. Entrega Esp:</span> <b>{r.fecha_entrega_esperada ? dayjs(r.fecha_entrega_esperada).format("DD/MM/YYYY") : "-"}</b></Col>
-        <Col span={24}><span style={{ color: "#888" }}>F. Entrega Real:</span> <b>{r.fecha_entrega_real ? dayjs(r.fecha_entrega_real).format("DD/MM/YYYY") : "-"}</b></Col>
+        <Col span={24}><span style={{ color: "#888" }}>F. Solicitud:</span> <b>{formatDateOnly(r.fecha_solicitud)}</b></Col>
+        <Col span={24}><span style={{ color: "#888" }}>F. Entrega Esp:</span> <b>{r.fecha_entrega_esperada ? formatDateOnly(r.fecha_entrega_esperada) : "-"}</b></Col>
+        <Col span={24}><span style={{ color: "#888" }}>F. Entrega Real:</span> <b>{r.fecha_entrega_real ? formatDateOnly(r.fecha_entrega_real) : "-"}</b></Col>
         <Col span={12}><span style={{ color: "#888" }}>Subtotal:</span> <b>{Number(r.subtotal).toFixed(2)}</b></Col>
         <Col span={12}><span style={{ color: "#888" }}>IGV:</span> <b>{Number(r.impuesto).toFixed(2)}</b></Col>
         <Col span={24}><span style={{ color: "#888" }}>Total:</span> <b style={{ color: brand.navy }}>{r.moneda} {Number(r.total).toFixed(2)}</b></Col>
@@ -290,7 +293,7 @@ export default function ComprasPage() {
       title: "F. Solicitud",
       dataIndex: "fecha_solicitud",
       width: 110,
-      render: (v: string) => dayjs(v).format("DD/MM/YYYY"),
+      render: (v: string) => formatDateOnly(v),
       sorter: (a, b) => (a.fecha_solicitud ?? "").localeCompare(b.fecha_solicitud ?? ""),
     },
     {
@@ -300,10 +303,10 @@ export default function ComprasPage() {
       width: 120,
       sorter: (a, b) => (a.fecha_entrega_esperada ?? "").localeCompare(b.fecha_entrega_esperada ?? ""),
       filters: [...new Set(data.map((r) => r.fecha_entrega_esperada).filter(Boolean) as string[])]
-        .sort().map((v) => ({ text: dayjs(v).format("DD/MM/YYYY"), value: v })),
+        .sort().map((v) => ({ text: formatDateOnly(v), value: v })),
       filterSearch: true,
       onFilter: (value, r) => r.fecha_entrega_esperada === value,
-      render: (v: string | null) => (v ? dayjs(v).format("DD/MM/YYYY") : "-"),
+      render: (v: string | null) => (v ? formatDateOnly(v) : "-"),
     },
     {
       key: "cantidad_items",
@@ -386,6 +389,33 @@ export default function ComprasPage() {
       width: 120,
       ...filtroPorColumna(data, "usuario_solicita"),
     },
+    // ── Columnas opcionales (ocultas por default) ──
+    {
+      key: "numero_req", title: "Nro Req.", dataIndex: "numero_req", width: 120,
+      ...filtroPorColumna(data, "numero_req"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "ot_numero", title: "OT", dataIndex: "ot_numero", width: 120,
+      ...filtroPorColumna(data, "ot_numero"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "fecha_entrega_real", title: "F. Entrega real", dataIndex: "fecha_entrega_real", width: 130,
+      sorter: (a, b) => (a.fecha_entrega_real ?? "").localeCompare(b.fecha_entrega_real ?? ""),
+      render: (v: string | null) => formatDateOnly(v),
+    },
+    {
+      key: "impuesto", title: "Impuesto", dataIndex: "impuesto", width: 100, align: "right",
+      sorter: (a, b) => (a.impuesto ?? 0) - (b.impuesto ?? 0),
+      render: (v: number | null) => v != null ? Number(v).toLocaleString() : "-",
+    },
+    {
+      key: "moneda", title: "Moneda", dataIndex: "moneda", width: 80, align: "center",
+      filters: [...new Set(data.map((r) => r.moneda).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
+      onFilter: (value, r) => r.moneda === value,
+      render: (v: string | null) => v ?? "-",
+    },
     {
       key: "acciones",
       title: "Acciones",
@@ -431,7 +461,7 @@ export default function ComprasPage() {
     },
   ];
 
-  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
     useColumnasRedimensionables<Compra>(columns, "compras-list-cols-widths-v1");
 
   const ocsContent = (
@@ -524,26 +554,28 @@ export default function ComprasPage() {
         </Row>
       </Card>
 
-      <Table
-        rowKey="id"
-        columns={visibleColumns(columnsResizable, ocultas)}
-        components={tableComponents}
-        dataSource={data.filter((r) =>
-          dentroDeRango(r, "fecha_solicitud", rangoSolicitud) &&
-          dentroDeRango(r, "fecha_entrega_esperada", rangoEntrega)
-        )}
-        loading={loading}
-        pagination={paginacionEstandar({
-          current: page,
-          pageSize,
-          total: data.length,
-          onChange: (p, s) => { setPage(p); setPageSize(s); },
-          label: "órdenes de compra",
-        })}
-        scroll={{ x: 1500 }}
-        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-        size="small"
-      />
+      <TableDragWrapper>
+              <Table
+          rowKey="id"
+          columns={visibleColumns(columnsResizable, ocultas)}
+          components={tableComponents}
+          dataSource={data.filter((r) =>
+            dentroDeRango(r, "fecha_solicitud", rangoSolicitud) &&
+            dentroDeRango(r, "fecha_entrega_esperada", rangoEntrega)
+          )}
+          loading={loading}
+          pagination={paginacionEstandar({
+            current: page,
+            pageSize,
+            total: data.length,
+            onChange: (p, s) => { setPage(p); setPageSize(s); },
+            label: "órdenes de compra",
+          })}
+          scroll={{ x: 1500 }}
+          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+          size="small"
+        />
+      </TableDragWrapper>
     </>
   );
 

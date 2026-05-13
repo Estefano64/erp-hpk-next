@@ -24,7 +24,8 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
         status_cotizacion: { select: { codigo: true, nombre: true } },
         status_oc: { select: { codigo: true, nombre: true } },
         proveedor: { select: { id: true, razon_social: true } },
-        compra: { select: { id: true, numero_po: true } },
+        compra: { select: { id: true, numero_po: true, fecha_entrega_esperada: true } },
+        adjuntos: { select: { id: true, nombre_archivo: true, ruta: true, tamano: true } },
       },
       orderBy: { item_req: "asc" },
     });
@@ -48,6 +49,9 @@ const CreateSchema = z.object({
   moneda: z.string().trim().optional().nullable(),
   fecha_requerida: z.string().optional().nullable(),
   observaciones: z.string().trim().optional().nullable(),
+  // Si se especifica, el item se agrega a ese nro_req (debe pertenecer a la misma OT).
+  // Si no, se genera un nro_req nuevo.
+  nro_req: z.string().trim().optional().nullable(),
 });
 
 export async function POST(req: NextRequest, ctx: Ctx) {
@@ -82,10 +86,26 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       const otExists = await tx.ordenTrabajo.findUnique({ where: { id: otId }, select: { id: true } });
       if (!otExists) throw new Error("NOT_FOUND_OT");
 
-      const nroReq = await nextNroReq(tx);
+      // Si vino nro_req: validar que existe en esta OT y agregar item ahí.
+      // Si no: generar uno nuevo.
+      let nroReq: string;
+      if (d.nro_req) {
+        const existing = await tx.oTRepuesto.findFirst({
+          where: { ot_id: otId, nro_req: d.nro_req },
+          select: { id: true, status_requerimiento_codigo: true },
+        });
+        if (!existing) throw new Error("INVALID_NRO_REQ");
+        // Solo permite agregar a requerimientos en BORRADOR o SIN_APROBACION
+        if (existing.status_requerimiento_codigo && !["BORRADOR", "SIN_APROBACION"].includes(existing.status_requerimiento_codigo)) {
+          throw new Error("LOCKED_NRO_REQ");
+        }
+        nroReq = d.nro_req;
+      } else {
+        nroReq = await nextNroReq(tx);
+      }
       const itemReq = await nextItemReq(tx, otId);
 
-      return tx.oTRepuesto.create({
+      const row = await tx.oTRepuesto.create({
         data: {
           ot_id: otId,
           material_id,
@@ -111,12 +131,30 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           status_requerimiento: { select: { codigo: true, nombre: true } },
         },
       });
+      // Historial: agregar item al requerimiento (existente o nuevo)
+      await tx.oTHistorial.create({
+        data: {
+          ot_id: otId,
+          tipo_operacion: "REQUERIMIENTO",
+          descripcion: d.nro_req
+            ? `Item agregado a ${nroReq} (item ${itemReq}: ${d.descripcion}).`
+            : `Requerimiento ${nroReq} creado con 1 item (${d.descripcion}).`,
+          usuario,
+        },
+      });
+      return row;
     });
 
     return NextResponse.json({ data: created }, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message === "NOT_FOUND_OT") {
       return NextResponse.json({ error: "OT no encontrada" }, { status: 404 });
+    }
+    if (error instanceof Error && error.message === "INVALID_NRO_REQ") {
+      return NextResponse.json({ error: "Ese nro_req no existe en esta OT." }, { status: 400 });
+    }
+    if (error instanceof Error && error.message === "LOCKED_NRO_REQ") {
+      return NextResponse.json({ error: "No se pueden agregar items a un requerimiento aprobado o anulado." }, { status: 400 });
     }
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {
       return NextResponse.json({ error: "Referencia inválida (material/proveedor)." }, { status: 400 });

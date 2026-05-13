@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
+import { maybePromoveOTaRecursosSolicitados } from "@/lib/ot-status";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -25,7 +26,11 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const updated = await prisma.$transaction(async (tx) => {
       const r = await tx.oTRepuesto.update({
         where: { id: Number(id) },
-        data: { status_requerimiento_codigo: "SIN_APROBACION" },
+        data: {
+          status_requerimiento_codigo: "SIN_APROBACION",
+          fecha_envio_aprobacion: new Date(),
+          usuario_envia: usuario,
+        },
       });
       await tx.oTHistorial.create({
         data: {
@@ -35,6 +40,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           usuario,
         },
       });
+      await maybePromoveOTaRecursosSolicitados(tx, current.ot_id, usuario);
       return r;
     });
     return NextResponse.json({ data: updated });

@@ -37,6 +37,7 @@ import {
 } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
 import dayjs from "dayjs";
+import { formatDateOnly } from "@/lib/dates";
 import OTAdjuntosTab from "./OTAdjuntosTab";
 import OTTareasTab from "./OTTareasTab";
 import OTHistorialTab from "./OTHistorialTab";
@@ -162,6 +163,7 @@ function SectionTitle({ children }: { children: string }) {
 export default function OTDetalleContent({ otId, onUpdated, headerActions, roundedHeader = false, onDirtyChange }: Props) {
   const [ot, setOt] = useState<OTDetalle | null>(null);
   const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>("resumen");
   const [messageApi, contextHolder] = message.useMessage();
   const [modalApi, modalCtx] = Modal.useModal();
 
@@ -509,7 +511,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   }
 
   function fmtDate(d: string | null) {
-    return d ? dayjs(d).format("DD/MM/YYYY") : "-";
+    return formatDateOnly(d);
   }
 
   /* ═══════════════════════════════════════════
@@ -545,13 +547,13 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
         validaciones.push({
           type: "error",
           message: `OT vencida hace ${Math.abs(diasRestantes)} día${Math.abs(diasRestantes) === 1 ? "" : "s"}`,
-          description: `Fecha de requerimiento: ${dayjs(fechaReqEf).format("DD/MM/YYYY")}. Considerá reprogramar o cerrar la OT.`,
+          description: `Fecha de requerimiento: ${formatDateOnly(fechaReqEf)}. Considerá reprogramar o cerrar la OT.`,
         });
       } else if (diasRestantes <= 3) {
         validaciones.push({
           type: "warning",
           message: `OT vence en ${diasRestantes} día${diasRestantes === 1 ? "" : "s"}`,
-          description: `Fecha de requerimiento: ${dayjs(fechaReqEf).format("DD/MM/YYYY")}.`,
+          description: `Fecha de requerimiento: ${formatDateOnly(fechaReqEf)}.`,
         });
       }
     }
@@ -799,7 +801,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                 <Col xs={12} md={6}>
                   <FieldLabel>Fecha Recepción</FieldLabel>
                   <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY"
-                    value={editData.fecha_recepcion ? dayjs(editData.fecha_recepcion as string) : null}
+                    value={editData.fecha_recepcion ? dayjs(String(editData.fecha_recepcion).slice(0, 10)) : null}
                     onChange={(d) => setField("fecha_recepcion", d ? d.format("YYYY-MM-DD") : null)} />
                 </Col>
               </Row>
@@ -914,7 +916,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   const tabItems = [
     { key: "resumen", label: "Resumen", icon: <InfoCircleOutlined />, children: resumenContent },
     { key: "tareas", label: "Tareas", icon: <UnorderedListOutlined />, children: ot ? <OTTareasTab otId={ot.id} codRepCodigo={ot.codigo_reparacion?.codigo ?? null} /> : null },
-    { key: "requerimientos", label: "Requerimientos", icon: <InboxOutlined />, children: ot ? <OTRequerimientosTab otId={ot.id} codRepCodigo={ot.codigo_reparacion?.codigo ?? null} onUpdated={() => fetchOT()} /> : null },
+    { key: "requerimientos", label: "Requerimientos", icon: <InboxOutlined />, children: ot ? <OTRequerimientosTab otId={ot.id} codRepCodigo={ot.codigo_reparacion?.codigo ?? null} otFechaRecepcion={ot.fecha_recepcion} onUpdated={() => fetchOT()} /> : null },
     { key: "costos", label: "Costos", icon: <DollarOutlined />, children: placeholderTab("Costos") },
     { key: "adjuntos", label: "Adjuntos", icon: <PaperClipOutlined />, children: ot ? <OTAdjuntosTab otId={ot.id} /> : null },
     { key: "historial", label: "Historial", icon: <HistoryOutlined />, children: ot ? <OTHistorialTab otId={ot.id} /> : null },
@@ -954,7 +956,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
             {ot?.fecha_actualizacion && (
               <>
                 &nbsp;|&nbsp; Última edición: {ot.usuario_actualiza ?? "—"}
-                {" · "}{dayjs(ot.fecha_actualizacion).format("DD/MM/YYYY")}
+                {" · "}{formatDateOnly(ot.fecha_actualizacion)}
               </>
             )}
           </div>
@@ -963,12 +965,13 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
       </div>
 
       {/* ── Contenido ── */}
-      {loading ? (
+      {loading && !ot ? (
         <div style={{ textAlign: "center", padding: 60 }}><Spin size="large" /></div>
       ) : (
         <div style={{ padding: "0 24px 20px" }}>
           <Tabs
-            defaultActiveKey="resumen"
+            activeKey={activeTab}
+            onChange={setActiveTab}
             items={tabItems}
             tabBarGutter={0}
             style={{ ['--tabs-bar-justify' as string]: 'stretch' }}

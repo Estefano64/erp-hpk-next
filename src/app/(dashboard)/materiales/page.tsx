@@ -95,7 +95,9 @@ export default function MaterialesPage() {
   const [filterCategoria, setFilterCategoria] = useState("");
   const [filterClasificacion, setFilterClasificacion] = useState("");
   const [filterFab, setFilterFab] = useState("");
-  const { ocultas, setOcultas } = useColumnasOcultas("materiales-list-cols-v1");
+  const { ocultas, setOcultas } = useColumnasOcultas("materiales-list-cols-v2", [
+    "stock_actual", "stock_maximo", "punto_reposicion", "ubicacion", "caja", "modelo", "plazo_entrega",
+  ]);
 
   // Opciones para selects
   const [plantas, setPlantas] = useState<Option[]>([]);
@@ -375,6 +377,42 @@ export default function MaterialesPage() {
         );
       },
     },
+    // ── Columnas opcionales (ocultas por default) ──
+    {
+      key: "stock_actual", title: "Stock", dataIndex: "stock_actual", width: 90, align: "right",
+      sorter: (a, b) => (a.stock_actual ?? 0) - (b.stock_actual ?? 0),
+      render: (v: number | null) => v != null ? Number(v).toLocaleString() : "-",
+    },
+    {
+      key: "stock_maximo", title: "Stock máx.", dataIndex: "stock_maximo", width: 100, align: "right",
+      sorter: (a, b) => (a.stock_maximo ?? 0) - (b.stock_maximo ?? 0),
+      render: (v: number | null) => v != null ? Number(v).toLocaleString() : "-",
+    },
+    {
+      key: "punto_reposicion", title: "Punto reposición", dataIndex: "punto_reposicion", width: 130, align: "right",
+      sorter: (a, b) => (a.punto_reposicion ?? 0) - (b.punto_reposicion ?? 0),
+      render: (v: number | null) => v != null ? Number(v).toLocaleString() : "-",
+    },
+    {
+      key: "ubicacion", title: "Ubicación", dataIndex: "ubicacion", width: 120,
+      ...filtroPorColumna(data, "ubicacion"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "caja", title: "Caja", dataIndex: "caja", width: 100,
+      ...filtroPorColumna(data, "caja"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "modelo", title: "Modelo", dataIndex: "modelo", width: 120,
+      ...filtroPorColumna(data, "modelo"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "plazo_entrega", title: "Plazo entrega (días)", dataIndex: "plazo_entrega", width: 130, align: "right",
+      sorter: (a, b) => (a.plazo_entrega ?? 0) - (b.plazo_entrega ?? 0),
+      render: (v: number | null) => v != null ? `${v} d` : "-",
+    },
     {
       key: "acciones",
       title: "Acciones",
@@ -406,7 +444,7 @@ export default function MaterialesPage() {
     },
   ];
 
-  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
     useColumnasRedimensionables<MaterialRecord>(columns, "materiales-list-cols-widths-v1");
 
   return (
@@ -569,41 +607,43 @@ export default function MaterialesPage() {
         </Row>
       </Card>
 
-      <Table
-        rowKey="material_id"
-        columns={visibleColumns(columnsResizable, ocultas)}
-        components={tableComponents}
-        dataSource={data}
-        loading={loading}
-        locale={{
-          emptyText: !loading && total === 0 && !search && !filterPlanta && !filterArea && !filterCategoria && !filterClasificacion ? (
-            <EmptyState
-              title="Aún no hay materiales cargados"
-              description="Importá masivamente desde Excel (código, descripción, planta, área, UM, precio…) o creá uno manualmente."
-              primaryAction={isAdminUser ? {
-                label: "Importar desde Excel",
-                icon: <ImportOutlined />,
-                onClick: () => setImportOpen(true),
-              } : undefined}
-              secondaryAction={{
-                label: "Crear manualmente",
-                icon: <PlusOutlined />,
-                onClick: openCreate,
-              }}
-            />
-          ) : undefined,
-        }}
-        pagination={paginacionEstandar({
-          current: page,
-          pageSize,
-          total,
-          onChange: (p, s) => { setPage(p); setPageSize(s); },
-          label: "materiales",
-        })}
-        scroll={{ x: 1200 }}
-        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-        size="small"
-      />
+      <TableDragWrapper>
+              <Table
+          rowKey="material_id"
+          columns={visibleColumns(columnsResizable, ocultas)}
+          components={tableComponents}
+          dataSource={data}
+          loading={loading}
+          locale={{
+            emptyText: !loading && total === 0 && !search && !filterPlanta && !filterArea && !filterCategoria && !filterClasificacion ? (
+              <EmptyState
+                title="Aún no hay materiales cargados"
+                description="Importá masivamente desde Excel (código, descripción, planta, área, UM, precio…) o creá uno manualmente."
+                primaryAction={isAdminUser ? {
+                  label: "Importar desde Excel",
+                  icon: <ImportOutlined />,
+                  onClick: () => setImportOpen(true),
+                } : undefined}
+                secondaryAction={{
+                  label: "Crear manualmente",
+                  icon: <PlusOutlined />,
+                  onClick: openCreate,
+                }}
+              />
+            ) : undefined,
+          }}
+          pagination={paginacionEstandar({
+            current: page,
+            pageSize,
+            total,
+            onChange: (p, s) => { setPage(p); setPageSize(s); },
+            label: "materiales",
+          })}
+          scroll={{ x: 1200 }}
+          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+          size="small"
+        />
+      </TableDragWrapper>
 
       <Modal
         title={editing ? `Editar ${editing.codigo}` : "Nuevo Material"}

@@ -8,7 +8,7 @@ import {
 } from "antd";
 import {
   ArrowLeftOutlined, PlusOutlined, DeleteOutlined,
-  ArrowUpOutlined, ArrowDownOutlined, InboxOutlined,
+  InboxOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
@@ -18,7 +18,9 @@ import {
   ColumnasToggleButton,
   visibleColumns,
   useColumnasRedimensionables,
+  useFilasArrastrables,
 } from "@/lib/tables";
+import { HolderOutlined } from "@ant-design/icons";
 
 const { Title, Text } = Typography;
 
@@ -181,15 +183,22 @@ export default function TemplateRequerimientosPage() {
     persist(id, patch);
   }, [persist]);
 
-  // ── Reorder ──
-  async function handleMove(idx: number, direction: -1 | 1) {
-    const j = idx + direction;
-    if (j < 0 || j >= rows.length) return;
-    const a = rows[idx], b = rows[j];
-    await Promise.all([
-      fetch(`/api/tareas/${a.tarea_id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ item_numero: b.item_numero }) }),
-      fetch(`/api/tareas/${b.tarea_id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ item_numero: a.item_numero }) }),
-    ]);
+  // ── Reorder via drag ──
+  async function handleReorder(oldIdx: number, newIdx: number) {
+    const reordered = [...rows];
+    const [moved] = reordered.splice(oldIdx, 1);
+    reordered.splice(newIdx, 0, moved);
+    setRows(reordered); // optimista
+    // Persistir: cada fila obtiene item_numero = idx+1
+    await Promise.all(
+      reordered.map((r, idx) =>
+        fetch(`/api/tareas/${r.tarea_id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ item_numero: idx + 1 }),
+        }),
+      ),
+    );
     if (codRep?.codigo) fetchTareas(codRep.codigo);
   }
 
@@ -326,15 +335,11 @@ export default function TemplateRequerimientosPage() {
   // Columnas
   const columns: ColumnsType<TareaRow> = [
     {
-      title: "#", key: "orden", width: 90, align: "center",
+      title: "#", key: "orden", width: 70, align: "center",
       render: (_, _r, idx) => (
-        <Space size={0}>
-          <Tooltip title="Subir">
-            <Button type="text" size="small" icon={<ArrowUpOutlined />} disabled={idx === 0} onClick={() => handleMove(idx, -1)} />
-          </Tooltip>
-          <Tooltip title="Bajar">
-            <Button type="text" size="small" icon={<ArrowDownOutlined />} disabled={idx === rows.length - 1} onClick={() => handleMove(idx, 1)} />
-          </Tooltip>
+        <Space size={4}>
+          <HolderOutlined style={{ cursor: "grab", color: brand.textSecondary }} title="Arrastrar para reordenar" />
+          <Text style={{ fontSize: 12 }}>{idx + 1}</Text>
         </Space>
       ),
     },
@@ -510,7 +515,11 @@ export default function TemplateRequerimientosPage() {
     },
   ];
 
-  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+  const { components: rowDragComponents, RowDragWrapper } = useFilasArrastrables({
+    items: rows.map((r) => String(r.tarea_id)),
+    onReorder: handleReorder,
+  });
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
     useColumnasRedimensionables<TareaRow>(columns, "codrep-req-cols-widths-v1");
 
   if (loading) return <Spin size="large" />;
@@ -573,16 +582,20 @@ export default function TemplateRequerimientosPage() {
         </Row>
       </Card>
 
-      <Table
-        rowKey="tarea_id"
-        columns={visibleColumns(columnsResizable, ocultas)}
-        components={tableComponents}
-        dataSource={rows}
-        size="small"
-        pagination={false}
-        scroll={{ x: 1300 }}
-        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-      />
+      <TableDragWrapper>
+        <RowDragWrapper>
+          <Table
+            rowKey="tarea_id"
+            columns={visibleColumns(columnsResizable, ocultas)}
+            components={{ ...tableComponents, ...rowDragComponents }}
+            dataSource={rows}
+            size="small"
+            pagination={false}
+            scroll={{ x: 1300 }}
+            sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+          />
+        </RowDragWrapper>
+      </TableDragWrapper>
 
       <Modal
         title="Agregar item al template"

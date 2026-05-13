@@ -45,6 +45,7 @@ import EvaluacionFormulario, {
 } from "@/components/modules/evaluacion/EvaluacionFormulario";
 import { generarWordEvaluacion } from "@/components/modules/evaluacion/generarWord";
 
+import { formatDateOnly } from "@/lib/dates";
 const { Title, Text } = Typography;
 const { TextArea } = Input;
 
@@ -484,7 +485,7 @@ export default function EvaluacionPage() {
         <Row gutter={[16, 12]}>
           <Col xs={24} sm={12} md={8}>
             <Text type="secondary" style={{ fontSize: 12 }}>Fecha de Ingreso</Text>
-            <div>{ot.fecha_recepcion ? dayjs(ot.fecha_recepcion).format("DD/MM/YYYY") : "-"}</div>
+            <div>{ot.fecha_recepcion ? formatDateOnly(ot.fecha_recepcion) : "-"}</div>
           </Col>
           <Col xs={24} sm={12} md={8}>
             <Text type="secondary" style={{ fontSize: 12 }}>Guia Cliente</Text>

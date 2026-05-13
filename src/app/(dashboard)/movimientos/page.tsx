@@ -61,6 +61,7 @@ import {
 import { brand } from "@/lib/theme";
 import dayjs, { Dayjs } from "dayjs";
 
+import { formatDateOnly } from "@/lib/dates";
 const { Title, Text } = Typography;
 const { TextArea } = Input;
 
@@ -207,7 +208,7 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
     try {
       const XLSX = await import("xlsx");
       const rows = filtered.map((m) => ({
-        Fecha: dayjs(m.fecha_movimiento).format("DD/MM/YYYY"),
+        Fecha: formatDateOnly(m.fecha_movimiento),
         Tipo: m.tipo_movimiento,
         Código: m.material_codigo ?? "",
         Material: m.material_nombre ?? "",
@@ -237,10 +238,10 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
       width: 110,
       sorter: (a, b) => (a.fecha_movimiento || "").localeCompare(b.fecha_movimiento || ""),
       filters: [...new Set(filtered.map((r) => r.fecha_movimiento ? dayjs(r.fecha_movimiento).format("YYYY-MM-DD") : "").filter(Boolean))]
-        .sort().map((v) => ({ text: dayjs(v).format("DD/MM/YYYY"), value: v })),
+        .sort().map((v) => ({ text: formatDateOnly(v), value: v })),
       filterSearch: true,
       onFilter: (value, r) => (r.fecha_movimiento ? dayjs(r.fecha_movimiento).format("YYYY-MM-DD") : "") === value,
-      render: (v: string) => dayjs(v).format("DD/MM/YYYY"),
+      render: (v: string) => formatDateOnly(v),
     },
     {
       key: "tipo_movimiento",
@@ -311,7 +312,7 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
     },
   ];
 
-  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
     useColumnasRedimensionables<Movimiento>(columns, "movimientos-list-cols-widths-v1");
 
   return (
@@ -375,17 +376,19 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
         <Button onClick={resetAnchos}>Restablecer anchos</Button>
       </div>
 
-      <Table
-        rowKey="id"
-        columns={visibleColumns(columnsResizable, ocultas)}
-        components={tableComponents}
-        dataSource={filtered}
-        loading={loading}
-        pagination={{ pageSize: 25, placement: ["topEnd", "bottomEnd"] }}
-        size="small"
-        scroll={{ x: 1200 }}
-        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-      />
+      <TableDragWrapper>
+              <Table
+          rowKey="id"
+          columns={visibleColumns(columnsResizable, ocultas)}
+          components={tableComponents}
+          dataSource={filtered}
+          loading={loading}
+          pagination={{ pageSize: 25, placement: ["topEnd", "bottomEnd"] }}
+          size="small"
+          scroll={{ x: 1200 }}
+          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+        />
+      </TableDragWrapper>
     </div>
   );
 }
@@ -648,7 +651,7 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
       dataIndex: "fecha_entrega_esperada",
       width: 110,
       sorter: (a, b) => (a.fecha_entrega_esperada || "").localeCompare(b.fecha_entrega_esperada || ""),
-      render: (v: string | null) => (v ? dayjs(v).format("DD/MM/YYYY") : "-"),
+      render: (v: string | null) => (v ? formatDateOnly(v) : "-"),
     },
     {
       key: "acciones",
@@ -669,7 +672,7 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
     },
   ];
 
-  const { columnas: itemsResizable, components: itemsComponents, resetAnchos: resetItemsAnchos } =
+  const { columnas: itemsResizable, components: itemsComponents, resetAnchos: resetItemsAnchos, TableDragWrapper: ItemsDragWrapper } =
     useColumnasRedimensionables<ItemFila>(columnasItems, "movimientos-items-cols-widths-v1");
 
   return (
@@ -754,17 +757,19 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
         <Button onClick={resetItemsAnchos}>Restablecer anchos</Button>
       </div>
 
-      <Table
-        rowKey="id"
-        size="small"
-        loading={loading}
-        dataSource={filasFiltradas.filter((r) => dentroDeRango(r, "fecha_entrega_esperada", rangoEntrega))}
-        columns={visibleColumns(itemsResizable, ingresoOcultas)}
-        components={itemsComponents}
-        pagination={{ pageSize: 25, showTotal: (t) => `${t} items`, placement: ["topEnd", "bottomEnd"] }}
-        scroll={{ x: 1500 }}
-        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-      />
+      <ItemsDragWrapper>
+              <Table
+          rowKey="id"
+          size="small"
+          loading={loading}
+          dataSource={filasFiltradas.filter((r) => dentroDeRango(r, "fecha_entrega_esperada", rangoEntrega))}
+          columns={visibleColumns(itemsResizable, ingresoOcultas)}
+          components={itemsComponents}
+          pagination={{ pageSize: 25, showTotal: (t) => `${t} items`, placement: ["topEnd", "bottomEnd"] }}
+          scroll={{ x: 1500 }}
+          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+        />
+      </ItemsDragWrapper>
 
       {/* Modal Recibir */}
       <Modal

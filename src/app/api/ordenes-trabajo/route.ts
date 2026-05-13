@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getAuditUser } from "@/lib/audit";
 import { parseDateOnly } from "@/lib/dates";
 
 // Genera el siguiente código OT-YYYY-XXXX
@@ -201,6 +202,111 @@ export async function POST(req: NextRequest) {
         taller_status: true,
       },
     });
+
+    const usuario = (await getAuditUser(req)) ?? "sistema";
+
+    // Registrar evento de creación en el historial
+    try {
+      await prisma.oTHistorial.create({
+        data: {
+          ot_id: created.id,
+          tipo_operacion: "CREACION",
+          descripcion: `OT ${created.ot} creada${created.cliente?.razon_social ? ` para ${created.cliente.razon_social}` : ""}.`,
+          usuario,
+          fecha: new Date(),
+        },
+      });
+    } catch (e) {
+      console.error("No se pudo registrar historial de creación:", e);
+    }
+
+    // Auto-generar planificación + requerimientos desde el cod_rep (si existe)
+    if (body.id_cod_rep && created.codigo_reparacion) {
+      const codRepCodigo = created.codigo_reparacion.codigo;
+      // 1) Planificación desde operacion_cod_rep
+      try {
+        const operaciones = await prisma.operacionCodRep.findMany({
+          where: { cod_rep_codigo: codRepCodigo, activo: true },
+          orderBy: { orden: "asc" },
+        });
+        if (operaciones.length > 0) {
+          await prisma.planificacionOT.createMany({
+            data: operaciones.map((op) => ({
+              ot_id: created.id,
+              operacion_cod_rep_id: op.operacion_cod_rep_id,
+              componente: op.componente_codigo,
+              operacion_codigo: op.operacion_reparacion_codigo ?? op.trabajo.slice(0, 20),
+              descripcion: op.trabajo,
+              orden: op.orden,
+              horas_estimadas: op.horas ?? null,
+              estado: "abierto",
+            })),
+          });
+          await prisma.oTHistorial.create({
+            data: {
+              ot_id: created.id,
+              tipo_operacion: "TAREAS_GENERADAS",
+              descripcion: `Planificación auto-generada desde ${codRepCodigo}: ${operaciones.length} tarea(s).`,
+              usuario,
+            },
+          });
+        }
+      } catch (e) {
+        console.error("Auto-gen planificación falló:", e);
+      }
+
+      // 2) Requerimientos desde tarea (template del cod_rep)
+      try {
+        const tareas = await prisma.tarea.findMany({
+          where: { cod_rep_codigo: codRepCodigo },
+          orderBy: { item_numero: "asc" },
+        });
+        if (tareas.length > 0) {
+          const { nextNroReq } = await import("@/lib/requerimientos");
+          await prisma.$transaction(async (tx) => {
+            const nroReq = await nextNroReq(tx);
+            const codigosMat = [...new Set(tareas.filter((t) => t.material_codigo).map((t) => t.material_codigo!))];
+            const materiales = codigosMat.length > 0
+              ? await tx.material.findMany({ where: { codigo: { in: codigosMat } }, select: { codigo: true, material_id: true } })
+              : [];
+            const matMap = new Map(materiales.map((m) => [m.codigo, m.material_id]));
+            for (let i = 0; i < tareas.length; i++) {
+              const t = tareas[i];
+              await tx.oTRepuesto.create({
+                data: {
+                  ot_id: created.id,
+                  material_id: t.material_codigo ? matMap.get(t.material_codigo) ?? null : null,
+                  material_codigo: t.material_codigo ?? null,
+                  tipo_codigo: t.tipo_codigo,
+                  cantidad: t.requerimiento,
+                  descripcion: t.descripcion,
+                  texto: t.texto ?? null,
+                  fabricante_codigo: t.fabricante_codigo ?? null,
+                  unidad_medida: "UNIDAD",
+                  precio_unitario: t.precio ?? null,
+                  moneda: "USD",
+                  es_adicional: false,
+                  nro_req: nroReq,
+                  item_req: i + 1,
+                  status_requerimiento_codigo: "BORRADOR",
+                  usuario_solicita: usuario,
+                },
+              });
+            }
+            await tx.oTHistorial.create({
+              data: {
+                ot_id: created.id,
+                tipo_operacion: "REQUERIMIENTO",
+                descripcion: `Requerimiento ${nroReq} auto-generado desde ${codRepCodigo}: ${tareas.length} item(s).`,
+                usuario,
+              },
+            });
+          });
+        }
+      } catch (e) {
+        console.error("Auto-gen requerimientos falló:", e);
+      }
+    }
 
     return NextResponse.json({ data: created }, { status: 201 });
   } catch (error) {

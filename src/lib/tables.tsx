@@ -7,6 +7,22 @@ import type { ColumnsType, ColumnType, TablePaginationConfig } from "antd/es/tab
 import dayjs, { Dayjs } from "dayjs";
 import { Resizable, type ResizeCallbackData } from "react-resizable";
 import "react-resizable/css/styles.css";
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 export interface NumeracionOpts {
   current?: number;
@@ -30,6 +46,9 @@ export function numeracionColumn<T>(opts: NumeracionOpts = {}): ColumnType<T> {
 }
 
 export const PAGINATION_PAGE_SIZE = 20;
+
+// Configuración estándar para sticky de tablas (header + scrollbar horizontal).
+export const STICKY_HEADER = { offsetHeader: 56, offsetScroll: 0 } as const;
 const PAGINATION_BASE_OPTIONS = [10, 20, 50, 100, 500, 1000];
 export const PAGINATION_PAGE_SIZE_OPTIONS = PAGINATION_BASE_OPTIONS.map(String);
 
@@ -94,16 +113,22 @@ export function vistasEstado<T extends string>(
 // Hook: gestiona qué columnas están ocultas y persiste la preferencia en
 // localStorage usando una key única por tabla. Devuelve helpers para filtrar
 // las `columns` y para componer el botón Popover de selección.
-export function useColumnasOcultas(storageKey: string) {
-  const [ocultas, setOcultas] = useState<string[]>([]);
+export function useColumnasOcultas(storageKey: string, defaultOcultas: string[] = []) {
+  const [ocultas, setOcultas] = useState<string[]>(defaultOcultas);
   const [hidratado, setHidratado] = useState(false);
 
   useEffect(() => {
     try {
       const stored = localStorage.getItem(storageKey);
-      if (stored) setOcultas(JSON.parse(stored));
+      if (stored) {
+        setOcultas(JSON.parse(stored));
+      } else {
+        // Primera visita del usuario: aplica defaults y persiste.
+        setOcultas(defaultOcultas);
+      }
     } catch { /* ignore */ }
     setHidratado(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey]);
 
   useEffect(() => {
@@ -117,10 +142,13 @@ export function useColumnasOcultas(storageKey: string) {
 }
 
 // Filtra las columnas según las claves ocultas. Las columnas sin `key` siempre se conservan.
-export function visibleColumns<T>(columns: ColumnsType<T>, ocultas: string[]): ColumnsType<T> {
+export function visibleColumns<T>(columns: ColumnsType<T>, ocultas: string[], obligatorias: string[] = []): ColumnsType<T> {
+  const ob = new Set(obligatorias);
   return columns.filter((c) => {
     const k = (c as { key?: React.Key }).key;
-    return k === undefined || !ocultas.includes(String(k));
+    if (k === undefined) return true;
+    if (ob.has(String(k))) return true; // siempre visible
+    return !ocultas.includes(String(k));
   });
 }
 
@@ -334,21 +362,92 @@ export function useRangoFechas(initial: RangoFechas = { desde: null, hasta: null
 // Columnas redimensionables
 // ───────────────────────────────────────────────────────────────────────────
 
-// Componente custom para el <th> del header de la tabla AntD: envuelve con
-// Resizable y reporta el nuevo ancho mediante onResize.
-type ResizableTitleProps = React.HTMLAttributes<HTMLTableCellElement> & {
+// Componente custom para el <th> del header de la tabla AntD:
+//  - Envuelve con Resizable (arrastrar borde derecho = cambiar ancho).
+//  - Sortable via dnd-kit (arrastrar el header completo = reordenar columna).
+// Mantenemos el handle de resize con stopPropagation para no chocar con el drag.
+type SortableResizableTitleProps = React.HTMLAttributes<HTMLTableCellElement> & {
   width?: number;
-  onResize: (e: React.SyntheticEvent<Element>, data: ResizeCallbackData) => void;
+  onResize?: (e: React.SyntheticEvent<Element>, data: ResizeCallbackData) => void;
+  onResizeStop?: (e: React.SyntheticEvent<Element>, data: ResizeCallbackData) => void;
+  columnKey?: string;
+  sortable?: boolean;
 };
 
-function ResizableTitle(props: ResizableTitleProps) {
-  const { onResize, width, ...restProps } = props;
-  if (!width) {
-    return <th {...restProps} />;
+function SortableResizableTitle(props: SortableResizableTitleProps) {
+  const { onResize, onResizeStop, width, columnKey, sortable, style: styleProp, children, ...restProps } = props;
+  // Ancho local durante drag para feedback visual sin re-render del Table.
+  const [liveWidth, setLiveWidth] = useState<number | null>(null);
+  const effectiveWidth = liveWidth ?? width;
+
+  const sort = useSortable({ id: columnKey ?? "__none__", disabled: !sortable || !columnKey });
+  const isInteractive = sortable && columnKey;
+  const dragStyle: React.CSSProperties = isInteractive
+    ? {
+        transform: CSS.Translate.toString(sort.transform),
+        transition: sort.transition,
+        opacity: sort.isDragging ? 0.4 : 1,
+      }
+    : {};
+
+  // position:relative solo cuando hay resize (para el handle absolutely positioned).
+  // Las columnas fixed conservan su position:sticky de antd intacto.
+  const needsRelative = !!(width && onResize) || !!isInteractive;
+  const cellStyle: React.CSSProperties = {
+    ...styleProp,
+    ...dragStyle,
+    ...(needsRelative ? { position: "relative" } : {}),
+  };
+
+  // ref del nodo va sobre el <th> para que dnd-kit calcule posición.
+  // Pero los listeners van SOLO en el drag handle, no en el <th> — así clicks en
+  // sort/filter/checkboxes funcionan sin disparar drag.
+  const thRefProps = isInteractive
+    ? { ref: sort.setNodeRef as unknown as React.Ref<HTMLTableCellElement> }
+    : {};
+
+  const dragHandle = isInteractive ? (
+    <span
+      {...sort.attributes}
+      {...sort.listeners}
+      style={{
+        position: "absolute",
+        left: 0,
+        top: 0,
+        bottom: 0,
+        width: 14,
+        zIndex: 2,
+        cursor: sort.isDragging ? "grabbing" : "grab",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "rgba(0,0,0,0.25)",
+        fontSize: 11,
+        opacity: 0,
+        transition: "opacity 0.15s",
+      }}
+      className="col-drag-handle"
+      title="Arrastrar para reordenar columna"
+      onClick={(e) => e.stopPropagation()}
+    >
+      ⋮⋮
+    </span>
+  ) : null;
+
+  const innerContent = (
+    <>
+      {dragHandle}
+      {children}
+    </>
+  );
+
+  if (!effectiveWidth || !onResizeStop) {
+    return <th {...restProps} {...thRefProps} style={cellStyle}>{innerContent}</th>;
   }
+
   return (
     <Resizable
-      width={width}
+      width={effectiveWidth}
       height={0}
       handle={
         <span
@@ -358,19 +457,25 @@ function ResizableTitle(props: ResizableTitleProps) {
             right: -5,
             bottom: 0,
             top: 0,
-            zIndex: 1,
+            zIndex: 3,
             width: 10,
             cursor: "col-resize",
             userSelect: "none",
           }}
           onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
           title="Arrastrar para cambiar ancho"
         />
       }
-      onResize={onResize}
-      draggableOpts={{ enableUserSelectHack: false }}
+      onResize={(_e, data) => setLiveWidth(Math.max(40, Math.round(data.size.width)))}
+      onResizeStop={(e, data) => {
+        setLiveWidth(null);
+        onResizeStop(e, data);
+      }}
+      draggableOpts={{ enableUserSelectHack: true }}
     >
-      <th {...restProps} style={{ ...restProps.style, position: "relative" }} />
+      <th {...restProps} {...thRefProps} style={cellStyle}>{innerContent}</th>
     </Resizable>
   );
 }
@@ -392,14 +497,12 @@ export function useColumnasRedimensionables<T>(
     [],
   );
 
+  // ── Anchos (resize) ─────────────────────────────────────────────────
   const [anchos, setAnchos] = useState<Record<string, number>>({});
   const [hidratado, setHidratado] = useState(false);
 
   useEffect(() => {
-    if (!storageKey) {
-      setHidratado(true);
-      return;
-    }
+    if (!storageKey) { setHidratado(true); return; }
     try {
       const stored = localStorage.getItem(storageKey);
       if (stored) setAnchos(JSON.parse(stored));
@@ -409,43 +512,214 @@ export function useColumnasRedimensionables<T>(
 
   useEffect(() => {
     if (!storageKey || !hidratado) return;
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(anchos));
-    } catch { /* ignore */ }
+    try { localStorage.setItem(storageKey, JSON.stringify(anchos)); } catch { /* ignore */ }
   }, [anchos, hidratado, storageKey]);
 
+  // ── Orden (drag-to-reorder) ─────────────────────────────────────────
+  const orderKey = storageKey ? `${storageKey}-order` : undefined;
+  const [orden, setOrden] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    if (!orderKey) return;
+    try {
+      const stored = localStorage.getItem(orderKey);
+      if (stored) setOrden(JSON.parse(stored));
+    } catch { /* ignore */ }
+  }, [orderKey]);
+
+  useEffect(() => {
+    if (!orderKey || orden === null) return;
+    try { localStorage.setItem(orderKey, JSON.stringify(orden)); } catch { /* ignore */ }
+  }, [orden, orderKey]);
+
+  // Aplicar orden personalizado a las columnas. Las columnas fixed mantienen su posición original.
+  const columnasOrdenadas = useMemo<ColumnsType<T>>(() => {
+    if (!orden || orden.length === 0) return columns;
+    // Separar fixed (no reordenables) de las normales
+    const fixedCols = columns.filter((c) => (c as ColumnType<T>).fixed);
+    const movableCols = columns.filter((c) => !(c as ColumnType<T>).fixed);
+    const byKey = new Map(movableCols.map((c, i) => [claveColumna(c as ColumnType<T>, i), c] as const));
+    // Aplicar orden persistido + agregar al final las que no estaban (columnas nuevas)
+    const orderedMovable: ColumnsType<T> = [];
+    const seen = new Set<string>();
+    for (const k of orden) {
+      const c = byKey.get(k);
+      if (c) { orderedMovable.push(c); seen.add(k); }
+    }
+    for (const c of movableCols) {
+      const k = claveColumna(c as ColumnType<T>, 0);
+      if (!seen.has(k)) orderedMovable.push(c);
+    }
+    // Reinsertar fixed manteniendo su side
+    const left = fixedCols.filter((c) => (c as ColumnType<T>).fixed === "left");
+    const right = fixedCols.filter((c) => (c as ColumnType<T>).fixed === "right");
+    return [...left, ...orderedMovable, ...right];
+  }, [columns, orden, claveColumna]);
+
   const columnasRedim = useMemo<ColumnsType<T>>(() => {
-    return columns.map((c, idx) => {
+    return columnasOrdenadas.map((c, idx) => {
       const col = c as ColumnType<T>;
       const k = claveColumna(col, idx);
       const widthActual = anchos[k] ?? (typeof col.width === "number" ? col.width : undefined);
-      // Las columnas fijas (fixed: "left" | "right") usan position: sticky de AntD.
-      // El wrapper de Resizable rompe ese sticky, así que las dejamos NO redimensionables
-      // — conservan su ancho original y siguen quedando pegadas al borde correspondiente.
+      // Las columnas fixed mantienen ancho original (Resizable rompe el sticky)
       if (col.fixed) {
-        return col;
+        return {
+          ...col,
+          onHeaderCell: () => ({ columnKey: k, sortable: false }),
+        } as ColumnType<T>;
       }
       return {
         ...col,
         ...(widthActual ? { width: widthActual } : {}),
         onHeaderCell: (column: { width?: number }) => ({
           width: column.width,
-          onResize: (_e: React.SyntheticEvent, data: ResizeCallbackData) => {
+          columnKey: k,
+          sortable: true,
+          // Commit del ancho solo al soltar (onResizeStop) — evita re-renders en cada pixel
+          // que interrumpen el drag.
+          onResizeStop: (_e: React.SyntheticEvent, data: ResizeCallbackData) => {
             setAnchos((prev) => ({ ...prev, [k]: Math.max(40, Math.round(data.size.width)) }));
           },
         }),
       } as ColumnType<T>;
     });
-  }, [columns, anchos, claveColumna]);
+  }, [columnasOrdenadas, anchos, claveColumna]);
 
   const components = useMemo(
-    () => ({
-      header: { cell: ResizableTitle },
-    }),
+    () => ({ header: { cell: SortableResizableTitle } }),
     [],
   );
 
-  const resetAnchos = useCallback(() => setAnchos({}), []);
+  // Lista de keys reordenables (sin las fixed) para SortableContext
+  const movableKeys = useMemo(
+    () =>
+      columnasRedim
+        .filter((c) => !(c as ColumnType<T>).fixed)
+        .map((c, idx) => claveColumna(c as ColumnType<T>, idx)),
+    [columnasRedim, claveColumna],
+  );
 
-  return { columnas: columnasRedim, components, resetAnchos };
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      setOrden((prev) => {
+        const current = prev ?? movableKeys;
+        const oldIndex = current.indexOf(String(active.id));
+        const newIndex = current.indexOf(String(over.id));
+        if (oldIndex < 0 || newIndex < 0) return current;
+        return arrayMove(current, oldIndex, newIndex);
+      });
+    },
+    [movableKeys],
+  );
+
+  // Wrapper que provee DndContext + SortableContext alrededor del <Table>.
+  const TableDragWrapper = useCallback(
+    ({ children }: { children: React.ReactNode }) => (
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={movableKeys} strategy={horizontalListSortingStrategy}>
+          {children}
+        </SortableContext>
+      </DndContext>
+    ),
+    [sensors, handleDragEnd, movableKeys],
+  );
+
+  const resetAnchos = useCallback(() => {
+    setAnchos({});
+    setOrden(null);
+    if (orderKey) try { localStorage.removeItem(orderKey); } catch { /* ignore */ }
+  }, [orderKey]);
+
+  return { columnas: columnasRedim, components, resetAnchos, TableDragWrapper };
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Filas arrastrables (drag-to-reorder rows en tablas template/edición)
+// ───────────────────────────────────────────────────────────────────────────
+
+interface SortableRowProps extends React.HTMLAttributes<HTMLTableRowElement> {
+  "data-row-key"?: string | number;
+}
+
+function SortableRow(props: SortableRowProps) {
+  const key = props["data-row-key"];
+  const id = key != null ? String(key) : "__none__";
+  const sort = useSortable({ id, disabled: key == null });
+
+  const style: React.CSSProperties = {
+    ...props.style,
+    transform: CSS.Translate.toString(sort.transform),
+    transition: sort.transition,
+    ...(sort.isDragging ? { opacity: 0.5, zIndex: 999, position: "relative" } : {}),
+  };
+
+  return (
+    <tr
+      {...props}
+      ref={sort.setNodeRef as unknown as React.Ref<HTMLTableRowElement>}
+      style={style}
+      {...sort.attributes}
+      {...sort.listeners}
+    />
+  );
+}
+
+/**
+ * Hook para filas arrastrables (drag-to-reorder).
+ *
+ * Uso:
+ *   const { components, RowDragWrapper } = useFilasArrastrables({
+ *     items: rows.map(r => String(r.id)),
+ *     onReorder: (oldIdx, newIdx) => {  ...persistir el nuevo orden... },
+ *   });
+ *
+ *   <RowDragWrapper>
+ *     <Table rowKey="id" components={components} ... />
+ *   </RowDragWrapper>
+ */
+export function useFilasArrastrables(opts: {
+  items: string[];
+  onReorder: (oldIndex: number, newIndex: number) => void;
+}) {
+  const { items, onReorder } = opts;
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      const oldIndex = items.indexOf(String(active.id));
+      const newIndex = items.indexOf(String(over.id));
+      if (oldIndex < 0 || newIndex < 0) return;
+      onReorder(oldIndex, newIndex);
+    },
+    [items, onReorder],
+  );
+
+  const components = useMemo(
+    () => ({ body: { row: SortableRow } }),
+    [],
+  );
+
+  const RowDragWrapper = useCallback(
+    ({ children }: { children: React.ReactNode }) => (
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={items} strategy={verticalListSortingStrategy}>
+          {children}
+        </SortableContext>
+      </DndContext>
+    ),
+    [sensors, handleDragEnd, items],
+  );
+
+  return { components, RowDragWrapper };
 }

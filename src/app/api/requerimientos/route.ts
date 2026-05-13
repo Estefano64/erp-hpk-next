@@ -86,6 +86,7 @@ export async function GET(req: NextRequest) {
           status_oc: { select: { codigo: true, nombre: true } },
           proveedor: { select: { id: true, razon_social: true } },
           compra: { select: { id: true, numero_po: true, status_oc_codigo: true } },
+          adjuntos: { select: { id: true, nombre_archivo: true, ruta: true, tamano: true } },
         },
         orderBy: [{ fecha_solicitud: "desc" }, { id: "desc" }],
         skip: (page - 1) * limit,
