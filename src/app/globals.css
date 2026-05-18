@@ -51,6 +51,51 @@ body {
   text-overflow: ellipsis;
 }
 
+/* Drag handle de columna: aparece al hacer hover sobre el header. */
+.ant-table-thead > tr > th:hover .col-drag-handle {
+  opacity: 1 !important;
+}
+.ant-table-thead > tr > th {
+  padding-left: 16px !important;
+}
+
+/* Resize handle: línea sutil 1px SIEMPRE visible (idle), se intensifica al hover. */
+.react-resizable-handle {
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    transparent 45%,
+    rgba(0, 0, 0, 0.08) 45%,
+    rgba(0, 0, 0, 0.08) 55%,
+    transparent 55%,
+    transparent 100%
+  ) !important;
+  border: none !important;
+  transition: background 0.15s;
+}
+.ant-table-thead > tr > th:hover .react-resizable-handle {
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    transparent 40%,
+    rgba(28, 43, 91, 0.4) 40%,
+    rgba(28, 43, 91, 0.4) 60%,
+    transparent 60%,
+    transparent 100%
+  ) !important;
+}
+.react-resizable-handle:hover {
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    transparent 35%,
+    rgba(17, 160, 182, 1) 35%,
+    rgba(17, 160, 182, 1) 65%,
+    transparent 65%,
+    transparent 100%
+  ) !important;
+}
+
 /* Columnas fijas (Acciones a la derecha / NRO a la izquierda): mantener fondo
    opaco siempre para que las columnas que pasan por debajo en el scroll
    horizontal no se vean a través. */
@@ -77,8 +122,7 @@ body {
   z-index: 5 !important;
 }
 /* Cualquier contenido (Tags, badges, etc.) dentro de una celda no debe poder
-   escaparse de los límites de la celda. `contain: paint` corta visualmente
-   cualquier render que se intente salir del cuadro. */
+   escaparse de los límites de la celda. */
 .ant-table-tbody > tr > td {
   overflow: hidden !important;
   contain: paint;

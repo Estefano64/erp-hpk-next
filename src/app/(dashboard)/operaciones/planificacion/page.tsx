@@ -22,6 +22,7 @@ import { brand } from "@/lib/theme";
 import { calcularFinEstimado, calcularHH } from "@/lib/planification-hours";
 import { useTabSync } from "@/lib/useTabSync";
 
+import { formatDateOnlyShort } from "@/lib/dates";
 dayjs.extend(isoWeek);
 
 // Lista de formatos aceptados al escribir (el primero es el que se muestra).
@@ -454,7 +455,7 @@ export default function PlanificacionPage() {
   const otDescValores = [...new Set(rows.map((r) => r.orden_trabajo?.descripcion).filter(Boolean) as string[])].sort()
     .map((v) => ({ text: v, value: v }));
   const fechaRecepValores = [...new Set(rows.map((r) => r.orden_trabajo?.fecha_recepcion).filter(Boolean) as string[])].sort()
-    .map((v) => ({ text: dayjs(v).format("DD/MM/YY"), value: v }));
+    .map((v) => ({ text: formatDateOnlyShort(v), value: v }));
   const prioridadValores = [...new Set(rows.map((r) => r.orden_trabajo?.prioridad_atencion?.nombre).filter(Boolean) as string[])].sort()
     .map((v) => ({ text: v, value: v }));
   const tallerValores = [...new Set(rows.map((r) => r.orden_trabajo?.taller_status?.nombre).filter(Boolean) as string[])].sort()
@@ -533,7 +534,7 @@ export default function PlanificacionPage() {
       sorter: (a, b) => (a.orden_trabajo?.fecha_recepcion ?? "").localeCompare(b.orden_trabajo?.fecha_recepcion ?? ""),
       filters: fechaRecepValores, filterSearch: true,
       onFilter: (value, r) => r.orden_trabajo?.fecha_recepcion === value,
-      render: (_, r) => r.orden_trabajo?.fecha_recepcion ? dayjs(r.orden_trabajo.fecha_recepcion).format("DD/MM/YY") : "-",
+      render: (_, r) => r.orden_trabajo?.fecha_recepcion ? formatDateOnlyShort(r.orden_trabajo.fecha_recepcion) : "-",
     },
     {
       title: "Prioridad", key: "prior", width: 110, align: "center",
@@ -883,7 +884,7 @@ export default function PlanificacionPage() {
     return [...s].sort();
   }, [rows]);
 
-  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
     useColumnasRedimensionables<PlanRow>(columns, "planificacion-cols-widths-v1");
 
   return (
@@ -1091,32 +1092,34 @@ export default function PlanificacionPage() {
         </Card>
       )}
 
-      <Table
-        rowKey="id"
-        columns={visibleColumns(columnsResizable, ocultas)}
-        components={tableComponents}
-        dataSource={rows.filter((r) =>
-          dentroDeRango(r, "fecha_inicio", rangoInicio) &&
-          dentroDeRango(r, "fecha_fin", rangoFin)
-        )}
-        loading={loading}
-        size="small"
-        pagination={{ pageSize: 50, showTotal: (t) => `${t} tareas`, placement: ["topEnd", "bottomEnd"] }}
-        scroll={{ x: 2400 }}
-        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-        rowSelection={{
-          selectedRowKeys: selectedKeys,
-          onChange: (keys) => setSelectedKeys(keys as number[]),
-          getCheckboxProps: (r) => ({ disabled: r.estado === "realizado" }),
-          fixed: true,
-        }}
-        rowClassName={(r) => {
-          if (pendingChanges[r.id]) return "plan-row-pending";
-          if (r.estado === "realizado") return "plan-row-done";
-          if (r.estado === "cancelado") return "plan-row-cancel";
-          return "";
-        }}
-      />
+      <TableDragWrapper>
+              <Table
+          rowKey="id"
+          columns={visibleColumns(columnsResizable, ocultas)}
+          components={tableComponents}
+          dataSource={rows.filter((r) =>
+            dentroDeRango(r, "fecha_inicio", rangoInicio) &&
+            dentroDeRango(r, "fecha_fin", rangoFin)
+          )}
+          loading={loading}
+          size="small"
+          pagination={{ pageSize: 50, showTotal: (t) => `${t} tareas`, placement: ["topEnd", "bottomEnd"] }}
+          scroll={{ x: 2400 }}
+          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+          rowSelection={{
+            selectedRowKeys: selectedKeys,
+            onChange: (keys) => setSelectedKeys(keys as number[]),
+            getCheckboxProps: (r) => ({ disabled: r.estado === "realizado" }),
+            fixed: true,
+          }}
+          rowClassName={(r) => {
+            if (pendingChanges[r.id]) return "plan-row-pending";
+            if (r.estado === "realizado") return "plan-row-done";
+            if (r.estado === "cancelado") return "plan-row-cancel";
+            return "";
+          }}
+        />
+      </TableDragWrapper>
 
       <style jsx global>{`
         /* Color de fila por estado — solo celdas NO fijas. Las celdas fijas

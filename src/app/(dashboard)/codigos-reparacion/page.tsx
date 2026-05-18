@@ -347,7 +347,7 @@ export default function CodigosReparacionPage() {
     },
   ];
 
-  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
     useColumnasRedimensionables<CodRep>(columns, "codrep-list-cols-widths-v1");
 
   return (
@@ -470,23 +470,25 @@ export default function CodigosReparacionPage() {
         </Row>
       </Card>
 
-      <Table
-        rowKey="cod_rep_id"
-        columns={visibleColumns(columnsResizable, ocultas)}
-        components={tableComponents}
-        dataSource={data}
-        loading={loading}
-        pagination={paginacionEstandar({
-          current: page,
-          pageSize,
-          total,
-          onChange: (p, s) => { setPage(p); setPageSize(s); },
-          label: "registros",
-        })}
-        scroll={{ x: 1100 }}
-        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-        size="small"
-      />
+      <TableDragWrapper>
+              <Table
+          rowKey="cod_rep_id"
+          columns={visibleColumns(columnsResizable, ocultas)}
+          components={tableComponents}
+          dataSource={data}
+          loading={loading}
+          pagination={paginacionEstandar({
+            current: page,
+            pageSize,
+            total,
+            onChange: (p, s) => { setPage(p); setPageSize(s); },
+            label: "registros",
+          })}
+          scroll={{ x: 1100 }}
+          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+          size="small"
+        />
+      </TableDragWrapper>
 
       <Modal
         title={editing ? `Editar ${editing.codigo}` : "Nuevo Código Reparable"}

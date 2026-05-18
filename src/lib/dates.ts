@@ -17,3 +17,29 @@ export function parseDateOnly(s: string | Date | null | undefined): Date | null 
   }
   return new Date(s);
 }
+
+/**
+ * Formatea una fecha "solo día" como DD/MM/YYYY sin que se desplace por zona horaria.
+ * Acepta strings ISO ("2026-05-13T00:00:00.000Z"), "YYYY-MM-DD" o Date.
+ * Toma solo la parte de fecha (los primeros 10 caracteres del ISO) para evitar conversiones.
+ */
+export function formatDateOnly(v: string | Date | null | undefined): string {
+  if (!v) return "-";
+  if (v instanceof Date) {
+    const y = v.getFullYear();
+    const m = String(v.getMonth() + 1).padStart(2, "0");
+    const d = String(v.getDate()).padStart(2, "0");
+    return `${d}/${m}/${y}`;
+  }
+  const s = String(v);
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return s;
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
+/** Igual que formatDateOnly pero con año de 2 dígitos (DD/MM/YY). */
+export function formatDateOnlyShort(v: string | Date | null | undefined): string {
+  const full = formatDateOnly(v);
+  if (full === "-" || full.length < 10) return full;
+  return full.slice(0, 6) + full.slice(8); // "DD/MM/YYYY" → "DD/MM/YY"
+}

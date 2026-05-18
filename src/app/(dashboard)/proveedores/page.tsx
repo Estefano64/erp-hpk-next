@@ -79,7 +79,7 @@ export default function ProveedoresPage() {
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
-  const { ocultas, setOcultas } = useColumnasOcultas("proveedores-list-cols-v1");
+  const { ocultas, setOcultas } = useColumnasOcultas("proveedores-list-cols-v2", ["direccion"]);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ProveedorRecord | null>(null);
@@ -224,6 +224,11 @@ export default function ProveedoresPage() {
       render: (v: string | null) => v ?? "-",
     },
     {
+      key: "direccion", title: "Dirección", dataIndex: "direccion", width: 220, ellipsis: true,
+      ...filtroPorColumna(data, "direccion"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
       key: "acciones",
       title: "Acciones",
       width: 120,
@@ -254,7 +259,7 @@ export default function ProveedoresPage() {
     },
   ];
 
-  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
     useColumnasRedimensionables<ProveedorRecord>(columns, "proveedores-list-cols-widths-v1");
 
   return (
@@ -329,41 +334,43 @@ export default function ProveedoresPage() {
         </Row>
       </Card>
 
-      <Table
-        rowKey="id"
-        columns={visibleColumns(columnsResizable, ocultas)}
-        components={tableComponents}
-        dataSource={data}
-        loading={loading}
-        locale={{
-          emptyText: !loading && total === 0 && !search ? (
-            <EmptyState
-              title="Aún no hay proveedores cargados"
-              description="Importá masivamente desde Excel (RUC, razón social, contacto) o creá uno manualmente."
-              primaryAction={isAdminUser ? {
-                label: "Importar desde Excel",
-                icon: <ImportOutlined />,
-                onClick: () => setImportOpen(true),
-              } : undefined}
-              secondaryAction={{
-                label: "Crear manualmente",
-                icon: <PlusOutlined />,
-                onClick: openCreate,
-              }}
-            />
-          ) : undefined,
-        }}
-        pagination={paginacionEstandar({
-          current: page,
-          pageSize,
-          total,
-          onChange: (p, s) => { setPage(p); setPageSize(s); },
-          label: "proveedores",
-        })}
-        scroll={{ x: 900 }}
-        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-        size="small"
-      />
+      <TableDragWrapper>
+              <Table
+          rowKey="id"
+          columns={visibleColumns(columnsResizable, ocultas)}
+          components={tableComponents}
+          dataSource={data}
+          loading={loading}
+          locale={{
+            emptyText: !loading && total === 0 && !search ? (
+              <EmptyState
+                title="Aún no hay proveedores cargados"
+                description="Importá masivamente desde Excel (RUC, razón social, contacto) o creá uno manualmente."
+                primaryAction={isAdminUser ? {
+                  label: "Importar desde Excel",
+                  icon: <ImportOutlined />,
+                  onClick: () => setImportOpen(true),
+                } : undefined}
+                secondaryAction={{
+                  label: "Crear manualmente",
+                  icon: <PlusOutlined />,
+                  onClick: openCreate,
+                }}
+              />
+            ) : undefined,
+          }}
+          pagination={paginacionEstandar({
+            current: page,
+            pageSize,
+            total,
+            onChange: (p, s) => { setPage(p); setPageSize(s); },
+            label: "proveedores",
+          })}
+          scroll={{ x: 900 }}
+          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+          size="small"
+        />
+      </TableDragWrapper>
 
       <Modal
         title={editing ? `Editar ${editing.ruc}` : "Nuevo Proveedor"}

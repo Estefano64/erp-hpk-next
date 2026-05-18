@@ -12,6 +12,7 @@ import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { brand } from "@/lib/theme";
 import { useTabSync } from "@/lib/useTabSync";
+import { formatDateOnlyShort } from "@/lib/dates";
 import {
   useColumnasOcultas,
   ColumnasToggleButton,
@@ -277,9 +278,9 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
   const horasUnicas = [...new Set(rows.map((r) => r.horas_estimadas).filter(Boolean) as string[])]
     .sort().map((v) => ({ text: Number(v).toFixed(2), value: v }));
   const fechasInicioUnicas = [...new Set(rows.map((r) => r.fecha_inicio).filter(Boolean) as string[])]
-    .sort().map((v) => ({ text: dayjs(v).format("DD/MM/YY"), value: v }));
+    .sort().map((v) => ({ text: formatDateOnlyShort(v), value: v }));
   const fechasFinUnicas = [...new Set(rows.map((r) => r.fecha_fin).filter(Boolean) as string[])]
-    .sort().map((v) => ({ text: dayjs(v).format("DD/MM/YY"), value: v }));
+    .sort().map((v) => ({ text: formatDateOnlyShort(v), value: v }));
   const fechasInicioRealUnicas = [...new Set(rows.map((r) => r.fecha_inicio_real).filter(Boolean) as string[])]
     .sort().map((v) => ({ text: dayjs(v).format("DD/MM HH:mm"), value: v }));
   const fechasFinRealUnicas = [...new Set(rows.map((r) => r.fecha_fin_real).filter(Boolean) as string[])]
@@ -338,7 +339,7 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
       sorter: (a, b) => (a.fecha_inicio || "").localeCompare(b.fecha_inicio || ""),
       filters: fechasInicioUnicas, filterSearch: true,
       onFilter: (value, r) => r.fecha_inicio === value,
-      render: (v: string | null) => v ? dayjs(v).format("DD/MM/YY") : <span style={{ color: brand.textSecondary }}>—</span>,
+      render: (v: string | null) => v ? formatDateOnlyShort(v) : <span style={{ color: brand.textSecondary }}>—</span>,
     },
     {
       key: "fecha_fin",
@@ -346,7 +347,7 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
       sorter: (a, b) => (a.fecha_fin || "").localeCompare(b.fecha_fin || ""),
       filters: fechasFinUnicas, filterSearch: true,
       onFilter: (value, r) => r.fecha_fin === value,
-      render: (v: string | null) => v ? dayjs(v).format("DD/MM/YY") : <span style={{ color: brand.textSecondary }}>—</span>,
+      render: (v: string | null) => v ? formatDateOnlyShort(v) : <span style={{ color: brand.textSecondary }}>—</span>,
     },
     {
       key: "maquina",
@@ -439,7 +440,7 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
     },
   ];
 
-  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
     useColumnasRedimensionables<PlanRow>(columns, "ot-tareas-cols-widths-v1");
 
   return (
@@ -559,21 +560,23 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
         </Card>
       )}
 
-      <Table
-        rowKey="id"
-        columns={visibleColumns(columnsResizable, ocultas)}
-        components={tableComponents}
-        dataSource={rows.filter((r) =>
-          dentroDeRango(r, "fecha_inicio", rangoInicio) &&
-          dentroDeRango(r, "fecha_fin", rangoFin)
-        )}
-        pagination={false}
-        size="small"
-        loading={loading}
-        scroll={{ x: 1800 }}
-        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-        locale={{ emptyText: <Empty description="Sin tareas. Usá 'Task list (autogenerar)' o 'Nueva Tarea'." /> }}
-      />
+      <TableDragWrapper>
+              <Table
+          rowKey="id"
+          columns={visibleColumns(columnsResizable, ocultas)}
+          components={tableComponents}
+          dataSource={rows.filter((r) =>
+            dentroDeRango(r, "fecha_inicio", rangoInicio) &&
+            dentroDeRango(r, "fecha_fin", rangoFin)
+          )}
+          pagination={false}
+          size="small"
+          loading={loading}
+          scroll={{ x: 1800 }}
+          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+          locale={{ emptyText: <Empty description="Sin tareas. Usá 'Task list (autogenerar)' o 'Nueva Tarea'." /> }}
+        />
+      </TableDragWrapper>
     </div>
   );
 }

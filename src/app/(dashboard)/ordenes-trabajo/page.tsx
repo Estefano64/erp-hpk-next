@@ -38,6 +38,7 @@ import {
 import { brand } from "@/lib/theme";
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
+import { formatDateOnly } from "@/lib/dates";
 import OTDetalleModal from "@/components/modules/ordenes-trabajo/OTDetalleModal";
 
 const { Title } = Typography;
@@ -46,21 +47,42 @@ interface OTRecord {
   id: number;
   ot: string;
   estrategia: boolean;
+  tipo: string | null;
+  np: string | null;
+  cod_rep_flota: string | null;
+  cod_rep_posicion: string | null;
   equipo_codigo: string | null;
   ns: string | null;
+  plaqueteo: string | null;
+  wo_cliente: string | null;
+  po_cliente: string | null;
+  id_viajero: string | null;
+  guia_remision: string | null;
+  empresa_entrega: string | null;
   descripcion: string | null;
   fecha_recepcion: string | null;
+  pcr: number | null;
+  horas: number | null;
   porcentaje_pcr: number | null;
+  contrato_dias: number | null;
+  fecha_requerimiento_cliente: string | null;
+  fecha_reprogramada: string | null;
+  comentarios: string | null;
   ot_status_codigo: string | null;
   recursos_status_codigo: string | null;
   taller_status_codigo: string | null;
   cliente: { codigo: string; nombre_comercial: string | null; razon_social: string } | null;
-  codigo_reparacion: { codigo: string; descripcion: string } | null;
+  codigo_reparacion: { codigo: string; descripcion: string; tipo?: { nombre: string } | null; flota?: { nombre: string } | null; fabricante?: { nombre: string } | null; posicion?: { nombre: string } | null } | null;
+  fabricante: { nombre: string } | null;
   atencion_reparacion: { nombre: string } | null;
   prioridad_atencion: { codigo: string; nombre: string } | null;
   ot_status: { nombre: string } | null;
   recursos_status: { nombre: string } | null;
   taller_status: { nombre: string } | null;
+  tipo_reparacion: { nombre: string } | null;
+  tipo_garantia: { nombre: string } | null;
+  garantia: { nombre: string } | null;
+  base_metalica: { nombre: string } | null;
 }
 
 interface CatalogOption {
@@ -92,7 +114,16 @@ export default function OrdenesTrabajoPage() {
   const [filterOtStatus, setFilterOtStatus] = useState("");
   const [filterRecursosStatus, setFilterRecursosStatus] = useState("");
   const [filterTallerStatus, setFilterTallerStatus] = useState("");
-  const { ocultas, setOcultas } = useColumnasOcultas("ordenes-trabajo-list-cols-v1");
+  // v2: nuevas columnas opcionales (tipo, NP, flota, posición, fabricante, garantía, base metálica, etc.)
+  // ocultas por default — el usuario las habilita desde el botón "Columnas".
+  const { ocultas, setOcultas } = useColumnasOcultas("ordenes-trabajo-list-cols-v2", [
+    "tipo", "np", "cod_rep_flota", "cod_rep_posicion", "fabricante",
+    "plaqueteo", "wo_cliente", "po_cliente", "id_viajero", "guia_remision", "empresa_entrega",
+    "pcr", "horas", "contrato_dias",
+    "fecha_requerimiento_cliente", "fecha_reprogramada",
+    "atencion_reparacion", "tipo_reparacion", "garantia", "tipo_garantia", "base_metalica",
+    "comentarios",
+  ]);
   const { rango: rangoRecepcion, setRango: setRangoRecepcion } = useRangoFechas();
 
   const [otStatuses, setOtStatuses] = useState<CatalogOption[]>([]);
@@ -207,7 +238,7 @@ export default function OrdenesTrabajoPage() {
       dataIndex: "fecha_recepcion",
       width: 110,
       sorter: (a, b) => (a.fecha_recepcion ?? "").localeCompare(b.fecha_recepcion ?? ""),
-      render: (v: string | null) => v ? dayjs(v).format("DD/MM/YYYY") : "-",
+      render: (v: string | null) => formatDateOnly(v),
     },
     {
       key: "porcentaje_pcr",
@@ -275,6 +306,127 @@ export default function OrdenesTrabajoPage() {
       onFilter: (value, r) => r.taller_status?.nombre === value,
       render: (_: unknown, r: OTRecord) => r.taller_status?.nombre ?? "-",
     },
+    // ── Columnas opcionales (ocultas por default) ──
+    {
+      key: "tipo", title: "Tipo (Cod. Rep)", dataIndex: "tipo", width: 120,
+      ...filtroPorColumna(data, "tipo"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "np", title: "N/P", dataIndex: "np", width: 130,
+      ...filtroPorColumna(data, "np"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "cod_rep_flota", title: "Flota", dataIndex: "cod_rep_flota", width: 110,
+      ...filtroPorColumna(data, "cod_rep_flota"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "cod_rep_posicion", title: "Posición", dataIndex: "cod_rep_posicion", width: 100,
+      ...filtroPorColumna(data, "cod_rep_posicion"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "fabricante", title: "Fabricante", width: 140, ellipsis: true,
+      filters: [...new Set(data.map((r) => r.fabricante?.nombre).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => r.fabricante?.nombre === value,
+      render: (_: unknown, r: OTRecord) => r.fabricante?.nombre ?? "-",
+    },
+    {
+      key: "plaqueteo", title: "Plaqueteo", dataIndex: "plaqueteo", width: 110,
+      ...filtroPorColumna(data, "plaqueteo"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "wo_cliente", title: "WO Cliente", dataIndex: "wo_cliente", width: 120,
+      ...filtroPorColumna(data, "wo_cliente"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "po_cliente", title: "PO Cliente", dataIndex: "po_cliente", width: 120,
+      ...filtroPorColumna(data, "po_cliente"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "id_viajero", title: "ID Viajero", dataIndex: "id_viajero", width: 120,
+      ...filtroPorColumna(data, "id_viajero"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "guia_remision", title: "Guía Rem.", dataIndex: "guia_remision", width: 120,
+      ...filtroPorColumna(data, "guia_remision"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "empresa_entrega", title: "Empresa entrega", dataIndex: "empresa_entrega", width: 160, ellipsis: true,
+      ...filtroPorColumna(data, "empresa_entrega"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "pcr", title: "PCR", dataIndex: "pcr", width: 90, align: "right",
+      sorter: (a, b) => (a.pcr ?? 0) - (b.pcr ?? 0),
+      render: (v: number | null) => v != null ? Number(v).toLocaleString() : "-",
+    },
+    {
+      key: "horas", title: "Horas", dataIndex: "horas", width: 90, align: "right",
+      sorter: (a, b) => (a.horas ?? 0) - (b.horas ?? 0),
+      render: (v: number | null) => v != null ? Number(v).toLocaleString() : "-",
+    },
+    {
+      key: "contrato_dias", title: "Días contrato", dataIndex: "contrato_dias", width: 110, align: "right",
+      sorter: (a, b) => (a.contrato_dias ?? 0) - (b.contrato_dias ?? 0),
+      render: (v: number | null) => v != null ? `${v} d` : "-",
+    },
+    {
+      key: "fecha_requerimiento_cliente", title: "F. Req. Cliente", dataIndex: "fecha_requerimiento_cliente", width: 120,
+      sorter: (a, b) => (a.fecha_requerimiento_cliente ?? "").localeCompare(b.fecha_requerimiento_cliente ?? ""),
+      render: (v: string | null) => formatDateOnly(v),
+    },
+    {
+      key: "fecha_reprogramada", title: "F. Reprogramada", dataIndex: "fecha_reprogramada", width: 130,
+      sorter: (a, b) => (a.fecha_reprogramada ?? "").localeCompare(b.fecha_reprogramada ?? ""),
+      render: (v: string | null) => formatDateOnly(v),
+    },
+    {
+      key: "atencion_reparacion", title: "Atención Rep.", width: 140, ellipsis: true,
+      filters: [...new Set(data.map((r) => r.atencion_reparacion?.nombre).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => r.atencion_reparacion?.nombre === value,
+      render: (_: unknown, r: OTRecord) => r.atencion_reparacion?.nombre ?? "-",
+    },
+    {
+      key: "tipo_reparacion", title: "Tipo Rep.", width: 120,
+      filters: [...new Set(data.map((r) => r.tipo_reparacion?.nombre).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => r.tipo_reparacion?.nombre === value,
+      render: (_: unknown, r: OTRecord) => r.tipo_reparacion?.nombre ?? "-",
+    },
+    {
+      key: "garantia", title: "Garantía", width: 90, align: "center",
+      filters: [{ text: "Si", value: "Si" }, { text: "No", value: "No" }],
+      onFilter: (value, r) => r.garantia?.nombre === value,
+      render: (_: unknown, r: OTRecord) => r.garantia?.nombre ?? "-",
+    },
+    {
+      key: "tipo_garantia", title: "Tipo Garantía", width: 120,
+      filters: [...new Set(data.map((r) => r.tipo_garantia?.nombre).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => r.tipo_garantia?.nombre === value,
+      render: (_: unknown, r: OTRecord) => r.tipo_garantia?.nombre ?? "-",
+    },
+    {
+      key: "base_metalica", title: "Base metálica", width: 110, align: "center",
+      filters: [{ text: "Si", value: "Si" }, { text: "No", value: "No" }],
+      onFilter: (value, r) => r.base_metalica?.nombre === value,
+      render: (_: unknown, r: OTRecord) => r.base_metalica?.nombre ?? "-",
+    },
+    {
+      key: "comentarios", title: "Comentarios", dataIndex: "comentarios", width: 200, ellipsis: true,
+      ...filtroPorColumna(data, "comentarios"),
+      render: (v: string | null) => v ?? "-",
+    },
     {
       key: "acciones",
       title: "",
@@ -302,7 +454,7 @@ export default function OrdenesTrabajoPage() {
     },
   ];
 
-  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
     useColumnasRedimensionables<OTRecord>(columns, "ot-list-cols-widths-v1");
 
   return (
@@ -377,23 +529,25 @@ export default function OrdenesTrabajoPage() {
         </Row>
       </Card>
 
-      <Table
-        rowKey="id"
-        columns={visibleColumns(columnsResizable, ocultas)}
-        components={tableComponents}
-        dataSource={data.filter((r) => dentroDeRango(r, "fecha_recepcion", rangoRecepcion))}
-        loading={loading}
-        pagination={paginacionEstandar({
-          current: page,
-          pageSize,
-          total,
-          onChange: (p, s) => { setPage(p); setPageSize(s); },
-          label: "órdenes de trabajo",
-        })}
-        scroll={{ x: 1500 }}
-        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-        size="small"
-      />
+      <TableDragWrapper>
+        <Table
+          rowKey="id"
+          columns={visibleColumns(columnsResizable, ocultas)}
+          components={tableComponents}
+          dataSource={data.filter((r) => dentroDeRango(r, "fecha_recepcion", rangoRecepcion))}
+          loading={loading}
+          pagination={paginacionEstandar({
+            current: page,
+            pageSize,
+            total,
+            onChange: (p, s) => { setPage(p); setPageSize(s); },
+            label: "órdenes de trabajo",
+          })}
+          scroll={{ x: 1500 }}
+          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+          size="small"
+        />
+      </TableDragWrapper>
 
       <OTDetalleModal
         otId={modalOtId}

@@ -17,7 +17,8 @@ import {
   message,
   Descriptions,
 } from "antd";
-import { SaveOutlined, ArrowLeftOutlined } from "@ant-design/icons";
+import { SaveOutlined, ArrowLeftOutlined, CheckCircleFilled } from "@ant-design/icons";
+import { brand } from "@/lib/theme";
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 
@@ -176,6 +177,11 @@ export default function NuevaOTPage() {
       const req = dayjs(fechaRecepcion).add(contratoDias, "day");
       setFechaReqCalculada(req.format("DD/MM/YYYY"));
     }
+    // Si la fecha de requerimiento ya está y quedó antes de la nueva fecha de recepción, limpiarla.
+    const fechaReq = form.getFieldValue("fecha_requerimiento_cliente");
+    if (fechaRecepcion && fechaReq && dayjs(fechaReq).isBefore(dayjs(fechaRecepcion), "day")) {
+      form.setFieldValue("fecha_requerimiento_cliente", null);
+    }
     // Recalcular días para Presupuesto/Emergencia
     if (atencion !== "Contrato") {
       calcularDiasRequerimiento();
@@ -293,7 +299,18 @@ export default function NuevaOTPage() {
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
-              <Form.Item name="id_cod_rep" label="Código Reparable">
+              <Form.Item
+                name="id_cod_rep"
+                label="Código Reparable"
+                extra={
+                  tieneContrato ? (
+                    <Text style={{ color: brand.success, fontSize: 12 }}>
+                      <CheckCircleFilled style={{ marginRight: 4 }} />
+                      Contrato vigente{contratoDias != null ? ` (${contratoDias} días de reparación)` : ""}
+                    </Text>
+                  ) : undefined
+                }
+              >
                 <Select
                   showSearch
                   optionFilterProp="label"
@@ -303,7 +320,7 @@ export default function NuevaOTPage() {
                   onChange={(v) => { handleCodRepChange(v); buscarContrato(undefined, v); }}
                   options={codReps.map((cr) => ({
                     value: cr.cod_rep_id,
-                    label: `${cr.codigo} - ${cr.descripcion}`,
+                    label: `${cr.codigo} - ${cr.descripcion}${cr.flota?.nombre ? ` · ${cr.flota.nombre}` : ""}`,
                   }))}
                 />
               </Form.Item>
@@ -558,11 +575,31 @@ export default function NuevaOTPage() {
             ) : (
               <>
                 <Col xs={12} md={6}>
-                  <Form.Item name="fecha_requerimiento_cliente" label="Fecha Requerimiento Cliente">
+                  <Form.Item
+                    name="fecha_requerimiento_cliente"
+                    label="Fecha Requerimiento Cliente"
+                    dependencies={["fecha_recepcion"]}
+                    rules={[
+                      ({ getFieldValue }) => ({
+                        validator(_, value) {
+                          const recepcion = getFieldValue("fecha_recepcion");
+                          if (!value || !recepcion) return Promise.resolve();
+                          if (dayjs(value).isBefore(dayjs(recepcion), "day")) {
+                            return Promise.reject(new Error("No puede ser anterior a la fecha de recepción"));
+                          }
+                          return Promise.resolve();
+                        },
+                      }),
+                    ]}
+                  >
                     <DatePicker
                       style={{ width: "100%" }}
                       format="DD/MM/YYYY"
                       onChange={() => calcularDiasRequerimiento()}
+                      disabledDate={(current) => {
+                        const recepcion = form.getFieldValue("fecha_recepcion");
+                        return !!(recepcion && current && current.isBefore(dayjs(recepcion), "day"));
+                      }}
                     />
                   </Form.Item>
                 </Col>

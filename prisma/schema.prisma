@@ -1118,6 +1118,8 @@ model OTRepuesto {
   ubicacion                   String?              @db.VarChar(50)
   observaciones               String?
   usuario_solicita            String               @db.VarChar(100)
+  usuario_envia               String?              @db.VarChar(100)
+  fecha_envio_aprobacion      DateTime?            @db.Date
   usuario_aprueba             String?              @db.VarChar(100)
   fecha_aprobacion            DateTime?            @db.Date
   createdAt                   DateTime             @default(now())
@@ -1129,6 +1131,7 @@ model OTRepuesto {
   status_requerimiento        StatusRequerimiento? @relation(fields: [status_requerimiento_codigo], references: [codigo])
   status_cotizacion           StatusCotizacion?    @relation(fields: [status_cotizacion_codigo], references: [codigo])
   status_oc                   StatusOC?            @relation(fields: [status_oc_codigo], references: [codigo])
+  adjuntos                    OTRepuestoAdjunto[]
 
   @@index([ot_id])
   @@index([nro_req])
@@ -1137,6 +1140,21 @@ model OTRepuesto {
   @@index([po_id])
   @@index([nro_oc])
   @@map("ot_repuestos")
+}
+
+model OTRepuestoAdjunto {
+  id              Int        @id @default(autoincrement())
+  ot_repuesto_id  Int
+  nombre_archivo  String     @db.VarChar(255)
+  ruta            String     @db.VarChar(500)
+  tipo_mime       String     @db.VarChar(100)
+  tamano          Int
+  usuario_sube    String?    @db.VarChar(100)
+  fecha_subida    DateTime   @default(now())
+  ot_repuesto     OTRepuesto @relation(fields: [ot_repuesto_id], references: [id], onDelete: Cascade)
+
+  @@index([ot_repuesto_id])
+  @@map("ot_repuesto_adjunto")
 }
 
 model PlanificacionOT {

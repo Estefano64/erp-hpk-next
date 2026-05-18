@@ -25,6 +25,7 @@ import { EditOutlined, SaveOutlined, CloseOutlined, PrinterOutlined, CheckOutlin
 import { brand } from "@/lib/theme";
 import dayjs, { Dayjs } from "dayjs";
 import type { ColumnsType } from "antd/es/table";
+import { formatDateOnly } from "@/lib/dates";
 import {
   useColumnasOcultas,
   ColumnasToggleButton,
@@ -451,10 +452,10 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
               <Descriptions.Item label="RUC">{compra.proveedor?.ruc ?? "-"}</Descriptions.Item>
               <Descriptions.Item label="Almacén">{compra.almacen?.nombre ?? "-"}</Descriptions.Item>
               <Descriptions.Item label="F. Solicitud">
-                {dayjs(compra.fecha_solicitud).format("DD/MM/YYYY")}
+                {formatDateOnly(compra.fecha_solicitud)}
               </Descriptions.Item>
               <Descriptions.Item label="F. Entrega Esperada">
-                {compra.fecha_entrega_esperada ? dayjs(compra.fecha_entrega_esperada).format("DD/MM/YYYY") : "-"}
+                {compra.fecha_entrega_esperada ? formatDateOnly(compra.fecha_entrega_esperada) : "-"}
               </Descriptions.Item>
               <Descriptions.Item label="Moneda">{compra.moneda}</Descriptions.Item>
               <Descriptions.Item label="Estado">
@@ -479,7 +480,7 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
                 {editing ? (
                   <DatePicker value={fechaEntrega} onChange={setFechaEntrega} format="DD/MM/YYYY" style={{ width: "100%" }} />
                 ) : compra.fecha_entrega_real ? (
-                  dayjs(compra.fecha_entrega_real).format("DD/MM/YYYY")
+                  formatDateOnly(compra.fecha_entrega_real)
                 ) : (
                   "-"
                 )}
