@@ -22,6 +22,7 @@ import {
 } from "@/lib/tables";
 import { useCachedFetch } from "@/lib/useCachedFetch";
 
+import { formatDateOnly, formatDateOnlyShort } from "@/lib/dates";
 const { Title, Text } = Typography;
 
 // ── Tipos del payload del endpoint /api/aceptaciones ──────────────────────
@@ -78,8 +79,10 @@ interface ReqPendiente {
     id: number; ot: string | null;
     cliente: { codigo: string; razon_social: string; nombre_comercial: string | null } | null;
   } | null;
+  observaciones: string | null;
   material: { codigo: string; descripcion: string; precio: number | string | null; moneda_codigo: string | null; stock_actual: number | string | null } | null;
   status_requerimiento: { codigo: string; nombre: string } | null;
+  adjuntos?: { id: number; nombre_archivo: string; ruta: string; tamano: number }[];
 }
 interface HistorialItem {
   tipo: "OC" | "RQ";
@@ -260,8 +263,8 @@ export default function AceptacionesPage() {
         <Row gutter={[8, 4]} style={{ marginBottom: 6 }}>
           <Col span={12}><span style={{ color: "#888" }}>OT:</span> <b>{o.orden_trabajo?.ot ?? "—"}</b></Col>
           <Col span={12}><span style={{ color: "#888" }}>Almacén:</span> <b>{o.ubicacion?.nombre ?? "—"}</b></Col>
-          <Col span={12}><span style={{ color: "#888" }}>F. Solicitud:</span> <b>{dayjs(o.fecha_solicitud).format("DD/MM/YYYY")}</b></Col>
-          <Col span={12}><span style={{ color: "#888" }}>F. Entrega Esp:</span> <b>{o.fecha_entrega_esperada ? dayjs(o.fecha_entrega_esperada).format("DD/MM/YYYY") : "—"}</b></Col>
+          <Col span={12}><span style={{ color: "#888" }}>F. Solicitud:</span> <b>{formatDateOnly(o.fecha_solicitud)}</b></Col>
+          <Col span={12}><span style={{ color: "#888" }}>F. Entrega Esp:</span> <b>{o.fecha_entrega_esperada ? formatDateOnly(o.fecha_entrega_esperada) : "—"}</b></Col>
           <Col span={24}><span style={{ color: "#888" }}>Total:</span> <b style={{ color: brand.navy }}>{o.moneda_codigo ?? "USD"} {Number(o.total).toFixed(2)}</b></Col>
         </Row>
         <Divider style={{ margin: "6px 0" }} />
@@ -311,9 +314,29 @@ export default function AceptacionesPage() {
             <span style={{ color: "#888" }}>Precio catálogo:</span>{" "}
             <b>{precioCat != null ? `${r.material?.moneda_codigo ?? "USD"} ${precioCat.toFixed(2)}` : "—"}</b>
           </Col>
-          <Col span={12}><span style={{ color: "#888" }}>F. Solicitud:</span> <b>{dayjs(r.fecha_solicitud).format("DD/MM/YYYY")}</b></Col>
-          <Col span={12}><span style={{ color: "#888" }}>F. Requerida:</span> <b>{r.fecha_requerida ? dayjs(r.fecha_requerida).format("DD/MM/YYYY") : "—"}</b></Col>
+          <Col span={12}><span style={{ color: "#888" }}>F. Solicitud:</span> <b>{formatDateOnly(r.fecha_solicitud)}</b></Col>
+          <Col span={12}><span style={{ color: "#888" }}>F. Requerida:</span> <b>{r.fecha_requerida ? formatDateOnly(r.fecha_requerida) : "—"}</b></Col>
           <Col span={24}><span style={{ color: "#888" }}>Solicita:</span> <b>{r.usuario_solicita}</b></Col>
+          {r.observaciones && (
+            <Col span={24}>
+              <span style={{ color: "#888" }}>Observaciones:</span>{" "}
+              <span style={{ fontStyle: "italic" }}>{r.observaciones}</span>
+            </Col>
+          )}
+          {r.adjuntos && r.adjuntos.length > 0 && (
+            <Col span={24}>
+              <div style={{ color: "#888", marginBottom: 4 }}>Adjuntos ({r.adjuntos.length}):</div>
+              <Space size={4} wrap>
+                {r.adjuntos.map((a) => (
+                  <Tag key={a.id} style={{ fontSize: 10, margin: 0 }}>
+                    <a href={a.ruta} target="_blank" rel="noopener noreferrer">
+                      📎 {a.nombre_archivo} ({(a.tamano / 1024).toFixed(1)} KB)
+                    </a>
+                  </Tag>
+                ))}
+              </Space>
+            </Col>
+          )}
         </Row>
       </div>
     );
@@ -368,11 +391,11 @@ export default function AceptacionesPage() {
     {
       key: "fecha_solicitud", title: "F. Solicitud", width: 100,
       sorter: (a, b) => a.fecha_solicitud.localeCompare(b.fecha_solicitud),
-      render: (_, o) => <Text style={{ fontSize: 11 }}>{dayjs(o.fecha_solicitud).format("DD/MM/YY")}</Text>,
+      render: (_, o) => <Text style={{ fontSize: 11 }}>{formatDateOnlyShort(o.fecha_solicitud)}</Text>,
     },
     {
       key: "fecha_entrega", title: "F. Entrega Esp.", width: 110,
-      render: (_, o) => o.fecha_entrega_esperada ? <Text style={{ fontSize: 11 }}>{dayjs(o.fecha_entrega_esperada).format("DD/MM/YY")}</Text> : <Text type="secondary">—</Text>,
+      render: (_, o) => o.fecha_entrega_esperada ? <Text style={{ fontSize: 11 }}>{formatDateOnlyShort(o.fecha_entrega_esperada)}</Text> : <Text type="secondary">—</Text>,
     },
     {
       key: "usuario", title: "Solicita", width: 130, ellipsis: true,
@@ -439,6 +462,26 @@ export default function AceptacionesPage() {
         <div style={{ lineHeight: 1.2 }}>
           {r.material?.codigo && <Tag style={{ fontSize: 10, marginRight: 4 }}>{r.material.codigo}</Tag>}
           {r.material?.descripcion ?? r.descripcion ?? "—"}
+          {r.observaciones && (
+            <div style={{ fontSize: 11, color: "#888", fontStyle: "italic", marginTop: 2 }}>
+              {r.observaciones}
+            </div>
+          )}
+          {r.adjuntos && r.adjuntos.length > 0 && (
+            <div style={{ marginTop: 4 }}>
+              <Space size={4} wrap>
+                {r.adjuntos.map((a) => (
+                  <Tooltip key={a.id} title={`${a.nombre_archivo} (${(a.tamano / 1024).toFixed(1)} KB)`}>
+                    <Tag style={{ fontSize: 10, margin: 0 }}>
+                      <a href={a.ruta} target="_blank" rel="noopener noreferrer">
+                        📎 {a.nombre_archivo.length > 20 ? `${a.nombre_archivo.slice(0, 17)}...` : a.nombre_archivo}
+                      </a>
+                    </Tag>
+                  </Tooltip>
+                ))}
+              </Space>
+            </div>
+          )}
         </div>
       ),
     },
@@ -465,7 +508,7 @@ export default function AceptacionesPage() {
     {
       key: "fecha_solicitud", title: "F. Solicitud", width: 100,
       sorter: (a, b) => a.fecha_solicitud.localeCompare(b.fecha_solicitud),
-      render: (_, r) => <Text style={{ fontSize: 11 }}>{dayjs(r.fecha_solicitud).format("DD/MM/YY")}</Text>,
+      render: (_, r) => <Text style={{ fontSize: 11 }}>{formatDateOnlyShort(r.fecha_solicitud)}</Text>,
     },
     {
       key: "usuario", title: "Solicita", width: 130, ellipsis: true,
@@ -539,11 +582,11 @@ export default function AceptacionesPage() {
     },
   ];
 
-  const { columnas: ocColumnsRz, components: ocComponents, resetAnchos: resetOcAnchos } =
+  const { columnas: ocColumnsRz, components: ocComponents, resetAnchos: resetOcAnchos, TableDragWrapper: OcDragWrapper } =
     useColumnasRedimensionables<OCPendiente>(ocColumns, "aceptaciones-oc-cols-widths-v1");
-  const { columnas: rqColumnsRz, components: rqComponents, resetAnchos: resetRqAnchos } =
+  const { columnas: rqColumnsRz, components: rqComponents, resetAnchos: resetRqAnchos, TableDragWrapper: RqDragWrapper } =
     useColumnasRedimensionables<ReqPendiente>(rqColumns, "aceptaciones-rq-cols-widths-v1");
-  const { columnas: histColumnsRz, components: histComponents, resetAnchos: resetHistAnchos } =
+  const { columnas: histColumnsRz, components: histComponents, resetAnchos: resetHistAnchos, TableDragWrapper: HistDragWrapper } =
     useColumnasRedimensionables<HistorialItem>(histColumns, "aceptaciones-hist-cols-widths-v1");
 
   const totalPendientes = useMemo(() => ocs.length + reqs.length, [ocs, reqs]);
@@ -703,26 +746,28 @@ export default function AceptacionesPage() {
                     {ocs.length === 0 ? (
                       <Empty description="No hay OCs pendientes." />
                     ) : (
-                      <Table<OCPendiente>
-                        rowKey="id"
-                        columns={visibleColumns(ocColumnsRz, ocultasOC)}
-                        components={ocComponents}
-                        dataSource={ocs}
-                        loading={loading}
-                        size="small"
-                        rowSelection={isAdmin ? {
-                          selectedRowKeys: selOcs,
-                          onChange: (keys) => setSelOcs(keys as number[]),
-                        } : undefined}
-                        pagination={paginacionEstandar({
-                          current: pageOC, pageSize, total: ocs.length,
-                          onChange: (p, s) => { setPageOC(p); setPageSize(s); },
-                          label: "OC pendientes",
-                          placement: ["topEnd", "bottomEnd"],
-                        })}
-                        scroll={{ x: 1100 }}
-                        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-                      />
+                      <OcDragWrapper>
+                                              <Table<OCPendiente>
+                          rowKey="id"
+                          columns={visibleColumns(ocColumnsRz, ocultasOC)}
+                          components={ocComponents}
+                          dataSource={ocs}
+                          loading={loading}
+                          size="small"
+                          rowSelection={isAdmin ? {
+                            selectedRowKeys: selOcs,
+                            onChange: (keys) => setSelOcs(keys as number[]),
+                          } : undefined}
+                          pagination={paginacionEstandar({
+                            current: pageOC, pageSize, total: ocs.length,
+                            onChange: (p, s) => { setPageOC(p); setPageSize(s); },
+                            label: "OC pendientes",
+                            placement: ["topEnd", "bottomEnd"],
+                          })}
+                          scroll={{ x: 1100 }}
+                          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+                        />
+                      </OcDragWrapper>
                     )}
                   </Card>
                 )}
@@ -764,26 +809,28 @@ export default function AceptacionesPage() {
                     {reqs.length === 0 ? (
                       <Empty description="No hay requerimientos pendientes." />
                     ) : (
-                      <Table<ReqPendiente>
-                        rowKey="id"
-                        columns={visibleColumns(rqColumnsRz, ocultasRQ)}
-                        components={rqComponents}
-                        dataSource={reqs}
-                        loading={loading}
-                        size="small"
-                        rowSelection={isAdmin ? {
-                          selectedRowKeys: selReqs,
-                          onChange: (keys) => setSelReqs(keys as number[]),
-                        } : undefined}
-                        pagination={paginacionEstandar({
-                          current: pageRQ, pageSize, total: reqs.length,
-                          onChange: (p, s) => { setPageRQ(p); setPageSize(s); },
-                          label: "requerimientos pendientes",
-                          placement: ["topEnd", "bottomEnd"],
-                        })}
-                        scroll={{ x: 1300 }}
-                        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-                      />
+                      <RqDragWrapper>
+                                              <Table<ReqPendiente>
+                          rowKey="id"
+                          columns={visibleColumns(rqColumnsRz, ocultasRQ)}
+                          components={rqComponents}
+                          dataSource={reqs}
+                          loading={loading}
+                          size="small"
+                          rowSelection={isAdmin ? {
+                            selectedRowKeys: selReqs,
+                            onChange: (keys) => setSelReqs(keys as number[]),
+                          } : undefined}
+                          pagination={paginacionEstandar({
+                            current: pageRQ, pageSize, total: reqs.length,
+                            onChange: (p, s) => { setPageRQ(p); setPageSize(s); },
+                            label: "requerimientos pendientes",
+                            placement: ["topEnd", "bottomEnd"],
+                          })}
+                          scroll={{ x: 1300 }}
+                          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+                        />
+                      </RqDragWrapper>
                     )}
                   </Card>
                 )}
@@ -822,22 +869,24 @@ export default function AceptacionesPage() {
                 {historial.length === 0 ? (
                   <Empty description="Sin historial todavía." />
                 ) : (
-                  <Table<HistorialItem>
-                    rowKey={(h) => `${h.tipo}-${h.id}`}
-                    columns={visibleColumns(histColumnsRz, ocultasHist)}
-                    components={histComponents}
-                    dataSource={historial}
-                    loading={loading}
-                    size="small"
-                    pagination={paginacionEstandar({
-                      current: pageHist, pageSize, total: historial.length,
-                      onChange: (p, s) => { setPageHist(p); setPageSize(s); },
-                      label: "movimientos",
-                      placement: ["topEnd", "bottomEnd"],
-                    })}
-                    scroll={{ x: 1100 }}
-                    sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-                  />
+                  <HistDragWrapper>
+                                      <Table<HistorialItem>
+                      rowKey={(h) => `${h.tipo}-${h.id}`}
+                      columns={visibleColumns(histColumnsRz, ocultasHist)}
+                      components={histComponents}
+                      dataSource={historial}
+                      loading={loading}
+                      size="small"
+                      pagination={paginacionEstandar({
+                        current: pageHist, pageSize, total: historial.length,
+                        onChange: (p, s) => { setPageHist(p); setPageSize(s); },
+                        label: "movimientos",
+                        placement: ["topEnd", "bottomEnd"],
+                      })}
+                      scroll={{ x: 1100 }}
+                      sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+                    />
+                  </HistDragWrapper>
                 )}
               </Card>
             ),

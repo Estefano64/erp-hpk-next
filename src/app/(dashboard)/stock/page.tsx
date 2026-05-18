@@ -432,7 +432,7 @@ export default function StockPage() {
   ];
 
   const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
-    useColumnasRedimensionables<StockItem>(columns, "stock-list-cols-widths-v1");
+  useColumnasRedimensionables<StockItem>(columns, "stock-list-cols-widths-v1");
 
   const exportarStockExcel = async () => {
     try {

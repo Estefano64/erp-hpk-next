@@ -72,22 +72,59 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         }
       }
 
+      // Pre-cargar materiales (para usar SU descripción/UM/fabricante, no la del cod_rep que es genérica)
+      const codigosUnicos = [...new Set(tareas.filter((t) => t.material_codigo).map((t) => t.material_codigo!))];
+      const materiales = codigosUnicos.length
+        ? await tx.material.findMany({
+            where: { codigo: { in: codigosUnicos } },
+            select: { material_id: true, codigo: true, descripcion: true, fabricante_codigo: true, unidad_medida_codigo: true },
+          })
+        : [];
+      const matByCodigo = new Map(materiales.map((m) => [m.codigo, m]));
+
+      // Pre-cargar servicios (para SER, usar nombre/descripcion del servicio si está enlazado)
+      const serviciosUnicos = [...new Set(tareas.filter((t) => t.servicio_codigo).map((t) => t.servicio_codigo!))];
+      const servicios = serviciosUnicos.length
+        ? await tx.servicioReparacion.findMany({
+            where: { codigo: { in: serviciosUnicos } },
+            select: { codigo: true, nombre: true, descripcion: true },
+          })
+        : [];
+      const svcByCodigo = new Map(servicios.map((s) => [s.codigo, s]));
+
+      function pickDescripcion(t: typeof tareas[number]): string {
+        if (t.tipo_codigo === "MAC" && t.material_codigo) {
+          const m = matByCodigo.get(t.material_codigo);
+          if (m?.descripcion) return m.descripcion;
+        }
+        if (t.tipo_codigo === "SER") {
+          if (t.servicio_codigo) {
+            const s = svcByCodigo.get(t.servicio_codigo);
+            if (s) return s.descripcion ?? s.nombre;
+          }
+          if (t.texto) return t.texto;
+        }
+        // CAD u otros: preferimos texto si existe (es lo "específico"); descripcion suele ser genérica del cod_rep.
+        return t.texto || t.descripcion;
+      }
+
       // Un solo nro_req para todo el template, item_req incremental dentro
       const nroReq = await nextNroReq(tx);
       let creados = 0;
       for (let i = 0; i < tareas.length; i++) {
         const t = tareas[i];
+        const mat = t.material_codigo ? matByCodigo.get(t.material_codigo) : null;
         await tx.oTRepuesto.create({
           data: {
             ot_id: otId,
-            material_id: null, // se resuelve abajo si hay material_codigo
+            material_id: mat?.material_id ?? null,
             material_codigo: t.material_codigo ?? null,
             tipo_codigo: t.tipo_codigo,
             cantidad: t.requerimiento,
-            descripcion: t.descripcion,
+            descripcion: pickDescripcion(t),
             texto: t.texto ?? null,
-            fabricante_codigo: t.fabricante_codigo ?? null,
-            unidad_medida: "UNIDAD",
+            fabricante_codigo: t.fabricante_codigo ?? mat?.fabricante_codigo ?? null,
+            unidad_medida: mat?.unidad_medida_codigo ?? "UNIDAD",
             precio_unitario: t.precio ?? null,
             moneda: "USD",
             es_adicional: false,
@@ -100,23 +137,17 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         creados++;
       }
 
-      // Resolver material_id en bulk para los MAC con material_codigo
-      const codigosUnicos = [...new Set(tareas.filter((t) => t.material_codigo).map((t) => t.material_codigo!))];
-      if (codigosUnicos.length > 0) {
-        const materiales = await tx.material.findMany({
-          where: { codigo: { in: codigosUnicos } },
-          select: { material_id: true, codigo: true },
-        });
-        const map = new Map(materiales.map((m) => [m.codigo, m.material_id]));
-        for (const [cod, matId] of map.entries()) {
-          await tx.oTRepuesto.updateMany({
-            where: { ot_id: otId, material_codigo: cod, material_id: null },
-            data: { material_id: matId },
-          });
-        }
-      }
+      // Historial
+      await tx.oTHistorial.create({
+        data: {
+          ot_id: otId,
+          tipo_operacion: "REQUERIMIENTO",
+          descripcion: `Template ${codRep} aplicado: ${nroReq} creado con ${creados} item(s)${eliminados ? `, ${eliminados} pendientes reemplazados` : ""}.`,
+          usuario,
+        },
+      });
 
-      return { creados, eliminados, codRep, total: tareas.length } as const;
+      return { creados, eliminados, codRep, total: tareas.length, nro_req: nroReq } as const;
     });
 
     if ("error" in result) {

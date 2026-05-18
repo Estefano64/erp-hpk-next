@@ -57,6 +57,8 @@ interface ClienteRecord {
   email: string | null;
   contacto_principal: string | null;
   nota: string | null;
+  activo?: boolean;
+  created_at?: string;
 }
 
 function ClienteDupHint({ form, excludeId }: { form: ReturnType<typeof Form.useForm>[0]; excludeId?: number }) {
@@ -80,7 +82,9 @@ export default function ClientesPage() {
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
-  const { ocultas, setOcultas } = useColumnasOcultas("clientes-list-cols-v1");
+  const { ocultas, setOcultas } = useColumnasOcultas("clientes-list-cols-v2", [
+    "direccion", "email",
+  ]);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ClienteRecord | null>(null);
@@ -233,6 +237,16 @@ export default function ClientesPage() {
       render: (v: string | null) => v ?? "-",
     },
     {
+      key: "direccion", title: "Dirección", dataIndex: "direccion", width: 220, ellipsis: true,
+      ...filtroPorColumna(data, "direccion"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "email", title: "Email", dataIndex: "email", width: 200, ellipsis: true,
+      ...filtroPorColumna(data, "email"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
       key: "acciones",
       title: "Acciones",
       width: 100,
@@ -263,7 +277,7 @@ export default function ClientesPage() {
     },
   ];
 
-  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
     useColumnasRedimensionables<ClienteRecord>(columns, "clientes-list-cols-widths-v1");
 
   return (
@@ -320,41 +334,43 @@ export default function ClientesPage() {
         </Row>
       </Card>
 
-      <Table
-        rowKey="cliente_id"
-        columns={visibleColumns(columnsResizable, ocultas)}
-        components={tableComponents}
-        dataSource={data}
-        loading={loading}
-        locale={{
-          emptyText: !loading && total === 0 && !search ? (
-            <EmptyState
-              title="Aún no hay clientes cargados"
-              description="Importá masivamente desde Excel o creá uno manualmente."
-              primaryAction={isAdminUser ? {
-                label: "Importar desde Excel",
-                icon: <ImportOutlined />,
-                onClick: () => setImportOpen(true),
-              } : undefined}
-              secondaryAction={{
-                label: "Crear manualmente",
-                icon: <PlusOutlined />,
-                onClick: openCreate,
-              }}
-            />
-          ) : undefined,
-        }}
-        pagination={paginacionEstandar({
-          current: page,
-          pageSize,
-          total,
-          onChange: (p, s) => { setPage(p); setPageSize(s); },
-          label: "clientes",
-        })}
-        scroll={{ x: 900 }}
-        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-        size="small"
-      />
+      <TableDragWrapper>
+              <Table
+          rowKey="cliente_id"
+          columns={visibleColumns(columnsResizable, ocultas)}
+          components={tableComponents}
+          dataSource={data}
+          loading={loading}
+          locale={{
+            emptyText: !loading && total === 0 && !search ? (
+              <EmptyState
+                title="Aún no hay clientes cargados"
+                description="Importá masivamente desde Excel o creá uno manualmente."
+                primaryAction={isAdminUser ? {
+                  label: "Importar desde Excel",
+                  icon: <ImportOutlined />,
+                  onClick: () => setImportOpen(true),
+                } : undefined}
+                secondaryAction={{
+                  label: "Crear manualmente",
+                  icon: <PlusOutlined />,
+                  onClick: openCreate,
+                }}
+              />
+            ) : undefined,
+          }}
+          pagination={paginacionEstandar({
+            current: page,
+            pageSize,
+            total,
+            onChange: (p, s) => { setPage(p); setPageSize(s); },
+            label: "clientes",
+          })}
+          scroll={{ x: 900 }}
+          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+          size="small"
+        />
+      </TableDragWrapper>
 
       <Modal
         title={editing ? `Editar ${editing.codigo}` : "Nuevo Cliente"}

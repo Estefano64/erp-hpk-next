@@ -11,6 +11,7 @@ import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { brand } from "@/lib/theme";
 import { useCachedFetch } from "@/lib/useCachedFetch";
+import { formatDateOnlyShort } from "@/lib/dates";
 import {
   useColumnasOcultas,
   ColumnasToggleButton,
@@ -238,14 +239,14 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
       title: "Solicitado", key: "fecha_solicitud", dataIndex: "fecha_solicitud", width: 90,
       sorter: (a, b) => (a.fecha_solicitud || "").localeCompare(b.fecha_solicitud || ""),
       filters: [...new Set(rows.map((r) => r.fecha_solicitud).filter(Boolean) as string[])]
-        .sort().map((v) => ({ text: dayjs(v).format("DD/MM/YY"), value: v })),
+        .sort().map((v) => ({ text: formatDateOnlyShort(v), value: v })),
       filterSearch: true,
       onFilter: (value, r) => r.fecha_solicitud === value,
-      render: (v: string) => v ? <Text style={{ fontSize: 11 }}>{dayjs(v).format("DD/MM/YY")}</Text> : "—",
+      render: (v: string) => v ? <Text style={{ fontSize: 11 }}>{formatDateOnlyShort(v)}</Text> : "—",
     },
   ];
 
-  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
     useColumnasRedimensionables<Row>(columns, "compras-reqaprob-cols-widths-v1");
 
   return (
@@ -321,21 +322,23 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
           </span>
         } />
       ) : (
-        <Table
-          rowKey="id"
-          columns={visibleColumns(columnsResizable, ocultas)}
-        components={tableComponents}
-          dataSource={rows}
-          loading={loading}
-          size="small"
-          pagination={{ pageSize: 50, showTotal: (t) => `${t} items`, placement: ["topEnd", "bottomEnd"] }}
-          scroll={{ x: 1200 }}
-          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-          rowSelection={{
-            selectedRowKeys: selectedKeys,
-            onChange: (keys) => setSelectedKeys(keys as number[]),
-          }}
-        />
+        <TableDragWrapper>
+                  <Table
+            rowKey="id"
+            columns={visibleColumns(columnsResizable, ocultas)}
+          components={tableComponents}
+            dataSource={rows}
+            loading={loading}
+            size="small"
+            pagination={{ pageSize: 50, showTotal: (t) => `${t} items`, placement: ["topEnd", "bottomEnd"] }}
+            scroll={{ x: 1200 }}
+            sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+            rowSelection={{
+              selectedRowKeys: selectedKeys,
+              onChange: (keys) => setSelectedKeys(keys as number[]),
+            }}
+          />
+        </TableDragWrapper>
       )}
 
       {/* Modal Generar OC */}

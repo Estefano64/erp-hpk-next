@@ -31,6 +31,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
 import dayjs from "dayjs";
+import { formatDateOnly } from "@/lib/dates";
 import {
   numeracionColumn,
   paginacionEstandar,
@@ -123,7 +124,10 @@ export default function EquiposPage() {
   const [filterArea, setFilterArea] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterCriticidad, setFilterCriticidad] = useState("");
-  const { ocultas, setOcultas } = useColumnasOcultas("equipos-list-cols-v1");
+  const { ocultas, setOcultas } = useColumnasOcultas("equipos-list-cols-v2", [
+    "descripcion", "modelo", "numero_serie", "numero_parte", "ubicacion_codigo",
+    "fecha_inicio", "fecha_fabricacion", "observaciones", "usuario_responsable",
+  ]);
   const { rango: rangoIni, setRango: setRangoIni } = useRangoFechas();
   const { rango: rangoFab, setRango: setRangoFab } = useRangoFechas();
 
@@ -428,6 +432,49 @@ export default function EquiposPage() {
       onFilter: (value, r) => (r.planta?.nombre ?? r.planta_codigo) === value,
       render: (_: string, r: EquipoRecord) => r.planta?.nombre ?? r.planta_codigo,
     },
+    // ── Columnas opcionales (ocultas por default) ──
+    {
+      key: "descripcion", title: "Descripción", dataIndex: "descripcion", width: 220, ellipsis: true,
+      ...filtroPorColumna(data, "descripcion"),
+      render: (v: string) => v ?? "-",
+    },
+    {
+      key: "modelo", title: "Modelo", dataIndex: "modelo", width: 140,
+      ...filtroPorColumna(data, "modelo"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "numero_serie", title: "N° Serie", dataIndex: "numero_serie", width: 140,
+      ...filtroPorColumna(data, "numero_serie"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "numero_parte", title: "N° Parte", dataIndex: "numero_parte", width: 140,
+      ...filtroPorColumna(data, "numero_parte"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "ubicacion_codigo", title: "Ubicación", dataIndex: "ubicacion_codigo", width: 120,
+      ...filtroPorColumna(data, "ubicacion_codigo"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "fecha_inicio", title: "Inicio operación", dataIndex: "fecha_inicio", width: 130,
+      render: (v: string | null) => formatDateOnly(v),
+    },
+    {
+      key: "fecha_fabricacion", title: "Fabricación", dataIndex: "fecha_fabricacion", width: 130,
+      render: (v: string | null) => formatDateOnly(v),
+    },
+    {
+      key: "observaciones", title: "Observaciones", dataIndex: "observaciones", width: 220, ellipsis: true,
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "usuario_responsable", title: "Responsable", dataIndex: "usuario_responsable", width: 150,
+      ...filtroPorColumna(data, "usuario_responsable"),
+      render: (v: string | null) => v ?? "-",
+    },
     {
       key: "acciones",
       title: "Acciones",
@@ -460,7 +507,7 @@ export default function EquiposPage() {
     },
   ];
 
-  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
     useColumnasRedimensionables<EquipoRecord>(columns, "equipos-list-cols-widths-v1");
 
   return (
@@ -588,26 +635,28 @@ export default function EquiposPage() {
         </Row>
       </Card>
 
-      <Table
-        rowKey="equipo_id"
-        columns={visibleColumns(columnsResizable, ocultas)}
-        components={tableComponents}
-        dataSource={data.filter((r) =>
-          dentroDeRango(r, "fecha_inicio", rangoIni) &&
-          dentroDeRango(r, "fecha_fabricacion", rangoFab)
-        )}
-        loading={loading}
-        pagination={paginacionEstandar({
-          current: page,
-          pageSize,
-          total,
-          onChange: (p, s) => { setPage(p); setPageSize(s); },
-          label: "equipos",
-        })}
-        scroll={{ x: 1800 }}
-        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-        size="small"
-      />
+      <TableDragWrapper>
+              <Table
+          rowKey="equipo_id"
+          columns={visibleColumns(columnsResizable, ocultas)}
+          components={tableComponents}
+          dataSource={data.filter((r) =>
+            dentroDeRango(r, "fecha_inicio", rangoIni) &&
+            dentroDeRango(r, "fecha_fabricacion", rangoFab)
+          )}
+          loading={loading}
+          pagination={paginacionEstandar({
+            current: page,
+            pageSize,
+            total,
+            onChange: (p, s) => { setPage(p); setPageSize(s); },
+            label: "equipos",
+          })}
+          scroll={{ x: 1800 }}
+          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+          size="small"
+        />
+      </TableDragWrapper>
 
       {/* Modal Crear / Editar */}
       <Modal

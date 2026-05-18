@@ -12,6 +12,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
+import { formatDateOnly } from "@/lib/dates";
 import {
   numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE,
   useColumnasOcultas, ColumnasToggleButton, visibleColumns, filtroPorColumna,
@@ -445,19 +446,19 @@ function TabPrestamos() {
     },
     {
       key: "fecha_entrega", title: "F. Entrega", dataIndex: "fecha_entrega", width: 110,
-      render: (v: string) => dayjs(v).format("DD/MM/YYYY"),
+      render: (v: string) => formatDateOnly(v),
     },
     {
       key: "fecha_devolucion_prevista", title: "F. Devol. Prevista", dataIndex: "fecha_devolucion_prevista", width: 120,
       render: (v: string | null, p) => {
         if (!v) return <Text type="secondary">—</Text>;
         const vencida = p.estado === "PRESTADA" && dayjs(v).isBefore(dayjs(), "day");
-        return <span style={{ color: vencida ? "#cf1322" : undefined, fontWeight: vencida ? 600 : undefined }}>{dayjs(v).format("DD/MM/YYYY")}</span>;
+        return <span style={{ color: vencida ? "#cf1322" : undefined, fontWeight: vencida ? 600 : undefined }}>{formatDateOnly(v)}</span>;
       },
     },
     {
       key: "fecha_devolucion_real", title: "F. Devol. Real", dataIndex: "fecha_devolucion_real", width: 120,
-      render: (v: string | null) => v ? dayjs(v).format("DD/MM/YYYY") : <Text type="secondary">—</Text>,
+      render: (v: string | null) => v ? formatDateOnly(v) : <Text type="secondary">—</Text>,
     },
     { key: "usuario_entrega", title: "Entrega (usr.)", dataIndex: "usuario_entrega", width: 130, ellipsis: true },
     {

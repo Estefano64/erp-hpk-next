@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { Suspense, useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Typography,
@@ -55,6 +55,7 @@ import { Popover, InputNumber, Divider, Checkbox } from "antd";
 import { brand } from "@/lib/theme";
 import dayjs, { Dayjs } from "dayjs";
 
+import { formatDateOnly } from "@/lib/dates";
 const { Title, Text } = Typography;
 const { TextArea } = Input;
 
@@ -92,6 +93,7 @@ interface RequerimientoApi {
   status_requerimiento: { codigo: string; nombre: string } | null;
   status_cotizacion: { codigo: string; nombre: string } | null;
   status_oc: { codigo: string; nombre: string } | null;
+  adjuntos?: { id: number; nombre_archivo: string; ruta: string; tamano: number }[];
 }
 
 // View-model plano para la tabla
@@ -126,6 +128,7 @@ interface Requerimiento {
   cliente_nombre: string | null;
   observaciones?: string | null;
   stock_actual?: number;
+  adjuntos?: { id: number; nombre_archivo: string; ruta: string; tamano: number }[];
 }
 
 function normalize(r: RequerimientoApi): Requerimiento {
@@ -160,6 +163,7 @@ function normalize(r: RequerimientoApi): Requerimiento {
     cliente_nombre: r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? null,
     observaciones: r.observaciones,
     stock_actual: r.material?.stock_actual != null ? Number(r.material.stock_actual) : undefined,
+    adjuntos: r.adjuntos,
   };
 }
 
@@ -189,7 +193,17 @@ const ocColor: Record<string, string> = {
   DEVOLUCION: "warning",
 };
 
+// useSearchParams requiere Suspense en Next 15+ para que el build no falle
+// al prerenderizar. Wrapper exportado abajo.
 export default function RequerimientosDetallePage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>
+      <RequerimientosDetalleInner />
+    </Suspense>
+  );
+}
+
+function RequerimientosDetalleInner() {
   const router = useRouter();
   const params = useSearchParams();
   const { message } = App.useApp();
@@ -614,14 +628,31 @@ export default function RequerimientosDetallePage() {
         <Col span={12}><Text type="secondary">Subtotal:</Text> <b>{r.precio_unitario ? (r.precio_unitario * r.cantidad).toFixed(2) : "-"}</b></Col>
         <Col span={24}><Text type="secondary">Cliente:</Text> {r.cliente_nombre || "-"}</Col>
         <Col span={24}><Text type="secondary">Proveedor:</Text> {r.proveedor_nombre || "-"}</Col>
-        <Col span={12}><Text type="secondary">F. Solicitud:</Text> {r.fecha_solicitud ? dayjs(r.fecha_solicitud).format("DD/MM/YYYY") : "-"}</Col>
-        <Col span={12}><Text type="secondary">F. Requerida:</Text> {r.fecha_requerida ? dayjs(r.fecha_requerida).format("DD/MM/YYYY") : "-"}</Col>
+        <Col span={12}><Text type="secondary">F. Solicitud:</Text> {r.fecha_solicitud ? formatDateOnly(r.fecha_solicitud) : "-"}</Col>
+        <Col span={12}><Text type="secondary">F. Requerida:</Text> {r.fecha_requerida ? formatDateOnly(r.fecha_requerida) : "-"}</Col>
       </Row>
       {r.observaciones && (
         <>
           <Divider style={{ margin: "8px 0" }} />
           <Text type="secondary" style={{ fontSize: 11 }}>Observaciones:</Text>
           <div style={{ fontSize: 11 }}>{r.observaciones}</div>
+        </>
+      )}
+      {r.adjuntos && r.adjuntos.length > 0 && (
+        <>
+          <Divider style={{ margin: "8px 0" }} />
+          <Text type="secondary" style={{ fontSize: 11 }}>Adjuntos ({r.adjuntos.length}):</Text>
+          <div style={{ marginTop: 4 }}>
+            <Space size={4} wrap>
+              {r.adjuntos.map((a) => (
+                <Tag key={a.id} style={{ fontSize: 10, margin: 0 }}>
+                  <a href={a.ruta} target="_blank" rel="noopener noreferrer">
+                    📎 {a.nombre_archivo} ({(a.tamano / 1024).toFixed(1)} KB)
+                  </a>
+                </Tag>
+              ))}
+            </Space>
+          </div>
         </>
       )}
       <Divider style={{ margin: "8px 0" }} />
@@ -713,9 +744,31 @@ export default function RequerimientosDetallePage() {
       ellipsis: true,
       render: (_: unknown, r: Requerimiento) => (
         <Popover content={popoverContent(r)} placement="right" mouseEnterDelay={0.3} trigger="hover">
-          <div style={{ display: "flex", alignItems: "center", gap: 4, cursor: "help" }}>
-            <InfoCircleOutlined style={{ color: brand.cyan, fontSize: 11 }} />
-            <span>{r.material_nombre || r.descripcion || "-"}</span>
+          <div style={{ lineHeight: 1.2, cursor: "help" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <InfoCircleOutlined style={{ color: brand.cyan, fontSize: 11 }} />
+              <span>{r.material_nombre || r.descripcion || "-"}</span>
+            </div>
+            {r.observaciones && (
+              <div style={{ fontSize: 10, color: "#888", fontStyle: "italic", marginTop: 2 }}>
+                {r.observaciones}
+              </div>
+            )}
+            {r.adjuntos && r.adjuntos.length > 0 && (
+              <div style={{ marginTop: 4 }}>
+                <Space size={4} wrap>
+                  {r.adjuntos.map((a) => (
+                    <Tooltip key={a.id} title={`${a.nombre_archivo} (${(a.tamano / 1024).toFixed(1)} KB)`}>
+                      <Tag style={{ fontSize: 10, margin: 0 }}>
+                        <a href={a.ruta} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+                          📎 {a.nombre_archivo.length > 18 ? `${a.nombre_archivo.slice(0, 15)}...` : a.nombre_archivo}
+                        </a>
+                      </Tag>
+                    </Tooltip>
+                  ))}
+                </Space>
+              </div>
+            )}
           </div>
         </Popover>
       ),
@@ -801,7 +854,7 @@ export default function RequerimientosDetallePage() {
       dataIndex: "fecha_solicitud",
       width: 105,
       sorter: (a, b) => (a.fecha_solicitud || "").localeCompare(b.fecha_solicitud || ""),
-      render: (v: string | null) => (v ? dayjs(v).format("DD/MM/YYYY") : "-"),
+      render: (v: string | null) => (v ? formatDateOnly(v) : "-"),
     },
     {
       key: "fecha_requerida",
@@ -809,7 +862,7 @@ export default function RequerimientosDetallePage() {
       dataIndex: "fecha_requerida",
       width: 105,
       sorter: (a, b) => (a.fecha_requerida || "").localeCompare(b.fecha_requerida || ""),
-      render: (v: string | null) => (v ? dayjs(v).format("DD/MM/YYYY") : "-"),
+      render: (v: string | null) => (v ? formatDateOnly(v) : "-"),
     },
     {
       key: "acciones",
@@ -920,7 +973,7 @@ export default function RequerimientosDetallePage() {
   ];
 
   // Hacer las columnas redimensionables (drag horizontal en el borde derecho del header).
-  const { columnas: columnasResizable, components: tableComponents } =
+  const { columnas: columnasResizable, components: tableComponents , TableDragWrapper } =
     useColumnasRedimensionables<Requerimiento>(columns, "req-detalle-cols-widths-v1");
 
   // Filtrar columnas visibles (respetando orden)
@@ -1159,27 +1212,29 @@ export default function RequerimientosDetallePage() {
       />
 
       {/* Tabla */}
-      <Table
-        rowKey="id"
-        rowSelection={rowSelection}
-        columns={columnasVisibles}
-        components={tableComponents}
-        dataSource={filteredData}
-        loading={loading}
-        pagination={{ pageSize: 25, showTotal: (t) => `${t} registros`, placement: ["topEnd", "bottomEnd"] }}
-        scroll={{ x: 2000 }}
-        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-        size="small"
-        rowClassName={(r) => {
-          const tieneStock = r.material_id != null
-            && r.po_id == null
-            && r.status_req !== "ANULADO"
-            && r.status_req !== "DESAPROBADO"
-            && (r.stock_actual ?? 0) >= Number(r.cantidad ?? 0)
-            && (r.stock_actual ?? 0) > 0;
-          return tieneStock ? "req-row-stock" : "";
-        }}
-      />
+      <TableDragWrapper>
+              <Table
+          rowKey="id"
+          rowSelection={rowSelection}
+          columns={columnasVisibles}
+          components={tableComponents}
+          dataSource={filteredData}
+          loading={loading}
+          pagination={{ pageSize: 25, showTotal: (t) => `${t} registros`, placement: ["topEnd", "bottomEnd"] }}
+          scroll={{ x: 2000 }}
+          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+          size="small"
+          rowClassName={(r) => {
+            const tieneStock = r.material_id != null
+              && r.po_id == null
+              && r.status_req !== "ANULADO"
+              && r.status_req !== "DESAPROBADO"
+              && (r.stock_actual ?? 0) >= Number(r.cantidad ?? 0)
+              && (r.stock_actual ?? 0) > 0;
+            return tieneStock ? "req-row-stock" : "";
+          }}
+        />
+      </TableDragWrapper>
 
       <style jsx global>{`
         .req-row-stock > td { background: #FFFBE6 !important; }

@@ -43,6 +43,7 @@ import {
 } from "@/lib/tables";
 import dayjs from "dayjs";
 
+import { formatDateOnly } from "@/lib/dates";
 const { Title } = Typography;
 
 interface ContratoRecord {
@@ -185,7 +186,7 @@ export default function ContratosPage() {
   }
 
   function formatDate(d: string) {
-    return dayjs(d).format("DD/MM/YYYY");
+    return formatDateOnly(d);
   }
 
   const columns: ColumnsType<ContratoRecord> = [
@@ -285,7 +286,7 @@ export default function ContratosPage() {
     },
   ];
 
-  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
     useColumnasRedimensionables<ContratoRecord>(columns, "contratos-list-cols-widths-v1");
 
   return (
@@ -340,26 +341,28 @@ export default function ContratosPage() {
         </Row>
       </Card>
 
-      <Table
-        rowKey="id"
-        columns={visibleColumns(columnsResizable, ocultas)}
-        components={tableComponents}
-        dataSource={data.filter((r) =>
-          dentroDeRango(r, "fecha_inicio", rangoInicio) &&
-          dentroDeRango(r, "fecha_termino", rangoTermino)
-        )}
-        loading={loading}
-        pagination={paginacionEstandar({
-          current: page,
-          pageSize,
-          total,
-          onChange: (p, s) => { setPage(p); setPageSize(s); },
-          label: "contratos",
-        })}
-        scroll={{ x: 1000 }}
-        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-        size="small"
-      />
+      <TableDragWrapper>
+              <Table
+          rowKey="id"
+          columns={visibleColumns(columnsResizable, ocultas)}
+          components={tableComponents}
+          dataSource={data.filter((r) =>
+            dentroDeRango(r, "fecha_inicio", rangoInicio) &&
+            dentroDeRango(r, "fecha_termino", rangoTermino)
+          )}
+          loading={loading}
+          pagination={paginacionEstandar({
+            current: page,
+            pageSize,
+            total,
+            onChange: (p, s) => { setPage(p); setPageSize(s); },
+            label: "contratos",
+          })}
+          scroll={{ x: 1000 }}
+          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+          size="small"
+        />
+      </TableDragWrapper>
 
       <Modal
         title={editing ? `Editar ${editing.codigo}` : "Nuevo Contrato"}

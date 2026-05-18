@@ -298,7 +298,7 @@ export default function CatalogoCrudPage() {
   });
 
   const allColumns = [numeracionColumn<CatalogRow>(), ...columns];
-  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
     useColumnasRedimensionables<CatalogRow>(allColumns, `catalogos-${cfg.id}-cols-widths-v1`);
 
   return (
@@ -364,18 +364,20 @@ export default function CatalogoCrudPage() {
         </Space>
       </Card>
 
-      <Table
-        rowKey={cfg.pkField}
-        columns={visibleColumns(columnsResizable, ocultas)}
-        components={tableComponents}
-        dataSource={filtered}
-        loading={loading}
-        size="small"
-        pagination={{ pageSize: 50, showTotal: (t) => `${t} registros`, placement: ["topEnd", "bottomEnd"] }}
-        scroll={{ x: 800 }}
-        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-        rowClassName={(r) => r.activo === false ? "cat-row-inactive" : ""}
-      />
+      <TableDragWrapper>
+              <Table
+          rowKey={cfg.pkField}
+          columns={visibleColumns(columnsResizable, ocultas)}
+          components={tableComponents}
+          dataSource={filtered}
+          loading={loading}
+          size="small"
+          pagination={{ pageSize: 50, showTotal: (t) => `${t} registros`, placement: ["topEnd", "bottomEnd"] }}
+          scroll={{ x: 800 }}
+          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+          rowClassName={(r) => r.activo === false ? "cat-row-inactive" : ""}
+        />
+      </TableDragWrapper>
 
       <Modal
         title={editingId == null ? `Nuevo ${cfg.label}` : `Editar ${cfg.label}`}

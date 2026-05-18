@@ -8,7 +8,7 @@ import {
 } from "antd";
 import {
   ArrowLeftOutlined, CheckCircleFilled, DeleteOutlined, PlusOutlined,
-  ArrowUpOutlined, ArrowDownOutlined,
+  HolderOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
@@ -18,6 +18,7 @@ import {
   ColumnasToggleButton,
   visibleColumns,
   useColumnasRedimensionables,
+  useFilasArrastrables,
 } from "@/lib/tables";
 
 interface OperacionRow {
@@ -179,22 +180,20 @@ export default function OperacionesCodRepPage() {
     }
   }
 
-  async function handleMove(idx: number, direction: -1 | 1) {
-    const j = idx + direction;
-    if (j < 0 || j >= rows.length) return;
-    const a = rows[idx];
-    const b = rows[j];
-    // Swap de orden
-    await Promise.all([
-      fetch(`/api/operaciones-cod-rep/${a.operacion_cod_rep_id}`, {
-        method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orden: b.orden }),
-      }),
-      fetch(`/api/operaciones-cod-rep/${b.operacion_cod_rep_id}`, {
-        method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orden: a.orden }),
-      }),
-    ]);
+  async function handleReorder(oldIdx: number, newIdx: number) {
+    const reordered = [...rows];
+    const [moved] = reordered.splice(oldIdx, 1);
+    reordered.splice(newIdx, 0, moved);
+    setRows(reordered); // optimista
+    await Promise.all(
+      reordered.map((r, idx) =>
+        fetch(`/api/operaciones-cod-rep/${r.operacion_cod_rep_id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orden: idx + 1 }),
+        }),
+      ),
+    );
     if (codRep?.codigo) fetchOperaciones(codRep.codigo);
   }
 
@@ -262,13 +261,9 @@ export default function OperacionesCodRepPage() {
     {
       title: "#", key: "orden", width: 70, align: "center",
       render: (_, _r, idx) => (
-        <Space size={0}>
-          <Tooltip title="Subir">
-            <Button type="text" size="small" icon={<ArrowUpOutlined />} disabled={idx === 0} onClick={() => handleMove(idx, -1)} />
-          </Tooltip>
-          <Tooltip title="Bajar">
-            <Button type="text" size="small" icon={<ArrowDownOutlined />} disabled={idx === rows.length - 1} onClick={() => handleMove(idx, 1)} />
-          </Tooltip>
+        <Space size={4}>
+          <HolderOutlined style={{ cursor: "grab", color: brand.textSecondary }} title="Arrastrar para reordenar" />
+          <span style={{ fontSize: 12 }}>{idx + 1}</span>
         </Space>
       ),
     },
@@ -407,8 +402,12 @@ export default function OperacionesCodRepPage() {
     },
   ];
 
-  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
     useColumnasRedimensionables<OperacionRow>(columns, "codrep-ops-cols-widths-v1");
+  const { components: rowDragComponents, RowDragWrapper } = useFilasArrastrables({
+    items: rows.map((r) => String(r.operacion_cod_rep_id)),
+    onReorder: handleReorder,
+  });
 
   if (loading) return <Spin size="large" />;
   if (!codRep) return <Alert type="error" title="CodRep no encontrado" />;
@@ -462,16 +461,20 @@ export default function OperacionesCodRepPage() {
         </Row>
       </Card>
 
-      <Table
-        rowKey="operacion_cod_rep_id"
-        columns={visibleColumns(columnsResizable, ocultas)}
-        components={tableComponents}
-        dataSource={rows}
-        pagination={false}
-        size="small"
-        scroll={{ x: 1200 }}
-        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-      />
+      <TableDragWrapper>
+        <RowDragWrapper>
+          <Table
+            rowKey="operacion_cod_rep_id"
+            columns={visibleColumns(columnsResizable, ocultas)}
+            components={{ ...tableComponents, ...rowDragComponents }}
+            dataSource={rows}
+            pagination={false}
+            size="small"
+            scroll={{ x: 1200 }}
+            sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+          />
+        </RowDragWrapper>
+      </TableDragWrapper>
 
       <Modal
         title="Agregar operación a la plantilla"
