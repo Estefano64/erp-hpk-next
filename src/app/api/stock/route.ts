@@ -176,9 +176,26 @@ export async function GET(req: NextRequest) {
     const porSolicitar = data.filter((m: StockItem) => m.por_solicitar > 0).length;
     const valorTotal = data.reduce((s: number, m: StockItem) => s + m.valor_total, 0);
 
+    // Balance de inventario: total de ENTRADAS vs SALIDAS (y AJUSTE) sobre movimientos.
+    const movAgrupado = await prisma.movimientoInventario.groupBy({
+      by: ["tipo_movimiento"],
+      _sum: { cantidad: true },
+    });
+    let totalEntradas = 0, totalSalidas = 0, totalAjustes = 0;
+    for (const g of movAgrupado) {
+      const q = Number(g._sum.cantidad ?? 0);
+      if (g.tipo_movimiento === "ENTRADA") totalEntradas = q;
+      else if (g.tipo_movimiento === "SALIDA") totalSalidas = q;
+      else if (g.tipo_movimiento === "AJUSTE") totalAjustes = q;
+    }
+    const balanceStock = totalEntradas - totalSalidas + totalAjustes;
+
     return NextResponse.json({
       data,
-      kpis: { totalMateriales, sinStock, bajoStock, exceso, enPO, enReq, porSolicitar, valorTotal },
+      kpis: {
+        totalMateriales, sinStock, bajoStock, exceso, enPO, enReq, porSolicitar, valorTotal,
+        totalEntradas, totalSalidas, totalAjustes, balanceStock,
+      },
     });
   } catch (error) {
     console.error("GET /api/stock error:", error);

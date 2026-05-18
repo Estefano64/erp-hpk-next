@@ -26,14 +26,22 @@ interface Item {
   item_req: number | null;
   descripcion: string | null;
   cantidad: number | string;
+  cantidad_recibida: number | string | null;
   unidad_medida: string | null;
   material_id: number | null;
+  po_id: number | null;
+  status_oc_codigo: string | null;
   material: { codigo: string; descripcion: string; stock_actual: number | string | null; ubicacion: string | null } | null;
+  compra: { numero_po: string; status_oc_codigo: string | null } | null;
   orden_trabajo: {
     id: number; ot: string | null;
     cliente: { codigo: string; razon_social: string; nombre_comercial: string | null } | null;
     codigo_reparacion: { codigo: string; descripcion: string } | null;
   } | null;
+  _cant_pendiente: number;
+  _puede_despachar: boolean;
+  _po_status: string | null;
+  _po_recibida: boolean;
 }
 
 interface GrupoOT {
@@ -41,9 +49,12 @@ interface GrupoOT {
   ot: string | null;
   cliente: string | null;
   codigo_reparacion: string | null;
+  recursos_status: string | null;
+  ubicacion: string | null;
   items: Item[];
   con_stock: number;
   sin_stock: number;
+  estado_ot: "completa" | "incompleta";
 }
 
 export default function DespachosPage() {
@@ -100,6 +111,8 @@ export default function DespachosPage() {
   const totalItems = grupos.reduce((s, g) => s + g.items.length, 0);
   const totalConStock = grupos.reduce((s, g) => s + g.con_stock, 0);
   const totalSinStock = grupos.reduce((s, g) => s + g.sin_stock, 0);
+  const otsCompletas = grupos.filter((g) => g.estado_ot === "completa").length;
+  const otsIncompletas = grupos.filter((g) => g.estado_ot === "incompleta").length;
 
   return (
     <div>
@@ -114,14 +127,15 @@ export default function DespachosPage() {
       <Alert
         type="info" showIcon style={{ marginBottom: 12 }}
         title="¿Qué es esto?"
-        description="Lista de OTs con requerimientos APROBADOS sin OC y con material vinculado. Si hay stock disponible en almacén, podés despachar varios items de una OT en una sola operación (descuenta stock + marca como ENTREGADO + deja traza en historial)."
+        description="OTs con requerimientos APROBADOS pendientes de entrega. Incluye items con OC ya recibida (material llegó al almacén) e items que ya estaban en stock. Una OT 'completa' tiene todos sus items con stock listo; 'incompleta' espera que llegue parte del material. Podés despachar parcial o completo: descuenta stock + marca ENTREGADO/INCOMPLETO + deja traza en historial."
       />
 
       <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
-        <Col xs={12} md={6}><Card><Statistic title="OTs pendientes" value={grupos.length} prefix={<InboxOutlined style={{ color: brand.navy }} />} /></Card></Col>
-        <Col xs={12} md={6}><Card><Statistic title="Items totales" value={totalItems} /></Card></Col>
-        <Col xs={12} md={6}><Card><Statistic title="Con stock" value={totalConStock} styles={{ content: { color: "#52c41a" } }} prefix={<CheckCircleOutlined style={{ color: "#52c41a" }} />} /></Card></Col>
-        <Col xs={12} md={6}><Card><Statistic title="Sin stock" value={totalSinStock} styles={{ content: { color: totalSinStock > 0 ? "#cf1322" : "#bfbfbf" } }} prefix={<WarningOutlined style={{ color: totalSinStock > 0 ? "#cf1322" : "#bfbfbf" }} />} /></Card></Col>
+        <Col xs={12} md={4}><Card><Statistic title="OTs pendientes" value={grupos.length} prefix={<InboxOutlined style={{ color: brand.navy }} />} /></Card></Col>
+        <Col xs={12} md={5}><Card><Statistic title="OTs completas" value={otsCompletas} styles={{ content: { color: "#52c41a" } }} prefix={<CheckCircleOutlined style={{ color: "#52c41a" }} />} /></Card></Col>
+        <Col xs={12} md={5}><Card><Statistic title="OTs incompletas" value={otsIncompletas} styles={{ content: { color: otsIncompletas > 0 ? "#fa8c16" : "#bfbfbf" } }} prefix={<WarningOutlined style={{ color: otsIncompletas > 0 ? "#fa8c16" : "#bfbfbf" }} />} /></Card></Col>
+        <Col xs={12} md={5}><Card><Statistic title="Items listos" value={totalConStock} styles={{ content: { color: "#52c41a" } }} /></Card></Col>
+        <Col xs={12} md={5}><Card><Statistic title="Items sin stock" value={totalSinStock} styles={{ content: { color: totalSinStock > 0 ? "#cf1322" : "#bfbfbf" } }} /></Card></Col>
       </Row>
 
       {grupos.length === 0 && !loading ? (
@@ -169,16 +183,32 @@ function GrupoCard({
       render: (_, r) => r.material?.descripcion ?? r.descripcion ?? "—",
     },
     {
-      key: "cantidad", title: "Cantidad", width: 110, align: "right",
+      key: "cantidad", title: "Pedido", width: 100, align: "right",
       render: (_, r) => `${Number(r.cantidad).toLocaleString()} ${r.unidad_medida ?? ""}`,
     },
     {
-      key: "stock", title: "Stock", width: 90, align: "right",
+      key: "pendiente", title: "Pendiente", width: 100, align: "right",
+      render: (_, r) => <span style={{ fontWeight: 600 }}>{r._cant_pendiente.toLocaleString()}</span>,
+    },
+    {
+      key: "stock", title: "Stock alm.", width: 90, align: "right",
       render: (_, r) => {
         const st = Number(r.material?.stock_actual ?? 0);
-        const cant = Number(r.cantidad);
-        const ok = st >= cant && st > 0;
-        return <span style={{ color: ok ? "#52c41a" : "#cf1322", fontWeight: 600 }}>{st}</span>;
+        return <span style={{ color: r._puede_despachar ? "#52c41a" : "#cf1322", fontWeight: 600 }}>{st}</span>;
+      },
+    },
+    {
+      key: "origen", title: "Origen / PO", width: 150, align: "center",
+      render: (_, r) => {
+        if (!r.po_id) return <Tag color="default">Stock directo</Tag>;
+        const recibida = r._po_recibida;
+        return (
+          <Tooltip title={`PO ${r.compra?.numero_po ?? r.po_id} — ${r._po_status ?? "—"}`}>
+            <Tag color={recibida ? "green" : "orange"}>
+              {r.compra?.numero_po ?? `PO#${r.po_id}`} {recibida ? "✓ recibida" : "⏳ por llegar"}
+            </Tag>
+          </Tooltip>
+        );
       },
     },
     {
@@ -187,24 +217,17 @@ function GrupoCard({
     },
     {
       key: "puede", title: "Puede despachar", width: 130, align: "center",
-      render: (_, r) => {
-        const st = Number(r.material?.stock_actual ?? 0);
-        const cant = Number(r.cantidad);
-        const ok = st >= cant && st > 0;
-        return ok ? <Tag color="green">✓ Sí</Tag> : <Tag color="red">✗ Sin stock</Tag>;
-      },
+      render: (_, r) => r._puede_despachar
+        ? <Tag color="green">✓ Sí</Tag>
+        : <Tag color="red">✗ Sin stock</Tag>,
     },
   ];
 
   const { columnas: columnsResizable, components: tableComponents } =
     useColumnasRedimensionables<Item>(columns, "despachos-list-cols-widths-v1");
 
-  // Solo items con stock pueden seleccionarse
-  const itemsConStock = grupo.items.filter((i) => {
-    const st = Number(i.material?.stock_actual ?? 0);
-    const cant = Number(i.cantidad);
-    return st >= cant && st > 0;
-  });
+  // Solo items que pueden despacharse (stock suficiente para lo pendiente)
+  const itemsConStock = grupo.items.filter((i) => i._puede_despachar);
 
   return (
     <Card
@@ -215,7 +238,14 @@ function GrupoCard({
           <Tag color={brand.navy} style={{ fontSize: 14, padding: "4px 8px" }}>{grupo.ot ?? `OT #${grupo.ot_id}`}</Tag>
           <Text>{grupo.cliente ?? "—"}</Text>
           {grupo.codigo_reparacion && <Text type="secondary">| {grupo.codigo_reparacion}</Text>}
-          <Tag color="green">{grupo.con_stock} con stock</Tag>
+          {grupo.estado_ot === "completa"
+            ? <Tag color="green" style={{ fontWeight: 600 }}>OT COMPLETA — lista para despachar</Tag>
+            : <Tag color="orange" style={{ fontWeight: 600 }}>OT INCOMPLETA — falta material</Tag>}
+          {grupo.recursos_status && <Tag color="blue">{grupo.recursos_status}</Tag>}
+          {grupo.ubicacion
+            ? <Tag color="purple">📍 {grupo.ubicacion}</Tag>
+            : <Tag>📍 Sin ubicación (asignar al recibir PO)</Tag>}
+          <Tag color="green">{grupo.con_stock} listo(s)</Tag>
           {grupo.sin_stock > 0 && <Tag color="red">{grupo.sin_stock} sin stock</Tag>}
         </Space>
       }
@@ -260,11 +290,7 @@ function GrupoCard({
         rowSelection={{
           selectedRowKeys: seleccionados,
           onChange: (keys) => onSelectChange(keys as number[]),
-          getCheckboxProps: (r) => {
-            const st = Number(r.material?.stock_actual ?? 0);
-            const cant = Number(r.cantidad);
-            return { disabled: st < cant || st <= 0 };
-          },
+          getCheckboxProps: (r) => ({ disabled: !r._puede_despachar }),
         }}
         footer={() => (
           <Space>

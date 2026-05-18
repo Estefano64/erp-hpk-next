@@ -31,72 +31,89 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       const ok: number[] = [];
       const errores: { id: number; error: string }[] = [];
 
+      const parciales: number[] = [];
+
       for (const reqId of parsed.data.requerimiento_ids) {
         const rep = await tx.oTRepuesto.findUnique({ where: { id: reqId } });
         if (!rep) { errores.push({ id: reqId, error: "No encontrado" }); continue; }
         if (rep.ot_id !== otId) { errores.push({ id: reqId, error: "Pertenece a otra OT" }); continue; }
         if (!rep.material_id) { errores.push({ id: reqId, error: "Sin material vinculado" }); continue; }
-        if (rep.po_id) { errores.push({ id: reqId, error: "Ya tiene OC" }); continue; }
         if (rep.status_requerimiento_codigo !== "APROBADO") { errores.push({ id: reqId, error: "No está APROBADO" }); continue; }
 
         const material = await tx.material.findUnique({ where: { material_id: rep.material_id } });
         if (!material) { errores.push({ id: reqId, error: "Material no encontrado" }); continue; }
-        const cant = new Prisma.Decimal(rep.cantidad);
+
+        const cantTotal = new Prisma.Decimal(rep.cantidad);
+        const yaDespachado = new Prisma.Decimal(rep.cantidad_recibida ?? 0);
+        const pendiente = cantTotal.minus(yaDespachado);
+        if (pendiente.lte(0)) { errores.push({ id: reqId, error: "Ya despachado completo" }); continue; }
+
         const stock = new Prisma.Decimal(material.stock_actual ?? 0);
-        if (stock.lt(cant)) {
-          errores.push({ id: reqId, error: `Stock insuficiente (${stock} < ${cant})` });
+        if (stock.lte(0)) {
+          errores.push({ id: reqId, error: `Sin stock en almacén` });
           continue;
         }
+        // Despacho PARCIAL o COMPLETO: lo que se pueda con el stock disponible.
+        const aDespachar = Prisma.Decimal.min(pendiente, stock);
+        const nuevaDespachada = yaDespachado.plus(aDespachar);
+        const quedaCompleto = nuevaDespachada.gte(cantTotal);
 
         // Movimiento SALIDA
         await tx.movimientoInventario.create({
           data: {
             material_id: rep.material_id,
             tipo_movimiento: "SALIDA",
-            cantidad: cant,
+            cantidad: aDespachar,
             documento_referencia: rep.nro_req ? `REQ-${rep.nro_req}` : `REQ-${rep.id}`,
-            observacion: `Despacho a OT — REQ ${rep.nro_req ?? rep.id}/${rep.item_req ?? "-"}`,
+            observacion: `Despacho a OT — REQ ${rep.nro_req ?? rep.id}/${rep.item_req ?? "-"}${quedaCompleto ? "" : " (parcial)"}`,
             usuario,
           },
         });
         // Decrementar stock
         await tx.material.update({
           where: { material_id: rep.material_id },
-          data: { stock_actual: { decrement: cant } },
+          data: { stock_actual: { decrement: aDespachar } },
         });
-        // Marcar requerimiento como ENTREGADO
+        // Marcar requerimiento: ENTREGADO si se completó, INCOMPLETO si fue parcial.
         const obsPrev = rep.observaciones ? `${rep.observaciones}\n` : "";
+        const etiqueta = quedaCompleto ? "completo" : `parcial (${aDespachar} de ${pendiente} pendiente)`;
         await tx.oTRepuesto.update({
           where: { id: rep.id },
           data: {
-            status_oc_codigo: "ENTREGADO",
-            cantidad_recibida: { increment: cant },
-            fecha_entrega_real: new Date(),
+            status_oc_codigo: quedaCompleto ? "ENTREGADO" : "INCOMPLETO",
+            cantidad_recibida: nuevaDespachada,
+            fecha_entrega_real: quedaCompleto ? new Date() : rep.fecha_entrega_real,
             fecha_salida_almacen: new Date(),
-            observaciones: `${obsPrev}Despacho desde almacén el ${new Date().toLocaleDateString("es-PE")} (${usuario})`,
+            observaciones: `${obsPrev}Despacho desde almacén el ${new Date().toLocaleDateString("es-PE")} — ${etiqueta} (${usuario})`,
           },
         });
-        ok.push(rep.id);
+        if (quedaCompleto) ok.push(rep.id);
+        else parciales.push(rep.id);
       }
 
       // Historial único por la operación
-      if (ok.length > 0) {
+      const totalDespachado = ok.length + parciales.length;
+      if (totalDespachado > 0) {
         await tx.oTHistorial.create({
           data: {
             ot_id: otId,
             tipo_operacion: "DESPACHO_OT",
-            descripcion: `Despacho desde almacén a la OT: ${ok.length} item(s)`,
+            descripcion: `Despacho desde almacén a la OT: ${ok.length} completo(s), ${parciales.length} parcial(es)`,
             usuario,
-            datos_adicionales: JSON.stringify({ requerimiento_ids: ok }),
+            datos_adicionales: JSON.stringify({ completos: ok, parciales }),
           },
         });
       }
 
-      return { ok, errores };
+      return { ok, parciales, errores };
     });
 
+    const partes: string[] = [];
+    if (result.ok.length) partes.push(`${result.ok.length} completo(s)`);
+    if (result.parciales.length) partes.push(`${result.parciales.length} parcial(es)`);
+    if (result.errores.length) partes.push(`${result.errores.length} error(es)`);
     return NextResponse.json({
-      message: `Despachados ${result.ok.length} item(s). ${result.errores.length} error(es).`,
+      message: `Despacho: ${partes.join(", ") || "sin cambios"}.`,
       ...result,
     });
   } catch (error) {

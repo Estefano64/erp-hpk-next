@@ -11,12 +11,15 @@ import {
   SearchOutlined, ReloadOutlined, CheckOutlined, CloseOutlined, StopOutlined,
   EditOutlined, FileAddOutlined, InboxOutlined, SendOutlined,
   FileExcelOutlined, ClockCircleOutlined,
-  WarningOutlined, InfoCircleOutlined, EyeOutlined, UnorderedListOutlined,
-  TruckOutlined, DatabaseOutlined, DollarOutlined,
+  InfoCircleOutlined, EyeOutlined, UnorderedListOutlined,
+  TruckOutlined, DollarOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
+import isoWeek from "dayjs/plugin/isoWeek";
 import { brand } from "@/lib/theme";
+
+dayjs.extend(isoWeek);
 import { useCachedFetch } from "@/lib/useCachedFetch";
 import { formatDateOnly, formatDateOnlyShort } from "@/lib/dates";
 import {
@@ -82,7 +85,7 @@ const REQ_COLOR: Record<string, string> = { SIN_APROBACION: "default", APROBADO:
 const COT_COLOR: Record<string, string> = { PEND_COT: "default", PEND_APROB: "processing", APROBADO: "success", COMPLETO: "success", ANULADO: "error" };
 const OC_COLOR: Record<string, string> = { PEND_OC: "default", PROCESO: "processing", ENTREGADO: "success", COMPLETO: "success", INCOMPLETO: "warning", ANULADO: "error", DEVOLUCION: "warning" };
 
-// KPI compacto que muestra el conteo por RQ y por item lado a lado.
+// KPI compacto que muestra el conteo global y por item lado a lado.
 function KpiRqItem({
   title, icon, color, rq, items,
 }: {
@@ -101,13 +104,13 @@ function KpiRqItem({
         <Col span={12}>
           <div style={{ lineHeight: 1.1 }}>
             <div style={{ fontSize: 18, fontWeight: 700, color }}>{rq}</div>
-            <div style={{ fontSize: 10, color: "rgba(0,0,0,0.45)" }}>por RQ</div>
+            <div style={{ fontSize: 10, color: "rgba(0,0,0,0.45)" }}>global</div>
           </div>
         </Col>
         <Col span={12}>
           <div style={{ lineHeight: 1.1 }}>
             <div style={{ fontSize: 18, fontWeight: 700, color }}>{items}</div>
-            <div style={{ fontSize: 10, color: "rgba(0,0,0,0.45)" }}>por item</div>
+            <div style={{ fontSize: 10, color: "rgba(0,0,0,0.45)" }}>item</div>
           </div>
         </Col>
       </Row>
@@ -218,6 +221,32 @@ export default function RequerimientosPage() {
   const { ocultas, setOcultas } = useColumnasOcultas("requerimientos-list-cols-v1");
   const { rango: rangoSol, setRango: setRangoSol } = useRangoFechas();
   const { rango: rangoReq, setRango: setRangoReq } = useRangoFechas();
+  const [semanaSel, setSemanaSel] = useState<dayjs.Dayjs | null>(null);
+  // Sobre qué fecha aplica el filtro de semana: solicitud o requerida.
+  const [semanaCampo, setSemanaCampo] = useState<"solicitud" | "requerida">("solicitud");
+
+  // Selección de semana (estilo planificación): filtra al rango lunes–domingo
+  // de la semana ISO elegida, sobre Fecha solicitud o Fecha requerida según el toggle.
+  const aplicarSemana = useCallback((d: dayjs.Dayjs | null, campo: "solicitud" | "requerida") => {
+    const rango = d ? { desde: d.startOf("isoWeek"), hasta: d.endOf("isoWeek") } : { desde: null, hasta: null };
+    if (campo === "solicitud") {
+      setRangoSol(rango);
+      setRangoReq({ desde: null, hasta: null });
+    } else {
+      setRangoReq(rango);
+      setRangoSol({ desde: null, hasta: null });
+    }
+  }, [setRangoSol, setRangoReq]);
+
+  const onSemanaChange = useCallback((d: dayjs.Dayjs | null) => {
+    setSemanaSel(d);
+    aplicarSemana(d, semanaCampo);
+  }, [aplicarSemana, semanaCampo]);
+
+  const onSemanaCampoChange = useCallback((campo: "solicitud" | "requerida") => {
+    setSemanaCampo(campo);
+    if (semanaSel) aplicarSemana(semanaSel, campo);
+  }, [semanaSel, aplicarSemana]);
 
   // Filtros
   const [search, setSearch] = useState("");
@@ -282,6 +311,9 @@ export default function RequerimientosPage() {
     aprob: number; sinAprob: number; conOC: number; anul: number;
     porSolicitar: number; porLlegar: number; enStock: number; sinStock: number;
     cantidadTotal: number; cantidadPromedio: number;
+    otsDistintas: number; rqPorOtProm: number; itemsPorOtProm: number;
+    tiempoAtencionProm: number; tiempoAtencionMuestras: number;
+    tiempoAprobOcProm: number; tiempoAprobOcMuestras: number;
     rqTotal: number; rqActivos: number;
     rqSinAprob: number; rqPorSolicitar: number; rqPorLlegar: number;
     rqEnStock: number; rqSinStock: number;
@@ -293,6 +325,9 @@ export default function RequerimientosPage() {
     totalItems: 0, itemsActivos: 0, aprob: 0, sinAprob: 0, conOC: 0, anul: 0,
     porSolicitar: 0, porLlegar: 0, enStock: 0, sinStock: 0,
     cantidadTotal: 0, cantidadPromedio: 0,
+    otsDistintas: 0, rqPorOtProm: 0, itemsPorOtProm: 0,
+    tiempoAtencionProm: 0, tiempoAtencionMuestras: 0,
+    tiempoAprobOcProm: 0, tiempoAprobOcMuestras: 0,
     rqTotal: 0, rqActivos: 0, rqSinAprob: 0, rqPorSolicitar: 0,
     rqPorLlegar: 0, rqEnStock: 0, rqSinStock: 0,
     precioPorMoneda: {}, precioRealPorMoneda: {}, precioCatalogoPorMoneda: {},
@@ -312,9 +347,13 @@ export default function RequerimientosPage() {
     if (filterProveedor) params.set("proveedor_id", String(filterProveedor));
     if (filterFechas?.[0]) params.set("fecha_desde", filterFechas[0].toISOString());
     if (filterFechas?.[1]) params.set("fecha_hasta", filterFechas[1].toISOString());
+    if (rangoSol.desde) params.set("sol_desde", rangoSol.desde.toISOString());
+    if (rangoSol.hasta) params.set("sol_hasta", rangoSol.hasta.toISOString());
+    if (rangoReq.desde) params.set("req_desde", rangoReq.desde.toISOString());
+    if (rangoReq.hasta) params.set("req_hasta", rangoReq.hasta.toISOString());
     if (soloAprobadosSinOC) params.set("solo_aprobados_sin_oc", "1");
     return params;
-  }, [search, filterOt, filterStatusReq, filterStatusCot, filterStatusOc, filterTipo, filterProveedor, filterFechas, soloAprobadosSinOC]);
+  }, [search, filterOt, filterStatusReq, filterStatusCot, filterStatusOc, filterTipo, filterProveedor, filterFechas, rangoSol, rangoReq, soloAprobadosSinOC]);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -339,6 +378,10 @@ export default function RequerimientosPage() {
       if (filterProveedor) params.set("proveedor_id", String(filterProveedor));
       if (filterFechas?.[0]) params.set("fecha_desde", filterFechas[0].toISOString());
       if (filterFechas?.[1]) params.set("fecha_hasta", filterFechas[1].toISOString());
+      if (rangoSol.desde) params.set("sol_desde", rangoSol.desde.toISOString());
+      if (rangoSol.hasta) params.set("sol_hasta", rangoSol.hasta.toISOString());
+      if (rangoReq.desde) params.set("req_desde", rangoReq.desde.toISOString());
+      if (rangoReq.hasta) params.set("req_hasta", rangoReq.hasta.toISOString());
       if (soloAprobadosSinOC) params.set("solo_aprobados_sin_oc", "1");
 
       const res = await fetch(`/api/requerimientos?${params}`);
@@ -352,7 +395,7 @@ export default function RequerimientosPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, search, filterOt, filterStatusReq, filterStatusCot, filterStatusOc, filterTipo, filterProveedor, filterFechas, soloAprobadosSinOC, fetchStats]);
+  }, [page, pageSize, search, filterOt, filterStatusReq, filterStatusCot, filterStatusOc, filterTipo, filterProveedor, filterFechas, rangoSol, rangoReq, soloAprobadosSinOC, fetchStats]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -360,6 +403,7 @@ export default function RequerimientosPage() {
     setSearch(""); setFilterOt(""); setFilterStatusReq(undefined); setFilterStatusCot(undefined);
     setFilterStatusOc(undefined); setFilterTipo(undefined); setFilterProveedor(undefined);
     setFilterFechas(null); setSoloAprobadosSinOC(false); setPage(1);
+    setSemanaSel(null); setRangoSol({ desde: null, hasta: null }); setRangoReq({ desde: null, hasta: null });
   }
 
   // Selección candidata para acciones bulk
@@ -1084,7 +1128,7 @@ export default function RequerimientosPage() {
         </Space>
       </div>
 
-      {/* KPIs visuales — resumen de requerimientos (por RQ / por item) */}
+      {/* KPIs visuales — resumen de requerimientos (global / item), varían con los filtros */}
       <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
         <Col xs={12} sm={8} md={4}>
           <Card styles={{ body: { padding: 12 } }}>
@@ -1137,24 +1181,43 @@ export default function RequerimientosPage() {
         </Col>
         <Col xs={12} sm={8} md={4}>
           <Card styles={{ body: { padding: 12 } }}>
-            <KpiRqItem
-              title="En stock"
-              icon={<DatabaseOutlined style={{ color: "#52c41a" }} />}
-              color="#52c41a"
-              rq={stats.rqEnStock}
-              items={stats.enStock}
-            />
+            <div>
+              <div style={{ fontSize: 12, color: "rgba(0,0,0,0.65)", marginBottom: 4, display: "flex", alignItems: "center", gap: 4 }}>
+                <InboxOutlined style={{ color: brand.cyan }} /><span>OTs</span>
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: brand.cyan, lineHeight: 1.1 }}>
+                {stats.otsDistintas}
+              </div>
+              <div style={{ fontSize: 10, color: "rgba(0,0,0,0.45)", marginTop: 4, lineHeight: 1.4 }}>
+                RQ/OT: <b>{stats.rqPorOtProm.toLocaleString(undefined, { maximumFractionDigits: 2 })}</b><br />
+                Items/OT: <b>{stats.itemsPorOtProm.toLocaleString(undefined, { maximumFractionDigits: 2 })}</b>
+              </div>
+            </div>
           </Card>
         </Col>
         <Col xs={12} sm={8} md={4}>
           <Card styles={{ body: { padding: 12 } }}>
-            <KpiRqItem
-              title="Sin stock"
-              icon={<WarningOutlined style={{ color: stats.sinStock > 0 ? "#cf1322" : "#bfbfbf" }} />}
-              color={stats.sinStock > 0 ? "#cf1322" : "#bfbfbf"}
-              rq={stats.rqSinStock}
-              items={stats.sinStock}
-            />
+            <div>
+              <div style={{ fontSize: 12, color: "rgba(0,0,0,0.65)", marginBottom: 4, display: "flex", alignItems: "center", gap: 4 }}>
+                <ClockCircleOutlined style={{ color: "#722ed1" }} /><span>Tiempos (días)</span>
+              </div>
+              <div style={{ fontSize: 11, lineHeight: 1.5 }}>
+                <div>
+                  <b style={{ fontSize: 16, color: "#722ed1" }}>
+                    {stats.tiempoAtencionProm.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                  </b>{" "}
+                  <span style={{ color: "rgba(0,0,0,0.45)" }}>atención prom.</span>
+                  <span style={{ color: "rgba(0,0,0,0.35)", fontSize: 10 }}> ({stats.tiempoAtencionMuestras})</span>
+                </div>
+                <div>
+                  <b style={{ fontSize: 16, color: brand.navy }}>
+                    {stats.tiempoAprobOcProm.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                  </b>{" "}
+                  <span style={{ color: "rgba(0,0,0,0.45)" }}>aprob.→OC</span>
+                  <span style={{ color: "rgba(0,0,0,0.35)", fontSize: 10 }}> ({stats.tiempoAprobOcMuestras})</span>
+                </div>
+              </div>
+            </div>
           </Card>
         </Col>
         <Col xs={24} sm={16} md={8}>
@@ -1319,9 +1382,44 @@ export default function RequerimientosPage() {
         />
       )}
 
+      <Row gutter={[12, 8]} style={{ marginBottom: 8 }} align="middle">
+        <Col xs={24} md={14}>
+          <Space size={6} wrap>
+            <Text type="secondary" style={{ fontSize: 12 }}>Semana:</Text>
+            <DatePicker
+              picker="week"
+              value={semanaSel}
+              onChange={onSemanaChange}
+              placeholder="Elegí una semana"
+              format={(v) => `Semana ${v.isoWeek()}, ${v.isoWeekYear()}`}
+              style={{ minWidth: 180 }}
+              allowClear
+            />
+            <Segmented
+              size="small"
+              value={semanaCampo}
+              onChange={(v) => onSemanaCampoChange(v as "solicitud" | "requerida")}
+              options={[
+                { value: "solicitud", label: "Solicitud" },
+                { value: "requerida", label: "Requerida" },
+              ]}
+            />
+            {semanaSel && (
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                {semanaSel.startOf("isoWeek").format("DD/MM")} – {semanaSel.endOf("isoWeek").format("DD/MM/YY")}
+              </Text>
+            )}
+          </Space>
+        </Col>
+        <Col xs={24} md={10}>
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            La semana filtra por <b>Fecha {semanaCampo}</b> (rango lun–dom).
+          </Text>
+        </Col>
+      </Row>
       <Row gutter={[12, 8]} style={{ marginBottom: 12 }}>
         <Col xs={24} md={12}>
-          <RangoFechasFiltro label="Fecha solicitud" value={rangoSol} onChange={setRangoSol} />
+          <RangoFechasFiltro label="Fecha solicitud" value={rangoSol} onChange={(r) => { setRangoSol(r); setSemanaSel(null); }} />
         </Col>
         <Col xs={24} md={12}>
           <RangoFechasFiltro label="Fecha requerida" value={rangoReq} onChange={setRangoReq} />

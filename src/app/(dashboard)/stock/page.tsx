@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Typography,
   Table,
@@ -16,11 +16,13 @@ import {
   Statistic,
   Popover,
   Tooltip,
+  Segmented,
 } from "antd";
 import {
   SearchOutlined,
   ReloadOutlined,
   ArrowUpOutlined,
+  ArrowDownOutlined,
   DatabaseOutlined,
   InboxOutlined,
   WarningOutlined,
@@ -71,6 +73,7 @@ interface StockItem {
   almacen: string | null;
   stock_proyectado: number;
   por_solicitar: number;
+  origen?: "catalogo" | "no_catalogado";
 }
 
 interface StockKPIs {
@@ -82,6 +85,10 @@ interface StockKPIs {
   enReq: number;
   porSolicitar: number;
   valorTotal: number;
+  totalEntradas: number;
+  totalSalidas: number;
+  totalAjustes: number;
+  balanceStock: number;
 }
 
 const alertaColor: Record<string, string> = {
@@ -97,11 +104,13 @@ export default function StockPage() {
   const [kpis, setKpis] = useState<StockKPIs>({
     totalMateriales: 0, sinStock: 0, bajoStock: 0,
     exceso: 0, enPO: 0, enReq: 0, porSolicitar: 0,
-    valorTotal: 0,
+    valorTotal: 0, totalEntradas: 0, totalSalidas: 0, totalAjustes: 0, balanceStock: 0,
   });
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [filtro, setFiltro] = useState<string>("todos");
+  const [vistaOrigen, setVistaOrigen] = useState<"catalogo" | "no_catalogado" | "todos">("catalogo");
+  const [noCatRaw, setNoCatRaw] = useState<StockItem[]>([]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
   const { ocultas, setOcultas } = useColumnasOcultas("stock-list-cols-v1");
@@ -112,10 +121,44 @@ export default function StockPage() {
       const params = new URLSearchParams();
       if (filtro !== "todos") params.set("filtro", filtro);
       if (search) params.set("search", search);
-      const res = await fetch(`/api/stock?${params}`);
-      const json = await res.json();
+      const [resStock, resNoCat] = await Promise.all([
+        fetch(`/api/stock?${params}`),
+        fetch(`/api/no-catalogados`),
+      ]);
+      const json = await resStock.json();
       setData(json.data ?? []);
       setKpis(json.kpis ?? {});
+      if (resNoCat.ok) {
+        const jnc = await resNoCat.json();
+        const mapped: StockItem[] = (jnc.data ?? []).map((m: { id: number; codigo: string; descripcion: string; unidad_medida: string; stock_actual: number; ubicacion_nombre: string | null }) => ({
+          material_id: -m.id, // negativo para no chocar con IDs reales
+          codigo: m.codigo,
+          descripcion: m.descripcion,
+          np: null,
+          stock_actual: m.stock_actual,
+          punto_reposicion: 0,
+          stock_maximo: 0,
+          unidad_medida: m.unidad_medida,
+          ubicacion: m.ubicacion_nombre,
+          caja: null,
+          precio: null,
+          moneda: null,
+          fabricante: null,
+          categoria: null,
+          clasificacion: null,
+          valor_total: 0,
+          alerta: m.stock_actual <= 0 ? "SIN" : "OK",
+          cantidad_en_po: 0,
+          pos_pendientes: [],
+          cantidad_en_req: 0,
+          reqs_pendientes: [],
+          almacen: m.ubicacion_nombre,
+          stock_proyectado: m.stock_actual,
+          por_solicitar: 0,
+          origen: "no_catalogado",
+        }));
+        setNoCatRaw(mapped);
+      }
     } catch {
       message.error("Error al cargar stock");
     } finally {
@@ -126,6 +169,35 @@ export default function StockPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Data mostrada según el toggle de origen (catálogo / no catalogado / todos).
+  const displayData = useMemo(() => {
+    const ncFiltrado = search
+      ? noCatRaw.filter((m) =>
+          m.codigo.toLowerCase().includes(search.toLowerCase()) ||
+          m.descripcion.toLowerCase().includes(search.toLowerCase()))
+      : noCatRaw;
+    if (vistaOrigen === "no_catalogado") return ncFiltrado;
+    if (vistaOrigen === "todos") return [...data, ...ncFiltrado];
+    return data;
+  }, [data, noCatRaw, vistaOrigen, search]);
+
+  // KPIs combinados: cuando se ven "todos", suma los no catalogados.
+  const kpisVista = useMemo(() => {
+    const ncTotal = noCatRaw.length;
+    const ncSin = noCatRaw.filter((m) => m.stock_actual <= 0).length;
+    if (vistaOrigen === "no_catalogado") {
+      return { ...kpis, totalMateriales: ncTotal, sinStock: ncSin, bajoStock: 0, exceso: 0, enPO: 0, enReq: 0, porSolicitar: 0 };
+    }
+    if (vistaOrigen === "todos") {
+      return {
+        ...kpis,
+        totalMateriales: kpis.totalMateriales + ncTotal,
+        sinStock: kpis.sinStock + ncSin,
+      };
+    }
+    return kpis;
+  }, [kpis, noCatRaw, vistaOrigen]);
 
   const popoverContent = (r: StockItem) => (
     <div style={{ maxWidth: 380, fontSize: 12 }}>
@@ -359,8 +431,8 @@ export default function StockPage() {
     },
   ];
 
-  const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
-    useColumnasRedimensionables<StockItem>(columns, "stock-list-cols-widths-v1");
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+  useColumnasRedimensionables<StockItem>(columns, "stock-list-cols-widths-v1");
 
   const exportarStockExcel = async () => {
     try {
@@ -427,42 +499,88 @@ export default function StockPage() {
       <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
         <Col xs={12} md={6} lg={3}>
           <Card styles={{ body: { padding: 12 } }} hoverable onClick={() => setFiltro("todos")}>
-            <Statistic title="Total" value={kpis.totalMateriales} prefix={<DatabaseOutlined style={{ color: brand.navy }} />} styles={{ content: { color: brand.navy, fontSize: 22 } }} />
+            <Statistic title="Total" value={kpisVista.totalMateriales} prefix={<DatabaseOutlined style={{ color: brand.navy }} />} styles={{ content: { color: brand.navy, fontSize: 22 } }} />
           </Card>
         </Col>
         <Col xs={12} md={6} lg={3}>
           <Card styles={{ body: { padding: 12 } }} hoverable onClick={() => setFiltro("sin_stock")}>
-            <Statistic title="Sin stock" value={kpis.sinStock} prefix={<WarningOutlined style={{ color: "#ff4d4f" }} />} styles={{ content: { color: "#ff4d4f", fontSize: 22 } }} />
+            <Statistic title="Sin stock" value={kpisVista.sinStock} prefix={<WarningOutlined style={{ color: "#ff4d4f" }} />} styles={{ content: { color: "#ff4d4f", fontSize: 22 } }} />
           </Card>
         </Col>
         <Col xs={12} md={6} lg={3}>
           <Card styles={{ body: { padding: 12 } }} hoverable onClick={() => setFiltro("bajo_stock")}>
-            <Statistic title="Bajo stock" value={kpis.bajoStock} prefix={<WarningOutlined style={{ color: "#faad14" }} />} styles={{ content: { color: "#faad14", fontSize: 22 } }} />
+            <Statistic title="Bajo stock" value={kpisVista.bajoStock} prefix={<WarningOutlined style={{ color: "#faad14" }} />} styles={{ content: { color: "#faad14", fontSize: 22 } }} />
           </Card>
         </Col>
         <Col xs={12} md={6} lg={3}>
           <Card styles={{ body: { padding: 12 } }} hoverable onClick={() => setFiltro("exceso")}>
-            <Statistic title="Exceso" value={kpis.exceso ?? 0} prefix={<ArrowUpOutlined style={{ color: "#722ed1" }} />} styles={{ content: { color: "#722ed1", fontSize: 22 } }} />
+            <Statistic title="Exceso" value={kpisVista.exceso ?? 0} prefix={<ArrowUpOutlined style={{ color: "#722ed1" }} />} styles={{ content: { color: "#722ed1", fontSize: 22 } }} />
           </Card>
         </Col>
         <Col xs={12} md={6} lg={3}>
           <Card styles={{ body: { padding: 12 } }} hoverable onClick={() => setFiltro("en_po")}>
-            <Statistic title="En POs" value={kpis.enPO ?? 0} prefix={<InboxOutlined style={{ color: "#1677ff" }} />} styles={{ content: { color: "#1677ff", fontSize: 22 } }} />
+            <Statistic title="En POs" value={kpisVista.enPO ?? 0} prefix={<InboxOutlined style={{ color: "#1677ff" }} />} styles={{ content: { color: "#1677ff", fontSize: 22 } }} />
           </Card>
         </Col>
         <Col xs={12} md={6} lg={3}>
           <Card styles={{ body: { padding: 12 } }} hoverable onClick={() => setFiltro("en_req")}>
-            <Statistic title="En REQ" value={kpis.enReq ?? 0} prefix={<FileDoneOutlined style={{ color: "#fa8c16" }} />} styles={{ content: { color: "#fa8c16", fontSize: 22 } }} />
+            <Statistic title="En REQ" value={kpisVista.enReq ?? 0} prefix={<FileDoneOutlined style={{ color: "#fa8c16" }} />} styles={{ content: { color: "#fa8c16", fontSize: 22 } }} />
           </Card>
         </Col>
         <Col xs={12} md={6} lg={3}>
           <Card styles={{ body: { padding: 12 } }} hoverable onClick={() => setFiltro("por_solicitar")}>
-            <Statistic title="Por solicitar" value={kpis.porSolicitar ?? 0} prefix={<WarningOutlined style={{ color: "#cf1322" }} />} styles={{ content: { color: "#cf1322", fontSize: 22 } }} />
+            <Statistic title="Por solicitar" value={kpisVista.porSolicitar ?? 0} prefix={<WarningOutlined style={{ color: "#cf1322" }} />} styles={{ content: { color: "#cf1322", fontSize: 22 } }} />
           </Card>
         </Col>
         <Col xs={12} md={6} lg={3}>
           <Card styles={{ body: { padding: 12 } }}>
-            <Statistic title="Valor total" value={kpis.valorTotal} precision={2} prefix="$" styles={{ content: { color: brand.navy, fontSize: 18 } }} />
+            <Statistic title="Valor total" value={kpisVista.valorTotal} precision={2} prefix="$" styles={{ content: { color: brand.navy, fontSize: 18 } }} />
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Balance de inventario: ingresos vs salidas */}
+      <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+        <Col xs={12} md={6} lg={6}>
+          <Card styles={{ body: { padding: 12 } }}>
+            <Statistic
+              title="Total Ingresos (ENTRADA)"
+              value={kpisVista.totalEntradas ?? 0}
+              precision={2}
+              prefix={<ArrowUpOutlined style={{ color: "#52c41a" }} />}
+              styles={{ content: { color: "#52c41a", fontSize: 20 } }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} md={6} lg={6}>
+          <Card styles={{ body: { padding: 12 } }}>
+            <Statistic
+              title="Total Salidas (SALIDA)"
+              value={kpisVista.totalSalidas ?? 0}
+              precision={2}
+              prefix={<ArrowDownOutlined style={{ color: "#cf1322" }} />}
+              styles={{ content: { color: "#cf1322", fontSize: 20 } }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} md={6} lg={6}>
+          <Card styles={{ body: { padding: 12 } }}>
+            <Statistic
+              title="Ajustes"
+              value={kpisVista.totalAjustes ?? 0}
+              precision={2}
+              styles={{ content: { color: "#722ed1", fontSize: 20 } }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} md={6} lg={6}>
+          <Card styles={{ body: { padding: 12 } }}>
+            <Statistic
+              title="Balance neto (E − S + Aj.)"
+              value={kpisVista.balanceStock ?? 0}
+              precision={2}
+              styles={{ content: { color: (kpisVista.balanceStock ?? 0) >= 0 ? "#52c41a" : "#cf1322", fontSize: 20, fontWeight: 700 } }}
+            />
           </Card>
         </Col>
       </Row>
@@ -499,28 +617,38 @@ export default function StockPage() {
               Actualizar
             </Button>
           </Col>
+          <Col xs={24} md={6}>
+            <Segmented
+              block
+              value={vistaOrigen}
+              onChange={(v) => { setVistaOrigen(v as typeof vistaOrigen); setPage(1); }}
+              options={[
+                { value: "catalogo", label: "Solo catálogo" },
+                { value: "no_catalogado", label: "No catalogados" },
+                { value: "todos", label: "Todos" },
+              ]}
+            />
+          </Col>
         </Row>
       </Card>
 
-      <TableDragWrapper>
-              <Table
-          rowKey="material_id"
-          columns={visibleColumns(columnsResizable, ocultas)}
-          components={tableComponents}
-          dataSource={data}
-          loading={loading}
-          pagination={paginacionEstandar({
-            current: page,
-            pageSize,
-            total: data.length,
-            onChange: (p, s) => { setPage(p); setPageSize(s); },
-            label: "materiales",
-          })}
-          scroll={{ x: 1700 }}
-          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-          size="small"
-        />
-      </TableDragWrapper>
+      <Table
+        rowKey="material_id"
+        columns={visibleColumns(columnsResizable, ocultas)}
+        components={tableComponents}
+        dataSource={displayData}
+        loading={loading}
+        pagination={paginacionEstandar({
+          current: page,
+          pageSize,
+          total: data.length,
+          onChange: (p, s) => { setPage(p); setPageSize(s); },
+          label: "materiales",
+        })}
+        scroll={{ x: 1700 }}
+        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+        size="small"
+      />
     </div>
   );
 }

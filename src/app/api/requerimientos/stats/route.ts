@@ -29,13 +29,24 @@ export async function GET(req: NextRequest) {
     const proveedorId = sp.get("proveedor_id");
     if (proveedorId) where.proveedor_id = Number(proveedorId);
 
-    const desde = sp.get("fecha_desde");
-    const hasta = sp.get("fecha_hasta");
+    // Rango fecha_solicitud: acepta fecha_desde/fecha_hasta (filtro principal)
+    // o sol_desde/sol_hasta (filtro "Fecha solicitud" del pie).
+    const desde = sp.get("fecha_desde") ?? sp.get("sol_desde");
+    const hasta = sp.get("fecha_hasta") ?? sp.get("sol_hasta");
     if (desde || hasta) {
       const range: Record<string, Date> = {};
       if (desde) range.gte = new Date(desde);
       if (hasta) range.lte = new Date(hasta);
       where.fecha_solicitud = range;
+    }
+    // Rango fecha_requerida (filtro "Fecha requerida" del pie).
+    const reqDesde = sp.get("req_desde");
+    const reqHasta = sp.get("req_hasta");
+    if (reqDesde || reqHasta) {
+      const range: Record<string, Date> = {};
+      if (reqDesde) range.gte = new Date(reqDesde);
+      if (reqHasta) range.lte = new Date(reqHasta);
+      where.fecha_requerida = range;
     }
 
     if (sp.get("solo_aprobados_sin_oc") === "1") {
@@ -58,6 +69,7 @@ export async function GET(req: NextRequest) {
       where,
       select: {
         id: true,
+        ot_id: true,
         nro_req: true,
         cantidad: true,
         po_id: true,
@@ -67,6 +79,10 @@ export async function GET(req: NextRequest) {
         precio_unitario: true,
         moneda: true,
         tipo_codigo: true,
+        fecha_solicitud: true,
+        fecha_aprobacion: true,
+        fecha_oc: true,
+        fecha_entrega_real: true,
         material: { select: { stock_actual: true, precio: true, moneda_codigo: true } },
       },
     });
@@ -132,6 +148,44 @@ export async function GET(req: NextRequest) {
     }
     const cantidadPromedio = itemsActivos > 0 ? cantidadTotal / itemsActivos : 0;
 
+    // ── Por OT ── (cuántas OTs distintas y cuántos RQ/items por OT)
+    const otsSet = new Set<number>();
+    const rqPorOt = new Map<number, Set<string>>();
+    for (const r of rows) {
+      if (r.ot_id == null) continue;
+      otsSet.add(r.ot_id);
+      if (!rqPorOt.has(r.ot_id)) rqPorOt.set(r.ot_id, new Set());
+      rqPorOt.get(r.ot_id)!.add(r.nro_req ?? `__sin_req_${r.id}`);
+    }
+    const otsDistintas = otsSet.size;
+    const rqPorOtProm = otsDistintas > 0
+      ? [...rqPorOt.values()].reduce((s, set) => s + set.size, 0) / otsDistintas
+      : 0;
+    const itemsPorOtProm = otsDistintas > 0 ? rows.length / otsDistintas : 0;
+
+    // ── Tiempos (en días) ──
+    const DIA_MS = 1000 * 60 * 60 * 24;
+    const diffDias = (a: Date | null, b: Date | null): number | null => {
+      if (!a || !b) return null;
+      const d = (new Date(b).getTime() - new Date(a).getTime()) / DIA_MS;
+      return d >= 0 ? d : null;
+    };
+    // Atención: solicitud → material recibido (fecha_entrega_real).
+    const atencionDias: number[] = [];
+    // Aprobado → OC: fecha_aprobacion → fecha_oc.
+    const aprobOcDias: number[] = [];
+    for (const r of rows) {
+      const at = diffDias(r.fecha_solicitud, r.fecha_entrega_real);
+      if (at != null) atencionDias.push(at);
+      const ao = diffDias(r.fecha_aprobacion, r.fecha_oc);
+      if (ao != null) aprobOcDias.push(ao);
+    }
+    const prom = (arr: number[]) => (arr.length ? arr.reduce((s, x) => s + x, 0) / arr.length : 0);
+    const tiempoAtencionProm = prom(atencionDias);
+    const tiempoAprobOcProm = prom(aprobOcDias);
+    const tiempoAtencionMuestras = atencionDias.length;
+    const tiempoAprobOcMuestras = aprobOcDias.length;
+
     // ── Por RQ ──
     let rqTotal = 0, rqActivos = 0;
     let rqSinAprob = 0, rqPorSolicitar = 0, rqPorLlegar = 0, rqEnStock = 0, rqSinStock = 0;
@@ -161,6 +215,11 @@ export async function GET(req: NextRequest) {
         aprob, sinAprob, conOC, anul,
         porSolicitar, porLlegar, enStock, sinStock,
         cantidadTotal, cantidadPromedio,
+        // Por OT
+        otsDistintas, rqPorOtProm, itemsPorOtProm,
+        // Tiempos (días promedio)
+        tiempoAtencionProm, tiempoAtencionMuestras,
+        tiempoAprobOcProm, tiempoAprobOcMuestras,
         // Por RQ
         rqTotal, rqActivos,
         rqSinAprob, rqPorSolicitar, rqPorLlegar, rqEnStock, rqSinStock,
