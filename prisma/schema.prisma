@@ -626,6 +626,7 @@ model Equipo {
   ubicacion            Ubicacion?    @relation(fields: [ubicacion_codigo], references: [codigo])
   unidad_medida        UnidadMedida? @relation(fields: [unidad_medida_codigo], references: [codigo])
   estrategias          Estrategia[]
+  trabajadores         Trabajador[]
 
   @@map("equipo")
 }
@@ -679,13 +680,17 @@ model Trabajador {
   dni           String?                @db.VarChar(20)
   area          String                 @db.VarChar(50)
   puesto        String                 @db.VarChar(100)
+  // Máquina/equipo asignado por defecto. Autocompleta al asignar tareas; editable.
+  equipo_codigo String?                @db.VarChar(20)
   activo        Boolean                @default(true)
   created_at    DateTime               @default(now())
   updated_at    DateTime               @default(now()) @updatedAt
+  equipo        Equipo?                @relation(fields: [equipo_codigo], references: [codigo], onDelete: SetNull)
   prestamos     PrestamoHerramienta[]
 
   @@index([dni])
   @@index([area])
+  @@index([equipo_codigo])
   @@map("trabajador")
 }
 
@@ -809,6 +814,7 @@ model OrdenTrabajo {
   plaqueteo                   String?             @db.VarChar(100)
   wo_cliente                  String?             @db.VarChar(100)
   po_cliente                  String?             @db.VarChar(100)
+  po_item                     String?             @db.VarChar(100)
   id_viajero                  String?             @db.VarChar(100)
   guia_remision               String?             @db.VarChar(100)
   empresa_entrega             String?             @db.VarChar(200)
@@ -831,7 +837,7 @@ model OrdenTrabajo {
   taller_status_codigo        String?             @db.VarChar(50)
   ubicacion_codigo            String?             @db.VarChar(10)
   usuario_crea                String?             @db.VarChar(100)
-  fecha_creacion              DateTime?           @default(now()) @db.Date
+  fecha_creacion              DateTime?           @default(now()) @db.Timestamp(3)
   usuario_actualiza           String?             @db.VarChar(100)
   fecha_actualizacion         DateTime?           @db.Date
   fecha_evaluacion            DateTime?           @db.Date

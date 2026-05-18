@@ -41,6 +41,7 @@ export async function GET() {
         descripcion: true,
         equipo_codigo: true,
         np: true,
+        fecha_recepcion: true,
         fecha_entrega: true,
         fecha_requerimiento_cliente: true,
         ot_status_codigo: true,
@@ -71,10 +72,13 @@ export async function GET() {
     // 3) Reducir a la forma esperada por la página: cada OT con un map de "comp/op" → estado.
     const ots = otsRaw.map((o: OT) => {
       const planMap: Record<string, { estado: string | null; externo: boolean | null }> = {};
+      let total = 0;
+      let realizadas = 0;
       for (const p of o.planificaciones as Plan[]) {
         const key = `${p.componente}__${p.operacion_codigo}`;
-        // Si hay duplicados, gana el último (no debería pasar para OTs bien planificadas).
         planMap[key] = { estado: p.estado ?? null, externo: p.trabajo_externo ?? null };
+        total++;
+        if ((p.estado ?? "").trim().toLowerCase() === "realizado") realizadas++;
       }
       return {
         id: o.id,
@@ -86,10 +90,12 @@ export async function GET() {
         cliente_nombre: o.cliente?.nombre_comercial ?? o.cliente?.razon_social ?? null,
         modelo: o.codigo_reparacion?.flota?.codigo ?? null,
         modelo_nombre: o.codigo_reparacion?.flota?.nombre ?? null,
+        fecha_recepcion: o.fecha_recepcion,
         fecha_entrega: o.fecha_entrega,
         fecha_requerimiento: o.fecha_requerimiento_cliente,
         ot_status: o.ot_status_codigo,
         plan: planMap,
+        progreso: { total, realizadas },
       };
     });
 

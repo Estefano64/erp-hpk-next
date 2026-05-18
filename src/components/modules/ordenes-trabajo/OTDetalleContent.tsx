@@ -72,6 +72,8 @@ interface CodRepOption {
 interface OTDetalle {
   id: number;
   version: number;
+  usuario_crea: string | null;
+  fecha_creacion: string | null;
   usuario_actualiza: string | null;
   fecha_actualizacion: string | null;
   ot: string;
@@ -88,6 +90,7 @@ interface OTDetalle {
   cod_rep_posicion: string | null;
   wo_cliente: string | null;
   po_cliente: string | null;
+  po_item: string | null;
   id_viajero: string | null;
   guia_remision: string | null;
   empresa_entrega: string | null;
@@ -272,6 +275,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
       plaqueteo: ot.plaqueteo,
       wo_cliente: ot.wo_cliente,
       po_cliente: ot.po_cliente,
+      po_item: ot.po_item,
       id_viajero: ot.id_viajero,
       guia_remision: ot.guia_remision,
       empresa_entrega: ot.empresa_entrega,
@@ -764,7 +768,10 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
               <Row gutter={[16, 4]}>
                 <Col xs={12} md={6}><Field label="WO Cliente" value={ot.wo_cliente} /></Col>
                 <Col xs={12} md={6}><Field label="PO Cliente" value={ot.po_cliente} /></Col>
+                <Col xs={12} md={6}><Field label="PO Item" value={ot.po_item} /></Col>
                 <Col xs={12} md={6}><Field label="ID Viajero" value={ot.id_viajero} /></Col>
+              </Row>
+              <Row gutter={[16, 4]}>
                 <Col xs={12} md={6}><Field label="Guía Remisión" value={ot.guia_remision} /></Col>
               </Row>
               <Row gutter={[16, 4]}>
@@ -783,6 +790,10 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                 <Col xs={12} md={6}>
                   <FieldLabel>PO Cliente</FieldLabel>
                   <Input value={(editData.po_cliente as string) ?? ""} onChange={(e) => setField("po_cliente", e.target.value)} />
+                </Col>
+                <Col xs={12} md={6}>
+                  <FieldLabel>PO Item</FieldLabel>
+                  <Input value={(editData.po_item as string) ?? ""} onChange={(e) => setField("po_item", e.target.value)} />
                 </Col>
                 <Col xs={12} md={6}>
                   <FieldLabel>ID Viajero</FieldLabel>
@@ -904,6 +915,41 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
             </Row>
           )}
         </Card>
+
+        {/* Pie de página: auditoría de creación + última edición */}
+        <div style={{
+          marginTop: 8,
+          padding: "10px 16px",
+          background: "#FAFAFA",
+          border: `1px solid ${brand.border}`,
+          borderRadius: 6,
+          fontSize: 11,
+          color: "rgba(0,0,0,0.55)",
+          display: "flex",
+          gap: 24,
+          flexWrap: "wrap",
+        }}>
+          <div>
+            <span style={{ color: "#888" }}>Creada por:</span>{" "}
+            <b style={{ color: brand.navy }}>{ot.usuario_crea ?? "—"}</b>
+            {ot.fecha_creacion && (
+              <>
+                {" · "}
+                <span style={{ color: "#888" }}>el</span>{" "}
+                <b>{dayjs(ot.fecha_creacion).format("DD/MM/YYYY HH:mm")}</b>
+              </>
+            )}
+          </div>
+          {ot.fecha_actualizacion && (
+            <div>
+              <span style={{ color: "#888" }}>Última edición:</span>{" "}
+              <b style={{ color: brand.navy }}>{ot.usuario_actualiza ?? "—"}</b>
+              {" · "}
+              <span style={{ color: "#888" }}>el</span>{" "}
+              <b>{dayjs(ot.fecha_actualizacion).format("DD/MM/YYYY HH:mm")}</b>
+            </div>
+          )}
+        </div>
       </div>
   );
 

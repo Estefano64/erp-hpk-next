@@ -35,7 +35,7 @@ interface RequerimientoRow {
   tipo_codigo: string;
   material_id: number | null;
   material_codigo: string | null;
-  material: { codigo: string; descripcion: string } | null;
+  material: { codigo: string; descripcion: string; precio?: string | null; moneda_codigo?: string | null } | null;
   cantidad: string;
   unidad_medida: string | null;
   descripcion: string | null;
@@ -316,12 +316,32 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
           }
         }
       }
+      // Registrar nuevos servicios en catálogo (idempotente): para items SER con
+      // descripción tipeada, guardamos el servicio para que pueda reutilizarse.
+      const serviciosNuevos = new Set<string>();
+      const descripcionesSer = draftItems
+        .filter((it) => it.tipo_codigo === "SER" && it.descripcion?.trim())
+        .map((it) => it.descripcion.trim());
+      for (const nombre of [...new Set(descripcionesSer)]) {
+        try {
+          const r = await fetch("/api/servicios-reparacion", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ nombre }),
+          });
+          if (r.ok) {
+            const sj = await r.json().catch(() => null);
+            if (sj && !sj.reused) serviciosNuevos.add(nombre);
+          }
+        } catch { /* falla silenciosa: no bloquear el flujo principal */ }
+      }
       messageApi.success(
         (draftAppendToNroReq
           ? `Agregados ${j.creados} item(s) a ${j.nro_req}.`
           : `Requerimiento ${j.nro_req} creado con ${j.creados} item(s).`) +
         (archivosSubidos > 0 ? ` ${archivosSubidos} archivo(s) subido(s).` : "") +
-        (archivosFallidos > 0 ? ` ${archivosFallidos} archivo(s) fallaron.` : "")
+        (archivosFallidos > 0 ? ` ${archivosFallidos} archivo(s) fallaron.` : "") +
+        (serviciosNuevos.size > 0 ? ` ${serviciosNuevos.size} servicio(s) nuevo(s) en catálogo.` : "")
       );
       cerrarDraft();
       fetchData();
@@ -600,6 +620,11 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
   // ── Stats ──
   const stats = useMemo(() => {
     let borrador = 0, aprobados = 0, sinAprob = 0, conOC = 0, anulados = 0;
+    // Totales por moneda. Para cada item: si tiene precio_unitario lo usa (real/quote),
+    // si no usa el precio del catálogo del material (estimado). Si no hay ninguno → no suma.
+    const totalReal: Record<string, number> = {};
+    const totalEstimado: Record<string, number> = {};
+    let itemsConPrecio = 0, itemsSinPrecio = 0;
     for (const r of rows) {
       const sr = r.status_requerimiento_codigo;
       if (sr === "BORRADOR") borrador++;
@@ -607,10 +632,40 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
       else if (sr === "SIN_APROBACION") sinAprob++;
       else if (sr === "ANULADO") anulados++;
       if (r.po_id) conOC++;
+      if (sr === "ANULADO" || sr === "DESAPROBADO") continue; // no cuentan en costo
+      const cant = Number(r.cantidad);
+      const pu = r.precio_unitario != null ? Number(r.precio_unitario) : null;
+      const moneda = r.moneda ?? "USD";
+      if (pu != null && Number.isFinite(pu)) {
+        totalReal[moneda] = (totalReal[moneda] ?? 0) + cant * pu;
+        itemsConPrecio++;
+      } else if (r.material?.precio != null) {
+        const cat = Number(r.material.precio);
+        const monedaCat = r.material.moneda_codigo ?? moneda;
+        totalEstimado[monedaCat] = (totalEstimado[monedaCat] ?? 0) + cant * cat;
+        itemsConPrecio++;
+      } else {
+        itemsSinPrecio++;
+      }
     }
-    return { borrador, aprobados, sinAprob, conOC, anulados };
+    return { borrador, aprobados, sinAprob, conOC, anulados, totalReal, totalEstimado, itemsConPrecio, itemsSinPrecio };
   }, [rows]);
   const hayBorradores = stats.borrador > 0;
+  // Helper para mostrar precio efectivo de un item (real o catálogo).
+  function precioEfectivo(r: RequerimientoRow): { precio: number; moneda: string; esEstimado: boolean } | null {
+    if (r.precio_unitario != null) {
+      const pu = Number(r.precio_unitario);
+      if (Number.isFinite(pu)) return { precio: pu, moneda: r.moneda ?? "USD", esEstimado: false };
+    }
+    if (r.material?.precio != null) {
+      const pu = Number(r.material.precio);
+      if (Number.isFinite(pu)) return { precio: pu, moneda: r.material.moneda_codigo ?? r.moneda ?? "USD", esEstimado: true };
+    }
+    return null;
+  }
+  function fmtMonto(n: number): string {
+    return n.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
 
   // Valores únicos para filtros derivados de relaciones
   const reqStatusValores = [...new Set(rows.map((r) => r.status_requerimiento?.nombre).filter(Boolean) as string[])]
@@ -661,14 +716,21 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
     {
       title: "Descripción", key: "desc", width: 280, ellipsis: true,
       ...filtroPorColumna(rows, "descripcion"),
-      render: (_, r) => (
-        <div style={{ lineHeight: 1.3 }}>
-          <div style={{ fontSize: 12 }}>{r.descripcion}</div>
-          {r.fabricante_codigo && (
-            <Text type="secondary" style={{ fontSize: 10 }}>{r.fabricante_codigo}</Text>
-          )}
-        </div>
-      ),
+      render: (_, r) => {
+        // Para MAC con material vinculado, mostrar la descripción REAL del material
+        // (no la genérica heredada del cod_rep que viene en r.descripcion).
+        const descripcionMostrada = r.tipo_codigo === "MAC" && r.material?.descripcion
+          ? r.material.descripcion
+          : r.descripcion;
+        return (
+          <div style={{ lineHeight: 1.3 }}>
+            <div style={{ fontSize: 12 }}>{descripcionMostrada}</div>
+            {r.fabricante_codigo && (
+              <Text type="secondary" style={{ fontSize: 10 }}>{r.fabricante_codigo}</Text>
+            )}
+          </div>
+        );
+      },
     },
     {
       title: "Cant.", key: "qty", width: 80, align: "right",
@@ -678,6 +740,48 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
       filterSearch: true,
       onFilter: (value, r) => String(Number(r.cantidad)) === value,
       render: (_, r) => Number(r.cantidad).toLocaleString(),
+    },
+    {
+      title: "P. Unit.", key: "precio_unit", width: 110, align: "right",
+      sorter: (a, b) => {
+        const pa = precioEfectivo(a)?.precio ?? -1;
+        const pb = precioEfectivo(b)?.precio ?? -1;
+        return pa - pb;
+      },
+      render: (_, r) => {
+        const eff = precioEfectivo(r);
+        if (!eff) return <Text type="secondary">—</Text>;
+        return (
+          <Tooltip title={eff.esEstimado ? "Precio del catálogo (estimado)" : "Precio cargado (real)"}>
+            <div style={{ lineHeight: 1.1 }}>
+              <Text style={{ fontSize: 12, color: eff.esEstimado ? "#888" : brand.navy }}>
+                {eff.moneda} {fmtMonto(eff.precio)}
+              </Text>
+              {eff.esEstimado && (
+                <div style={{ fontSize: 9, color: "#aaa" }}>estimado</div>
+              )}
+            </div>
+          </Tooltip>
+        );
+      },
+    },
+    {
+      title: "Subtotal", key: "subtotal", width: 130, align: "right",
+      sorter: (a, b) => {
+        const pa = (precioEfectivo(a)?.precio ?? 0) * Number(a.cantidad);
+        const pb = (precioEfectivo(b)?.precio ?? 0) * Number(b.cantidad);
+        return pa - pb;
+      },
+      render: (_, r) => {
+        const eff = precioEfectivo(r);
+        if (!eff) return <Text type="secondary">—</Text>;
+        const sub = eff.precio * Number(r.cantidad);
+        return (
+          <Text strong style={{ fontSize: 12, color: eff.esEstimado ? "#888" : brand.navy }}>
+            {eff.moneda} {fmtMonto(sub)}
+          </Text>
+        );
+      },
     },
     {
       title: "U.M.", key: "unidad_medida", width: 90,
@@ -818,10 +922,56 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
   const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
     useColumnasRedimensionables<RequerimientoRow>(columns, "ot-req-cols-widths-v1");
 
+  const monedasActivas = useMemo(() => {
+    return [...new Set([...Object.keys(stats.totalReal), ...Object.keys(stats.totalEstimado)])].sort();
+  }, [stats.totalReal, stats.totalEstimado]);
+
   return (
     <div>
       {contextHolder}
       {modalCtx}
+      {/* Card de costos estimados/reales */}
+      {rows.length > 0 && monedasActivas.length > 0 && (
+        <Card
+          size="small"
+          style={{ marginBottom: 12, background: "#FAFCFE", borderColor: "#D6E4FF" }}
+          styles={{ body: { padding: 12 } }}
+        >
+          <Row gutter={12} align="middle">
+            <Col flex="auto">
+              <Space size={20} wrap>
+                {monedasActivas.map((moneda) => {
+                  const real = stats.totalReal[moneda] ?? 0;
+                  const est = stats.totalEstimado[moneda] ?? 0;
+                  const total = real + est;
+                  return (
+                    <div key={moneda} style={{ lineHeight: 1.2 }}>
+                      <Text type="secondary" style={{ fontSize: 11 }}>Costo total ({moneda})</Text>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: brand.navy }}>
+                        {moneda} {fmtMonto(total)}
+                      </div>
+                      <div style={{ fontSize: 10, color: "#888" }}>
+                        Real (PO/quote): <b>{fmtMonto(real)}</b>
+                        {est > 0 && <> · Estimado catálogo: <b>{fmtMonto(est)}</b></>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </Space>
+            </Col>
+            <Col>
+              <Space size={6} direction="vertical" style={{ textAlign: "right" }}>
+                <Tag color="success">{stats.itemsConPrecio} item(s) con precio</Tag>
+                {stats.itemsSinPrecio > 0 && (
+                  <Tooltip title="Items sin precio_unitario y sin precio de catálogo. Editá el item o cargá precio al material.">
+                    <Tag color="warning">{stats.itemsSinPrecio} sin precio</Tag>
+                  </Tooltip>
+                )}
+              </Space>
+            </Col>
+          </Row>
+        </Card>
+      )}
       {/* Toolbar */}
       <Row gutter={12} style={{ marginBottom: 12 }} wrap>
         <Col flex="auto">
@@ -934,6 +1084,8 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
                         size="small" style={{ width: "100%" }}
                         placeholder="Buscar material…"
                         showSearch optionFilterProp="label" allowClear
+                        // Después de seleccionar muestra solo el código (la descripción ya va en su propio campo).
+                        optionLabelProp="value"
                         value={r.material_codigo}
                         onChange={(v) => actualizarDraftItem(r.id, { material_codigo: v })}
                         options={materiales.map((m) => ({
@@ -943,21 +1095,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
                       />
                     );
                   }
-                  if (r.tipo_codigo === "SER") {
-                    return (
-                      <Select
-                        size="small" style={{ width: "100%" }}
-                        placeholder="Buscar servicio…"
-                        showSearch optionFilterProp="label" allowClear
-                        value={r.servicio_codigo}
-                        onChange={(v) => actualizarDraftItem(r.id, { servicio_codigo: v })}
-                        options={servicios.map((s) => ({
-                          value: s.codigo,
-                          label: `${s.codigo} — ${s.nombre}`,
-                        }))}
-                      />
-                    );
-                  }
+                  // SER y CAD: no usan dropdown — la descripción es donde el usuario tipea el servicio/cargo.
                   return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
                 },
               },
@@ -1204,6 +1342,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
                 showSearch
                 placeholder="Buscá por código o descripción…"
                 optionFilterProp="label"
+                optionLabelProp="value"
                 onChange={onMaterialSelect}
                 options={materiales.map((m) => ({
                   value: m.codigo,
@@ -1402,6 +1541,27 @@ function RequerimientosAgrupados({
         );
         const isRealReq = nro !== "(sin nro)";
         const cantBorradores = items.filter((i) => i.status_requerimiento_codigo === "BORRADOR").length;
+        // Subtotal del grupo por moneda (real + estimado catálogo, excluye ANULADO/DESAPROBADO)
+        const subtotalGrupo: Record<string, number> = {};
+        for (const it of items) {
+          const sr = it.status_requerimiento_codigo;
+          if (sr === "ANULADO" || sr === "DESAPROBADO") continue;
+          const cant = Number(it.cantidad);
+          let pu: number | null = null;
+          let moneda = it.moneda ?? "USD";
+          if (it.precio_unitario != null) {
+            pu = Number(it.precio_unitario);
+          } else if (it.material?.precio != null) {
+            pu = Number(it.material.precio);
+            moneda = it.material.moneda_codigo ?? moneda;
+          }
+          if (pu != null && Number.isFinite(pu)) {
+            subtotalGrupo[moneda] = (subtotalGrupo[moneda] ?? 0) + cant * pu;
+          }
+        }
+        const subtotalTexto = Object.entries(subtotalGrupo)
+          .map(([m, t]) => `${m} ${t.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+          .join(" · ");
         return (
           <Card
             key={nro}
@@ -1419,6 +1579,13 @@ function RequerimientosAgrupados({
                   {items.length} ítem{items.length !== 1 ? "s" : ""}
                   {first?.fecha_solicitud ? ` · ${dayjs(first.fecha_solicitud).format("DD/MM/YYYY")}` : ""}
                 </Text>
+                {subtotalTexto && (
+                  <Tooltip title="Subtotal del requerimiento (precio real + estimado catálogo)">
+                    <Tag color="blue" style={{ marginLeft: 4 }}>
+                      💰 {subtotalTexto}
+                    </Tag>
+                  </Tooltip>
+                )}
               </Space>
             }
             extra={
@@ -1461,7 +1628,7 @@ function RequerimientosAgrupados({
                 dataSource={items}
                 pagination={false}
                 size="small"
-                scroll={{ x: 1920 }}
+                scroll={{ x: 2160 }}
                 rowClassName={(r) => r.status_requerimiento_codigo === "ANULADO" ? "req-anulado" : ""}
               />
             )}

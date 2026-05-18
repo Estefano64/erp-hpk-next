@@ -155,6 +155,8 @@ export async function POST(req: NextRequest) {
     // Tipo garantía: confiar en lo que envía el form (form ya lo envía como "NA" si garantia=false).
     const tipoGarantiaCodigo = body.tipo_garantia_codigo ?? (body.garantia_codigo === "No" ? "NA" : null);
 
+    const usuarioCrea = (await getAuditUser(req)) ?? "sistema";
+
     const created = await prisma.ordenTrabajo.create({
       data: {
         ot,
@@ -172,6 +174,7 @@ export async function POST(req: NextRequest) {
         plaqueteo: body.plaqueteo || null,
         wo_cliente: body.wo_cliente || null,
         po_cliente: body.po_cliente || null,
+        po_item: body.po_item || null,
         id_viajero: body.id_viajero || null,
         guia_remision: body.guia_remision || null,
         empresa_entrega: body.empresa_entrega || null,
@@ -192,6 +195,8 @@ export async function POST(req: NextRequest) {
         ot_status_codigo: "Abierta",
         recursos_status_codigo: "En revision procesos",
         taller_status_codigo: "Pdt Evaluación",
+        // Auditoría de creación
+        usuario_crea: usuarioCrea,
       },
       include: {
         cliente: true,
@@ -203,7 +208,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const usuario = (await getAuditUser(req)) ?? "sistema";
+    const usuario = usuarioCrea;
 
     // Registrar evento de creación en el historial
     try {

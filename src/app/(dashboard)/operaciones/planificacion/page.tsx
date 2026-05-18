@@ -18,12 +18,16 @@ import {
 } from "@/lib/tables";
 import dayjs, { Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
+import customParseFormat from "dayjs/plugin/customParseFormat";
 import { brand } from "@/lib/theme";
 import { calcularFinEstimado, calcularHH } from "@/lib/planification-hours";
 import { useTabSync } from "@/lib/useTabSync";
 
 import { formatDateOnlyShort } from "@/lib/dates";
 dayjs.extend(isoWeek);
+// Necesario para que dayjs(text, format, strict) acepte nuestros formatos cortos
+// como "D/M HH:mm", "D-M", etc. Sin esto, los parseos strict fallan silenciosamente.
+dayjs.extend(customParseFormat);
 
 // Lista de formatos aceptados al escribir (el primero es el que se muestra).
 // Cubre "3-5 13:00", "3-5 13", "3-5", "3/5/26 13:00", etc.
@@ -40,16 +44,25 @@ const FECHA_FORMATOS: string[] = [
  * Normaliza atajos comunes al escribir fechas:
  *  - "3-5 13:" → "3-5 13:00"   (colón sin minutos → :00)
  *  - "3-5 13"  → "3-5 13:00"   (solo hora → :00)
- *  - "3-5"     → "3-5"         (sin hora, lo dejamos)
- * Devuelve el texto procesado para que el DatePicker pueda parsearlo con los formatos arriba.
+ *  - "3-5 1815" → "3-5 18:15"  (4 dígitos sin colon → HH:mm)
+ *  - "3-5 815"  → "3-5 8:15"   (3 dígitos sin colon → H:mm)
+ *  - "3-5"     → "3-5"          (sin hora, lo dejamos)
  */
 function normalizarTextoFecha(raw: string): string {
   if (!raw) return raw;
   let t = raw.trim();
+  // 4 dígitos al final precedidos por espacio: "13/05 1815" → "13/05 18:15"
+  t = t.replace(/\s(\d{2})(\d{2})$/, (_, h, m) => ` ${h}:${m}`);
+  // 3 dígitos al final precedidos por espacio: "13/05 815" → "13/05 8:15"
+  t = t.replace(/\s(\d{1})(\d{2})$/, (_, h, m) => ` ${h}:${m}`);
   // "13:" o "13:0" → "13:00"
   t = t.replace(/(\d{1,2}):(\d{0,1})$/, (_, h, m) => `${h}:${m ? `${m}0`.slice(0, 2) : "00"}`);
   return t;
 }
+
+// Valor por defecto para el time-picker dentro del DatePicker: 00:00 (no la hora actual).
+// Si no se pasa, AntD usa la hora ACTUAL al abrir el panel y eso ensucia el campo.
+const DEFAULT_PICKER_TIME = dayjs("00:00", "HH:mm");
 
 /**
  * Parsea texto a Dayjs probando los formatos cortos.
@@ -103,7 +116,14 @@ interface PlanRow {
   } | null;
 }
 
-interface TrabajadorOpt { trabajador_id: number; nombre: string; area: string; puesto: string }
+interface TrabajadorOpt {
+  trabajador_id: number;
+  nombre: string;
+  area: string;
+  puesto: string;
+  equipo_codigo: string | null;
+  equipo: { codigo: string; descripcion: string } | null;
+}
 interface EquipoOpt { codigo: string; descripcion: string }
 
 interface StatusTareaOpt { codigo: string; nombre: string; color: string | null; orden: number | null }
@@ -319,7 +339,16 @@ export default function PlanificacionPage() {
   // Bulk: aplica el patch a todas las filas seleccionadas
   const aplicarBulk = useCallback(() => {
     const patch: Record<string, unknown> = {};
-    if (bulkTecnico !== undefined) patch.tecnico = bulkTecnico ?? null;
+    if (bulkTecnico !== undefined) {
+      patch.tecnico = bulkTecnico ?? null;
+      // Si el operario nuevo es "Tercero", marcamos también trabajo_externo (y limpiamos máquina).
+      if (bulkTecnico === "Tercero") {
+        patch.trabajo_externo = true;
+        if (bulkMaquina === undefined) patch.maquina = null;
+      } else if (bulkTecnico) {
+        patch.trabajo_externo = false;
+      }
+    }
     if (bulkMaquina !== undefined) patch.maquina = bulkMaquina ?? null;
     if (bulkSemana !== undefined) patch.semana_plan = bulkSemana ?? null;
     if (Object.keys(patch).length === 0) {
@@ -394,10 +423,20 @@ export default function PlanificacionPage() {
     return "green";
   }
 
-  // Construye opciones con badge de carga si hay una semana de referencia
+  // Construye opciones con badge de carga si hay una semana de referencia.
+  // Incluye "Tercero" como opción especial al inicio (trabajos derivados a un proveedor externo).
   function buildOpcionesOperario(semanaRef: string | null | undefined) {
     const cargaMap = semanaRef ? cargaIndex.op.get(semanaRef) : null;
-    return trabajadores.map((t) => {
+    const opcionTercero = {
+      value: "Tercero",
+      label: (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <Tag color="purple" style={{ fontSize: 10, margin: 0, lineHeight: "16px" }}>TERCERO</Tag>
+          <span style={{ color: brand.textSecondary, fontSize: 11 }}>Trabajo derivado a proveedor externo</span>
+        </span>
+      ),
+    };
+    const operarios = trabajadores.map((t) => {
       const hh = cargaMap?.get(t.nombre) ?? 0;
       const showCarga = !!cargaMap;
       return {
@@ -414,6 +453,7 @@ export default function PlanificacionPage() {
         ) : `${t.nombre} — ${t.area}`,
       };
     });
+    return [opcionTercero, ...operarios];
   }
 
   function buildOpcionesEquipo(semanaRef: string | null | undefined) {
@@ -584,11 +624,10 @@ export default function PlanificacionPage() {
     { key: "descripcion", title: "Tarea", dataIndex: "descripcion", width: 250, ellipsis: true,
       filters: descValores, filterSearch: true,
       onFilter: (value, r) => r.descripcion === value,
-      render: (v: string, r) => {
-        const code = (r.operacion_codigo ?? "").trim();
+      render: (v: string) => {
+        // Mostramos solo la descripción (sin el código abreviado tipo "DES - Desarmado")
         const desc = (v ?? "").trim();
-        const isFallback = !code || code === "EVAL" || code === "CUSTOM" || code.toLowerCase() === desc.toLowerCase();
-        return <span style={{ fontSize: 12 }}>{isFallback ? desc : `${code} - ${desc}`}</span>;
+        return <span style={{ fontSize: 12 }}>{desc}</span>;
       },
     },
     {
@@ -616,7 +655,22 @@ export default function PlanificacionPage() {
       render: (_, r) => (
         <Select
           value={r.tecnico ?? undefined}
-          onChange={(v) => updateField(r.id, { tecnico: v ?? null })}
+          onChange={(v) => {
+            const patch: Record<string, unknown> = { tecnico: v ?? null };
+            // "Tercero" no es un trabajador real — marca la tarea como derivada externamente.
+            if (v === "Tercero") {
+              patch.trabajo_externo = true;
+              patch.maquina = null; // tercero no usa máquina del taller
+            } else {
+              patch.trabajo_externo = false;
+              // Autocompletar máquina si el trabajador tiene una asignada y el campo está vacío
+              if (v && !r.maquina) {
+                const t = trabajadores.find((x) => x.nombre === v);
+                if (t?.equipo_codigo) patch.maquina = t.equipo_codigo;
+              }
+            }
+            updateField(r.id, patch);
+          }}
           options={buildOpcionesOperario(r.semana_plan ?? filterSemana)}
           placeholder="—"
           allowClear
@@ -652,7 +706,7 @@ export default function PlanificacionPage() {
       render: (_, r) => (
         <DatePicker
           value={r.fecha_inicio ? dayjs(r.fecha_inicio) : null}
-          showTime={{ format: "HH:mm" }}
+          showTime={{ format: "HH:mm", defaultValue: DEFAULT_PICKER_TIME }}
           format={FECHA_FORMATOS}
           size="small"
           style={{ width: "100%" }}
@@ -725,25 +779,6 @@ export default function PlanificacionPage() {
       ),
     },
     {
-      title: (
-        <Tooltip title="Trabajo derivado a un servicio tercero (no se ejecuta en el taller).">
-          <span>Tercero</span>
-        </Tooltip>
-      ),
-      key: "trabajo_externo", width: 90, align: "center",
-      filters: [
-        { text: "Sí", value: "true" },
-        { text: "No", value: "false" },
-      ],
-      onFilter: (value, r) => String(!!r.trabajo_externo) === value,
-      render: (_, r) => (
-        <Checkbox
-          checked={!!r.trabajo_externo}
-          onChange={(e) => updateField(r.id, { trabajo_externo: e.target.checked })}
-        />
-      ),
-    },
-    {
       title: "Qty HE", key: "qtyhe", width: 80, align: "right",
       filters: qtyHeValores, filterSearch: true,
       onFilter: (value, r) => String(r.horas_extras_qty ?? "") === value,
@@ -769,7 +804,7 @@ export default function PlanificacionPage() {
           return (
             <DatePicker
               value={r.fecha_fin ? dayjs(r.fecha_fin) : null}
-              showTime={{ format: "HH:mm" }}
+              showTime={{ format: "HH:mm", defaultValue: DEFAULT_PICKER_TIME }}
               format={FECHA_FORMATOS}
               size="small"
               style={{ width: "100%" }}

@@ -14,6 +14,7 @@ import {
   Drawer,
   Descriptions,
   Tooltip,
+  Progress,
 } from "antd";
 import {
   AppstoreOutlined,
@@ -55,10 +56,12 @@ interface OTRow {
   cliente_nombre: string | null;
   modelo: string | null;
   modelo_nombre: string | null;
+  fecha_recepcion: string | null;
   fecha_entrega: string | null;
   fecha_requerimiento: string | null;
   ot_status: string | null;
   plan: Record<string, { estado: string | null; externo: boolean | null }>;
+  progreso: { total: number; realizadas: number };
 }
 
 // Color por defecto si el catálogo de status_tarea no tiene `color` asignado.
@@ -229,6 +232,14 @@ export default function ProgramacionDashboardPage() {
       render: (_, r) => <span style={{ fontSize: 11 }}>{r.modelo ?? "—"}</span>,
     },
     {
+      key: "fecha_recepcion",
+      title: "F. Ingreso OT",
+      width: 110,
+      align: "center",
+      sorter: (a, b) => (a.fecha_recepcion ?? "").localeCompare(b.fecha_recepcion ?? ""),
+      render: (_, r) => r.fecha_recepcion ? <span style={{ fontSize: 11 }}>{dayjs(r.fecha_recepcion).format("DD/MM/YY")}</span> : <Text type="secondary">—</Text>,
+    },
+    {
       key: "fecha_entrega",
       title: "Fecha entrega est.",
       width: 110,
@@ -238,13 +249,37 @@ export default function ProgramacionDashboardPage() {
     },
     {
       key: "ot_status",
-      title: "Status final",
+      title: "Status OT",
       dataIndex: "ot_status",
       width: 110,
       align: "center",
       sorter: (a, b) => (a.ot_status ?? "").localeCompare(b.ot_status ?? ""),
       ...filtroPorColumna(otsFiltradas, "ot_status"),
       render: (_, r) => r.ot_status ? <Tag style={{ fontSize: 10, margin: 0 }}>{r.ot_status}</Tag> : <Text type="secondary">—</Text>,
+    },
+    {
+      key: "progreso",
+      title: "Progreso tareas",
+      width: 140,
+      align: "center",
+      sorter: (a, b) => {
+        const pa = a.progreso.total > 0 ? a.progreso.realizadas / a.progreso.total : 0;
+        const pb = b.progreso.total > 0 ? b.progreso.realizadas / b.progreso.total : 0;
+        return pa - pb;
+      },
+      render: (_, r) => {
+        const { total, realizadas } = r.progreso;
+        if (total === 0) return <Text type="secondary" style={{ fontSize: 11 }}>Sin tareas</Text>;
+        const pct = Math.round((realizadas / total) * 100);
+        return (
+          <Tooltip title={`${realizadas}/${total} tareas realizadas (${pct}%)`}>
+            <div style={{ lineHeight: 1.1 }}>
+              <Progress percent={pct} size="small" status={pct === 100 ? "success" : "active"} showInfo={false} />
+              <div style={{ fontSize: 10, color: "#666" }}>{realizadas}/{total} ({pct}%)</div>
+            </div>
+          </Tooltip>
+        );
+      },
     },
   ];
 
@@ -292,7 +327,7 @@ export default function ProgramacionDashboardPage() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
         <Title level={4} style={{ margin: 0, color: brand.navy }}>
           <AppstoreOutlined style={{ marginRight: 8 }} />
-          Dashboard de Programación
+          Dashboard de Planificación
         </Title>
         <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>
           Refrescar

@@ -144,6 +144,7 @@ export default function EvaluacionPage() {
   const [sistemaMedicion, setSistemaMedicion] = useState<string>("Metrico");
   const [modeloBloqueado, setModeloBloqueado] = useState(false);
   const [datosFormulario, setDatosFormulario] = useState<Record<string, unknown>>({});
+  const [trabajadores, setTrabajadores] = useState<{ trabajador_id: number; nombre: string; puesto: string }[]>([]);
 
   // Modal revision
   const [modalAccion, setModalAccion] = useState<"solicitar" | "aprobar" | "rechazar" | "reabrir" | null>(null);
@@ -246,6 +247,14 @@ export default function EvaluacionPage() {
   useEffect(() => {
     if (otId) cargarDatos();
   }, [otId, cargarDatos]);
+
+  // Cargar trabajadores (para el desplegable "Evaluado por")
+  useEffect(() => {
+    fetch("/api/trabajadores?limit=200")
+      .then((r) => r.ok ? r.json() : null)
+      .then((j) => { if (j?.data) setTrabajadores(j.data); })
+      .catch(() => { /* noop */ });
+  }, []);
 
   // Aplicar valores al Form despues de que este montado (cuando loading=false)
   useEffect(() => {
@@ -693,11 +702,21 @@ export default function EvaluacionPage() {
                     showIcon
                     icon={<InfoCircleOutlined />}
                     title="No se pudo detectar automáticamente el tipo"
-                    description={<span style={{ fontSize: 11 }}>Seleccioná manualmente el modelo apropiado.</span>}
+                    description={<span style={{ fontSize: 11 }}>Verificá que el modelo seleccionado corresponda al equipo.</span>}
                     style={{ marginTop: 8 }}
                     banner
                   />
                 )}
+                {/* Nota informativa: Aplica del modelo seleccionado (siempre visible) */}
+                {(() => {
+                  const sel = MODELOS_EVALUACION.find((m) => m.value === modeloEvaluacion);
+                  if (!sel) return null;
+                  return (
+                    <div style={{ marginTop: 8, padding: "6px 10px", background: "#FAFCFE", border: `1px solid ${brand.border}`, borderRadius: 4, fontSize: 11, color: "#666" }}>
+                      <b style={{ color: brand.navy }}>Aplica:</b> {sel.aplica}
+                    </div>
+                  );
+                })()}
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
@@ -720,7 +739,13 @@ export default function EvaluacionPage() {
             </Col>
             <Col xs={24} md={4}>
               <Form.Item label="Evaluado por" name="evaluado_por">
-                <Input placeholder="Nombre" />
+                <Select
+                  placeholder="Seleccioná un trabajador..."
+                  showSearch
+                  allowClear
+                  filterOption={(input, option) => (option?.label as string).toLowerCase().includes(input.toLowerCase())}
+                  options={trabajadores.map((t) => ({ value: t.nombre, label: `${t.nombre} — ${t.puesto}` }))}
+                />
               </Form.Item>
             </Col>
           </Row>

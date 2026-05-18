@@ -22,6 +22,9 @@ export async function GET(req: NextRequest) {
 
     const data = await prisma.trabajador.findMany({
       where,
+      include: {
+        equipo: { select: { codigo: true, descripcion: true } },
+      },
       orderBy: [{ area: "asc" }, { nombre: "asc" }],
       take: limit,
     });

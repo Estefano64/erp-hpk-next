@@ -5,7 +5,7 @@ import path from "path";
 
 type Params = { params: Promise<{ id: string }> };
 
-const ETAPAS_VALIDAS = ["recepcion", "evaluacion", "termino", "despacho"];
+const ETAPAS_VALIDAS = ["recepcion", "evaluacion", "cotizacion", "termino", "despacho"];
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
 const ALLOWED_MIME_PREFIXES = ["image/", "application/pdf", "application/vnd", "application/msword", "text/"];
 

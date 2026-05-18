@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  Button, Card, Col, Empty, Form, Input, Modal, Popconfirm, Progress, Row, Select, Space, Table, Tag, Tooltip, Typography, message,
+  Button, Card, Col, Empty, Input, Popconfirm, Progress, Row, Select, Space, Table, Tag, Tooltip, Typography, message,
 } from "antd";
 import {
-  PlusOutlined, ReloadOutlined, UnorderedListOutlined, EditOutlined, DeleteOutlined, CloseOutlined,
+  PlusOutlined, UnorderedListOutlined, EditOutlined, DeleteOutlined, CloseOutlined,
   PlayCircleOutlined, CheckCircleOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
@@ -54,6 +54,12 @@ interface PlanRow {
 interface ComponenteOpt { codigo: string; nombre: string }
 interface OperacionOpt { codigo: string; nombre: string; componente_codigo: string | null; clasificacion: string }
 interface EquipoOpt { codigo: string; descripcion: string }
+interface TrabajadorOpt {
+  trabajador_id: number;
+  nombre: string;
+  puesto: string;
+  equipo_codigo: string | null;
+}
 
 const TIPO_TAREA_OPTS = [
   { value: "Estandar", label: "Estándar" },
@@ -67,14 +73,62 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [autogenerating, setAutogenerating] = useState(false);
   const [componentes, setComponentes] = useState<ComponenteOpt[]>([]);
   const [operaciones, setOperaciones] = useState<OperacionOpt[]>([]);
   const [equipos, setEquipos] = useState<EquipoOpt[]>([]);
+  const [trabajadores, setTrabajadores] = useState<TrabajadorOpt[]>([]);
   const [estadosCat, setEstadosCat] = useState<StatusTareaOpt[]>([]);
-  const [form] = Form.useForm();
-  const [parte, setParte] = useState<string | null>(null);
-  const [tipoTarea, setTipoTarea] = useState<string>("Estandar");
+  // Borradores de tareas a crear en lote (multi-fila en el form de "Nueva Tarea").
+  type DraftTarea = {
+    id: string; // uuid local
+    parte: string | null;
+    tipo_tarea: string;
+    operacion_codigo: string | null;
+    trabajo_manual: string | null;
+    // Si el usuario eligió "+ Crear nueva" en el combobox de NoEstandar, guardamos
+    // el nombre acá. Al guardar, primero creamos la operación en catálogo, conseguimos
+    // el código auto-generado (NS-NNNN) y lo usamos en la planificación.
+    nueva_operacion_nombre: string | null;
+    qty: number;
+    tecnico: string | null;
+    equipo: string | null;
+  };
+  const newDraft = (): DraftTarea => ({
+    id: crypto.randomUUID(),
+    parte: null,
+    tipo_tarea: "Estandar",
+    operacion_codigo: null,
+    trabajo_manual: null,
+    nueva_operacion_nombre: null,
+    qty: 1,
+    tecnico: null,
+    equipo: null,
+  });
+  const [draftRows, setDraftRows] = useState<DraftTarea[]>([]);
+  function updateDraft(id: string, patch: Partial<DraftTarea>) {
+    setDraftRows((prev) => prev.map((d) => {
+      if (d.id !== id) return d;
+      const next = { ...d, ...patch };
+      // Si cambió parte o tipo_tarea, limpiamos selección de operación/texto libre
+      if (patch.parte !== undefined && patch.parte !== d.parte) {
+        next.operacion_codigo = null;
+        next.trabajo_manual = null;
+        next.nueva_operacion_nombre = null;
+      }
+      if (patch.tipo_tarea !== undefined && patch.tipo_tarea !== d.tipo_tarea) {
+        next.operacion_codigo = null;
+        next.trabajo_manual = null;
+        next.nueva_operacion_nombre = null;
+      }
+      return next;
+    }));
+  }
+  function addDraft() {
+    setDraftRows((prev) => [...prev, newDraft()]);
+  }
+  function removeDraft(id: string) {
+    setDraftRows((prev) => prev.filter((d) => d.id !== id));
+  }
   const [messageApi, contextHolder] = message.useMessage();
   const { ocultas, setOcultas } = useColumnasOcultas("ot-tareas-cols-v1");
   const { rango: rangoInicio, setRango: setRangoInicio } = useRangoFechas();
@@ -97,103 +151,122 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
   useEffect(() => {
     (async () => {
       try {
-        const [resC, resO, resE, resS] = await Promise.all([
+        const [resC, resO, resE, resS, resT] = await Promise.all([
           fetch("/api/catalogos?tabla=componente"),
           fetch("/api/catalogos?tabla=operacionReparacion"),
           fetch("/api/equipos?limit=200&tipo=MAQ"),
           fetch("/api/catalogos?tabla=statusTarea"),
+          fetch("/api/trabajadores?limit=200"),
         ]);
         const jsonC = await resC.json();
         const jsonO = await resO.json();
         const jsonE = await resE.json();
         const jsonS = await resS.json();
+        const jsonT = await resT.json();
         setComponentes(jsonC.data ?? []);
         setOperaciones(jsonO.data ?? []);
         setEquipos((jsonE.data ?? []).map((e: { codigo: string; descripcion: string }) => ({ codigo: e.codigo, descripcion: e.descripcion })));
         setEstadosCat(jsonS.data ?? []);
+        setTrabajadores(jsonT.data ?? []);
       } catch (e) {
         console.error("Error cargando catálogos Tareas:", e);
       }
     })();
   }, []);
 
-  async function ejecutarAutogen(sobreescribir: boolean) {
-    setAutogenerating(true);
-    try {
-      const res = await fetch(`/api/ordenes-trabajo/${otId}/planificacion`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sobreescribir }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        throw new Error(err?.error ?? "Error");
-      }
-      const json = await res.json();
-      messageApi.success(`${json.inserted} tareas generadas desde ${json.cod_rep}`);
-      fetchRows();
-    } catch (e) {
-      messageApi.error(e instanceof Error ? e.message : "Error al autogenerar");
-    } finally {
-      setAutogenerating(false);
-    }
-  }
-
-  function handleAutogenerar() {
-    if (!codRepCodigo) {
-      messageApi.warning("Esta OT no tiene CodRep asignado; no se puede autogenerar.");
-      return;
-    }
-    if (rows.length === 0) {
-      ejecutarAutogen(false);
-      return;
-    }
-    Modal.confirm({
-      title: "¿Regenerar task list?",
-      content: `Esta OT ya tiene ${rows.length} tarea(s). Si confirmás, se BORRARÁN todas y se generarán de nuevo desde ${codRepCodigo}. Los cambios manuales (técnico asignado, fechas, estado) se perderán.`,
-      okText: "Sí, regenerar",
-      okButtonProps: { danger: true },
-      cancelText: "Cancelar",
-      onOk: () => ejecutarAutogen(true),
-    });
-  }
-
   function openForm() {
-    form.resetFields();
-    form.setFieldsValue({ tipo_tarea: "Estandar", qty: 1 });
-    setParte(null);
-    setTipoTarea("Estandar");
+    setDraftRows([newDraft()]);
     setFormOpen(true);
   }
 
-  async function saveTarea() {
+  function cerrarForm() {
+    setFormOpen(false);
+    setDraftRows([]);
+  }
+
+  // Devuelve si la fila necesita texto libre (parte sin operaciones del tipo seleccionado).
+  function usaTextoLibrePara(d: DraftTarea): boolean {
+    if (!d.parte) return false;
+    const clas = d.tipo_tarea === "NoEstandar" ? "NO_STD" : "STD";
+    const matches = operaciones.filter((o) => o.componente_codigo === d.parte && o.clasificacion === clas);
+    return matches.length === 0;
+  }
+
+  async function saveAllTareas() {
+    // Validar
+    const errs: string[] = [];
+    for (const [idx, d] of draftRows.entries()) {
+      const label = `Tarea ${idx + 1}`;
+      if (!d.parte) errs.push(`${label}: falta Parte`);
+      if (!d.tipo_tarea) errs.push(`${label}: falta Tipo`);
+      const libre = usaTextoLibrePara(d);
+      const tieneNueva = !!d.nueva_operacion_nombre?.trim();
+      if (libre && !d.trabajo_manual?.trim()) errs.push(`${label}: falta descripción (texto libre)`);
+      if (!libre && !d.operacion_codigo && !tieneNueva) errs.push(`${label}: falta seleccionar tarea`);
+    }
+    if (errs.length > 0) {
+      messageApi.error(errs[0]);
+      return;
+    }
+    setSaving(true);
+    let ok = 0;
+    let fail = 0;
+    let nuevasOps = 0;
     try {
-      const values = await form.validateFields();
-      setSaving(true);
-      const body: Record<string, unknown> = {
-        ot_id: otId,
-        componente_codigo: values.parte,
-        tipo_reparacion: values.tipo_tarea ?? "Estandar",
-        qty: Number(values.qty ?? 1),
-        maquina: values.equipo ?? null,
-      };
-      if (usarTextoLibre) {
-        body.trabajo = values.trabajo_manual;
-      } else {
-        body.operacion_reparacion_codigo = values.operacion_codigo;
+      for (const d of draftRows) {
+        let operacionCodigo = d.operacion_codigo;
+        // Si el usuario tipeó una operación nueva, la creamos primero en el catálogo
+        if (d.nueva_operacion_nombre && !operacionCodigo) {
+          const resOp = await fetch("/api/operaciones-reparacion", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              nombre: d.nueva_operacion_nombre.trim(),
+              componente_codigo: d.parte,
+              clasificacion: d.tipo_tarea === "NoEstandar" ? "NO_STD" : "STD",
+            }),
+          });
+          if (!resOp.ok) {
+            fail++;
+            continue;
+          }
+          const j = await resOp.json();
+          operacionCodigo = j.data.codigo;
+          if (!j.reused) {
+            nuevasOps++;
+            // Sumar a la lista local para que se vea en futuras selecciones sin recargar
+            setOperaciones((prev) => [...prev, j.data]);
+          }
+        }
+        const body: Record<string, unknown> = {
+          ot_id: otId,
+          componente_codigo: d.parte,
+          tipo_reparacion: d.tipo_tarea ?? "Estandar",
+          qty: Number(d.qty ?? 1),
+          maquina: d.equipo ?? null,
+          tecnico: d.tecnico ?? null,
+        };
+        if (usaTextoLibrePara(d)) {
+          body.trabajo = d.trabajo_manual;
+        } else {
+          body.operacion_reparacion_codigo = operacionCodigo;
+        }
+        const res = await fetch("/api/planificacion", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (res.ok) ok++; else fail++;
       }
-      const res = await fetch("/api/planificacion", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        throw new Error(err?.error ?? "Error");
+      if (ok > 0) {
+        const detalleOps = nuevasOps > 0 ? ` (${nuevasOps} operación(es) nueva(s) creada(s) en catálogo)` : "";
+        messageApi.success(`${ok} tarea(s) agregadas${detalleOps}`);
       }
-      messageApi.success("Tarea agregada");
-      setFormOpen(false);
-      fetchRows();
+      if (fail > 0) messageApi.warning(`${fail} tarea(s) fallaron`);
+      if (ok > 0) {
+        cerrarForm();
+        fetchRows();
+      }
     } catch (e) {
       messageApi.error(e instanceof Error ? e.message : "Error al guardar");
     } finally {
@@ -266,11 +339,12 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
 
   // Filtro por Parte + Clasificación (STD / NO_STD). Si el tipoTarea no matchea ninguna clasificación
   // (ej: "NoEstandar" pero no hay ops NO_STD para esa Parte), se cae a texto libre.
-  const clasObjetivo = tipoTarea === "NoEstandar" ? "NO_STD" : "STD";
-  const operacionesFiltradas = parte
-    ? operaciones.filter((o) => o.componente_codigo === parte && o.clasificacion === clasObjetivo)
-    : [];
-  const usarTextoLibre = parte !== null && operacionesFiltradas.length === 0;
+  // Helper para filtrar operaciones por parte + tipo (por fila del draft)
+  function operacionesParaFila(d: DraftTarea) {
+    if (!d.parte) return [];
+    const clas = d.tipo_tarea === "NoEstandar" ? "NO_STD" : "STD";
+    return operaciones.filter((o) => o.componente_codigo === d.parte && o.clasificacion === clas);
+  }
 
   // Helpers para filtros de columnas con valores no-string
   const ordenesUnicos = [...new Set(rows.map((r) => r.orden).filter((v): v is number => v != null))]
@@ -460,15 +534,6 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
             obligatorias={["orden", "descripcion", "acc"]}
           />
           <Button onClick={resetAnchos}>Restablecer anchos</Button>
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={handleAutogenerar}
-            loading={autogenerating}
-            disabled={!codRepCodigo}
-            title={codRepCodigo ? `Generar desde ${codRepCodigo}` : "La OT necesita CodRep"}
-          >
-            Task list (autogenerar)
-          </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={openForm}>
             Nueva Tarea
           </Button>
@@ -491,72 +556,129 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
 
       {formOpen && (
         <Card
-          title={<span style={{ fontSize: 14 }}>Nueva Tarea</span>}
+          title={<span style={{ fontSize: 14 }}>Nueva(s) Tarea(s){draftRows.length > 1 ? ` — ${draftRows.length} tareas` : ""}</span>}
           size="small"
           style={{ marginBottom: 16, borderStyle: "dashed", borderColor: brand.cyan }}
-          extra={<Button type="text" icon={<CloseOutlined />} onClick={() => setFormOpen(false)} />}
+          extra={<Button type="text" icon={<CloseOutlined />} onClick={cerrarForm} />}
         >
-          <Form form={form} layout="vertical">
-            <Row gutter={12}>
-              <Col xs={24} sm={12} md={5}>
-                <Form.Item name="parte" label="Parte*" rules={[{ required: true, message: "Requerido" }]}>
+          {draftRows.map((d, idx) => {
+            const opsFila = operacionesParaFila(d);
+            const libre = usaTextoLibrePara(d);
+            return (
+              <Row key={d.id} gutter={12} align="bottom" style={{ marginBottom: 8, paddingBottom: 8, borderBottom: idx < draftRows.length - 1 ? "1px dashed #e8e8e8" : "none" }}>
+                <Col xs={24} sm={12} md={4}>
+                  <div style={{ fontSize: 11, color: "#888", marginBottom: 2 }}>Parte *</div>
                   <Select
+                    size="small"
+                    value={d.parte ?? undefined}
+                    onChange={(v) => updateDraft(d.id, { parte: v })}
                     placeholder="Seleccione..."
-                    onChange={(v) => { setParte(v); form.setFieldValue("operacion_codigo", undefined); }}
                     options={componentes.map((c) => ({ value: c.codigo, label: c.nombre }))}
+                    style={{ width: "100%" }}
                   />
-                </Form.Item>
-              </Col>
-              <Col xs={24} sm={12} md={4}>
-                <Form.Item name="tipo_tarea" label="Tipo Tarea*" rules={[{ required: true, message: "Requerido" }]}>
+                </Col>
+                <Col xs={24} sm={12} md={3}>
+                  <div style={{ fontSize: 11, color: "#888", marginBottom: 2 }}>Tipo *</div>
                   <Select
-                    placeholder="Seleccione parte primero..."
+                    size="small"
+                    value={d.tipo_tarea}
+                    onChange={(v) => updateDraft(d.id, { tipo_tarea: v })}
                     options={TIPO_TAREA_OPTS}
-                    disabled={!parte}
-                    onChange={(v) => { setTipoTarea(v); form.setFieldValue("operacion_codigo", undefined); form.setFieldValue("trabajo_manual", undefined); }}
+                    disabled={!d.parte}
+                    style={{ width: "100%" }}
                   />
-                </Form.Item>
-              </Col>
-              <Col xs={24} sm={24} md={8}>
-                {usarTextoLibre ? (
-                  <Form.Item name="trabajo_manual" label="Tarea (sin catálogo, texto libre)*" rules={[{ required: true, message: "Requerido" }]}>
-                    <Input placeholder={`Describa la tarea ${tipoTarea === "NoEstandar" ? "no estándar" : ""} para ${parte}...`} />
-                  </Form.Item>
-                ) : (
-                  <Form.Item name="operacion_codigo" label="Tarea*" rules={[{ required: true, message: "Requerido" }]}>
-                    <Select
-                      placeholder={!parte ? "Seleccione parte primero..." : "Seleccione operación..."}
-                      showSearch
-                      disabled={!parte}
-                      filterOption={(input, option) => (option?.label as string).toLowerCase().includes(input.toLowerCase())}
-                      options={operacionesFiltradas.map((o) => ({
-                        value: o.codigo,
-                        label: `${o.codigo} - ${o.nombre}`,
-                      }))}
+                </Col>
+                <Col xs={24} sm={24} md={7}>
+                  <div style={{ fontSize: 11, color: "#888", marginBottom: 2 }}>Tarea *</div>
+                  {libre ? (
+                    <Input
+                      size="small"
+                      value={d.trabajo_manual ?? ""}
+                      onChange={(e) => updateDraft(d.id, { trabajo_manual: e.target.value })}
+                      placeholder={`Describa la tarea ${d.tipo_tarea === "NoEstandar" ? "no estándar" : ""} para ${d.parte ?? ""}...`}
                     />
-                  </Form.Item>
-                )}
-              </Col>
-              <Col xs={24} sm={12} md={5}>
-                <Form.Item name="equipo" label="Equipo Asignado">
+                  ) : (
+                    <OperacionCombo
+                      draft={d}
+                      opciones={opsFila}
+                      onPickExisting={(codigo) => updateDraft(d.id, { operacion_codigo: codigo, nueva_operacion_nombre: null })}
+                      onCreateNew={(nombre) => updateDraft(d.id, { operacion_codigo: null, nueva_operacion_nombre: nombre })}
+                      onClear={() => updateDraft(d.id, { operacion_codigo: null, nueva_operacion_nombre: null })}
+                    />
+                  )}
+                </Col>
+                <Col xs={24} sm={12} md={4}>
+                  <div style={{ fontSize: 11, color: "#888", marginBottom: 2 }}>Operario</div>
                   <Select
-                    placeholder="Seleccione..."
+                    size="small"
+                    value={d.tecnico ?? undefined}
+                    onChange={(nombre) => {
+                      const patch: Partial<DraftTarea> = { tecnico: nombre ?? null };
+                      // Autocompletar máquina si no hay equipo asignado y el trabajador tiene uno por default
+                      if (nombre && !d.equipo) {
+                        const t = trabajadores.find((x) => x.nombre === nombre);
+                        if (t?.equipo_codigo) patch.equipo = t.equipo_codigo;
+                      }
+                      updateDraft(d.id, patch);
+                    }}
+                    placeholder="Operario..."
+                    allowClear
+                    showSearch
+                    filterOption={(input, option) => (option?.label as string).toLowerCase().includes(input.toLowerCase())}
+                    options={trabajadores.map((t) => ({ value: t.nombre, label: `${t.nombre} — ${t.puesto}` }))}
+                    style={{ width: "100%" }}
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={4}>
+                  <div style={{ fontSize: 11, color: "#888", marginBottom: 2 }}>Equipo</div>
+                  <Select
+                    size="small"
+                    value={d.equipo ?? undefined}
+                    onChange={(v) => updateDraft(d.id, { equipo: v ?? null })}
+                    placeholder="Equipo..."
                     allowClear
                     showSearch
                     filterOption={(input, option) => (option?.label as string).toLowerCase().includes(input.toLowerCase())}
                     options={equipos.map((e) => ({ value: e.codigo, label: `${e.codigo} — ${e.descripcion}` }))}
+                    style={{ width: "100%" }}
                   />
-                </Form.Item>
-              </Col>
-              <Col xs={24} sm={12} md={2}>
-                <Form.Item label=" ">
-                  <Button type="primary" style={{ width: "100%", background: brand.success, borderColor: brand.success }} loading={saving} onClick={saveTarea}>
-                    Guardar
-                  </Button>
-                </Form.Item>
-              </Col>
-            </Row>
-          </Form>
+                </Col>
+                <Col xs={24} sm={24} md={2} style={{ display: "flex", alignItems: "flex-end", justifyContent: "flex-end" }}>
+                  {draftRows.length > 1 && (
+                    <Tooltip title="Quitar esta tarea del lote">
+                      <Button
+                        size="small"
+                        danger
+                        type="text"
+                        icon={<CloseOutlined />}
+                        onClick={() => removeDraft(d.id)}
+                      />
+                    </Tooltip>
+                  )}
+                </Col>
+              </Row>
+            );
+          })}
+          <Row justify="space-between" align="middle" style={{ marginTop: 12 }}>
+            <Col>
+              <Button type="dashed" icon={<PlusOutlined />} onClick={addDraft}>
+                Agregar otra tarea
+              </Button>
+            </Col>
+            <Col>
+              <Space>
+                <Button onClick={cerrarForm}>Cancelar</Button>
+                <Button
+                  type="primary"
+                  style={{ background: brand.success, borderColor: brand.success }}
+                  loading={saving}
+                  onClick={saveAllTareas}
+                >
+                  Guardar {draftRows.length > 1 ? `(${draftRows.length})` : ""}
+                </Button>
+              </Space>
+            </Col>
+          </Row>
         </Card>
       )}
 
@@ -574,9 +696,92 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
           loading={loading}
           scroll={{ x: 1800 }}
           sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-          locale={{ emptyText: <Empty description="Sin tareas. Usá 'Task list (autogenerar)' o 'Nueva Tarea'." /> }}
+          locale={{ emptyText: <Empty description="Sin tareas. Agregalas con el botón 'Nueva Tarea'." /> }}
         />
       </TableDragWrapper>
     </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Combo de Tarea: permite elegir existente o tipear una nueva.
+// Si el usuario tipea texto que no matchea ninguna opción, ofrece "+ Crear: <texto>".
+// Al confirmar la creación, el padre la guardará en catálogo al hacer "Guardar".
+// ───────────────────────────────────────────────────────────────────────────
+interface OperacionComboProps {
+  draft: {
+    parte: string | null;
+    operacion_codigo: string | null;
+    nueva_operacion_nombre: string | null;
+    tipo_tarea: string;
+  };
+  opciones: OperacionOpt[];
+  onPickExisting: (codigo: string) => void;
+  onCreateNew: (nombre: string) => void;
+  onClear: () => void;
+}
+
+function OperacionCombo({ draft, opciones, onPickExisting, onCreateNew, onClear }: OperacionComboProps) {
+  const [search, setSearch] = useState("");
+  // Valor visible en el Select: si hay operacion_codigo elegida, su código.
+  // Si hay nueva_operacion_nombre (pendiente de crear), un marker "__new__:nombre".
+  const valorActual = draft.operacion_codigo
+    ?? (draft.nueva_operacion_nombre ? `__new__::${draft.nueva_operacion_nombre}` : undefined);
+  // Match exacto contra opciones existentes (no distingue mayúsculas)
+  const matchExacto = search.trim()
+    ? opciones.find((o) => o.nombre.toLowerCase() === search.trim().toLowerCase())
+    : null;
+  const puedeCrear = search.trim().length >= 2 && !matchExacto;
+
+  const opcionesSelect = [
+    ...opciones.map((o) => ({ value: o.codigo, label: `${o.codigo} - ${o.nombre}` })),
+    // Si hay una "nueva" pendiente, agregar como opción seleccionada
+    ...(draft.nueva_operacion_nombre && !draft.operacion_codigo
+      ? [{ value: `__new__::${draft.nueva_operacion_nombre}`, label: `🆕 ${draft.nueva_operacion_nombre} (se creará al guardar)` }]
+      : []),
+  ];
+
+  return (
+    <Select
+      size="small"
+      value={valorActual}
+      onChange={(v) => {
+        if (typeof v === "string" && v.startsWith("__new__::")) {
+          onCreateNew(v.substring("__new__::".length));
+        } else if (v) {
+          onPickExisting(v);
+        } else {
+          onClear();
+        }
+      }}
+      onSearch={(text) => setSearch(text)}
+      onBlur={() => setSearch("")}
+      placeholder={!draft.parte ? "Seleccione parte primero..." : "Seleccione o tipee para crear nueva..."}
+      showSearch
+      allowClear
+      disabled={!draft.parte}
+      filterOption={(input, option) => (option?.label as string)?.toLowerCase().includes(input.toLowerCase())}
+      options={opcionesSelect}
+      style={{ width: "100%" }}
+      dropdownRender={(menu) => (
+        <div>
+          {menu}
+          {puedeCrear && (
+            <div style={{ borderTop: "1px solid #f0f0f0", padding: "6px 8px" }}>
+              <Button
+                type="link" size="small" block
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  onCreateNew(search.trim());
+                  setSearch("");
+                }}
+              >
+                + Crear: <b>{`"${search.trim()}"`}</b>
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    />
   );
 }

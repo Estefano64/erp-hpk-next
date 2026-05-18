@@ -810,7 +810,13 @@ export default function ProgramacionSemanalPage() {
             <Button icon={<AimOutlined />} onClick={() => setLunes(dayjs().startOf("isoWeek"))}>Hoy</Button>
             <Segmented
               value={view}
-              onChange={(v) => setView(v as "equipo" | "operario")}
+              onChange={(v) => {
+                const nuevo = v as "equipo" | "operario";
+                setView(nuevo);
+                // Limpiar el filtro opuesto al cambiar de vista (no tiene sentido mantenerlo aplicado).
+                if (nuevo === "equipo") setFiltroOperarios([]);
+                else setFiltroEquipos([]);
+              }}
               options={[
                 { value: "equipo", icon: <ToolOutlined />, label: "Equipos" },
                 { value: "operario", icon: <UserOutlined />, label: "Operarios" },
@@ -837,32 +843,38 @@ export default function ProgramacionSemanalPage() {
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
           <FilterOutlined style={{ color: brand.textSecondary }} />
           <span style={{ fontSize: 12, color: brand.textSecondary, fontWeight: 500 }}>Filtros:</span>
-          <Select
-            mode="multiple"
-            allowClear
-            placeholder="Máquinas (todas)"
-            value={filtroEquipos}
-            onChange={setFiltroEquipos}
-            options={equipos.map((e) => ({ value: e.codigo, label: e.descripcion ?? e.codigo }))}
-            optionFilterProp="label"
-            maxTagCount="responsive"
-            size="small"
-            style={{ minWidth: 220, maxWidth: 380 }}
-            suffixIcon={<ToolOutlined />}
-          />
-          <Select
-            mode="multiple"
-            allowClear
-            placeholder="Operarios (todos)"
-            value={filtroOperarios}
-            onChange={setFiltroOperarios}
-            options={trabajadores.map((t) => ({ value: t.nombre, label: `${t.nombre} — ${t.area}` }))}
-            optionFilterProp="label"
-            maxTagCount="responsive"
-            size="small"
-            style={{ minWidth: 220, maxWidth: 380 }}
-            suffixIcon={<UserOutlined />}
-          />
+          <Tooltip title={view === "operario" ? "El filtro de máquinas está deshabilitado mientras la vista es por operario." : ""}>
+            <Select
+              mode="multiple"
+              allowClear
+              placeholder="Máquinas (todas)"
+              value={filtroEquipos}
+              onChange={setFiltroEquipos}
+              options={equipos.map((e) => ({ value: e.codigo, label: e.descripcion ?? e.codigo }))}
+              optionFilterProp="label"
+              maxTagCount="responsive"
+              size="small"
+              disabled={view === "operario"}
+              style={{ minWidth: 220, maxWidth: 380 }}
+              suffixIcon={<ToolOutlined />}
+            />
+          </Tooltip>
+          <Tooltip title={view === "equipo" ? "El filtro de operarios está deshabilitado mientras la vista es por equipo." : ""}>
+            <Select
+              mode="multiple"
+              allowClear
+              placeholder="Operarios (todos)"
+              value={filtroOperarios}
+              onChange={setFiltroOperarios}
+              options={trabajadores.map((t) => ({ value: t.nombre, label: `${t.nombre} — ${t.area}` }))}
+              optionFilterProp="label"
+              maxTagCount="responsive"
+              size="small"
+              disabled={view === "equipo"}
+              style={{ minWidth: 220, maxWidth: 380 }}
+              suffixIcon={<UserOutlined />}
+            />
+          </Tooltip>
           {(filtroEquipos.length > 0 || filtroOperarios.length > 0) && (
             <Button
               size="small"

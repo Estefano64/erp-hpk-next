@@ -64,6 +64,12 @@ const ETAPAS = [
     description: "Fotos de evaluación, informes técnicos y hoja de evaluación del componente",
   },
   {
+    key: "cotizacion",
+    label: "Cotización",
+    icon: <FileTextOutlined />,
+    description: "Cotización al cliente, propuestas comerciales y documentos relacionados",
+  },
+  {
     key: "termino",
     label: "Término de Reparación",
     icon: <CheckCircleOutlined />,

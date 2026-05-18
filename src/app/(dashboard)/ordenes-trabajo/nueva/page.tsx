@@ -221,6 +221,7 @@ export default function NuevaOTPage() {
         plaqueteo: values.plaqueteo || null,
         wo_cliente: values.wo_cliente || null,
         po_cliente: values.po_cliente || null,
+        po_item: values.po_item || null,
         id_viajero: values.id_viajero || null,
         guia_remision: values.guia_remision || null,
         empresa_entrega: values.empresa_entrega || null,
@@ -427,6 +428,11 @@ export default function NuevaOTPage() {
             </Col>
             <Col xs={12} md={6}>
               <Form.Item name="po_cliente" label="PO Cliente">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={6}>
+              <Form.Item name="po_item" label="PO Item">
                 <Input />
               </Form.Item>
             </Col>

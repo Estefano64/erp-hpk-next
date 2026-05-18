@@ -8,15 +8,19 @@ const { Text } = Typography;
 const { TextArea } = Input;
 
 // ── Modelos disponibles ─────────────────────────────────────
+// `codigo`: código corto del catálogo Excel "5. Cod Rep" (CHVS, CHP, etc.)
+// `aplica`: ayuda al usuario a saber qué equipo/flota corresponde a cada modelo
+//           (se muestra cuando no se puede detectar el tipo automáticamente).
 export const MODELOS_EVALUACION = [
-  { value: "cil_vastago_simple", label: "1. Cilindro hidraulico vastago simple", grupo: "Cilindros" },
-  { value: "cil_pivotado", label: "2. Cilindro hidraulico pivotado", grupo: "Cilindros" },
-  { value: "cil_doble_vastago", label: "3. Cilindro hidraulico de piston de doble vastago", grupo: "Cilindros" },
-  { value: "cil_telescopico", label: "4. Cilindro hidraulico telescopico", grupo: "Cilindros" },
-  { value: "acum_embolo", label: "5. Acumulador de embolo", grupo: "Acumuladores" },
-  { value: "acum_vejiga", label: "6. Acumulador de vejiga", grupo: "Acumuladores" },
-  { value: "rueda_delantera", label: "7. Rueda delantera", grupo: "Otros" },
-  { value: "suspension_delantera", label: "8. Cilindro de suspension delantera", grupo: "Otros" },
+  { value: "cil_vastago_simple", label: "1. Cilindro hidraulico vastago simple", grupo: "Cilindros", codigo: "CHVS", aplica: "Todos los cilindros de simple efecto" },
+  { value: "cil_pivotado", label: "2. Cilindro hidraulico pivotado", grupo: "Cilindros", codigo: "CHP", aplica: "bladelift 24 - 24M / levante de ripper 24 - 24M / levante de buldozer D11 - D11T - 844H - 844K" },
+  { value: "cil_doble_vastago", label: "3. Cilindro hidraulico de piston de doble vastago", grupo: "Cilindros", codigo: "CHPDV", aplica: "Dirección de montacargas genéricos" },
+  { value: "cil_telescopico", label: "4. Cilindro hidraulico telescopico", grupo: "Cilindros", codigo: "CHT", aplica: "Levante de tolvas 797F / 793D - 930E-4SE / 830E" },
+  { value: "acum_embolo", label: "5. Acumulador de embolo", grupo: "Acumuladores", codigo: "AE", aplica: "Dirección 797F / Freno 797F / Dirección 980E-4SE" },
+  { value: "acum_vejiga", label: "6. Acumulador de vejiga", grupo: "Acumuladores", codigo: "AV", aplica: "Dirección 930E-4SE / Freno 930E-4SE / Freno 830E-4SE" },
+  { value: "rueda_delantera", label: "7. Rueda delantera", grupo: "Otros", codigo: "RD", aplica: "Rueda 930E-4SE / 797F / 980E-4SE / 830E / HD1500 / 793D" },
+  { value: "suspension_delantera", label: "8. Cilindro de suspension delantera", grupo: "Otros", codigo: "SD", aplica: "Suspensiones 930E-4SE / 797F / 980E-4SE / 830E / HD1500 / 793D" },
+  { value: "freno_servicio_parqueo", label: "9. Freno de servicio & parqueo", grupo: "Otros", codigo: "FS", aplica: "Frenos de 24 - 24M / Drive 24M" },
 ];
 
 // ── Mapeo de componentes a imagenes ─────────────────────────

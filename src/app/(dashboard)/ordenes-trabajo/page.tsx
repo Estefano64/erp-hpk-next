@@ -56,6 +56,7 @@ interface OTRecord {
   plaqueteo: string | null;
   wo_cliente: string | null;
   po_cliente: string | null;
+  po_item: string | null;
   id_viajero: string | null;
   guia_remision: string | null;
   empresa_entrega: string | null;
@@ -83,6 +84,8 @@ interface OTRecord {
   tipo_garantia: { nombre: string } | null;
   garantia: { nombre: string } | null;
   base_metalica: { nombre: string } | null;
+  usuario_crea: string | null;
+  fecha_creacion: string | null;
 }
 
 interface CatalogOption {
@@ -118,7 +121,8 @@ export default function OrdenesTrabajoPage() {
   // ocultas por default — el usuario las habilita desde el botón "Columnas".
   const { ocultas, setOcultas } = useColumnasOcultas("ordenes-trabajo-list-cols-v2", [
     "tipo", "np", "cod_rep_flota", "cod_rep_posicion", "fabricante",
-    "plaqueteo", "wo_cliente", "po_cliente", "id_viajero", "guia_remision", "empresa_entrega",
+    "plaqueteo", "wo_cliente", "po_cliente", "po_item", "id_viajero", "guia_remision", "empresa_entrega",
+    "usuario_crea", "fecha_creacion",
     "pcr", "horas", "contrato_dias",
     "fecha_requerimiento_cliente", "fecha_reprogramada",
     "atencion_reparacion", "tipo_reparacion", "garantia", "tipo_garantia", "base_metalica",
@@ -350,6 +354,11 @@ export default function OrdenesTrabajoPage() {
       render: (v: string | null) => v ?? "-",
     },
     {
+      key: "po_item", title: "PO Item", dataIndex: "po_item", width: 100,
+      ...filtroPorColumna(data, "po_item"),
+      render: (v: string | null) => v ?? "-",
+    },
+    {
       key: "id_viajero", title: "ID Viajero", dataIndex: "id_viajero", width: 120,
       ...filtroPorColumna(data, "id_viajero"),
       render: (v: string | null) => v ?? "-",
@@ -388,6 +397,16 @@ export default function OrdenesTrabajoPage() {
       key: "fecha_reprogramada", title: "F. Reprogramada", dataIndex: "fecha_reprogramada", width: 130,
       sorter: (a, b) => (a.fecha_reprogramada ?? "").localeCompare(b.fecha_reprogramada ?? ""),
       render: (v: string | null) => formatDateOnly(v),
+    },
+    {
+      key: "fecha_creacion", title: "F. Creación", dataIndex: "fecha_creacion", width: 140,
+      sorter: (a, b) => (a.fecha_creacion ?? "").localeCompare(b.fecha_creacion ?? ""),
+      render: (v: string | null) => v ? dayjs(v).format("DD/MM/YY HH:mm") : "-",
+    },
+    {
+      key: "usuario_crea", title: "Creada por", dataIndex: "usuario_crea", width: 130,
+      ...filtroPorColumna(data, "usuario_crea"),
+      render: (v: string | null) => v ?? "-",
     },
     {
       key: "atencion_reparacion", title: "Atención Rep.", width: 140, ellipsis: true,

@@ -15,7 +15,7 @@ export const COD_REP_TIPO_A_MODELO_EVAL: Record<string, string> = {
   AV: "acum_vejiga",
   RD: "rueda_delantera",
   SD: "suspension_delantera",
-  // FS (Freno de servicio) no tiene modelo de evaluación equivalente todavía.
+  FS: "freno_servicio_parqueo",
 };
 
 /** Nombre amigable del tipo (CHVS → "Cilindro hidráulico vástago simple"). */

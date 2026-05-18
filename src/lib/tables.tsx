@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Checkbox, DatePicker, Divider, Popover, Space, Typography } from "antd";
 import { CalendarOutlined, SettingOutlined } from "@ant-design/icons";
 import type { ColumnsType, ColumnType, TablePaginationConfig } from "antd/es/table/interface";
@@ -619,16 +619,27 @@ export function useColumnasRedimensionables<T>(
   );
 
   // Wrapper que provee DndContext + SortableContext alrededor del <Table>.
-  const TableDragWrapper = useCallback(
-    ({ children }: { children: React.ReactNode }) => (
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={movableKeys} strategy={horizontalListSortingStrategy}>
-          {children}
-        </SortableContext>
-      </DndContext>
-    ),
-    [sensors, handleDragEnd, movableKeys],
-  );
+  // IMPORTANTE: definimos el componente una sola vez (identity estable) y leemos
+  // sensors/handleDragEnd/movableKeys desde un ref. Sin esto, cada vez que
+  // cambia `columns` arriba se crea una nueva función y React desmonta el Table,
+  // perdiendo el scroll horizontal (típico al editar una celda).
+  const dragStateRef = useRef({ sensors, handleDragEnd, movableKeys });
+  dragStateRef.current = { sensors, handleDragEnd, movableKeys };
+
+  const TableDragWrapper = useMemo(() => {
+    function Wrapper({ children }: { children: React.ReactNode }) {
+      const { sensors: s, handleDragEnd: h, movableKeys: m } = dragStateRef.current;
+      return (
+        <DndContext sensors={s} collisionDetection={closestCenter} onDragEnd={h}>
+          <SortableContext items={m} strategy={horizontalListSortingStrategy}>
+            {children}
+          </SortableContext>
+        </DndContext>
+      );
+    }
+    return Wrapper;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const resetAnchos = useCallback(() => {
     setAnchos({});
