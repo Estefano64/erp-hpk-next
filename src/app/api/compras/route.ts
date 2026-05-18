@@ -84,6 +84,7 @@ export async function GET(req: NextRequest) {
           include: { material: { select: { codigo: true, descripcion: true } } },
         },
         _count: { select: { ot_repuestos: true } },
+        ot_repuestos: { select: { fecha_solicitud: true, createdAt: true }, orderBy: { fecha_solicitud: "asc" }, take: 1 },
       },
       orderBy: { fecha_solicitud: "desc" },
     });
@@ -122,6 +123,9 @@ export async function GET(req: NextRequest) {
       usuario_aprueba: r.usuario_aprueba,
       cantidad_items: r._count.ot_repuestos || r.detalles.length,
       createdAt: r.createdAt,
+      // Fecha en que se creó la OC y la del requerimiento más antiguo vinculado.
+      fecha_oc_creacion: r.createdAt,
+      fecha_req_creacion: r.ot_repuestos[0]?.fecha_solicitud ?? r.ot_repuestos[0]?.createdAt ?? null,
     }));
 
     return NextResponse.json({ data });

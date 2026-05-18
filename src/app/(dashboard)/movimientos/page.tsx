@@ -24,6 +24,7 @@ import {
   Alert,
   Tooltip,
   Upload,
+  Checkbox,
 } from "antd";
 import {
   SearchOutlined,
@@ -421,6 +422,8 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
   const [nroGuia, setNroGuia] = useState("");
   const [nroFactura, setNroFactura] = useState("");
   const [comentariosRec, setComentariosRec] = useState("");
+  const [ubicacionRec, setUbicacionRec] = useState<string | undefined>();
+  const [ubicaciones, setUbicaciones] = useState<{ codigo: string; nombre: string }[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [search, setSearch] = useState("");
   const [filtroProv, setFiltroProv] = useState<string | undefined>();
@@ -444,6 +447,13 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
   useEffect(() => {
     fetchPOs();
   }, [fetchPOs]);
+
+  useEffect(() => {
+    fetch("/api/almacenes")
+      .then((r) => r.ok ? r.json() : { data: [] })
+      .then((j) => setUbicaciones((j.data ?? []).map((u: { codigo: string; nombre: string }) => ({ codigo: u.codigo, nombre: u.nombre }))))
+      .catch(() => { /* ignore */ });
+  }, []);
 
   // Aplanar todos los items de todas las POs
   const filasAplanadas: ItemFila[] = pos.flatMap((po) =>
@@ -494,6 +504,7 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
     setNroGuia("");
     setNroFactura("");
     setComentariosRec("");
+    setUbicacionRec(undefined);
   };
 
   const confirmarIngreso = async () => {
@@ -522,6 +533,7 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
           nro_guia: nroGuia || undefined,
           nro_factura: nroFactura || undefined,
           comentarios: comentariosRec || undefined,
+          ubicacion_codigo: ubicacionRec || undefined,
         }),
       });
       const json = await res.json();
@@ -827,6 +839,26 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                   />
                 </Col>
               </Row>
+              <Row gutter={12}>
+                <Col xs={24} sm={12}>
+                  <Text strong style={{ fontSize: 12 }}>
+                    Ubicación física del material <span style={{ color: "#cf1322" }}>*</span>
+                  </Text>
+                  <Select
+                    placeholder="¿Dónde se guardó el material recibido?"
+                    value={ubicacionRec}
+                    onChange={setUbicacionRec}
+                    options={ubicaciones.map((u) => ({ value: u.codigo, label: `${u.codigo} — ${u.nombre}` }))}
+                    showSearch
+                    optionFilterProp="label"
+                    allowClear
+                    style={{ width: "100%" }}
+                  />
+                  <Text type="secondary" style={{ fontSize: 11 }}>
+                    Se guardará en la(s) OT(s) de esta PO para saber dónde está el material al despachar.
+                  </Text>
+                </Col>
+              </Row>
 
               <Divider style={{ margin: "8px 0", fontSize: 11, color: "#666" }}>Archivos adjuntos (opcional)</Divider>
 
@@ -1014,6 +1046,10 @@ function TabSalida({ onRefresh }: { onRefresh: () => void }) {
   const [materiales, setMateriales] = useState<StockItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [matSel, setMatSel] = useState<StockItem | null>(null);
+  // Modo material NO catalogado.
+  const [esNoCat, setEsNoCat] = useState(false);
+  const [noCat, setNoCat] = useState<{ id: number; codigo: string; descripcion: string; unidad_medida: string; stock_actual: number; ubicacion_nombre: string | null }[]>([]);
+  const [noCatSel, setNoCatSel] = useState<typeof noCat[number] | null>(null);
 
   const cargarMateriales = useCallback(async () => {
     try {
@@ -1023,32 +1059,58 @@ function TabSalida({ onRefresh }: { onRefresh: () => void }) {
     } catch {}
   }, []);
 
+  const cargarNoCat = useCallback(async () => {
+    try {
+      const res = await fetch("/api/no-catalogados");
+      const json = await res.json();
+      setNoCat(json.data ?? []);
+    } catch {}
+  }, []);
+
   useEffect(() => {
     cargarMateriales();
-  }, [cargarMateriales]);
+    cargarNoCat();
+  }, [cargarMateriales, cargarNoCat]);
 
   const registrar = async (tipo: "SALIDA" | "ENTRADA" | "AJUSTE") => {
     try {
       const values = await form.validateFields();
       setSubmitting(true);
-      const res = await fetch("/api/movimientos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          material_id: values.material_id,
-          tipo_movimiento: tipo,
-          cantidad: values.cantidad,
-          documento_referencia: values.documento_referencia,
-          observacion: values.observacion,
-          usuario: values.usuario || "Almacenero",
-        }),
-      });
+      let res: Response;
+      if (esNoCat) {
+        // Movimiento sobre material NO catalogado (endpoint dedicado).
+        res = await fetch(`/api/no-catalogados/${values.material_id}/movimiento`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tipo_movimiento: tipo,
+            cantidad: values.cantidad,
+            motivo: values.observacion,
+            documento_referencia: values.documento_referencia,
+            usuario: values.usuario || "Almacenero",
+          }),
+        });
+      } else {
+        res = await fetch("/api/movimientos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            material_id: values.material_id,
+            tipo_movimiento: tipo,
+            cantidad: values.cantidad,
+            documento_referencia: values.documento_referencia,
+            observacion: values.observacion,
+            usuario: values.usuario || "Almacenero",
+          }),
+        });
+      }
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Error");
       message.success(`Movimiento ${tipo} registrado correctamente`);
       form.resetFields();
       setMatSel(null);
-      await cargarMateriales();
+      setNoCatSel(null);
+      await Promise.all([cargarMateriales(), cargarNoCat()]);
       onRefresh();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Error";
@@ -1063,8 +1125,20 @@ function TabSalida({ onRefresh }: { onRefresh: () => void }) {
       <Col xs={24} md={14}>
         <Card title={<Space><PlusOutlined />Registrar movimiento manual</Space>}>
           <Form form={form} layout="vertical">
+            <Checkbox
+              checked={esNoCat}
+              onChange={(e) => {
+                setEsNoCat(e.target.checked);
+                form.setFieldsValue({ material_id: undefined });
+                setMatSel(null); setNoCatSel(null);
+              }}
+              style={{ marginBottom: 12 }}
+            >
+              <b>Material NO catalogado</b> — registrar movimiento de un material fuera del catálogo
+            </Checkbox>
+
             <Form.Item
-              label="Material"
+              label={esNoCat ? "Material no catalogado" : "Material"}
               name="material_id"
               rules={[{ required: true, message: "Selecciona un material" }]}
             >
@@ -1073,17 +1147,20 @@ function TabSalida({ onRefresh }: { onRefresh: () => void }) {
                 placeholder="Buscar por código o descripción..."
                 optionFilterProp="label"
                 onChange={(v) => {
-                  const m = materiales.find((x) => x.material_id === v);
-                  setMatSel(m || null);
+                  if (esNoCat) {
+                    setNoCatSel(noCat.find((x) => x.id === v) || null);
+                  } else {
+                    setMatSel(materiales.find((x) => x.material_id === v) || null);
+                  }
                 }}
-                options={materiales.map((m) => ({
-                  value: m.material_id,
-                  label: `${m.codigo} — ${m.descripcion}`,
-                }))}
+                options={esNoCat
+                  ? noCat.map((m) => ({ value: m.id, label: `${m.codigo} — ${m.descripcion}` }))
+                  : materiales.map((m) => ({ value: m.material_id, label: `${m.codigo} — ${m.descripcion}` }))}
+                notFoundContent={esNoCat && noCat.length === 0 ? "No hay materiales no catalogados. Creá uno en Inventario no catalogado." : undefined}
               />
             </Form.Item>
 
-            {matSel && (
+            {!esNoCat && matSel && (
               <Alert
                 style={{ marginBottom: 12 }}
                 type={matSel.alerta === "SIN" ? "error" : matSel.alerta === "BAJO" ? "warning" : "success"}
@@ -1093,6 +1170,19 @@ function TabSalida({ onRefresh }: { onRefresh: () => void }) {
                     <span>Stock actual: <b>{matSel.stock_actual}</b> {matSel.unidad_medida}</span>
                     {matSel.punto_reposicion > 0 && <span>| Pto. reposición: <b>{matSel.punto_reposicion}</b></span>}
                     {matSel.ubicacion && <span>| Ubicación: <b>{matSel.ubicacion}</b></span>}
+                  </Space>
+                }
+              />
+            )}
+            {esNoCat && noCatSel && (
+              <Alert
+                style={{ marginBottom: 12 }}
+                type={noCatSel.stock_actual <= 0 ? "error" : "success"}
+                showIcon
+                title={
+                  <Space>
+                    <span>Stock actual: <b>{noCatSel.stock_actual}</b> {noCatSel.unidad_medida}</span>
+                    {noCatSel.ubicacion_nombre && <span>| Ubicación: <b>{noCatSel.ubicacion_nombre}</b></span>}
                   </Space>
                 }
               />

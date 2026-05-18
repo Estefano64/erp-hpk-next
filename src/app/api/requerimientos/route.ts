@@ -44,13 +44,21 @@ export async function GET(req: NextRequest) {
     const proveedorId = sp.get("proveedor_id");
     if (proveedorId) where.proveedor_id = Number(proveedorId);
 
-    const desde = sp.get("fecha_desde");
-    const hasta = sp.get("fecha_hasta");
+    const desde = sp.get("fecha_desde") ?? sp.get("sol_desde");
+    const hasta = sp.get("fecha_hasta") ?? sp.get("sol_hasta");
     if (desde || hasta) {
       const range: Record<string, Date> = {};
       if (desde) range.gte = new Date(desde);
       if (hasta) range.lte = new Date(hasta);
       where.fecha_solicitud = range;
+    }
+    const reqDesde = sp.get("req_desde");
+    const reqHasta = sp.get("req_hasta");
+    if (reqDesde || reqHasta) {
+      const range: Record<string, Date> = {};
+      if (reqDesde) range.gte = new Date(reqDesde);
+      if (reqHasta) range.lte = new Date(reqHasta);
+      where.fecha_requerida = range;
     }
 
     if (sp.get("solo_aprobados_sin_oc") === "1") {

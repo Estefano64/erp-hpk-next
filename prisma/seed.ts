@@ -831,6 +831,8 @@ async function main() {
     { codigo: "En cotización", nombre: "En cotización" },
     { codigo: "En aprobación", nombre: "En aprobación" },
     { codigo: "En espera de recursos", nombre: "En espera de recursos" },
+    { codigo: "Recursos en recepción", nombre: "Recursos en recepción" },
+    { codigo: "Recursos incompletos", nombre: "Recursos incompletos" },
     { codigo: "Recursos completos", nombre: "Recursos completos" },
   ];
   for (const s of recursosStatuses) {

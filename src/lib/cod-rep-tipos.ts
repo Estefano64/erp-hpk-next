@@ -18,6 +18,17 @@ export const COD_REP_TIPO_A_MODELO_EVAL: Record<string, string> = {
   // FS (Freno de servicio) no tiene modelo de evaluación equivalente todavía.
 };
 
+/** Nombre amigable del tipo (CHVS → "Cilindro hidráulico vástago simple"). */
+export function nombreTipoCilindro(codigo: string | null | undefined): string | null {
+  if (!codigo) return null;
+  return TIPOS_CILINDRO[codigo] ?? codigo;
+}
+
+/** ¿Ese tipo del código reparable tiene un modelo de evaluación equivalente? */
+export function tipoTienePlantilla(codigo: string | null | undefined): boolean {
+  return !!codigo && !!COD_REP_TIPO_A_MODELO_EVAL[codigo];
+}
+
 export interface DeteccionTipo {
   /** Código del tipo detectado (ej. "CHVS"). null si no se pudo deducir. */
   codigo: string | null;

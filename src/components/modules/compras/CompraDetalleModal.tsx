@@ -18,9 +18,10 @@ import {
   Input,
   DatePicker,
   Popconfirm,
+  Upload,
   App,
 } from "antd";
-import { EditOutlined, SaveOutlined, CloseOutlined, PrinterOutlined, CheckOutlined } from "@ant-design/icons";
+import { EditOutlined, SaveOutlined, CloseOutlined, PrinterOutlined, CheckOutlined, UploadOutlined, DownloadOutlined, DeleteOutlined, FileTextOutlined } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
 import dayjs, { Dayjs } from "dayjs";
 import type { ColumnsType } from "antd/es/table";
@@ -57,6 +58,10 @@ interface CompraDetalle {
   moneda: string;
   nro_factura: string | null;
   nro_guia: string | null;
+  guia_archivo: string | null;
+  guia_nombre: string | null;
+  factura_archivo: string | null;
+  factura_nombre: string | null;
   observaciones: string | null;
   usuario_solicita: string;
   usuario_aprueba: string | null;
@@ -165,6 +170,36 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
       message.error(err instanceof Error ? err.message : "Error al guardar");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const subirArchivo = async (tipo: "guia" | "factura", file: File) => {
+    if (!compra) return;
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`/api/compras/${compra.id}/guia?tipo=${tipo}`, { method: "POST", body: fd });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Error al subir archivo");
+      message.success(`${tipo === "guia" ? "Guía" : "Factura"} subida`);
+      cargar();
+      onUpdated?.();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : "Error al subir archivo");
+    }
+  };
+
+  const eliminarArchivo = async (tipo: "guia" | "factura") => {
+    if (!compra) return;
+    try {
+      const res = await fetch(`/api/compras/${compra.id}/guia?tipo=${tipo}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Error al eliminar archivo");
+      message.success("Archivo eliminado");
+      cargar();
+      onUpdated?.();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : "Error al eliminar archivo");
     }
   };
 
@@ -463,6 +498,26 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
                   compra.nro_guia ?? "-"
                 )}
               </Descriptions.Item>
+              <Descriptions.Item label="Archivo Guía de Remisión" span={editing ? 1 : 1}>
+                <ArchivoSlot
+                  tipo="guia"
+                  archivo={compra.guia_archivo}
+                  nombre={compra.guia_nombre}
+                  editing={editing}
+                  onUpload={(f) => subirArchivo("guia", f)}
+                  onDelete={() => eliminarArchivo("guia")}
+                />
+              </Descriptions.Item>
+              <Descriptions.Item label="Archivo Factura">
+                <ArchivoSlot
+                  tipo="factura"
+                  archivo={compra.factura_archivo}
+                  nombre={compra.factura_nombre}
+                  editing={editing}
+                  onUpload={(f) => subirArchivo("factura", f)}
+                  onDelete={() => eliminarArchivo("factura")}
+                />
+              </Descriptions.Item>
               <Descriptions.Item label="Usuario Solicita">{compra.usuario_solicita}</Descriptions.Item>
               <Descriptions.Item label="Usuario Aprueba">{compra.usuario_aprueba ?? "-"}</Descriptions.Item>
               <Descriptions.Item label="Observaciones" span={3}>
@@ -501,5 +556,51 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
         </div>
       )}
     </Modal>
+  );
+}
+
+// Slot reutilizable para Guía de Remisión / Factura: muestra el archivo subido
+// (descargar / eliminar) y permite subir uno nuevo cuando se está editando.
+function ArchivoSlot({
+  tipo, archivo, nombre, editing, onUpload, onDelete,
+}: {
+  tipo: "guia" | "factura";
+  archivo: string | null;
+  nombre: string | null;
+  editing: boolean;
+  onUpload: (f: File) => void;
+  onDelete: () => void;
+}) {
+  const label = tipo === "guia" ? "guía" : "factura";
+  return (
+    <Space wrap size={6}>
+      {archivo ? (
+        <>
+          <a href={archivo} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12 }}>
+            <FileTextOutlined style={{ color: brand.cyan, marginRight: 4 }} />
+            {nombre || `Ver ${label}`}
+          </a>
+          <Button size="small" type="text" icon={<DownloadOutlined />} href={archivo} target="_blank" title="Descargar" />
+          {editing && (
+            <Popconfirm title={`¿Eliminar ${label}?`} onConfirm={onDelete} okType="danger" okText="Eliminar">
+              <Button size="small" type="text" danger icon={<DeleteOutlined />} title="Eliminar" />
+            </Popconfirm>
+          )}
+        </>
+      ) : (
+        <Text type="secondary" style={{ fontSize: 12 }}>Sin archivo</Text>
+      )}
+      {editing && (
+        <Upload
+          showUploadList={false}
+          accept=".pdf,image/*"
+          beforeUpload={(file) => { onUpload(file as File); return false; }}
+        >
+          <Button size="small" icon={<UploadOutlined />}>
+            {archivo ? "Reemplazar" : "Subir"}
+          </Button>
+        </Upload>
+      )}
+    </Space>
   );
 }

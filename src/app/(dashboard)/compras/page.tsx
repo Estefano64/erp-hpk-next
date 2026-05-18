@@ -25,6 +25,7 @@ import {
   SearchOutlined,
   ReloadOutlined,
   EyeOutlined,
+  EditOutlined,
   DeleteOutlined,
   UnorderedListOutlined,
   ShoppingCartOutlined,
@@ -80,6 +81,8 @@ interface Compra {
   observaciones: string | null;
   cantidad_items: number;
   usuario_solicita: string;
+  fecha_oc_creacion: string | null;
+  fecha_req_creacion: string | null;
 }
 
 const estadoColor: Record<string, string> = {
@@ -307,6 +310,24 @@ export default function ComprasPage() {
       sorter: (a, b) => (a.fecha_solicitud ?? "").localeCompare(b.fecha_solicitud ?? ""),
     },
     {
+      key: "fecha_req_creacion",
+      title: "Creación REQ",
+      dataIndex: "fecha_req_creacion",
+      width: 120,
+      align: "center",
+      sorter: (a, b) => (a.fecha_req_creacion ?? "").localeCompare(b.fecha_req_creacion ?? ""),
+      render: (v: string | null) => v ? dayjs(v).format("DD/MM/YY") : <span style={{ color: "#bbb" }}>—</span>,
+    },
+    {
+      key: "fecha_oc_creacion",
+      title: "Creación OC",
+      dataIndex: "fecha_oc_creacion",
+      width: 130,
+      align: "center",
+      sorter: (a, b) => (a.fecha_oc_creacion ?? "").localeCompare(b.fecha_oc_creacion ?? ""),
+      render: (v: string | null) => v ? dayjs(v).format("DD/MM/YY HH:mm") : <span style={{ color: "#bbb" }}>—</span>,
+    },
+    {
       key: "fecha_entrega_esperada",
       title: "F. Entrega Esp.",
       dataIndex: "fecha_entrega_esperada",
@@ -409,6 +430,9 @@ export default function ComprasPage() {
         <Space size={0}>
           <Tooltip title="Ver detalle">
             <Button type="text" icon={<EyeOutlined />} onClick={() => setModalId(r.id)} />
+          </Tooltip>
+          <Tooltip title="Editar items (tipo Excel)">
+            <Button type="text" icon={<EditOutlined style={{ color: brand.cyan }} />} onClick={() => router.push(`/compras/${r.id}/editar`)} />
           </Tooltip>
           <Tooltip title="Generar PDF (OC)">
             <Button type="text" icon={<FilePdfOutlined style={{ color: "#cf1322" }} />} onClick={() => window.open(`/api/compras/${r.id}/pdf`, "_blank")} />

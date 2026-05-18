@@ -39,7 +39,13 @@ import {
 import type { UploadFile } from "antd/es/upload/interface";
 import { brand } from "@/lib/theme";
 import dayjs, { Dayjs } from "dayjs";
-import { detectarTipoCilindro, COD_REP_TIPO_A_MODELO_EVAL, type DeteccionTipo } from "@/lib/cod-rep-tipos";
+import {
+  detectarTipoCilindro,
+  COD_REP_TIPO_A_MODELO_EVAL,
+  nombreTipoCilindro,
+  tipoTienePlantilla,
+  type DeteccionTipo,
+} from "@/lib/cod-rep-tipos";
 import EvaluacionFormulario, {
   MODELOS_EVALUACION,
   detectarModeloDesdeEstrategia,
@@ -63,7 +69,11 @@ interface OTDetalle {
   cod_rep_posicion: string | null;
   guia_remision: string | null;
   cliente: { codigo: string; nombre_comercial: string | null; razon_social: string } | null;
-  codigo_reparacion: { codigo: string; descripcion: string } | null;
+  codigo_reparacion: {
+    codigo: string;
+    descripcion: string;
+    modelo_evaluacion_codigo: string | null;
+  } | null;
   fabricante: { nombre: string } | null;
 }
 
@@ -126,6 +136,10 @@ export default function EvaluacionPage() {
   const [evaluacion, setEvaluacion] = useState<Evaluacion | null>(null);
   const [modeloEvaluacion, setModeloEvaluacion] = useState<string>("cil_vastago_simple");
   const [deteccionExcel, setDeteccionExcel] = useState<DeteccionTipo | null>(null);
+  // Tipo determinado por el código reparable de la OT (autoritativo, según el Excel).
+  const [tipoCodRep, setTipoCodRep] = useState<
+    { codRepCodigo: string | null; tipoCodigo: string; tipoNombre: string; tienePlantilla: boolean } | null
+  >(null);
   const [sistemaMedicion, setSistemaMedicion] = useState<string>("Metrico");
   const [modeloBloqueado, setModeloBloqueado] = useState(false);
   const [datosFormulario, setDatosFormulario] = useState<Record<string, unknown>>({});
@@ -144,12 +158,42 @@ export default function EvaluacionPage() {
       const otData = jsonOT.data as OTDetalle;
       setOt(otData);
 
-      // Determinar modelo de evaluacion
+      // ── Determinar el TIPO de hoja de evaluación ──────────────────
+      // Prioridad:
+      //  1. Tipo del CÓDIGO REPARABLE de la OT (autoritativo: lo define el
+      //     catálogo "5. Cod Rep" — CHVS/CHP/CHPDV/CHT/AE/AV/RD/SD). Así un
+      //     bulldozer nunca abre una hoja que no le corresponde.
+      //  2. Estrategia de la OT (regla por tipo).
+      //  3. Detección heurística contra el Excel (descripción/NP/flota).
+      //  4. Default editable.
       let modeloInicial = "cil_vastago_simple";
       let bloqueado = false;
+      let deteccionUsada: DeteccionTipo | null = null;
 
-      // 1) Si la OT tiene estrategia, usar la detección heurística por tipo.
-      if (otData.estrategia && otData.tipo) {
+      const crModeloCodigo = otData.codigo_reparacion?.modelo_evaluacion_codigo ?? null;
+
+      // 1) Tipo oficial del código reparable
+      if (crModeloCodigo) {
+        const tienePl = tipoTienePlantilla(crModeloCodigo);
+        setTipoCodRep({
+          codRepCodigo: otData.codigo_reparacion?.codigo ?? null,
+          tipoCodigo: crModeloCodigo,
+          tipoNombre: nombreTipoCilindro(crModeloCodigo) ?? crModeloCodigo,
+          tienePlantilla: tienePl,
+        });
+        const modeloForm = COD_REP_TIPO_A_MODELO_EVAL[crModeloCodigo];
+        if (modeloForm) {
+          modeloInicial = modeloForm;
+          bloqueado = true; // el tipo lo manda el código reparable
+        }
+        // Sin plantilla equivalente (ej. FS): NO se bloquea ni se fuerza un
+        // tipo erróneo — se avisa y el usuario elige manualmente.
+      } else {
+        setTipoCodRep(null);
+      }
+
+      // 2) Estrategia (sólo si el código reparable no fijó el tipo)
+      if (!bloqueado && otData.estrategia && otData.tipo) {
         const detectado = detectarModeloDesdeEstrategia(otData.tipo);
         if (detectado) {
           modeloInicial = detectado;
@@ -157,25 +201,21 @@ export default function EvaluacionPage() {
         }
       }
 
-      // 2) Si todavía no hay un modelo "fijo", buscar en el catálogo del Excel
-      //    (5. Cod Rep) por descripción / NP / flota. Esto detecta CHVS/CHT/etc
-      //    y lo convierte al código que usa el formulario (cil_vastago_simple, etc.).
-      if (!bloqueado) {
+      // 3) Detección heurística (sólo si no hay tipo del código reparable)
+      if (!bloqueado && !crModeloCodigo) {
         const deteccion = detectarTipoCilindro({
           descripcion: otData.codigo_reparacion?.descripcion ?? otData.descripcion,
           np: otData.np,
           flota: otData.cod_rep_flota,
           posicion: otData.cod_rep_posicion,
         });
-        setDeteccionExcel(deteccion);
+        deteccionUsada = deteccion;
         if (deteccion.codigo) {
           const modeloFormulario = COD_REP_TIPO_A_MODELO_EVAL[deteccion.codigo];
           if (modeloFormulario) modeloInicial = modeloFormulario;
         }
-      } else {
-        setDeteccionExcel(null);
       }
-
+      setDeteccionExcel(deteccionUsada);
       setModeloBloqueado(bloqueado);
 
       // Intentar cargar evaluacion existente
@@ -587,7 +627,41 @@ export default function EvaluacionPage() {
                     value: m.value,
                   }))}
                 />
-                {modeloBloqueado && (
+                {tipoCodRep ? (
+                  tipoCodRep.tienePlantilla ? (
+                    <Alert
+                      type="success"
+                      showIcon
+                      icon={<LockOutlined />}
+                      title={`Tipo según código reparable${tipoCodRep.codRepCodigo ? ` ${tipoCodRep.codRepCodigo}` : ""}: ${tipoCodRep.tipoCodigo} — ${tipoCodRep.tipoNombre}`}
+                      description={
+                        <span style={{ fontSize: 11 }}>
+                          La hoja de evaluación se asigna automáticamente según el
+                          tipo del código reparable de la OT.
+                        </span>
+                      }
+                      style={{ marginTop: 8 }}
+                      banner
+                    />
+                  ) : (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      icon={<InfoCircleOutlined />}
+                      title={`Código reparable${tipoCodRep.codRepCodigo ? ` ${tipoCodRep.codRepCodigo}` : ""} de tipo ${tipoCodRep.tipoCodigo} — ${tipoCodRep.tipoNombre}`}
+                      description={
+                        <span style={{ fontSize: 11 }}>
+                          Este tipo todavía no tiene una hoja de evaluación
+                          equivalente. Seleccioná manualmente el modelo apropiado
+                          (no se fuerza un tipo automático para no abrir una hoja
+                          equivocada).
+                        </span>
+                      }
+                      style={{ marginTop: 8 }}
+                      banner
+                    />
+                  )
+                ) : modeloBloqueado ? (
                   <Alert
                     type="warning"
                     showIcon
@@ -596,8 +670,8 @@ export default function EvaluacionPage() {
                     style={{ marginTop: 8 }}
                     banner
                   />
-                )}
-                {!modeloBloqueado && deteccionExcel?.codigo && (
+                ) : null}
+                {!tipoCodRep && !modeloBloqueado && deteccionExcel?.codigo && (
                   <Alert
                     type={deteccionExcel.via === "np" || deteccionExcel.via === "descripcion+flota" ? "success" : "info"}
                     showIcon
@@ -612,7 +686,7 @@ export default function EvaluacionPage() {
                     banner
                   />
                 )}
-                {!modeloBloqueado && !deteccionExcel?.codigo && (
+                {!tipoCodRep && !modeloBloqueado && !deteccionExcel?.codigo && (
                   <Alert
                     type="warning"
                     showIcon

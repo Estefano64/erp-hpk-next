@@ -1,92 +1,141 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-// GET — Histórico de precios por (material × proveedor).
-// Devuelve UNA fila por cada combinación material+proveedor con los datos
-// de la compra MÁS RECIENTE (excluyendo compras anuladas/devueltas).
+// GET — Matriz "Listado de repuestos · precios unitarios por proveedor".
+// Para cada material: precio por proveedor (cotización manual = override; si no,
+// el último precio de una OC real), + precio mínimo, proveedor ganador y
+// precio de la última compra.
 export async function GET() {
   try {
+    // 1) Precios reales: detalles de compra (no anuladas), ordenados por fecha desc.
     const detalles = await prisma.compraDetalle.findMany({
-      where: {
-        compra: { status_oc_codigo: { notIn: ["ANULADO", "DEVOLUCION"] } },
-      },
-      include: {
-        material: {
-          select: { codigo: true, descripcion: true, unidad_medida_codigo: true },
-        },
+      where: { compra: { status_oc_codigo: { notIn: ["ANULADO", "DEVOLUCION"] } } },
+      select: {
+        material_id: true,
+        precio_unitario: true,
+        material: { select: { codigo: true, descripcion: true, np: true, fabricante_codigo: true } },
         compra: {
           select: {
-            id: true,
-            numero_po: true,
             fecha_solicitud: true,
             fecha_entrega_real: true,
             moneda_codigo: true,
-            status_oc_codigo: true,
-            proveedor: { select: { id: true, razon_social: true, ruc: true } },
+            proveedor: { select: { id: true, razon_social: true, nombre_comercial: true } },
           },
         },
       },
-      orderBy: [
-        { compra: { fecha_solicitud: "desc" } },
-        { createdAt: "desc" },
-      ],
+      orderBy: [{ compra: { fecha_solicitud: "desc" } }, { createdAt: "desc" }],
     });
 
-    type D = typeof detalles[number];
+    // 2) Cotizaciones manuales (override).
+    const cotizaciones = await prisma.cotizacionProveedor.findMany({
+      include: {
+        material: { select: { codigo: true, descripcion: true, np: true, fabricante_codigo: true } },
+        proveedor: { select: { id: true, razon_social: true, nombre_comercial: true } },
+      },
+    });
 
-    const visto = new Set<string>();
-    const data = [] as Array<{
-      key: string;
+    type Celda = { precio: number; moneda: string; origen: "oc" | "cotizacion"; fecha: Date | null };
+    interface MatAcc {
       material_id: number;
-      material_codigo: string | null;
-      material_descripcion: string | null;
-      unidad: string | null;
-      proveedor_id: number;
-      proveedor_razon_social: string;
-      proveedor_ruc: string | null;
-      precio_unitario: number;
-      moneda: string | null;
-      cantidad: number;
-      fecha: Date | null;
-      numero_po: string;
-      compra_id: number;
-      status_oc: string | null;
-    }>;
+      codigo: string | null;
+      np: string | null;
+      descripcion: string | null;
+      marca: string | null;
+      precios: Record<number, Celda>;       // proveedor_id → celda
+      ultima_compra_precio: number | null;
+      ultima_compra_fecha: Date | null;
+      ultima_compra_prov: string | null;
+    }
+    const mats = new Map<number, MatAcc>();
+    const provs = new Map<number, string>();
 
-    for (const d of detalles as D[]) {
-      const provId = d.compra?.proveedor?.id;
-      if (!provId) continue;
-      const k = `${d.material_id}__${provId}`;
-      if (visto.has(k)) continue;
-      visto.add(k);
-      data.push({
-        key: k,
-        material_id: d.material_id,
-        material_codigo: d.material?.codigo ?? null,
-        material_descripcion: d.material?.descripcion ?? null,
-        unidad: d.material?.unidad_medida_codigo ?? null,
-        proveedor_id: provId,
-        proveedor_razon_social: d.compra.proveedor.razon_social,
-        proveedor_ruc: d.compra.proveedor.ruc ?? null,
-        precio_unitario: Number(d.precio_unitario),
-        moneda: d.compra.moneda_codigo ?? null,
-        cantidad: Number(d.cantidad),
-        fecha: d.compra.fecha_entrega_real ?? d.compra.fecha_solicitud ?? null,
-        numero_po: d.compra.numero_po,
-        compra_id: d.compra.id,
-        status_oc: d.compra.status_oc_codigo ?? null,
-      });
+    const provLabel = (p: { id: number; razon_social: string; nombre_comercial: string | null }) =>
+      p.nombre_comercial ?? p.razon_social ?? `Prov.${p.id}`;
+
+    // Precios reales (el primero por orden = el más reciente por par material/proveedor).
+    for (const d of detalles) {
+      const prov = d.compra?.proveedor;
+      if (!prov) continue;
+      provs.set(prov.id, provLabel(prov));
+      if (!mats.has(d.material_id)) {
+        mats.set(d.material_id, {
+          material_id: d.material_id,
+          codigo: d.material?.codigo ?? null,
+          np: d.material?.np ?? null,
+          descripcion: d.material?.descripcion ?? null,
+          marca: d.material?.fabricante_codigo ?? null,
+          precios: {},
+          ultima_compra_precio: null,
+          ultima_compra_fecha: null,
+          ultima_compra_prov: null,
+        });
+      }
+      const m = mats.get(d.material_id)!;
+      const precio = Number(d.precio_unitario);
+      const fecha = d.compra?.fecha_entrega_real ?? d.compra?.fecha_solicitud ?? null;
+      // Solo registrar si no hay ya un precio (más reciente) para ese proveedor.
+      if (!m.precios[prov.id]) {
+        m.precios[prov.id] = { precio, moneda: d.compra?.moneda_codigo ?? "USD", origen: "oc", fecha };
+      }
+      // Última compra global del material (la primera que aparece = más reciente).
+      if (m.ultima_compra_precio == null) {
+        m.ultima_compra_precio = precio;
+        m.ultima_compra_fecha = fecha;
+        m.ultima_compra_prov = provLabel(prov);
+      }
     }
 
-    const materialesUnicos = new Set(data.map((r) => r.material_id)).size;
-    const proveedoresUnicos = new Set(data.map((r) => r.proveedor_id)).size;
+    // Cotizaciones manuales: override (pisan el precio de OC en esa celda).
+    for (const c of cotizaciones) {
+      const prov = c.proveedor;
+      provs.set(prov.id, provLabel(prov));
+      if (!mats.has(c.material_id)) {
+        mats.set(c.material_id, {
+          material_id: c.material_id,
+          codigo: c.material?.codigo ?? null,
+          np: c.material?.np ?? null,
+          descripcion: c.material?.descripcion ?? null,
+          marca: c.material?.fabricante_codigo ?? null,
+          precios: {},
+          ultima_compra_precio: null,
+          ultima_compra_fecha: null,
+          ultima_compra_prov: null,
+        });
+      }
+      const m = mats.get(c.material_id)!;
+      m.precios[prov.id] = {
+        precio: Number(c.precio_unitario),
+        moneda: c.moneda_codigo,
+        origen: "cotizacion",
+        fecha: c.fecha,
+      };
+    }
+
+    const proveedores = [...provs.entries()]
+      .map(([id, nombre]) => ({ id, nombre }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+    const materiales = [...mats.values()].map((m) => {
+      let min = Infinity;
+      let ganadorId: number | null = null;
+      for (const [pid, c] of Object.entries(m.precios)) {
+        if (c.precio > 0 && c.precio < min) { min = c.precio; ganadorId = Number(pid); }
+      }
+      return {
+        ...m,
+        precio_minimo: ganadorId != null ? min : null,
+        proveedor_ganador: ganadorId != null ? (provs.get(ganadorId) ?? null) : null,
+        proveedor_ganador_id: ganadorId,
+      };
+    }).sort((a, b) => (a.descripcion ?? "").localeCompare(b.descripcion ?? ""));
 
     return NextResponse.json({
-      data,
+      proveedores,
+      materiales,
       stats: {
-        combinaciones: data.length,
-        materiales: materialesUnicos,
-        proveedores: proveedoresUnicos,
+        materiales: materiales.length,
+        proveedores: proveedores.length,
+        cotizaciones: cotizaciones.length,
       },
     });
   } catch (error) {
