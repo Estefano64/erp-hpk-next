@@ -60,18 +60,49 @@ function buildMenuItems(_rol: string | null): MenuProps["items"] {
       icon: <ShoppingCartOutlined />,
       label: "Logística",
       children: [
-        { key: "/clientes", label: "Clientes" },
-        { key: "/materiales", label: "Materiales" },
-        { key: "/proveedores", label: "Proveedores" },
-        { key: "/requerimientos", label: "Requerimientos" },
-        { key: "/compras", label: "Compras" },
-        { key: "/compras/historico", label: "Histórico de Compras" },
-        { key: "/compras/contabilidad", label: "Contabilidad (Guías/Facturas)" },
-        { key: "/stock", label: "Stock" },
-        { key: "/stock/no-catalogados", label: "Inventario no catalogado" },
-        { key: "/movimientos", label: "Movimientos" },
-        { key: "/despachos", label: "Despachos por OT" },
-        { key: "/herramientas", label: "Herramientas" },
+        {
+          key: "log-maestros",
+          label: "Maestros",
+          children: [
+            { key: "/clientes", label: "Clientes" },
+            { key: "/proveedores", label: "Proveedores" },
+            { key: "/materiales", label: "Materiales" },
+          ],
+        },
+        {
+          key: "log-ciclo-compras",
+          label: "Ciclo de compras",
+          children: [
+            { key: "/requerimientos", label: "Requerimientos" },
+            { key: "/compras/historico", label: "Cotizaciones (precios históricos)" },
+            { key: "/compras", label: "Órdenes de compra" },
+          ],
+        },
+        {
+          key: "log-almacen-repuestos",
+          label: "Almacén de repuestos",
+          children: [
+            { key: "/movimientos", label: "Movimiento de repuestos" },
+            { key: "/stock", label: "Inventario de stock" },
+            { key: "/stock/no-catalogados", label: "Inventario no catalogado" },
+            { key: "/despachos", label: "Inventario por OT (despachos)" },
+          ],
+        },
+        {
+          key: "log-herramientas-suministros",
+          label: "Almacén de herramientas y suministros",
+          children: [
+            { key: "/herramientas", label: "Herramientas" },
+          ],
+        },
+        {
+          key: "log-despacho-facturacion",
+          label: "Despacho y facturación",
+          children: [
+            { key: "/compras/contabilidad/guias", label: "Guías" },
+            { key: "/compras/contabilidad/facturas", label: "Facturas" },
+          ],
+        },
       ],
     },
     { key: "/reportes", icon: <BarChartOutlined />, label: "Reportes" },
@@ -82,6 +113,41 @@ function buildMenuItems(_rol: string | null): MenuProps["items"] {
       children: configChildren,
     },
   ];
+}
+
+// Aplana el árbol de menú (soporta submenús y grupos anidados) → lista de
+// hojas navegables con la cadena de submenús ancestros (para abrirlos todos).
+type MenuLeaf = { key: string; parents: string[] };
+function flattenMenuLeaves(
+  items: MenuProps["items"],
+  parents: string[] = [],
+): MenuLeaf[] {
+  const out: MenuLeaf[] = [];
+  for (const item of items ?? []) {
+    if (!item) continue;
+    const hasChildren = "children" in item && Array.isArray(item.children);
+    const hasKey = "key" in item && typeof item.key === "string";
+    if (hasChildren) {
+      // Un submenú colapsable (con key propia) agrega su key a la cadena de
+      // ancestros; un grupo (type: "group", sin key) no aporta apertura.
+      const nextParents = hasKey ? [...parents, item.key as string] : parents;
+      out.push(...flattenMenuLeaves(item.children, nextParents));
+    } else if (hasKey) {
+      out.push({ key: item.key as string, parents });
+    }
+  }
+  return out;
+}
+
+// La hoja cuya key es el prefijo más largo de la ruta actual (respeta los
+// límites de segmento para no confundir /compras con /compras/historico).
+function matchLeaf(leaves: MenuLeaf[], pathname: string): MenuLeaf | undefined {
+  let best: MenuLeaf | undefined;
+  for (const leaf of leaves) {
+    const isMatch = pathname === leaf.key || pathname.startsWith(leaf.key + "/");
+    if (isMatch && (!best || leaf.key.length > best.key.length)) best = leaf;
+  }
+  return best;
 }
 
 const rolLabels: Record<string, { label: string; color: string }> = {
@@ -120,37 +186,18 @@ export default function DashboardLayout({
 
   const menuItems = useMemo(() => buildMenuItems(rol), [rol]);
 
-  // Determina qué item y submenú están activos
-  const selectedKey = (menuItems ?? []).reduce<string>((best, item) => {
-    if (!item) return best;
-    if ("children" in item && item.children) {
-      for (const child of item.children) {
-        if (child && "key" in child && pathname.startsWith(child.key as string)) {
-          return child.key as string;
-        }
-      }
-    }
-    if ("key" in item && pathname.startsWith(item.key as string) && !["operaciones", "logistica", "mantenimiento", "configuracion"].includes(item.key as string)) {
-      return item.key as string;
-    }
-    return best;
-  }, "/dashboard");
+  // Determina qué item y submenú están activos (soporta grupos anidados)
+  const menuLeaves = useMemo(() => flattenMenuLeaves(menuItems), [menuItems]);
+  const matched = useMemo(() => matchLeaf(menuLeaves, pathname), [menuLeaves, pathname]);
+  const selectedKey = matched?.key ?? "/dashboard";
 
-  // Sincroniza submenús abiertos con la ruta actual
-  useEffect(() => {
-    const parentKey = (menuItems ?? []).reduce<string | undefined>((found, item) => {
-      if (found || !item || !("children" in item) || !item.children) return found;
-      for (const child of item.children) {
-        if (child && "key" in child && pathname.startsWith(child.key as string)) {
-          return item.key as string;
-        }
-      }
-      return found;
-    }, undefined);
-    if (parentKey && !openKeys.includes(parentKey)) {
-      setOpenKeys((prev) => [...prev, parentKey]);
-    }
-  }, [pathname, menuItems]);
+  // Submenús abiertos = los que el usuario abrió (openKeys) + la cadena de
+  // ancestros de la ruta actual (para que la sección activa quede abierta).
+  // Derivado en render → sin setState dentro de un effect.
+  const effectiveOpenKeys = useMemo(
+    () => Array.from(new Set([...openKeys, ...(matched?.parents ?? [])])),
+    [openKeys, matched],
+  );
 
   const userMenuItems: MenuProps["items"] = [
     {
@@ -214,7 +261,7 @@ export default function DashboardLayout({
         <Menu
           mode="inline"
           selectedKeys={[selectedKey]}
-          openKeys={openKeys}
+          openKeys={effectiveOpenKeys}
           onOpenChange={(keys) => setOpenKeys(keys)}
           items={menuItems}
           onClick={({ key }) => router.push(key)}
