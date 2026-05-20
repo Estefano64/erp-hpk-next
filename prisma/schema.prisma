@@ -515,13 +515,15 @@ model TallerStatus {
 }
 
 // ── Tipo de OT externa (Reparación / Bien / Servicio) ────
-// Catálogo agregado en Fase D0. Pasa a ser FK desde OrdenTrabajo en Fase D1.
-// Reemplaza el campo legacy `OrdenTrabajo.tipo` (String libre).
+// Catálogo agregado en Fase D0. FK desde OrdenTrabajo en Fase D1.
+// Convive con el campo legacy `OrdenTrabajo.tipo` (String libre) — el legacy
+// queda en NULL después del wipe de D1 y se eliminará en una fase posterior.
 model TipoOT {
-  tipo_ot_id Int     @id @default(autoincrement())
-  codigo     String  @unique @db.VarChar(10)
-  nombre     String  @db.VarChar(100)
-  activo     Boolean @default(true)
+  tipo_ot_id      Int            @id @default(autoincrement())
+  codigo          String         @unique @db.VarChar(10)
+  nombre          String         @db.VarChar(100)
+  activo          Boolean        @default(true)
+  ordenes_trabajo OrdenTrabajo[]
 
   @@map("tipo_ot")
 }
@@ -842,6 +844,7 @@ model OrdenTrabajo {
   estrategia                  Boolean?
   id_cod_rep                  Int?
   tipo                        String?             @db.VarChar(100)
+  tipo_codigo                 String?             @db.VarChar(10)
   np                          String?             @db.VarChar(100)
   descripcion                 String?
   id_fabricante               Int?
@@ -925,6 +928,7 @@ model OrdenTrabajo {
   taller_status               TallerStatus?       @relation(fields: [taller_status_codigo], references: [codigo])
   ubicacion                   Ubicacion?          @relation(fields: [ubicacion_codigo], references: [codigo])
   tipo_garantia               TipoGarantia?       @relation(fields: [tipo_garantia_codigo], references: [codigo])
+  tipo_ot                     TipoOT?             @relation(fields: [tipo_codigo], references: [codigo])
   tipo_reparacion             TipoReparacion?     @relation(fields: [tipo_reparacion_codigo], references: [codigo])
   adjuntos                    OtAdjunto[]
   historial                   OTHistorial[]
