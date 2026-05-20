@@ -15,6 +15,7 @@ import dayjs from "dayjs";
 import { formatDateOnly } from "@/lib/dates";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
+import { localUid } from "@/lib/uid";
 import { useCachedFetch } from "@/lib/useCachedFetch";
 import {
   useColumnasOcultas,
@@ -194,7 +195,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
   function abrirDraft(appendToNroReq: string | null = null) {
     setDraftAppendToNroReq(appendToNroReq);
     setDraftItems([{
-      id: crypto.randomUUID(),
+      id: localUid(),
       tipo_codigo: "MAC",
       descripcion: "",
       cantidad: 1,
@@ -210,7 +211,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
     setDraftItems((prev) => [
       ...prev,
       {
-        id: crypto.randomUUID(),
+        id: localUid(),
         tipo_codigo: "MAC",
         descripcion: "",
         cantidad: 1,

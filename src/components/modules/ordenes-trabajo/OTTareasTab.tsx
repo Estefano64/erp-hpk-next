@@ -11,6 +11,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { brand } from "@/lib/theme";
+import { localUid } from "@/lib/uid";
 import { useTabSync } from "@/lib/useTabSync";
 import { formatDateOnlyShort } from "@/lib/dates";
 import {
@@ -94,7 +95,7 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
     equipo: string | null;
   };
   const newDraft = (): DraftTarea => ({
-    id: crypto.randomUUID(),
+    id: localUid(),
     parte: null,
     tipo_tarea: "Estandar",
     operacion_codigo: null,
