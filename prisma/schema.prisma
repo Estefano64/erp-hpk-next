@@ -8,14 +8,15 @@ datasource db {
 }
 
 model Planta {
-  planta_id  Int        @id @default(autoincrement())
-  codigo     String     @unique @db.VarChar(10)
-  nombre     String     @db.VarChar(100)
-  direccion  String?    @db.VarChar(200)
-  activo     Boolean    @default(true)
-  areas      Area[]
-  equipos    Equipo[]
-  materiales Material[]
+  planta_id                Int                   @id @default(autoincrement())
+  codigo                   String                @unique @db.VarChar(10)
+  nombre                   String                @db.VarChar(100)
+  direccion                String?               @db.VarChar(200)
+  activo                   Boolean               @default(true)
+  areas                    Area[]
+  equipos                  Equipo[]
+  materiales               Material[]
+  ordenes_trabajo_internas OrdenTrabajoInterna[]
 
   @@map("planta")
 }
@@ -464,12 +465,13 @@ model TipoGarantia {
 }
 
 model PrioridadAtencion {
-  prioridad_atencion_id Int            @id @default(autoincrement())
-  codigo                String         @unique @db.VarChar(10)
-  nombre                String         @db.VarChar(100)
-  nivel                 Int?
-  activo                Boolean        @default(true)
-  ordenes_trabajo       OrdenTrabajo[]
+  prioridad_atencion_id    Int                   @id @default(autoincrement())
+  codigo                   String                @unique @db.VarChar(10)
+  nombre                   String                @db.VarChar(100)
+  nivel                    Int?
+  activo                   Boolean               @default(true)
+  ordenes_trabajo          OrdenTrabajo[]
+  ordenes_trabajo_internas OrdenTrabajoInterna[] @relation("InternaPrioridadAtencion")
 
   @@map("prioridad_atencion")
 }
@@ -485,21 +487,23 @@ model BaseMetalica {
 }
 
 model OtStatus {
-  ot_status_id    Int            @id @default(autoincrement())
-  codigo          String         @unique @db.VarChar(30)
-  nombre          String         @db.VarChar(100)
-  activo          Boolean        @default(true)
-  ordenes_trabajo OrdenTrabajo[]
+  ot_status_id             Int                   @id @default(autoincrement())
+  codigo                   String                @unique @db.VarChar(30)
+  nombre                   String                @db.VarChar(100)
+  activo                   Boolean               @default(true)
+  ordenes_trabajo          OrdenTrabajo[]
+  ordenes_trabajo_internas OrdenTrabajoInterna[] @relation("InternaOtStatus")
 
   @@map("ot_status")
 }
 
 model RecursosStatus {
-  recursos_status_id Int            @id @default(autoincrement())
-  codigo             String         @unique @db.VarChar(30)
-  nombre             String         @db.VarChar(100)
-  activo             Boolean        @default(true)
-  ordenes_trabajo    OrdenTrabajo[]
+  recursos_status_id       Int                   @id @default(autoincrement())
+  codigo                   String                @unique @db.VarChar(30)
+  nombre                   String                @db.VarChar(100)
+  activo                   Boolean               @default(true)
+  ordenes_trabajo          OrdenTrabajo[]
+  ordenes_trabajo_internas OrdenTrabajoInterna[] @relation("InternaRecursosStatus")
 
   @@map("recursos_status")
 }
@@ -531,10 +535,11 @@ model TipoOT {
 // ── Tipo de OT interna (Correctiva / Preventiva) ─────────
 // Catálogo para la nueva entidad OrdenTrabajoInterna (mantenimiento del taller HP&K).
 model TipoOTInterna {
-  tipo_ot_interna_id Int     @id @default(autoincrement())
-  codigo             String  @unique @db.VarChar(20)
-  nombre             String  @db.VarChar(100)
-  activo             Boolean @default(true)
+  tipo_ot_interna_id       Int                   @id @default(autoincrement())
+  codigo                   String                @unique @db.VarChar(20)
+  nombre                   String                @db.VarChar(100)
+  activo                   Boolean               @default(true)
+  ordenes_trabajo_internas OrdenTrabajoInterna[]
 
   @@map("tipo_ot_interna")
 }
@@ -542,10 +547,11 @@ model TipoOTInterna {
 // ── User Status para OT interna ──────────────────────────
 // Estados específicos del flujo interno (Planificado / Programado / Correctivo / Reprogramado).
 model UserStatus {
-  user_status_id Int     @id @default(autoincrement())
-  codigo         String  @unique @db.VarChar(20)
-  nombre         String  @db.VarChar(100)
-  activo         Boolean @default(true)
+  user_status_id           Int                   @id @default(autoincrement())
+  codigo                   String                @unique @db.VarChar(20)
+  nombre                   String                @db.VarChar(100)
+  activo                   Boolean               @default(true)
+  ordenes_trabajo_internas OrdenTrabajoInterna[]
 
   @@map("user_status")
 }
@@ -663,6 +669,7 @@ model Equipo {
   unidad_medida        UnidadMedida? @relation(fields: [unidad_medida_codigo], references: [codigo])
   estrategias          Estrategia[]
   trabajadores         Trabajador[]
+  ordenes_trabajo_internas OrdenTrabajoInterna[]
 
   @@map("equipo")
 }
@@ -691,6 +698,7 @@ model Estrategia {
   tipo                    TipoEstrategia         @relation(fields: [tipo_estrategia_codigo], references: [codigo])
   unidad_medida           UnidadMedida           @relation(fields: [unidad_medida_codigo], references: [codigo])
   tareas                  Tarea[]
+  ordenes_trabajo_internas OrdenTrabajoInterna[]
 
   @@index([equipo_codigo])
   @@index([conjunto_codigo])
@@ -938,6 +946,49 @@ model OrdenTrabajo {
   prestamos_herramientas      PrestamoHerramienta[]
 
   @@map("orden_trabajo")
+}
+
+// ── Orden de Trabajo Interna (mantenimiento del taller HP&K) ──────
+// Diferente a OrdenTrabajo (externa): no tiene cliente, no apunta a cilindros
+// reparables del cliente, sino a Equipos del taller propio. Fuente: Excel
+// "10. Ots internas.xlsx". Fase D2.1: schema + migración (sin API ni UI).
+model OrdenTrabajoInterna {
+  id                        Int                @id @default(autoincrement())
+  ot                        String?            @unique @db.VarChar(50)
+  planta_codigo             String?            @db.VarChar(10)
+  equipo_codigo             String?            @db.VarChar(50)
+  tipo_ot_interna_codigo    String?            @db.VarChar(20)
+  descripcion               String?
+  prioridad_atencion_codigo String?            @db.VarChar(10)
+  usuario_crea              String?            @db.VarChar(100)
+  fecha_creacion            DateTime?          @default(now()) @db.Timestamp(3)
+  fecha_inicio_plan         DateTime?          @db.Timestamp(3)
+  fecha_fin_plan            DateTime?          @db.Timestamp(3)
+  // Semana ISO en formato YYYY-Www (ej "2026W18"). Conecta con planificacion_ot.semana_plan.
+  semana_revision           String?            @db.VarChar(10)
+  fecha_inicio_real         DateTime?          @db.Timestamp(3)
+  fecha_fin_real            DateTime?          @db.Timestamp(3)
+  fecha_cierre              DateTime?          @db.Timestamp(3)
+  estrategia_id             Int?
+  // task_list es texto libre por ahora (referencia a tareas de Toño). FK a Tarea[] en fase futura.
+  task_list                 String?
+  user_status_codigo        String?            @db.VarChar(20)
+  ot_status_codigo          String?            @db.VarChar(30)
+  recursos_status_codigo    String?            @db.VarChar(30)
+  version                   Int                @default(1)
+  estrategia                Estrategia?        @relation(fields: [estrategia_id], references: [estrategia_id])
+  equipo                    Equipo?            @relation(fields: [equipo_codigo], references: [codigo])
+  ot_status                 OtStatus?          @relation("InternaOtStatus", fields: [ot_status_codigo], references: [codigo])
+  planta                    Planta?            @relation(fields: [planta_codigo], references: [codigo])
+  prioridad_atencion        PrioridadAtencion? @relation("InternaPrioridadAtencion", fields: [prioridad_atencion_codigo], references: [codigo])
+  recursos_status           RecursosStatus?    @relation("InternaRecursosStatus", fields: [recursos_status_codigo], references: [codigo])
+  tipo_ot_interna           TipoOTInterna?     @relation(fields: [tipo_ot_interna_codigo], references: [codigo])
+  user_status               UserStatus?        @relation(fields: [user_status_codigo], references: [codigo])
+
+  @@index([equipo_codigo])
+  @@index([tipo_ot_interna_codigo])
+  @@index([ot_status_codigo])
+  @@map("orden_trabajo_interna")
 }
 
 model OtAdjunto {
