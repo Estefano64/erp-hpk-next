@@ -38,6 +38,7 @@ import {
 } from "@ant-design/icons";
 import type { UploadFile } from "antd/es/upload/interface";
 import { brand } from "@/lib/theme";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 import dayjs, { Dayjs } from "dayjs";
 import {
   detectarTipoCilindro,
@@ -127,6 +128,7 @@ export default function EvaluacionPage() {
   const params = useParams();
   const router = useRouter();
   const { message } = App.useApp();
+  const { screens } = useResponsive();
   const [form] = Form.useForm();
   const otId = Number(params.id);
 
@@ -452,7 +454,7 @@ export default function EvaluacionPage() {
             {puedeSolicitar && (
               <Button
                 icon={<SendOutlined />}
-                style={{ background: brand.cyan, color: "#fff", borderColor: brand.cyan }}
+                style={{ background: brand.cyan, color: brand.white, borderColor: brand.cyan }}
                 onClick={() => setModalAccion("solicitar")}
               >
                 Enviar a revisión
@@ -462,7 +464,7 @@ export default function EvaluacionPage() {
               <>
                 <Button
                   icon={<CheckCircleOutlined />}
-                  style={{ background: "#52c41a", color: "#fff", borderColor: "#52c41a" }}
+                  style={{ background: "#52c41a", color: brand.white, borderColor: "#52c41a" }}
                   onClick={() => setModalAccion("aprobar")}
                 >
                   Aprobar
@@ -549,7 +551,7 @@ export default function EvaluacionPage() {
       <Card
         title={
           <Space>
-            <span style={{ background: brand.navy, color: "#fff", borderRadius: "50%", width: 24, height: 24, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12 }}>1</span>
+            <span style={{ background: brand.navy, color: brand.white, borderRadius: "50%", width: 24, height: 24, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12 }}>1</span>
             Datos Generales de la OT
           </Space>
         }
@@ -617,7 +619,7 @@ export default function EvaluacionPage() {
       <Card
         title={
           <Space>
-            <span style={{ background: brand.navy, color: "#fff", borderRadius: "50%", width: 24, height: 24, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12 }}>2</span>
+            <span style={{ background: brand.navy, color: brand.white, borderRadius: "50%", width: 24, height: 24, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12 }}>2</span>
             Configuracion de la Evaluacion
           </Space>
         }
@@ -765,7 +767,7 @@ export default function EvaluacionPage() {
       <Card
         title={
           <Space>
-            <span style={{ background: brand.navy, color: "#fff", borderRadius: "50%", width: 24, height: 24, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12 }}>F</span>
+            <span style={{ background: brand.navy, color: brand.white, borderRadius: "50%", width: 24, height: 24, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12 }}>F</span>
             Resultado General y Recomendaciones
           </Space>
         }
@@ -856,7 +858,7 @@ export default function EvaluacionPage() {
             <Button
               icon={<SendOutlined />}
               size="large"
-              style={{ background: brand.cyan, color: "#fff", borderColor: brand.cyan }}
+              style={{ background: brand.cyan, color: brand.white, borderColor: brand.cyan }}
               onClick={() => setModalAccion("solicitar")}
             >
               Enviar a revisión
@@ -873,13 +875,14 @@ export default function EvaluacionPage() {
             : modalAccion === "aprobar"
             ? <Space><CheckCircleOutlined style={{ color: "#52c41a" }} />Aprobar Evaluación</Space>
             : modalAccion === "rechazar"
-            ? <Space><CloseCircleOutlined style={{ color: "#ff4d4f" }} />Rechazar Evaluación</Space>
+            ? <Space><CloseCircleOutlined style={{ color: brand.error }} />Rechazar Evaluación</Space>
             : <Space><EditOutlined />Reabrir Evaluación</Space>
         }
         open={!!modalAccion}
         onCancel={() => setModalAccion(null)}
         onOk={ejecutarAccionRevision}
         confirmLoading={procesandoAccion}
+        width={modalWidth(screens, 520)}
         forceRender
         okText={
           modalAccion === "solicitar" ? "Enviar" :

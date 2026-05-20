@@ -76,7 +76,7 @@ function SeccionNum({ num, titulo, children }: { num: number | string; titulo: s
           <span
             style={{
               background: brand.navy,
-              color: "#fff",
+              color: brand.white,
               borderRadius: "50%",
               width: 24,
               height: 24,
@@ -575,7 +575,7 @@ function ImagenesComponente({
                   border: `1px solid ${brand.border}`,
                   borderRadius: 4,
                   padding: 4,
-                  background: "#fff",
+                  background: brand.white,
                 }}
               >
                 <Image
