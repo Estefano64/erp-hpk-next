@@ -33,6 +33,7 @@ import {
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 import {
   numeracionColumn,
   paginacionEstandar,
@@ -106,6 +107,7 @@ const estadoIcon: Record<string, React.ReactNode> = {
 export default function EvaluacionesPage() {
   const router = useRouter();
   const { message } = App.useApp();
+  const { screens } = useResponsive();
 
   const [data, setData] = useState<Evaluacion[]>([]);
   const [loading, setLoading] = useState(false);
@@ -329,7 +331,7 @@ export default function EvaluacionesPage() {
               <Tooltip title="Rechazar">
                 <Button
                   type="text"
-                  icon={<CloseCircleOutlined style={{ color: "#ff4d4f" }} />}
+                  icon={<CloseCircleOutlined style={{ color: brand.error }} />}
                   onClick={() => setModalAccion({ evalItem: r, accion: "rechazar" })}
                 />
               </Tooltip>
@@ -434,8 +436,8 @@ export default function EvaluacionesPage() {
             <Statistic
               title="Rechazadas"
               value={kpis.rechazadas}
-              prefix={<CloseCircleOutlined style={{ color: "#ff4d4f" }} />}
-              styles={{ content: { color: "#ff4d4f" } }}
+              prefix={<CloseCircleOutlined style={{ color: brand.error }} />}
+              styles={{ content: { color: brand.error } }}
             />
           </Card>
         </Col>
@@ -517,6 +519,7 @@ export default function EvaluacionesPage() {
         onCancel={() => setModalAccion(null)}
         onOk={ejecutarAccion}
         confirmLoading={procesando}
+        width={modalWidth(screens, 520)}
         okText={modalAccion?.accion === "aprobar" ? "Aprobar" : modalAccion?.accion === "rechazar" ? "Rechazar" : "Enviar"}
         okButtonProps={{
           danger: modalAccion?.accion === "rechazar",

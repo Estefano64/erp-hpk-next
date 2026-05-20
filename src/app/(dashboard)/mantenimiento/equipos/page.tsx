@@ -30,6 +30,7 @@ import {
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 import dayjs from "dayjs";
 import { formatDateOnly } from "@/lib/dates";
 import {
@@ -150,6 +151,7 @@ export default function EquiposPage() {
   const [saving, setSaving] = useState(false);
 
   const [messageApi, contextHolder] = message.useMessage();
+  const { screens } = useResponsive();
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -665,7 +667,7 @@ export default function EquiposPage() {
         onCancel={() => setModalOpen(false)}
         onOk={handleSave}
         confirmLoading={saving}
-        width={900}
+        width={modalWidth(screens, 900)}
         destroyOnHidden
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>

@@ -9,6 +9,7 @@ import { InboxOutlined, FileExcelOutlined, CopyOutlined, CheckCircleOutlined } f
 import * as XLSX from "xlsx";
 import type { ColumnsType } from "antd/es/table";
 import { useColumnasRedimensionables } from "@/lib/tables";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 
 const { Text, Paragraph } = Typography;
 const { Dragger } = Upload;
@@ -105,6 +106,7 @@ export function ImportarExcelModal({
   open, onClose, onSuccess, title, endpoint, fields, templateRows,
 }: Props) {
   const { message } = App.useApp();
+  const { screens } = useResponsive();
   const [pasteText, setPasteText] = useState("");
   const [matrix, setMatrix] = useState<(string | number | null)[][]>([]);
   const [mapping, setMapping] = useState<Record<string, string>>({});
@@ -233,7 +235,7 @@ export function ImportarExcelModal({
 
   return (
     <Modal
-      open={open} onCancel={close} title={title} width={900}
+      open={open} onCancel={close} title={title} width={modalWidth(screens, 900)}
       footer={
         <Space>
           <Button onClick={close}>Cancelar</Button>

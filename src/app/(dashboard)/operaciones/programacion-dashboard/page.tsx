@@ -29,6 +29,7 @@ import type { ColumnsType, ColumnGroupType, ColumnType } from "antd/es/table/int
 import dayjs from "dayjs";
 import Link from "next/link";
 import { brand } from "@/lib/theme";
+import { useResponsive } from "@/lib/responsive";
 import {
   useColumnasOcultas,
   ColumnasToggleButton,
@@ -212,7 +213,7 @@ export default function ProgramacionDashboardPage() {
         <div
           style={{
             background: color,
-            color: "#fff",
+            color: brand.white,
             fontWeight: 600,
             fontSize: 10,
             textAlign: "center",
@@ -552,6 +553,7 @@ function ConfigurarVistaDrawer({
   opsOcultas: string[];
   setOpsOcultas: (next: string[]) => void;
 }) {
+  const { screens } = useResponsive();
   // Build tree
   const treeData = useMemo(() => {
     return componentes
@@ -605,7 +607,7 @@ function ConfigurarVistaDrawer({
       title="Configurar vista del dashboard"
       open={open}
       onClose={onClose}
-      width={460}
+      width={screens.md ? 460 : "100%"}
       placement="right"
       extra={
         <Space>

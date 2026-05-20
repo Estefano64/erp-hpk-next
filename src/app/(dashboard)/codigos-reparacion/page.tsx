@@ -32,6 +32,7 @@ import {
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 import {
   numeracionColumn,
   paginacionEstandar,
@@ -101,6 +102,7 @@ export default function CodigosReparacionPage() {
   const [saving, setSaving] = useState(false);
 
   const [messageApi, contextHolder] = message.useMessage();
+  const { screens } = useResponsive();
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -496,7 +498,7 @@ export default function CodigosReparacionPage() {
         onCancel={() => setModalOpen(false)}
         onOk={handleSave}
         confirmLoading={saving}
-        width={700}
+        width={modalWidth(screens, 700)}
         destroyOnHidden
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>

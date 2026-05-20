@@ -12,6 +12,7 @@ import {
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 import { useCachedFetch } from "@/lib/useCachedFetch";
 import {
   useColumnasOcultas,
@@ -87,6 +88,7 @@ export default function TemplateRequerimientosPage() {
   const [drafts, setDrafts] = useState<Record<number, Draft>>({});
   const [savingId, setSavingId] = useState<number | null>(null);
   const [messageApi, contextHolder] = message.useMessage();
+  const { screens } = useResponsive();
   const debounceTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const { ocultas, setOcultas } = useColumnasOcultas("codrep-req-template-cols-v1");
 
@@ -612,7 +614,7 @@ export default function TemplateRequerimientosPage() {
         confirmLoading={creating}
         okText="Agregar"
         cancelText="Cancelar"
-        width={680}
+        width={modalWidth(screens, 680)}
         destroyOnHidden
       >
         <Form form={form} layout="vertical">

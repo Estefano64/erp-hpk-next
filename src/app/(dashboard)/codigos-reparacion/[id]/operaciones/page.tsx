@@ -12,6 +12,7 @@ import {
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 import { useCachedFetch } from "@/lib/useCachedFetch";
 import {
   useColumnasOcultas,
@@ -64,6 +65,7 @@ export default function OperacionesCodRepPage() {
   const [drafts, setDrafts] = useState<Record<number, Draft>>({});
   const [savingId, setSavingId] = useState<number | null>(null);
   const [messageApi, contextHolder] = message.useMessage();
+  const { screens } = useResponsive();
   const debounceTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const { ocultas, setOcultas } = useColumnasOcultas("codrep-operaciones-cols-v1");
 
@@ -484,6 +486,7 @@ export default function OperacionesCodRepPage() {
         confirmLoading={creating}
         okText="Crear"
         cancelText="Cancelar"
+        width={modalWidth(screens, 520)}
         destroyOnHidden
       >
         <Form form={form} layout="vertical" onFinish={handleCreate} initialValues={{ qty: 1 }}>
