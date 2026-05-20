@@ -144,18 +144,27 @@ export default function HistoricoComprasPage() {
           );
         }
         const esGanador = r.proveedor_ganador_id === p.id;
+        const fechaCorta = c?.fecha
+          ? new Date(c.fecha).toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "2-digit" })
+          : null;
         return (
           <div
             style={{
               cursor: "pointer", padding: "2px 4px", borderRadius: 3,
               background: esGanador ? "#d9f7be" : c?.origen === "cotizacion" ? "#fff7e6" : undefined,
               fontWeight: esGanador ? 700 : 400,
+              lineHeight: 1.15,
             }}
             title={c ? `${c.origen === "cotizacion" ? "Cotización manual" : "Precio de OC"}${c.fecha ? " · " + new Date(c.fecha).toLocaleDateString("es-PE") : ""} — click para editar` : "Sin precio — click para cotizar"}
             onClick={() => { setEditando({ matId: r.material_id, provId: p.id }); setEditValor(c?.precio ?? null); }}
           >
-            {c ? `$ ${fmt(c.precio)}` : <span style={{ color: "#bbb" }}>+ cotizar</span>}
-            {c?.origen === "cotizacion" && <EditOutlined style={{ fontSize: 9, marginLeft: 3, color: "#fa8c16" }} />}
+            <div>
+              {c ? `$ ${fmt(c.precio)}` : <span style={{ color: "#bbb" }}>+ cotizar</span>}
+              {c?.origen === "cotizacion" && <EditOutlined style={{ fontSize: 9, marginLeft: 3, color: "#fa8c16" }} />}
+            </div>
+            {fechaCorta && (
+              <div style={{ fontSize: 9, color: "#888", textAlign: "right" }}>{fechaCorta}</div>
+            )}
           </div>
         );
       },
@@ -177,7 +186,14 @@ export default function HistoricoComprasPage() {
       key: "ultima_compra", title: "Últ. compra", width: 130, align: "right", fixed: "right",
       render: (_v, r) => r.ultima_compra_precio != null ? (
         <Tooltip title={`${r.ultima_compra_prov ?? ""}${r.ultima_compra_fecha ? " · " + new Date(r.ultima_compra_fecha).toLocaleDateString("es-PE") : ""}`}>
-          <b style={{ color: brand.navy }}>$ {fmt(r.ultima_compra_precio)}</b>
+          <div style={{ lineHeight: 1.15 }}>
+            <b style={{ color: brand.navy }}>$ {fmt(r.ultima_compra_precio)}</b>
+            {r.ultima_compra_fecha && (
+              <div style={{ fontSize: 9, color: "#888" }}>
+                {new Date(r.ultima_compra_fecha).toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "2-digit" })}
+              </div>
+            )}
+          </div>
         </Tooltip>
       ) : <Text type="secondary">—</Text>,
     },

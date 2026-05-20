@@ -65,7 +65,9 @@ export async function GET(_req: NextRequest, { params }: Params) {
       estado: r.status_oc_codigo ? codeToLabel[r.status_oc_codigo] ?? r.status_oc_codigo : "Pendiente",
       status_oc_codigo: r.status_oc_codigo,
       subtotal: r.subtotal,
+      descuento: r.descuento,
       impuesto: r.impuesto,
+      otros: r.otros,
       total: r.total,
       moneda: r.moneda_codigo ?? "USD",
       nombre: r.nombre ?? null,
@@ -134,12 +136,30 @@ export async function PUT(req: NextRequest, { params }: Params) {
     for (const k of ["nro_factura", "nro_guia", "observaciones", "usuario_aprueba"]) {
       if (body[k] !== undefined) data[k] = body[k];
     }
+    // Descuento / otros (header-level): si vienen, recalcular total = subtotal - descuento + impuesto + otros
+    let recalcularTotal = false;
+    if (body.descuento !== undefined) { data.descuento = body.descuento; recalcularTotal = true; }
+    if (body.otros !== undefined) { data.otros = body.otros; recalcularTotal = true; }
     if (usuario && data.usuario_aprueba === undefined) data.usuario_aprueba = usuario;
 
     const record = await prisma.compra.update({
       where: { id: Number(id) },
       data,
     });
+
+    if (recalcularTotal) {
+      const { Prisma } = await import("@prisma/client");
+      const subtotal = new Prisma.Decimal(record.subtotal);
+      const descuento = new Prisma.Decimal(record.descuento);
+      const impuesto = new Prisma.Decimal(record.impuesto);
+      const otros = new Prisma.Decimal(record.otros);
+      const total = subtotal.minus(descuento).plus(impuesto).plus(otros);
+      const updated = await prisma.compra.update({
+        where: { id: record.id },
+        data: { total },
+      });
+      return NextResponse.json({ data: updated });
+    }
     return NextResponse.json({ data: record });
   } catch (error: unknown) {
     const err = error as { code?: string };

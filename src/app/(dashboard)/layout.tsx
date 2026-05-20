@@ -99,8 +99,10 @@ function buildMenuItems(_rol: string | null): MenuProps["items"] {
           key: "log-despacho-facturacion",
           label: "Despacho y facturación",
           children: [
-            { key: "/compras/contabilidad/guias", label: "Guías" },
-            { key: "/compras/contabilidad/facturas", label: "Facturas" },
+            { key: "/despachos/mina", label: "Despacho a mina (Guía de remisión)" },
+            { key: "/facturacion/ot", label: "Facturación de OT (mina)" },
+            { key: "/compras/contabilidad/guias", label: "Guías de OC" },
+            { key: "/compras/contabilidad/facturas", label: "Facturación de OC" },
           ],
         },
       ],

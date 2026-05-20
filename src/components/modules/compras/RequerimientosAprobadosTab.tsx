@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Table, Tag, Space, Button, Modal, Form, Select, DatePicker, Input,
+  Table, Tag, Space, Button, Modal, Form, Select, DatePicker, Input, InputNumber,
   message, Empty, Alert, Row, Col, Typography, Tooltip,
 } from "antd";
-import { FileAddOutlined, ReloadOutlined, InboxOutlined, SearchOutlined } from "@ant-design/icons";
+import { FileAddOutlined, ReloadOutlined, InboxOutlined, SearchOutlined, EditOutlined, CheckOutlined, CloseOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { brand } from "@/lib/theme";
@@ -73,6 +73,40 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
     nombre?: string;
   }>();
 
+  // Edición inline de precio por fila
+  const [editPrecioId, setEditPrecioId] = useState<number | null>(null);
+  const [editPrecioVal, setEditPrecioVal] = useState<number | null>(null);
+  const [savingPrecio, setSavingPrecio] = useState(false);
+
+  const guardarPrecio = async (row: Row) => {
+    if (editPrecioVal == null || editPrecioVal <= 0) {
+      messageApi.warning("El precio debe ser mayor a 0.");
+      return;
+    }
+    setSavingPrecio(true);
+    try {
+      const res = await fetch(`/api/requerimientos/${row.id}/precio`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          precio_unitario: editPrecioVal,
+          moneda: row.moneda ?? "USD",
+          proveedor_id: row.proveedor_id ?? undefined,
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error ?? "Error guardando precio");
+      messageApi.success("Precio actualizado");
+      setEditPrecioId(null);
+      setEditPrecioVal(null);
+      fetchData();
+    } catch (e) {
+      messageApi.error(e instanceof Error ? e.message : "Error");
+    } finally {
+      setSavingPrecio(false);
+    }
+  };
+
   // Catálogos
   type Wrapped<T> = { data: T[] } | null;
   const provRes = useCachedFetch<Wrapped<ProveedorOpt>>("/api/proveedores?limit=500");
@@ -104,6 +138,24 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
   function abrirOcModal() {
     if (selectedRows.length === 0) {
       messageApi.warning("Seleccioná al menos un requerimiento.");
+      return;
+    }
+    // Validación: TODOS los items seleccionados deben tener precio > 0.
+    const sinPrecio = selectedRows.filter((r) => {
+      const p = Number(r.precio_unitario ?? 0);
+      return !Number.isFinite(p) || p <= 0;
+    });
+    if (sinPrecio.length > 0) {
+      const labels = sinPrecio.map((r) => `${r.nro_req ?? `#${r.id}`}/${r.item_req ?? "-"}`).join(", ");
+      modalApi.error({
+        title: "Faltan precios para crear la OC",
+        content: (
+          <div>
+            <p>{sinPrecio.length} item(s) sin precio unitario: <b>{labels}</b></p>
+            <p>Asigná un precio a cada item antes de generar la OC (click en la columna “Precio unit.”).</p>
+          </div>
+        ),
+      });
       return;
     }
     if (proveedoresEnSeleccion.size > 1) {
@@ -219,15 +271,51 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
       render: (_, r) => `${Number(r.cantidad).toLocaleString()} ${r.unidad_medida ?? ""}`,
     },
     {
-      title: "Precio est.", key: "precio", width: 110, align: "right",
+      title: "Precio unit.", key: "precio", width: 150, align: "right",
       sorter: (a, b) => Number(a.precio_unitario ?? 0) - Number(b.precio_unitario ?? 0),
       filters: [...new Set(rows.map((r) => r.precio_unitario).filter(Boolean) as string[])]
         .sort().map((v) => ({ text: Number(v).toFixed(2), value: v })),
       filterSearch: true,
       onFilter: (value, r) => String(r.precio_unitario ?? "") === value,
-      render: (_, r) => r.precio_unitario != null
-        ? `${Number(r.precio_unitario).toFixed(2)} ${r.moneda ?? ""}`
-        : <Text type="secondary">—</Text>,
+      render: (_, r) => {
+        const precio = r.precio_unitario != null ? Number(r.precio_unitario) : null;
+        const enEdit = editPrecioId === r.id;
+        if (enEdit) {
+          return (
+            <Space size={2}>
+              <InputNumber
+                size="small" autoFocus value={editPrecioVal} min={0} step={0.01} precision={2}
+                style={{ width: 90 }}
+                onChange={(v) => setEditPrecioVal(v == null ? null : Number(v))}
+                onPressEnter={() => guardarPrecio(r)}
+              />
+              <Button size="small" type="primary" icon={<CheckOutlined />} loading={savingPrecio}
+                onClick={() => guardarPrecio(r)} />
+              <Button size="small" icon={<CloseOutlined />}
+                onClick={() => { setEditPrecioId(null); setEditPrecioVal(null); }} />
+            </Space>
+          );
+        }
+        const sinPrecio = precio == null || precio <= 0;
+        return (
+          <Tooltip title={sinPrecio ? "Falta precio — click para asignar" : "Click para editar"}>
+            <div
+              style={{
+                cursor: "pointer",
+                padding: "2px 6px",
+                borderRadius: 3,
+                background: sinPrecio ? "#fff1f0" : undefined,
+                border: sinPrecio ? "1px dashed #ff4d4f" : undefined,
+              }}
+              onClick={() => { setEditPrecioId(r.id); setEditPrecioVal(precio); }}
+            >
+              {sinPrecio
+                ? <Text type="danger" style={{ fontSize: 11 }}>+ asignar</Text>
+                : <span style={{ fontSize: 11 }}>{precio!.toFixed(2)} {r.moneda ?? ""} <EditOutlined style={{ fontSize: 9, color: "#bbb", marginLeft: 2 }} /></span>}
+            </div>
+          </Tooltip>
+        );
+      },
     },
     {
       title: "Proveedor sugerido", key: "prov", width: 160, ellipsis: true,
@@ -351,7 +439,6 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
         okText="Generar OC"
         cancelText="Cancelar"
         width={620}
-        destroyOnHidden
       >
         <Form form={ocForm} layout="vertical">
           <Form.Item name="proveedor_id" label="Proveedor" rules={[{ required: true, message: "Proveedor requerido" }]}>

@@ -5,7 +5,6 @@ import { prisma } from "@/lib/prisma";
 import { parseDateOnly } from "@/lib/dates";
 
 const IGV_PCT = new Prisma.Decimal("0.18");
-const ONE_PLUS_IGV = new Prisma.Decimal(1).plus(IGV_PCT);
 
 const ItemSchema = z.object({
   id: z.coerce.number().int().positive().optional().nullable(),
@@ -24,6 +23,9 @@ const ItemSchema = z.object({
 const Schema = z.object({
   items: z.array(ItemSchema),
   deleteIds: z.array(z.coerce.number().int().positive()).default([]),
+  // Header-level (opcionales): si vienen, se persisten en la Compra.
+  descuento: z.coerce.number().min(0).optional(),
+  otros: z.coerce.number().min(0).optional(),
 });
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -42,7 +44,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Validación", detail: parsed.error.flatten() }, { status: 400 });
     }
-    const { items, deleteIds } = parsed.data;
+    const { items, deleteIds, descuento, otros } = parsed.data;
 
     const result = await prisma.$transaction(async (tx) => {
       const compra = await tx.compra.findUnique({
@@ -121,6 +123,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
       }
 
       // 3) Recalcular totales de la compra
+      //    total = subtotal − descuento + impuesto + otros
       const itemsActuales = await tx.oTRepuesto.findMany({
         where: { po_id: compraId },
         select: { cantidad: true, precio_unitario: true },
@@ -130,14 +133,23 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
         const linea = new Prisma.Decimal(r.precio_unitario ?? 0).mul(new Prisma.Decimal(r.cantidad ?? 0));
         subtotal = subtotal.plus(linea);
       }
-      const impuesto = subtotal.mul(IGV_PCT);
-      const total = subtotal.mul(ONE_PLUS_IGV);
+      // Si vinieron en el payload los persistimos; si no, usamos los actuales de la compra.
+      const descuentoDec = descuento !== undefined
+        ? new Prisma.Decimal(descuento)
+        : new Prisma.Decimal(compra.descuento);
+      const otrosDec = otros !== undefined
+        ? new Prisma.Decimal(otros)
+        : new Prisma.Decimal(compra.otros);
+      // IGV se recalcula sobre la base afectada por el descuento (práctica estándar).
+      const baseImponible = subtotal.minus(descuentoDec);
+      const impuesto = baseImponible.gt(0) ? baseImponible.mul(IGV_PCT) : new Prisma.Decimal(0);
+      const total = baseImponible.plus(impuesto).plus(otrosDec);
       await tx.compra.update({
         where: { id: compraId },
-        data: { subtotal, impuesto, total },
+        data: { subtotal, descuento: descuentoDec, impuesto, otros: otrosDec, total },
       });
 
-      return { count: itemsActuales.length, subtotal, impuesto, total };
+      return { count: itemsActuales.length, subtotal, descuento: descuentoDec, impuesto, otros: otrosDec, total };
     });
 
     return NextResponse.json({ data: result });

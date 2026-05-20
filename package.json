@@ -10,7 +10,8 @@
     "start:prod": "prisma migrate deploy && next start",
     "lint": "eslint",
     "postinstall": "prisma generate",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "db:seed-test": "tsx prisma/seed-test-data.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

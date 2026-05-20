@@ -73,6 +73,26 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      // Validación: TODO ítem debe tener precio_unitario > 0 antes de crear la OC.
+      const sinPrecio = repuestos.filter((r) => {
+        const p = Number(r.precio_unitario ?? 0);
+        return !Number.isFinite(p) || p <= 0;
+      });
+      if (sinPrecio.length > 0) {
+        const labels = sinPrecio
+          .map((r) => `${r.nro_req ?? `#${r.id}`}/${r.item_req ?? "-"}`)
+          .join(", ");
+        throw Object.assign(
+          new Error(
+            `No se puede crear la OC: ${sinPrecio.length} item(s) sin precio unitario (${labels}). Asigná un precio antes de generar la OC.`,
+          ),
+          {
+            code: "SIN_PRECIO",
+            sin_precio_ids: sinPrecio.map((r) => r.id),
+          },
+        );
+      }
+
       // Calcular totales con Prisma.Decimal para no perder precisión.
       let subtotal = new Prisma.Decimal(0);
       const detallesData: Prisma.CompraDetalleCreateManyInput[] = [];
@@ -204,9 +224,15 @@ export async function POST(req: NextRequest) {
       { status: 201 },
     );
   } catch (error: unknown) {
-    const err = error as { code?: string; message?: string };
+    const err = error as { code?: string; message?: string; sin_precio_ids?: number[] };
     if (err?.code === "NO_DISPONIBLES" || err?.code === "PARCIAL" || err?.code === "RACE") {
       return NextResponse.json({ error: err.message }, { status: 409 });
+    }
+    if (err?.code === "SIN_PRECIO") {
+      return NextResponse.json(
+        { error: err.message, sin_precio_ids: err.sin_precio_ids ?? [] },
+        { status: 400 },
+      );
     }
     console.error("POST /api/compras/crear-oc error:", error);
     const msg = error instanceof Error ? error.message : "Error al crear OC";
