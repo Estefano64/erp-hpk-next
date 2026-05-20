@@ -990,7 +990,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
             <span>Orden de Trabajo: {ot?.ot ?? "..."}</span>
             {dirty && (
               <span style={{
-                background: "#FAAD14", color: "#fff", fontSize: 10, fontWeight: 600,
+                background: "#FAAD14", color: brand.white, fontSize: 10, fontWeight: 600,
                 padding: "2px 8px", borderRadius: 10, letterSpacing: 0.4,
               }}>
                 CAMBIOS SIN GUARDAR

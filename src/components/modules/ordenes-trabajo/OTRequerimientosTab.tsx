@@ -14,6 +14,7 @@ import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { formatDateOnly } from "@/lib/dates";
 import { brand } from "@/lib/theme";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 import { useCachedFetch } from "@/lib/useCachedFetch";
 import {
   useColumnasOcultas,
@@ -115,6 +116,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
   const [rol, setRol] = useState<string | null>(null);
   const isAdmin = rol === "admin";
   const [messageApi, contextHolder] = message.useMessage();
+  const { screens } = useResponsive();
   const [modalApi, modalCtx] = Modal.useModal();
   const { ocultas, setOcultas } = useColumnasOcultas("ot-requerimientos-cols-v2");
   const { rango: rangoSol, setRango: setRangoSol } = useRangoFechas();
@@ -1300,7 +1302,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
         confirmLoading={saving}
-        width={680}
+        width={modalWidth(screens, 680)}
         destroyOnHidden
         footer={[
           <Button key="cancel" onClick={() => setModalOpen(false)}>Cancelar</Button>,

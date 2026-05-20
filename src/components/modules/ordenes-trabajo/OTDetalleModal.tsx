@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Modal, Button } from "antd";
 import { CloseOutlined, ExclamationCircleOutlined } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
+import { useResponsive } from "@/lib/responsive";
 import OTDetalleContent from "./OTDetalleContent";
 
 interface Props {
@@ -16,6 +17,7 @@ interface Props {
 export default function OTDetalleModal({ otId, open, onClose, onUpdated }: Props) {
   const [dirty, setDirty] = useState(false);
   const [confirmModal, contextHolder] = Modal.useModal();
+  const { screens } = useResponsive();
 
   function attemptClose() {
     if (!dirty) {
@@ -38,7 +40,7 @@ export default function OTDetalleModal({ otId, open, onClose, onUpdated }: Props
       open={open}
       onCancel={attemptClose}
       footer={null}
-      width="90vw"
+      width={screens.md ? "90vw" : "100vw"}
       style={{ top: 20 }}
       styles={{
         body: { padding: 0 },
