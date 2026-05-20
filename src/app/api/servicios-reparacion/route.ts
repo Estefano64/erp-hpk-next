@@ -20,9 +20,14 @@ export async function POST(req: NextRequest) {
     }
     const d = parsed.data;
 
-    // Idempotencia por nombre
+    // Idempotencia por descripción (campo visible) o por nombre (legacy).
     const existing = await prisma.servicioReparacion.findFirst({
-      where: { nombre: { equals: d.nombre, mode: "insensitive" } },
+      where: {
+        OR: [
+          { descripcion: { equals: d.nombre, mode: "insensitive" } },
+          { nombre: { equals: d.nombre, mode: "insensitive" } },
+        ],
+      },
     });
     if (existing) {
       return NextResponse.json({ data: existing, reused: true });
@@ -42,11 +47,13 @@ export async function POST(req: NextRequest) {
     }
     const codigo = `${prefix}${String(next).padStart(4, "0")}`;
 
+    // Guardamos el mismo texto en `nombre` (NOT NULL en BD) y `descripcion` (la
+    // que ve el usuario). Si vino un descripcion adicional, respetarlo.
     const created = await prisma.servicioReparacion.create({
       data: {
         codigo,
         nombre: d.nombre,
-        descripcion: d.descripcion ?? null,
+        descripcion: d.descripcion ?? d.nombre,
       },
     });
     return NextResponse.json({ data: created, reused: false }, { status: 201 });

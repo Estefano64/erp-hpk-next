@@ -42,10 +42,16 @@ function buildMenuItems(_rol: string | null): MenuProps["items"] {
         { key: "/evaluaciones", label: "Hojas de Evaluación" },
         { key: "/codigos-reparacion", label: "Cod. Reparables" },
         { key: "/contratos", label: "Contratos" },
-        { key: "/operaciones/planificacion", label: "Planificación" },
-        { key: "/operaciones/programacion-semanal", label: "Programación semanal" },
-        { key: "/operaciones/programacion-dashboard", label: "Dashboard Planificación" },
-        { key: "/operaciones/trabajadores", label: "Trabajadores" },
+        {
+          key: "ops-planificacion",
+          label: "Planificación de tareas",
+          children: [
+            { key: "/operaciones/planificacion", label: "Planificación" },
+            { key: "/operaciones/programacion-semanal", label: "Programación semanal" },
+            { key: "/operaciones/programacion-dashboard", label: "Dashboard Planificación" },
+            { key: "/operaciones/trabajadores", label: "Trabajadores" },
+          ],
+        },
       ],
     },
     {
@@ -192,13 +198,20 @@ export default function DashboardLayout({
   const matched = useMemo(() => matchLeaf(menuLeaves, pathname), [menuLeaves, pathname]);
   const selectedKey = matched?.key ?? "/dashboard";
 
-  // Submenús abiertos = los que el usuario abrió (openKeys) + la cadena de
-  // ancestros de la ruta actual (para que la sección activa quede abierta).
-  // Derivado en render → sin setState dentro de un effect.
-  const effectiveOpenKeys = useMemo(
-    () => Array.from(new Set([...openKeys, ...(matched?.parents ?? [])])),
-    [openKeys, matched],
-  );
+  // Cuando cambia la ruta, abrimos automáticamente los submenús ancestros (sin
+  // tocar los que el usuario haya abierto/cerrado por su cuenta). Usar `effective`
+  // mergeado en render hace que el usuario no pueda cerrar el submenú activo —
+  // lo abríamos siempre. Con este effect, el usuario tiene control total después
+  // de la navegación inicial.
+  useEffect(() => {
+    if (matched?.parents.length) {
+      setOpenKeys((prev) => {
+        const set = new Set(prev);
+        for (const p of matched.parents) set.add(p);
+        return Array.from(set);
+      });
+    }
+  }, [matched]);
 
   const userMenuItems: MenuProps["items"] = [
     {
@@ -262,7 +275,7 @@ export default function DashboardLayout({
         <Menu
           mode="inline"
           selectedKeys={[selectedKey]}
-          openKeys={effectiveOpenKeys}
+          openKeys={openKeys}
           onOpenChange={(keys) => setOpenKeys(keys)}
           items={menuItems}
           onClick={({ key }) => router.push(key)}

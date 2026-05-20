@@ -404,13 +404,16 @@ export const catalogosConfig: CatalogoConfig[] = [
   {
     id: "servicioReparacion",
     label: "Servicios de Reparación (OT)",
-    description: "Servicios externos / tercerizados que se asignan a tareas tipo SER de un código reparable.",
+    description: "Servicios externos / tercerizados que se asignan a tareas tipo SER. El nombre del servicio va en Descripción.",
     category: "Reparación (OT)",
     pkField: "servicio_reparacion_id",
     uniqueField: "codigo",
+    displayField: "descripcion",
+    // El campo `nombre` se mantiene en BD (NOT NULL) pero el API lo mirroreará
+    // automáticamente desde `descripcion`. La UI sólo muestra Código + Descripción.
     fields: [
-      ...codigoNombre(20, 300),
-      { key: "descripcion", label: "Descripción", type: "text" },
+      { key: "codigo", label: "Código", type: "string", required: true, maxLength: 20 },
+      { key: "descripcion", label: "Descripción", type: "string", required: true, maxLength: 300 },
       activo,
     ],
   },

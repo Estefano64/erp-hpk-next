@@ -20,7 +20,9 @@
       "Bash('/c/Program Files/PostgreSQL/18/bin/psql.exe' -h localhost -p 5433 -U postgres -d erp_hpyk -c ' *)",
       "Bash(taskkill //F //IM node.exe)",
       "Bash(PGPASSWORD=admin \"/c/Program Files/PostgreSQL/18/bin/psql.exe\" -h localhost -p 5433 -U postgres -d erp_hpyk -f \"prisma/migrations/20260513090000_split_servicio/migration.sql\")",
-      "Bash(PGPASSWORD=admin \"/c/Program Files/PostgreSQL/18/bin/psql.exe\" -h localhost -p 5433 -U postgres -d erp_hpyk -c \"SELECT 'servicio_reparacion' AS tabla, COUNT\\(*\\) FROM servicio_reparacion UNION ALL SELECT 'servicio_mantenimiento', COUNT\\(*\\) FROM servicio_mantenimiento;\")"
+      "Bash(PGPASSWORD=admin \"/c/Program Files/PostgreSQL/18/bin/psql.exe\" -h localhost -p 5433 -U postgres -d erp_hpyk -c \"SELECT 'servicio_reparacion' AS tabla, COUNT\\(*\\) FROM servicio_reparacion UNION ALL SELECT 'servicio_mantenimiento', COUNT\\(*\\) FROM servicio_mantenimiento;\")",
+      "Bash(export PGPASSWORD=admin)",
+      "Bash(npm run *)"
     ]
   }
 }

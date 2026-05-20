@@ -15,6 +15,7 @@ import {
   Descriptions,
   Tooltip,
   Progress,
+  Tree,
 } from "antd";
 import {
   AppstoreOutlined,
@@ -22,6 +23,7 @@ import {
   SearchOutlined,
   FilterOutlined,
   BgColorsOutlined,
+  SettingOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType, ColumnGroupType, ColumnType } from "antd/es/table/interface";
 import dayjs from "dayjs";
@@ -37,7 +39,7 @@ import {
 
 const { Title, Text } = Typography;
 
-interface ComponenteCat { codigo: string; nombre: string }
+interface ComponenteCat { componente_id: number; codigo: string; nombre: string }
 interface OperacionCat {
   codigo: string;
   nombre: string;
@@ -65,12 +67,17 @@ interface OTRow {
 }
 
 // Color por defecto si el catálogo de status_tarea no tiene `color` asignado.
+// Convención acordada con el equipo:
+//   abierto → amarillo, programado → verde, realizado → azul,
+//   correctivo → rojo, cancelado → gris.
 const DEFAULT_ESTADO_COLOR: Record<string, string> = {
-  abierto: "#bfbfbf",
-  programado: "#1677FF",
+  abierto: "#FAAD14",
+  programado: "#52C41A",
+  realizado: "#1677FF",
+  correctivo: "#cf1322",
+  cancelado: "#8c8c8c",
   "en proceso": "#FA8C16",
-  realizado: "#52C41A",
-  pausado: "#cf1322",
+  pausado: "#722ED1",
 };
 
 // Abreviatura de 2 letras para mostrar dentro de la celda (estilo Excel: OK / PR / X / TS).
@@ -95,6 +102,22 @@ export default function ProgramacionDashboardPage() {
   const [filtroComponente, setFiltroComponente] = useState<string | null>(null);
   const [detalle, setDetalle] = useState<OTRow | null>(null);
   const { ocultas, setOcultas } = useColumnasOcultas("programacion-dashboard-cols-v1");
+  // Vista configurable: lista de operacion_codigos ocultos (persistida en localStorage).
+  // Si null = ver todas (default). Si array vacío = todas ocultas. Si array poblado = ocultar esas.
+  const [opsOcultas, setOpsOcultas] = useState<string[]>([]);
+  const [opsOcultasHidratado, setOpsOcultasHidratado] = useState(false);
+  const [vistaConfigOpen, setVistaConfigOpen] = useState(false);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("programacion-dashboard-ops-ocultas-v1");
+      if (raw) setOpsOcultas(JSON.parse(raw));
+    } catch { /* ignore */ }
+    setOpsOcultasHidratado(true);
+  }, []);
+  useEffect(() => {
+    if (!opsOcultasHidratado) return;
+    try { localStorage.setItem("programacion-dashboard-ops-ocultas-v1", JSON.stringify(opsOcultas)); } catch { /* ignore */ }
+  }, [opsOcultas, opsOcultasHidratado]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -120,11 +143,36 @@ export default function ProgramacionDashboardPage() {
     return m;
   }, [estados]);
 
+  // Mapeo de presets antd (lo que guarda el catálogo status_tarea) a hex real,
+  // porque para `backgroundColor` necesitamos un color CSS válido (no "success").
+  const ANTD_PRESET_TO_HEX: Record<string, string> = {
+    success: "#52C41A",
+    warning: "#FAAD14",
+    error: "#cf1322",
+    processing: "#1677FF",
+    blue: "#1677FF",
+    default: "#8c8c8c",
+    volcano: "#fa541c",
+    purple: "#722ED1",
+    magenta: "#eb2f96",
+    red: "#cf1322",
+    green: "#52C41A",
+    cyan: "#13c2c2",
+    geekblue: "#2f54eb",
+    gold: "#faad14",
+    orange: "#fa8c16",
+    lime: "#a0d911",
+  };
   const colorDeEstado = useCallback((codigo: string | null): string => {
     if (!codigo) return "transparent";
     const e = estadoMap.get(codigo);
-    if (e?.color) return e.color;
+    if (e?.color) {
+      // Si el color guardado es un preset de antd, lo convertimos a hex.
+      // Si ya es hex / rgb / etc., lo devolvemos tal cual.
+      return ANTD_PRESET_TO_HEX[e.color.toLowerCase()] ?? e.color;
+    }
     return DEFAULT_ESTADO_COLOR[codigo.toLowerCase()] ?? "#d9d9d9";
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [estadoMap]);
 
   // Filas filtradas por búsqueda libre
@@ -141,16 +189,18 @@ export default function ProgramacionDashboardPage() {
   }, [ots, search]);
 
   // Agrupar operaciones por componente para construir las columnas anidadas
+  const opsOcultasSet = useMemo(() => new Set(opsOcultas), [opsOcultas]);
   const operacionesPorComponente = useMemo(() => {
     const m = new Map<string, OperacionCat[]>();
     for (const op of operaciones) {
       if (filtroComponente && op.componente_codigo !== filtroComponente) continue;
+      if (opsOcultasSet.has(op.codigo)) continue; // filtro de vista configurable
       const k = op.componente_codigo ?? "__SIN_COMP__";
       if (!m.has(k)) m.set(k, []);
       m.get(k)!.push(op);
     }
     return m;
-  }, [operaciones, filtroComponente]);
+  }, [operaciones, filtroComponente, opsOcultasSet]);
 
   // Renderer de celda de operación: muestra abreviatura sobre fondo del color del estado.
   const renderCelda = (estado: string | null, externo: boolean | null) => {
@@ -283,13 +333,19 @@ export default function ProgramacionDashboardPage() {
     },
   ];
 
-  // Columnas dinámicas: una columna padre por componente, hijas por operación
+  // Columnas dinámicas: 3 niveles → Componente → STD/NO_STD → Operación.
+  // Cada celda muestra el estado de la operación en esa OT.
   const operacionColumns: ColumnsType<OTRow> = useMemo(() => {
     const cols: ColumnsType<OTRow> = [];
     for (const comp of componentes) {
       const ops = operacionesPorComponente.get(comp.codigo) ?? [];
       if (ops.length === 0) continue;
-      const childrenCols: ColumnsType<OTRow> = ops.map((op): ColumnType<OTRow> => ({
+
+      // Separar por clasificación
+      const opsSTD = ops.filter((o) => (o.clasificacion ?? "STD").toUpperCase() === "STD");
+      const opsNSTD = ops.filter((o) => (o.clasificacion ?? "").toUpperCase() === "NO_STD");
+
+      const buildOpCol = (op: OperacionCat): ColumnType<OTRow> => ({
         key: `op-${comp.codigo}-${op.codigo}`,
         title: (
           <Tooltip title={`${op.nombre}${op.clasificacion ? ` (${op.clasificacion})` : ""}`}>
@@ -305,7 +361,33 @@ export default function ProgramacionDashboardPage() {
           const cell = r.plan[key];
           return renderCelda(cell?.estado ?? null, cell?.externo ?? null);
         },
-      }));
+      });
+
+      // Subgrupos por clasificación
+      const subgrupos: ColumnsType<OTRow> = [];
+      if (opsSTD.length > 0) {
+        subgrupos.push({
+          key: `comp-${comp.codigo}-std`,
+          title: (
+            <div style={{ fontSize: 10, fontWeight: 600, color: "#389E0D", letterSpacing: 0.3 }}>
+              Estándar
+            </div>
+          ),
+          children: opsSTD.map(buildOpCol),
+        } as ColumnGroupType<OTRow>);
+      }
+      if (opsNSTD.length > 0) {
+        subgrupos.push({
+          key: `comp-${comp.codigo}-nstd`,
+          title: (
+            <div style={{ fontSize: 10, fontWeight: 600, color: "#D46B08", letterSpacing: 0.3 }}>
+              No estándar
+            </div>
+          ),
+          children: opsNSTD.map(buildOpCol),
+        } as ColumnGroupType<OTRow>);
+      }
+
       const groupCol: ColumnGroupType<OTRow> = {
         key: `comp-${comp.codigo}`,
         title: (
@@ -313,7 +395,7 @@ export default function ProgramacionDashboardPage() {
             {comp.nombre}
           </div>
         ),
-        children: childrenCols,
+        children: subgrupos.length > 0 ? subgrupos : [],
       };
       cols.push(groupCol);
     }
@@ -362,13 +444,19 @@ export default function ProgramacionDashboardPage() {
             setOcultas={setOcultas}
             obligatorias={["ot"]}
           />
+          <Button
+            icon={<SettingOutlined />}
+            onClick={() => setVistaConfigOpen(true)}
+          >
+            Configurar vista{opsOcultas.length > 0 ? ` (${opsOcultas.length} ocultas)` : ""}
+          </Button>
           <Tooltip
             title={
               <div style={{ fontSize: 11 }}>
                 <div style={{ fontWeight: 600, marginBottom: 4 }}>Leyenda de estados</div>
                 {estados.map((e) => (
                   <div key={e.codigo} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-                    <span style={{ display: "inline-block", width: 16, height: 12, borderRadius: 2, background: e.color ?? DEFAULT_ESTADO_COLOR[e.codigo.toLowerCase()] ?? "#d9d9d9" }} />
+                    <span style={{ display: "inline-block", width: 16, height: 12, borderRadius: 2, background: colorDeEstado(e.codigo) }} />
                     <span><b>{abreviarEstado(e.codigo)}</b> — {e.nombre}</span>
                   </div>
                 ))}
@@ -435,6 +523,109 @@ export default function ProgramacionDashboardPage() {
           </div>
         )}
       </Drawer>
+
+      {/* Drawer: configuración de vista — elegir qué componentes / clasificaciones / operaciones mostrar */}
+      <ConfigurarVistaDrawer
+        open={vistaConfigOpen}
+        onClose={() => setVistaConfigOpen(false)}
+        componentes={componentes}
+        operaciones={operaciones}
+        opsOcultas={opsOcultas}
+        setOpsOcultas={setOpsOcultas}
+      />
     </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Drawer para configurar qué columnas operación se ven en el dashboard.
+// Estructura del árbol: Componente → Estándar/No estándar → Operación.
+// Internamente trackea operaciones OCULTAS (más simple para "todas por default visibles").
+// ───────────────────────────────────────────────────────────────────────────
+function ConfigurarVistaDrawer({
+  open, onClose, componentes, operaciones, opsOcultas, setOpsOcultas,
+}: {
+  open: boolean;
+  onClose: () => void;
+  componentes: ComponenteCat[];
+  operaciones: OperacionCat[];
+  opsOcultas: string[];
+  setOpsOcultas: (next: string[]) => void;
+}) {
+  // Build tree
+  const treeData = useMemo(() => {
+    return componentes
+      .map((c) => {
+        const opsDeComp = operaciones.filter((o) => o.componente_codigo === c.codigo);
+        if (opsDeComp.length === 0) return null;
+        const opsSTD = opsDeComp.filter((o) => (o.clasificacion ?? "STD").toUpperCase() === "STD");
+        const opsNSTD = opsDeComp.filter((o) => (o.clasificacion ?? "").toUpperCase() === "NO_STD");
+        const children: { title: string; key: string; children?: { title: string; key: string }[] }[] = [];
+        if (opsSTD.length > 0) {
+          children.push({
+            title: `Estándar (${opsSTD.length})`,
+            key: `cls-${c.codigo}-STD`,
+            children: opsSTD.map((o) => ({ title: o.nombre, key: `op-${o.codigo}` })),
+          });
+        }
+        if (opsNSTD.length > 0) {
+          children.push({
+            title: `No estándar (${opsNSTD.length})`,
+            key: `cls-${c.codigo}-NO_STD`,
+            children: opsNSTD.map((o) => ({ title: o.nombre, key: `op-${o.codigo}` })),
+          });
+        }
+        return { title: c.nombre, key: `comp-${c.codigo}`, children };
+      })
+      .filter((n): n is NonNullable<typeof n> => n !== null);
+  }, [componentes, operaciones]);
+
+  // Keys visibles = todos los leaves NO en opsOcultas
+  const allOpKeys = useMemo(() => operaciones.map((o) => `op-${o.codigo}`), [operaciones]);
+  const checkedKeys = useMemo(() => {
+    const ocultas = new Set(opsOcultas.map((c) => `op-${c}`));
+    return allOpKeys.filter((k) => !ocultas.has(k));
+  }, [allOpKeys, opsOcultas]);
+
+  function onCheck(checked: React.Key[] | { checked: React.Key[]; halfChecked: React.Key[] }) {
+    const keys = Array.isArray(checked) ? checked : checked.checked;
+    // Filtramos solo las hojas (op-*)
+    const visibleOps = new Set(
+      keys.filter((k) => String(k).startsWith("op-")).map((k) => String(k).substring(3)),
+    );
+    const nuevasOcultas = operaciones.map((o) => o.codigo).filter((cod) => !visibleOps.has(cod));
+    setOpsOcultas(nuevasOcultas);
+  }
+
+  function mostrarTodas() { setOpsOcultas([]); }
+  function ocultarTodas() { setOpsOcultas(operaciones.map((o) => o.codigo)); }
+
+  return (
+    <Drawer
+      title="Configurar vista del dashboard"
+      open={open}
+      onClose={onClose}
+      width={460}
+      placement="right"
+      extra={
+        <Space>
+          <Button size="small" onClick={mostrarTodas}>Mostrar todas</Button>
+          <Button size="small" onClick={ocultarTodas} danger>Ocultar todas</Button>
+        </Space>
+      }
+    >
+      <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 12 }}>
+        Elegí qué componentes y operaciones querés ver en la matriz. Tu selección queda guardada
+        para próximas sesiones (por navegador).
+      </Text>
+      <Tree
+        checkable
+        treeData={treeData}
+        checkedKeys={checkedKeys}
+        onCheck={onCheck}
+        defaultExpandAll
+        selectable={false}
+      />
+    </Drawer>
   );
 }

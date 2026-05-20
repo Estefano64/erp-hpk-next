@@ -1105,7 +1105,12 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
                   // Para SER usamos AutoComplete con sugerencias del catálogo de servicios
                   // (lo que escriben se guarda al guardar; reutilizable después).
                   if (r.tipo_codigo === "SER") {
-                    const opciones = servicios.map((s) => ({ value: s.nombre, label: `${s.nombre}${s.descripcion ? ` — ${s.descripcion}` : ""}` }));
+                    // Usamos `descripcion` del catálogo (es el "nombre visible" del servicio).
+                    // Fallback a `nombre` por compatibilidad con entries viejos.
+                    const opciones = servicios.map((s) => {
+                      const valor = s.descripcion?.trim() || s.nombre;
+                      return { value: valor, label: valor };
+                    });
                     return (
                       <AutoComplete
                         size="small"

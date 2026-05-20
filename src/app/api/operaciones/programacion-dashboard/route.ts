@@ -10,7 +10,7 @@ export async function GET() {
       prisma.componente.findMany({
         where: { activo: true },
         orderBy: { codigo: "asc" },
-        select: { codigo: true, nombre: true },
+        select: { componente_id: true, codigo: true, nombre: true },
       }),
       prisma.operacionReparacion.findMany({
         where: { activo: true },

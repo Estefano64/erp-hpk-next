@@ -80,6 +80,12 @@ export async function POST(req: NextRequest, { params }: Params) {
     const built = buildPayload(ctx.cfg!.fields, body);
     if (!built.ok) return NextResponse.json({ error: built.error }, { status: 400 });
 
+    // servicio_reparacion: la BD exige `nombre` NOT NULL, pero la UI solo expone
+    // `descripcion`. Mirroreamos para que ambos campos guarden el mismo valor.
+    if (tabla === "servicioReparacion" && built.data.descripcion) {
+      built.data.nombre = built.data.descripcion;
+    }
+
     const created = await ctx.model.create({ data: built.data });
     return NextResponse.json({ data: created }, { status: 201 });
   } catch (error) {
@@ -110,6 +116,11 @@ export async function PUT(req: NextRequest, { params }: Params) {
     const body = await req.json();
     const built = buildPayload(ctx.cfg!.fields, body);
     if (!built.ok) return NextResponse.json({ error: built.error }, { status: 400 });
+
+    // servicio_reparacion: mirroreamos descripcion → nombre.
+    if (tabla === "servicioReparacion" && built.data.descripcion) {
+      built.data.nombre = built.data.descripcion;
+    }
 
     const updated = await ctx.model.update({
       where: { [ctx.cfg!.pkField]: id },
