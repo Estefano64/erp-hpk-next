@@ -18,6 +18,7 @@ import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
 import { brand } from "@/lib/theme";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 
 dayjs.extend(isoWeek);
 import { useCachedFetch } from "@/lib/useCachedFetch";
@@ -267,6 +268,7 @@ export default function RequerimientosPage() {
   const isAdmin = rol === "admin";
 
   const [messageApi, contextHolder] = message.useMessage();
+  const { screens } = useResponsive();
   const [modalApi, modalCtx] = Modal.useModal();
 
   // Editar modal (admin)
@@ -1115,7 +1117,7 @@ export default function RequerimientosPage() {
           <Button
             icon={<FileExcelOutlined />}
             onClick={exportarExcel}
-            style={{ background: "#1d6f42", color: "#fff", borderColor: "#1d6f42" }}
+            style={{ background: "#1d6f42", color: brand.white, borderColor: "#1d6f42" }}
           >
             Descargar Excel
           </Button>
@@ -1459,7 +1461,7 @@ export default function RequerimientosPage() {
         onOk={onSaveEdit}
         confirmLoading={editSaving}
         okText="Guardar" cancelText="Cancelar"
-        width={620}
+        width={modalWidth(screens, 620)}
         destroyOnHidden
       >
         <Form form={editForm} layout="vertical">

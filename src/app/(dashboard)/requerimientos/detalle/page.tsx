@@ -53,6 +53,7 @@ import {
 } from "@/lib/tables";
 import { Popover, InputNumber, Divider, Checkbox } from "antd";
 import { brand } from "@/lib/theme";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 import dayjs, { Dayjs } from "dayjs";
 
 import { formatDateOnly } from "@/lib/dates";
@@ -207,6 +208,7 @@ function RequerimientosDetalleInner() {
   const router = useRouter();
   const params = useSearchParams();
   const { message } = App.useApp();
+  const { screens } = useResponsive();
 
   const [allData, setAllData] = useState<Requerimiento[]>([]);
   const [loading, setLoading] = useState(false);
@@ -1251,7 +1253,7 @@ function RequerimientosDetalleInner() {
         }
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
-        width={900}
+        width={modalWidth(screens, 900)}
         footer={null}
       >
         <div style={{ marginBottom: 16 }}>
@@ -1355,7 +1357,7 @@ function RequerimientosDetalleInner() {
         }
         open={!!modalDividir}
         onCancel={cerrarModalDividir}
-        width={600}
+        width={modalWidth(screens, 600)}
         footer={null}
       >
         {modalDividir && (
