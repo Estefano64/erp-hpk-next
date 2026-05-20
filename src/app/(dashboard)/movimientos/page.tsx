@@ -60,6 +60,7 @@ import {
   useColumnasRedimensionables,
 } from "@/lib/tables";
 import { brand } from "@/lib/theme";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 import dayjs, { Dayjs } from "dayjs";
 
 import { formatDateOnly } from "@/lib/dates";
@@ -359,7 +360,7 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
               icon={<FileExcelOutlined />}
               onClick={exportarMovExcel}
               block
-              style={{ background: "#1d6f42", color: "#fff", borderColor: "#1d6f42" }}
+              style={{ background: "#1d6f42", color: brand.white, borderColor: "#1d6f42" }}
             >
               Descargar Excel
             </Button>
@@ -418,6 +419,7 @@ interface ItemFila {
 
 function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
   const { message } = App.useApp();
+  const { screens } = useResponsive();
   const [pos, setPos] = useState<POPendiente[]>([]);
   const [loading, setLoading] = useState(false);
   const [poSeleccionada, setPoSeleccionada] = useState<POPendiente | null>(null);
@@ -793,7 +795,7 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
         }
         open={!!poSeleccionada}
         onCancel={() => setPoSeleccionada(null)}
-        width={1000}
+        width={modalWidth(screens, 1000)}
         okText="Confirmar Recepción"
         onOk={confirmarIngreso}
         confirmLoading={submitting}
@@ -1232,7 +1234,7 @@ function TabSalida({ onRefresh }: { onRefresh: () => void }) {
               <Tooltip title="Aumenta el stock (ej: devolución de material)">
                 <Button
                   icon={<ArrowDownOutlined />}
-                  style={{ background: "#52c41a", color: "#fff", borderColor: "#52c41a" }}
+                  style={{ background: "#52c41a", color: brand.white, borderColor: "#52c41a" }}
                   loading={submitting}
                   onClick={() => registrar("ENTRADA")}
                 >
