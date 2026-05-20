@@ -573,7 +573,7 @@ export default function PlanificacionPage() {
         ? (
           <Tag style={{
             background: brand.navy,
-            color: "#fff",
+            color: brand.white,
             border: "none",
             maxWidth: "100%",
             overflow: "hidden",
@@ -642,7 +642,7 @@ export default function PlanificacionPage() {
         <Tooltip title={v}>
           <Tag style={{
             background: brand.cyan,
-            color: "#fff",
+            color: brand.white,
             border: "none",
             maxWidth: "100%",
             overflow: "hidden",

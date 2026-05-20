@@ -14,6 +14,7 @@ import isoWeek from "dayjs/plugin/isoWeek";
 import "dayjs/locale/es";
 import { useRouter } from "next/navigation";
 import { brand } from "@/lib/theme";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 import { calcularFinEstimado } from "@/lib/planification-hours";
 import { useTabSync } from "@/lib/useTabSync";
 
@@ -157,6 +158,7 @@ export default function ProgramacionSemanalPage() {
     multiOffsets: { id: number; offsetMin: number; recurso: string | null }[];
   } | null>(null);
   const [messageApi, contextHolder] = message.useMessage();
+  const { screens } = useResponsive();
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const stripsRef = useRef<Map<string, HTMLElement>>(new Map());
 
@@ -691,7 +693,7 @@ export default function ProgramacionSemanalPage() {
             <div>{r.operacion_codigo} — {r.descripcion}</div>
             <div>{ini.format("DD/MM HH:mm")} → {fin.format("DD/MM HH:mm")}</div>
             <div>Estado: {estadoNombre(r.estado)}</div>
-            {hasConflict && <div style={{ color: "#ff4d4f" }}>⚠ Conflicto</div>}
+            {hasConflict && <div style={{ color: brand.error }}>⚠ Conflicto</div>}
           </div>
         }
       >
@@ -798,13 +800,13 @@ export default function ProgramacionSemanalPage() {
         style={{
           marginBottom: 12,
           background: `linear-gradient(135deg, ${brand.navy}, ${brand.cyan})`,
-          color: "#fff",
+          color: brand.white,
           border: "none",
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
           <div>
-            <Typography.Title level={3} style={{ color: "#fff", margin: 0 }}>
+            <Typography.Title level={3} style={{ color: brand.white, margin: 0 }}>
               <CalendarOutlined style={{ marginRight: 8 }} />
               Programación Semanal
             </Typography.Title>
@@ -907,7 +909,7 @@ export default function ProgramacionSemanalPage() {
             {selectedIds.size > 0 && (
               <Tag color={brand.cyan} style={{ fontWeight: 600 }}>
                 {selectedIds.size} seleccionada{selectedIds.size > 1 ? "s" : ""}
-                <a onClick={clearSelection} style={{ marginLeft: 8, color: "#fff", textDecoration: "underline" }}>limpiar</a>
+                <a onClick={clearSelection} style={{ marginLeft: 8, color: brand.white, textDecoration: "underline" }}>limpiar</a>
               </Tag>
             )}
             <span style={{ fontSize: 11, color: brand.textSecondary }}>
@@ -973,7 +975,7 @@ export default function ProgramacionSemanalPage() {
                       <span>🤝 Trabajo derivado a tercero (servicio externo)</span>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <WarningFilled style={{ color: "#ff4d4f", fontSize: 13 }} />
+                      <WarningFilled style={{ color: brand.error, fontSize: 13 }} />
                       <span>Conflicto de horarios entre tareas</span>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1321,6 +1323,7 @@ export default function ProgramacionSemanalPage() {
         }}
         okText="Imprimir"
         cancelText="Cancelar"
+        width={modalWidth(screens, 520)}
       >
         <div style={{ marginBottom: 12 }}>¿Qué querés imprimir?</div>
         <Segmented
@@ -1358,7 +1361,7 @@ export default function ProgramacionSemanalPage() {
             Editar en Planificación
           </Button>,
         ]}
-        width={680}
+        width={modalWidth(screens, 680)}
       >
         {selectedTask && (
           <Descriptions column={1} size="small">

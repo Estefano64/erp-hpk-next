@@ -11,7 +11,7 @@ export const brand = {
   border: "#EBEBEB",        // Bordes y divisores
   success: "#28A745",
   warning: "#FFC107",
-  error: "#DC3545",
+  error: "#cf1322",
 } as const;
 
 // ── Spacing (múltiplos de 4, alineado con antd) ──────────
