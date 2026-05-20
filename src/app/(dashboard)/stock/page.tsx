@@ -488,7 +488,7 @@ export default function StockPage() {
           <Button
             icon={<FileExcelOutlined />}
             onClick={exportarStockExcel}
-            style={{ background: "#1d6f42", color: "#fff", borderColor: "#1d6f42" }}
+            style={{ background: "#1d6f42", color: brand.white, borderColor: "#1d6f42" }}
           >
             Descargar Excel
           </Button>
@@ -504,7 +504,7 @@ export default function StockPage() {
         </Col>
         <Col xs={12} md={6} lg={3}>
           <Card styles={{ body: { padding: 12 } }} hoverable onClick={() => setFiltro("sin_stock")}>
-            <Statistic title="Sin stock" value={kpisVista.sinStock} prefix={<WarningOutlined style={{ color: "#ff4d4f" }} />} styles={{ content: { color: "#ff4d4f", fontSize: 22 } }} />
+            <Statistic title="Sin stock" value={kpisVista.sinStock} prefix={<WarningOutlined style={{ color: brand.error }} />} styles={{ content: { color: brand.error, fontSize: 22 } }} />
           </Card>
         </Col>
         <Col xs={12} md={6} lg={3}>

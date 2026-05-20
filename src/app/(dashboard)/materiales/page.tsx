@@ -36,6 +36,7 @@ import {
 import dayjs from "dayjs";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 import {
   numeracionColumn,
   paginacionEstandar,
@@ -136,6 +137,7 @@ export default function MaterialesPage() {
   const [importOpen, setImportOpen] = useState(false);
 
   const [messageApi, contextHolder] = message.useMessage();
+  const { screens } = useResponsive();
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -688,11 +690,11 @@ export default function MaterialesPage() {
         onCancel={() => setModalOpen(false)}
         onOk={handleSave}
         confirmLoading={saving}
-        width={800}
+        width={modalWidth(screens, 800)}
         destroyOnHidden
       >
         <div style={{ fontSize: 12, color: brand.textSecondary, marginTop: 12 }}>
-          Los campos con <span style={{ color: "#ff4d4f" }}>*</span> son obligatorios.
+          Los campos con <span style={{ color: brand.error }}>*</span> son obligatorios.
         </div>
         <Form
           form={form} layout="vertical" style={{ marginTop: 8 }}

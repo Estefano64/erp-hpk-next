@@ -13,6 +13,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { brand } from "@/lib/theme";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 import {
   numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE,
   useColumnasOcultas, ColumnasToggleButton, visibleColumns,
@@ -44,6 +45,7 @@ interface Movimiento {
 
 export default function NoCatalogadosPage() {
   const { message } = App.useApp();
+  const { screens } = useResponsive();
   const [rows, setRows] = useState<MatRow[]>([]);
   const [kpis, setKpis] = useState<Kpis>({ total: 0, sinStock: 0, totalEntradas: 0, totalSalidas: 0, totalAjustes: 0, balance: 0 });
   const [loading, setLoading] = useState(false);
@@ -301,6 +303,7 @@ export default function NoCatalogadosPage() {
         onOk={crearMaterial}
         confirmLoading={savingNuevo}
         okText="Crear"
+        width={modalWidth(screens, 520)}
       >
         <Form form={formNuevo} layout="vertical">
           <Form.Item name="codigo" label="Código" rules={[{ required: true, max: 50 }]}>
@@ -339,6 +342,7 @@ export default function NoCatalogadosPage() {
         onOk={registrarMov}
         confirmLoading={savingMov}
         okText="Registrar"
+        width={modalWidth(screens, 520)}
       >
         <Form form={formMov} layout="vertical">
           <Form.Item name="tipo_movimiento" label="Tipo" rules={[{ required: true }]} initialValue="ENTRADA">
@@ -368,7 +372,7 @@ export default function NoCatalogadosPage() {
         onOk={catalogar}
         confirmLoading={savingCat}
         okText="Catalogar"
-        width={620}
+        width={modalWidth(screens, 620)}
       >
         <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 12 }}>
           Se creará un material del catálogo con un código nuevo. El stock actual ({catOpen?.stock_actual ?? 0}) se transfiere como ENTRADA y este registro no catalogado se desactiva.
