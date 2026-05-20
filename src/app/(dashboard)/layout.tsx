@@ -38,7 +38,8 @@ function buildMenuItems(_rol: string | null): MenuProps["items"] {
       icon: <ToolOutlined />,
       label: "Operaciones",
       children: [
-        { key: "/ordenes-trabajo", label: "Órdenes de Trabajo" },
+        { key: "/ordenes-trabajo", label: "OTs Externas" },
+        { key: "/ordenes-trabajo-internas", label: "OTs Internas" },
         { key: "/evaluaciones", label: "Hojas de Evaluación" },
         { key: "/codigos-reparacion", label: "Cod. Reparables" },
         { key: "/contratos", label: "Contratos" },

@@ -68,6 +68,7 @@ export default function NuevaOTPage() {
   const [prioridades, setPrioridades] = useState<CatalogOption[]>([]);
   const [tipoGarantias, setTipoGarantias] = useState<CatalogOption[]>([]);
   const [tiposCodRep, setTiposCodRep] = useState<CatalogOption[]>([]);
+  const [tiposOT, setTiposOT] = useState<CatalogOption[]>([]);
   const [fabricantes, setFabricantes] = useState<FabricanteOption[]>([]);
   const [flotas, setFlotas] = useState<CatalogOption[]>([]);
   const [posiciones, setPosiciones] = useState<CatalogOption[]>([]);
@@ -87,7 +88,7 @@ export default function NuevaOTPage() {
 
   useEffect(() => {
     async function loadCatalogs() {
-      const [cliRes, crRes, tipoRepRes, atencionRes, prioRes, tipoGarRes, tipoCRRes, fabRes, flotaRes, posRes] = await Promise.all([
+      const [cliRes, crRes, tipoRepRes, atencionRes, prioRes, tipoGarRes, tipoCRRes, fabRes, flotaRes, posRes, tipoOTRes] = await Promise.all([
         fetch("/api/clientes?limit=100"),
         fetch("/api/codigos-reparacion?limit=500"),
         fetch("/api/catalogos?tabla=tipoReparacion"),
@@ -98,6 +99,7 @@ export default function NuevaOTPage() {
         fetch("/api/catalogos?tabla=fabricante"),
         fetch("/api/catalogos?tabla=flotaEquipo"),
         fetch("/api/catalogos?tabla=posicion"),
+        fetch("/api/catalogos?tabla=tipoOT"),
       ]);
       if (cliRes.ok) setClientes((await cliRes.json()).data ?? []);
       if (crRes.ok) setCodReps((await crRes.json()).data ?? []);
@@ -109,6 +111,7 @@ export default function NuevaOTPage() {
       if (fabRes.ok) setFabricantes((await fabRes.json()).data ?? []);
       if (flotaRes.ok) setFlotas((await flotaRes.json()).data ?? []);
       if (posRes.ok) setPosiciones((await posRes.json()).data ?? []);
+      if (tipoOTRes.ok) setTiposOT((await tipoOTRes.json()).data ?? []);
     }
     loadCatalogs();
   }, []);
@@ -211,6 +214,7 @@ export default function NuevaOTPage() {
         id_cod_rep: estrategia ? values.id_cod_rep : null,
         // Si NO hay estrategia, mandar los campos manuales. Si sí hay, el backend deriva del cod_rep.
         tipo: estrategia ? null : (values.tipo || null),
+        tipo_codigo: values.tipo_codigo,
         np: estrategia ? null : (values.np || null),
         descripcion: estrategia ? null : (values.descripcion || null),
         id_fabricante: estrategia ? null : (values.id_fabricante || null),
@@ -269,6 +273,19 @@ export default function NuevaOTPage() {
         {/* ── SECCIÓN: Cliente y Código Reparable ── */}
         <Card title="Identificación" style={{ marginBottom: 16 }} styles={{ body: { paddingBottom: 0 } }}>
           <Row gutter={16}>
+            <Col xs={24} md={6}>
+              <Form.Item
+                name="tipo_codigo"
+                label="Tipo OT"
+                rules={[{ required: true, message: "Requerido" }]}
+                tooltip="Reparación: cilindro a reparar. Bien: venta de repuesto. Servicio: servicio facturado."
+              >
+                <Select
+                  placeholder="Seleccionar tipo"
+                  options={tiposOT.map((t) => ({ value: t.codigo, label: t.nombre }))}
+                />
+              </Form.Item>
+            </Col>
             <Col xs={24} md={8}>
               <Form.Item name="id_cliente" label="Cliente" rules={[{ required: true, message: "Requerido" }]}>
                 <Select

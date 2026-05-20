@@ -58,6 +58,7 @@ export async function GET(req: NextRequest) {
           atencion_reparacion: true,
           tipo_reparacion: true,
           tipo_garantia: true,
+          tipo_ot: true,
           prioridad_atencion: true,
           base_metalica: true,
           ot_status: true,
@@ -82,6 +83,11 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+
+    // TipoOT (REP/BIE/SER) es requerido — desbloqueado en Fase D1.
+    if (!body.tipo_codigo || typeof body.tipo_codigo !== "string") {
+      return NextResponse.json({ error: "tipo_codigo es requerido (REP / BIE / SER)" }, { status: 400 });
+    }
 
     const ot = await generarNumeroOT();
 
@@ -164,6 +170,7 @@ export async function POST(req: NextRequest) {
         estrategia: body.estrategia ?? false,
         id_cod_rep: body.id_cod_rep || null,
         tipo,
+        tipo_codigo: body.tipo_codigo,
         np,
         descripcion,
         id_fabricante: idFabricante,

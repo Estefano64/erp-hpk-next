@@ -48,6 +48,8 @@ interface OTRecord {
   ot: string;
   estrategia: boolean;
   tipo: string | null;
+  tipo_codigo: string | null;
+  tipo_ot: { codigo: string; nombre: string } | null;
   np: string | null;
   cod_rep_flota: string | null;
   cod_rep_posicion: string | null;
@@ -311,6 +313,12 @@ export default function OrdenesTrabajoPage() {
       render: (_: unknown, r: OTRecord) => r.taller_status?.nombre ?? "-",
     },
     // ── Columnas opcionales (ocultas por default) ──
+    {
+      key: "tipo_ot", title: "Tipo OT", width: 100,
+      filters: [...new Set(data.map((r) => r.tipo_ot?.nombre).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
+      onFilter: (value, r) => r.tipo_ot?.nombre === value,
+      render: (_: unknown, r: OTRecord) => r.tipo_ot?.nombre ?? r.tipo_codigo ?? "-",
+    },
     {
       key: "tipo", title: "Tipo (Cod. Rep)", dataIndex: "tipo", width: 120,
       ...filtroPorColumna(data, "tipo"),
