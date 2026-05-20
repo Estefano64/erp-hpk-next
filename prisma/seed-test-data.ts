@@ -301,7 +301,315 @@ async function main() {
   }
   console.log(`   ✓ ${evalsCreadas} evaluaciones técnicas creadas`);
 
+  // ─────────────────────────────────────────────────────────────────────
+  // 6. ESCENARIOS PARA FEATURES NUEVAS (T1-T5)
+  // ─────────────────────────────────────────────────────────────────────
+  console.log("\n🎯 Generando escenarios para flujos nuevos (T1-T5)...");
+
+  // ── 6a) T3: Requerimientos APROBADO SIN PRECIO ──────────────
+  //         Para probar que el botón "Generar OC" se bloquea hasta asignar
+  //         precio inline en la columna "Precio unit.".
+  console.log("   • T3: requerimientos aprobados sin precio…");
+  let sinPrecioCount = 0;
+  const otsParaReq = otsCreadas.slice(0, 5);
+  for (const ot of otsParaReq) {
+    const mat = pick(materiales);
+    const cant = randInt(1, 5);
+    const yaExiste = await prisma.oTRepuesto.findFirst({
+      where: { ot_id: ot.id, material_id: mat.material_id, precio_unitario: null },
+    });
+    if (yaExiste) continue;
+    const nextItem = (await prisma.oTRepuesto.aggregate({
+      where: { ot_id: ot.id },
+      _max: { item_req: true },
+    }))._max.item_req ?? 0;
+    await prisma.oTRepuesto.create({
+      data: {
+        ot_id: ot.id,
+        material_id: mat.material_id,
+        material_codigo: mat.codigo,
+        tipo_codigo: "MAC",
+        cantidad: cant,
+        descripcion: mat.descripcion,
+        precio_unitario: null,
+        moneda: mat.moneda_codigo ?? "USD",
+        unidad_medida: mat.unidad_medida_codigo,
+        fabricante_codigo: mat.fabricante_codigo,
+        fecha_solicitud: daysAgo(randInt(1, 30)),
+        item_req: nextItem + 1,
+        nro_req: `R25-${String(ot.id).padStart(4, "0")}`,
+        status_requerimiento_codigo: "APROBADO",
+        usuario_solicita: "admin",
+        po_id: null,
+      },
+    });
+    sinPrecioCount++;
+  }
+  console.log(`     ✓ ${sinPrecioCount} requerimientos APROBADO sin precio`);
+
+  // ── 6b) T2: OTs en estado "Terminado" listas para despacho a mina ──
+  //         Crea 5 OTs con taller_status=Terminado y items con
+  //         status_oc=ENTREGADO para que el conteo items_count > 0.
+  console.log("   • T2: OTs terminadas para despacho a mina…");
+  const otsTerminadas: number[] = [];
+  for (let i = 0; i < 5; i++) {
+    const otNum = `OT-25-T${String(i + 1).padStart(3, "0")}`;
+    let ot = await prisma.ordenTrabajo.findFirst({ where: { ot: otNum } });
+    if (!ot) {
+      const cliente = pick(clientes);
+      const codRep = pick(codRepsAll);
+      const fab = pick(fabricantes);
+      ot = await prisma.ordenTrabajo.create({
+        data: {
+          ot: otNum,
+          id_cliente: cliente.cliente_id,
+          id_cod_rep: codRep.cod_rep_id,
+          id_fabricante: fab.fabricante_id,
+          equipo_codigo: equipos.length ? pick(equipos).codigo : null,
+          cod_rep_flota: codRep.flota_codigo,
+          cod_rep_posicion: codRep.posicion_codigo,
+          descripcion: `Reparación lista para despacho — ${codRep.descripcion.slice(0, 60)}`,
+          tipo: "Reparación general",
+          np: codRep.np,
+          ns: `NS-${randInt(50000, 99999)}`,
+          plaqueteo: `PLQ-${randInt(1000, 9999)}`,
+          wo_cliente: `WO-${randInt(2000, 2999)}`,
+          po_cliente: `PO-${randInt(3000, 3999)}`,
+          fecha_recepcion: daysAgo(randInt(30, 90)),
+          ot_status_codigo: "Abierta",
+          taller_status_codigo: "Terminado",
+          recursos_status_codigo: "Recursos completos",
+          usuario_crea: "admin",
+          fecha_creacion: daysAgo(randInt(30, 90)),
+          estrategia: false,
+        },
+      });
+    } else {
+      // Forzar estado Terminado si ya existía
+      await prisma.ordenTrabajo.update({
+        where: { id: ot.id },
+        data: { taller_status_codigo: "Terminado" },
+      });
+    }
+    // Asegurar al menos 2 items ENTREGADO en esta OT
+    const itemsEnt = await prisma.oTRepuesto.count({
+      where: { ot_id: ot.id, status_oc_codigo: "ENTREGADO" },
+    });
+    if (itemsEnt < 2) {
+      const matsSel = pickN(materiales, 2);
+      const nextItem = (await prisma.oTRepuesto.aggregate({
+        where: { ot_id: ot.id },
+        _max: { item_req: true },
+      }))._max.item_req ?? 0;
+      for (let j = 0; j < matsSel.length; j++) {
+        const mat = matsSel[j];
+        const cant = randInt(1, 4);
+        const precio = mat.precio ? Number(mat.precio) : randDecimal(80, 800);
+        await prisma.oTRepuesto.create({
+          data: {
+            ot_id: ot.id,
+            material_id: mat.material_id,
+            material_codigo: mat.codigo,
+            tipo_codigo: "MAC",
+            cantidad: cant,
+            cantidad_recibida: cant,
+            descripcion: mat.descripcion,
+            precio_unitario: precio,
+            moneda: mat.moneda_codigo ?? "USD",
+            unidad_medida: mat.unidad_medida_codigo,
+            fabricante_codigo: mat.fabricante_codigo,
+            fecha_solicitud: daysAgo(randInt(40, 60)),
+            fecha_entrega_real: daysAgo(randInt(1, 10)),
+            item_req: nextItem + j + 1,
+            nro_req: `R25-${String(ot.id).padStart(4, "0")}`,
+            status_requerimiento_codigo: "APROBADO",
+            status_oc_codigo: "ENTREGADO",
+            usuario_solicita: "admin",
+          },
+        });
+      }
+    }
+    otsTerminadas.push(ot.id);
+  }
+  console.log(`     ✓ ${otsTerminadas.length} OTs en "Terminado" listas para despacho`);
+
+  // ── 6c) T4: OTs en estado "Entregado" para facturación ──
+  //         3 OTs CON guía emitida y adjunto despacho (listas a facturar)
+  //         3 OTs SIN adjunto despacho (deben aparecer en lista con "Faltan")
+  console.log("   • T4: OTs entregadas para facturación…");
+  const otsConAdjuntos: number[] = [];
+  const otsSinAdjuntos: number[] = [];
+  for (let i = 0; i < 6; i++) {
+    const otNum = `OT-25-E${String(i + 1).padStart(3, "0")}`;
+    let ot = await prisma.ordenTrabajo.findFirst({ where: { ot: otNum } });
+    const conAdjunto = i < 3;
+    if (!ot) {
+      const cliente = pick(clientes);
+      const codRep = pick(codRepsAll);
+      const fab = pick(fabricantes);
+      ot = await prisma.ordenTrabajo.create({
+        data: {
+          ot: otNum,
+          id_cliente: cliente.cliente_id,
+          id_cod_rep: codRep.cod_rep_id,
+          id_fabricante: fab.fabricante_id,
+          equipo_codigo: equipos.length ? pick(equipos).codigo : null,
+          cod_rep_flota: codRep.flota_codigo,
+          cod_rep_posicion: codRep.posicion_codigo,
+          descripcion: `OT entregada, pendiente facturación — ${codRep.descripcion.slice(0, 60)}`,
+          tipo: "Reparación general",
+          np: codRep.np,
+          ns: `NS-${randInt(50000, 99999)}`,
+          plaqueteo: `PLQ-${randInt(1000, 9999)}`,
+          wo_cliente: `WO-${randInt(2000, 2999)}`,
+          po_cliente: `PO-${randInt(3000, 3999)}`,
+          fecha_recepcion: daysAgo(randInt(60, 120)),
+          fecha_entrega: daysAgo(randInt(1, 15)),
+          guia_entrega_salida: `GR-2026-${String(i + 1).padStart(4, "0")}`,
+          nro_informe_entrega: `INF-${randInt(1000, 9999)}`,
+          monto_cotizacion: randDecimal(5000, 25000),
+          ot_status_codigo: "Abierta",
+          taller_status_codigo: "Entregado",
+          recursos_status_codigo: "Recursos completos",
+          usuario_crea: "admin",
+          fecha_creacion: daysAgo(randInt(60, 120)),
+          estrategia: false,
+        },
+      });
+    } else {
+      await prisma.ordenTrabajo.update({
+        where: { id: ot.id },
+        data: {
+          taller_status_codigo: "Entregado",
+          guia_entrega_salida: ot.guia_entrega_salida ?? `GR-2026-${String(i + 1).padStart(4, "0")}`,
+          fecha_entrega: ot.fecha_entrega ?? daysAgo(randInt(1, 15)),
+        },
+      });
+    }
+    // Adjunto etapa "despacho" para los 3 primeros
+    if (conAdjunto) {
+      const yaTiene = await prisma.otAdjunto.findFirst({
+        where: { orden_trabajo_id: ot.id, etapa_codigo: "despacho" },
+      });
+      if (!yaTiene) {
+        await prisma.otAdjunto.create({
+          data: {
+            orden_trabajo_id: ot.id,
+            etapa_codigo: "despacho",
+            nombre_archivo: `guia-firmada-${otNum}.pdf`,
+            ruta: `seed/despacho/${otNum}-guia.pdf`,
+            tipo_mime: "application/pdf",
+            tamano: randInt(50000, 500000),
+          },
+        });
+      }
+      otsConAdjuntos.push(ot.id);
+    } else {
+      otsSinAdjuntos.push(ot.id);
+    }
+    // Items ENTREGADO para que tengan algo que facturar
+    const itemsEnt = await prisma.oTRepuesto.count({
+      where: { ot_id: ot.id, status_oc_codigo: "ENTREGADO" },
+    });
+    if (itemsEnt < 1) {
+      const mat = pick(materiales);
+      const precio = mat.precio ? Number(mat.precio) : randDecimal(100, 1000);
+      const cant = randInt(1, 3);
+      const nextItem = (await prisma.oTRepuesto.aggregate({
+        where: { ot_id: ot.id },
+        _max: { item_req: true },
+      }))._max.item_req ?? 0;
+      await prisma.oTRepuesto.create({
+        data: {
+          ot_id: ot.id,
+          material_id: mat.material_id,
+          material_codigo: mat.codigo,
+          tipo_codigo: "MAC",
+          cantidad: cant,
+          cantidad_recibida: cant,
+          descripcion: mat.descripcion,
+          precio_unitario: precio,
+          moneda: mat.moneda_codigo ?? "USD",
+          unidad_medida: mat.unidad_medida_codigo,
+          fabricante_codigo: mat.fabricante_codigo,
+          fecha_solicitud: daysAgo(randInt(40, 80)),
+          fecha_entrega_real: daysAgo(randInt(1, 20)),
+          item_req: nextItem + 1,
+          nro_req: `R25-${String(ot.id).padStart(4, "0")}`,
+          status_requerimiento_codigo: "APROBADO",
+          status_oc_codigo: "ENTREGADO",
+          usuario_solicita: "admin",
+        },
+      });
+    }
+  }
+  console.log(`     ✓ ${otsConAdjuntos.length} OTs Entregado con adjuntos (listas a facturar)`);
+  console.log(`     ✓ ${otsSinAdjuntos.length} OTs Entregado SIN adjuntos (validación bloqueante)`);
+
+  // ── 6d) T5: Compras con descuento y otros poblados ──
+  //         Las nuevas columnas existen pero por defecto = 0. Actualizamos
+  //         3 compras existentes para que tengan valores y poder visualizar
+  //         el efecto en el editor de plantilla OC.
+  console.log("   • T5: compras con descuento + otros para visualizar…");
+  const comprasParaDesc = await prisma.compra.findMany({
+    where: { status_oc_codigo: { in: ["PEND_OC", "PROCESO", "INCOMPLETO"] } },
+    take: 3,
+    orderBy: { id: "desc" },
+  });
+  let updatesT5 = 0;
+  for (const c of comprasParaDesc) {
+    const subtotalDec = new Prisma.Decimal(c.subtotal);
+    if (subtotalDec.lte(0)) continue;
+    const descuento = subtotalDec.mul("0.05").toDecimalPlaces(2);          // 5% descuento
+    const otros = new Prisma.Decimal(randDecimal(20, 200)).toDecimalPlaces(2); // cargo adicional
+    const base = subtotalDec.minus(descuento);
+    const impuesto = base.mul("0.18").toDecimalPlaces(2);
+    const total = base.plus(impuesto).plus(otros).toDecimalPlaces(2);
+    await prisma.compra.update({
+      where: { id: c.id },
+      data: { descuento, otros, impuesto, total },
+    });
+    updatesT5++;
+  }
+  console.log(`     ✓ ${updatesT5} compras con descuento (5%) + otros poblados`);
+
+  // ── 6e) T1: Cotizaciones manuales (override) para enriquecer histórico ──
+  //         Crea cotizaciones manuales para algunos pares material/proveedor
+  //         de modo que la matriz del histórico muestre celdas naranjas
+  //         (cotización manual) además de las celdas verdes (precio OC real).
+  console.log("   • T1: cotizaciones manuales (override) para histórico…");
+  let cotsCreadas = 0;
+  const matsParaCot = pickN(materiales, 15);
+  for (const mat of matsParaCot) {
+    const provsParaCot = pickN(proveedores, randInt(1, 3));
+    for (const prov of provsParaCot) {
+      const yaExiste = await prisma.cotizacionProveedor.findUnique({
+        where: { material_id_proveedor_id: { material_id: mat.material_id, proveedor_id: prov.id } },
+      });
+      if (yaExiste) continue;
+      await prisma.cotizacionProveedor.create({
+        data: {
+          material_id: mat.material_id,
+          proveedor_id: prov.id,
+          precio_unitario: mat.precio ? Number(mat.precio) * randDecimal(0.85, 1.15, 4) : randDecimal(50, 1500, 2),
+          moneda_codigo: mat.moneda_codigo ?? "USD",
+          observaciones: "Cotización generada por seed",
+          usuario: "admin",
+          fecha: daysAgo(randInt(0, 30)),
+        },
+      });
+      cotsCreadas++;
+    }
+  }
+  console.log(`     ✓ ${cotsCreadas} cotizaciones manuales (con fecha)`);
+
   console.log("\n✅ Seed transaccional completo");
+  console.log("\n📋 Para probar las features nuevas:");
+  console.log("   • T1 Histórico → /compras/historico (ver fecha en cada celda)");
+  console.log("   • T3 Precio obligatorio → /compras tab 'Requerimientos aprobados' (items con + asignar)");
+  console.log("   • T5 Descuentos → /compras/[id]/editar (3 OCs con descuento)");
+  console.log("   • T2 Despacho a mina → /despachos/mina (5 OTs en Terminado)");
+  console.log("   • T4 Facturación OT → /facturacion/ot (3 con adjuntos OK + 3 con faltantes)");
 }
 
 main()

@@ -43,6 +43,8 @@ interface CompraData {
   status_oc_codigo: string | null;
   estado: string;
   fecha_entrega_esperada: string | null;
+  descuento: number | string | null;
+  otros: number | string | null;
   ot_repuestos: Array<{
     id: number;
     material_id: number | null;
@@ -71,6 +73,10 @@ export default function EditarOCPage() {
   const [compra, setCompra] = useState<CompraData | null>(null);
   const [rows, setRows] = useState<ItemRow[]>([]);
   const [originalRowsHash, setOriginalRowsHash] = useState<string>("");
+  const [descuento, setDescuento] = useState<number>(0);
+  const [otros, setOtros] = useState<number>(0);
+  const [originalDescuento, setOriginalDescuento] = useState<number>(0);
+  const [originalOtros, setOriginalOtros] = useState<number>(0);
   const [messageApi, contextHolder] = message.useMessage();
 
   const fetchCompra = useCallback(async () => {
@@ -97,6 +103,12 @@ export default function EditarOCPage() {
       }));
       setRows(mapped);
       setOriginalRowsHash(JSON.stringify(mapped));
+      const desc = Number(c.descuento ?? 0);
+      const otr = Number(c.otros ?? 0);
+      setDescuento(desc);
+      setOtros(otr);
+      setOriginalDescuento(desc);
+      setOriginalOtros(otr);
     } catch (e) {
       messageApi.error(e instanceof Error ? e.message : "Error");
     } finally {
@@ -140,14 +152,22 @@ export default function EditarOCPage() {
   };
 
   const visibleRows = useMemo(() => rows.filter((r) => !r._deleted), [rows]);
-  const hayCambios = useMemo(() => JSON.stringify(visibleRows) !== originalRowsHash || rows.some((r) => r._deleted && r.id != null), [visibleRows, originalRowsHash, rows]);
+  const hayCambios = useMemo(() =>
+    JSON.stringify(visibleRows) !== originalRowsHash
+    || rows.some((r) => r._deleted && r.id != null)
+    || descuento !== originalDescuento
+    || otros !== originalOtros,
+  [visibleRows, originalRowsHash, rows, descuento, originalDescuento, otros, originalOtros]);
 
   const totales = useMemo(() => {
     const subtotal = visibleRows.reduce((s, r) => s + r.cantidad * r.precio_unitario, 0);
-    const igv = subtotal * 0.18;
-    const total = subtotal + igv;
-    return { subtotal, igv, total };
-  }, [visibleRows]);
+    // Convención HP&K: descuento aplica al subtotal, IGV se calcula sobre la base
+    // ya descontada, "otros" se suma al final.
+    const baseImponible = Math.max(0, subtotal - descuento);
+    const igv = baseImponible * 0.18;
+    const total = baseImponible + igv + otros;
+    return { subtotal, descuento, igv, otros, total };
+  }, [visibleRows, descuento, otros]);
 
   const handleGuardar = async () => {
     if (!compra) return;
@@ -168,6 +188,8 @@ export default function EditarOCPage() {
           fecha_entrega_esperada: r.fecha_entrega_esperada,
         })),
         deleteIds: rows.filter((r) => r._deleted && r.id != null).map((r) => r.id),
+        descuento,
+        otros,
       };
       const res = await fetch(`/api/compras/${compraId}/items`, {
         method: "PATCH",
@@ -332,17 +354,41 @@ export default function EditarOCPage() {
       />
 
       <Card size="small" style={{ marginBottom: 12 }} styles={{ body: { padding: 10 } }}>
-        <Row gutter={12}>
-          <Col span={6}>
+        <Row gutter={12} align="middle">
+          <Col xs={12} md={4}>
             <Statistic title="Items" value={visibleRows.length} />
           </Col>
-          <Col span={6}>
+          <Col xs={12} md={4}>
             <Statistic title="Subtotal" value={totales.subtotal} precision={2} prefix={compra.moneda} />
           </Col>
-          <Col span={6}>
+          <Col xs={12} md={4}>
+            <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 2 }}>Descuento</div>
+            <InputNumber
+              value={descuento}
+              min={0}
+              step={0.01}
+              precision={2}
+              style={{ width: "100%" }}
+              prefix={compra.moneda}
+              onChange={(v) => setDescuento(v == null ? 0 : Number(v))}
+            />
+          </Col>
+          <Col xs={12} md={4}>
             <Statistic title="IGV (18%)" value={totales.igv} precision={2} prefix={compra.moneda} />
           </Col>
-          <Col span={6}>
+          <Col xs={12} md={4}>
+            <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 2 }}>Otros</div>
+            <InputNumber
+              value={otros}
+              min={0}
+              step={0.01}
+              precision={2}
+              style={{ width: "100%" }}
+              prefix={compra.moneda}
+              onChange={(v) => setOtros(v == null ? 0 : Number(v))}
+            />
+          </Col>
+          <Col xs={12} md={4}>
             <Statistic title="TOTAL" value={totales.total} precision={2} prefix={compra.moneda} styles={{ content: { color: brand.navy, fontWeight: 700 } }} />
           </Col>
         </Row>

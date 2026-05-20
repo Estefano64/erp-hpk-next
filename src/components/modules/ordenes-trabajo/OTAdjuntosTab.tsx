@@ -248,7 +248,7 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
       ) : adjuntos.length === 0 ? (
         <Empty
           image={<FolderOpenOutlined style={{ fontSize: 48, color: brand.textSecondary }} />}
-          imageStyle={{ height: 60 }}
+          styles={{ image: { height: 60 } }}
           description={
             <Text type="secondary">Sin archivos de {etapa.label.toLowerCase()}</Text>
           }

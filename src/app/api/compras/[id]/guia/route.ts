@@ -19,6 +19,16 @@ export async function POST(req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Compra no encontrada" }, { status: 404 });
     }
 
+    // Para facturar primero hay que tener la guía del proveedor cargada.
+    // Sin guía no se acepta la factura — evita registrar factura antes de
+    // recibir la mercadería.
+    if (tipo === "factura" && !compra.guia_archivo) {
+      return NextResponse.json({
+        error: "No se puede subir factura: primero cargá la guía de remisión del proveedor.",
+        falta: "guia",
+      }, { status: 400 });
+    }
+
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
     if (!file) {
