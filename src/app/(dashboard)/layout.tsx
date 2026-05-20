@@ -45,6 +45,7 @@ function buildMenuItems(_rol: string | null): MenuProps["items"] {
         { key: "/operaciones/planificacion", label: "Planificación" },
         { key: "/operaciones/programacion-semanal", label: "Programación semanal" },
         { key: "/operaciones/programacion-dashboard", label: "Dashboard Planificación" },
+        { key: "/operaciones/trabajadores", label: "Trabajadores" },
       ],
     },
     {

@@ -29,40 +29,67 @@ dayjs.extend(isoWeek);
 // como "D/M HH:mm", "D-M", etc. Sin esto, los parseos strict fallan silenciosamente.
 dayjs.extend(customParseFormat);
 
-// Lista de formatos aceptados al escribir (el primero es el que se muestra).
-// Cubre "3-5 13:00", "3-5 13", "3-5", "3/5/26 13:00", etc.
+// Lista de formatos aceptados al escribir. Cubre todas las combinaciones de
+// D/DD (día con o sin cero) x M/MM (mes con o sin cero) x con/sin año x con/sin hora,
+// con separador `/` o `-`. El primero (DD/MM/YY HH:mm) es el formato canónico de display.
 const FECHA_FORMATOS: string[] = [
-  "DD/MM/YY HH:mm",
-  "D-M-YY HH:mm", "D-M-YY HH", "D-M-YY",
-  "D-M HH:mm", "D-M HH", "D-M",
-  "D/M/YY HH:mm", "D/M/YY HH", "D/M/YY",
-  "D/M HH:mm", "D/M HH", "D/M",
-  "DD-MM-YY HH:mm", "DD-MM HH:mm", "DD-MM",
+  // Con año + minutos
+  "DD/MM/YY HH:mm", "D/M/YY HH:mm", "DD/M/YY HH:mm", "D/MM/YY HH:mm",
+  "DD-MM-YY HH:mm", "D-M-YY HH:mm", "DD-M-YY HH:mm", "D-MM-YY HH:mm",
+  // Con año + hora sola
+  "DD/MM/YY HH", "D/M/YY HH", "DD/M/YY HH", "D/MM/YY HH",
+  "DD-MM-YY HH", "D-M-YY HH", "DD-M-YY HH", "D-MM-YY HH",
+  // Con año solo
+  "DD/MM/YY", "D/M/YY", "DD/M/YY", "D/MM/YY",
+  "DD-MM-YY", "D-M-YY", "DD-M-YY", "D-MM-YY",
+  // Sin año + minutos
+  "DD/MM HH:mm", "D/M HH:mm", "DD/M HH:mm", "D/MM HH:mm",
+  "DD-MM HH:mm", "D-M HH:mm", "DD-M HH:mm", "D-MM HH:mm",
+  // Sin año + hora sola
+  "DD/MM HH", "D/M HH", "DD/M HH", "D/MM HH",
+  "DD-MM HH", "D-M HH", "DD-M HH", "D-MM HH",
+  // Sin año solo
+  "DD/MM", "D/M", "DD/M", "D/MM",
+  "DD-MM", "D-M", "DD-M", "D-MM",
 ];
 
 /**
- * Normaliza atajos comunes al escribir fechas:
- *  - "3-5 13:" → "3-5 13:00"   (colón sin minutos → :00)
- *  - "3-5 13"  → "3-5 13:00"   (solo hora → :00)
- *  - "3-5 1815" → "3-5 18:15"  (4 dígitos sin colon → HH:mm)
- *  - "3-5 815"  → "3-5 8:15"   (3 dígitos sin colon → H:mm)
- *  - "3-5"     → "3-5"          (sin hora, lo dejamos)
+ * Normaliza atajos comunes al escribir fechas para que matcheen los formatos:
+ *  - "13/05 1315"  → "13/05 13:15"   (4 dígitos sin colon → HH:mm)
+ *  - "13/05 815"   → "13/05 08:15"   (3 dígitos sin colon → 0H:mm)
+ *  - "13/05 13:5"  → "13/05 13:05"   (minuto 1-dígito → padded)
+ *  - "13/05 13:"   → "13/05 13:00"   (colon sin minutos → :00)
+ *  - "13/05 8:15"  → "13/05 08:15"   (hora 1-dígito antes de colon → padded)
  */
 function normalizarTextoFecha(raw: string): string {
   if (!raw) return raw;
   let t = raw.trim();
-  // 4 dígitos al final precedidos por espacio: "13/05 1815" → "13/05 18:15"
+  // 4 dígitos al final: "1815" → "18:15"
   t = t.replace(/\s(\d{2})(\d{2})$/, (_, h, m) => ` ${h}:${m}`);
-  // 3 dígitos al final precedidos por espacio: "13/05 815" → "13/05 8:15"
-  t = t.replace(/\s(\d{1})(\d{2})$/, (_, h, m) => ` ${h}:${m}`);
-  // "13:" o "13:0" → "13:00"
-  t = t.replace(/(\d{1,2}):(\d{0,1})$/, (_, h, m) => `${h}:${m ? `${m}0`.slice(0, 2) : "00"}`);
+  // 3 dígitos al final: "815" → "08:15" (con leading zero)
+  t = t.replace(/\s(\d{1})(\d{2})$/, (_, h, m) => ` 0${h}:${m}`);
+  // Colon con minutos parciales o vacíos: "13:" → "13:00", "13:5" → "13:05"
+  t = t.replace(/(\d{1,2}):(\d{0,1})$/, (_, h, m) => `${h}:${m ? m.padStart(2, "0") : "00"}`);
+  // Hora 1-dígito antes de colon: "8:15" → "08:15"
+  t = t.replace(/\s(\d{1}):(\d{2})$/, (_, h, m) => ` 0${h}:${m}`);
   return t;
 }
 
 // Valor por defecto para el time-picker dentro del DatePicker: 00:00 (no la hora actual).
 // Si no se pasa, AntD usa la hora ACTUAL al abrir el panel y eso ensucia el campo.
 const DEFAULT_PICKER_TIME = dayjs("00:00", "HH:mm");
+
+// Helpers para el campo tecnico (multi-operario en una tarea con qty_personal > 1).
+// Storage: string separado por coma+espacio (ej. "Juan Pérez, María López"). Compatibilidad:
+// tareas con 1 solo operario quedan como antes; las que tengan varios usan la misma columna.
+function splitTecnicos(s: string | null | undefined): string[] {
+  if (!s) return [];
+  return s.split(",").map((x) => x.trim()).filter(Boolean);
+}
+function joinTecnicos(arr: string[]): string | null {
+  const clean = arr.map((x) => x.trim()).filter(Boolean);
+  return clean.length === 0 ? null : clean.join(", ");
+}
 
 /**
  * Parsea texto a Dayjs probando los formatos cortos.
@@ -400,15 +427,21 @@ export default function PlanificacionPage() {
       const semana = r.semana_plan;
       if (!semana) continue;
       const hh = Number(r.horas_estimadas ?? 0) * Math.max(1, Number(r.qty_personal ?? 1));
-      if (r.tecnico) {
+      const tecnicos = splitTecnicos(r.tecnico);
+      if (tecnicos.length > 0) {
         if (!op.has(semana)) op.set(semana, new Map());
         const m = op.get(semana)!;
-        m.set(r.tecnico, (m.get(r.tecnico) ?? 0) + hh);
+        // Si hay varios operarios asignados a la tarea, se prorratea la carga entre ellos.
+        const cuota = hh / tecnicos.length;
+        for (const t of tecnicos) m.set(t, (m.get(t) ?? 0) + cuota);
       }
-      if (r.maquina) {
+      const maquinas = splitTecnicos(r.maquina);
+      if (maquinas.length > 0) {
         if (!eq.has(semana)) eq.set(semana, new Map());
         const m = eq.get(semana)!;
-        m.set(r.maquina, (m.get(r.maquina) ?? 0) + hh);
+        // Prorrateo entre varias máquinas si la tarea las comparte.
+        const cuota = hh / maquinas.length;
+        for (const k of maquinas) m.set(k, (m.get(k) ?? 0) + cuota);
       }
     }
     return { op, eq };
@@ -461,18 +494,19 @@ export default function PlanificacionPage() {
     return equipos.map((e) => {
       const hh = cargaMap?.get(e.codigo) ?? 0;
       const showCarga = !!cargaMap;
+      // Pedido del usuario: primero el nombre (descripcion), después el código.
       return {
         value: e.codigo,
         label: showCarga ? (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6, width: "100%" }}>
             <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {e.codigo} <span style={{ color: brand.textSecondary }}>— {e.descripcion}</span>
+              {e.descripcion} <span style={{ color: brand.textSecondary }}>— {e.codigo}</span>
             </span>
             <Tag color={cargaColor(hh)} style={{ fontSize: 10, margin: 0, lineHeight: "16px" }}>
               {hh.toFixed(0)}/{CAPACIDAD_SEMANA}h
             </Tag>
           </span>
-        ) : `${e.codigo} — ${e.descripcion}`,
+        ) : `${e.descripcion} — ${e.codigo}`,
       };
     });
   }
@@ -508,9 +542,9 @@ export default function PlanificacionPage() {
     .map((v) => ({ text: v, value: v }));
   const semanaValores = [...new Set(rows.map((r) => r.semana_plan).filter(Boolean) as string[])].sort()
     .map((v) => ({ text: v, value: v }));
-  const tecnicoValores = [...new Set(rows.map((r) => r.tecnico).filter(Boolean) as string[])].sort()
+  const tecnicoValores = [...new Set(rows.flatMap((r) => splitTecnicos(r.tecnico)))].sort()
     .map((v) => ({ text: v, value: v }));
-  const maquinaValores = [...new Set(rows.map((r) => r.maquina).filter(Boolean) as string[])].sort()
+  const maquinaValores = [...new Set(rows.flatMap((r) => splitTecnicos(r.maquina)))].sort()
     .map((v) => ({ text: v, value: v }));
   const inicioValores = [...new Set(rows.map((r) => r.fecha_inicio).filter(Boolean) as string[])].sort()
     .map((v) => ({ text: dayjs(v).format("DD/MM/YY HH:mm"), value: v }));
@@ -649,55 +683,157 @@ export default function PlanificacionPage() {
       ),
     },
     {
-      title: "Operario", key: "tecnico", width: 220,
+      title: "Operario", key: "tecnico", width: 280,
       filters: tecnicoValores, filterSearch: true,
-      onFilter: (value, r) => r.tecnico === value,
-      render: (_, r) => (
-        <Select
-          value={r.tecnico ?? undefined}
-          onChange={(v) => {
-            const patch: Record<string, unknown> = { tecnico: v ?? null };
-            // "Tercero" no es un trabajador real — marca la tarea como derivada externamente.
-            if (v === "Tercero") {
-              patch.trabajo_externo = true;
-              patch.maquina = null; // tercero no usa máquina del taller
-            } else {
-              patch.trabajo_externo = false;
-              // Autocompletar máquina si el trabajador tiene una asignada y el campo está vacío
-              if (v && !r.maquina) {
-                const t = trabajadores.find((x) => x.nombre === v);
-                if (t?.equipo_codigo) patch.maquina = t.equipo_codigo;
+      onFilter: (value, r) => splitTecnicos(r.tecnico).includes(value as string),
+      render: (_, r) => {
+        const qty = Math.max(1, Number(r.qty_personal ?? 1));
+        const multi = qty > 1;
+        const actuales = splitTecnicos(r.tecnico);
+
+        function aplicar(seleccionados: string[]) {
+          // Si "Tercero" está en la selección, la tarea es terciarizada — limpiamos máquina.
+          const esTercero = seleccionados.includes("Tercero");
+          const tecnicoStr = joinTecnicos(seleccionados);
+          const patch: Record<string, unknown> = { tecnico: tecnicoStr };
+          if (esTercero) {
+            patch.trabajo_externo = true;
+            patch.maquina = null;
+            // Si la tarea es terciarizada, solo guardamos "Tercero" (sin mezclar operarios reales).
+            patch.tecnico = "Tercero";
+          } else {
+            patch.trabajo_externo = false;
+            // Autocompletar máquina con el primer operario que tenga una asignada (si no hay máquina aún)
+            if (seleccionados.length > 0 && !r.maquina) {
+              for (const nombre of seleccionados) {
+                const t = trabajadores.find((x) => x.nombre === nombre);
+                if (t?.equipo_codigo) { patch.maquina = t.equipo_codigo; break; }
               }
             }
-            updateField(r.id, patch);
-          }}
-          options={buildOpcionesOperario(r.semana_plan ?? filterSemana)}
-          placeholder="—"
-          allowClear
-          size="small"
-          style={{ width: "100%" }}
-          showSearch
-          filterOption={(i, o) => String(o?.value ?? "").toLowerCase().includes(i.toLowerCase())}
-        />
-      ),
+          }
+          updateField(r.id, patch);
+        }
+
+        if (multi) {
+          return (
+            <Tooltip title={`Tarea con Qty=${qty} — podés asignar hasta ${qty} operario(s). Actual: ${actuales.join(", ") || "—"}`}>
+              <Select
+                mode="multiple"
+                value={actuales}
+                onChange={(v) => aplicar((v as string[]).slice(0, qty))}
+                options={buildOpcionesOperario(r.semana_plan ?? filterSemana)}
+                placeholder="—"
+                size="small"
+                // Mostramos todos los tags (sin colapsar). El alto de la fila crece si hay varios.
+                style={{ width: "100%" }}
+                showSearch
+                filterOption={(i, o) => String(o?.value ?? "").toLowerCase().includes(i.toLowerCase())}
+                tagRender={({ label, onClose }) => (
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                      background: "#E6F4FF",
+                      color: "#1677FF",
+                      borderRadius: 4,
+                      padding: "1px 6px",
+                      margin: "2px 2px 2px 0",
+                      fontSize: 11,
+                      maxWidth: "100%",
+                    }}
+                  >
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+                    <a onClick={onClose} style={{ color: "#1677FF", marginLeft: 2, fontWeight: 700 }}>×</a>
+                  </span>
+                )}
+              />
+            </Tooltip>
+          );
+        }
+        return (
+          <Select
+            value={actuales[0]}
+            onChange={(v) => aplicar(v ? [v] : [])}
+            options={buildOpcionesOperario(r.semana_plan ?? filterSemana)}
+            placeholder="—"
+            allowClear
+            size="small"
+            style={{ width: "100%" }}
+            showSearch
+            filterOption={(i, o) => String(o?.value ?? "").toLowerCase().includes(i.toLowerCase())}
+          />
+        );
+      },
     },
     {
-      title: "Equipo", key: "maquina", width: 220,
+      title: "Equipo", key: "maquina", width: 280,
       filters: maquinaValores, filterSearch: true,
-      onFilter: (value, r) => r.maquina === value,
-      render: (_, r) => (
-        <Select
-          value={r.maquina ?? undefined}
-          onChange={(v) => updateField(r.id, { maquina: v ?? null })}
-          options={buildOpcionesEquipo(r.semana_plan ?? filterSemana)}
-          placeholder="—"
-          allowClear
-          size="small"
-          style={{ width: "100%" }}
-          showSearch
-          filterOption={(i, o) => String(o?.value ?? "").toLowerCase().includes(i.toLowerCase())}
-        />
-      ),
+      onFilter: (value, r) => splitTecnicos(r.maquina).includes(value as string),
+      render: (_, r) => {
+        const esTercero = r.tecnico === "Tercero";
+        const qty = Math.max(1, Number(r.qty_personal ?? 1));
+        const multi = qty > 1 && !esTercero;
+        const actuales = splitTecnicos(r.maquina);
+
+        if (esTercero) {
+          return (
+            <Tooltip title="Tarea terciarizada: no aplica equipo del taller.">
+              <Select size="small" disabled placeholder="— (Tercero)" style={{ width: "100%" }} />
+            </Tooltip>
+          );
+        }
+
+        if (multi) {
+          return (
+            <Tooltip title={`Hasta ${qty} equipo(s). Actual: ${actuales.join(", ") || "—"}`}>
+              <Select
+                mode="multiple"
+                value={actuales}
+                onChange={(v) => updateField(r.id, { maquina: joinTecnicos((v as string[]).slice(0, qty)) })}
+                options={buildOpcionesEquipo(r.semana_plan ?? filterSemana)}
+                placeholder="—"
+                size="small"
+                style={{ width: "100%" }}
+                showSearch
+                filterOption={(i, o) => String(o?.value ?? "").toLowerCase().includes(i.toLowerCase())}
+                tagRender={({ label, onClose }) => (
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                      background: "#F6FFED",
+                      color: "#389E0D",
+                      borderRadius: 4,
+                      padding: "1px 6px",
+                      margin: "2px 2px 2px 0",
+                      fontSize: 11,
+                      maxWidth: "100%",
+                    }}
+                  >
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+                    <a onClick={onClose} style={{ color: "#389E0D", marginLeft: 2, fontWeight: 700 }}>×</a>
+                  </span>
+                )}
+              />
+            </Tooltip>
+          );
+        }
+        return (
+          <Select
+            value={actuales[0]}
+            onChange={(v) => updateField(r.id, { maquina: v ?? null })}
+            options={buildOpcionesEquipo(r.semana_plan ?? filterSemana)}
+            placeholder="—"
+            allowClear
+            size="small"
+            style={{ width: "100%" }}
+            showSearch
+            filterOption={(i, o) => String(o?.value ?? "").toLowerCase().includes(i.toLowerCase())}
+          />
+        );
+      },
     },
     {
       title: "Inicio Est.", key: "inicio", width: 155,
@@ -909,13 +1045,13 @@ export default function PlanificacionPage() {
 
   const tecnicosUnicos = useMemo(() => {
     const s = new Set<string>();
-    for (const r of rows) if (r.tecnico) s.add(r.tecnico);
+    for (const r of rows) for (const t of splitTecnicos(r.tecnico)) s.add(t);
     return [...s].sort();
   }, [rows]);
 
   const equiposUnicos = useMemo(() => {
     const s = new Set<string>();
-    for (const r of rows) if (r.maquina) s.add(r.maquina);
+    for (const r of rows) for (const m of splitTecnicos(r.maquina)) s.add(m);
     return [...s].sort();
   }, [rows]);
 

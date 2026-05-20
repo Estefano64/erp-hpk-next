@@ -682,6 +682,10 @@ model Trabajador {
   puesto        String                 @db.VarChar(100)
   // Máquina/equipo asignado por defecto. Autocompleta al asignar tareas; editable.
   equipo_codigo String?                @db.VarChar(20)
+  // Costo Hora Hombre (jornada normal) del trabajador.
+  costo_hora_hombre Decimal?           @db.Decimal(10, 2)
+  // Costo por hora extra del trabajador (fuera de jornada normal).
+  costo_hora_extra Decimal?            @db.Decimal(10, 2)
   activo        Boolean                @default(true)
   created_at    DateTime               @default(now())
   updated_at    DateTime               @default(now()) @updatedAt

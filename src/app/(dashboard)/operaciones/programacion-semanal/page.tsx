@@ -49,6 +49,12 @@ interface Trabajador { trabajador_id: number; nombre: string; area: string; pues
 interface Equipo { codigo: string; descripcion: string }
 interface StatusTareaOpt { codigo: string; nombre: string; color: string | null }
 
+// Helpers para multi-operario en `tecnico` (string separado por coma).
+function splitTecnicos(s: string | null | undefined): string[] {
+  if (!s) return [];
+  return s.split(",").map((x) => x.trim()).filter(Boolean);
+}
+
 const JORNADA_INICIO = 8;
 const JORNADA_FIN = 18;
 const HORAS_DIA = JORNADA_FIN - JORNADA_INICIO; // 10
@@ -234,8 +240,14 @@ export default function ProgramacionSemanalPage() {
   const rowsFiltradas = useMemo(() => {
     if (filtroEquipos.length === 0 && filtroOperarios.length === 0) return rows;
     return rows.filter((r) => {
-      if (filtroEquipos.length > 0 && (!r.maquina || !filtroEquipos.includes(r.maquina))) return false;
-      if (filtroOperarios.length > 0 && (!r.tecnico || !filtroOperarios.includes(r.tecnico))) return false;
+      if (filtroEquipos.length > 0) {
+        const maqs = splitTecnicos(r.maquina);
+        if (!maqs.some((m) => filtroEquipos.includes(m))) return false;
+      }
+      if (filtroOperarios.length > 0) {
+        const tecs = splitTecnicos(r.tecnico);
+        if (!tecs.some((t) => filtroOperarios.includes(t))) return false;
+      }
       return true;
     });
   }, [rows, filtroEquipos, filtroOperarios]);
@@ -265,10 +277,12 @@ export default function ProgramacionSemanalPage() {
   const tareasPorRecurso = useMemo(() => {
     const map = new Map<string, PlanRow[]>();
     for (const r of rowsFiltradas) {
-      const key = view === "equipo" ? r.maquina : r.tecnico;
-      if (!key) continue;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(r);
+      // Una tarea con varios recursos aparece en cada lane (operarios o equipos).
+      const keys = view === "equipo" ? splitTecnicos(r.maquina) : splitTecnicos(r.tecnico);
+      for (const k of keys) {
+        if (!map.has(k)) map.set(k, []);
+        map.get(k)!.push(r);
+      }
     }
     return map;
   }, [rowsFiltradas, view]);
@@ -278,11 +292,14 @@ export default function ProgramacionSemanalPage() {
   const cargaPorRecurso = useMemo(() => {
     const map = new Map<string, number>();
     for (const r of rowsFiltradas) {
-      const key = view === "equipo" ? r.maquina : r.tecnico;
-      if (!key) continue;
       const dur = Number(r.horas_estimadas ?? 0);
       const qty = Math.max(1, Number(r.qty_personal ?? 1));
-      map.set(key, (map.get(key) ?? 0) + dur * qty);
+      const hhTotal = dur * qty;
+      const keys = view === "equipo" ? splitTecnicos(r.maquina) : splitTecnicos(r.tecnico);
+      if (keys.length === 0) continue;
+      // Carga prorateada entre todos los recursos asignados (operarios o máquinas)
+      const cuota = hhTotal / keys.length;
+      for (const k of keys) map.set(k, (map.get(k) ?? 0) + cuota);
     }
     return map;
   }, [rowsFiltradas, view]);

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(req: NextRequest) {
@@ -32,5 +33,43 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     console.error("GET /api/trabajadores error:", error);
     return NextResponse.json({ error: "Error" }, { status: 500 });
+  }
+}
+
+const CreateSchema = z.object({
+  nombre: z.string().trim().min(1).max(200),
+  dni: z.string().trim().optional().nullable(),
+  area: z.string().trim().min(1).max(50),
+  puesto: z.string().trim().min(1).max(100),
+  equipo_codigo: z.string().trim().optional().nullable(),
+  costo_hora_hombre: z.coerce.number().min(0).optional().nullable(),
+  costo_hora_extra: z.coerce.number().min(0).optional().nullable(),
+  activo: z.boolean().optional(),
+});
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const parsed = CreateSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Validación", detail: parsed.error.flatten() }, { status: 400 });
+    }
+    const d = parsed.data;
+    const created = await prisma.trabajador.create({
+      data: {
+        nombre: d.nombre,
+        dni: d.dni ?? null,
+        area: d.area,
+        puesto: d.puesto,
+        equipo_codigo: d.equipo_codigo ?? null,
+        costo_hora_hombre: d.costo_hora_hombre ?? null,
+        costo_hora_extra: d.costo_hora_extra ?? null,
+        activo: d.activo ?? true,
+      },
+    });
+    return NextResponse.json({ data: created }, { status: 201 });
+  } catch (error) {
+    console.error("POST /api/trabajadores error:", error);
+    return NextResponse.json({ error: "Error al crear trabajador" }, { status: 500 });
   }
 }

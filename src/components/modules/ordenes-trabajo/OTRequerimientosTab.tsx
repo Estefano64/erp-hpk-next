@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Table, Button, Tag, Space, Modal, Form, Input, InputNumber, Select, DatePicker,
+  Table, Button, Tag, Space, Modal, Form, Input, InputNumber, Select, DatePicker, AutoComplete,
   message, Popconfirm, Tooltip, Empty, Alert, Row, Col, Typography, Radio, Card, Popover,
 } from "antd";
 import {
@@ -1101,14 +1101,32 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
               },
               {
                 title: "Descripción *", key: "desc", width: 250,
-                render: (_: unknown, r: DraftItem) => (
-                  <Input
-                    size="small"
-                    placeholder="Descripción"
-                    value={r.descripcion}
-                    onChange={(e) => actualizarDraftItem(r.id, { descripcion: e.target.value })}
-                  />
-                ),
+                render: (_: unknown, r: DraftItem) => {
+                  // Para SER usamos AutoComplete con sugerencias del catálogo de servicios
+                  // (lo que escriben se guarda al guardar; reutilizable después).
+                  if (r.tipo_codigo === "SER") {
+                    const opciones = servicios.map((s) => ({ value: s.nombre, label: `${s.nombre}${s.descripcion ? ` — ${s.descripcion}` : ""}` }));
+                    return (
+                      <AutoComplete
+                        size="small"
+                        placeholder="Tipeá un servicio (ej. SVC Cromado)..."
+                        value={r.descripcion}
+                        onChange={(v) => actualizarDraftItem(r.id, { descripcion: v })}
+                        options={opciones}
+                        filterOption={(input, option) => String(option?.value ?? "").toLowerCase().includes(input.toLowerCase())}
+                        style={{ width: "100%" }}
+                      />
+                    );
+                  }
+                  return (
+                    <Input
+                      size="small"
+                      placeholder="Descripción"
+                      value={r.descripcion}
+                      onChange={(e) => actualizarDraftItem(r.id, { descripcion: e.target.value })}
+                    />
+                  );
+                },
               },
               {
                 title: "Marca", key: "marca", width: 140,

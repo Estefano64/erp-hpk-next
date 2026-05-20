@@ -351,7 +351,7 @@ async function main() {
       });
       imported++;
     } catch (err) {
-      console.log(`  ❌ Error fila ${i} (${codigo}):`, (err as Error).message?.substring(0, 100));
+      console.log(`  ❌ Error fila ${i} (${codigo}):`, (err as Error).message?.substring(0, 600));
       errors++;
     }
   }
