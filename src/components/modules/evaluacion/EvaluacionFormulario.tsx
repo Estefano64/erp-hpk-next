@@ -977,6 +977,7 @@ export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, o
     // ── CILINDRO TELESCOPICO ── (etapas dinamicas)
     if (modelo === "cil_telescopico") {
       const tipoAnclajeCil = (datos[`${p}_cil_tipo_anclaje`] as string) || "";
+      const tipoTapaSec = (datos[`${p}_tipo_tapa_sec`] as string) || "";
       return (
         <>
           {/* Cilindro principal (botella) */}
@@ -1142,90 +1143,179 @@ export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, o
 
           <EtapasTelescopico prefix={p} unidad={unidad} datos={datos} onChange={onChange} />
 
-          <SeccionNum num="T1" titulo="Tapa Roscada Secundaria">
+          {/* Selector entre las dos tapas secundarias — es una o la otra */}
+          <Card
+            title="Tipo de tapa secundaria"
+            style={{ marginBottom: 16, background: "#fafcff", border: `1px dashed ${brand.cyan}` }}
+          >
+            <RadioInline
+              name={`${p}_tipo_tapa_sec`}
+              label="Seleccionar el tipo aplicable (es una o la otra)"
+              opciones={["Tapa Roscada Secundaria", "Tapa Posterior de Sujeción"]}
+              datos={datos}
+              onChange={onChange}
+            />
+          </Card>
+
+          {tipoTapaSec === "Tapa Roscada Secundaria" && (
+            <SeccionNum num="T1" titulo="Tapa Roscada Secundaria">
+              <Row gutter={16}>
+                <Col xs={24} md={8}>
+                  <ImagenReferencia componente="tapa" label="Tapa Roscada Secundaria" />
+                </Col>
+                <Col xs={24} md={16}>
+                  <TablaMedidas
+                    filas={[
+                      { prefix: `${p}_tapa_sec_a`, label: `Diámetro Exterior (A) [${unidad}]`, tipo: "single" },
+                      { prefix: `${p}_tapa_sec_b`, label: `Diámetro Interior (B) [${unidad}]`, tipo: "single" },
+                      { prefix: `${p}_tapa_sec_c`, label: `Diámetro Sellado (C) [${unidad}]`, tipo: "single" },
+                      { prefix: `${p}_tapa_sec_d`, label: `Longitud Total (D) [${unidad}]`, tipo: "single" },
+                    ]}
+                    datos={datos}
+                    onChange={onChange}
+                  />
+                  <div style={{ marginTop: 12 }}>
+                    <TablaChecks
+                      prefix={`${p}_tapa_sec`}
+                      items={[
+                        { key: "sup_roscada", label: "Est. de sup. Roscada" },
+                        { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                      ]}
+                      datos={datos}
+                      onChange={onChange}
+                    />
+                  </div>
+                  {/* Detalle libre - retrocompatibilidad con datos previos */}
+                  <div style={{ marginTop: 12 }}>
+                    <Text strong style={{ fontSize: 12 }}>Detalle adicional (opcional)</Text>
+                    <TextArea
+                      rows={2}
+                      placeholder="Medidas y condicion..."
+                      value={(datos[`${p}_tapa_secundaria`] as string) || ""}
+                      onChange={(e) => onChange({ ...datos, [`${p}_tapa_secundaria`]: e.target.value })}
+                    />
+                  </div>
+                </Col>
+              </Row>
+              <ImagenesComponente prefix={`${p}_tapa_sec`} etiqueta="Tapa Roscada Secundaria" datos={datos} onChange={onChange} />
+              <ResultadoComponente prefix={`${p}_tapa_sec`} label="Tapa Roscada Secundaria" datos={datos} onChange={onChange} />
+            </SeccionNum>
+          )}
+
+          {tipoTapaSec === "Tapa Posterior de Sujeción" && (
+            <SeccionNum num="T2" titulo="Tapa Posterior de Sujeción">
+              <Row gutter={16}>
+                <Col xs={24} md={8}>
+                  <ImagenReferencia componente="tapa" label="Tapa Posterior de Sujeción" />
+                </Col>
+                <Col xs={24} md={16}>
+                  <TablaMedidas
+                    filas={[
+                      { prefix: `${p}_tapa_post_dsell`, label: `Diám. Sellado [${unidad}]`, tipo: "single" },
+                      { prefix: `${p}_tapa_post_dint_ojo`, label: `Diám. Int. Ojo [${unidad}]`, tipo: "single" },
+                      { prefix: `${p}_tapa_post_dint_rotula`, label: `Diám. Int. Rótula [${unidad}]`, tipo: "single" },
+                      { prefix: `${p}_tapa_post_ancho_ojo`, label: `Ancho de Ojo [${unidad}]`, tipo: "single" },
+                    ]}
+                    datos={datos}
+                    onChange={onChange}
+                  />
+                  <div style={{ marginTop: 12 }}>
+                    <TablaChecks
+                      prefix={`${p}_tapa_post`}
+                      items={[
+                        { key: "est_soldadura", label: "Est. de soldadura" },
+                        { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                      ]}
+                      datos={datos}
+                      onChange={onChange}
+                    />
+                  </div>
+                  {/* Detalle libre - retrocompatibilidad */}
+                  <div style={{ marginTop: 12 }}>
+                    <Text strong style={{ fontSize: 12 }}>Detalle adicional (opcional)</Text>
+                    <TextArea
+                      rows={2}
+                      placeholder="Medidas y condicion..."
+                      value={(datos[`${p}_tapa_posterior`] as string) || ""}
+                      onChange={(e) => onChange({ ...datos, [`${p}_tapa_posterior`]: e.target.value })}
+                    />
+                  </div>
+                </Col>
+              </Row>
+              <ImagenesComponente prefix={`${p}_tapa_post`} etiqueta="Tapa Posterior" datos={datos} onChange={onChange} />
+              <ResultadoComponente prefix={`${p}_tapa_post`} label="Tapa Posterior" datos={datos} onChange={onChange} />
+            </SeccionNum>
+          )}
+
+          {/* Tapa principal (A, B, C, D) — sec final del Excel */}
+          <SeccionNum num={5} titulo="Tapa">
             <Row gutter={16}>
               <Col xs={24} md={8}>
-                <ImagenReferencia componente="tapa" label="Tapa Roscada Secundaria" />
+                <ImagenReferencia componente="tapa" label="Tapa (A, B, C, D)" />
               </Col>
               <Col xs={24} md={16}>
                 <TablaMedidas
                   filas={[
-                    { prefix: `${p}_tapa_sec_a`, label: `Medida A [${unidad}]`, tipo: "single" },
-                    { prefix: `${p}_tapa_sec_b`, label: `Medida B [${unidad}]`, tipo: "single" },
-                    { prefix: `${p}_tapa_sec_c`, label: `Medida C [${unidad}]`, tipo: "single" },
-                    { prefix: `${p}_tapa_sec_d`, label: `Medida D [${unidad}]`, tipo: "single" },
+                    { prefix: `${p}_tapa_dext`, label: `Diámetro Exterior (A) [${unidad}]`, tipo: "single" },
+                    { prefix: `${p}_tapa_dint`, label: `Diámetro Interior (B) [${unidad}]`, tipo: "single" },
+                    { prefix: `${p}_tapa_dsell`, label: `Diámetro Sellado (C) [${unidad}]`, tipo: "single" },
+                    { prefix: `${p}_tapa_ltot`, label: `Longitud Total (D) [${unidad}]`, tipo: "single" },
                   ]}
                   datos={datos}
                   onChange={onChange}
                 />
                 <div style={{ marginTop: 12 }}>
                   <TablaChecks
-                    prefix={`${p}_tapa_sec`}
+                    prefix={`${p}_tapa`}
                     items={[
-                      { key: "sup_roscada", label: "Est. de sup. Roscada" },
                       { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                      { key: "ext_roscado", label: "Exterior roscado", tipo: "sn" },
+                      { key: "sup_roscada", label: "Est. de sup. Roscada" },
                     ]}
                     datos={datos}
                     onChange={onChange}
                   />
                 </div>
-                {/* Detalle libre - retrocompatibilidad con datos previos */}
-                <div style={{ marginTop: 12 }}>
-                  <Text strong style={{ fontSize: 12 }}>Detalle adicional (opcional)</Text>
-                  <TextArea
-                    rows={2}
-                    placeholder="Medidas y condicion..."
-                    value={(datos[`${p}_tapa_secundaria`] as string) || ""}
-                    onChange={(e) => onChange({ ...datos, [`${p}_tapa_secundaria`]: e.target.value })}
-                  />
-                </div>
               </Col>
             </Row>
-            <ImagenesComponente prefix={`${p}_tapa_sec`} etiqueta="Tapa Roscada Secundaria" datos={datos} onChange={onChange} />
-            <ResultadoComponente prefix={`${p}_tapa_sec`} label="Tapa Roscada Secundaria" datos={datos} onChange={onChange} />
+            <ChecklistHallazgos id={`${p}_tapa`} titulo="Check list - Tapa" grupos={GRUPOS_TAPA} datos={datos} onChange={onChange} />
+            <ImagenesComponente prefix={`${p}_tapa`} etiqueta="Tapa" datos={datos} onChange={onChange} />
+            <ResultadoComponente prefix={`${p}_tapa`} label="Tapa" datos={datos} onChange={onChange} />
           </SeccionNum>
 
-          <SeccionNum num="T2" titulo="Tapa Posterior de Sujeción">
+          {/* Émbolo (A, B, D) — sec final del Excel */}
+          <SeccionNum num={6} titulo="Émbolo">
             <Row gutter={16}>
               <Col xs={24} md={8}>
-                <ImagenReferencia componente="tapa" label="Tapa Posterior de Sujeción" />
+                <ImagenReferencia componente="embolo" label="Émbolo (A, B, D)" />
               </Col>
               <Col xs={24} md={16}>
                 <TablaMedidas
                   filas={[
-                    { prefix: `${p}_tapa_post_dsell`, label: `Diám. Sellado [${unidad}]`, tipo: "single" },
-                    { prefix: `${p}_tapa_post_dint_ojo`, label: `Diám. Int. Ojo [${unidad}]`, tipo: "single" },
-                    { prefix: `${p}_tapa_post_dint_rotula`, label: `Diám. Int. Rótula [${unidad}]`, tipo: "single" },
-                    { prefix: `${p}_tapa_post_ancho_ojo`, label: `Ancho de Ojo [${unidad}]`, tipo: "single" },
+                    { prefix: `${p}_emb_dext`, label: `Diámetro Exterior (A) [${unidad}]`, tipo: "single" },
+                    { prefix: `${p}_emb_dint`, label: `Diámetro Interior (B) [${unidad}]`, tipo: "single" },
+                    { prefix: `${p}_emb_ltot`, label: `Longitud Total (D) [${unidad}]`, tipo: "single" },
                   ]}
                   datos={datos}
                   onChange={onChange}
                 />
                 <div style={{ marginTop: 12 }}>
                   <TablaChecks
-                    prefix={`${p}_tapa_post`}
+                    prefix={`${p}_emb`}
                     items={[
-                      { key: "est_soldadura", label: "Est. de soldadura" },
                       { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                      { key: "int_roscado", label: "Interior roscado", tipo: "sn" },
+                      { key: "sup_roscada", label: "Est. de sup. Roscada" },
                     ]}
                     datos={datos}
                     onChange={onChange}
                   />
                 </div>
-                {/* Detalle libre - retrocompatibilidad */}
-                <div style={{ marginTop: 12 }}>
-                  <Text strong style={{ fontSize: 12 }}>Detalle adicional (opcional)</Text>
-                  <TextArea
-                    rows={2}
-                    placeholder="Medidas y condicion..."
-                    value={(datos[`${p}_tapa_posterior`] as string) || ""}
-                    onChange={(e) => onChange({ ...datos, [`${p}_tapa_posterior`]: e.target.value })}
-                  />
-                </div>
               </Col>
             </Row>
-            <ImagenesComponente prefix={`${p}_tapa_post`} etiqueta="Tapa Posterior" datos={datos} onChange={onChange} />
-            <ResultadoComponente prefix={`${p}_tapa_post`} label="Tapa Posterior" datos={datos} onChange={onChange} />
+            <ChecklistHallazgos id={`${p}_emb`} titulo="Check list - Émbolo" grupos={GRUPOS_PISTON} datos={datos} onChange={onChange} />
+            <ImagenesComponente prefix={`${p}_emb`} etiqueta="Émbolo" datos={datos} onChange={onChange} />
+            <ResultadoComponente prefix={`${p}_emb`} label="Émbolo" datos={datos} onChange={onChange} />
           </SeccionNum>
         </>
       );
