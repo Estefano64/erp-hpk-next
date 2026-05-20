@@ -1294,51 +1294,53 @@ export default function PlanificacionPage() {
 
       <style jsx global>{`
         /* Color de fila por estado — solo celdas NO fijas. Las celdas fijas
-           (NRO, OT) se quedan siempre blancas opacas para que nada se vea por detrás. */
-        .plan-row-done > td:not(.ant-table-cell-fix-left):not(.ant-table-cell-fix-right) {
+           (NRO, OT) se quedan siempre blancas opacas para que nada se vea por detrás.
+           NOTA: antd 6 renombró las clases de columnas fijas a fix-start/fix-end. */
+        .plan-row-done > td:not(.ant-table-cell-fix-start):not(.ant-table-cell-fix-end) {
           background-color: #F6FFED !important;
         }
-        .plan-row-cancel > td:not(.ant-table-cell-fix-left):not(.ant-table-cell-fix-right) {
+        .plan-row-cancel > td:not(.ant-table-cell-fix-start):not(.ant-table-cell-fix-end) {
           background-color: #FFF1F0 !important;
           color: #999 !important;
           text-decoration: line-through;
         }
-        .plan-row-pending > td:not(.ant-table-cell-fix-left):not(.ant-table-cell-fix-right) {
+        .plan-row-pending > td:not(.ant-table-cell-fix-start):not(.ant-table-cell-fix-end) {
           background-color: #FFFBE6 !important;
           box-shadow: inset 3px 0 0 #FAAD14;
         }
         /* Hover: oscurecer color de fondo de celdas no-fijas; las fijas se manejan en globals.css. */
-        .ant-table-tbody > tr.plan-row-done:hover > td:not(.ant-table-cell-fix-left):not(.ant-table-cell-fix-right) {
+        .ant-table-tbody > tr.plan-row-done:hover > td:not(.ant-table-cell-fix-start):not(.ant-table-cell-fix-end) {
           background-color: #d9f7be !important;
         }
-        .ant-table-tbody > tr.plan-row-cancel:hover > td:not(.ant-table-cell-fix-left):not(.ant-table-cell-fix-right) {
+        .ant-table-tbody > tr.plan-row-cancel:hover > td:not(.ant-table-cell-fix-start):not(.ant-table-cell-fix-end) {
           background-color: #ffccc7 !important;
         }
-        .ant-table-tbody > tr.plan-row-pending:hover > td:not(.ant-table-cell-fix-left):not(.ant-table-cell-fix-right) {
+        .ant-table-tbody > tr.plan-row-pending:hover > td:not(.ant-table-cell-fix-start):not(.ant-table-cell-fix-end) {
           background-color: #fff1b8 !important;
         }
         /* Las celdas fijas: SIEMPRE blanco opaco. Cubrimos todas las variantes
-           que usa antd v6 para hover (clase, :hover, row-hover). */
-        .ant-table-tbody > tr > td.ant-table-cell-fix-left,
-        .ant-table-tbody > tr > td.ant-table-cell-fix-right,
-        .ant-table-tbody > tr:hover > td.ant-table-cell-fix-left,
-        .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right,
-        .ant-table-tbody > tr.ant-table-row-hover > td.ant-table-cell-fix-left,
-        .ant-table-tbody > tr.ant-table-row-hover > td.ant-table-cell-fix-right,
-        .ant-table-tbody > tr > td.ant-table-cell-fix-left.ant-table-cell-row-hover,
-        .ant-table-tbody > tr > td.ant-table-cell-fix-right.ant-table-cell-row-hover,
-        .ant-table-tbody > tr.plan-row-done > td.ant-table-cell-fix-left,
-        .ant-table-tbody > tr.plan-row-done > td.ant-table-cell-fix-right,
-        .ant-table-tbody > tr.plan-row-cancel > td.ant-table-cell-fix-left,
-        .ant-table-tbody > tr.plan-row-cancel > td.ant-table-cell-fix-right,
-        .ant-table-tbody > tr.plan-row-pending > td.ant-table-cell-fix-left,
-        .ant-table-tbody > tr.plan-row-pending > td.ant-table-cell-fix-right,
-        .ant-table-tbody > tr.plan-row-done:hover > td.ant-table-cell-fix-left,
-        .ant-table-tbody > tr.plan-row-done:hover > td.ant-table-cell-fix-right,
-        .ant-table-tbody > tr.plan-row-cancel:hover > td.ant-table-cell-fix-left,
-        .ant-table-tbody > tr.plan-row-cancel:hover > td.ant-table-cell-fix-right,
-        .ant-table-tbody > tr.plan-row-pending:hover > td.ant-table-cell-fix-left,
-        .ant-table-tbody > tr.plan-row-pending:hover > td.ant-table-cell-fix-right {
+           que usa antd v6 para hover (clase, :hover, row-hover) y para filas
+           con coloreado de estado. */
+        .ant-table-tbody > tr > td.ant-table-cell-fix-start,
+        .ant-table-tbody > tr > td.ant-table-cell-fix-end,
+        .ant-table-tbody > tr:hover > td.ant-table-cell-fix-start,
+        .ant-table-tbody > tr:hover > td.ant-table-cell-fix-end,
+        .ant-table-tbody > tr.ant-table-row-hover > td.ant-table-cell-fix-start,
+        .ant-table-tbody > tr.ant-table-row-hover > td.ant-table-cell-fix-end,
+        .ant-table-tbody > tr > td.ant-table-cell-fix-start.ant-table-cell-row-hover,
+        .ant-table-tbody > tr > td.ant-table-cell-fix-end.ant-table-cell-row-hover,
+        .ant-table-tbody > tr.plan-row-done > td.ant-table-cell-fix-start,
+        .ant-table-tbody > tr.plan-row-done > td.ant-table-cell-fix-end,
+        .ant-table-tbody > tr.plan-row-cancel > td.ant-table-cell-fix-start,
+        .ant-table-tbody > tr.plan-row-cancel > td.ant-table-cell-fix-end,
+        .ant-table-tbody > tr.plan-row-pending > td.ant-table-cell-fix-start,
+        .ant-table-tbody > tr.plan-row-pending > td.ant-table-cell-fix-end,
+        .ant-table-tbody > tr.plan-row-done:hover > td.ant-table-cell-fix-start,
+        .ant-table-tbody > tr.plan-row-done:hover > td.ant-table-cell-fix-end,
+        .ant-table-tbody > tr.plan-row-cancel:hover > td.ant-table-cell-fix-start,
+        .ant-table-tbody > tr.plan-row-cancel:hover > td.ant-table-cell-fix-end,
+        .ant-table-tbody > tr.plan-row-pending:hover > td.ant-table-cell-fix-start,
+        .ant-table-tbody > tr.plan-row-pending:hover > td.ant-table-cell-fix-end {
           background-color: #ffffff !important;
         }
       `}</style>
