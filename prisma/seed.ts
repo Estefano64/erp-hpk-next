@@ -855,6 +855,39 @@ async function main() {
   }
   console.log("✓ Taller Status creados");
 
+  // Tipo OT externa (Fase D0 — desbloqueo del TipoOT antes pospuesto)
+  const tiposOT = [
+    { codigo: "REP", nombre: "Reparación" },
+    { codigo: "BIE", nombre: "Bien" },
+    { codigo: "SER", nombre: "Servicio" },
+  ];
+  for (const t of tiposOT) {
+    await prisma.tipoOT.upsert({ where: { codigo: t.codigo }, update: {}, create: t });
+  }
+  console.log("✓ Tipos de OT (externa) creados");
+
+  // Tipo OT interna
+  const tiposOTInterna = [
+    { codigo: "CORRECTIVA", nombre: "Correctiva" },
+    { codigo: "PREVENTIVA", nombre: "Preventiva" },
+  ];
+  for (const t of tiposOTInterna) {
+    await prisma.tipoOTInterna.upsert({ where: { codigo: t.codigo }, update: {}, create: t });
+  }
+  console.log("✓ Tipos de OT (interna) creados");
+
+  // User Status (OT interna)
+  const userStatuses = [
+    { codigo: "PLANIFICADO", nombre: "Planificado" },
+    { codigo: "PROGRAMADO", nombre: "Programado" },
+    { codigo: "CORRECTIVO", nombre: "Correctivo" },
+    { codigo: "REPROGRAMADO", nombre: "Reprogramado" },
+  ];
+  for (const u of userStatuses) {
+    await prisma.userStatus.upsert({ where: { codigo: u.codigo }, update: {}, create: u });
+  }
+  console.log("✓ User Status (OT interna) creados");
+
   // Garantía
   const garantias = [
     { codigo: "Si", nombre: "Si" },

@@ -241,6 +241,36 @@ export const catalogosConfig: CatalogoConfig[] = [
     orderByPK: true,
     fields: [...codigoNombre(30), activo],
   },
+  {
+    id: "tipoOT",
+    label: "Tipo de OT (externa)",
+    description: "Reparación / Bien / Servicio — clasifica las órdenes de trabajo de clientes externos.",
+    category: "Estados / Workflow",
+    pkField: "tipo_ot_id",
+    uniqueField: "codigo",
+    orderByPK: true,
+    fields: [...codigoNombre(10), activo],
+  },
+  {
+    id: "tipoOTInterna",
+    label: "Tipo de OT interna",
+    description: "Correctiva / Preventiva — clasifica las órdenes de mantenimiento interno del taller HP&K.",
+    category: "Estados / Workflow",
+    pkField: "tipo_ot_interna_id",
+    uniqueField: "codigo",
+    orderByPK: true,
+    fields: [...codigoNombre(20), activo],
+  },
+  {
+    id: "userStatus",
+    label: "User Status (OT interna)",
+    description: "Planificado / Programado / Correctivo / Reprogramado — estados del flujo interno.",
+    category: "Estados / Workflow",
+    pkField: "user_status_id",
+    uniqueField: "codigo",
+    orderByPK: true,
+    fields: [...codigoNombre(20), activo],
+  },
 
   // ── Reparación ─────────────────────────────────────────────────────────
   {

@@ -514,6 +514,40 @@ model TallerStatus {
   @@map("taller_status")
 }
 
+// ── Tipo de OT externa (Reparación / Bien / Servicio) ────
+// Catálogo agregado en Fase D0. Pasa a ser FK desde OrdenTrabajo en Fase D1.
+// Reemplaza el campo legacy `OrdenTrabajo.tipo` (String libre).
+model TipoOT {
+  tipo_ot_id Int     @id @default(autoincrement())
+  codigo     String  @unique @db.VarChar(10)
+  nombre     String  @db.VarChar(100)
+  activo     Boolean @default(true)
+
+  @@map("tipo_ot")
+}
+
+// ── Tipo de OT interna (Correctiva / Preventiva) ─────────
+// Catálogo para la nueva entidad OrdenTrabajoInterna (mantenimiento del taller HP&K).
+model TipoOTInterna {
+  tipo_ot_interna_id Int     @id @default(autoincrement())
+  codigo             String  @unique @db.VarChar(20)
+  nombre             String  @db.VarChar(100)
+  activo             Boolean @default(true)
+
+  @@map("tipo_ot_interna")
+}
+
+// ── User Status para OT interna ──────────────────────────
+// Estados específicos del flujo interno (Planificado / Programado / Correctivo / Reprogramado).
+model UserStatus {
+  user_status_id Int     @id @default(autoincrement())
+  codigo         String  @unique @db.VarChar(20)
+  nombre         String  @db.VarChar(100)
+  activo         Boolean @default(true)
+
+  @@map("user_status")
+}
+
 model OtEtapa {
   ot_etapa_id Int         @id @default(autoincrement())
   codigo      String      @unique @db.VarChar(20)
