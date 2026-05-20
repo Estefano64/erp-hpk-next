@@ -633,7 +633,7 @@ export default function ComprasPage() {
           <Button
             icon={<FileExcelOutlined />}
             onClick={exportarExcel}
-            style={{ background: "#1d6f42", color: "#fff", borderColor: "#1d6f42" }}
+            style={{ background: "#1d6f42", color: brand.white, borderColor: "#1d6f42" }}
           >
             Descargar Excel
           </Button>

@@ -295,7 +295,7 @@ export default function EditarOCPage() {
       <Card style={{ marginBottom: 12, background: `linear-gradient(135deg, ${brand.navy}, ${brand.cyan})` }} styles={{ body: { padding: 16 } }}>
         <Row gutter={16} align="middle">
           <Col flex="auto">
-            <Title level={4} style={{ color: "#fff", margin: 0 }}>
+            <Title level={4} style={{ color: brand.white, margin: 0 }}>
               <EditOutlined style={{ marginRight: 8 }} />
               Editar items de OC — {compra.numero_po}
             </Title>

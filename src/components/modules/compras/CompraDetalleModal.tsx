@@ -23,6 +23,7 @@ import {
 } from "antd";
 import { EditOutlined, SaveOutlined, CloseOutlined, PrinterOutlined, CheckOutlined, UploadOutlined, DownloadOutlined, DeleteOutlined, FileTextOutlined } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
+import { useResponsive } from "@/lib/responsive";
 import dayjs, { Dayjs } from "dayjs";
 import type { ColumnsType } from "antd/es/table";
 import { formatDateOnly } from "@/lib/dates";
@@ -99,6 +100,7 @@ const estadoColor: Record<string, string> = {
 
 export default function CompraDetalleModal({ compraId, open, onClose, onUpdated }: Props) {
   const { message } = App.useApp();
+  const { screens } = useResponsive();
   const [compra, setCompra] = useState<CompraDetalle | null>(null);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -325,7 +327,7 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
     <Modal
       open={open}
       onCancel={onClose}
-      width="90vw"
+      width={screens.md ? "90vw" : "100vw"}
       style={{ top: 20 }}
       styles={{ body: { padding: 0 }, header: { display: "none" } }}
       footer={null}
