@@ -12,6 +12,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 import { formatDateOnly } from "@/lib/dates";
 import {
   numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE,
@@ -77,6 +78,7 @@ const estadoPrestamoColor: Record<string, string> = {
 // ════════════════════════════════════════════════════════════
 function TabCatalogo() {
   const { message } = App.useApp();
+  const { screens } = useResponsive();
   const [data, setData] = useState<Herramienta[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -245,6 +247,7 @@ function TabCatalogo() {
         confirmLoading={saving}
         okText="Guardar"
         cancelText="Cancelar"
+        width={modalWidth(screens, 520)}
       >
         <Form form={form} layout="vertical">
           <Form.Item name="codigo" label="Código" rules={[{ required: true, max: 20 }]}>
@@ -281,6 +284,7 @@ function TabCatalogo() {
 // ════════════════════════════════════════════════════════════
 function TabPrestamos() {
   const { message } = App.useApp();
+  const { screens } = useResponsive();
   const [data, setData] = useState<Prestamo[]>([]);
   const [herramientas, setHerramientas] = useState<Herramienta[]>([]);
   const [trabajadores, setTrabajadores] = useState<TrabajadorOpt[]>([]);
@@ -528,7 +532,7 @@ function TabPrestamos() {
         confirmLoading={saving}
         okText="Registrar"
         cancelText="Cancelar"
-        width={620}
+        width={modalWidth(screens, 620)}
       >
         <Form form={form} layout="vertical">
           <Form.Item name="herramienta_id" label="Herramienta" rules={[{ required: true }]}>
@@ -552,7 +556,7 @@ function TabPrestamos() {
             <Col span={16}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <Text style={{ fontSize: 13, fontWeight: 500 }}>
-                  Prestado a {!destinoExterno && <span style={{ color: "#ff4d4f" }}>*</span>}
+                  Prestado a {!destinoExterno && <span style={{ color: brand.error }}>*</span>}
                 </Text>
                 <Button
                   type="link"
@@ -626,6 +630,7 @@ function TabPrestamos() {
         confirmLoading={saving}
         okText="Confirmar devolución"
         cancelText="Cancelar"
+        width={modalWidth(screens, 520)}
       >
         {devolverModal && (
           <>
