@@ -3,8 +3,9 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Typography, Table, Input, Space, Button, Empty, Row, Col, Card, Statistic,
-  Tag, InputNumber, App, Tooltip,
+  Tag, InputNumber, DatePicker, App, Tooltip,
 } from "antd";
+import dayjs, { Dayjs } from "dayjs";
 import { ReloadOutlined, SearchOutlined, FileSearchOutlined, EditOutlined } from "@ant-design/icons";
 import type { ColumnsType, ColumnGroupType, ColumnType } from "antd/es/table/interface";
 import { brand } from "@/lib/theme";
@@ -41,6 +42,8 @@ export default function HistoricoComprasPage() {
   const [busqueda, setBusqueda] = useState("");
   const [editando, setEditando] = useState<{ matId: number; provId: number } | null>(null);
   const [editValor, setEditValor] = useState<number | null>(null);
+  // Fecha de la cotización (editable, default a hoy).
+  const [editFecha, setEditFecha] = useState<Dayjs>(dayjs());
   const { ocultas, setOcultas } = useColumnasOcultas("historico-matriz-cols-v1");
 
   const fetchData = useCallback(async () => {
@@ -77,12 +80,13 @@ export default function HistoricoComprasPage() {
         body: JSON.stringify({
           material_id: matId, proveedor_id: provId,
           precio_unitario: precio ?? 0, usuario: "Logistica",
+          fecha: editFecha.format("YYYY-MM-DD"),
         }),
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "Error");
       message.success(j.message || "Cotización guardada");
-      setEditando(null); setEditValor(null);
+      setEditando(null); setEditValor(null); setEditFecha(dayjs());
       fetchData();
     } catch (e) {
       if (e instanceof Error) message.error(e.message);
@@ -132,14 +136,24 @@ export default function HistoricoComprasPage() {
         const enEdit = editando?.matId === r.material_id && editando?.provId === p.id;
         if (enEdit) {
           return (
-            <Space size={2}>
-              <InputNumber
-                size="small" autoFocus value={editValor} min={0} step={0.01}
-                style={{ width: 80 }}
-                onChange={(v) => setEditValor(v == null ? null : Number(v))}
-                onPressEnter={() => guardarCotizacion(r.material_id, p.id, editValor)}
+            <Space direction="vertical" size={2} style={{ width: "100%" }}>
+              <Space size={2}>
+                <InputNumber
+                  size="small" autoFocus value={editValor} min={0} step={0.01}
+                  style={{ width: 80 }}
+                  onChange={(v) => setEditValor(v == null ? null : Number(v))}
+                  onPressEnter={() => guardarCotizacion(r.material_id, p.id, editValor)}
+                />
+                <Button size="small" type="primary" onClick={() => guardarCotizacion(r.material_id, p.id, editValor)}>OK</Button>
+              </Space>
+              <DatePicker
+                size="small"
+                value={editFecha}
+                format="DD/MM/YY"
+                onChange={(d) => setEditFecha(d ?? dayjs())}
+                allowClear={false}
+                style={{ width: 110 }}
               />
-              <Button size="small" type="primary" onClick={() => guardarCotizacion(r.material_id, p.id, editValor)}>OK</Button>
             </Space>
           );
         }
@@ -156,7 +170,11 @@ export default function HistoricoComprasPage() {
               lineHeight: 1.15,
             }}
             title={c ? `${c.origen === "cotizacion" ? "Cotización manual" : "Precio de OC"}${c.fecha ? " · " + new Date(c.fecha).toLocaleDateString("es-PE") : ""} — click para editar` : "Sin precio — click para cotizar"}
-            onClick={() => { setEditando({ matId: r.material_id, provId: p.id }); setEditValor(c?.precio ?? null); }}
+            onClick={() => {
+              setEditando({ matId: r.material_id, provId: p.id });
+              setEditValor(c?.precio ?? null);
+              setEditFecha(c?.fecha ? dayjs(c.fecha) : dayjs());
+            }}
           >
             <div>
               {c ? `$ ${fmt(c.precio)}` : <span style={{ color: "#bbb" }}>+ cotizar</span>}

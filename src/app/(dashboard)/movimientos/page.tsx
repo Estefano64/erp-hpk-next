@@ -76,6 +76,9 @@ interface Movimiento {
   stock_actual: number | null;
   tipo_movimiento: "ENTRADA" | "SALIDA" | "AJUSTE";
   cantidad: number;
+  precio_unitario: number | null;
+  moneda: string | null;
+  costo_total: number | null;
   documento_referencia: string | null;
   observacion: string | null;
   usuario: string;
@@ -289,6 +292,43 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
           {r.unidad_medida}
         </span>
       ),
+    },
+    {
+      key: "precio_unitario",
+      title: "Precio Unit.",
+      dataIndex: "precio_unitario",
+      width: 120,
+      align: "right",
+      sorter: (a, b) => (a.precio_unitario ?? 0) - (b.precio_unitario ?? 0),
+      render: (v: number | null, r: Movimiento) => {
+        if (v == null) {
+          return r.tipo_movimiento === "SALIDA"
+            ? <Tooltip title="No se pudo resolver precio (sin catálogo ni OC previa)"><Text type="secondary">—</Text></Tooltip>
+            : <Text type="secondary">—</Text>;
+        }
+        return (
+          <Text style={{ fontSize: 12 }}>
+            {(r.moneda ?? "USD")} {Number(v).toFixed(2)}
+          </Text>
+        );
+      },
+    },
+    {
+      key: "costo_total",
+      title: "Costo Total",
+      dataIndex: "costo_total",
+      width: 120,
+      align: "right",
+      sorter: (a, b) => (a.costo_total ?? 0) - (b.costo_total ?? 0),
+      render: (v: number | null, r: Movimiento) => {
+        if (v == null) return <Text type="secondary">—</Text>;
+        const color = r.tipo_movimiento === "SALIDA" ? "#cf1322" : brand.navy;
+        return (
+          <Text style={{ fontSize: 12, fontWeight: 600, color }}>
+            {(r.moneda ?? "USD")} {Number(v).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </Text>
+        );
+      },
     },
     {
       key: "stock_actual",
@@ -523,6 +563,10 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
 
     if (items.length === 0) {
       message.warning("Ingresa al menos una cantidad");
+      return;
+    }
+    if (!ubicacionRec) {
+      message.warning("Indicá la ubicación física donde se guardó el material recibido.");
       return;
     }
 
@@ -1082,6 +1126,10 @@ function TabSalida({ onRefresh }: { onRefresh: () => void }) {
   const registrar = async (tipo: "SALIDA" | "ENTRADA" | "AJUSTE") => {
     try {
       const values = await form.validateFields();
+      if (tipo === "ENTRADA" && !values.tipo_ingreso) {
+        message.warning("Seleccioná el tipo de ingreso (Bien / Servicio / Cargo directo).");
+        return;
+      }
       setSubmitting(true);
       let res: Response;
       if (esNoCat) {
@@ -1108,6 +1156,8 @@ function TabSalida({ onRefresh }: { onRefresh: () => void }) {
             documento_referencia: values.documento_referencia,
             observacion: values.observacion,
             usuario: values.usuario || "Almacenero",
+            tipo_ingreso: tipo === "ENTRADA" ? values.tipo_ingreso : undefined,
+            persona_recibe: tipo === "SALIDA" ? values.persona_recibe : undefined,
           }),
         });
       }
@@ -1216,7 +1266,35 @@ function TabSalida({ onRefresh }: { onRefresh: () => void }) {
               <Input placeholder="OT-2026-001, OC-123, ajuste, etc." />
             </Form.Item>
 
-            <Form.Item label="Observación" name="observacion">
+            <Row gutter={12}>
+              <Col span={12}>
+                <Form.Item
+                  label={<span>Tipo de ingreso <Text type="secondary" style={{ fontSize: 11 }}>(solo ENTRADA)</Text></span>}
+                  name="tipo_ingreso"
+                  tooltip="BIEN: mercadería física. SERVICIO: servicio facturado. CARGO DIRECTO: cargo a OT sin pasar por stock."
+                >
+                  <Select
+                    placeholder="Bien / Servicio / Cargo directo"
+                    allowClear
+                    options={[
+                      { value: "BIEN", label: "Bien" },
+                      { value: "SERVICIO", label: "Servicio" },
+                      { value: "CARGO_DIRECTO", label: "Cargo directo" },
+                    ]}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  label={<span>Persona que recibe <Text type="secondary" style={{ fontSize: 11 }}>(solo SALIDA)</Text></span>}
+                  name="persona_recibe"
+                >
+                  <Input placeholder="Nombre de quien retira el material" maxLength={150} />
+                </Form.Item>
+              </Col>
+            </Row>
+
+            <Form.Item label="Observación / Comentarios" name="observacion">
               <TextArea rows={2} placeholder="Motivo del movimiento..." />
             </Form.Item>
 

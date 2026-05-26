@@ -1,0 +1,304 @@
+═══════════════════════════════════════════════════════════════════════════════
+ERP HP&K — Áreas del sistema y matriz de permisos por rol
+═══════════════════════════════════════════════════════════════════════════════
+Documento de planificación. Llenar las celdas con: V = Ver, C = Crear, E = Editar,
+B = Borrar/Anular, A = Aprobar, F = Firmar/Cerrar etapa, — = Sin acceso.
+
+Roles definidos hoy en el código (campo `usuario.rol`):
+  - admin       → super-usuario, todos los permisos
+  - supervisor  → jefes de área (operaciones, taller, logística)
+  - tecnico     → mecánicos / evaluadores en planta
+  - logistica   → compras, almacén, despacho
+  - viewer      → solo lectura
+
+═══════════════════════════════════════════════════════════════════════════════
+1. DASHBOARD  (/dashboard)
+═══════════════════════════════════════════════════════════════════════════════
+Vista de inicio con KPIs.
+                                    admin  supervisor  tecnico  logistica  viewer
+  1.1  Ver dashboard                  [ ]      [ ]       [ ]       [ ]       [ ]
+
+═══════════════════════════════════════════════════════════════════════════════
+2. ACEPTACIONES  (/aceptaciones)
+═══════════════════════════════════════════════════════════════════════════════
+Bandeja de requerimientos pendientes de aprobación por Operaciones.
+                                    admin  supervisor  tecnico  logistica  viewer
+  2.1  Ver bandeja                    [ ]      [ ]       [ ]       [ ]       [ ]
+  2.2  Aprobar requerimiento          [ ]      [ ]       [ ]       [ ]       [ ]
+  2.3  Desaprobar requerimiento       [ ]      [ ]       [ ]       [ ]       [ ]
+  2.4  Anular requerimiento           [ ]      [ ]       [ ]       [ ]       [ ]
+
+═══════════════════════════════════════════════════════════════════════════════
+3. OPERACIONES
+═══════════════════════════════════════════════════════════════════════════════
+
+  3.1  Órdenes de Trabajo  (/ordenes-trabajo)
+                                    admin  supervisor  tecnico  logistica  viewer
+    Ver lista de OTs                  [ ]      [ ]       [ ]       [ ]       [ ]
+    Ver detalle de OT                 [ ]      [ ]       [ ]       [ ]       [ ]
+    Crear OT                          [ ]      [ ]       [ ]       [ ]       [ ]
+    Editar OT (cabecera)              [ ]      [ ]       [ ]       [ ]       [ ]
+    Cambiar estado de OT              [ ]      [ ]       [ ]       [ ]       [ ]
+    Subir adjuntos por etapa          [ ]      [ ]       [ ]       [ ]       [ ]
+    Eliminar adjuntos                 [ ]      [ ]       [ ]       [ ]       [ ]
+    Editar tareas de OT               [ ]      [ ]       [ ]       [ ]       [ ]
+    Ver historial de OT               [ ]      [ ]       [ ]       [ ]       [ ]
+    Crear requerimiento (item)        [ ]      [ ]       [ ]       [ ]       [ ]
+    Enviar req a aprobación           [ ]      [ ]       [ ]       [ ]       [ ]
+
+  3.2  Hojas de Evaluación  (/evaluaciones, /ordenes-trabajo/[id]/evaluacion)
+                                    admin  supervisor  tecnico  logistica  viewer
+    Ver evaluación                    [ ]      [ ]       [ ]       [ ]       [ ]
+    Crear/editar evaluación           [ ]      [ ]       [ ]       [ ]       [ ]
+    Ingresar medidas                  [ ]      [ ]       [ ]       [ ]       [ ]
+    Subir informe (PDF/Word)          [ ]      [ ]       [ ]       [ ]       [ ]
+    Eliminar informe                  [ ]      [ ]       [ ]       [ ]       [ ]
+    Solicitar revisión                [ ]      [ ]       [ ]       [ ]       [ ]
+    Aprobar evaluación                [ ]      [ ]       [ ]       [ ]       [ ]
+    Rechazar evaluación               [ ]      [ ]       [ ]       [ ]       [ ]
+    Reabrir evaluación aprobada       [ ]      [ ]       [ ]       [ ]       [ ]
+
+  3.3  Códigos Reparables  (/codigos-reparacion)
+                                    admin  supervisor  tecnico  logistica  viewer
+    Ver listado                       [ ]      [ ]       [ ]       [ ]       [ ]
+    Crear código reparable            [ ]      [ ]       [ ]       [ ]       [ ]
+    Editar código reparable           [ ]      [ ]       [ ]       [ ]       [ ]
+    Editar operaciones (HORAS/HH)     [ ]      [ ]       [ ]       [ ]       [ ]
+    Editar template de requerimientos [ ]      [ ]       [ ]       [ ]       [ ]
+    Eliminar                          [ ]      [ ]       [ ]       [ ]       [ ]
+
+  3.4  Contratos  (/contratos)
+                                    admin  supervisor  tecnico  logistica  viewer
+    Ver contratos                     [ ]      [ ]       [ ]       [ ]       [ ]
+    Crear contrato                    [ ]      [ ]       [ ]       [ ]       [ ]
+    Editar contrato                   [ ]      [ ]       [ ]       [ ]       [ ]
+    Desactivar contrato               [ ]      [ ]       [ ]       [ ]       [ ]
+
+  3.5  Planificación  (/operaciones/planificacion)
+                                    admin  supervisor  tecnico  logistica  viewer
+    Ver Gantt / lista                 [ ]      [ ]       [ ]       [ ]       [ ]
+    Agendar tarea (fechas/recursos)   [ ]      [ ]       [ ]       [ ]       [ ]
+    Reasignar técnico                 [ ]      [ ]       [ ]       [ ]       [ ]
+    Ingresar capturas/medidas         [ ]      [ ]       [ ]       [ ]       [ ]
+    Cerrar / cambiar estado tarea     [ ]      [ ]       [ ]       [ ]       [ ]
+
+  3.6  Programación semanal  (/operaciones/programacion-semanal)
+                                    admin  supervisor  tecnico  logistica  viewer
+    Ver tablero semanal               [ ]      [ ]       [ ]       [ ]       [ ]
+    Editar programación               [ ]      [ ]       [ ]       [ ]       [ ]
+
+  3.7  Dashboard Programación  (/operaciones/programacion-dashboard)
+                                    admin  supervisor  tecnico  logistica  viewer
+    Ver dashboard de programación     [ ]      [ ]       [ ]       [ ]       [ ]
+
+═══════════════════════════════════════════════════════════════════════════════
+4. MANTENIMIENTO
+═══════════════════════════════════════════════════════════════════════════════
+
+  4.1  Equipos del taller  (/mantenimiento/equipos)
+                                    admin  supervisor  tecnico  logistica  viewer
+    Ver listado                       [ ]      [ ]       [ ]       [ ]       [ ]
+    Crear equipo                      [ ]      [ ]       [ ]       [ ]       [ ]
+    Editar equipo                     [ ]      [ ]       [ ]       [ ]       [ ]
+    Eliminar/desactivar               [ ]      [ ]       [ ]       [ ]       [ ]
+    Importar Excel                    [ ]      [ ]       [ ]       [ ]       [ ]
+
+═══════════════════════════════════════════════════════════════════════════════
+5. LOGÍSTICA — Maestros
+═══════════════════════════════════════════════════════════════════════════════
+
+  5.1  Clientes  (/clientes)
+                                    admin  supervisor  tecnico  logistica  viewer
+    Ver listado                       [ ]      [ ]       [ ]       [ ]       [ ]
+    Crear cliente (consulta RUC)      [ ]      [ ]       [ ]       [ ]       [ ]
+    Editar cliente                    [ ]      [ ]       [ ]       [ ]       [ ]
+    Desactivar                        [ ]      [ ]       [ ]       [ ]       [ ]
+    Importar Excel                    [ ]      [ ]       [ ]       [ ]       [ ]
+
+  5.2  Proveedores  (/proveedores)
+                                    admin  supervisor  tecnico  logistica  viewer
+    Ver listado                       [ ]      [ ]       [ ]       [ ]       [ ]
+    Crear proveedor (consulta RUC)    [ ]      [ ]       [ ]       [ ]       [ ]
+    Editar proveedor                  [ ]      [ ]       [ ]       [ ]       [ ]
+    Desactivar                        [ ]      [ ]       [ ]       [ ]       [ ]
+    Importar Excel                    [ ]      [ ]       [ ]       [ ]       [ ]
+
+  5.3  Materiales  (/materiales)
+                                    admin  supervisor  tecnico  logistica  viewer
+    Ver catálogo                      [ ]      [ ]       [ ]       [ ]       [ ]
+    Crear material                    [ ]      [ ]       [ ]       [ ]       [ ]
+    Editar precio                     [ ]      [ ]       [ ]       [ ]       [ ]
+    Editar NP / fabricante            [ ]      [ ]       [ ]       [ ]       [ ]
+    Editar stock máx / pto reposición [ ]      [ ]       [ ]       [ ]       [ ]
+    Desactivar / eliminar             [ ]      [ ]       [ ]       [ ]       [ ]
+    Importar Excel                    [ ]      [ ]       [ ]       [ ]       [ ]
+
+═══════════════════════════════════════════════════════════════════════════════
+6. LOGÍSTICA — Ciclo de compras
+═══════════════════════════════════════════════════════════════════════════════
+
+  6.1  Requerimientos  (/requerimientos, /requerimientos/detalle)
+                                    admin  supervisor  tecnico  logistica  viewer
+    Ver lista                         [ ]      [ ]       [ ]       [ ]       [ ]
+    Editar precio inline (NEW)        [ ]      [ ]       [ ]       [ ]       [ ]
+    Editar cantidad / material        [ ]      [ ]       [ ]       [ ]       [ ]
+    Dividir requerimiento             [ ]      [ ]       [ ]       [ ]       [ ]
+    Aprobar / desaprobar              [ ]      [ ]       [ ]       [ ]       [ ]
+    Anular requerimiento              [ ]      [ ]       [ ]       [ ]       [ ]
+    Subir adjunto                     [ ]      [ ]       [ ]       [ ]       [ ]
+    Consumir de almacén               [ ]      [ ]       [ ]       [ ]       [ ]
+
+  6.2  Cotizaciones / Histórico  (/compras/historico)
+                                    admin  supervisor  tecnico  logistica  viewer
+    Ver matriz precios x proveedor    [ ]      [ ]       [ ]       [ ]       [ ]
+    Editar cotización manual          [ ]      [ ]       [ ]       [ ]       [ ]
+
+  6.3  Órdenes de compra  (/compras, /compras/[id]/editar)
+                                    admin  supervisor  tecnico  logistica  viewer
+    Ver lista de OCs                  [ ]      [ ]       [ ]       [ ]       [ ]
+    Ver detalle de OC                 [ ]      [ ]       [ ]       [ ]       [ ]
+    Crear OC desde requerimientos     [ ]      [ ]       [ ]       [ ]       [ ]
+    Editar items (plantilla OC)       [ ]      [ ]       [ ]       [ ]       [ ]
+    Editar descuento / otros (NEW)    [ ]      [ ]       [ ]       [ ]       [ ]
+    Anular OC                         [ ]      [ ]       [ ]       [ ]       [ ]
+    Aceptar / cambiar estado          [ ]      [ ]       [ ]       [ ]       [ ]
+    Pendientes de ingreso             [ ]      [ ]       [ ]       [ ]       [ ]
+
+═══════════════════════════════════════════════════════════════════════════════
+7. LOGÍSTICA — Almacén de repuestos
+═══════════════════════════════════════════════════════════════════════════════
+
+  7.1  Movimiento de repuestos  (/movimientos)
+                                    admin  supervisor  tecnico  logistica  viewer
+    Ver historial movimientos         [ ]      [ ]       [ ]       [ ]       [ ]
+    Ingresar PO (recepción)           [ ]      [ ]       [ ]       [ ]       [ ]
+    Ajuste manual ENTRADA             [ ]      [ ]       [ ]       [ ]       [ ]
+    Ajuste manual SALIDA              [ ]      [ ]       [ ]       [ ]       [ ]
+    Inventario físico (AJUSTE)        [ ]      [ ]       [ ]       [ ]       [ ]
+
+  7.2  Inventario de stock  (/stock)
+                                    admin  supervisor  tecnico  logistica  viewer
+    Ver stock catalogado              [ ]      [ ]       [ ]       [ ]       [ ]
+
+  7.3  Inventario no catalogado  (/stock/no-catalogados)
+                                    admin  supervisor  tecnico  logistica  viewer
+    Ver listado                       [ ]      [ ]       [ ]       [ ]       [ ]
+    Crear no-catalogado               [ ]      [ ]       [ ]       [ ]       [ ]
+    Editar / movimientos              [ ]      [ ]       [ ]       [ ]       [ ]
+    Catalogar (convertir a Material)  [ ]      [ ]       [ ]       [ ]       [ ]
+
+  7.4  Inventario por OT (despachos internos)  (/despachos)
+                                    admin  supervisor  tecnico  logistica  viewer
+    Ver despachos pendientes          [ ]      [ ]       [ ]       [ ]       [ ]
+    Despachar items a OT              [ ]      [ ]       [ ]       [ ]       [ ]
+
+═══════════════════════════════════════════════════════════════════════════════
+8. LOGÍSTICA — Almacén de herramientas y suministros
+═══════════════════════════════════════════════════════════════════════════════
+
+  8.1  Herramientas  (/herramientas)
+                                    admin  supervisor  tecnico  logistica  viewer
+    Ver listado                       [ ]      [ ]       [ ]       [ ]       [ ]
+    Crear / editar herramienta        [ ]      [ ]       [ ]       [ ]       [ ]
+    Prestar herramienta a OT          [ ]      [ ]       [ ]       [ ]       [ ]
+    Devolver herramienta              [ ]      [ ]       [ ]       [ ]       [ ]
+
+═══════════════════════════════════════════════════════════════════════════════
+9. LOGÍSTICA — Despacho y facturación
+═══════════════════════════════════════════════════════════════════════════════
+
+  9.1  Despacho a mina (Guía de remisión)  (/despachos/mina) [NEW]
+                                    admin  supervisor  tecnico  logistica  viewer
+    Ver OTs listas para despacho      [ ]      [ ]       [ ]       [ ]       [ ]
+    Emitir guía de remisión           [ ]      [ ]       [ ]       [ ]       [ ]
+    Subir adjunto guía firmada        [ ]      [ ]       [ ]       [ ]       [ ]
+    Editar guía emitida               [ ]      [ ]       [ ]       [ ]       [ ]
+
+  9.2  Facturación de OT (mina)  (/facturacion/ot) [NEW]
+                                    admin  supervisor  tecnico  logistica  viewer
+    Ver OTs listas a facturar         [ ]      [ ]       [ ]       [ ]       [ ]
+    Registrar N° factura              [ ]      [ ]       [ ]       [ ]       [ ]
+    Editar monto facturado            [ ]      [ ]       [ ]       [ ]       [ ]
+    Editar factura existente          [ ]      [ ]       [ ]       [ ]       [ ]
+
+  9.3  Guías de OC  (/compras/contabilidad/guias)
+                                    admin  supervisor  tecnico  logistica  viewer
+    Ver guías de OC                   [ ]      [ ]       [ ]       [ ]       [ ]
+    Subir / eliminar guía             [ ]      [ ]       [ ]       [ ]       [ ]
+
+  9.4  Facturación de OC  (/compras/contabilidad/facturas)
+                                    admin  supervisor  tecnico  logistica  viewer
+    Ver facturas de OC                [ ]      [ ]       [ ]       [ ]       [ ]
+    Subir factura (req. guía cargada) [ ]      [ ]       [ ]       [ ]       [ ]
+    Eliminar factura                  [ ]      [ ]       [ ]       [ ]       [ ]
+
+═══════════════════════════════════════════════════════════════════════════════
+10. REPORTES  (/reportes)
+═══════════════════════════════════════════════════════════════════════════════
+                                    admin  supervisor  tecnico  logistica  viewer
+  10.1  Ver reportes operativos       [ ]      [ ]       [ ]       [ ]       [ ]
+  10.2  Exportar a Excel              [ ]      [ ]       [ ]       [ ]       [ ]
+
+═══════════════════════════════════════════════════════════════════════════════
+11. CONFIGURACIÓN
+═══════════════════════════════════════════════════════════════════════════════
+
+  11.1  Configuración de cotización  (/configuracion-cotizacion)
+                                    admin  supervisor  tecnico  logistica  viewer
+    Ver configuración                 [ ]      [ ]       [ ]       [ ]       [ ]
+    Editar tarifa hora USD/SOL        [ ]      [ ]       [ ]       [ ]       [ ]
+    Editar multiplicador HE / IGV     [ ]      [ ]       [ ]       [ ]       [ ]
+
+  11.2  Catálogos maestros  (/catalogos, /catalogos/[tabla])
+        ~30 catálogos: planta, area, ubicacion, moneda, fabricante, etc.
+                                    admin  supervisor  tecnico  logistica  viewer
+    Ver catálogo                      [ ]      [ ]       [ ]       [ ]       [ ]
+    Crear entrada                     [ ]      [ ]       [ ]       [ ]       [ ]
+    Editar entrada                    [ ]      [ ]       [ ]       [ ]       [ ]
+    Desactivar / eliminar             [ ]      [ ]       [ ]       [ ]       [ ]
+
+  11.3  Usuarios y roles               (TODO — no existe UI todavía)
+                                    admin  supervisor  tecnico  logistica  viewer
+    Listar usuarios                   [ ]      [ ]       [ ]       [ ]       [ ]
+    Crear usuario                     [ ]      [ ]       [ ]       [ ]       [ ]
+    Cambiar rol                       [ ]      [ ]       [ ]       [ ]       [ ]
+    Resetear contraseña               [ ]      [ ]       [ ]       [ ]       [ ]
+    Desactivar usuario                [ ]      [ ]       [ ]       [ ]       [ ]
+
+═══════════════════════════════════════════════════════════════════════════════
+ÁREAS ADICIONALES (sin entrada en sidebar pero existen)
+═══════════════════════════════════════════════════════════════════════════════
+
+  A.  Compras > Cotizaciones (precios históricos editables)
+  B.  Compras > /compras/historico/  (mismo módulo, otra ruta)
+  C.  Compras > /compras/[id]/editar  (plantilla OC)
+  D.  Almacenes (API solo): /api/almacenes
+  E.  Trabajadores (API): /api/trabajadores
+  F.  Sunat / consulta RUC: /api/sunat/ruc/[ruc]
+  G.  Operaciones-cod-rep (API): /api/operaciones-cod-rep
+  H.  Tareas (API): /api/tareas
+
+═══════════════════════════════════════════════════════════════════════════════
+NOTAS DE IMPLEMENTACIÓN (cuando se hagan los permisos)
+═══════════════════════════════════════════════════════════════════════════════
+
+  ▸ El campo `usuario.rol` ya existe en el schema (VarChar(20), default "viewer").
+  ▸ Hoy SOLO se valida sesión (NextAuth getToken). El rol no se chequea en casi
+    ningún endpoint — la única verificación rol-based hoy es `isAdmin(req)` en
+    /api/requerimientos/[id] (PUT) para items APROBADO.
+  ▸ Para implementar matriz de permisos:
+      1) Crear helper en src/lib/auth.ts: `hasPermission(req, recurso, accion)`
+         que lea el rol del token y consulte un mapa permisos[rol][recurso].
+      2) Crear catálogo `permiso` en BD (o mapa estático) con: recurso, accion,
+         lista de roles permitidos.
+      3) Aplicar `hasPermission()` al inicio de cada route handler antes de la
+         lógica de negocio. 401 si no hay sesión, 403 si no tiene permiso.
+      4) UI: condicionar botones/links con un hook `usePermissions()` que lee
+         /api/me y compara con la matriz.
+      5) Considerar permisos por almacén también: cada uno de los 3 almacenes
+         (Suministros-Juve, Repuestos-Diego, Stock general-Angelo) puede
+         requerir su propio rol o asignación user→almacén.
+
+═══════════════════════════════════════════════════════════════════════════════
+FIN
+═══════════════════════════════════════════════════════════════════════════════

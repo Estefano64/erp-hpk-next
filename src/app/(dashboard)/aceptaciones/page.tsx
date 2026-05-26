@@ -457,6 +457,26 @@ export default function AceptacionesPage() {
         : <Text type="secondary">—</Text>,
     },
     {
+      key: "cliente", title: "Mina / Cliente", width: 160, ellipsis: true,
+      filters: [...new Set(reqs.map((r) =>
+        r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social,
+      ).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) =>
+        (r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social) === value,
+      render: (_, r) => {
+        const c = r.orden_trabajo?.cliente;
+        if (!c) return <Text type="secondary">—</Text>;
+        return (
+          <Tooltip title={c.razon_social}>
+            <Tag color="purple" style={{ margin: 0 }}>
+              📍 {c.nombre_comercial ?? c.razon_social}
+            </Tag>
+          </Tooltip>
+        );
+      },
+    },
+    {
       key: "descripcion", title: "Material / Descripción", ellipsis: true,
       render: (_, r) => (
         <div style={{ lineHeight: 1.2 }}>
@@ -785,7 +805,7 @@ export default function AceptacionesPage() {
                     }
                     extra={
                       <Space>
-                        {isAdmin && selReqs.length > 0 && (
+                        {selReqs.length > 0 && (
                           <Popconfirm
                             title={`¿Aprobar ${selReqs.length} requerimiento(s) seleccionado(s)?`}
                             onConfirm={bulkAprobarRQ}
@@ -817,10 +837,10 @@ export default function AceptacionesPage() {
                           dataSource={reqs}
                           loading={loading}
                           size="small"
-                          rowSelection={isAdmin ? {
+                          rowSelection={{
                             selectedRowKeys: selReqs,
                             onChange: (keys) => setSelReqs(keys as number[]),
-                          } : undefined}
+                          }}
                           pagination={paginacionEstandar({
                             current: pageRQ, pageSize, total: reqs.length,
                             onChange: (p, s) => { setPageRQ(p); setPageSize(s); },

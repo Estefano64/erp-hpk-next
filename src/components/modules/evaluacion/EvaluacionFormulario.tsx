@@ -1,11 +1,22 @@
 "use client";
 
-import { Card, Row, Col, Input, Checkbox, Radio, InputNumber, Space, Typography, Divider, Image, Upload, Button, App } from "antd";
+import { createContext, useContext, useMemo } from "react";
+import { Card, Row, Col, Input, Checkbox, Radio, InputNumber, Space, Typography, Divider, Image, Upload, Button, App, Tag } from "antd";
 import { CameraOutlined, UploadOutlined, DeleteOutlined } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
+import { findMedidasModelo, modeloForField, type MedidaModelo } from "@/lib/medidas-modelo";
 
 const { Text } = Typography;
 const { TextArea } = Input;
+
+// ── Context de medidas modelo (referencia visual) ───────────
+// Permite que cualquier InputMedida descendiente pueda leer la medida modelo
+// aplicable según el NP del cilindro, sin pasarla por props en toda la cadena.
+interface MedidasModeloContextValue {
+  medida: MedidaModelo | null;
+  unidad: string;
+}
+const MedidasModeloContext = createContext<MedidasModeloContextValue>({ medida: null, unidad: "mm" });
 
 // ── Modelos disponibles ─────────────────────────────────────
 // `codigo`: código corto del catálogo Excel "5. Cod Rep" (CHVS, CHP, etc.)
@@ -57,6 +68,13 @@ interface EvaluacionFormularioProps {
   datos: Record<string, unknown>;
   onChange: (datos: Record<string, unknown>) => void;
   readonly?: boolean;
+  /** N° de parte del cilindro (de la OT/CodRep). Si coincide con una fila del
+   *  catálogo MEDIDAS2.xlsx, los inputs muestran la medida modelo abajo. */
+  np?: string | null;
+  /** Descripción/marca/modelo para fallback de búsqueda si NP no matchea. */
+  descripcionCilindro?: string | null;
+  marca?: string | null;
+  modeloCilindro?: string | null;
 }
 
 // ── Helper: obtener y setear valor ─────────────────────────
@@ -112,6 +130,9 @@ function ImagenReferencia({ componente, label }: { componente: string; label: st
 }
 
 // ── Input de medida numerica ───────────────────────────────
+// Renderiza dos celdas verticales: arriba la medida MODELO (readonly, fondo
+// claro) y abajo el INPUT editable donde el técnico ingresa la medida real.
+// Cuando no hay modelo aplicable, solo se muestra el input.
 function InputMedida({
   name,
   placeholder,
@@ -124,16 +145,46 @@ function InputMedida({
   onChange: (d: Record<string, unknown>) => void;
 }) {
   const v = useValor(datos, onChange);
+  const { medida, unidad } = useContext(MedidasModeloContext);
+  const modelo = useMemo(() => modeloForField(name, medida), [name, medida]);
+  const modeloTexto = modelo != null
+    ? `${modelo >= 100 ? modelo.toFixed(2) : modelo.toFixed(3)} ${unidad}`
+    : null;
   return (
-    <InputNumber
-      size="small"
-      value={v.get(name) as number | undefined}
-      onChange={(val) => v.set(name, val)}
-      placeholder={placeholder || ""}
-      step={0.0001}
-      style={{ width: "100%" }}
-      controls={false}
-    />
+    <div>
+      {modeloTexto && (
+        <div
+          title="Medida modelo (referencia del catálogo)"
+          style={{
+            height: 24,
+            lineHeight: "22px",
+            border: `1px solid ${brand.cyan}`,
+            background: "#f0f9ff",
+            color: brand.navy,
+            borderRadius: 4,
+            padding: "0 6px",
+            fontSize: 11,
+            fontWeight: 600,
+            textAlign: "center",
+            marginBottom: 2,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {modeloTexto}
+        </div>
+      )}
+      <InputNumber
+        size="small"
+        value={v.get(name) as number | undefined}
+        onChange={(val) => v.set(name, val)}
+        placeholder={placeholder || ""}
+        step={0.0001}
+        style={{ width: "100%" }}
+        controls={false}
+      />
+    </div>
   );
 }
 
@@ -956,8 +1007,24 @@ function EtapasTelescopico({
 // ═══════════════════════════════════════════════════════════
 // RENDER PRINCIPAL
 // ═══════════════════════════════════════════════════════════
-export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, onChange, readonly = false }: EvaluacionFormularioProps) {
+export default function EvaluacionFormulario({
+  modelo,
+  sistemaMedicion,
+  datos,
+  onChange,
+  readonly = false,
+  np = null,
+  descripcionCilindro = null,
+  marca = null,
+  modeloCilindro = null,
+}: EvaluacionFormularioProps) {
   const unidad = sistemaMedicion === "Imperial" ? "in" : "mm";
+
+  // Resolver medida modelo aplicable según NP / descripción.
+  const medidaModelo = useMemo(
+    () => findMedidasModelo({ np, descripcion: descripcionCilindro, marca, modelo: modeloCilindro }),
+    [np, descripcionCilindro, marca, modeloCilindro],
+  );
 
   // Prefijo segun tipo
   const prefijos: Record<string, string> = {
@@ -1883,24 +1950,67 @@ export default function EvaluacionFormulario({ modelo, sistemaMedicion, datos, o
     return secciones;
   };
 
+  // Banner informativo cuando se encontró la medida modelo aplicable
+  const bannerModelo = medidaModelo ? (
+    <Card
+      size="small"
+      style={{ marginBottom: 12, background: "#f0f5ff", borderColor: brand.cyan }}
+      styles={{ body: { padding: 8 } }}
+    >
+      <Space size={6} wrap>
+        <Tag color={brand.cyan} style={{ margin: 0 }}>Medida modelo</Tag>
+        <Text strong style={{ fontSize: 12 }}>
+          {medidaModelo.descripcion ?? "—"}
+        </Text>
+        <Text type="secondary" style={{ fontSize: 11 }}>
+          {medidaModelo.marca ?? ""} {medidaModelo.modelo ?? ""} · NP {medidaModelo.np1 ?? medidaModelo.np2 ?? "—"}
+        </Text>
+        <Tag style={{ margin: 0 }}>Unidades: {medidaModelo.sistema}</Tag>
+        <Text type="secondary" style={{ fontSize: 11 }}>
+          Los valores “ref:” bajo cada input son las medidas modelo de este cilindro.
+        </Text>
+      </Space>
+    </Card>
+  ) : np ? (
+    <Card
+      size="small"
+      style={{ marginBottom: 12, background: "#fffbe6", borderColor: "#ffe58f" }}
+      styles={{ body: { padding: 8 } }}
+    >
+      <Text type="secondary" style={{ fontSize: 12 }}>
+        ⚠ No se encontró medida modelo para NP <b>{np}</b> en el catálogo MEDIDAS2. Los inputs no muestran referencia.
+      </Text>
+    </Card>
+  ) : null;
+
+  const contextValue = { medida: medidaModelo, unidad };
+
   if (readonly) {
     // Bloquear todos los inputs internos (Input, InputNumber, Checkbox, Radio, button/Upload)
     // usando <fieldset disabled> que desactiva a nivel DOM.
     return (
-      <fieldset
-        disabled
-        style={{
-          border: "none",
-          padding: 0,
-          margin: 0,
-          minWidth: 0,
-          opacity: 0.85,
-        }}
-      >
-        {renderSecciones()}
-      </fieldset>
+      <MedidasModeloContext.Provider value={contextValue}>
+        <fieldset
+          disabled
+          style={{
+            border: "none",
+            padding: 0,
+            margin: 0,
+            minWidth: 0,
+            opacity: 0.85,
+          }}
+        >
+          {bannerModelo}
+          {renderSecciones()}
+        </fieldset>
+      </MedidasModeloContext.Provider>
     );
   }
 
-  return <>{renderSecciones()}</>;
+  return (
+    <MedidasModeloContext.Provider value={contextValue}>
+      {bannerModelo}
+      {renderSecciones()}
+    </MedidasModeloContext.Provider>
+  );
 }

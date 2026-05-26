@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { resolverPrecioSalida } from "@/lib/inventario";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -84,12 +85,17 @@ export async function POST(req: NextRequest, { params }: Params) {
         );
       }
 
+      // Snapshot del precio al momento de la salida (cascada catálogo → última OC).
+      const { precio: precioSnap, moneda: monedaSnap } = await resolverPrecioSalida(tx, rep.material_id);
+
       // 1) Crear movimiento SALIDA.
       await tx.movimientoInventario.create({
         data: {
           material_id: rep.material_id,
           tipo_movimiento: "SALIDA",
           cantidad,
+          precio_unitario: precioSnap,
+          moneda: monedaSnap,
           documento_referencia: rep.nro_req ? `REQ-${rep.nro_req}` : `REQ-${rep.id}`,
           observacion:
             parsed.data.observacion

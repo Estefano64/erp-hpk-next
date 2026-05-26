@@ -1105,6 +1105,15 @@ model MovimientoInventario {
   material_id          Int
   tipo_movimiento      TipoMovimientoInventario
   cantidad             Decimal                  @db.Decimal(10, 2)
+  // Snapshot del precio unitario al momento del movimiento (solo SALIDAs por ahora).
+  // Para SALIDAs: cascada material.precio → última OC → null.
+  precio_unitario      Decimal?                 @db.Decimal(15, 4)
+  moneda               String?                  @db.VarChar(10)
+  // Para ENTRADAs: clasifica el origen — BIEN (mercadería física), SERVICIO,
+  // CARGO_DIRECTO (sin pasar por stock físico).
+  tipo_ingreso         String?                  @db.VarChar(20)
+  // Para SALIDAs: a quién se le entregó el material físicamente.
+  persona_recibe       String?                  @db.VarChar(150)
   documento_referencia String?                  @db.VarChar(50)
   observacion          String?
   usuario              String                   @db.VarChar(50)
@@ -1356,6 +1365,9 @@ model EvaluacionTecnica {
   sistema_medicion         String       @default("Metrico") @db.VarChar(10)
   fecha_evaluacion         DateTime?    @db.Date
   evaluado_por             String?      @db.VarChar(150)
+  // Supervisor que valida la evaluación al pie del informe (distinto de
+  // `revisado_por` que se llena en el flujo de aprobación posterior).
+  supervisor               String?      @db.VarChar(150)
   datos_formulario         Json         @default("{}")
   resultado_general        String?
   recomendaciones_general  String?

@@ -62,6 +62,8 @@ interface RequerimientoRow {
   status_requerimiento: { codigo: string; nombre: string } | null;
   status_cotizacion: { codigo: string; nombre: string } | null;
   status_oc: { codigo: string; nombre: string } | null;
+  usuario_aprueba: string | null;
+  fecha_aprobacion: string | null;
   proveedor: { id: number; razon_social: string } | null;
   compra: { id: number; numero_po: string } | null;
   po_id: number | null;
@@ -1031,11 +1033,32 @@ export default function RequerimientosPage() {
     },
     {
       title: "REQ", key: "req", width: 110, align: "center",
-      render: (_, r) => r.status_requerimiento ? (
-        <Tag color={REQ_COLOR[r.status_requerimiento.codigo] ?? "default"} style={{ margin: 0, fontSize: 10 }}>
-          {r.status_requerimiento.nombre}
-        </Tag>
-      ) : "—",
+      render: (_, r) => {
+        if (!r.status_requerimiento) return "—";
+        const tag = (
+          <Tag color={REQ_COLOR[r.status_requerimiento.codigo] ?? "default"} style={{ margin: 0, fontSize: 10 }}>
+            {r.status_requerimiento.nombre}
+          </Tag>
+        );
+        // Para APROBADO: tooltip con quién aprobó y fecha.
+        if (r.status_requerimiento.codigo === "APROBADO" && (r.usuario_aprueba || r.fecha_aprobacion)) {
+          return (
+            <Tooltip
+              title={
+                <div style={{ fontSize: 12, lineHeight: 1.4 }}>
+                  <div><b>Aprobado por:</b> {r.usuario_aprueba ?? "—"}</div>
+                  {r.fecha_aprobacion && (
+                    <div><b>Fecha:</b> {formatDateOnly(r.fecha_aprobacion)}</div>
+                  )}
+                </div>
+              }
+            >
+              {tag}
+            </Tooltip>
+          );
+        }
+        return tag;
+      },
     },
     {
       title: "OC", key: "oc", width: 130, align: "center",

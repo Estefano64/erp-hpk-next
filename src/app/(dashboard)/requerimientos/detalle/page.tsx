@@ -228,6 +228,9 @@ function RequerimientosDetalleInner() {
   const [proveedores, setProveedores] = useState<ProveedorApi[]>([]);
   const [almacenes, setAlmacenes] = useState<AlmacenApi[]>([]);
   const [creatingOC, setCreatingOC] = useState(false);
+  // Precios editados dentro del modal (id_requerimiento → precio). Se persisten
+  // al confirmar "Generar OC" vía PATCH /api/requerimientos/[id]/precio.
+  const [preciosModal, setPreciosModal] = useState<Record<number, number>>({});
 
   // Modal de Dividir
   const [modalDividir, setModalDividir] = useState<Requerimiento | null>(null);
@@ -371,6 +374,14 @@ function RequerimientosDetalleInner() {
       message.warning("Selecciona al menos un requerimiento");
       return;
     }
+    // Inicializa el mapa de precios editables con el precio actual de cada
+    // requerimiento (0 si no tiene). La tabla del modal permite ajustarlos.
+    const precios: Record<number, number> = {};
+    for (const r of selectedRecords) {
+      const p = Number(r.precio_unitario ?? 0);
+      precios[r.id] = Number.isFinite(p) && p > 0 ? p : 0;
+    }
+    setPreciosModal(precios);
     ocForm.setFieldsValue({
       moneda: "USD",
       fecha_entrega_esperada: dayjs().add(15, "day"),
@@ -382,7 +393,43 @@ function RequerimientosDetalleInner() {
   const generarOC = async () => {
     try {
       const values = await ocForm.validateFields();
+
+      // Validar precios del modal (todos deben ser > 0).
+      const sinPrecio = selectedRecords.filter((r) => {
+        const p = preciosModal[r.id] ?? 0;
+        return !Number.isFinite(p) || p <= 0;
+      });
+      if (sinPrecio.length > 0) {
+        const labels = sinPrecio.map((r) => `${r.nro_req ?? `#${r.id}`}/${r.item_req ?? "-"}`).join(", ");
+        message.error(`Falta precio en ${sinPrecio.length} item(s): ${labels}`);
+        return;
+      }
+
       setCreatingOC(true);
+
+      // Persistir cambios de precio antes de crear la OC. Solo se PATCHean los
+      // items cuyo precio del modal difiere del precio original.
+      const cambios = selectedRecords.filter((r) => {
+        const local = preciosModal[r.id];
+        const orig = Number(r.precio_unitario ?? 0);
+        return Math.abs(local - orig) > 0.0001;
+      });
+      for (const r of cambios) {
+        const resP = await fetch(`/api/requerimientos/${r.id}/precio`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            precio_unitario: preciosModal[r.id],
+            moneda: values.moneda ?? "USD",
+            proveedor_id: values.proveedor_id ?? undefined,
+          }),
+        });
+        if (!resP.ok) {
+          const j = await resP.json().catch(() => ({}));
+          throw new Error(j.error ?? `Error guardando precio del item ${r.nro_req ?? r.id}`);
+        }
+      }
+
       const res = await fetch("/api/compras/crear-oc", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1256,26 +1303,114 @@ function RequerimientosDetalleInner() {
         width={modalWidth(screens, 900)}
         footer={null}
       >
+        {(() => {
+          // Totales recalculados en vivo sobre `preciosModal` para que reflejen
+          // los precios editados antes de generar la OC.
+          const totalSubModal = selectedRecords.reduce(
+            (s, r) => s + (preciosModal[r.id] ?? 0) * Number(r.cantidad ?? 0),
+            0,
+          );
+          const totalFinalModal = totalSubModal * 1.18;
+          return (
+            <div style={{ marginBottom: 16 }}>
+              <Card size="small" style={{ background: brand.bgPage }}>
+                <Row gutter={16}>
+                  <Col span={8}>
+                    <Statistic title="Items" value={selectedRows.length} />
+                  </Col>
+                  <Col span={8}>
+                    <Statistic title="Subtotal" value={totalSubModal} precision={2} prefix="$" />
+                  </Col>
+                  <Col span={8}>
+                    <Statistic
+                      title="Total + IGV"
+                      value={totalFinalModal}
+                      precision={2}
+                      prefix="$"
+                      styles={{ content: { color: brand.navy, fontWeight: 700 } }}
+                    />
+                  </Col>
+                </Row>
+              </Card>
+            </div>
+          );
+        })()}
+
+        {/* Tabla editable de precios — el usuario completa/ajusta el precio
+            unitario de cada item antes de generar la OC. */}
         <div style={{ marginBottom: 16 }}>
-          <Card size="small" style={{ background: brand.bgPage }}>
-            <Row gutter={16}>
-              <Col span={8}>
-                <Statistic title="Items" value={selectedRows.length} />
-              </Col>
-              <Col span={8}>
-                <Statistic title="Subtotal" value={totalSub} precision={2} prefix="$" />
-              </Col>
-              <Col span={8}>
-                <Statistic
-                  title="Total + IGV"
-                  value={totalFinal}
-                  precision={2}
-                  prefix="$"
-                  styles={{ content: { color: brand.navy, fontWeight: 700 } }}
-                />
-              </Col>
-            </Row>
-          </Card>
+          <Text strong style={{ fontSize: 13 }}>Precios por item</Text>
+          <Text type="secondary" style={{ fontSize: 11, marginLeft: 8 }}>
+            (editá el precio unitario en el que comprarás cada ítem)
+          </Text>
+          <Table
+            size="small"
+            rowKey="id"
+            dataSource={selectedRecords}
+            pagination={false}
+            style={{ marginTop: 6 }}
+            columns={[
+              {
+                title: "Req / Item", key: "ref", width: 110,
+                render: (_, r: Requerimiento) => (
+                  <Text style={{ fontSize: 11 }}>
+                    {r.nro_req ?? `#${r.id}`}<Text type="secondary"> / {r.item_req ?? "-"}</Text>
+                  </Text>
+                ),
+              },
+              {
+                title: "Descripción", key: "desc", ellipsis: true,
+                render: (_, r: Requerimiento) => (
+                  <Text style={{ fontSize: 12 }}>
+                    {r.material_codigo ? `${r.material_codigo} — ` : ""}{r.descripcion ?? "—"}
+                  </Text>
+                ),
+              },
+              {
+                title: "Cant.", key: "cant", width: 80, align: "right",
+                render: (_, r: Requerimiento) => (
+                  <Text style={{ fontSize: 12 }}>{Number(r.cantidad).toLocaleString()} {r.unidad_medida ?? ""}</Text>
+                ),
+              },
+              {
+                title: "Precio unit.", key: "precio", width: 130, align: "right",
+                render: (_, r: Requerimiento) => {
+                  const val = preciosModal[r.id] ?? 0;
+                  const invalido = !Number.isFinite(val) || val <= 0;
+                  return (
+                    <InputNumber
+                      size="small"
+                      value={val || null}
+                      min={0}
+                      step={0.01}
+                      precision={2}
+                      style={{
+                        width: "100%",
+                        borderColor: invalido ? "#ff4d4f" : undefined,
+                        background: invalido ? "#fff1f0" : undefined,
+                      }}
+                      placeholder="0.00"
+                      onChange={(v) =>
+                        setPreciosModal((prev) => ({ ...prev, [r.id]: v == null ? 0 : Number(v) }))
+                      }
+                    />
+                  );
+                },
+              },
+              {
+                title: "Subtotal", key: "sub", width: 110, align: "right",
+                render: (_, r: Requerimiento) => {
+                  const p = preciosModal[r.id] ?? 0;
+                  const c = Number(r.cantidad);
+                  return (
+                    <Text strong style={{ fontSize: 12, color: brand.navy }}>
+                      {(p * c).toFixed(2)}
+                    </Text>
+                  );
+                },
+              },
+            ]}
+          />
         </div>
 
         <Form form={ocForm} layout="vertical">

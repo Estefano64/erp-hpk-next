@@ -165,6 +165,14 @@ export async function GET(req: NextRequest) {
     if (filtro === "por_solicitar") data = data.filter((m: StockItem) => m.por_solicitar > 0);
     if (filtro === "en_po") data = data.filter((m: StockItem) => m.cantidad_en_po > 0);
     if (filtro === "en_req") data = data.filter((m: StockItem) => m.cantidad_en_req > 0);
+    if (filtro === "con_min_max") {
+      data = data.filter((m: StockItem) => m.punto_reposicion > 0 && m.stock_maximo > 0);
+    }
+    if (filtro === "min_max_sin_stock") {
+      data = data.filter((m: StockItem) =>
+        m.punto_reposicion > 0 && m.stock_maximo > 0 && m.stock_actual <= 0,
+      );
+    }
 
     // KPIs
     const totalMateriales = data.length;
@@ -175,6 +183,15 @@ export async function GET(req: NextRequest) {
     const enReq = data.filter((m: StockItem) => m.cantidad_en_req > 0).length;
     const porSolicitar = data.filter((m: StockItem) => m.por_solicitar > 0).length;
     const valorTotal = data.reduce((s: number, m: StockItem) => s + m.valor_total, 0);
+    // Catálogos con punto_reposicion y stock_maximo configurados (>0)
+    const conMinMax = data.filter(
+      (m: StockItem) => m.punto_reposicion > 0 && m.stock_maximo > 0,
+    ).length;
+    // De los anteriores, cuántos están sin stock
+    const conMinMaxSinStock = data.filter(
+      (m: StockItem) =>
+        m.punto_reposicion > 0 && m.stock_maximo > 0 && m.stock_actual <= 0,
+    ).length;
 
     // Balance de inventario: total de ENTRADAS vs SALIDAS (y AJUSTE) sobre movimientos.
     const movAgrupado = await prisma.movimientoInventario.groupBy({
@@ -194,6 +211,7 @@ export async function GET(req: NextRequest) {
       data,
       kpis: {
         totalMateriales, sinStock, bajoStock, exceso, enPO, enReq, porSolicitar, valorTotal,
+        conMinMax, conMinMaxSinStock,
         totalEntradas, totalSalidas, totalAjustes, balanceStock,
       },
     });
