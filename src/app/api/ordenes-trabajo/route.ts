@@ -274,27 +274,45 @@ export async function POST(req: NextRequest) {
           orderBy: { item_numero: "asc" },
         });
         if (tareas.length > 0) {
-          const { nextNroReq } = await import("@/lib/requerimientos");
+          const { nextNroReq, pickDescripcionFromTarea } = await import("@/lib/requerimientos");
           await prisma.$transaction(async (tx) => {
             const nroReq = await nextNroReq(tx);
+
+            // Pre-cargar Materiales con todos los campos que usamos (descripción real,
+            // unidad de medida y fabricante específico — no la del cod_rep que es genérica).
             const codigosMat = [...new Set(tareas.filter((t) => t.material_codigo).map((t) => t.material_codigo!))];
             const materiales = codigosMat.length > 0
-              ? await tx.material.findMany({ where: { codigo: { in: codigosMat } }, select: { codigo: true, material_id: true } })
+              ? await tx.material.findMany({
+                  where: { codigo: { in: codigosMat } },
+                  select: { material_id: true, codigo: true, descripcion: true, unidad_medida_codigo: true, fabricante_codigo: true },
+                })
               : [];
-            const matMap = new Map(materiales.map((m) => [m.codigo, m.material_id]));
+            const matByCodigo = new Map(materiales.map((m) => [m.codigo, m]));
+
+            // Pre-cargar Servicios para los SER con servicio_codigo asignado.
+            const codigosSvc = [...new Set(tareas.filter((t) => t.servicio_codigo).map((t) => t.servicio_codigo!))];
+            const servicios = codigosSvc.length > 0
+              ? await tx.servicioReparacion.findMany({
+                  where: { codigo: { in: codigosSvc } },
+                  select: { codigo: true, nombre: true, descripcion: true },
+                })
+              : [];
+            const svcByCodigo = new Map(servicios.map((s) => [s.codigo, s]));
+
             for (let i = 0; i < tareas.length; i++) {
               const t = tareas[i];
+              const mat = t.material_codigo ? matByCodigo.get(t.material_codigo) : null;
               await tx.oTRepuesto.create({
                 data: {
                   ot_id: created.id,
-                  material_id: t.material_codigo ? matMap.get(t.material_codigo) ?? null : null,
+                  material_id: mat?.material_id ?? null,
                   material_codigo: t.material_codigo ?? null,
                   tipo_codigo: t.tipo_codigo,
                   cantidad: t.requerimiento,
-                  descripcion: t.descripcion,
+                  descripcion: pickDescripcionFromTarea(t, matByCodigo, svcByCodigo),
                   texto: t.texto ?? null,
-                  fabricante_codigo: t.fabricante_codigo ?? null,
-                  unidad_medida: "UNIDAD",
+                  fabricante_codigo: t.fabricante_codigo ?? mat?.fabricante_codigo ?? null,
+                  unidad_medida: mat?.unidad_medida_codigo ?? "UNIDAD",
                   precio_unitario: t.precio ?? null,
                   moneda: "USD",
                   es_adicional: false,

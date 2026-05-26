@@ -61,3 +61,60 @@ export const ESTADOS_REQ_LOCKED_DELETE = new Set(["APROBADO", "ANULADO"]);
  * Después de "Enviar a aprobación", solo el admin puede tocar.
  */
 export const ESTADOS_REQ_USER_EDITABLES = new Set(["BORRADOR"]);
+
+// ── Helper compartido para resolver descripción al copiar template ─────────
+// Usado por POST /api/ordenes-trabajo (creación con cod_rep) y por
+// POST /api/ordenes-trabajo/[id]/requerimientos/aplicar-template.
+// Antes vivía duplicado en aplicar-template; quedaba el bug de que la creación
+// de OT no lo aplicaba y los SER terminaban con la descripción genérica del
+// cod_rep en vez del `texto` específico ("SVC Cromado", "SVC NDT", etc.).
+
+export interface TareaParaDescripcion {
+  tipo_codigo: string;
+  material_codigo: string | null;
+  servicio_codigo: string | null;
+  texto: string | null;
+  descripcion: string;
+}
+
+export interface MaterialLookup {
+  codigo: string;
+  descripcion: string;
+  unidad_medida_codigo?: string | null;
+  fabricante_codigo?: string | null;
+  material_id?: number;
+}
+
+export interface ServicioLookup {
+  codigo: string;
+  nombre: string;
+  descripcion: string | null;
+}
+
+/**
+ * Decide qué texto guardar en `ot_repuestos.descripcion` al copiar una Tarea
+ * template. Prioridad:
+ *   1. MAC con material_codigo: descripción del Material (más específico).
+ *   2. SER con servicio_codigo: descripción/nombre del ServicioReparacion.
+ *   3. SER sin servicio_codigo pero con texto: el `texto` de la Tarea
+ *      (típicamente "SVC Cromado", "SVC NDT", etc.).
+ *   4. Fallback: `texto` si hay, o si no la `descripcion` genérica del cod_rep.
+ */
+export function pickDescripcionFromTarea(
+  t: TareaParaDescripcion,
+  matByCodigo: Map<string, MaterialLookup>,
+  svcByCodigo: Map<string, ServicioLookup>,
+): string {
+  if (t.tipo_codigo === "MAC" && t.material_codigo) {
+    const m = matByCodigo.get(t.material_codigo);
+    if (m?.descripcion) return m.descripcion;
+  }
+  if (t.tipo_codigo === "SER") {
+    if (t.servicio_codigo) {
+      const s = svcByCodigo.get(t.servicio_codigo);
+      if (s) return s.descripcion ?? s.nombre;
+    }
+    if (t.texto) return t.texto;
+  }
+  return t.texto || t.descripcion;
+}

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
-import { nextNroReq } from "@/lib/requerimientos";
+import { nextNroReq, pickDescripcionFromTarea } from "@/lib/requerimientos";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -92,21 +92,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         : [];
       const svcByCodigo = new Map(servicios.map((s) => [s.codigo, s]));
 
-      function pickDescripcion(t: typeof tareas[number]): string {
-        if (t.tipo_codigo === "MAC" && t.material_codigo) {
-          const m = matByCodigo.get(t.material_codigo);
-          if (m?.descripcion) return m.descripcion;
-        }
-        if (t.tipo_codigo === "SER") {
-          if (t.servicio_codigo) {
-            const s = svcByCodigo.get(t.servicio_codigo);
-            if (s) return s.descripcion ?? s.nombre;
-          }
-          if (t.texto) return t.texto;
-        }
-        // CAD u otros: preferimos texto si existe (es lo "específico"); descripcion suele ser genérica del cod_rep.
-        return t.texto || t.descripcion;
-      }
+      // Resolver descripción usa el helper compartido (también lo usa POST /api/ordenes-trabajo).
 
       // Un solo nro_req para todo el template, item_req incremental dentro
       const nroReq = await nextNroReq(tx);
@@ -121,7 +107,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
             material_codigo: t.material_codigo ?? null,
             tipo_codigo: t.tipo_codigo,
             cantidad: t.requerimiento,
-            descripcion: pickDescripcion(t),
+            descripcion: pickDescripcionFromTarea(t, matByCodigo, svcByCodigo),
             texto: t.texto ?? null,
             fabricante_codigo: t.fabricante_codigo ?? mat?.fabricante_codigo ?? null,
             unidad_medida: mat?.unidad_medida_codigo ?? "UNIDAD",
