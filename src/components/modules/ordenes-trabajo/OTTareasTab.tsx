@@ -375,7 +375,7 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
       ...filtroPorColumna(rows, "componente"),
       render: (v: string) => <Tag color={brand.cyan}>{v}</Tag>,
     },
-    { key: "descripcion", title: "Tarea", dataIndex: "descripcion", ellipsis: true,
+    { key: "descripcion", title: "Tarea", dataIndex: "descripcion", width: 320, ellipsis: true,
       ...filtroPorColumna(rows, "descripcion"),
       render: (v: string, r) => {
         const code = (r.operacion_codigo ?? "").trim();
