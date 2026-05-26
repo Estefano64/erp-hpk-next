@@ -24,6 +24,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
         ot_status: true,
         recursos_status: true,
         taller_status: true,
+        moneda_cotizacion: true,
       },
     });
 

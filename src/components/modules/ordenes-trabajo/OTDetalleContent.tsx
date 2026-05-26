@@ -123,6 +123,9 @@ interface OTDetalle {
   prioridad_atencion: { codigo: string; nombre: string } | null;
   base_metalica: { nombre: string } | null;
   garantia: { nombre: string } | null;
+  monto_cotizacion: number | string | null;
+  moneda_cotizacion_codigo: string | null;
+  moneda_cotizacion: { codigo: string; nombre: string } | null;
 }
 
 interface Props {
@@ -199,6 +202,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   const atencionReparacionesRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=atencionReparacion");
   const prioridadesRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=prioridadAtencion");
   const tipoGarantiasRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=tipoGarantia");
+  const monedasRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=moneda");
 
   const otStatuses = otStatusesRes?.data ?? [];
   const recursosStatuses = recursosStatusesRes?.data ?? [];
@@ -209,6 +213,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   const atencionReparaciones = atencionReparacionesRes?.data ?? [];
   const prioridades = prioridadesRes?.data ?? [];
   const tipoGarantias = tipoGarantiasRes?.data ?? [];
+  const monedas = monedasRes?.data ?? [];
 
   const fetchOT = useCallback(async () => {
     if (!otId) return;
@@ -288,6 +293,8 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
       tipo_garantia_codigo: ot.tipo_garantia_codigo,
       prioridad_atencion_codigo: ot.prioridad_atencion_codigo,
       base_metalica_codigo: ot.base_metalica_codigo,
+      monto_cotizacion: ot.monto_cotizacion != null ? Number(ot.monto_cotizacion) : null,
+      moneda_cotizacion_codigo: ot.moneda_cotizacion_codigo,
     });
     setEditing(true);
   }
@@ -871,6 +878,16 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
               <Col xs={12} md={4}><Field label="Tipo Garantía" value={ot.tipo_garantia?.nombre} /></Col>
               <Col xs={12} md={3}><Field label="Base Metálica" value={ot.base_metalica_codigo} /></Col>
               <Col xs={12} md={3}><Field label="Contrato (días)" value={ot.contrato_dias} /></Col>
+              <Col xs={24} md={6}>
+                <Field
+                  label="Cotización"
+                  value={
+                    ot.monto_cotizacion != null
+                      ? `${Number(ot.monto_cotizacion).toLocaleString("es-PE", { minimumFractionDigits: 2 })} ${ot.moneda_cotizacion?.codigo ?? ot.moneda_cotizacion_codigo ?? ""}`.trim()
+                      : null
+                  }
+                />
+              </Col>
             </Row>
           ) : (
             <Row gutter={[16, 12]}>
@@ -911,6 +928,32 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                 <FieldLabel>Base Metálica</FieldLabel>
                 <Checkbox checked={editData.base_metalica_codigo === "Si"}
                   onChange={(e) => setField("base_metalica_codigo", e.target.checked ? "Si" : "No")}>Sí</Checkbox>
+              </Col>
+              <Col xs={16} md={6}>
+                <FieldLabel>Cotización (monto + moneda)</FieldLabel>
+                <Input.Group compact style={{ display: "flex" }}>
+                  <InputNumber
+                    placeholder="0.00"
+                    min={0}
+                    step={100}
+                    value={editData.monto_cotizacion as number ?? undefined}
+                    onChange={(v) => setField("monto_cotizacion", v)}
+                    style={{ flex: 1 }}
+                    formatter={(v) => {
+                      if (v == null) return "";
+                      const n = Number(v);
+                      return Number.isNaN(n) ? "" : n.toLocaleString("es-PE", { minimumFractionDigits: 2 });
+                    }}
+                    parser={(v) => Number((v ?? "").replace(/[^\d.]/g, "")) as 0}
+                  />
+                  <Select
+                    placeholder="Moneda"
+                    value={editData.moneda_cotizacion_codigo as string}
+                    onChange={(v) => setField("moneda_cotizacion_codigo", v)}
+                    style={{ width: 110 }}
+                    options={monedas.map((m) => ({ value: m.codigo, label: m.codigo }))}
+                  />
+                </Input.Group>
               </Col>
             </Row>
           )}

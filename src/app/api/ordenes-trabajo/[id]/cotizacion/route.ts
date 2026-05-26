@@ -208,6 +208,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         where: { id: otId },
         data: {
           monto_cotizacion: result.total,
+          moneda_cotizacion_codigo: result.moneda,
           fecha_cotizacion: new Date(),
           ...(parsed.data.nro_cotizacion ? { nro_cotizacion: parsed.data.nro_cotizacion } : {}),
         },

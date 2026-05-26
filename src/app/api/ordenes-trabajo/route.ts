@@ -197,6 +197,8 @@ export async function POST(req: NextRequest) {
         contrato_dias: contratoDias,
         base_metalica_codigo: body.base_metalica_codigo || null,
         comentarios: body.comentarios || null,
+        monto_cotizacion: body.monto_cotizacion != null && body.monto_cotizacion !== "" ? body.monto_cotizacion : null,
+        moneda_cotizacion_codigo: body.moneda_cotizacion_codigo || null,
         fecha_requerimiento_cliente: fechaRequerimiento,
         // Status por defecto al crear
         ot_status_codigo: "Abierta",

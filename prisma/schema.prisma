@@ -86,6 +86,7 @@ model Moneda {
   equipos            Equipo[]
   materiales         Material[]
   compras            Compra[]
+  ordenes_trabajo_cotizacion OrdenTrabajo[] @relation("MonedaCotizacion")
 
   @@map("moneda")
 }
@@ -900,6 +901,7 @@ model OrdenTrabajo {
   reparacion_piston           String?             @db.VarChar(10)
   nro_cotizacion              String?             @db.VarChar(100)
   monto_cotizacion            Decimal?            @db.Decimal(15, 2)
+  moneda_cotizacion_codigo    String?             @db.VarChar(10)
   fecha_cotizacion            DateTime?           @db.Date
   dias_cotizacion             Int?
   fecha_aprobacion            DateTime?           @db.Date
@@ -938,6 +940,7 @@ model OrdenTrabajo {
   tipo_garantia               TipoGarantia?       @relation(fields: [tipo_garantia_codigo], references: [codigo])
   tipo_ot                     TipoOT?             @relation(fields: [tipo_codigo], references: [codigo])
   tipo_reparacion             TipoReparacion?     @relation(fields: [tipo_reparacion_codigo], references: [codigo])
+  moneda_cotizacion           Moneda?             @relation("MonedaCotizacion", fields: [moneda_cotizacion_codigo], references: [codigo])
   adjuntos                    OtAdjunto[]
   historial                   OTHistorial[]
   repuestos                   OTRepuesto[]

@@ -72,6 +72,7 @@ export default function NuevaOTPage() {
   const [fabricantes, setFabricantes] = useState<FabricanteOption[]>([]);
   const [flotas, setFlotas] = useState<CatalogOption[]>([]);
   const [posiciones, setPosiciones] = useState<CatalogOption[]>([]);
+  const [monedas, setMonedas] = useState<CatalogOption[]>([]);
 
   // Estado del form para lógica condicional
   const [estrategia, setEstrategia] = useState(false);
@@ -88,7 +89,7 @@ export default function NuevaOTPage() {
 
   useEffect(() => {
     async function loadCatalogs() {
-      const [cliRes, crRes, tipoRepRes, atencionRes, prioRes, tipoGarRes, tipoCRRes, fabRes, flotaRes, posRes, tipoOTRes] = await Promise.all([
+      const [cliRes, crRes, tipoRepRes, atencionRes, prioRes, tipoGarRes, tipoCRRes, fabRes, flotaRes, posRes, tipoOTRes, monRes] = await Promise.all([
         fetch("/api/clientes?limit=100"),
         fetch("/api/codigos-reparacion?limit=500"),
         fetch("/api/catalogos?tabla=tipoReparacion"),
@@ -100,6 +101,7 @@ export default function NuevaOTPage() {
         fetch("/api/catalogos?tabla=flotaEquipo"),
         fetch("/api/catalogos?tabla=posicion"),
         fetch("/api/catalogos?tabla=tipoOT"),
+        fetch("/api/catalogos?tabla=moneda"),
       ]);
       if (cliRes.ok) setClientes((await cliRes.json()).data ?? []);
       if (crRes.ok) setCodReps((await crRes.json()).data ?? []);
@@ -112,6 +114,7 @@ export default function NuevaOTPage() {
       if (flotaRes.ok) setFlotas((await flotaRes.json()).data ?? []);
       if (posRes.ok) setPosiciones((await posRes.json()).data ?? []);
       if (tipoOTRes.ok) setTiposOT((await tipoOTRes.json()).data ?? []);
+      if (monRes.ok) setMonedas((await monRes.json()).data ?? []);
     }
     loadCatalogs();
   }, []);
@@ -238,6 +241,8 @@ export default function NuevaOTPage() {
         tipo_garantia_codigo: garantia ? (values.tipo_garantia_codigo || null) : "NA",
         prioridad_atencion_codigo: values.prioridad_atencion_codigo || null,
         base_metalica_codigo: values.base_metalica ? "Si" : "No",
+        monto_cotizacion: values.monto_cotizacion ?? null,
+        moneda_cotizacion_codigo: values.moneda_cotizacion_codigo || null,
         comentarios: values.comentarios || null,
         fecha_requerimiento_cliente: atencionCodigo !== "Contrato" && values.fecha_requerimiento_cliente
           ? values.fecha_requerimiento_cliente.format("YYYY-MM-DD")
@@ -573,6 +578,33 @@ export default function NuevaOTPage() {
             <Col xs={12} md={4}>
               <Form.Item label="Base Metálica" name="base_metalica" valuePropName="checked">
                 <Checkbox>Si</Checkbox>
+              </Form.Item>
+            </Col>
+            <Col xs={16} md={8}>
+              <Form.Item label="Cotización (monto + moneda)">
+                <Input.Group compact style={{ display: "flex" }}>
+                  <Form.Item name="monto_cotizacion" noStyle>
+                    <InputNumber
+                      placeholder="0.00"
+                      min={0}
+                      step={100}
+                      style={{ flex: 1 }}
+                      formatter={(v) => {
+                        if (v == null) return "";
+                        const n = Number(v);
+                        return Number.isNaN(n) ? "" : n.toLocaleString("es-PE", { minimumFractionDigits: 2 });
+                      }}
+                      parser={(v) => Number((v ?? "").replace(/[^\d.]/g, "")) as 0}
+                    />
+                  </Form.Item>
+                  <Form.Item name="moneda_cotizacion_codigo" noStyle>
+                    <Select
+                      placeholder="Moneda"
+                      style={{ width: 110 }}
+                      options={monedas.map((m) => ({ value: m.codigo, label: m.codigo }))}
+                    />
+                  </Form.Item>
+                </Input.Group>
               </Form.Item>
             </Col>
           </Row>
