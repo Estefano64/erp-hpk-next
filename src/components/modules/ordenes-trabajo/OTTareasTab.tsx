@@ -364,7 +364,7 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
 
   const columns: ColumnsType<PlanRow> = [
     {
-      key: "orden", title: "N°", dataIndex: "orden", width: 50, align: "center",
+      key: "orden", title: "N°", dataIndex: "orden", width: 50, align: "center", fixed: "left",
       sorter: (a, b) => (a.orden ?? 0) - (b.orden ?? 0),
       filters: ordenesUnicos, filterSearch: true,
       onFilter: (value, r) => String(r.orden ?? "") === value,
