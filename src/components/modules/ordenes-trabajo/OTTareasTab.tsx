@@ -156,7 +156,7 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
           fetch("/api/catalogos?tabla=operacionReparacion"),
           fetch("/api/equipos?limit=200&tipo=MAQ"),
           fetch("/api/catalogos?tabla=statusTarea"),
-          fetch("/api/trabajadores?limit=200"),
+          fetch("/api/trabajadores?limit=200&soloOperarios=1"),
         ]);
         const jsonC = await resC.json();
         const jsonO = await resO.json();

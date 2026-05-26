@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 
+// Áreas/puestos cuyos trabajadores NO se asignan como operarios en tareas u
+// OTs. Confirmado con el usuario el 2026-05-26: jefes, compras, limpieza y
+// seguridad quedan fuera del selector de operario.
+const AREAS_NO_OPERATIVAS = ["LIMPIEZA", "SEGURIDAD"];
+const PUESTOS_NO_OPERATIVOS = ["COMPRAS"];
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = req.nextUrl;
@@ -9,6 +15,9 @@ export async function GET(req: NextRequest) {
     const search = searchParams.get("search")?.trim();
     const area = searchParams.get("area")?.trim();
     const activos = searchParams.get("activos") !== "false";
+    // ?soloOperarios=1 excluye limpieza, seguridad, compras y jefes (cualquier puesto que arranque con "JEFE").
+    // Usado por los selectores de operario en OTTareasTab y operaciones/planificacion.
+    const soloOperarios = searchParams.get("soloOperarios") === "1";
 
     const where: Record<string, unknown> = {};
     if (activos) where.activo = true;
@@ -18,6 +27,13 @@ export async function GET(req: NextRequest) {
         { nombre: { contains: search, mode: "insensitive" } },
         { dni: { contains: search } },
         { puesto: { contains: search, mode: "insensitive" } },
+      ];
+    }
+    if (soloOperarios) {
+      where.AND = [
+        { area: { notIn: AREAS_NO_OPERATIVAS } },
+        { puesto: { notIn: PUESTOS_NO_OPERATIVOS } },
+        { NOT: { puesto: { startsWith: "JEFE", mode: "insensitive" } } },
       ];
     }
 
