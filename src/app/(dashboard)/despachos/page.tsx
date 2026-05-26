@@ -4,13 +4,14 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Typography, Card, Table, Tag, Space, Button, Row, Col, Statistic, Empty,
-  Popconfirm, App, Tooltip, Alert,
+  App, Tooltip, Alert, Modal, Form, Input, DatePicker,
 } from "antd";
 import {
   ExportOutlined, ReloadOutlined, CheckCircleOutlined, WarningOutlined,
-  ToolOutlined, InboxOutlined, EyeOutlined,
+  InboxOutlined, EyeOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
+import dayjs, { Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
 import {
   numeracionColumn, useColumnasOcultas, ColumnasToggleButton, visibleColumns,
@@ -80,18 +81,43 @@ export default function DespachosPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const despachar = async (otId: number) => {
+  // Modal de "Datos del despacho" antes de confirmar.
+  const [modalDespacho, setModalDespacho] = useState<{ otId: number; otLabel: string } | null>(null);
+  const [formDespacho] = Form.useForm<{
+    fecha_despacho: Dayjs;
+    persona_recibe?: string;
+    comentarios?: string;
+  }>();
+
+  const abrirModalDespacho = (otId: number, otLabel: string) => {
     const ids = seleccionados[otId] ?? [];
     if (ids.length === 0) {
       message.warning("Seleccioná al menos un item.");
       return;
     }
+    formDespacho.resetFields();
+    formDespacho.setFieldsValue({ fecha_despacho: dayjs() });
+    setModalDespacho({ otId, otLabel });
+  };
+
+  const confirmarDespacho = async () => {
+    if (!modalDespacho) return;
+    const otId = modalDespacho.otId;
+    const ids = seleccionados[otId] ?? [];
+    if (ids.length === 0) return;
+    const values = await formDespacho.validateFields().catch(() => null);
+    if (!values) return;
     try {
       setSubmitting(otId);
       const res = await fetch(`/api/despachos/ot/${otId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ requerimiento_ids: ids }),
+        body: JSON.stringify({
+          requerimiento_ids: ids,
+          fecha_despacho: values.fecha_despacho.format("YYYY-MM-DD"),
+          persona_recibe: values.persona_recibe ?? null,
+          comentarios: values.comentarios ?? null,
+        }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Error");
@@ -100,6 +126,7 @@ export default function DespachosPage() {
         message.warning(`${json.errores.length} item(s) con error: ${json.errores.map((e: { error: string }) => e.error).join(", ")}`);
       }
       setSeleccionados((prev) => ({ ...prev, [otId]: [] }));
+      setModalDespacho(null);
       fetchData();
     } catch (err: unknown) {
       message.error(err instanceof Error ? err.message : "Error");
@@ -146,11 +173,43 @@ export default function DespachosPage() {
           grupo={g}
           seleccionados={seleccionados[g.ot_id] ?? []}
           onSelectChange={(ids) => setSeleccionados((prev) => ({ ...prev, [g.ot_id]: ids }))}
-          onDespachar={() => despachar(g.ot_id)}
+          onDespachar={() => abrirModalDespacho(g.ot_id, g.ot ?? `OT #${g.ot_id}`)}
           submitting={submitting === g.ot_id}
           router={router}
         />)
       )}
+
+      {/* Modal de datos del despacho */}
+      <Modal
+        title={modalDespacho ? `Despachar — ${modalDespacho.otLabel}` : ""}
+        open={!!modalDespacho}
+        onCancel={() => setModalDespacho(null)}
+        onOk={confirmarDespacho}
+        confirmLoading={modalDespacho ? submitting === modalDespacho.otId : false}
+        okText={`Despachar ${modalDespacho ? (seleccionados[modalDespacho.otId] ?? []).length : 0} item(s)`}
+        cancelText="Cancelar"
+        width={520}
+      >
+        <Form form={formDespacho} layout="vertical" preserve={false}>
+          <Form.Item
+            name="fecha_despacho"
+            label="Fecha de despacho"
+            rules={[{ required: true, message: "Fecha requerida" }]}
+          >
+            <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" />
+          </Form.Item>
+          <Form.Item
+            name="persona_recibe"
+            label="Persona que recibe"
+            tooltip="Nombre de quien retira el material en la planta del cliente"
+          >
+            <Input placeholder="Nombre de la persona" maxLength={150} />
+          </Form.Item>
+          <Form.Item name="comentarios" label="Comentarios">
+            <Input.TextArea rows={3} placeholder="Observaciones del despacho..." maxLength={500} />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }
@@ -260,22 +319,15 @@ function GrupoCard({
             setOcultas={setOcultas}
             obligatorias={["nro_req", "desc", "cantidad", "puede"]}
           />
-          <Popconfirm
-            title={`Despachar ${seleccionados.length} item(s)?`}
-            description="Se descontará del stock y se marcará como ENTREGADO."
-            onConfirm={onDespachar}
-            okText="Despachar" cancelText="Cancelar"
+          <Button
+            type="primary"
+            icon={<ExportOutlined />}
             disabled={seleccionados.length === 0}
+            loading={submitting}
+            onClick={onDespachar}
           >
-            <Button
-              type="primary"
-              icon={<ExportOutlined />}
-              disabled={seleccionados.length === 0}
-              loading={submitting}
-            >
-              Despachar seleccionados ({seleccionados.length})
-            </Button>
-          </Popconfirm>
+            Despachar seleccionados ({seleccionados.length})
+          </Button>
         </Space>
       }
     >

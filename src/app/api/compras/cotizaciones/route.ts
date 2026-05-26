@@ -9,6 +9,7 @@ const Schema = z.object({
   moneda_codigo: z.string().trim().max(10).optional().nullable(),
   observaciones: z.string().trim().max(300).optional().nullable(),
   usuario: z.string().trim().optional().nullable(),
+  fecha: z.string().optional().nullable(),
 });
 
 // POST — upsert de la cotización manual (override) de un material a un proveedor.
@@ -29,6 +30,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: "Cotización eliminada (usa precio de OC)" });
     }
 
+    // Fecha del payload (YYYY-MM-DD) o por defecto la actual.
+    const fechaCot = d.fecha ? new Date(d.fecha + "T00:00:00") : new Date();
     const record = await prisma.cotizacionProveedor.upsert({
       where: { material_id_proveedor_id: { material_id: d.material_id, proveedor_id: d.proveedor_id } },
       create: {
@@ -38,13 +41,14 @@ export async function POST(req: NextRequest) {
         moneda_codigo: d.moneda_codigo || "USD",
         observaciones: d.observaciones || null,
         usuario: d.usuario || "sistema",
+        fecha: fechaCot,
       },
       update: {
         precio_unitario: d.precio_unitario,
         moneda_codigo: d.moneda_codigo || "USD",
         observaciones: d.observaciones || null,
         usuario: d.usuario || "sistema",
-        fecha: new Date(),
+        fecha: fechaCot,
       },
     });
     return NextResponse.json({ data: record });

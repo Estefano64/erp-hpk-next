@@ -3,11 +3,15 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
+import { resolverPrecioSalida } from "@/lib/inventario";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 const Schema = z.object({
   requerimiento_ids: z.array(z.coerce.number().int().positive()).min(1),
+  fecha_despacho: z.string().optional().nullable(),
+  persona_recibe: z.string().trim().max(150).optional().nullable(),
+  comentarios: z.string().trim().max(500).optional().nullable(),
 });
 
 // POST /api/despachos/ot/[id]
@@ -26,6 +30,12 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       return NextResponse.json({ error: "Validación", detail: parsed.error.flatten() }, { status: 400 });
     }
     const usuario = (await getAuditUser(req)) ?? "Logistica";
+    // Datos del despacho (default a hoy si no vienen).
+    const fechaDespacho = parsed.data.fecha_despacho
+      ? new Date(parsed.data.fecha_despacho + "T00:00:00")
+      : new Date();
+    const personaRecibe = parsed.data.persona_recibe?.trim() || null;
+    const comentariosBulk = parsed.data.comentarios?.trim() || null;
 
     const result = await prisma.$transaction(async (tx) => {
       const ok: number[] = [];
@@ -58,14 +68,27 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         const nuevaDespachada = yaDespachado.plus(aDespachar);
         const quedaCompleto = nuevaDespachada.gte(cantTotal);
 
+        // Snapshot del precio al momento de la salida.
+        const { precio: precioSnap, moneda: monedaSnap } = await resolverPrecioSalida(tx, rep.material_id);
+
+        // Observación con cabecera de bulk + detalle item.
+        const obsItem = `Despacho a OT — REQ ${rep.nro_req ?? rep.id}/${rep.item_req ?? "-"}${quedaCompleto ? "" : " (parcial)"}`;
+        const observacionFinal = comentariosBulk
+          ? `${comentariosBulk} · ${obsItem}`
+          : obsItem;
+
         // Movimiento SALIDA
         await tx.movimientoInventario.create({
           data: {
             material_id: rep.material_id,
             tipo_movimiento: "SALIDA",
             cantidad: aDespachar,
+            precio_unitario: precioSnap,
+            moneda: monedaSnap,
+            persona_recibe: personaRecibe,
+            fecha_movimiento: fechaDespacho,
             documento_referencia: rep.nro_req ? `REQ-${rep.nro_req}` : `REQ-${rep.id}`,
-            observacion: `Despacho a OT — REQ ${rep.nro_req ?? rep.id}/${rep.item_req ?? "-"}${quedaCompleto ? "" : " (parcial)"}`,
+            observacion: observacionFinal,
             usuario,
           },
         });
@@ -82,9 +105,9 @@ export async function POST(req: NextRequest, { params }: Ctx) {
           data: {
             status_oc_codigo: quedaCompleto ? "ENTREGADO" : "INCOMPLETO",
             cantidad_recibida: nuevaDespachada,
-            fecha_entrega_real: quedaCompleto ? new Date() : rep.fecha_entrega_real,
-            fecha_salida_almacen: new Date(),
-            observaciones: `${obsPrev}Despacho desde almacén el ${new Date().toLocaleDateString("es-PE")} — ${etiqueta} (${usuario})`,
+            fecha_entrega_real: quedaCompleto ? fechaDespacho : rep.fecha_entrega_real,
+            fecha_salida_almacen: fechaDespacho,
+            observaciones: `${obsPrev}Despacho desde almacén el ${fechaDespacho.toLocaleDateString("es-PE")} — ${etiqueta} (${usuario})${personaRecibe ? ` — recibe: ${personaRecibe}` : ""}${comentariosBulk ? ` · ${comentariosBulk}` : ""}`,
           },
         });
         if (quedaCompleto) ok.push(rep.id);
@@ -94,13 +117,25 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       // Historial único por la operación
       const totalDespachado = ok.length + parciales.length;
       if (totalDespachado > 0) {
+        const descBase = `Despacho desde almacén a la OT: ${ok.length} completo(s), ${parciales.length} parcial(es)`;
+        const descExtra = [
+          fechaDespacho ? `fecha ${fechaDespacho.toLocaleDateString("es-PE")}` : null,
+          personaRecibe ? `recibe ${personaRecibe}` : null,
+          comentariosBulk ? `coment.: ${comentariosBulk}` : null,
+        ].filter(Boolean).join(" · ");
         await tx.oTHistorial.create({
           data: {
             ot_id: otId,
             tipo_operacion: "DESPACHO_OT",
-            descripcion: `Despacho desde almacén a la OT: ${ok.length} completo(s), ${parciales.length} parcial(es)`,
+            descripcion: descExtra ? `${descBase} — ${descExtra}` : descBase,
             usuario,
-            datos_adicionales: JSON.stringify({ completos: ok, parciales }),
+            datos_adicionales: JSON.stringify({
+              completos: ok,
+              parciales,
+              fecha_despacho: fechaDespacho.toISOString(),
+              persona_recibe: personaRecibe,
+              comentarios: comentariosBulk,
+            }),
           },
         });
       }

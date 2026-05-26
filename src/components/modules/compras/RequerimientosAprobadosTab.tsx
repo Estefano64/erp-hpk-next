@@ -72,6 +72,9 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
     observaciones?: string;
     nombre?: string;
   }>();
+  // Precios editados dentro del modal de OC (id → precio). Se persisten al
+  // confirmar "Generar OC" llamando al PATCH de precio por cada item modificado.
+  const [preciosModal, setPreciosModal] = useState<Record<number, number>>({});
 
   // Edición inline de precio por fila
   const [editPrecioId, setEditPrecioId] = useState<number | null>(null);
@@ -140,24 +143,6 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
       messageApi.warning("Seleccioná al menos un requerimiento.");
       return;
     }
-    // Validación: TODOS los items seleccionados deben tener precio > 0.
-    const sinPrecio = selectedRows.filter((r) => {
-      const p = Number(r.precio_unitario ?? 0);
-      return !Number.isFinite(p) || p <= 0;
-    });
-    if (sinPrecio.length > 0) {
-      const labels = sinPrecio.map((r) => `${r.nro_req ?? `#${r.id}`}/${r.item_req ?? "-"}`).join(", ");
-      modalApi.error({
-        title: "Faltan precios para crear la OC",
-        content: (
-          <div>
-            <p>{sinPrecio.length} item(s) sin precio unitario: <b>{labels}</b></p>
-            <p>Asigná un precio a cada item antes de generar la OC (click en la columna “Precio unit.”).</p>
-          </div>
-        ),
-      });
-      return;
-    }
     if (proveedoresEnSeleccion.size > 1) {
       modalApi.warning({
         title: "Proveedores múltiples",
@@ -166,6 +151,15 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
     }
     const provId = selectedRows.find((r) => r.proveedor_id)?.proveedor_id;
     const moneda = selectedRows.find((r) => r.moneda)?.moneda ?? "USD";
+    // Inicializa los precios del modal con los precios actuales (o 0 si faltan).
+    // Dentro del modal hay una tabla editable para que el usuario complete o ajuste
+    // los precios antes de generar la OC.
+    const precios: Record<number, number> = {};
+    for (const r of selectedRows) {
+      const p = Number(r.precio_unitario ?? 0);
+      precios[r.id] = Number.isFinite(p) && p > 0 ? p : 0;
+    }
+    setPreciosModal(precios);
     ocForm.resetFields();
     ocForm.setFieldsValue({ proveedor_id: provId ?? undefined, moneda });
     setOcOpen(true);
@@ -174,8 +168,44 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
   async function onCrearOC() {
     const values = await ocForm.validateFields().catch(() => null);
     if (!values) return;
+
+    // Validar que TODOS los items tengan precio > 0 dentro del modal.
+    const sinPrecio = selectedRows.filter((r) => {
+      const p = preciosModal[r.id] ?? 0;
+      return !Number.isFinite(p) || p <= 0;
+    });
+    if (sinPrecio.length > 0) {
+      const labels = sinPrecio.map((r) => `${r.nro_req ?? `#${r.id}`}/${r.item_req ?? "-"}`).join(", ");
+      messageApi.error(`Falta precio en ${sinPrecio.length} item(s): ${labels}`);
+      return;
+    }
+
     setOcSaving(true);
     try {
+      // Persistir cambios de precio antes de crear la OC. Sólo se PATCHean los
+      // items cuyo precio del modal difiere del precio actual en la fila.
+      const cambios = selectedRows.filter((r) => {
+        const local = preciosModal[r.id];
+        const orig = Number(r.precio_unitario ?? 0);
+        return Math.abs(local - orig) > 0.0001;
+      });
+      for (const r of cambios) {
+        const resP = await fetch(`/api/requerimientos/${r.id}/precio`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            precio_unitario: preciosModal[r.id],
+            moneda: r.moneda ?? values.moneda ?? "USD",
+            proveedor_id: r.proveedor_id ?? values.proveedor_id ?? undefined,
+          }),
+        });
+        if (!resP.ok) {
+          const j = await resP.json().catch(() => ({}));
+          messageApi.error(j.error ?? `Error guardando precio del item ${r.nro_req ?? r.id}`);
+          return;
+        }
+      }
+
       const res = await fetch("/api/compras/crear-oc", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -438,8 +468,99 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
         confirmLoading={ocSaving}
         okText="Generar OC"
         cancelText="Cancelar"
-        width={620}
+        width={820}
       >
+        {/* Tabla editable de precios — el usuario completa/ajusta cada precio
+            antes de generar la OC. Se persisten en onCrearOC vía PATCH. */}
+        <div style={{ marginBottom: 16 }}>
+          <Text strong style={{ fontSize: 13 }}>Precios por item</Text>
+          <Text type="secondary" style={{ fontSize: 11, marginLeft: 8 }}>
+            (editá el precio unitario en el que comprarás cada ítem)
+          </Text>
+          <Table
+            size="small"
+            rowKey="id"
+            dataSource={selectedRows}
+            pagination={false}
+            style={{ marginTop: 6 }}
+            columns={[
+              {
+                title: "Req / Item", key: "ref", width: 110,
+                render: (_, r: Row) => (
+                  <Text style={{ fontSize: 11 }}>
+                    {r.nro_req ?? `#${r.id}`}<Text type="secondary"> / {r.item_req ?? "-"}</Text>
+                  </Text>
+                ),
+              },
+              {
+                title: "Descripción", key: "desc", ellipsis: true,
+                render: (_, r: Row) => (
+                  <Text style={{ fontSize: 12 }}>
+                    {r.material_codigo ? `${r.material_codigo} — ` : ""}{r.descripcion ?? "—"}
+                  </Text>
+                ),
+              },
+              {
+                title: "Cant.", key: "cant", width: 80, align: "right",
+                render: (_, r: Row) => (
+                  <Text style={{ fontSize: 12 }}>{Number(r.cantidad).toLocaleString()} {r.unidad_medida ?? ""}</Text>
+                ),
+              },
+              {
+                title: "Precio unit.", key: "precio", width: 130, align: "right",
+                render: (_, r: Row) => {
+                  const val = preciosModal[r.id] ?? 0;
+                  const invalido = !Number.isFinite(val) || val <= 0;
+                  return (
+                    <InputNumber
+                      size="small"
+                      value={val || null}
+                      min={0}
+                      step={0.01}
+                      precision={2}
+                      style={{
+                        width: "100%",
+                        borderColor: invalido ? "#ff4d4f" : undefined,
+                        background: invalido ? "#fff1f0" : undefined,
+                      }}
+                      placeholder="0.00"
+                      onChange={(v) =>
+                        setPreciosModal((prev) => ({ ...prev, [r.id]: v == null ? 0 : Number(v) }))
+                      }
+                    />
+                  );
+                },
+              },
+              {
+                title: "Subtotal", key: "sub", width: 110, align: "right",
+                render: (_, r: Row) => {
+                  const p = preciosModal[r.id] ?? 0;
+                  const c = Number(r.cantidad);
+                  const sub = p * c;
+                  return (
+                    <Text strong style={{ fontSize: 12, color: brand.navy }}>
+                      {sub.toFixed(2)}
+                    </Text>
+                  );
+                },
+              },
+            ]}
+            summary={() => {
+              const total = selectedRows.reduce((acc, r) => acc + (preciosModal[r.id] ?? 0) * Number(r.cantidad), 0);
+              return (
+                <Table.Summary.Row>
+                  <Table.Summary.Cell index={0} colSpan={4} align="right">
+                    <Text strong>Subtotal:</Text>
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={1} align="right">
+                    <Text strong style={{ color: brand.navy }}>{total.toFixed(2)}</Text>
+                  </Table.Summary.Cell>
+                </Table.Summary.Row>
+              );
+            }}
+          />
+        </div>
+
         <Form form={ocForm} layout="vertical">
           <Form.Item name="proveedor_id" label="Proveedor" rules={[{ required: true, message: "Proveedor requerido" }]}>
             <Select showSearch optionFilterProp="label" placeholder="Buscá por nombre o RUC…" options={proveedoresOpts} />

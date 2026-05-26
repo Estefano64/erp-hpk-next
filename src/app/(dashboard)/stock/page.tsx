@@ -43,6 +43,7 @@ import {
   filtroPorColumna,
   useColumnasRedimensionables,
 } from "@/lib/tables";
+import { EditableCell } from "@/components/EditableCell";
 import dayjs from "dayjs";
 
 
@@ -85,6 +86,8 @@ interface StockKPIs {
   enReq: number;
   porSolicitar: number;
   valorTotal: number;
+  conMinMax: number;
+  conMinMaxSinStock: number;
   totalEntradas: number;
   totalSalidas: number;
   totalAjustes: number;
@@ -104,7 +107,8 @@ export default function StockPage() {
   const [kpis, setKpis] = useState<StockKPIs>({
     totalMateriales: 0, sinStock: 0, bajoStock: 0,
     exceso: 0, enPO: 0, enReq: 0, porSolicitar: 0,
-    valorTotal: 0, totalEntradas: 0, totalSalidas: 0, totalAjustes: 0, balanceStock: 0,
+    valorTotal: 0, conMinMax: 0, conMinMaxSinStock: 0,
+    totalEntradas: 0, totalSalidas: 0, totalAjustes: 0, balanceStock: 0,
   });
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -183,11 +187,18 @@ export default function StockPage() {
   }, [data, noCatRaw, vistaOrigen, search]);
 
   // KPIs combinados: cuando se ven "todos", suma los no catalogados.
+  // Los no-catalogados no llevan punto_reposicion/stock_maximo, así que no
+  // afectan los KPIs de min/max.
   const kpisVista = useMemo(() => {
     const ncTotal = noCatRaw.length;
     const ncSin = noCatRaw.filter((m) => m.stock_actual <= 0).length;
     if (vistaOrigen === "no_catalogado") {
-      return { ...kpis, totalMateriales: ncTotal, sinStock: ncSin, bajoStock: 0, exceso: 0, enPO: 0, enReq: 0, porSolicitar: 0 };
+      return {
+        ...kpis,
+        totalMateriales: ncTotal, sinStock: ncSin,
+        bajoStock: 0, exceso: 0, enPO: 0, enReq: 0, porSolicitar: 0,
+        conMinMax: 0, conMinMaxSinStock: 0,
+      };
     }
     if (vistaOrigen === "todos") {
       return {
@@ -211,13 +222,13 @@ export default function StockPage() {
         <Col span={12}><span style={{ color: "#888" }}>Stock máximo:</span> <b>{r.stock_maximo}</b></Col>
         <Col span={12}><span style={{ color: "#888" }}>En POs (entrante):</span> <b style={{ color: "#1677ff" }}>+{r.cantidad_en_po}</b></Col>
         <Col span={12}><span style={{ color: "#888" }}>En REQ (a solicitar):</span> <b style={{ color: "#faad14" }}>{r.cantidad_en_req}</b></Col>
-        <Col span={12}><span style={{ color: "#888" }}>Stock proyectado:</span> <b style={{ color: brand.cyan }}>{r.stock_proyectado}</b></Col>
+        <Col span={12}><span style={{ color: "#888" }}>Stock disponible:</span> <b style={{ color: brand.cyan }}>{r.stock_proyectado}</b></Col>
         <Col span={12}><span style={{ color: "#888" }}>Por solicitar:</span> <b style={{ color: r.por_solicitar > 0 ? "#cf1322" : "#666" }}>{r.por_solicitar}</b></Col>
         <Col span={12}><span style={{ color: "#888" }}>Almacén:</span> <b>{r.almacen || "-"}</b></Col>
         <Col span={12}><span style={{ color: "#888" }}>Ubicación:</span> <b>{r.ubicacion || "-"}</b></Col>
         <Col span={12}><span style={{ color: "#888" }}>Caja:</span> <b>{r.caja || "-"}</b></Col>
         <Col span={12}><span style={{ color: "#888" }}>Fabricante:</span> <b>{r.fabricante || "-"}</b></Col>
-        <Col span={12}><span style={{ color: "#888" }}>Precio:</span> <b>{r.precio ? `${r.moneda || ""} ${r.precio.toFixed(2)}` : "-"}</b></Col>
+        <Col span={12}><span style={{ color: "#888" }}>Precio último:</span> <b>{r.precio ? `${r.moneda || ""} ${r.precio.toFixed(2)}` : "-"}</b></Col>
         <Col span={12}><span style={{ color: "#888" }}>Valor total:</span> <b style={{ color: brand.navy }}>{r.moneda || "USD"} {r.valor_total.toFixed(2)}</b></Col>
         {r.pos_pendientes.length > 0 && (
           <Col span={24} style={{ borderTop: `1px dashed ${brand.border}`, paddingTop: 4, marginTop: 4 }}>
@@ -246,6 +257,24 @@ export default function StockPage() {
       if (v !== null && v !== undefined && v !== "") set.add(String(v));
     });
     return [...set].sort().map((v) => ({ text: v, value: v }));
+  };
+
+  // Guarda ubicación de un material vía PATCH; refresca el row optimista en data.
+  const guardarUbicacion = async (materialId: number, nuevaUbicacion: string | null) => {
+    const res = await fetch(`/api/materiales/${materialId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ubicacion: nuevaUbicacion ?? "" }),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      message.error(j.error ?? "Error al guardar ubicación");
+      throw new Error(j.error ?? "Error");
+    }
+    message.success("Ubicación actualizada");
+    setData((prev) =>
+      prev.map((r) => (r.material_id === materialId ? { ...r, ubicacion: nuevaUbicacion ?? null } : r)),
+    );
   };
 
   const columns: ColumnsType<StockItem> = [
@@ -310,6 +339,21 @@ export default function StockPage() {
         </span>
       ),
     },
+    {
+      key: "stock_proyectado",
+      title: "Disponible",
+      dataIndex: "stock_proyectado",
+      width: 100,
+      align: "right",
+      sorter: (a, b) => a.stock_proyectado - b.stock_proyectado,
+      render: (v: number) => (
+        <Tooltip title="Stock + lo entrante en POs − lo solicitado en REQ">
+          <b style={{ color: v < 0 ? "#cf1322" : v === 0 ? "#faad14" : brand.cyan }}>
+            {v.toLocaleString("en", { maximumFractionDigits: 2 })}
+          </b>
+        </Tooltip>
+      ),
+    },
     { key: "unidad_medida", title: "UM", dataIndex: "unidad_medida", width: 55, align: "center", ...filtroPorColumna(data, "unidad_medida") },
     {
       key: "cantidad_en_po",
@@ -344,21 +388,6 @@ export default function StockPage() {
         ),
     },
     {
-      key: "stock_proyectado",
-      title: "Proyectado",
-      dataIndex: "stock_proyectado",
-      width: 100,
-      align: "right",
-      sorter: (a, b) => a.stock_proyectado - b.stock_proyectado,
-      render: (v: number) => (
-        <Tooltip title="Stock + lo entrante en POs - lo solicitado en REQ">
-          <b style={{ color: v < 0 ? "#cf1322" : v === 0 ? "#faad14" : brand.cyan }}>
-            {v.toLocaleString("en", { maximumFractionDigits: 2 })}
-          </b>
-        </Tooltip>
-      ),
-    },
-    {
       key: "punto_reposicion",
       title: "Pto. Repo",
       dataIndex: "punto_reposicion",
@@ -379,20 +408,6 @@ export default function StockPage() {
       onFilter: (value, r) => String(Number(r.stock_maximo)) === value,
     },
     {
-      key: "por_solicitar",
-      title: "Por Solicitar",
-      dataIndex: "por_solicitar",
-      width: 110,
-      align: "right",
-      sorter: (a, b) => a.por_solicitar - b.por_solicitar,
-      render: (v: number) =>
-        v > 0 ? (
-          <Tag color="red" style={{ fontWeight: 600 }}>↑ {v}</Tag>
-        ) : (
-          <span style={{ color: "#bbb" }}>—</span>
-        ),
-    },
-    {
       key: "almacen",
       title: "Almacén",
       dataIndex: "almacen",
@@ -402,7 +417,24 @@ export default function StockPage() {
       onFilter: (value, r) => r.almacen === value,
       render: (v: string | null) => v || <span style={{ color: "#bbb" }}>—</span>,
     },
-    { key: "ubicacion", title: "Ubicación", dataIndex: "ubicacion", width: 110, ...filtroPorColumna(data, "ubicacion") },
+    {
+      key: "ubicacion",
+      title: "Ubicación",
+      dataIndex: "ubicacion",
+      width: 130,
+      ...filtroPorColumna(data, "ubicacion"),
+      render: (v: string | null, r: StockItem) => (
+        <EditableCell
+          value={v}
+          type="string"
+          emptyPlaceholder="+ ubicar"
+          onSave={async (next) => {
+            const txt = (next == null || next === "") ? null : String(next).trim() || null;
+            await guardarUbicacion(r.material_id, txt);
+          }}
+        />
+      ),
+    },
     {
       key: "fabricante",
       title: "Fabricante",
@@ -414,9 +446,9 @@ export default function StockPage() {
     },
     {
       key: "precio",
-      title: "Precio",
+      title: "Precio Último",
       dataIndex: "precio",
-      width: 100,
+      width: 110,
       align: "right",
       render: (v: number | null, r: StockItem) => (v != null ? `${r.moneda || ""} ${v.toFixed(2)}` : "-"),
     },
@@ -448,7 +480,7 @@ export default function StockPage() {
         "POs Pendientes": m.pos_pendientes.join(", "),
         "En REQ": m.cantidad_en_req,
         "REQs Pendientes": m.reqs_pendientes.join(", "),
-        "Stock Proyectado": m.stock_proyectado,
+        "Stock Disponible": m.stock_proyectado,
         "Pto. Reposición": m.punto_reposicion,
         Máximo: m.stock_maximo,
         "Por Solicitar": m.por_solicitar,
@@ -456,7 +488,7 @@ export default function StockPage() {
         Ubicación: m.ubicacion ?? "",
         Fabricante: m.fabricante ?? "",
         Categoría: m.categoria ?? "",
-        Precio: m.precio ?? "",
+        "Precio Último": m.precio ?? "",
         Moneda: m.moneda ?? "",
         "Valor Total": m.valor_total,
       }));
@@ -503,9 +535,28 @@ export default function StockPage() {
           </Card>
         </Col>
         <Col xs={12} md={6} lg={3}>
-          <Card styles={{ body: { padding: 12 } }} hoverable onClick={() => setFiltro("sin_stock")}>
-            <Statistic title="Sin stock" value={kpisVista.sinStock} prefix={<WarningOutlined style={{ color: brand.error }} />} styles={{ content: { color: brand.error, fontSize: 22 } }} />
-          </Card>
+          <Tooltip title="Materiales con punto de reposición y stock máximo configurados">
+            <Card styles={{ body: { padding: 12 } }} hoverable onClick={() => setFiltro("con_min_max")}>
+              <Statistic
+                title="Con mín/máx"
+                value={kpisVista.conMinMax ?? 0}
+                prefix={<CheckCircleOutlined style={{ color: "#13c2c2" }} />}
+                styles={{ content: { color: "#13c2c2", fontSize: 22 } }}
+              />
+            </Card>
+          </Tooltip>
+        </Col>
+        <Col xs={12} md={6} lg={3}>
+          <Tooltip title="De los que tienen mín/máx, los que están en stock 0">
+            <Card styles={{ body: { padding: 12 } }} hoverable onClick={() => setFiltro("min_max_sin_stock")}>
+              <Statistic
+                title="Mín/máx sin stock"
+                value={kpisVista.conMinMaxSinStock ?? 0}
+                prefix={<WarningOutlined style={{ color: "#ff4d4f" }} />}
+                styles={{ content: { color: "#ff4d4f", fontSize: 22 } }}
+              />
+            </Card>
+          </Tooltip>
         </Col>
         <Col xs={12} md={6} lg={3}>
           <Card styles={{ body: { padding: 12 } }} hoverable onClick={() => setFiltro("bajo_stock")}>
@@ -603,7 +654,8 @@ export default function StockPage() {
               style={{ width: "100%" }}
               options={[
                 { value: "todos", label: "Todos los materiales" },
-                { value: "sin_stock", label: "Solo sin stock" },
+                { value: "con_min_max", label: "Con mín/máx configurados" },
+                { value: "min_max_sin_stock", label: "Mín/máx — sin stock" },
                 { value: "bajo_stock", label: "Solo bajo stock" },
                 { value: "exceso", label: "Solo en exceso" },
                 { value: "en_po", label: "Con cantidad en POs" },

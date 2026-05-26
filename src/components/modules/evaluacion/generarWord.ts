@@ -21,6 +21,7 @@ interface GenerarWordArgs {
   sistemaMedicion: string;
   fechaEvaluacion: string;
   evaluadoPor: string;
+  supervisor?: string;
   datos: Record<string, unknown>;
   resultadoGeneral: string;
   recomendacionesGeneral: string;
@@ -58,7 +59,7 @@ async function imagenABase64(url: string): Promise<string> {
 }
 
 export async function generarWordEvaluacion(args: GenerarWordArgs) {
-  const { ot, modeloEvaluacion, sistemaMedicion, fechaEvaluacion, evaluadoPor, datos, resultadoGeneral, recomendacionesGeneral } = args;
+  const { ot, modeloEvaluacion, sistemaMedicion, fechaEvaluacion, evaluadoPor, supervisor = "", datos, resultadoGeneral, recomendacionesGeneral } = args;
 
   const modelo = MODELOS_EVALUACION.find((m) => m.value === modeloEvaluacion);
   const tituloModelo = modelo?.label || "Cilindro hidraulico vastago simple";
@@ -909,6 +910,7 @@ td.editable { color: ${AZUL_CLARO}; font-weight: 600; text-align: center; }
         <b>OT:</b> ${esc(otNumero)}<br/>
         <b>Fecha:</b> ${esc(fechaEvaluacion || fechaHoy)}<br/>
         <b>Evaluador:</b> ${esc(evaluadoPor)}<br/>
+        <b>Supervisor:</b> ${esc(supervisor)}<br/>
         <b>Sistema:</b> ${esc(sistemaMedicion)}
     </td>
 </tr></table>

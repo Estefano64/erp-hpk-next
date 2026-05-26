@@ -101,6 +101,7 @@ function buildMenuItems(_rol: string | null): MenuProps["items"] {
           label: "Almacén de herramientas y suministros",
           children: [
             { key: "/herramientas", label: "Herramientas" },
+            { key: "/suministros", label: "Suministros" },
           ],
         },
         {

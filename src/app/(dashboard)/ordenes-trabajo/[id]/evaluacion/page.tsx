@@ -45,7 +45,6 @@ import {
   COD_REP_TIPO_A_MODELO_EVAL,
   nombreTipoCilindro,
   tipoTienePlantilla,
-  type DeteccionTipo,
 } from "@/lib/cod-rep-tipos";
 import EvaluacionFormulario, {
   MODELOS_EVALUACION,
@@ -86,6 +85,7 @@ interface Evaluacion {
   sistema_medicion: string;
   fecha_evaluacion: string | null;
   evaluado_por: string | null;
+  supervisor: string | null;
   datos_formulario: Record<string, unknown>;
   resultado_general: string | null;
   recomendaciones_general: string | null;
@@ -138,7 +138,6 @@ export default function EvaluacionPage() {
   const [ot, setOt] = useState<OTDetalle | null>(null);
   const [evaluacion, setEvaluacion] = useState<Evaluacion | null>(null);
   const [modeloEvaluacion, setModeloEvaluacion] = useState<string>("cil_vastago_simple");
-  const [deteccionExcel, setDeteccionExcel] = useState<DeteccionTipo | null>(null);
   // Tipo determinado por el código reparable de la OT (autoritativo, según el Excel).
   const [tipoCodRep, setTipoCodRep] = useState<
     { codRepCodigo: string | null; tipoCodigo: string; tipoNombre: string; tienePlantilla: boolean } | null
@@ -172,7 +171,6 @@ export default function EvaluacionPage() {
       //  4. Default editable.
       let modeloInicial = "cil_vastago_simple";
       let bloqueado = false;
-      let deteccionUsada: DeteccionTipo | null = null;
 
       const crModeloCodigo = otData.codigo_reparacion?.modelo_evaluacion_codigo ?? null;
 
@@ -213,13 +211,11 @@ export default function EvaluacionPage() {
           flota: otData.cod_rep_flota,
           posicion: otData.cod_rep_posicion,
         });
-        deteccionUsada = deteccion;
         if (deteccion.codigo) {
           const modeloFormulario = COD_REP_TIPO_A_MODELO_EVAL[deteccion.codigo];
           if (modeloFormulario) modeloInicial = modeloFormulario;
         }
       }
-      setDeteccionExcel(deteccionUsada);
       setModeloBloqueado(bloqueado);
 
       // Intentar cargar evaluacion existente
@@ -263,6 +259,7 @@ export default function EvaluacionPage() {
     if (loading || !evaluacion) return;
     form.setFieldsValue({
       evaluado_por: evaluacion.evaluado_por,
+      supervisor: evaluacion.supervisor,
       fecha_evaluacion: evaluacion.fecha_evaluacion ? dayjs(evaluacion.fecha_evaluacion) : null,
       resultado_general: evaluacion.resultado_general,
       recomendaciones_general: evaluacion.recomendaciones_general,
@@ -281,6 +278,7 @@ export default function EvaluacionPage() {
           ? (values.fecha_evaluacion as Dayjs).format("YYYY-MM-DD")
           : null,
         evaluado_por: values.evaluado_por || null,
+        supervisor: values.supervisor || null,
         datos_formulario: datosFormulario,
         resultado_general: values.resultado_general || null,
         recomendaciones_general: values.recomendaciones_general || null,
@@ -343,6 +341,7 @@ export default function EvaluacionPage() {
         sistemaMedicion,
         fechaEvaluacion: values.fecha_evaluacion ? (values.fecha_evaluacion as Dayjs).format("DD/MM/YYYY") : "",
         evaluadoPor: values.evaluado_por || "",
+        supervisor: values.supervisor || "",
         datos: datosFormulario,
         resultadoGeneral: values.resultado_general || "",
         recomendacionesGeneral: values.recomendaciones_general || "",
@@ -639,7 +638,7 @@ export default function EvaluacionPage() {
                     value: m.value,
                   }))}
                 />
-                {tipoCodRep ? (
+                {tipoCodRep && (
                   tipoCodRep.tienePlantilla ? (
                     <Alert
                       type="success"
@@ -673,55 +672,10 @@ export default function EvaluacionPage() {
                       banner
                     />
                   )
-                ) : modeloBloqueado ? (
-                  <Alert
-                    type="warning"
-                    showIcon
-                    icon={<InfoCircleOutlined />}
-                    title="Tipo determinado por la estrategia de la OT"
-                    style={{ marginTop: 8 }}
-                    banner
-                  />
-                ) : null}
-                {!tipoCodRep && !modeloBloqueado && deteccionExcel?.codigo && (
-                  <Alert
-                    type={deteccionExcel.via === "np" || deteccionExcel.via === "descripcion+flota" ? "success" : "info"}
-                    showIcon
-                    title={`Tipo detectado: ${deteccionExcel.codigo}${deteccionExcel.nombre ? ` — ${deteccionExcel.nombre}` : ""}`}
-                    description={
-                      <span style={{ fontSize: 11 }}>
-                        Detectado vía <b>{deteccionExcel.via === "np" ? "número de parte" : deteccionExcel.via === "descripcion+flota" ? "descripción + flota" : "descripción"}</b>
-                        {deteccionExcel.candidatos > 1 ? ` · ${deteccionExcel.candidatos} coincidencias en catálogo` : ""}. Verificá que sea el correcto antes de continuar.
-                      </span>
-                    }
-                    style={{ marginTop: 8 }}
-                    banner
-                  />
                 )}
-                {!tipoCodRep && !modeloBloqueado && !deteccionExcel?.codigo && (
-                  <Alert
-                    type="warning"
-                    showIcon
-                    icon={<InfoCircleOutlined />}
-                    title="No se pudo detectar automáticamente el tipo"
-                    description={<span style={{ fontSize: 11 }}>Verificá que el modelo seleccionado corresponda al equipo.</span>}
-                    style={{ marginTop: 8 }}
-                    banner
-                  />
-                )}
-                {/* Nota informativa: Aplica del modelo seleccionado (siempre visible) */}
-                {(() => {
-                  const sel = MODELOS_EVALUACION.find((m) => m.value === modeloEvaluacion);
-                  if (!sel) return null;
-                  return (
-                    <div style={{ marginTop: 8, padding: "6px 10px", background: "#FAFCFE", border: `1px solid ${brand.border}`, borderRadius: 4, fontSize: 11, color: "#666" }}>
-                      <b style={{ color: brand.navy }}>Aplica:</b> {sel.aplica}
-                    </div>
-                  );
-                })()}
               </Form.Item>
             </Col>
-            <Col xs={24} md={8}>
+            <Col xs={24} md={6}>
               <Form.Item label="Sistema de Medicion">
                 <Select
                   value={sistemaMedicion}
@@ -739,7 +693,7 @@ export default function EvaluacionPage() {
                 <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" />
               </Form.Item>
             </Col>
-            <Col xs={24} md={4}>
+            <Col xs={24} md={3}>
               <Form.Item label="Evaluado por" name="evaluado_por">
                 <Select
                   placeholder="Seleccioná un trabajador..."
@@ -748,6 +702,11 @@ export default function EvaluacionPage() {
                   filterOption={(input, option) => (option?.label as string).toLowerCase().includes(input.toLowerCase())}
                   options={trabajadores.map((t) => ({ value: t.nombre, label: `${t.nombre} — ${t.puesto}` }))}
                 />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={3}>
+              <Form.Item label="Supervisor" name="supervisor">
+                <Input placeholder="Nombre" />
               </Form.Item>
             </Col>
           </Row>
@@ -761,6 +720,10 @@ export default function EvaluacionPage() {
         datos={datosFormulario}
         onChange={setDatosFormulario}
         readonly={!puedeEditar}
+        np={ot.np}
+        descripcionCilindro={ot.codigo_reparacion?.descripcion ?? ot.descripcion}
+        marca={ot.fabricante?.nombre ?? null}
+        modeloCilindro={ot.cod_rep_flota}
       />
 
       {/* ── Seccion final: Resultado y Recomendaciones ── */}

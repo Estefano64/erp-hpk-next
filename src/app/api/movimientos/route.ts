@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import type { TipoMovimientoInventario } from "@prisma/client";
+import { resolverPrecioSalida } from "@/lib/inventario";
 
 type TipoMov = "ENTRADA" | "SALIDA" | "AJUSTE";
 
@@ -43,6 +44,9 @@ export async function GET(req: NextRequest) {
 
     const data = movimientos.map((m: Mov) => {
       const mat = matMap.get(m.material_id);
+      const precio = m.precio_unitario != null ? Number(m.precio_unitario) : null;
+      const cant = Number(m.cantidad);
+      const costoTotal = precio != null ? Number((precio * cant).toFixed(2)) : null;
       return {
         id: m.id,
         material_id: m.material_id,
@@ -52,6 +56,11 @@ export async function GET(req: NextRequest) {
         stock_actual: mat?.stock_actual ?? null,
         tipo_movimiento: m.tipo_movimiento,
         cantidad: m.cantidad,
+        precio_unitario: precio,
+        moneda: m.moneda,
+        costo_total: costoTotal,
+        tipo_ingreso: m.tipo_ingreso,
+        persona_recibe: m.persona_recibe,
         documento_referencia: m.documento_referencia,
         observacion: m.observacion,
         usuario: m.usuario,
@@ -70,7 +79,10 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { material_id, tipo_movimiento, cantidad, documento_referencia, observacion, usuario } = body;
+    const {
+      material_id, tipo_movimiento, cantidad, documento_referencia, observacion, usuario,
+      tipo_ingreso, persona_recibe, fecha_movimiento,
+    } = body;
 
     if (!material_id || !tipo_movimiento || !cantidad || !usuario) {
       return NextResponse.json(
@@ -83,6 +95,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: "tipo_movimiento debe ser ENTRADA, SALIDA o AJUSTE" },
         { status: 400 }
+      );
+    }
+    // tipo_ingreso aplica solo en ENTRADAs. Valores permitidos.
+    const tiposIngresoValidos = ["BIEN", "SERVICIO", "CARGO_DIRECTO"] as const;
+    if (tipo_movimiento === "ENTRADA" && tipo_ingreso != null && tipo_ingreso !== "" && !tiposIngresoValidos.includes(tipo_ingreso)) {
+      return NextResponse.json(
+        { error: "tipo_ingreso debe ser BIEN, SERVICIO o CARGO_DIRECTO" },
+        { status: 400 },
       );
     }
 
@@ -108,14 +128,30 @@ export async function POST(req: NextRequest) {
 
     // Crear movimiento + actualizar stock en transaccion
     const result = await prisma.$transaction(async (tx: any) => {
+      // Para SALIDAs: capturar snapshot del precio (cascada catalogo → última OC).
+      // ENTRADAs/AJUSTEs no llevan precio por ahora.
+      let precio_unitario = null;
+      let moneda = null;
+      if (tipo_movimiento === "SALIDA") {
+        const r = await resolverPrecioSalida(tx, Number(material_id));
+        precio_unitario = r.precio;
+        moneda = r.moneda;
+      }
+
       const mov = await tx.movimientoInventario.create({
         data: {
           material_id: Number(material_id),
           tipo_movimiento: tipo_movimiento as TipoMovimientoInventario,
           cantidad: cant,
+          precio_unitario,
+          moneda,
+          tipo_ingreso: tipo_movimiento === "ENTRADA" ? (tipo_ingreso || null) : null,
+          persona_recibe: tipo_movimiento === "SALIDA" ? (persona_recibe || null) : null,
           documento_referencia: documento_referencia || null,
           observacion: observacion || null,
           usuario,
+          // Permite override de fecha si el caller la envía (default = ahora).
+          ...(fecha_movimiento ? { fecha_movimiento: new Date(fecha_movimiento) } : {}),
         },
       });
 

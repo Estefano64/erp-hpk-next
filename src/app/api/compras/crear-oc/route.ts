@@ -180,6 +180,41 @@ export async function POST(req: NextRequest) {
         });
       }
 
+      // Actualizar el histórico de precios por proveedor (cotizacion_proveedor).
+      // Esto deja registrado el precio efectivo de compra en el histórico de
+      // /compras/historico, evitando que una cotización manual obsoleta pise el
+      // precio recién comprado.
+      const now = new Date();
+      for (const rep of repuestos) {
+        if (!rep.material_id) continue;
+        const precio = new Prisma.Decimal(rep.precio_unitario ?? 0);
+        if (precio.lte(0)) continue;
+        await tx.cotizacionProveedor.upsert({
+          where: {
+            material_id_proveedor_id: {
+              material_id: rep.material_id,
+              proveedor_id: d.proveedor_id,
+            },
+          },
+          create: {
+            material_id: rep.material_id,
+            proveedor_id: d.proveedor_id,
+            precio_unitario: precio,
+            moneda_codigo,
+            observaciones: `Precio de OC ${compra.numero_po}`,
+            usuario,
+            fecha: now,
+          },
+          update: {
+            precio_unitario: precio,
+            moneda_codigo,
+            observaciones: `Precio de OC ${compra.numero_po}`,
+            usuario,
+            fecha: now,
+          },
+        });
+      }
+
       // Asignar po_id sólo a los que seguían disponibles (race-safe).
       // Una vez creada la OC, el item sale de PEND_OC y entra a PROCESO.
       const assigned = await tx.oTRepuesto.updateMany({

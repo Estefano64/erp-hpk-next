@@ -42,6 +42,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
       "sistema_medicion",
       "fecha_evaluacion",
       "evaluado_por",
+      "supervisor",
       "datos_formulario",
       "resultado_general",
       "recomendaciones_general",
@@ -62,6 +63,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     if (body.sistema_medicion !== undefined) data.sistema_medicion = body.sistema_medicion;
     if (body.fecha_evaluacion !== undefined) data.fecha_evaluacion = parseDateOnly(body.fecha_evaluacion);
     if (body.evaluado_por !== undefined) data.evaluado_por = body.evaluado_por;
+    if (body.supervisor !== undefined) data.supervisor = body.supervisor;
     if (body.datos_formulario !== undefined) data.datos_formulario = body.datos_formulario;
     if (body.resultado_general !== undefined) data.resultado_general = body.resultado_general;
     if (body.recomendaciones_general !== undefined) data.recomendaciones_general = body.recomendaciones_general;
