@@ -48,8 +48,9 @@ export async function GET(_req: NextRequest, { params }: Params) {
     const moneda = compra.moneda?.codigo || compra.moneda_codigo || "USD";
     const monedaLabel = moneda === "USD" ? "DOLARES" : moneda === "SOL" || moneda === "PEN" ? "SOLES" : moneda;
     const otReferencias = [...new Set(items.map((r: Item) => r.orden_trabajo?.ot).filter(Boolean))].join(", ");
-    // Nombre del documento al guardar como PDF: "OC-{OT}-{PROVEEDOR}"
+    // Nombre del documento al guardar como PDF: "{NumeroOC}-{OT}-{PROVEEDOR}"
     // Sanitizar para que sea un nombre de archivo válido (sin /, \, :, espacios consecutivos).
+    const ocFile = compra.numero_po.replace(/[^A-Za-z0-9\-_]/g, "");
     const otFile = [...new Set(items.map((r: Item) => r.orden_trabajo?.ot).filter(Boolean))]
       .join("_")
       .replace(/[^A-Za-z0-9\-_]/g, "");
@@ -59,7 +60,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
       .replace(/\s+/g, "_")
       .replace(/[^A-Z0-9\-_]/g, "")
       .slice(0, 40);
-    const tituloDocumento = ["OC", otFile || "SinOT", provFile || "SinProv"].join("-");
+    const tituloDocumento = [ocFile, otFile || "SinOT", provFile || "SinProv"].join("-");
 
     // Firmas: si el nombre del usuario coincide con un archivo en public/firmas/
     // (mapeo en src/lib/firmas.ts), se renderiza la imagen sobre el nombre.
