@@ -1,13 +1,23 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Card, Form, Input, Alert } from "antd";
 import { UserOutlined, LockOutlined } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
 
+// Wrapper requerido por Next.js: useSearchParams obliga a estar dentro de
+// <Suspense> porque puede pausar el render durante el static prerender.
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginContent />
+    </Suspense>
+  );
+}
+
+function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const expired = searchParams?.get("expired") === "1";
