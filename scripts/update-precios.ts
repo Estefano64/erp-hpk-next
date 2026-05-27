@@ -175,12 +175,12 @@ async function main() {
     for (const row of servicios) {
       const codRep = npToCodRep.get(row.np_cod_1);
       if (!codRep) {
-        svcUnmatched.push({ ...row, reason: `NP ${row.np_cod_1} no existe en codigo_reparacion` });
+        svcUnmatched.push({ np_cod_1: row.np_cod_1, item: row.item_numero, texto: row.texto, reason: `NP ${row.np_cod_1} no existe en codigo_reparacion` });
         continue;
       }
       const tarea = tareaMap.get(tareaKey(codRep, row.item_numero));
       if (!tarea) {
-        svcUnmatched.push({ ...row, reason: `Tarea SER no existe en ${codRep} item ${row.item_numero}` });
+        svcUnmatched.push({ np_cod_1: row.np_cod_1, item: row.item_numero, texto: row.texto, reason: `Tarea SER no existe en ${codRep} item ${row.item_numero}` });
         continue;
       }
       svcMatches.push({
