@@ -22,6 +22,7 @@ import { SaveOutlined, ArrowLeftOutlined, CheckCircleFilled } from "@ant-design/
 import { brand } from "@/lib/theme";
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
+import { useUnsavedChangesWarning, confirmLeave } from "@/lib/unsaved-changes";
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -60,6 +61,10 @@ export default function NuevaOTPage() {
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
   const [messageApi, contextHolder] = message.useMessage();
+  // Marca el formulario como "dirty" al primer cambio. Se limpia al guardar
+  // o al cancelar.
+  const [dirty, setDirty] = useState(false);
+  useUnsavedChangesWarning(dirty, "Estás creando una OT con datos sin guardar.", "nueva-ot");
 
   // Catálogos
   const [clientes, setClientes] = useState<ClienteOption[]>([]);
@@ -305,6 +310,7 @@ export default function NuevaOTPage() {
       if (!res.ok) throw new Error();
 
       messageApi.success("OT creada correctamente");
+      setDirty(false); // ya guardamos, sacamos el aviso antes de navegar
       setTimeout(() => router.push("/ordenes-trabajo"), 1000);
     } catch {
       messageApi.error("Error al crear la OT");
@@ -317,11 +323,18 @@ export default function NuevaOTPage() {
     <div>
       {contextHolder}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-        <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/ordenes-trabajo")} />
+        <Button
+          icon={<ArrowLeftOutlined />}
+          onClick={() => { if (confirmLeave()) router.push("/ordenes-trabajo"); }}
+        />
         <Title level={3} style={{ margin: 0 }}>Nueva Orden de Trabajo</Title>
       </div>
 
-      <Form form={form} layout="vertical">
+      <Form
+        form={form}
+        layout="vertical"
+        onValuesChange={() => { if (!dirty) setDirty(true); }}
+      >
         {/* ── SECCIÓN: Cliente y Código Reparable ── */}
         <Card title="Identificación" style={{ marginBottom: 16 }} styles={{ body: { paddingBottom: 0 } }}>
           <Row gutter={16}>
@@ -752,7 +765,7 @@ export default function NuevaOTPage() {
 
         {/* ── Botones ── */}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
-          <Button onClick={() => router.push("/ordenes-trabajo")}>Cancelar</Button>
+          <Button onClick={() => { if (confirmLeave()) router.push("/ordenes-trabajo"); }}>Cancelar</Button>
           <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={handleSave}>
             Crear OT
           </Button>

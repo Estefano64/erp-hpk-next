@@ -23,6 +23,7 @@ import {
 import type { MenuProps } from "antd";
 import { brand } from "@/lib/theme";
 import IdleLogout from "@/components/IdleLogout";
+import { confirmLeave } from "@/lib/unsaved-changes";
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
@@ -286,7 +287,7 @@ export default function DashboardLayout({
           openKeys={openKeys}
           onOpenChange={(keys) => setOpenKeys(keys)}
           items={menuItems}
-          onClick={({ key }) => router.push(key)}
+          onClick={({ key }) => { if (confirmLeave()) router.push(key); }}
           style={{ borderRight: 0, marginTop: 4 }}
         />
       </Sider>
