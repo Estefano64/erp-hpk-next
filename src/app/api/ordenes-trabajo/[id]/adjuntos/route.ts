@@ -17,7 +17,7 @@ import { getAuditUser } from "@/lib/audit";
 
 type Params = { params: Promise<{ id: string }> };
 
-const ETAPAS_VALIDAS = ["recepcion", "evaluacion", "cotizacion", "termino", "despacho"] as const;
+const ETAPAS_VALIDAS = ["recepcion", "evaluacion", "cotizacion", "termino", "despacho", "facturacion"] as const;
 type Etapa = (typeof ETAPAS_VALIDAS)[number];
 
 function isEtapa(value: unknown): value is Etapa {

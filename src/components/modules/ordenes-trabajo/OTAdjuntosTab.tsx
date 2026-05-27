@@ -54,9 +54,9 @@ interface Props {
 const ETAPAS = [
   {
     key: "recepcion",
-    label: "Recepción",
+    label: "Recepción y GR",
     icon: <CameraOutlined />,
-    description: "Fotos y documentos de la llegada del cilindro al taller",
+    description: "Fotos y documentos de la llegada del cilindro al taller — incluye guía de remisión del cliente",
   },
   {
     key: "evaluacion",
@@ -78,9 +78,15 @@ const ETAPAS = [
   },
   {
     key: "despacho",
-    label: "Despacho",
+    label: "Despacho y GR",
     icon: <CarOutlined />,
-    description: "Fotos y documentos del despacho del componente reparado",
+    description: "Fotos y documentos del despacho del componente reparado — incluye guía de remisión al cliente",
+  },
+  {
+    key: "facturacion",
+    label: "Facturación",
+    icon: <FileTextOutlined />,
+    description: "Facturas emitidas al cliente y comprobantes de pago",
   },
 ];
 

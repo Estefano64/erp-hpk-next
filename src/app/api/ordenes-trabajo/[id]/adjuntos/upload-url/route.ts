@@ -14,7 +14,7 @@ import { assertOTAccess, readJsonBody, validateUploadBody } from "@/lib/r2-serve
 
 type Params = { params: Promise<{ id: string }> };
 
-const ETAPAS_VALIDAS = new Set(["recepcion", "evaluacion", "cotizacion", "termino", "despacho"]);
+const ETAPAS_VALIDAS = new Set(["recepcion", "evaluacion", "cotizacion", "termino", "despacho", "facturacion"]);
 
 export async function POST(req: NextRequest, { params }: Params) {
   const { id } = await params;
