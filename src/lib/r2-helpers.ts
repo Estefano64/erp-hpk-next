@@ -9,8 +9,8 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { randomUUID } from "crypto";
 import {
-  r2,
-  R2_BUCKET,
+  getR2Client,
+  getR2Bucket,
   UPLOAD_URL_EXPIRES_SECONDS,
   DOWNLOAD_URL_EXPIRES_SECONDS,
 } from "./r2";
@@ -33,12 +33,12 @@ export async function generateUploadUrl(params: {
   const key = `${params.folderPrefix}/${Date.now()}-${randomUUID()}-${safeName}`;
 
   const command = new PutObjectCommand({
-    Bucket: R2_BUCKET,
+    Bucket: getR2Bucket(),
     Key: key,
     ContentType: params.fileType,
   });
 
-  const uploadUrl = await getSignedUrl(r2, command, {
+  const uploadUrl = await getSignedUrl(getR2Client(), command, {
     expiresIn: UPLOAD_URL_EXPIRES_SECONDS,
   });
 
@@ -46,19 +46,19 @@ export async function generateUploadUrl(params: {
 }
 
 export async function generateDownloadUrl(key: string): Promise<string> {
-  const command = new GetObjectCommand({ Bucket: R2_BUCKET, Key: key });
-  return getSignedUrl(r2, command, { expiresIn: DOWNLOAD_URL_EXPIRES_SECONDS });
+  const command = new GetObjectCommand({ Bucket: getR2Bucket(), Key: key });
+  return getSignedUrl(getR2Client(), command, { expiresIn: DOWNLOAD_URL_EXPIRES_SECONDS });
 }
 
 // Elimina un objeto. Si la key no existe R2 igual devuelve 204 (idempotente).
 // Errores reales (red, credenciales) lanzan.
 export async function deleteObject(key: string): Promise<void> {
-  await r2.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+  await getR2Client().send(new DeleteObjectCommand({ Bucket: getR2Bucket(), Key: key }));
 }
 
 export async function objectExists(key: string): Promise<boolean> {
   try {
-    await r2.send(new HeadObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+    await getR2Client().send(new HeadObjectCommand({ Bucket: getR2Bucket(), Key: key }));
     return true;
   } catch {
     return false;

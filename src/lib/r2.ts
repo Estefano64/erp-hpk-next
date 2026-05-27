@@ -1,5 +1,11 @@
-// Cliente Cloudflare R2 (compatible S3). Singleton: se reutiliza entre llamadas.
-// Las credenciales NUNCA salen del servidor; el frontend solo recibe URLs firmadas.
+// Cliente Cloudflare R2 (compatible S3). Singleton lazy: se instancia la primera
+// vez que se usa, no al importar el módulo.
+//
+// IMPORTANTE: NO leer env vars en el top-level — `next build` evalúa todos los
+// módulos de las API routes durante "Collecting page data", y si esto lanza el
+// build muere aunque la ruta nunca se ejecute. Por eso la validación de env
+// está dentro de getR2Client() / getR2Bucket() — solo falla en runtime cuando
+// realmente se necesita R2.
 import { S3Client } from "@aws-sdk/client-s3";
 
 function requireEnv(name: string): string {
@@ -8,16 +14,27 @@ function requireEnv(name: string): string {
   return v;
 }
 
-export const R2_BUCKET = requireEnv("R2_BUCKET_NAME");
+let _r2: S3Client | null = null;
+let _bucket: string | null = null;
 
-export const r2 = new S3Client({
-  region: "auto",
-  endpoint: requireEnv("R2_ENDPOINT"),
-  credentials: {
-    accessKeyId: requireEnv("R2_ACCESS_KEY_ID"),
-    secretAccessKey: requireEnv("R2_SECRET_ACCESS_KEY"),
-  },
-});
+export function getR2Client(): S3Client {
+  if (_r2) return _r2;
+  _r2 = new S3Client({
+    region: "auto",
+    endpoint: requireEnv("R2_ENDPOINT"),
+    credentials: {
+      accessKeyId: requireEnv("R2_ACCESS_KEY_ID"),
+      secretAccessKey: requireEnv("R2_SECRET_ACCESS_KEY"),
+    },
+  });
+  return _r2;
+}
+
+export function getR2Bucket(): string {
+  if (_bucket) return _bucket;
+  _bucket = requireEnv("R2_BUCKET_NAME");
+  return _bucket;
+}
 
 // Estructura de carpetas en R2 — todo gira alrededor de la OT.
 //
@@ -49,7 +66,6 @@ export const R2Keys = {
     `ordenes-trabajo/${sanitize(otCodigo)}/compras/${sanitize(ocCodigo)}/guia`,
   compraFactura: (otCodigo: string, ocCodigo: string) =>
     `ordenes-trabajo/${sanitize(otCodigo)}/compras/${sanitize(ocCodigo)}/factura`,
-  // Fallback para compras sin OT asociada (Compra.ot_id == null).
   compraSueltaGuia: (ocCodigo: string) => `compras-sueltas/${sanitize(ocCodigo)}/guia`,
   compraSueltaFactura: (ocCodigo: string) => `compras-sueltas/${sanitize(ocCodigo)}/factura`,
   // Capturas de tickets (bugs/mejoras del ERP). No vinculados a OT.

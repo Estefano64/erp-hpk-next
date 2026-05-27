@@ -226,6 +226,9 @@ function RequerimientosDetalleInner() {
   // Modal de Crear OC
   const [modalOpen, setModalOpen] = useState(false);
   const [ocForm] = Form.useForm();
+  // Reactivo al cambio de moneda en el form, para que el subtotal del header
+  // del modal se redibuje con el símbolo correcto.
+  const monedaModal = Form.useWatch("moneda", ocForm) as string | undefined;
   const [proveedores, setProveedores] = useState<ProveedorApi[]>([]);
   const [almacenes, setAlmacenes] = useState<AlmacenApi[]>([]);
   const [creatingOC, setCreatingOC] = useState(false);
@@ -1305,29 +1308,27 @@ function RequerimientosDetalleInner() {
         footer={null}
       >
         {(() => {
-          // Totales recalculados en vivo sobre `preciosModal` para que reflejen
-          // los precios editados antes de generar la OC.
+          // Subtotal recalculado en vivo sobre `preciosModal` para que refleje
+          // los precios editados antes de generar la OC. El IGV se aplica recién
+          // al imprimir la OC (ver plantilla en /api/compras/[id]/pdf).
           const totalSubModal = selectedRecords.reduce(
             (s, r) => s + (preciosModal[r.id] ?? 0) * Number(r.cantidad ?? 0),
             0,
           );
-          const totalFinalModal = totalSubModal * 1.18;
+          const simbolo = monedaModal === "SOL" || monedaModal === "PEN" ? "S/ " : "$ ";
           return (
             <div style={{ marginBottom: 16 }}>
               <Card size="small" style={{ background: brand.bgPage }}>
                 <Row gutter={16}>
-                  <Col span={8}>
+                  <Col span={12}>
                     <Statistic title="Items" value={selectedRows.length} />
                   </Col>
-                  <Col span={8}>
-                    <Statistic title="Subtotal" value={totalSubModal} precision={2} prefix="$" />
-                  </Col>
-                  <Col span={8}>
+                  <Col span={12}>
                     <Statistic
-                      title="Total + IGV"
-                      value={totalFinalModal}
+                      title="Subtotal"
+                      value={totalSubModal}
                       precision={2}
-                      prefix="$"
+                      prefix={simbolo}
                       styles={{ content: { color: brand.navy, fontWeight: 700 } }}
                     />
                   </Col>
