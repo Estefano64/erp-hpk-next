@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import {
   Typography, Table, Button, Input, Select, Space, Tag, Modal, Form,
   Row, Col, Card, App, DatePicker, Popconfirm, Tooltip,
@@ -77,6 +78,7 @@ interface FormValues {
 interface TrabajadorOpt { nombre: string; area: string; puesto: string }
 
 export default function OrdenesTrabajoInternasPage() {
+  const router = useRouter();
   const { message, modal } = App.useApp();
   const { screens } = useResponsive();
   const [form] = Form.useForm<FormValues>();
@@ -426,14 +428,14 @@ export default function OrdenesTrabajoInternasPage() {
           size="small"
           scroll={{ x: 2200 }}
           sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-          // Row clickable — abre el modal de edición. Filtramos clicks de los
-          // botones de acciones para no abrir el modal cuando ya están haciendo
-          // editar/eliminar desde la columna fija.
+          // Row clickable — navega a la página detalle (igual que OT externas).
+          // Filtramos clicks de los botones de acciones para no navegar cuando
+          // ya están haciendo editar/eliminar desde la columna fija.
           onRow={(r) => ({
             onClick: (e) => {
               const target = e.target as HTMLElement;
               if (target.closest("button, .ant-popover, .ant-popconfirm")) return;
-              openEditarModal(r);
+              router.push(`/ordenes-trabajo-internas/${r.id}`);
             },
             style: { cursor: "pointer" },
           })}
