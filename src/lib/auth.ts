@@ -4,13 +4,21 @@ import bcrypt from "bcryptjs";
 import { prisma } from "./prisma";
 
 export const authOptions: AuthOptions = {
-  session: { strategy: "jwt" },
+  session: {
+    strategy: "jwt",
+    // Sesión máxima absoluta: 8 horas. Tras este tiempo el JWT vence aunque el
+    // usuario haya estado activo (forzamos re-login periódico por frescura).
+    maxAge: 8 * 60 * 60,
+    // Cada hora refresca el token (extiende su validez si sigue activo, dentro
+    // del límite de maxAge). Sin esto el token podría vencer en medio de uso.
+    updateAge: 60 * 60,
+  },
   pages: { signIn: "/login" },
   providers: [
     CredentialsProvider({
       name: "credentials",
       credentials: {
-        identifier: { label: "Email, DNI o código de empleado", type: "text" },
+        identifier: { label: "Email o código de empleado", type: "text" },
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
@@ -19,17 +27,12 @@ export const authOptions: AuthOptions = {
         const input = credentials.identifier.trim();
         const isEmail = input.includes("@");
 
-        // Si trae @ → email. Si es solo dígitos → DNI. Si no, código de empleado.
-        // Email/DNI/codigoEmpleado son @unique cada uno; un mismo input no debería
-        // matchear más de uno, pero por las dudas usamos findUnique en orden.
-        let user = null;
-        if (isEmail) {
-          user = await prisma.usuario.findUnique({ where: { email: input } });
-        } else if (/^\d{6,12}$/.test(input)) {
-          user = await prisma.usuario.findUnique({ where: { dni: input } });
-        } else {
-          user = await prisma.usuario.findUnique({ where: { codigoEmpleado: input } });
-        }
+        // El codigoEmpleado es el DNI (con la excepción de algunos USR-XXX
+        // huérfanos que no tienen DNI cargado). No hace falta una rama DNI
+        // aparte: si te logueás con el DNI matchea por codigoEmpleado.
+        const user = isEmail
+          ? await prisma.usuario.findUnique({ where: { email: input } })
+          : await prisma.usuario.findUnique({ where: { codigoEmpleado: input } });
 
         if (!user || !user.activo) return null;
 

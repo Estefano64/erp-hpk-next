@@ -2,13 +2,15 @@
 
 import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Card, Form, Input, Alert } from "antd";
 import { UserOutlined, LockOutlined } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const expired = searchParams?.get("expired") === "1";
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -73,6 +75,17 @@ export default function LoginPage() {
           />
         </div>
 
+        {expired && !error && (
+          <Alert
+            type="warning"
+            showIcon
+            closable
+            style={{ marginBottom: 16 }}
+            message="Tu sesión expiró por inactividad"
+            description="Volvé a ingresar para continuar."
+          />
+        )}
+
         {error && (
           <Alert
             title={error}
@@ -88,11 +101,11 @@ export default function LoginPage() {
           <Form.Item
             name="identifier"
             label="Email o código de empleado"
-            rules={[{ required: true, message: "Ingresa tu email o código" }]}
+            rules={[{ required: true, message: "Ingresá tu email o código" }]}
           >
             <Input
               prefix={<UserOutlined style={{ color: brand.textSecondary }} />}
-              placeholder="usuario@empresa.com o EMP-001"
+              placeholder="usuario@empresa.com o código"
             />
           </Form.Item>
 

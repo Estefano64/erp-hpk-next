@@ -22,6 +22,7 @@ import {
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { brand } from "@/lib/theme";
+import IdleLogout from "@/components/IdleLogout";
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
@@ -238,6 +239,7 @@ export default function DashboardLayout({
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
+      <IdleLogout />
       <Sider
         collapsible
         collapsed={collapsed}
