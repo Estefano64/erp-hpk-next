@@ -408,7 +408,7 @@ export default function NuevaOTPage() {
                   onChange={(v) => { handleCodRepChange(v); buscarContrato(undefined, v); }}
                   options={codReps.map((cr) => ({
                     value: cr.cod_rep_id,
-                    label: `${cr.codigo} - ${cr.descripcion}${cr.flota?.nombre ? ` · ${cr.flota.nombre}` : ""}`,
+                    label: `${cr.codigo} - ${cr.descripcion}${cr.np ? ` · N/P ${cr.np}` : ""}${cr.flota?.nombre ? ` · ${cr.flota.nombre}` : ""}`,
                   }))}
                 />
               </Form.Item>
