@@ -71,7 +71,6 @@ export default function NuevaOTPage() {
   const [tiposCodRep, setTiposCodRep] = useState<CatalogOption[]>([]);
   const [tiposOT, setTiposOT] = useState<CatalogOption[]>([]);
   const [fabricantes, setFabricantes] = useState<FabricanteOption[]>([]);
-  const [flotas, setFlotas] = useState<CatalogOption[]>([]);
   const [posiciones, setPosiciones] = useState<CatalogOption[]>([]);
   const [monedas, setMonedas] = useState<CatalogOption[]>([]);
 
@@ -98,7 +97,7 @@ export default function NuevaOTPage() {
 
   useEffect(() => {
     async function loadCatalogs() {
-      const [cliRes, crRes, tipoRepRes, atencionRes, prioRes, tipoGarRes, tipoCRRes, fabRes, flotaRes, posRes, tipoOTRes, monRes] = await Promise.all([
+      const [cliRes, crRes, tipoRepRes, atencionRes, prioRes, tipoGarRes, tipoCRRes, fabRes, posRes, tipoOTRes, monRes] = await Promise.all([
         fetch("/api/clientes?limit=100"),
         fetch("/api/codigos-reparacion?limit=500"),
         fetch("/api/catalogos?tabla=tipoReparacion"),
@@ -107,7 +106,6 @@ export default function NuevaOTPage() {
         fetch("/api/catalogos?tabla=tipoGarantia"),
         fetch("/api/catalogos?tabla=tipoCodRep"),
         fetch("/api/catalogos?tabla=fabricante"),
-        fetch("/api/catalogos?tabla=flotaEquipo"),
         fetch("/api/catalogos?tabla=posicion"),
         fetch("/api/catalogos?tabla=tipoOT"),
         fetch("/api/catalogos?tabla=moneda"),
@@ -120,7 +118,6 @@ export default function NuevaOTPage() {
       if (tipoGarRes.ok) setTipoGarantias((await tipoGarRes.json()).data ?? []);
       if (tipoCRRes.ok) setTiposCodRep((await tipoCRRes.json()).data ?? []);
       if (fabRes.ok) setFabricantes((await fabRes.json()).data ?? []);
-      if (flotaRes.ok) setFlotas((await flotaRes.json()).data ?? []);
       if (posRes.ok) setPosiciones((await posRes.json()).data ?? []);
       if (tipoOTRes.ok) setTiposOT((await tipoOTRes.json()).data ?? []);
       if (monRes.ok) setMonedas((await monRes.json()).data ?? []);
@@ -448,11 +445,7 @@ export default function NuevaOTPage() {
               </Col>
               <Col xs={12} md={8}>
                 <Form.Item name="cod_rep_flota" label="Flota">
-                  <Select
-                    placeholder="Seleccionar"
-                    allowClear showSearch optionFilterProp="label"
-                    options={flotas.map((f) => ({ value: f.codigo, label: f.codigo }))}
-                  />
+                  <Input placeholder="Ej. 980E" />
                 </Form.Item>
               </Col>
               <Col xs={12} md={8}>
@@ -460,7 +453,12 @@ export default function NuevaOTPage() {
                   <Select
                     placeholder="Seleccionar"
                     allowClear showSearch optionFilterProp="label"
-                    options={posiciones.map((p) => ({ value: p.codigo, label: p.nombre }))}
+                    options={posiciones.map((p) => ({
+                      value: p.codigo,
+                      label: p.codigo === "no aplica" || p.nombre?.toLowerCase() === "no aplica"
+                        ? "No aplica (unica)"
+                        : p.nombre,
+                    }))}
                   />
                 </Form.Item>
               </Col>
