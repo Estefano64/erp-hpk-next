@@ -378,6 +378,8 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
     fecha_requerida?: dayjs.Dayjs | null;
     observaciones?: string;
     nro_req?: string | null;
+    precio_unitario?: number;
+    moneda?: string;
   }>();
   const tipoSeleccionado = Form.useWatch("tipo_codigo", form);
 
@@ -482,22 +484,28 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
   function abrirCrear() {
     setEditingId(null);
     form.resetFields();
-    form.setFieldsValue({ tipo_codigo: "MAC", cantidad: 1 });
+    form.setFieldsValue({ tipo_codigo: "MAC", cantidad: 1, moneda: "USD" });
     setModalOpen(true);
   }
   function abrirEditar(r: RequerimientoRow) {
     setEditingId(r.id);
     setEditAdjuntos([]);
     fetchAdjuntos(r.id);
+    // Mismo comportamiento que crear: si el item no tiene descripción /
+    // fabricante / unidad cargados, se usa lo del catálogo del material.
+    // Si ya tiene valores propios, se mantienen.
+    const matFromCat = r.material_codigo ? materiales.find((x) => x.codigo === r.material_codigo) : null;
     form.setFieldsValue({
       tipo_codigo: r.tipo_codigo as "MAC" | "CAD" | "SER",
       material_codigo: r.material_codigo ?? undefined,
       cantidad: Number(r.cantidad),
-      descripcion: r.descripcion ?? "",
-      unidad_medida: r.unidad_medida ?? undefined,
-      fabricante_codigo: r.fabricante_codigo ?? undefined,
+      descripcion: r.descripcion ?? matFromCat?.descripcion ?? "",
+      unidad_medida: r.unidad_medida ?? matFromCat?.unidad_medida_codigo ?? undefined,
+      fabricante_codigo: r.fabricante_codigo ?? matFromCat?.fabricante_codigo ?? undefined,
       fecha_requerida: r.fecha_requerida ? dayjs(r.fecha_requerida) : null,
       observaciones: r.observaciones ?? undefined,
+      precio_unitario: r.precio_unitario != null ? Number(r.precio_unitario) : undefined,
+      moneda: r.moneda ?? "USD",
     });
     setModalOpen(true);
   }
@@ -505,9 +513,12 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
     if (!codigo) return;
     const m = materiales.find((x) => x.codigo === codigo);
     if (!m) return;
-    // autocomplete (sin tocar precio/moneda — se manejan desde Compras)
+    // Autocomplete: pisa descripcion/fabricante/unidad con los datos del
+    // material seleccionado, tanto en CREAR como en EDITAR (mismo
+    // comportamiento — al cambiar de material, el item refleja el nuevo).
+    // No tocamos precio/moneda, eso se maneja en el módulo de Compras.
     form.setFieldsValue({
-      descripcion: form.getFieldValue("descripcion") || m.descripcion,
+      descripcion: m.descripcion,
       fabricante_codigo: m.fabricante_codigo ?? undefined,
       unidad_medida: m.unidad_medida_codigo ?? undefined,
     });
@@ -1448,10 +1459,39 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
             </Col>
           </Row>
 
+          {/* Precio referencial para SER / CAD — no se piden para MAC porque
+              ese ya viene del catálogo de material. Es manual y orientativo;
+              el precio definitivo lo carga el comprador en la OC. */}
+          {(tipoSeleccionado === "SER" || tipoSeleccionado === "CAD") && (
+            <Row gutter={12}>
+              <Col span={12}>
+                <Form.Item
+                  name="precio_unitario"
+                  label="Precio referencial"
+                  tooltip="Precio orientativo de quien crea el requerimiento. El precio definitivo lo carga el área de compras en la OC."
+                >
+                  <InputNumber min={0} step={0.01} style={{ width: "100%" }} placeholder="0.00" />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="moneda" label="Moneda" initialValue="USD">
+                  <Select
+                    options={[
+                      { value: "USD", label: "USD ($)" },
+                      { value: "SOL", label: "SOL (S/)" },
+                    ]}
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+          )}
+
           <Form.Item
             name="fecha_requerida"
             label="Fecha requerida"
+            tooltip="Obligatoria para poder enviar el requerimiento a aprobación."
             rules={[
+              { required: true, message: "Fecha requerida obligatoria" },
               () => ({
                 validator(_, value) {
                   if (!value || !otFechaRecepcion) return Promise.resolve();
@@ -1625,7 +1665,7 @@ function RequerimientosAgrupados({
                 <Text strong style={{ fontSize: 13 }}>{nro}</Text>
                 <Text type="secondary" style={{ fontSize: 12 }}>
                   {items.length} ítem{items.length !== 1 ? "s" : ""}
-                  {first?.fecha_solicitud ? ` · ${dayjs(first.fecha_solicitud).format("DD/MM/YYYY")}` : ""}
+                  {first?.fecha_solicitud ? ` · ${formatDateOnly(first.fecha_solicitud)}` : ""}
                 </Text>
                 {subtotalTexto && (
                   <Tooltip title="Subtotal del requerimiento (precio real + estimado catálogo)">

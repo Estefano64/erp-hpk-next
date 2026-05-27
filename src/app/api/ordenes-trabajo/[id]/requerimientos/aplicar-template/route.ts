@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
-import { nextNroReq, pickDescripcionFromTarea } from "@/lib/requerimientos";
+import { nextNroReq, pickDescripcionFromTarea, pickCantidadFromTarea } from "@/lib/requerimientos";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -106,7 +106,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
             material_id: mat?.material_id ?? null,
             material_codigo: t.material_codigo ?? null,
             tipo_codigo: t.tipo_codigo,
-            cantidad: t.requerimiento,
+            cantidad: pickCantidadFromTarea(t),
             descripcion: pickDescripcionFromTarea(t, matByCodigo, svcByCodigo),
             texto: t.texto ?? null,
             fabricante_codigo: t.fabricante_codigo ?? mat?.fabricante_codigo ?? null,

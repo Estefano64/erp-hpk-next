@@ -133,3 +133,15 @@ export function pickDescripcionFromTarea(
   }
   return t.texto || t.descripcion;
 }
+
+/**
+ * Cantidad a usar al copiar una Tarea (template) a OTRepuesto. Los servicios
+ * (SER) en los templates suelen venir con `requerimiento = 0` porque la
+ * cantidad no aplica al template; en el requerimiento real debe ser ≥ 1 para
+ * que el item tenga sentido. Para MAC/CAD respetamos el valor del template.
+ */
+export function pickCantidadFromTarea(t: { tipo_codigo: string | null; requerimiento: number | unknown }): number {
+  const req = Number(t.requerimiento ?? 0);
+  if (t.tipo_codigo === "SER" && (!Number.isFinite(req) || req <= 0)) return 1;
+  return Number.isFinite(req) ? req : 0;
+}

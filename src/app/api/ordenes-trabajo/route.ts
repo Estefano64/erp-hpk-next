@@ -310,7 +310,7 @@ export async function POST(req: NextRequest) {
           orderBy: { item_numero: "asc" },
         });
         if (tareas.length > 0) {
-          const { nextNroReq, pickDescripcionFromTarea } = await import("@/lib/requerimientos");
+          const { nextNroReq, pickDescripcionFromTarea, pickCantidadFromTarea } = await import("@/lib/requerimientos");
           await prisma.$transaction(async (tx) => {
             const nroReq = await nextNroReq(tx);
 
@@ -344,7 +344,7 @@ export async function POST(req: NextRequest) {
                   material_id: mat?.material_id ?? null,
                   material_codigo: t.material_codigo ?? null,
                   tipo_codigo: t.tipo_codigo,
-                  cantidad: t.requerimiento,
+                  cantidad: pickCantidadFromTarea(t),
                   descripcion: pickDescripcionFromTarea(t, matByCodigo, svcByCodigo),
                   texto: t.texto ?? null,
                   fabricante_codigo: t.fabricante_codigo ?? mat?.fabricante_codigo ?? null,
