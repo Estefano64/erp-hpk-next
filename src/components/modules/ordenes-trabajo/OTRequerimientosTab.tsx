@@ -297,9 +297,12 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
           fabricante_codigo: it.fabricante_codigo ?? null,
           fecha_requerida: it.fecha_requerida ? it.fecha_requerida.format("YYYY-MM-DD") : null,
           observaciones: it.observaciones ?? null,
-          // Precio referencial — solo aplica a SER/CAD; en MAC no se envía.
-          precio_unitario: (it.tipo_codigo !== "MAC" && it.precio_unitario != null) ? it.precio_unitario : null,
-          moneda: it.tipo_codigo !== "MAC" ? (it.moneda ?? "USD") : null,
+          // Precio referencial:
+          //   - SER/CAD → manual del usuario.
+          //   - MAC con precio en catálogo → null (el backend lo resuelve por material_id).
+          //   - MAC sin precio en catálogo → manual del usuario.
+          precio_unitario: it.precio_unitario ?? null,
+          moneda: it.moneda ?? "USD",
         })),
         nro_req: draftAppendToNroReq ?? undefined,
       };
@@ -1214,14 +1217,17 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
               },
               {
                 // Precio referencial:
-                //   - MAC: muestra el precio del catálogo (read-only). Si el
-                //     material no tiene precio cargado, muestra "—".
-                //   - SER/CAD: editable manualmente (input + selector moneda).
-                title: "Precio ref.", key: "precio", width: 140, align: "right",
+                //   - MAC con material y precio en catálogo → muestra el del
+                //     catálogo en read-only (con tooltip).
+                //   - MAC sin precio en catálogo (o sin material elegido aún)
+                //     → input editable, igual que SER/CAD.
+                //   - SER/CAD → siempre editable.
+                title: "Precio ref.", key: "precio", width: 150, align: "right",
                 render: (_: unknown, r: DraftItem) => {
-                  if (r.tipo_codigo === "MAC") {
-                    const mat = r.material_codigo ? materiales.find((m) => m.codigo === r.material_codigo) : null;
-                    if (!mat?.precio) return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
+                  const mat = r.tipo_codigo === "MAC" && r.material_codigo
+                    ? materiales.find((m) => m.codigo === r.material_codigo)
+                    : null;
+                  if (mat?.precio) {
                     return (
                       <Tooltip title="Precio del catálogo de material">
                         <Text style={{ fontSize: 12 }}>
@@ -1230,6 +1236,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
                       </Tooltip>
                     );
                   }
+                  // Input editable: SER, CAD, o MAC sin precio en catálogo.
                   return (
                     <Space.Compact style={{ width: "100%" }}>
                       <InputNumber
