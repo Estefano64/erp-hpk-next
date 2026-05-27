@@ -350,6 +350,28 @@ export default function ProgramacionSemanalPage() {
     }
   }, [editMode, lock.isOwner, lock.lockedBy, currentUser, messageApi]);
 
+  // Verifica si una tarea quedaría superpuesta con otra del mismo recurso.
+  // Devuelve la primera tarea que la solapa (para incluirla en el toast), o null
+  // si está libre. Útil tanto para drag/drop como para resize.
+  function tareaSuperpuesta(
+    taskId: number,
+    ini: number,
+    fin: number,
+    recursoTarget: string | null | undefined,
+  ): PlanRow | null {
+    if (!recursoTarget) return null;
+    for (const t of rows) {
+      if (t.id === taskId) continue;
+      const taskRecurso = view === "equipo" ? t.maquina : t.tecnico;
+      if (taskRecurso !== recursoTarget) continue;
+      if (!t.fecha_inicio || !t.fecha_fin) continue;
+      const oIni = new Date(t.fecha_inicio).getTime();
+      const oFin = new Date(t.fecha_fin).getTime();
+      if (ini < oFin && fin > oIni) return t;
+    }
+    return null;
+  }
+
   // ── Persist con update optimista ──
   async function persistMove(id: number, nuevoInicio: Dayjs, nuevoRecurso?: string) {
     if (!editMode) {
@@ -364,6 +386,20 @@ export default function ProgramacionSemanalPage() {
     const dur = horasFaltantes ? 1 : durRaw;
     const qty = Math.max(1, Number(original.qty_personal ?? 1));
     const fin = calcularFinEstimado(nuevoInicio.toDate(), dur * qty);
+
+    // Bloquear si choca con otra tarea del mismo recurso.
+    const recursoDestino = nuevoRecurso !== undefined
+      ? nuevoRecurso
+      : (view === "equipo" ? original.maquina : original.tecnico);
+    const choque = tareaSuperpuesta(id, nuevoInicio.toDate().getTime(), fin.getTime(), recursoDestino);
+    if (choque) {
+      const cliente = choque.orden_trabajo?.cliente?.nombre_comercial
+        ?? choque.orden_trabajo?.cliente?.razon_social
+        ?? `OT ${choque.orden_trabajo?.ot ?? "#?"}`;
+      messageApi.error(`No se puede mover acá: choca con ${cliente} — ${choque.descripcion ?? choque.operacion_codigo}`);
+      return;
+    }
+
     const patch: Record<string, unknown> = {
       fecha_inicio: nuevoInicio.toISOString(),
       fecha_fin: fin.toISOString(),
@@ -401,13 +437,8 @@ export default function ProgramacionSemanalPage() {
       const res = await fetch(`/api/planificacion/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...patch, version: original.version }),
+        body: JSON.stringify(patch),
       });
-      if (res.status === 409) {
-        messageApi.warning("Otro usuario actualizó esta tarea. Sincronizando…");
-        fetchData();
-        return;
-      }
       if (res.status === 423) {
         messageApi.error("Tarea cerrada (realizado), no editable.");
         fetchData();
@@ -433,22 +464,30 @@ export default function ProgramacionSemanalPage() {
     // nuevasHoras representa duración total de la barra. Las horas_estimadas son por persona.
     const horasPorPersona = Math.max(0.25, nuevasHoras / qty);
     const inicio = original.fecha_inicio ? new Date(original.fecha_inicio) : null;
-    const finRecalc = inicio ? calcularFinEstimado(inicio, horasPorPersona * qty).toISOString() : null;
+    const finCalc = inicio ? calcularFinEstimado(inicio, horasPorPersona * qty) : null;
+
+    // Bloquear si la nueva duración haría chocar con otra tarea del mismo recurso.
+    if (inicio && finCalc) {
+      const recurso = view === "equipo" ? original.maquina : original.tecnico;
+      const choque = tareaSuperpuesta(id, inicio.getTime(), finCalc.getTime(), recurso);
+      if (choque) {
+        const cliente = choque.orden_trabajo?.cliente?.nombre_comercial
+          ?? choque.orden_trabajo?.cliente?.razon_social
+          ?? `OT ${choque.orden_trabajo?.ot ?? "#?"}`;
+        messageApi.error(`No se puede agrandar: choca con ${cliente} — ${choque.descripcion ?? choque.operacion_codigo}`);
+        return;
+      }
+    }
+
     try {
       const res = await fetch(`/api/planificacion/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           horas_estimadas: horasPorPersona,
-          ...(finRecalc ? { fecha_fin: finRecalc } : {}),
-          version: original.version,
+          ...(finCalc ? { fecha_fin: finCalc.toISOString() } : {}),
         }),
       });
-      if (res.status === 409) {
-        messageApi.warning("Otro usuario actualizó esta tarea. Sincronizando…");
-        fetchData();
-        return;
-      }
       if (res.status === 423) {
         messageApi.error("Tarea cerrada (realizado), no editable.");
         fetchData();
