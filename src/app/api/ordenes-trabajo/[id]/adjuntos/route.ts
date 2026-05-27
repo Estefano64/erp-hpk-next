@@ -118,6 +118,16 @@ export async function POST(req: NextRequest, { params }: Params) {
       },
     });
 
+    // Auditoría: solo la subida queda en historial (delete y download no).
+    await prisma.oTHistorial.create({
+      data: {
+        ot_id: otId,
+        tipo_operacion: "ADJUNTO",
+        descripcion: `Adjunto subido (etapa ${etapa}): ${nombre_archivo}`,
+        usuario: usuario ?? "sistema",
+      },
+    });
+
     return NextResponse.json({ data: adjunto }, { status: 201 });
   } catch (error) {
     console.error("POST adjuntos error:", error);

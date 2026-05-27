@@ -11,6 +11,7 @@ import { prisma } from "@/lib/prisma";
 import { sanitizarNombreArchivo } from "@/lib/file-uploads";
 import { deleteObject } from "@/lib/r2-helpers";
 import { R2Keys, otCodigoFor } from "@/lib/r2";
+import { getAuditUser } from "@/lib/audit";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -78,14 +79,26 @@ export async function POST(req: NextRequest, { params }: Params) {
       }
     }
 
+    const nombreSanitizado = sanitizarNombreArchivo(nombre_archivo);
     const updated = await prisma.evaluacionTecnica.update({
       where: { id: evalId },
       data: {
         informe_key: key,
-        informe_nombre: sanitizarNombreArchivo(nombre_archivo),
+        informe_nombre: nombreSanitizado,
         informe_mime: tipo_mime,
         informe_tamano: tamano,
         informe_fecha_subida: new Date(),
+      },
+    });
+
+    // Auditoría: registrar la subida en el historial de la OT padre.
+    const usuario = (await getAuditUser(req)) ?? "sistema";
+    await prisma.oTHistorial.create({
+      data: {
+        ot_id: existing.orden_trabajo.id,
+        tipo_operacion: "ADJUNTO",
+        descripcion: `Informe de evaluación subido: ${nombreSanitizado}`,
+        usuario,
       },
     });
 
