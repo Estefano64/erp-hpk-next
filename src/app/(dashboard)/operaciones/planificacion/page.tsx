@@ -22,6 +22,8 @@ import customParseFormat from "dayjs/plugin/customParseFormat";
 import { brand } from "@/lib/theme";
 import { calcularFinEstimado, calcularHH } from "@/lib/planification-hours";
 import { useTabSync } from "@/lib/useTabSync";
+import { useSession } from "next-auth/react";
+import { useEditLock } from "@/lib/useEditLock";
 
 import { formatDateOnlyShort } from "@/lib/dates";
 dayjs.extend(isoWeek);
@@ -171,6 +173,14 @@ function buildSemanasOptions(): { value: string; label: string }[] {
 }
 
 export default function PlanificacionPage() {
+  const { data: session } = useSession();
+  const currentUser = (session?.user?.name ?? session?.user?.email) ?? null;
+  // Page-level lock: resource_id fijo en 1 porque la planificación es un único
+  // recurso compartido (no por OT). 0 funciona también pero algunos clientes
+  // tratan 0 como "vacío" en parseo de query strings.
+  const lock = useEditLock("planificacion", 1, currentUser);
+  const [editMode, setEditMode] = useState(false);
+
   const [rows, setRows] = useState<PlanRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -293,6 +303,10 @@ export default function PlanificacionPage() {
   }, [messageApi, rows, fetchData, notifySync]);
 
   const updateField = useCallback((id: number, patch: Record<string, unknown>) => {
+    if (!editMode) {
+      messageApi.warning("Activá Modo Edición para hacer cambios.");
+      return;
+    }
     // Optimistic local update siempre
     setRows((prev) => {
       const target = prev.find((r) => r.id === id);
@@ -314,7 +328,34 @@ export default function PlanificacionPage() {
         [id]: { ...(prev[id] ?? {}), ...patch },
       }));
     }
-  }, [persistPatch, autoSave]);
+  }, [persistPatch, autoSave, editMode, messageApi]);
+
+  // Toggle de edit mode. Adquiere/libera el lock pesimista.
+  const toggleEditMode = useCallback(async () => {
+    if (editMode) {
+      setEditMode(false);
+      await lock.release();
+      return;
+    }
+    const ok = await lock.acquire();
+    if (!ok) {
+      messageApi.warning(
+        lock.lockedBy
+          ? `${lock.lockedBy} está editando la planificación.`
+          : "No se pudo entrar a edición.",
+      );
+      return;
+    }
+    setEditMode(true);
+  }, [editMode, lock, messageApi]);
+
+  // Si pierdo el lock (heartbeat 409, alguien más entró tras stale), salir de edit mode.
+  useEffect(() => {
+    if (editMode && !lock.isOwner && lock.lockedBy && lock.lockedBy !== currentUser) {
+      setEditMode(false);
+      messageApi.warning("Perdiste el lock de edición. Otro usuario lo tomó.");
+    }
+  }, [editMode, lock.isOwner, lock.lockedBy, currentUser, messageApi]);
 
   const guardarTodo = useCallback(async () => {
     const ids = Object.keys(pendingChanges).map(Number);
@@ -1067,6 +1108,15 @@ export default function PlanificacionPage() {
           Planificación
         </Typography.Title>
         <Space size="middle" wrap>
+          <Button
+            type={editMode ? "default" : "primary"}
+            danger={editMode}
+            onClick={toggleEditMode}
+            disabled={!editMode && !lock.canEdit}
+            title={!lock.canEdit && lock.lockedBy ? `Editando: ${lock.lockedBy}` : undefined}
+          >
+            {editMode ? "Salir de edición" : "Modo edición"}
+          </Button>
           <span style={{ fontSize: 12, color: brand.textSecondary }}>
             <ThunderboltOutlined style={{ marginRight: 4 }} />
             Autoguardar
@@ -1129,6 +1179,16 @@ export default function PlanificacionPage() {
           </span>
         </Space>
       </div>
+
+      {!lock.isOwner && lock.lockedBy && (
+        <Alert
+          type="warning"
+          showIcon
+          message={`${lock.lockedBy} está editando la planificación`}
+          description="Solo podés ver hasta que termine. Si se quedó colgado el lock se libera solo a los 3 minutos."
+          style={{ marginBottom: 12 }}
+        />
+      )}
 
       <Alert
         type="info"

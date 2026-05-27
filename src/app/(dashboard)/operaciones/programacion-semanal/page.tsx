@@ -17,6 +17,8 @@ import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import { calcularFinEstimado } from "@/lib/planification-hours";
 import { useTabSync } from "@/lib/useTabSync";
+import { useSession } from "next-auth/react";
+import { useEditLock } from "@/lib/useEditLock";
 
 dayjs.extend(isoWeek);
 dayjs.locale("es");
@@ -127,6 +129,10 @@ function semanaCodigo(d: Dayjs): string {
 
 export default function ProgramacionSemanalPage() {
   const router = useRouter();
+  const { data: session } = useSession();
+  const currentUser = (session?.user?.name ?? session?.user?.email) ?? null;
+  const lock = useEditLock("programacion-semanal", 1, currentUser);
+  const [editMode, setEditMode] = useState(false);
   const [lunes, setLunes] = useState<Dayjs>(() => dayjs().startOf("isoWeek"));
   const [view, setView] = useState<"equipo" | "operario">("equipo");
   const [filtroEquipos, setFiltroEquipos] = useState<string[]>([]);
@@ -317,8 +323,39 @@ export default function ProgramacionSemanalPage() {
     return dayIdx * dayPx + (h - JORNADA_INICIO) * hourPx;
   }, [lunes, dayPx, hourPx]);
 
+  // Toggle de edit mode pesimista. Adquiere / libera el lock global de la página.
+  const toggleEditMode = useCallback(async () => {
+    if (editMode) {
+      setEditMode(false);
+      await lock.release();
+      return;
+    }
+    const ok = await lock.acquire();
+    if (!ok) {
+      messageApi.warning(
+        lock.lockedBy
+          ? `${lock.lockedBy} está editando la programación semanal.`
+          : "No se pudo entrar a edición.",
+      );
+      return;
+    }
+    setEditMode(true);
+  }, [editMode, lock, messageApi]);
+
+  // Si pierdo el lock por TTL/heartbeat fail, salir de edit mode.
+  useEffect(() => {
+    if (editMode && !lock.isOwner && lock.lockedBy && lock.lockedBy !== currentUser) {
+      setEditMode(false);
+      messageApi.warning("Perdiste el lock de edición. Otro usuario lo tomó.");
+    }
+  }, [editMode, lock.isOwner, lock.lockedBy, currentUser, messageApi]);
+
   // ── Persist con update optimista ──
   async function persistMove(id: number, nuevoInicio: Dayjs, nuevoRecurso?: string) {
+    if (!editMode) {
+      messageApi.warning("Activá Modo Edición para mover tareas.");
+      return;
+    }
     const original = rows.find((r) => r.id === id) || allRows.find((r) => r.id === id);
     if (!original) return;
     // Si la tarea no tiene horas_estimadas (vino del pool sin fecha), defaulteamos a 1h
@@ -386,6 +423,10 @@ export default function ProgramacionSemanalPage() {
 
   // ── Resize ──
   async function persistResize(id: number, nuevasHoras: number) {
+    if (!editMode) {
+      messageApi.warning("Activá Modo Edición para cambiar duración.");
+      return;
+    }
     const original = rows.find((r) => r.id === id);
     if (!original) return;
     const qty = Math.max(1, Number(original.qty_personal ?? 1));
@@ -794,6 +835,16 @@ export default function ProgramacionSemanalPage() {
     <div style={{ minHeight: "100%" }}>
       {contextHolder}
 
+      {!lock.isOwner && lock.lockedBy && (
+        <Alert
+          type="warning"
+          showIcon
+          message={`${lock.lockedBy} está editando la programación semanal`}
+          description="Solo podés ver hasta que termine. Si se quedó colgado el lock se libera solo a los 3 minutos."
+          style={{ marginBottom: 12 }}
+        />
+      )}
+
       {/* Header con gradient */}
       <Card
         styles={{ body: { padding: "16px 20px" } }}
@@ -815,6 +866,15 @@ export default function ProgramacionSemanalPage() {
             </div>
           </div>
           <Space wrap>
+            <Button
+              type={editMode ? "default" : "primary"}
+              danger={editMode}
+              onClick={toggleEditMode}
+              disabled={!editMode && !lock.canEdit}
+              title={!lock.canEdit && lock.lockedBy ? `Editando: ${lock.lockedBy}` : undefined}
+            >
+              {editMode ? "Salir de edición" : "Modo edición"}
+            </Button>
             <Button shape="circle" icon={<LeftOutlined />} onClick={() => setLunes((m) => m.subtract(1, "week"))} />
             <DatePicker
               value={lunes}
