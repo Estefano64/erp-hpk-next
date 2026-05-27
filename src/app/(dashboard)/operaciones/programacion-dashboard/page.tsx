@@ -16,6 +16,9 @@ import {
   Tooltip,
   Progress,
   Tree,
+  ColorPicker,
+  Tabs,
+  App,
 } from "antd";
 import {
   AppstoreOutlined,
@@ -24,6 +27,8 @@ import {
   FilterOutlined,
   BgColorsOutlined,
   SettingOutlined,
+  ArrowUpOutlined,
+  ArrowDownOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType, ColumnGroupType, ColumnType } from "antd/es/table/interface";
 import dayjs from "dayjs";
@@ -40,7 +45,22 @@ import {
 
 const { Title, Text } = Typography;
 
-interface ComponenteCat { componente_id: number; codigo: string; nombre: string }
+interface ComponenteCat { componente_id: number; codigo: string; nombre: string; color: string | null }
+
+// Paleta rotativa para componentes sin color asignado en BD. Los códigos se
+// hashean a un índice de la paleta para que el color sea estable entre cargas.
+const PALETA_FALLBACK = [
+  "#1677FF", "#52C41A", "#FAAD14", "#cf1322", "#722ED1",
+  "#13c2c2", "#fa541c", "#eb2f96", "#2f54eb", "#a0d911",
+];
+function colorFallback(codigo: string): string {
+  let h = 0;
+  for (let i = 0; i < codigo.length; i++) h = (h * 31 + codigo.charCodeAt(i)) | 0;
+  return PALETA_FALLBACK[Math.abs(h) % PALETA_FALLBACK.length];
+}
+function colorDeComponente(c: { codigo: string; color: string | null }): string {
+  return c.color && c.color.trim() ? c.color : colorFallback(c.codigo);
+}
 interface OperacionCat {
   codigo: string;
   nombre: string;
@@ -107,18 +127,44 @@ export default function ProgramacionDashboardPage() {
   // Si null = ver todas (default). Si array vacío = todas ocultas. Si array poblado = ocultar esas.
   const [opsOcultas, setOpsOcultas] = useState<string[]>([]);
   const [opsOcultasHidratado, setOpsOcultasHidratado] = useState(false);
+  // Orden de componentes (lista de códigos) — por USUARIO en localStorage.
+  // Si vacío → orden del backend. Si poblado → códigos ahí van primero en ese
+  // orden, luego los no listados al final (típicamente extras nuevos).
+  const [componentesOrden, setComponentesOrden] = useState<string[]>([]);
+  const [componentesOrdenHidratado, setComponentesOrdenHidratado] = useState(false);
   const [vistaConfigOpen, setVistaConfigOpen] = useState(false);
   useEffect(() => {
     try {
       const raw = localStorage.getItem("programacion-dashboard-ops-ocultas-v1");
       if (raw) setOpsOcultas(JSON.parse(raw));
+      const ordenRaw = localStorage.getItem("programacion-dashboard-componentes-orden-v1");
+      if (ordenRaw) setComponentesOrden(JSON.parse(ordenRaw));
     } catch { /* ignore */ }
     setOpsOcultasHidratado(true);
+    setComponentesOrdenHidratado(true);
   }, []);
   useEffect(() => {
     if (!opsOcultasHidratado) return;
     try { localStorage.setItem("programacion-dashboard-ops-ocultas-v1", JSON.stringify(opsOcultas)); } catch { /* ignore */ }
   }, [opsOcultas, opsOcultasHidratado]);
+  useEffect(() => {
+    if (!componentesOrdenHidratado) return;
+    try { localStorage.setItem("programacion-dashboard-componentes-orden-v1", JSON.stringify(componentesOrden)); } catch { /* ignore */ }
+  }, [componentesOrden, componentesOrdenHidratado]);
+
+  // Componentes ordenados según preferencia del usuario.
+  const componentesOrdenados = useMemo<ComponenteCat[]>(() => {
+    if (componentesOrden.length === 0) return componentes;
+    const byCod = new Map(componentes.map((c) => [c.codigo, c]));
+    const out: ComponenteCat[] = [];
+    for (const cod of componentesOrden) {
+      const c = byCod.get(cod);
+      if (c) { out.push(c); byCod.delete(cod); }
+    }
+    // Componentes no listados (extras nuevos) al final.
+    for (const c of byCod.values()) out.push(c);
+    return out;
+  }, [componentes, componentesOrden]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -338,9 +384,10 @@ export default function ProgramacionDashboardPage() {
   // Cada celda muestra el estado de la operación en esa OT.
   const operacionColumns: ColumnsType<OTRow> = useMemo(() => {
     const cols: ColumnsType<OTRow> = [];
-    for (const comp of componentes) {
+    for (const comp of componentesOrdenados) {
       const ops = operacionesPorComponente.get(comp.codigo) ?? [];
       if (ops.length === 0) continue;
+      const compColor = colorDeComponente(comp);
 
       // Separar por clasificación
       const opsSTD = ops.filter((o) => (o.clasificacion ?? "STD").toUpperCase() === "STD");
@@ -392,7 +439,16 @@ export default function ProgramacionDashboardPage() {
       const groupCol: ColumnGroupType<OTRow> = {
         key: `comp-${comp.codigo}`,
         title: (
-          <div style={{ fontWeight: 700, color: brand.navy, fontSize: 11, letterSpacing: 0.5 }}>
+          <div style={{
+            fontWeight: 700,
+            color: brand.white,
+            fontSize: 11,
+            letterSpacing: 0.5,
+            background: compColor,
+            padding: "4px 8px",
+            borderRadius: 4,
+            display: "inline-block",
+          }}>
             {comp.nombre}
           </div>
         ),
@@ -401,7 +457,7 @@ export default function ProgramacionDashboardPage() {
       cols.push(groupCol);
     }
     return cols;
-  }, [componentes, operacionesPorComponente, estados, colorDeEstado]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [componentesOrdenados, operacionesPorComponente, estados, colorDeEstado]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const columns: ColumnsType<OTRow> = [...infoColumns, ...operacionColumns];
 
@@ -530,30 +586,39 @@ export default function ProgramacionDashboardPage() {
         open={vistaConfigOpen}
         onClose={() => setVistaConfigOpen(false)}
         componentes={componentes}
+        componentesOrden={componentesOrden}
+        setComponentesOrden={setComponentesOrden}
         operaciones={operaciones}
         opsOcultas={opsOcultas}
         setOpsOcultas={setOpsOcultas}
+        onColorChanged={fetchData}
       />
     </div>
   );
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// Drawer para configurar qué columnas operación se ven en el dashboard.
-// Estructura del árbol: Componente → Estándar/No estándar → Operación.
-// Internamente trackea operaciones OCULTAS (más simple para "todas por default visibles").
+// Drawer de configuración con 3 tabs:
+//   - Vista (qué operaciones se ven, persistencia local por usuario)
+//   - Orden (orden de componentes en la matriz, local por usuario)
+//   - Colores (color por componente, PERSISTE EN BD — compartido)
 // ───────────────────────────────────────────────────────────────────────────
 function ConfigurarVistaDrawer({
-  open, onClose, componentes, operaciones, opsOcultas, setOpsOcultas,
+  open, onClose, componentes, componentesOrden, setComponentesOrden,
+  operaciones, opsOcultas, setOpsOcultas, onColorChanged,
 }: {
   open: boolean;
   onClose: () => void;
   componentes: ComponenteCat[];
+  componentesOrden: string[];
+  setComponentesOrden: (next: string[]) => void;
   operaciones: OperacionCat[];
   opsOcultas: string[];
   setOpsOcultas: (next: string[]) => void;
+  onColorChanged: () => void;
 }) {
   const { screens } = useResponsive();
+  const { message } = App.useApp();
   // Build tree
   const treeData = useMemo(() => {
     return componentes
@@ -591,7 +656,6 @@ function ConfigurarVistaDrawer({
 
   function onCheck(checked: React.Key[] | { checked: React.Key[]; halfChecked: React.Key[] }) {
     const keys = Array.isArray(checked) ? checked : checked.checked;
-    // Filtramos solo las hojas (op-*)
     const visibleOps = new Set(
       keys.filter((k) => String(k).startsWith("op-")).map((k) => String(k).substring(3)),
     );
@@ -602,31 +666,178 @@ function ConfigurarVistaDrawer({
   function mostrarTodas() { setOpsOcultas([]); }
   function ocultarTodas() { setOpsOcultas(operaciones.map((o) => o.codigo)); }
 
+  // ── ORDEN ──
+  // Lista de componentes en orden actual (override del usuario o catálogo).
+  const componentesOrdenados = useMemo<ComponenteCat[]>(() => {
+    if (componentesOrden.length === 0) return componentes;
+    const byCod = new Map(componentes.map((c) => [c.codigo, c]));
+    const out: ComponenteCat[] = [];
+    for (const cod of componentesOrden) {
+      const c = byCod.get(cod);
+      if (c) { out.push(c); byCod.delete(cod); }
+    }
+    for (const c of byCod.values()) out.push(c);
+    return out;
+  }, [componentes, componentesOrden]);
+
+  function moverComponente(codigo: string, delta: -1 | 1) {
+    const codigos = componentesOrdenados.map((c) => c.codigo);
+    const idx = codigos.indexOf(codigo);
+    const nuevoIdx = idx + delta;
+    if (idx < 0 || nuevoIdx < 0 || nuevoIdx >= codigos.length) return;
+    [codigos[idx], codigos[nuevoIdx]] = [codigos[nuevoIdx], codigos[idx]];
+    setComponentesOrden(codigos);
+  }
+
+  // ── COLORES ──
+  // Se guarda en BD. Solo los componentes con componente_id > 0 (no los extras)
+  // pueden actualizarse — los extras solo tienen color local (fallback paleta).
+  async function actualizarColor(comp: ComponenteCat, color: string | null) {
+    if (comp.componente_id <= 0) {
+      message.warning("Este componente no está en el catálogo, no se puede guardar el color en BD.");
+      return;
+    }
+    try {
+      const res = await fetch(`/api/catalogos/componente?id=${comp.componente_id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          codigo: comp.codigo,
+          nombre: comp.nombre,
+          color: color ?? "",
+          activo: true,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error ?? "Error guardando color");
+      }
+      message.success("Color guardado");
+      onColorChanged();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "Error guardando color");
+    }
+  }
+
   return (
     <Drawer
       title="Configurar vista del dashboard"
       open={open}
       onClose={onClose}
-      width={screens.md ? 460 : "100%"}
+      width={screens.md ? 520 : "100%"}
       placement="right"
-      extra={
-        <Space>
-          <Button size="small" onClick={mostrarTodas}>Mostrar todas</Button>
-          <Button size="small" onClick={ocultarTodas} danger>Ocultar todas</Button>
-        </Space>
-      }
     >
-      <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 12 }}>
-        Elegí qué componentes y operaciones querés ver en la matriz. Tu selección queda guardada
-        para próximas sesiones (por navegador).
-      </Text>
-      <Tree
-        checkable
-        treeData={treeData}
-        checkedKeys={checkedKeys}
-        onCheck={onCheck}
-        defaultExpandAll
-        selectable={false}
+      <Tabs
+        defaultActiveKey="vista"
+        items={[
+          {
+            key: "vista",
+            label: "Vista",
+            children: (
+              <div>
+                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8, gap: 6 }}>
+                  <Button size="small" onClick={mostrarTodas}>Mostrar todas</Button>
+                  <Button size="small" onClick={ocultarTodas} danger>Ocultar todas</Button>
+                </div>
+                <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 12 }}>
+                  Elegí qué operaciones querés ver. Tu selección queda guardada por navegador.
+                </Text>
+                <Tree
+                  checkable
+                  treeData={treeData}
+                  checkedKeys={checkedKeys}
+                  onCheck={onCheck}
+                  defaultExpandAll
+                  selectable={false}
+                />
+              </div>
+            ),
+          },
+          {
+            key: "orden",
+            label: "Orden",
+            children: (
+              <div>
+                <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 12 }}>
+                  Reordená los componentes con las flechas. El orden es solo para vos (se guarda por navegador).
+                </Text>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {componentesOrdenados.map((c, i) => (
+                    <div
+                      key={c.codigo}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "6px 10px",
+                        border: `1px solid ${brand.border}`,
+                        borderRadius: 4,
+                        background: brand.white,
+                      }}
+                    >
+                      <span style={{ width: 14, height: 14, borderRadius: 3, background: colorDeComponente(c) }} />
+                      <Text strong style={{ flex: 1, fontSize: 13 }}>{c.nombre}</Text>
+                      <Text type="secondary" style={{ fontSize: 11 }}>{c.codigo}</Text>
+                      <Button
+                        size="small"
+                        icon={<ArrowUpOutlined />}
+                        disabled={i === 0}
+                        onClick={() => moverComponente(c.codigo, -1)}
+                      />
+                      <Button
+                        size="small"
+                        icon={<ArrowDownOutlined />}
+                        disabled={i === componentesOrdenados.length - 1}
+                        onClick={() => moverComponente(c.codigo, 1)}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <Button size="small" style={{ marginTop: 12 }} onClick={() => setComponentesOrden([])}>
+                  Restablecer al orden por defecto
+                </Button>
+              </div>
+            ),
+          },
+          {
+            key: "colores",
+            label: "Colores",
+            children: (
+              <div>
+                <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 12 }}>
+                  El color es compartido por todos los usuarios. Se aplica al header del componente en la matriz.
+                </Text>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {componentesOrdenados.map((c) => (
+                    <div
+                      key={c.codigo}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "6px 10px",
+                        border: `1px solid ${brand.border}`,
+                        borderRadius: 4,
+                        background: brand.white,
+                      }}
+                    >
+                      <ColorPicker
+                        value={colorDeComponente(c)}
+                        onChangeComplete={(col) => actualizarColor(c, col.toHexString())}
+                        disabled={c.componente_id <= 0}
+                      />
+                      <Text strong style={{ flex: 1, fontSize: 13 }}>{c.nombre}</Text>
+                      <Text type="secondary" style={{ fontSize: 11 }}>{c.codigo}</Text>
+                      {c.componente_id <= 0 && (
+                        <Tag color="default" style={{ fontSize: 10 }}>extra</Tag>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ),
+          },
+        ]}
       />
     </Drawer>
   );
