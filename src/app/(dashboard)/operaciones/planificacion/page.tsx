@@ -496,6 +496,9 @@ export default function PlanificacionPage() {
     const cargaMap = semanaRef ? cargaIndex.op.get(semanaRef) : null;
     const opcionTercero = {
       value: "Tercero",
+      // search: string que el filterOption usa para matchear lo que tipea el
+      // usuario (porque label es JSX y no se puede usar como string).
+      search: "tercero proveedor externo",
       label: (
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           <Tag color="purple" style={{ fontSize: 10, margin: 0, lineHeight: "16px" }}>TERCERO</Tag>
@@ -508,6 +511,7 @@ export default function PlanificacionPage() {
       const showCarga = !!cargaMap;
       return {
         value: t.nombre,
+        search: `${t.nombre} ${t.area ?? ""} ${t.puesto ?? ""}`.toLowerCase(),
         label: showCarga ? (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6, width: "100%" }}>
             <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -531,6 +535,9 @@ export default function PlanificacionPage() {
       // Pedido del usuario: primero el nombre (descripcion), después el código.
       return {
         value: e.codigo,
+        // search: string para que filterOption matchee por código O descripción.
+        // Necesario porque label es JSX cuando hay carga (no se puede searchar).
+        search: `${e.codigo} ${e.descripcion ?? ""}`.toLowerCase(),
         label: showCarga ? (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6, width: "100%" }}>
             <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -761,7 +768,7 @@ export default function PlanificacionPage() {
                 // Mostramos todos los tags (sin colapsar). El alto de la fila crece si hay varios.
                 style={{ width: "100%" }}
                 showSearch
-                filterOption={(i, o) => String(o?.value ?? "").toLowerCase().includes(i.toLowerCase())}
+                filterOption={(i, o) => ((o as { search?: string })?.search ?? String(o?.value ?? "")).toLowerCase().includes(i.toLowerCase())}
                 tagRender={({ label, onClose }) => (
                   <span
                     style={{
@@ -795,7 +802,7 @@ export default function PlanificacionPage() {
             size="small"
             style={{ width: "100%" }}
             showSearch
-            filterOption={(i, o) => String(o?.value ?? "").toLowerCase().includes(i.toLowerCase())}
+            filterOption={(i, o) => ((o as { search?: string })?.search ?? String(o?.value ?? "")).toLowerCase().includes(i.toLowerCase())}
           />
         );
       },
@@ -830,7 +837,7 @@ export default function PlanificacionPage() {
                 size="small"
                 style={{ width: "100%" }}
                 showSearch
-                filterOption={(i, o) => String(o?.value ?? "").toLowerCase().includes(i.toLowerCase())}
+                filterOption={(i, o) => ((o as { search?: string })?.search ?? String(o?.value ?? "")).toLowerCase().includes(i.toLowerCase())}
                 tagRender={({ label, onClose }) => (
                   <span
                     style={{
@@ -864,7 +871,7 @@ export default function PlanificacionPage() {
             size="small"
             style={{ width: "100%" }}
             showSearch
-            filterOption={(i, o) => String(o?.value ?? "").toLowerCase().includes(i.toLowerCase())}
+            filterOption={(i, o) => ((o as { search?: string })?.search ?? String(o?.value ?? "")).toLowerCase().includes(i.toLowerCase())}
           />
         );
       },
@@ -1270,7 +1277,7 @@ export default function PlanificacionPage() {
                 allowClear
                 showSearch
                 style={{ width: "100%" }}
-                filterOption={(i, o) => String(o?.value ?? "").toLowerCase().includes(i.toLowerCase())}
+                filterOption={(i, o) => ((o as { search?: string })?.search ?? String(o?.value ?? "")).toLowerCase().includes(i.toLowerCase())}
               />
             </Col>
             <Col flex="1 1 220px">
@@ -1282,7 +1289,7 @@ export default function PlanificacionPage() {
                 allowClear
                 showSearch
                 style={{ width: "100%" }}
-                filterOption={(i, o) => String(o?.value ?? "").toLowerCase().includes(i.toLowerCase())}
+                filterOption={(i, o) => ((o as { search?: string })?.search ?? String(o?.value ?? "")).toLowerCase().includes(i.toLowerCase())}
               />
             </Col>
             <Col flex="1 1 220px">

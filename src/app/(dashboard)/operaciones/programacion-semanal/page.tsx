@@ -970,7 +970,7 @@ export default function ProgramacionSemanalPage() {
               placeholder="Máquinas (todas)"
               value={filtroEquipos}
               onChange={setFiltroEquipos}
-              options={equipos.map((e) => ({ value: e.codigo, label: e.descripcion ?? e.codigo }))}
+              options={equipos.map((e) => ({ value: e.codigo, label: `${e.codigo} — ${e.descripcion ?? ""}`.trim() }))}
               optionFilterProp="label"
               maxTagCount="responsive"
               size="small"
