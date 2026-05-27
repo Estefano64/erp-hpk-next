@@ -63,6 +63,8 @@ export async function GET(req: NextRequest) {
           orden_trabajo: {
             select: {
               id: true, ot: true,
+              descripcion: true,
+              cod_rep_flota: true,
               cliente: { select: { codigo: true, razon_social: true, nombre_comercial: true } },
             },
           },

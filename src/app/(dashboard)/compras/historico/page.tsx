@@ -136,7 +136,7 @@ export default function HistoricoComprasPage() {
         const enEdit = editando?.matId === r.material_id && editando?.provId === p.id;
         if (enEdit) {
           return (
-            <Space direction="vertical" size={2} style={{ width: "100%" }}>
+            <Space orientation="vertical" size={2} style={{ width: "100%" }}>
               <Space size={2}>
                 <InputNumber
                   size="small" autoFocus value={editValor} min={0} step={0.01}

@@ -9,7 +9,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
-import { nextNroReq, nextItemReqInterna } from "@/lib/requerimientos";
+import { nextNroReqInterna, nextItemReqInterna } from "@/lib/requerimientos";
 import { parseDateOnly } from "@/lib/dates";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -106,7 +106,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         }
         nroReq = d.nro_req;
       } else {
-        nroReq = await nextNroReq(tx);
+        nroReq = await nextNroReqInterna(tx, otInternaId);
       }
       const itemReq = await nextItemReqInterna(tx, otInternaId);
 

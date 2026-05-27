@@ -108,11 +108,18 @@ export default function OTInternaDetallePage() {
   const [estrategias, setEstrategias] = useState<EstrategiaOption[]>([]);
   const [trabajadores, setTrabajadores] = useState<TrabajadorOpt[]>([]);
 
-  // El dropdown "Asignado a" en OTs internas solo muestra trabajadores del
-  // área Logística + Antonio (Antonio Zumaeta Mendoza). Decisión del usuario.
+  // El dropdown "Asignado a" en OTs internas muestra solo trabajadores de las
+  // áreas operativas relevantes para mantenimiento del taller, más Antonio
+  // (Antonio Zumaeta Mendoza) por nombre. Decisión del usuario (2026-05-27).
+  const AREAS_ASIGNABLES_OT_INTERNA = new Set([
+    "LOGISTICA",
+    "MANTENIMIENTO",
+    "LIMPIEZA",
+    "SOFTWARE",
+  ]);
   const trabajadoresAsignables = trabajadores.filter(
     (t) =>
-      t.area?.toUpperCase() === "LOGISTICA" ||
+      (t.area && AREAS_ASIGNABLES_OT_INTERNA.has(t.area.toUpperCase())) ||
       t.nombre.toLowerCase().includes("antonio"),
   );
 
@@ -428,6 +435,21 @@ function DetalleTab({ ot, editing, form, catalogos }: {
                 showSearch
                 optionFilterProp="label"
                 options={areasTallerGrouped()}
+              />
+            </Form.Item>
+          </Col>
+          <Col span={24}>
+            <Form.Item
+              name="equipo_codigo"
+              label="Equipo (opcional)"
+              tooltip="Si la OT es para un equipo específico del taller, seleccionalo."
+            >
+              <Select
+                placeholder="Buscar equipo (código o descripción)"
+                showSearch
+                allowClear
+                optionFilterProp="label"
+                options={catalogos.equipos.map((e) => ({ value: e.codigo, label: `${e.codigo} — ${e.descripcion}` }))}
               />
             </Form.Item>
           </Col>

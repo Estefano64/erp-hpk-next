@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
-import { nextNroReq, pickDescripcionFromTarea } from "@/lib/requerimientos";
+import { nextNroReqExterna, pickDescripcionFromTarea } from "@/lib/requerimientos";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -95,7 +95,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       // Resolver descripción usa el helper compartido (también lo usa POST /api/ordenes-trabajo).
 
       // Un solo nro_req para todo el template, item_req incremental dentro
-      const nroReq = await nextNroReq(tx);
+      const nroReq = await nextNroReqExterna(tx, otId);
       let creados = 0;
       for (let i = 0; i < tareas.length; i++) {
         const t = tareas[i];

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
-import { nextNroReq, nextItemReq } from "@/lib/requerimientos";
+import { nextNroReqExterna, nextItemReq } from "@/lib/requerimientos";
 import { parseDateOnly } from "@/lib/dates";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -101,7 +101,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         }
         nroReq = d.nro_req;
       } else {
-        nroReq = await nextNroReq(tx);
+        nroReq = await nextNroReqExterna(tx, otId);
       }
       const itemReq = await nextItemReq(tx, otId);
 

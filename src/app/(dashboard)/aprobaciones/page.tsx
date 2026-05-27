@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Typography, Card, Tabs, Table, Tag, Space, Button, Input, Select, Row, Col,
   Statistic, Popconfirm, Empty, Tooltip, Popover, Divider, Badge, App,
-  Alert, Segmented,
+  Alert, Segmented, Modal,
 } from "antd";
 import {
   CheckOutlined, CloseOutlined, ReloadOutlined, EyeOutlined, FileProtectOutlined,
@@ -78,6 +78,8 @@ interface ReqPendiente {
   usuario_solicita: string;
   orden_trabajo: {
     id: number; ot: string | null;
+    descripcion: string | null;
+    cod_rep_flota: string | null;
     cliente: { codigo: string; razon_social: string; nombre_comercial: string | null } | null;
   } | null;
   observaciones: string | null;
@@ -124,6 +126,12 @@ export default function AceptacionesPage() {
   // Selección bulk
   const [selOcs, setSelOcs] = useState<number[]>([]);
   const [selReqs, setSelReqs] = useState<number[]>([]);
+
+  // Modal "Aprobar requerimiento" (con campo precio estimado opcional).
+  const [aprobarModalReq, setAprobarModalReq] = useState<ReqPendiente | null>(null);
+  const [aprobarPrecio, setAprobarPrecio] = useState<number | null>(null);
+  const [aprobarMoneda, setAprobarMoneda] = useState<string>("USD");
+  const [aprobarSaving, setAprobarSaving] = useState(false);
 
   // Tab activo
   const [tab, setTab] = useState<"pendientes" | "historial">("pendientes");
@@ -176,15 +184,49 @@ export default function AceptacionesPage() {
       message.error(e instanceof Error ? e.message : "Error");
     }
   }
-  async function aprobarReq(id: number, ref: string) {
+  async function aprobarReq(
+    id: number,
+    ref: string,
+    body?: { precio_estimado?: number; moneda?: string },
+  ) {
     try {
-      const res = await fetch(`/api/requerimientos/${id}/aprobar`, { method: "POST" });
+      const res = await fetch(`/api/requerimientos/${id}/aprobar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
       const j = await res.json().catch(() => null);
       if (!res.ok) throw new Error(j?.error ?? "Error al aprobar requerimiento");
       message.success(`Req ${ref} aprobado.`);
       fetchData();
     } catch (e: unknown) {
       message.error(e instanceof Error ? e.message : "Error");
+    }
+  }
+
+  // Abre el modal de aprobar con precio estimado.
+  function openAprobarModal(r: ReqPendiente) {
+    setAprobarModalReq(r);
+    // Pre-cargar con el precio del item (si ya tiene), o el precio del material catálogo.
+    const precioActual = r.precio_unitario != null
+      ? Number(r.precio_unitario)
+      : (r.material?.precio != null ? Number(r.material.precio) : null);
+    setAprobarPrecio(precioActual);
+    setAprobarMoneda(r.moneda ?? r.material?.moneda_codigo ?? "USD");
+  }
+
+  async function handleConfirmAprobar() {
+    if (!aprobarModalReq) return;
+    setAprobarSaving(true);
+    try {
+      const ref = `${aprobarModalReq.nro_req ?? "—"}/${aprobarModalReq.item_req ?? "—"}`;
+      const body = aprobarPrecio != null && aprobarPrecio >= 0
+        ? { precio_estimado: aprobarPrecio, moneda: aprobarMoneda }
+        : undefined;
+      await aprobarReq(aprobarModalReq.id, ref, body);
+      setAprobarModalReq(null);
+    } finally {
+      setAprobarSaving(false);
     }
   }
   function desaprobarReq(r: ReqPendiente) {
@@ -467,6 +509,21 @@ export default function AceptacionesPage() {
       },
     },
     {
+      key: "flota", title: "Flota", width: 130, ellipsis: true,
+      filters: [...new Set(reqs.map((r) => r.orden_trabajo?.cod_rep_flota).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => r.orden_trabajo?.cod_rep_flota === value,
+      render: (_, r) => r.orden_trabajo?.cod_rep_flota
+        ? <Tag color="geekblue" style={{ margin: 0 }}>{r.orden_trabajo.cod_rep_flota}</Tag>
+        : <Text type="secondary">—</Text>,
+    },
+    {
+      key: "descripcion_ot", title: "Descripción OT", width: 220, ellipsis: true,
+      render: (_, r) => r.orden_trabajo?.descripcion
+        ? <Tooltip title={r.orden_trabajo.descripcion}><span style={{ fontSize: 12 }}>{r.orden_trabajo.descripcion}</span></Tooltip>
+        : <Text type="secondary">—</Text>,
+    },
+    {
       key: "descripcion", title: "Material / Descripción", ellipsis: true,
       render: (_, r) => (
         <div style={{ lineHeight: 1.2 }}>
@@ -530,13 +587,12 @@ export default function AceptacionesPage() {
       render: (_, r) => (
         <Space size={4}>
           <Tooltip title="Aprobar requerimiento">
-            <Popconfirm
-              title={`¿Aprobar req ${r.nro_req ?? "—"}/${r.item_req ?? "—"}?`}
-              onConfirm={() => aprobarReq(r.id, `${r.nro_req ?? "—"}/${r.item_req ?? "—"}`)}
-              okText="Aprobar" cancelText="Cancelar"
+            <Button
+              type="primary" size="small" icon={<CheckOutlined />}
+              onClick={() => openAprobarModal(r)}
             >
-              <Button type="primary" size="small" icon={<CheckOutlined />}>Aprobar</Button>
-            </Popconfirm>
+              Aprobar
+            </Button>
           </Tooltip>
           <Tooltip title={r.orden_trabajo?.ot ? `Ver OT ${r.orden_trabajo.ot}` : "Ver requerimientos"}>
             <Button
@@ -900,6 +956,77 @@ export default function AceptacionesPage() {
           },
         ]}
       />
+
+      {/* Modal aprobar requerimiento — incluye campo precio estimado opcional. */}
+      <Modal
+        title={aprobarModalReq
+          ? `Aprobar requerimiento ${aprobarModalReq.nro_req ?? "—"}/${aprobarModalReq.item_req ?? "—"}`
+          : "Aprobar"}
+        open={aprobarModalReq != null}
+        onCancel={() => setAprobarModalReq(null)}
+        onOk={handleConfirmAprobar}
+        confirmLoading={aprobarSaving}
+        okText="Aprobar"
+        cancelText="Cancelar"
+        destroyOnHidden
+      >
+        {aprobarModalReq && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ fontSize: 13, color: "#666" }}>
+              <div>
+                <b>{aprobarModalReq.tipo_codigo}</b> —{" "}
+                {aprobarModalReq.material?.descripcion ?? aprobarModalReq.descripcion ?? "—"}
+              </div>
+              <div style={{ marginTop: 4 }}>
+                Cantidad:{" "}
+                <b>
+                  {Number(aprobarModalReq.cantidad).toLocaleString()}{" "}
+                  {aprobarModalReq.unidad_medida ?? ""}
+                </b>
+              </div>
+              {aprobarModalReq.orden_trabajo?.ot && (
+                <div style={{ marginTop: 4 }}>
+                  OT: <Tag>{aprobarModalReq.orden_trabajo.ot}</Tag>
+                  {aprobarModalReq.orden_trabajo.cod_rep_flota && (
+                    <Tag color="geekblue">{aprobarModalReq.orden_trabajo.cod_rep_flota}</Tag>
+                  )}
+                </div>
+              )}
+            </div>
+            <div>
+              <Text strong style={{ display: "block", marginBottom: 4 }}>
+                Precio estimado <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+              </Text>
+              <Space>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  value={aprobarPrecio ?? ""}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setAprobarPrecio(v === "" ? null : Number(v));
+                  }}
+                  placeholder="0.00"
+                  style={{ width: 180 }}
+                />
+                <Select
+                  value={aprobarMoneda}
+                  onChange={setAprobarMoneda}
+                  style={{ width: 100 }}
+                  options={[
+                    { value: "USD", label: "USD" },
+                    { value: "PEN", label: "PEN" },
+                  ]}
+                />
+              </Space>
+              <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>
+                Si lo dejás vacío, se aprueba sin tocar el precio actual del item.
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
