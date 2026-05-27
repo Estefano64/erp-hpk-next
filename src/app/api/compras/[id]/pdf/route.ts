@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { rutaFirmaDe } from "@/lib/firmas";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -59,6 +60,16 @@ export async function GET(_req: NextRequest, { params }: Params) {
       .replace(/[^A-Z0-9\-_]/g, "")
       .slice(0, 40);
     const tituloDocumento = ["OC", otFile || "SinOT", provFile || "SinProv"].join("-");
+
+    // Firmas: si el nombre del usuario coincide con un archivo en public/firmas/
+    // (mapeo en src/lib/firmas.ts), se renderiza la imagen sobre el nombre.
+    // Si no coincide, solo se muestra el nombre como texto.
+    const firmaElaboro = rutaFirmaDe(compra.usuario_solicita);
+    const firmaAprobo = rutaFirmaDe(compra.usuario_aprueba);
+    const renderFirma = (rutaImg: string | null, nombre: string) =>
+      rutaImg
+        ? `<img class="img-firma" src="${esc(rutaImg)}" alt="Firma" /><div class="nombre">${esc(nombre)}</div>`
+        : `<div class="nombre">${esc(nombre)}</div>`;
 
     // Formar filas de items (minimo 8 filas para que luzca formal como la plantilla)
     const MIN_ROWS = 8;
@@ -157,8 +168,10 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
   /* Firmas */
   .firmas { margin-top: 18px; width: 100%; border-collapse: collapse; }
-  .firmas td { border: 1pt solid #333; padding: 30px 8px 6px; font-size: 8pt; text-align: center; width: 33%; vertical-align: bottom; }
-  .firmas .rol { font-weight: bold; color: #1C2B5B; }
+  .firmas td { border: 1pt solid #333; padding: 8px; font-size: 8pt; text-align: center; width: 33%; vertical-align: bottom; height: 110px; }
+  .firmas .rol { font-weight: bold; color: #1C2B5B; margin-bottom: 4px; }
+  .firmas .img-firma { max-height: 60px; max-width: 90%; object-fit: contain; display: block; margin: 0 auto 4px; }
+  .firmas .nombre { margin-top: 4px; }
 
   /* Factura */
   .factura-box { margin-top: 12px; border: 1pt solid #333; padding: 8px; font-size: 8pt; background: #fafafa; }
@@ -324,15 +337,15 @@ export async function GET(_req: NextRequest, { params }: Params) {
     <tr>
       <td>
         <div class="rol">ELABORADO POR:</div>
-        <div>${esc(compra.usuario_solicita ?? "")}</div>
+        ${renderFirma(firmaElaboro, compra.usuario_solicita ?? "")}
       </td>
       <td>
         <div class="rol">APROBADO POR:</div>
-        <div>${esc(compra.usuario_aprueba ?? "_______________")}</div>
+        ${renderFirma(firmaAprobo, compra.usuario_aprueba ?? "_______________")}
       </td>
       <td>
         <div class="rol">ACEPTADO POR:</div>
-        <div>PROVEEDOR</div>
+        <div class="nombre">PROVEEDOR</div>
       </td>
     </tr>
   </table>

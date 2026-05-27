@@ -19,6 +19,32 @@ async function main() {
   });
   console.log("✓ Usuario admin creado");
 
+  // ── Usuarios con firma para órdenes de compra ────────
+  // Los `nombre` deben coincidir EXACTAMENTE con los archivos en public/firmas/
+  // (la plantilla OC busca el archivo por nombre del usuario logueado/firmante).
+  // Password temporal: 'hpyk2026' — cambiar después del primer login.
+  const firmaHash = await bcrypt.hash("hpyk2026", 10);
+  const firmantes = [
+    { codigo: "USR-001", nombre: "Antonio Zumaeta Mendoza" },
+    { codigo: "USR-002", nombre: "Carlos Viña Miranda" },
+    { codigo: "USR-003", nombre: "Diego Jaime Monge" },
+    { codigo: "USR-004", nombre: "Juan Diego Muñoz Manrique" },
+    { codigo: "USR-005", nombre: "Miriam Ccanahuire" },
+  ];
+  for (const u of firmantes) {
+    await prisma.usuario.upsert({
+      where: { codigoEmpleado: u.codigo },
+      update: {},
+      create: {
+        codigoEmpleado: u.codigo,
+        nombre: u.nombre,
+        password: firmaHash,
+        rol: "supervisor",
+      },
+    });
+  }
+  console.log(`✓ ${firmantes.length} usuarios firmantes creados`);
+
   // ── Moneda ──────────────────────────────────────────
   const monedas = [
     { codigo: "USD", nombre: "Dólar Americano", simbolo: "$" },
