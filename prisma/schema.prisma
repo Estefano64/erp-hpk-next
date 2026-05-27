@@ -978,6 +978,10 @@ model OrdenTrabajoInterna {
   user_status_codigo        String?            @db.VarChar(20)
   ot_status_codigo          String?            @db.VarChar(30)
   recursos_status_codigo    String?            @db.VarChar(30)
+  // Operario asignado para ejecutar la OT (texto libre — guarda el nombre).
+  asignado_a                String?            @db.VarChar(150)
+  // Comentarios libres sobre la OT (instrucciones, contexto adicional).
+  comentarios               String?
   version                   Int                @default(1)
   estrategia                Estrategia?        @relation(fields: [estrategia_id], references: [estrategia_id])
   equipo                    Equipo?            @relation(fields: [equipo_codigo], references: [codigo])

@@ -91,6 +91,11 @@ export async function POST(req: NextRequest) {
     const ot = await generarNumeroOTInterna();
     const usuarioCrea = (await getAuditUser(req)) ?? "sistema";
 
+    // Defaults para que la OT arranque con el primer estado de cada catálogo
+    // — mismo patrón que la OT externa al crearse.
+    //   ot_status:       "Abierta"                  (siempre primera)
+    //   recursos_status: "En revision procesos"     (primera fila del catálogo)
+    //   user_status:     "PLANIFICADO"              (primera fila del catálogo)
     const created = await prisma.ordenTrabajoInterna.create({
       data: {
         ot,
@@ -105,14 +110,18 @@ export async function POST(req: NextRequest) {
         semana_revision: body.semana_revision || null,
         estrategia_id: body.estrategia_id ? Number(body.estrategia_id) : null,
         task_list: body.task_list || null,
-        user_status_codigo: body.user_status_codigo || null,
+        user_status_codigo: body.user_status_codigo || "PLANIFICADO",
         ot_status_codigo: body.ot_status_codigo || "Abierta",
-        recursos_status_codigo: body.recursos_status_codigo || null,
+        recursos_status_codigo: body.recursos_status_codigo || "En revision procesos",
+        asignado_a: body.asignado_a || null,
+        comentarios: body.comentarios || null,
       },
       include: {
         equipo: { select: { codigo: true, descripcion: true } },
         tipo_ot_interna: true,
         ot_status: true,
+        user_status: true,
+        recursos_status: true,
       },
     });
 
