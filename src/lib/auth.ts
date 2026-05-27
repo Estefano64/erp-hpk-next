@@ -10,7 +10,7 @@ export const authOptions: AuthOptions = {
     CredentialsProvider({
       name: "credentials",
       credentials: {
-        identifier: { label: "Email o código de empleado", type: "text" },
+        identifier: { label: "Email, DNI o código de empleado", type: "text" },
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
@@ -19,9 +19,17 @@ export const authOptions: AuthOptions = {
         const input = credentials.identifier.trim();
         const isEmail = input.includes("@");
 
-        const user = isEmail
-          ? await prisma.usuario.findUnique({ where: { email: input } })
-          : await prisma.usuario.findUnique({ where: { codigoEmpleado: input } });
+        // Si trae @ → email. Si es solo dígitos → DNI. Si no, código de empleado.
+        // Email/DNI/codigoEmpleado son @unique cada uno; un mismo input no debería
+        // matchear más de uno, pero por las dudas usamos findUnique en orden.
+        let user = null;
+        if (isEmail) {
+          user = await prisma.usuario.findUnique({ where: { email: input } });
+        } else if (/^\d{6,12}$/.test(input)) {
+          user = await prisma.usuario.findUnique({ where: { dni: input } });
+        } else {
+          user = await prisma.usuario.findUnique({ where: { codigoEmpleado: input } });
+        }
 
         if (!user || !user.activo) return null;
 
