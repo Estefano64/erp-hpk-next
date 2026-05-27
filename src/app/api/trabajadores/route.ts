@@ -8,6 +8,11 @@ import { prisma } from "@/lib/prisma";
 const AREAS_NO_OPERATIVAS = ["LIMPIEZA", "SEGURIDAD"];
 const PUESTOS_NO_OPERATIVOS = ["COMPRAS"];
 
+// Áreas cuyos trabajadores NO pueden firmar como evaluador técnico. Logística
+// se excluye además de limpieza/seguridad (los técnicos de mantenimiento sí
+// pueden evaluar, los de logística no).
+const AREAS_NO_EVALUADORES = ["LIMPIEZA", "SEGURIDAD", "LOGISTICA"];
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = req.nextUrl;
@@ -18,6 +23,9 @@ export async function GET(req: NextRequest) {
     // ?soloOperarios=1 excluye limpieza, seguridad, compras y jefes (cualquier puesto que arranque con "JEFE").
     // Usado por los selectores de operario en OTTareasTab y operaciones/planificacion.
     const soloOperarios = searchParams.get("soloOperarios") === "1";
+    // ?paraEvaluacion=1 excluye además logística (los selectores "Evaluado por"
+    // / "Supervisor" de la hoja de evaluación no deberían incluirlos).
+    const paraEvaluacion = searchParams.get("paraEvaluacion") === "1";
 
     const where: Record<string, unknown> = {};
     if (activos) where.activo = true;
@@ -34,6 +42,11 @@ export async function GET(req: NextRequest) {
         { area: { notIn: AREAS_NO_OPERATIVAS } },
         { puesto: { notIn: PUESTOS_NO_OPERATIVOS } },
         { NOT: { puesto: { startsWith: "JEFE", mode: "insensitive" } } },
+      ];
+    } else if (paraEvaluacion) {
+      where.AND = [
+        { area: { notIn: AREAS_NO_EVALUADORES } },
+        { puesto: { notIn: PUESTOS_NO_OPERATIVOS } },
       ];
     }
 
