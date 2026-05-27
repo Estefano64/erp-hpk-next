@@ -72,8 +72,9 @@ export async function GET(req: NextRequest) {
 }
 
 // POST — crea una OT interna con número auto-generado.
-// Campos mínimos requeridos (decisión del usuario en Fase D2):
-//   tipo_ot_interna_codigo, equipo_codigo, descripcion.
+// Campos mínimos requeridos:
+//   tipo_ot_interna_codigo, descripcion, y al menos uno de (area_taller | equipo_codigo).
+//   area_taller es el flujo nuevo (preferido). equipo_codigo queda para compat.
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -81,8 +82,8 @@ export async function POST(req: NextRequest) {
     if (!body.tipo_ot_interna_codigo) {
       return NextResponse.json({ error: "tipo_ot_interna_codigo es requerido" }, { status: 400 });
     }
-    if (!body.equipo_codigo) {
-      return NextResponse.json({ error: "equipo_codigo es requerido" }, { status: 400 });
+    if (!body.area_taller && !body.equipo_codigo) {
+      return NextResponse.json({ error: "area_taller (o equipo_codigo legacy) es requerido" }, { status: 400 });
     }
     if (!body.descripcion || typeof body.descripcion !== "string" || !body.descripcion.trim()) {
       return NextResponse.json({ error: "descripcion es requerida" }, { status: 400 });
@@ -100,7 +101,8 @@ export async function POST(req: NextRequest) {
       data: {
         ot,
         planta_codigo: body.planta_codigo || null,
-        equipo_codigo: body.equipo_codigo,
+        equipo_codigo: body.equipo_codigo || null,
+        area_taller: body.area_taller || null,
         tipo_ot_interna_codigo: body.tipo_ot_interna_codigo,
         descripcion: body.descripcion.trim(),
         prioridad_atencion_codigo: body.prioridad_atencion_codigo || null,

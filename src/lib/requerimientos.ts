@@ -37,11 +37,26 @@ export async function nextNroReq(tx: Prisma.TransactionClient): Promise<string> 
 }
 
 /**
- * Próximo `item_req` dentro de una OT (1, 2, 3, ...).
+ * Próximo `item_req` dentro de una OT externa (1, 2, 3, ...).
  */
 export async function nextItemReq(tx: Prisma.TransactionClient, otId: number): Promise<number> {
   const max = await tx.oTRepuesto.aggregate({
     where: { ot_id: otId },
+    _max: { item_req: true },
+  });
+  return (max._max.item_req ?? 0) + 1;
+}
+
+/**
+ * Próximo `item_req` dentro de una OT interna (1, 2, 3, ...).
+ * Variante de nextItemReq que filtra por orden_trabajo_interna_id.
+ */
+export async function nextItemReqInterna(
+  tx: Prisma.TransactionClient,
+  otInternaId: number,
+): Promise<number> {
+  const max = await tx.oTRepuesto.aggregate({
+    where: { orden_trabajo_interna_id: otInternaId },
     _max: { item_req: true },
   });
   return (max._max.item_req ?? 0) + 1;

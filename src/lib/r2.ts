@@ -72,6 +72,9 @@ export const R2Keys = {
   ticket: () => `tickets`,
   // Adjuntos de OT Interna — mismo patrón que OT Externa pero en otro namespace.
   otInternaAdjunto: (otCodigo: string) => `ot-internas/${sanitize(otCodigo)}/adjuntos`,
+  // Requerimientos de OT Interna (espejo de requerimientoAdjunto para externas).
+  otInternaRequerimientoAdjunto: (otInternaCodigo: string, reqId: number) =>
+    `ot-internas/${sanitize(otInternaCodigo)}/requerimientos/${reqId}`,
 } as const;
 
 // Sanitiza un segmento de path para evitar inyección (../, slashes, etc.).

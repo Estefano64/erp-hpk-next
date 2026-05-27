@@ -180,7 +180,12 @@ export async function POST(req: NextRequest) {
         where: { po_id: d.po_id },
         select: { ot_id: true },
       });
-      const otIds = [...new Set(repuestosPO.map((r) => r.ot_id))];
+      // Filtramos null porque ahora ot_id es opcional (items de OT interna).
+      // El bloque siguiente solo actualiza OTs externas — las internas no tienen
+      // status `recursos_status_codigo` ni `ubicacion_codigo`.
+      const otIds = [
+        ...new Set(repuestosPO.map((r) => r.ot_id).filter((x): x is number => x != null)),
+      ];
       const ubicacionValida = d.ubicacion_codigo
         ? await tx.ubicacion.findUnique({ where: { codigo: d.ubicacion_codigo }, select: { codigo: true } })
         : null;
