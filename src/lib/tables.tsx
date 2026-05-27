@@ -568,22 +568,53 @@ export function useColumnasRedimensionables<T>(
   // no-fixed pueden ajustarse.
   const DEFAULT_COL_WIDTH = 150;
 
+  // Sorter automático para columnas sin sorter explícito. Lee el valor del
+  // registro siguiendo `dataIndex` (string o array) y compara numéricamente
+  // si ambos lados son números, sino con localeCompare para strings.
+  function autoSorter(dataIndex: React.Key | React.Key[] | undefined): ((a: T, b: T) => number) | undefined {
+    if (dataIndex === undefined) return undefined;
+    const path = Array.isArray(dataIndex) ? dataIndex : [dataIndex];
+    const read = (row: T): unknown => {
+      let v: unknown = row;
+      for (const seg of path) {
+        if (v == null || typeof v !== "object") return undefined;
+        v = (v as Record<string, unknown>)[String(seg)];
+      }
+      return v;
+    };
+    return (a: T, b: T) => {
+      const va = read(a);
+      const vb = read(b);
+      if (va == null && vb == null) return 0;
+      if (va == null) return -1;
+      if (vb == null) return 1;
+      const na = typeof va === "number" ? va : Number(va);
+      const nb = typeof vb === "number" ? vb : Number(vb);
+      if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
+      return String(va).localeCompare(String(vb), "es", { numeric: true, sensitivity: "base" });
+    };
+  }
+
   const columnasRedim = useMemo<ColumnsType<T>>(() => {
     return columnasOrdenadas.map((c, idx) => {
       const col = c as ColumnType<T>;
       const k = claveColumna(col, idx);
       const widthActual =
         anchos[k] ?? (typeof col.width === "number" ? col.width : DEFAULT_COL_WIDTH);
+      // Auto-sorter si la columna no lo declara: usa el dataIndex para comparar.
+      const sorterFinal = col.sorter ?? autoSorter((col as { dataIndex?: React.Key | React.Key[] }).dataIndex);
       // Las columnas fixed mantienen ancho original (Resizable rompe el sticky)
       if (col.fixed) {
         return {
           ...col,
+          ...(col.sorter ? {} : { sorter: sorterFinal }),
           onHeaderCell: () => ({ columnKey: k, sortable: false }),
         } as ColumnType<T>;
       }
       return {
         ...col,
         width: widthActual,
+        ...(col.sorter ? {} : { sorter: sorterFinal }),
         onHeaderCell: (column: { width?: number }) => ({
           width: column.width,
           columnKey: k,
