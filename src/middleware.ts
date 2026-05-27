@@ -1,10 +1,14 @@
 // Middleware de auth: bloquea todo lo que no sea /login, /api/auth/* y assets
-// estáticos cuando no hay sesión. Lo que esté fuera del matcher (favicon, _next,
-// imágenes públicas) ni siquiera pasa por acá.
+// estáticos cuando no hay sesión.
 //
-// Si el usuario no tiene sesión y entra a una ruta protegida, NextAuth lo manda
-// a /login con ?callbackUrl=... para volver al destino tras loguearse.
-export { default } from "next-auth/middleware";
+// Importante: hay que pasar `pages.signIn: "/login"` explícitamente a withAuth.
+// Si re-exportamos el default sin config, next-auth usa "/api/auth/signin"
+// (su UI por defecto) que no existe en esta app — y la redirección se rompe.
+import { withAuth } from "next-auth/middleware";
+
+export default withAuth({
+  pages: { signIn: "/login" },
+});
 
 export const config = {
   matcher: [
