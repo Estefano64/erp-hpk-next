@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
-import { getAuditUser, isAdmin } from "@/lib/audit";
+import { getAuditUser } from "@/lib/audit";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-// POST /api/requerimientos/[id]/desaprobar — solo admin
+// POST /api/requerimientos/[id]/desaprobar
+// La vía principal hoy es /desaprobar-lote. Este queda para callers legacy.
+// Permiso: cualquier usuario autenticado.
 export async function POST(req: NextRequest, ctx: Ctx) {
-  if (!(await isAdmin(req))) {
-    return NextResponse.json({ error: "Solo administradores pueden desaprobar." }, { status: 403 });
+  const token = await getToken({ req });
+  if (!token) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
   try {
     const { id } = await ctx.params;

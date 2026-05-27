@@ -32,7 +32,7 @@ function buildMenuItems(_rol: string | null): MenuProps["items"] {
   ];
   return [
     { key: "/dashboard", icon: <DashboardOutlined />, label: "Dashboard" },
-    { key: "/aceptaciones", icon: <FileProtectOutlined />, label: "Aceptaciones" },
+    { key: "/aprobaciones", icon: <FileProtectOutlined />, label: "Aprobaciones" },
     {
       key: "operaciones",
       icon: <ToolOutlined />,

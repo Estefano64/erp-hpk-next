@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-// GET /api/aceptaciones — devuelve, en una sola llamada:
+// GET /api/aprobaciones — devuelve, en una sola llamada:
 //   - ocs_pendientes:  Compras en estado PEND_OC
 //   - reqs_pendientes: OTRepuesto en estado SIN_APROBACION
-//   - historial:       últimas aceptaciones/aprobaciones (OC y RQ)
+//   - historial:       últimas aprobaciones (OC y RQ)
 //
 // Query params opcionales (todos aplican a ambos lados cuando tienen sentido):
 //   tipo          OC | RQ | all  (default all)
@@ -144,7 +144,7 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("GET /api/aceptaciones error:", error);
-    return NextResponse.json({ error: "Error al obtener aceptaciones" }, { status: 500 });
+    console.error("GET /api/aprobaciones error:", error);
+    return NextResponse.json({ error: "Error al obtener aprobaciones" }, { status: 500 });
   }
 }
