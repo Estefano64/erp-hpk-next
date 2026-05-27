@@ -61,7 +61,7 @@ interface Evaluacion {
   fecha_evaluacion: string | null;
   evaluado_por: string | null;
   resultado_general: string | null;
-  informe_archivo: string | null;
+  informe_key: string | null;
   informe_nombre: string | null;
   estado: string;
   revisado_por: string | null;

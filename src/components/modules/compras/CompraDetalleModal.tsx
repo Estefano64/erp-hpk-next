@@ -21,8 +21,10 @@ import {
   Upload,
   App,
 } from "antd";
-import { EditOutlined, SaveOutlined, CloseOutlined, PrinterOutlined, CheckOutlined, UploadOutlined, DownloadOutlined, DeleteOutlined, FileTextOutlined } from "@ant-design/icons";
+import { EditOutlined, SaveOutlined, CloseOutlined, PrinterOutlined, CheckOutlined, UploadOutlined, DeleteOutlined, FileTextOutlined } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
+import { uploadToR2 } from "@/lib/r2-client";
+import { R2FileLink } from "@/components/R2FileLink";
 import { useResponsive } from "@/lib/responsive";
 import dayjs, { Dayjs } from "dayjs";
 import type { ColumnsType } from "antd/es/table";
@@ -60,9 +62,9 @@ interface CompraDetalle {
   moneda: string;
   nro_factura: string | null;
   nro_guia: string | null;
-  guia_archivo: string | null;
+  guia_key: string | null;
   guia_nombre: string | null;
-  factura_archivo: string | null;
+  factura_key: string | null;
   factura_nombre: string | null;
   observaciones: string | null;
   usuario_solicita: string;
@@ -179,11 +181,17 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
   const subirArchivo = async (tipo: "guia" | "factura", file: File) => {
     if (!compra) return;
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch(`/api/compras/${compra.id}/guia?tipo=${tipo}`, { method: "POST", body: fd });
+      const meta = await uploadToR2({
+        file,
+        uploadUrlEndpoint: `/api/compras/${compra.id}/guia/upload-url?tipo=${tipo}`,
+      });
+      const res = await fetch(`/api/compras/${compra.id}/guia?tipo=${tipo}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(meta),
+      });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Error al subir archivo");
+      if (!res.ok) throw new Error(json.error || "Error al registrar archivo");
       message.success(`${tipo === "guia" ? "Guía" : "Factura"} subida`);
       cargar();
       onUpdated?.();
@@ -504,7 +512,8 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
               <Descriptions.Item label="Archivo Guía de Remisión" span={editing ? 1 : 1}>
                 <ArchivoSlot
                   tipo="guia"
-                  archivo={compra.guia_archivo}
+                  compraId={compra.id}
+                  r2Key={compra.guia_key}
                   nombre={compra.guia_nombre}
                   editing={editing}
                   onUpload={(f) => subirArchivo("guia", f)}
@@ -514,7 +523,8 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
               <Descriptions.Item label="Archivo Factura">
                 <ArchivoSlot
                   tipo="factura"
-                  archivo={compra.factura_archivo}
+                  compraId={compra.id}
+                  r2Key={compra.factura_key}
                   nombre={compra.factura_nombre}
                   editing={editing}
                   onUpload={(f) => subirArchivo("factura", f)}
@@ -564,26 +574,33 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
 
 // Slot reutilizable para Guía de Remisión / Factura: muestra el archivo subido
 // (descargar / eliminar) y permite subir uno nuevo cuando se está editando.
+// El download usa presigned URL via R2FileLink.
 function ArchivoSlot({
-  tipo, archivo, nombre, editing, onUpload, onDelete,
+  tipo, compraId, r2Key, nombre, editing, onUpload, onDelete,
 }: {
   tipo: "guia" | "factura";
-  archivo: string | null;
+  compraId: number;
+  r2Key: string | null;
   nombre: string | null;
   editing: boolean;
   onUpload: (f: File) => void;
   onDelete: () => void;
 }) {
   const label = tipo === "guia" ? "guía" : "factura";
+  const resource = tipo === "guia" ? "compra-guia" : "compra-factura";
   return (
     <Space wrap size={6}>
-      {archivo ? (
+      {r2Key ? (
         <>
-          <a href={archivo} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12 }}>
+          <R2FileLink
+            resource={resource}
+            resourceId={compraId}
+            r2Key={r2Key}
+            style={{ fontSize: 12 }}
+          >
             <FileTextOutlined style={{ color: brand.cyan, marginRight: 4 }} />
             {nombre || `Ver ${label}`}
-          </a>
-          <Button size="small" type="text" icon={<DownloadOutlined />} href={archivo} target="_blank" title="Descargar" />
+          </R2FileLink>
           {editing && (
             <Popconfirm title={`¿Eliminar ${label}?`} onConfirm={onDelete} okType="danger" okText="Eliminar">
               <Button size="small" type="text" danger icon={<DeleteOutlined />} title="Eliminar" />
@@ -600,7 +617,7 @@ function ArchivoSlot({
           beforeUpload={(file) => { onUpload(file as File); return false; }}
         >
           <Button size="small" icon={<UploadOutlined />}>
-            {archivo ? "Reemplazar" : "Subir"}
+            {r2Key ? "Reemplazar" : "Subir"}
           </Button>
         </Upload>
       )}

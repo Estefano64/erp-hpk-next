@@ -1,22 +1,40 @@
+// Adjuntos de OT en Cloudflare R2.
+//
+// Flujo de subida (presigned URL):
+//   1. Cliente llama POST /api/r2/upload-url con resource="ot-adjunto" → obtiene { uploadUrl, key }
+//   2. Cliente sube el File con PUT a uploadUrl (directo a R2)
+//   3. Cliente llama POST aquí con { key, nombre_archivo, tipo_mime, tamano, etapa }
+//      para registrar el adjunto en BD.
+//
+// DELETE: borra primero de R2; si R2 OK, borra de BD. R2 devuelve OK aunque
+// la key ya no exista (idempotente), así que esto cubre registros huérfanos.
 import { NextRequest, NextResponse } from "next/server";
+import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
-import { writeFile, mkdir, unlink } from "fs/promises";
-import path from "path";
+import { deleteObject } from "@/lib/r2-helpers";
+import { R2Keys, otCodigoFor } from "@/lib/r2";
+import { getAuditUser } from "@/lib/audit";
 
 type Params = { params: Promise<{ id: string }> };
 
-const ETAPAS_VALIDAS = ["recepcion", "evaluacion", "cotizacion", "termino", "despacho"];
-const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
-const ALLOWED_MIME_PREFIXES = ["image/", "application/pdf", "application/vnd", "application/msword", "text/"];
+const ETAPAS_VALIDAS = ["recepcion", "evaluacion", "cotizacion", "termino", "despacho"] as const;
+type Etapa = (typeof ETAPAS_VALIDAS)[number];
+
+function isEtapa(value: unknown): value is Etapa {
+  return typeof value === "string" && (ETAPAS_VALIDAS as readonly string[]).includes(value);
+}
 
 // GET — listar adjuntos de una OT (opcionalmente filtrados por etapa)
 export async function GET(req: NextRequest, { params }: Params) {
+  const token = await getToken({ req });
+  if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+
   try {
     const { id } = await params;
     const etapa = req.nextUrl.searchParams.get("etapa");
 
     const where: Record<string, unknown> = { orden_trabajo_id: Number(id) };
-    if (etapa && ETAPAS_VALIDAS.includes(etapa)) {
+    if (etapa && isEtapa(etapa)) {
       where.etapa_codigo = etapa;
     }
 
@@ -32,78 +50,89 @@ export async function GET(req: NextRequest, { params }: Params) {
   }
 }
 
-// POST — subir un archivo adjunto
+// POST — registrar un adjunto ya subido a R2.
+// Body: { key, nombre_archivo, tipo_mime, tamano, etapa }
 export async function POST(req: NextRequest, { params }: Params) {
+  const token = await getToken({ req });
+  if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+
   try {
     const { id } = await params;
     const otId = Number(id);
 
-    // Verificar que la OT existe
-    const ot = await prisma.ordenTrabajo.findUnique({ where: { id: otId }, select: { id: true } });
+    const ot = await prisma.ordenTrabajo.findUnique({
+      where: { id: otId },
+      select: { id: true, ot: true },
+    });
     if (!ot) {
       return NextResponse.json({ error: "OT no encontrada" }, { status: 404 });
     }
 
-    const formData = await req.formData();
-    const file = formData.get("file") as File | null;
-    const etapa = formData.get("etapa") as string | null;
-
-    if (!file) {
-      return NextResponse.json({ error: "No se envió ningún archivo" }, { status: 400 });
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
     }
-    if (!etapa || !ETAPAS_VALIDAS.includes(etapa)) {
+    const { key, nombre_archivo, tipo_mime, tamano, etapa } = body as {
+      key?: unknown;
+      nombre_archivo?: unknown;
+      tipo_mime?: unknown;
+      tamano?: unknown;
+      etapa?: unknown;
+    };
+
+    if (typeof key !== "string" || key.length === 0) {
+      return NextResponse.json({ error: "key requerida" }, { status: 400 });
+    }
+    if (typeof nombre_archivo !== "string" || nombre_archivo.length === 0) {
+      return NextResponse.json({ error: "nombre_archivo requerido" }, { status: 400 });
+    }
+    if (typeof tipo_mime !== "string" || tipo_mime.length === 0) {
+      return NextResponse.json({ error: "tipo_mime requerido" }, { status: 400 });
+    }
+    if (typeof tamano !== "number" || !Number.isFinite(tamano) || tamano <= 0) {
+      return NextResponse.json({ error: "tamano inválido" }, { status: 400 });
+    }
+    if (!isEtapa(etapa)) {
       return NextResponse.json({ error: "Etapa inválida" }, { status: 400 });
     }
-    if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json({ error: "El archivo excede 20 MB" }, { status: 400 });
+    // La key debe vivir bajo el namespace de ESTA OT (defensa en profundidad
+    // contra clientes que firmen para una OT pero registren en otra).
+    const expectedPrefix = R2Keys.otAdjunto(otCodigoFor(ot)) + "/";
+    if (!key.startsWith(expectedPrefix)) {
+      return NextResponse.json({ error: "key fuera del namespace de la OT" }, { status: 400 });
     }
 
-    const mimeOk = ALLOWED_MIME_PREFIXES.some((prefix) => file.type.startsWith(prefix));
-    if (!mimeOk) {
-      return NextResponse.json({ error: "Tipo de archivo no permitido" }, { status: 400 });
-    }
+    const usuario = (await getAuditUser(req)) ?? null;
 
-    // Generar nombre único para evitar colisiones
-    const ext = path.extname(file.name) || "";
-    const baseName = path.basename(file.name, ext).replace(/[^a-zA-Z0-9_-]/g, "_");
-    const uniqueName = `${baseName}_${Date.now()}${ext}`;
-
-    // Guardar en public/uploads/ot/{otId}/{etapa}/
-    const relDir = path.join("uploads", "ot", String(otId), etapa);
-    const absDir = path.join(process.cwd(), "public", relDir);
-    await mkdir(absDir, { recursive: true });
-
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const absPath = path.join(absDir, uniqueName);
-    await writeFile(absPath, buffer);
-
-    const ruta = `/${relDir.replace(/\\/g, "/")}/${uniqueName}`;
-
-    // Crear registro en DB
     const adjunto = await prisma.otAdjunto.create({
       data: {
         orden_trabajo_id: otId,
         etapa_codigo: etapa,
-        nombre_archivo: file.name,
-        ruta,
-        tipo_mime: file.type,
-        tamano: file.size,
+        nombre_archivo,
+        r2_key: key,
+        tipo_mime,
+        tamano,
+        usuario_sube: usuario ?? undefined,
       },
     });
 
     return NextResponse.json({ data: adjunto }, { status: 201 });
   } catch (error) {
     console.error("POST adjuntos error:", error);
-    return NextResponse.json({ error: "Error al subir archivo" }, { status: 500 });
+    return NextResponse.json({ error: "Error al registrar adjunto" }, { status: 500 });
   }
 }
 
 // DELETE — eliminar un adjunto por query param ?adjuntoId=X
 export async function DELETE(req: NextRequest, { params }: Params) {
+  const token = await getToken({ req });
+  if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+
   try {
     const { id } = await params;
     const adjuntoId = req.nextUrl.searchParams.get("adjuntoId");
-
     if (!adjuntoId) {
       return NextResponse.json({ error: "adjuntoId requerido" }, { status: 400 });
     }
@@ -111,21 +140,19 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     const adjunto = await prisma.otAdjunto.findFirst({
       where: { id: Number(adjuntoId), orden_trabajo_id: Number(id) },
     });
-
     if (!adjunto) {
       return NextResponse.json({ error: "Adjunto no encontrado" }, { status: 404 });
     }
 
-    // Eliminar archivo físico
+    // R2 primero. Si falla, no tocamos BD para no dejar archivos huérfanos.
     try {
-      const absPath = path.join(process.cwd(), "public", adjunto.ruta);
-      await unlink(absPath);
-    } catch {
-      // El archivo puede ya no existir, continuar con la eliminación del registro
+      await deleteObject(adjunto.r2_key);
+    } catch (error) {
+      console.error("DELETE adjuntos: fallo R2", error);
+      return NextResponse.json({ error: "No se pudo eliminar el archivo de R2" }, { status: 500 });
     }
 
     await prisma.otAdjunto.delete({ where: { id: Number(adjuntoId) } });
-
     return NextResponse.json({ data: { deleted: true } });
   } catch (error) {
     console.error("DELETE adjuntos error:", error);

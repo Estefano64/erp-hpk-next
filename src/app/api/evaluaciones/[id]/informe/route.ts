@@ -1,70 +1,90 @@
+// Informe de Evaluación Técnica en Cloudflare R2.
+//
+// POST body: { key, nombre_archivo, tipo_mime, tamano }
+// El cliente subió antes a R2 via /api/r2/upload-url con resource="evaluacion-informe".
+//
+// Reglas de negocio preservadas: no se puede modificar/eliminar el informe si la
+// evaluación está APROBADA o PENDIENTE_APROBACION.
 import { NextRequest, NextResponse } from "next/server";
+import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
-import { writeFile, mkdir, unlink } from "fs/promises";
-import path from "path";
-import { validarArchivo, sanitizarNombreArchivo } from "@/lib/file-uploads";
+import { sanitizarNombreArchivo } from "@/lib/file-uploads";
+import { deleteObject } from "@/lib/r2-helpers";
+import { R2Keys, otCodigoFor } from "@/lib/r2";
 
 type Params = { params: Promise<{ id: string }> };
 
-// POST — subir informe
+const ESTADOS_BLOQUEADOS = ["APROBADA", "PENDIENTE_APROBACION"];
+
+function errorEstadoBloqueado(estado: string): string {
+  return estado === "APROBADA"
+    ? "La evaluacion esta APROBADA. Debes reabrirla para cambiar el informe."
+    : "La evaluacion esta PENDIENTE DE APROBACION y no se puede modificar.";
+}
+
+// POST — registra un informe ya subido a R2.
 export async function POST(req: NextRequest, { params }: Params) {
+  const token = await getToken({ req });
+  if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+
   try {
     const { id } = await params;
     const evalId = Number(id);
 
     const existing = await prisma.evaluacionTecnica.findUnique({
       where: { id: evalId },
+      include: { orden_trabajo: { select: { id: true, ot: true } } },
     });
     if (!existing) {
       return NextResponse.json({ error: "Evaluacion no encontrada" }, { status: 404 });
     }
-    if (["APROBADA", "PENDIENTE_APROBACION"].includes(existing.estado)) {
-      const msg =
-        existing.estado === "APROBADA"
-          ? "La evaluacion esta APROBADA. Debes reabrirla para cambiar el informe."
-          : "La evaluacion esta PENDIENTE DE APROBACION y no se puede modificar.";
-      return NextResponse.json({ error: msg }, { status: 409 });
+    if (ESTADOS_BLOQUEADOS.includes(existing.estado)) {
+      return NextResponse.json({ error: errorEstadoBloqueado(existing.estado) }, { status: 409 });
     }
 
-    const formData = await req.formData();
-    const file = formData.get("informe") as File | null;
-    if (!file) {
-      return NextResponse.json({ error: "No se envio ningun archivo" }, { status: 400 });
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
     }
-    const validacion = validarArchivo(file, "informes");
-    if (!validacion.ok) {
-      return NextResponse.json({ error: validacion.error }, { status: 400 });
+    const { key, nombre_archivo, tipo_mime, tamano } = body as {
+      key?: unknown;
+      nombre_archivo?: unknown;
+      tipo_mime?: unknown;
+      tamano?: unknown;
+    };
+
+    const expectedPrefix = R2Keys.otEvaluacion(otCodigoFor(existing.orden_trabajo)) + "/";
+    if (typeof key !== "string" || !key.startsWith(expectedPrefix)) {
+      return NextResponse.json({ error: "key fuera del namespace de la OT" }, { status: 400 });
+    }
+    if (typeof nombre_archivo !== "string" || nombre_archivo.length === 0) {
+      return NextResponse.json({ error: "nombre_archivo requerido" }, { status: 400 });
+    }
+    if (typeof tipo_mime !== "string" || tipo_mime.length === 0) {
+      return NextResponse.json({ error: "tipo_mime requerido" }, { status: 400 });
+    }
+    if (typeof tamano !== "number" || !Number.isFinite(tamano) || tamano <= 0) {
+      return NextResponse.json({ error: "tamano inválido" }, { status: 400 });
     }
 
-    // Eliminar archivo anterior si existe
-    if (existing.informe_archivo) {
+    // Eliminar archivo anterior en R2 si existe.
+    if (existing.informe_key && existing.informe_key !== key) {
       try {
-        const oldPath = path.join(process.cwd(), "public", existing.informe_archivo);
-        await unlink(oldPath);
-      } catch {
-        // OK si no existe
+        await deleteObject(existing.informe_key);
+      } catch (error) {
+        console.warn("No se pudo eliminar informe anterior de R2:", error);
       }
     }
-
-    // Generar nombre unico (la extensión ya fue validada por validarArchivo).
-    const ext = path.extname(file.name).toLowerCase();
-    const uniqueName = `informe-eval-${evalId}-${Date.now()}${ext}`;
-
-    const relDir = path.join("uploads", "evaluaciones");
-    const absDir = path.join(process.cwd(), "public", relDir);
-    await mkdir(absDir, { recursive: true });
-
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const absPath = path.join(absDir, uniqueName);
-    await writeFile(absPath, buffer);
-
-    const ruta = `/${relDir.replace(/\\/g, "/")}/${uniqueName}`;
 
     const updated = await prisma.evaluacionTecnica.update({
       where: { id: evalId },
       data: {
-        informe_archivo: ruta,
-        informe_nombre: sanitizarNombreArchivo(file.name),
+        informe_key: key,
+        informe_nombre: sanitizarNombreArchivo(nombre_archivo),
+        informe_mime: tipo_mime,
+        informe_tamano: tamano,
         informe_fecha_subida: new Date(),
       },
     });
@@ -72,35 +92,43 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ data: updated });
   } catch (error) {
     console.error("POST /api/evaluaciones/[id]/informe error:", error);
-    return NextResponse.json({ error: "Error al subir informe" }, { status: 500 });
+    return NextResponse.json({ error: "Error al registrar informe" }, { status: 500 });
   }
 }
 
-// DELETE — eliminar informe
-export async function DELETE(_req: NextRequest, { params }: Params) {
+// DELETE — eliminar informe (R2 + BD)
+export async function DELETE(req: NextRequest, { params }: Params) {
+  const token = await getToken({ req });
+  if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+
   try {
     const { id } = await params;
     const evalId = Number(id);
+
     const existing = await prisma.evaluacionTecnica.findUnique({ where: { id: evalId } });
-    if (!existing || !existing.informe_archivo) {
+    if (!existing || !existing.informe_key) {
       return NextResponse.json({ error: "No hay informe" }, { status: 404 });
     }
-    if (["APROBADA", "PENDIENTE_APROBACION"].includes(existing.estado)) {
-      const msg =
-        existing.estado === "APROBADA"
-          ? "La evaluacion esta APROBADA. Debes reabrirla para cambiar el informe."
-          : "La evaluacion esta PENDIENTE DE APROBACION y no se puede modificar.";
-      return NextResponse.json({ error: msg }, { status: 409 });
+    if (ESTADOS_BLOQUEADOS.includes(existing.estado)) {
+      return NextResponse.json({ error: errorEstadoBloqueado(existing.estado) }, { status: 409 });
     }
 
     try {
-      const absPath = path.join(process.cwd(), "public", existing.informe_archivo);
-      await unlink(absPath);
-    } catch {}
+      await deleteObject(existing.informe_key);
+    } catch (error) {
+      console.error("DELETE informe: fallo R2", error);
+      return NextResponse.json({ error: "No se pudo eliminar el archivo de R2" }, { status: 500 });
+    }
 
     const updated = await prisma.evaluacionTecnica.update({
       where: { id: evalId },
-      data: { informe_archivo: null, informe_nombre: null, informe_fecha_subida: null },
+      data: {
+        informe_key: null,
+        informe_nombre: null,
+        informe_mime: null,
+        informe_tamano: null,
+        informe_fecha_subida: null,
+      },
     });
     return NextResponse.json({ data: updated });
   } catch (error) {

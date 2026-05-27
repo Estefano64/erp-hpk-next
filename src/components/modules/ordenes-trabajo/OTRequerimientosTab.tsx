@@ -26,6 +26,8 @@ import {
   dentroDeRango,
   useColumnasRedimensionables,
 } from "@/lib/tables";
+import { uploadToR2 } from "@/lib/r2-client";
+import { R2FileLink } from "@/components/R2FileLink";
 
 const { Text } = Typography;
 
@@ -54,7 +56,7 @@ interface RequerimientoRow {
   status_oc: { codigo: string; nombre: string } | null;
   proveedor: { id: number; razon_social: string } | null;
   compra: { id: number; numero_po: string; fecha_entrega_esperada: string | null } | null;
-  adjuntos?: { id: number; nombre_archivo: string; ruta: string; tamano: number }[];
+  adjuntos?: { id: number; nombre_archivo: string; r2_key: string; tamano: number }[];
   po_id: number | null;
   nro_oc: string | null;
   es_adicional: boolean | null;
@@ -126,7 +128,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
-  type Adjunto = { id: number; nombre_archivo: string; ruta: string; tamano: number; fecha_subida: string };
+  type Adjunto = { id: number; nombre_archivo: string; r2_key: string; tamano: number; fecha_subida: string };
   const [editAdjuntos, setEditAdjuntos] = useState<Adjunto[]>([]);
   const [uploadingFile, setUploadingFile] = useState(false);
 
@@ -143,16 +145,24 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
     if (!editingId) return;
     setUploadingFile(true);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch(`/api/requerimientos/${editingId}/adjuntos`, { method: "POST", body: fd });
+      const meta = await uploadToR2({
+        file,
+        uploadUrlEndpoint: `/api/requerimientos/${editingId}/adjuntos/upload-url`,
+      });
+      const res = await fetch(`/api/requerimientos/${editingId}/adjuntos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(meta),
+      });
       if (!res.ok) {
         const err = await res.json().catch(() => null);
-        messageApi.error(err?.error ?? "Error al subir archivo.");
+        messageApi.error(err?.error ?? "Error al registrar archivo.");
         return;
       }
       messageApi.success("Archivo adjuntado.");
       await fetchAdjuntos(editingId);
+    } catch (e) {
+      messageApi.error(e instanceof Error ? e.message : "Error al subir archivo.");
     } finally {
       setUploadingFile(false);
     }
@@ -307,10 +317,16 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
         const creado = itemsCreados[i];
         if (!creado) continue;
         for (const file of archivos) {
-          const fd = new FormData();
-          fd.append("file", file);
           try {
-            const r = await fetch(`/api/requerimientos/${creado.id}/adjuntos`, { method: "POST", body: fd });
+            const meta = await uploadToR2({
+              file,
+              uploadUrlEndpoint: `/api/requerimientos/${creado.id}/adjuntos/upload-url`,
+            });
+            const r = await fetch(`/api/requerimientos/${creado.id}/adjuntos`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(meta),
+            });
             if (r.ok) archivosSubidos++;
             else archivosFallidos++;
           } catch {
@@ -813,9 +829,14 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
               {r.adjuntos.map((a) => (
                 <Tooltip key={a.id} title={`${a.nombre_archivo} (${(a.tamano / 1024).toFixed(1)} KB)`}>
                   <Tag style={{ fontSize: 10, margin: 0, cursor: "pointer" }}>
-                    <a href={a.ruta} target="_blank" rel="noopener noreferrer" style={{ color: "inherit" }}>
+                    <R2FileLink
+                      resource="req-adjunto"
+                      resourceId={a.id}
+                      r2Key={a.r2_key}
+                      style={{ color: "inherit" }}
+                    >
                       <PaperClipOutlined /> {a.nombre_archivo.length > 18 ? a.nombre_archivo.slice(0, 15) + "…" : a.nombre_archivo}
-                    </a>
+                    </R2FileLink>
                   </Tag>
                 </Tooltip>
               ))}
@@ -1487,7 +1508,9 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
                         style={{ fontSize: 11, margin: 0 }}
                       >
                         <PaperClipOutlined />{" "}
-                        <a href={a.ruta} target="_blank" rel="noopener noreferrer">{a.nombre_archivo}</a>
+                        <R2FileLink resource="req-adjunto" resourceId={a.id} r2Key={a.r2_key}>
+                          {a.nombre_archivo}
+                        </R2FileLink>
                       </Tag>
                     ))}
                   </Space>

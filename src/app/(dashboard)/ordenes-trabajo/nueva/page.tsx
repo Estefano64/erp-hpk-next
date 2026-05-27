@@ -16,6 +16,7 @@ import {
   Divider,
   message,
   Descriptions,
+  Space,
 } from "antd";
 import { SaveOutlined, ArrowLeftOutlined, CheckCircleFilled } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
@@ -582,7 +583,7 @@ export default function NuevaOTPage() {
             </Col>
             <Col xs={16} md={8}>
               <Form.Item label="Cotización (monto + moneda)">
-                <Input.Group compact style={{ display: "flex" }}>
+                <Space.Compact style={{ display: "flex" }}>
                   <Form.Item name="monto_cotizacion" noStyle>
                     <InputNumber
                       placeholder="0.00"
@@ -604,7 +605,7 @@ export default function NuevaOTPage() {
                       options={monedas.map((m) => ({ value: m.codigo, label: m.codigo }))}
                     />
                   </Form.Item>
-                </Input.Group>
+                </Space.Compact>
               </Form.Item>
             </Col>
           </Row>

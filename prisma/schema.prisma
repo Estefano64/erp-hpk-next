@@ -999,10 +999,12 @@ model OtAdjunto {
   orden_trabajo_id Int
   etapa_codigo     String       @db.VarChar(20)
   nombre_archivo   String       @db.VarChar(255)
-  ruta             String       @db.VarChar(500)
+  // Object key en Cloudflare R2. El acceso se hace siempre vía presigned URL.
+  r2_key           String       @db.VarChar(500)
   tipo_mime        String       @db.VarChar(100)
   tamano           Int
   fecha_subida     DateTime     @default(now())
+  usuario_sube     String?      @db.VarChar(100)
   orden_trabajo    OrdenTrabajo @relation(fields: [orden_trabajo_id], references: [id], onDelete: Cascade)
   etapa            OtEtapa      @relation(fields: [etapa_codigo], references: [codigo], onDelete: Restrict)
 
@@ -1050,11 +1052,17 @@ model Compra {
   moneda_codigo          String?         @db.VarChar(10)
   nro_factura            String?         @db.VarChar(100)
   nro_guia               String?         @db.VarChar(100)
-  guia_archivo           String?         @db.VarChar(500)
+  // Adjunto de guía de remisión en R2.
+  guia_key               String?         @db.VarChar(500)
   guia_nombre            String?         @db.VarChar(300)
+  guia_mime              String?         @db.VarChar(100)
+  guia_tamano            Int?
   guia_fecha_subida      DateTime?
-  factura_archivo        String?         @db.VarChar(500)
+  // Adjunto de factura en R2.
+  factura_key            String?         @db.VarChar(500)
   factura_nombre         String?         @db.VarChar(300)
+  factura_mime           String?         @db.VarChar(100)
+  factura_tamano         Int?
   factura_fecha_subida   DateTime?
   observaciones          String?
   usuario_solicita       String          @db.VarChar(100)
@@ -1259,7 +1267,8 @@ model OTRepuestoAdjunto {
   id              Int        @id @default(autoincrement())
   ot_repuesto_id  Int
   nombre_archivo  String     @db.VarChar(255)
-  ruta            String     @db.VarChar(500)
+  // Object key en Cloudflare R2. El acceso se hace siempre vía presigned URL.
+  r2_key          String     @db.VarChar(500)
   tipo_mime       String     @db.VarChar(100)
   tamano          Int
   usuario_sube    String?    @db.VarChar(100)
@@ -1371,8 +1380,11 @@ model EvaluacionTecnica {
   datos_formulario         Json         @default("{}")
   resultado_general        String?
   recomendaciones_general  String?
-  informe_archivo          String?      @db.VarChar(500)
+  // Adjunto del informe técnico en R2.
+  informe_key              String?      @db.VarChar(500)
   informe_nombre           String?      @db.VarChar(300)
+  informe_mime             String?      @db.VarChar(100)
+  informe_tamano           Int?
   informe_fecha_subida     DateTime?
   estado                   String       @default("BORRADOR") @db.VarChar(25)
   revisado_por             String?      @db.VarChar(150)

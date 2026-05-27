@@ -189,7 +189,7 @@ export default function SuministrosPage() {
 
       <Alert
         type="info" showIcon style={{ marginBottom: 12 }}
-        message="Consumibles que se entregan a una OT (trapos, pintura, pernos, disolventes, etc.)"
+        title="Consumibles que se entregan a una OT (trapos, pintura, pernos, disolventes, etc.)"
         description={
           <div style={{ fontSize: 12 }}>
             Esta vista muestra materiales identificados como suministros por categoría

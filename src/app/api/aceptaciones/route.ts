@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
           },
           material: { select: { codigo: true, descripcion: true, precio: true, moneda_codigo: true, stock_actual: true } },
           status_requerimiento: { select: { codigo: true, nombre: true } },
-          adjuntos: { select: { id: true, nombre_archivo: true, ruta: true, tamano: true } },
+          adjuntos: { select: { id: true, nombre_archivo: true, r2_key: true, tamano: true } },
         },
         orderBy: [{ fecha_solicitud: "desc" }, { id: "desc" }],
         take: 500,

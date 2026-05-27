@@ -31,6 +31,7 @@ import {
   FolderOpenOutlined,
 } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
+import { uploadToR2, getDownloadUrl, openR2File } from "@/lib/r2-client";
 
 const { Text } = Typography;
 const { Dragger } = Upload;
@@ -40,7 +41,7 @@ interface Adjunto {
   orden_trabajo_id: number;
   etapa_codigo: string;
   nombre_archivo: string;
-  ruta: string;
+  r2_key: string;
   tipo_mime: string;
   tamano: number;
   fecha_subida: string;
@@ -131,18 +132,20 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
   async function uploadFile(file: File) {
     setUploading(true);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("etapa", etapa.key);
-
+      const meta = await uploadToR2({
+        file,
+        uploadUrlEndpoint: `/api/ordenes-trabajo/${otId}/adjuntos/upload-url`,
+        extra: { etapa: etapa.key },
+      });
       const res = await fetch(`/api/ordenes-trabajo/${otId}/adjuntos`, {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...meta, etapa: etapa.key }),
       });
 
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.error || "Error al subir");
+        throw new Error(err.error || "Error al registrar");
       }
 
       messageApi.success(`${file.name} subido correctamente`);
@@ -280,14 +283,7 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
                 }}
               >
                 {isImage(adj.tipo_mime) ? (
-                  <Image
-                    src={adj.ruta}
-                    alt={adj.nombre_archivo}
-                    style={{ maxHeight: 140, maxWidth: "100%", objectFit: "cover" }}
-                    preview={{
-                      mask: <EyeOutlined style={{ fontSize: 20 }} />,
-                    }}
-                  />
+                  <R2AntdImage adjuntoId={adj.id} r2Key={adj.r2_key} alt={adj.nombre_archivo} />
                 ) : (
                   getFileIcon(adj.tipo_mime)
                 )}
@@ -319,9 +315,13 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
                         type="text"
                         size="small"
                         icon={<DownloadOutlined />}
-                        href={adj.ruta}
-                        target="_blank"
-                        download={adj.nombre_archivo}
+                        onClick={async () => {
+                          try {
+                            await openR2File({ key: adj.r2_key, resource: "ot-adjunto", resourceId: adj.id });
+                          } catch (e) {
+                            messageApi.error(e instanceof Error ? e.message : "Error abriendo archivo");
+                          }
+                        }}
                         style={{ color: brand.cyan }}
                       />
                     </Tooltip>
@@ -401,5 +401,46 @@ export default function OTAdjuntosTab({ otId }: Props) {
         }
       `}</style>
     </div>
+  );
+}
+
+// Wrap antd Image que resuelve la presigned URL en mount. Mantiene el preview
+// nativo de antd (mask + lightbox).
+function R2AntdImage({
+  adjuntoId,
+  r2Key,
+  alt,
+}: {
+  adjuntoId: number;
+  r2Key: string;
+  alt: string;
+}) {
+  const [state, setState] = useState<{ r2Key: string; url: string | null }>({ r2Key, url: null });
+  const effective = state.r2Key === r2Key ? state : { r2Key, url: null };
+
+  useEffect(() => {
+    let cancelled = false;
+    getDownloadUrl({ key: r2Key, resource: "ot-adjunto", resourceId: adjuntoId })
+      .then((u) => {
+        if (!cancelled) setState({ r2Key, url: u });
+      })
+      .catch(() => {
+        if (!cancelled) setState({ r2Key, url: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [adjuntoId, r2Key]);
+
+  if (!effective.url) {
+    return <Spin size="small" />;
+  }
+  return (
+    <Image
+      src={effective.url}
+      alt={alt}
+      style={{ maxHeight: 140, maxWidth: "100%", objectFit: "cover" }}
+      preview={{ mask: <EyeOutlined style={{ fontSize: 20 }} /> }}
+    />
   );
 }

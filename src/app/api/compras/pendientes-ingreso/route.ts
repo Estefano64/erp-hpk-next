@@ -40,9 +40,9 @@ export async function GET() {
         observaciones: c.observaciones ?? null,
         nro_guia: c.nro_guia ?? null,
         nro_factura: c.nro_factura ?? null,
-        guia_archivo: c.guia_archivo ?? null,
+        guia_key: c.guia_key ?? null,
         guia_nombre: c.guia_nombre ?? null,
-        factura_archivo: c.factura_archivo ?? null,
+        factura_key: c.factura_key ?? null,
         factura_nombre: c.factura_nombre ?? null,
         items: c.detalles
           .map((d: D) => {

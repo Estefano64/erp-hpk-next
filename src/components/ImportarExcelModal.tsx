@@ -325,7 +325,7 @@ export function ImportarExcelModal({
           {requiredFaltantes.length > 0 && (
             <Alert
               type="warning" showIcon style={{ marginBottom: 12 }}
-              message={`Falta mapear: ${requiredFaltantes.join(", ")}`}
+              title={`Falta mapear: ${requiredFaltantes.join(", ")}`}
             />
           )}
           <Table
@@ -344,7 +344,7 @@ export function ImportarExcelModal({
           {validationErrors.length > 0 && (
             <Alert
               type="error" showIcon style={{ marginBottom: 12 }}
-              message={`${validationErrors.length} fila(s) con error`}
+              title={`${validationErrors.length} fila(s) con error`}
               description={
                 <div style={{ maxHeight: 120, overflowY: "auto", fontSize: 12 }}>
                   {validationErrors.slice(0, 10).map((e, i) => (
@@ -373,7 +373,7 @@ export function ImportarExcelModal({
           style={{ marginTop: 16 }}
           type={result.errors.length === 0 ? "success" : "warning"}
           showIcon icon={<CheckCircleOutlined />}
-          message={`Importación: ${result.created} creados, ${result.updated} actualizados${result.errors.length > 0 ? `, ${result.errors.length} con error` : ""}`}
+          title={`Importación: ${result.created} creados, ${result.updated} actualizados${result.errors.length > 0 ? `, ${result.errors.length} con error` : ""}`}
           description={result.errors.length > 0 && (
             <div style={{ maxHeight: 120, overflowY: "auto", fontSize: 12 }}>
               {result.errors.slice(0, 10).map((e, i) => <div key={i}>Fila {e.row}: {e.error}</div>)}

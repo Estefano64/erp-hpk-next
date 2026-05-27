@@ -51,6 +51,8 @@ import EvaluacionFormulario, {
   detectarModeloDesdeEstrategia,
 } from "@/components/modules/evaluacion/EvaluacionFormulario";
 import { generarWordEvaluacion } from "@/components/modules/evaluacion/generarWord";
+import { uploadToR2 } from "@/lib/r2-client";
+import { R2FileLink } from "@/components/R2FileLink";
 
 import { formatDateOnly } from "@/lib/dates";
 const { Title, Text } = Typography;
@@ -89,7 +91,7 @@ interface Evaluacion {
   datos_formulario: Record<string, unknown>;
   resultado_general: string | null;
   recomendaciones_general: string | null;
-  informe_archivo: string | null;
+  informe_key: string | null;
   informe_nombre: string | null;
   informe_fecha_subida: string | null;
   estado: string;
@@ -313,14 +315,17 @@ export default function EvaluacionPage() {
     }
     try {
       setUploading(true);
-      const fd = new FormData();
-      fd.append("informe", file);
+      const meta = await uploadToR2({
+        file,
+        uploadUrlEndpoint: `/api/evaluaciones/${evaluacion.id}/informe/upload-url`,
+      });
       const res = await fetch(`/api/evaluaciones/${evaluacion.id}/informe`, {
         method: "POST",
-        body: fd,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(meta),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Error al subir informe");
+      if (!res.ok) throw new Error(json.error || "Error al registrar informe");
       setEvaluacion(json.data);
       message.success("Informe subido correctamente");
     } catch (err: unknown) {
@@ -767,11 +772,15 @@ export default function EvaluacionPage() {
                 <Text type="secondary" style={{ fontSize: 12 }}>
                   Subido: {evaluacion.informe_fecha_subida ? dayjs(evaluacion.informe_fecha_subida).format("DD/MM/YYYY HH:mm") : ""}
                 </Text>
-                <a href={evaluacion.informe_archivo!} target="_blank" rel="noopener noreferrer">
+                <R2FileLink
+                  resource="evaluacion-informe"
+                  resourceId={evaluacion.id}
+                  r2Key={evaluacion.informe_key!}
+                >
                   <Button type="link" size="small" icon={<DownloadOutlined />}>
                     Descargar
                   </Button>
-                </a>
+                </R2FileLink>
               </Space>
             }
           />

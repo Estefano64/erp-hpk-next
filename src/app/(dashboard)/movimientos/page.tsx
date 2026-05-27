@@ -43,7 +43,6 @@ import {
   SwapOutlined,
   FileExcelOutlined,
   UploadOutlined,
-  DownloadOutlined,
   DeleteOutlined,
   PaperClipOutlined,
 } from "@ant-design/icons";
@@ -64,6 +63,8 @@ import { useResponsive, modalWidth } from "@/lib/responsive";
 import dayjs, { Dayjs } from "dayjs";
 
 import { formatDateOnly } from "@/lib/dates";
+import { uploadToR2 } from "@/lib/r2-client";
+import { R2FileLink } from "@/components/R2FileLink";
 const { Title, Text } = Typography;
 const { TextArea } = Input;
 
@@ -136,9 +137,9 @@ interface POPendiente {
   observaciones: string | null;
   nro_guia: string | null;
   nro_factura: string | null;
-  guia_archivo: string | null;
+  guia_key: string | null;
   guia_nombre: string | null;
-  factura_archivo: string | null;
+  factura_key: string | null;
   factura_nombre: string | null;
   items: Array<{
     id: number;
@@ -918,19 +919,21 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                   <Text strong style={{ fontSize: 12, display: "block", marginBottom: 4 }}>
                     📎 Archivo de Guía de Remisión (PDF/imagen)
                   </Text>
-                  {poSeleccionada.guia_archivo ? (
+                  {poSeleccionada.guia_key ? (
                     <Card size="small" style={{ background: "#f6ffed", borderColor: "#b7eb8f" }}>
                       <Space style={{ width: "100%", justifyContent: "space-between" }}>
                         <Space size={6}>
                           <CheckCircleOutlined style={{ color: "#52c41a" }} />
-                          <a href={poSeleccionada.guia_archivo} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12 }}>
+                          <R2FileLink
+                            resource="compra-guia"
+                            resourceId={poSeleccionada.id}
+                            r2Key={poSeleccionada.guia_key}
+                            style={{ fontSize: 12 }}
+                          >
                             {poSeleccionada.guia_nombre || "Guía adjunta"}
-                          </a>
+                          </R2FileLink>
                         </Space>
                         <Space size={4}>
-                          <Tooltip title="Descargar">
-                            <Button size="small" type="text" icon={<DownloadOutlined />} href={poSeleccionada.guia_archivo} target="_blank" />
-                          </Tooltip>
                           <Tooltip title="Eliminar">
                             <Button
                               size="small"
@@ -943,7 +946,7 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                                   if (!res.ok) throw new Error();
                                   message.success("Guía eliminada");
                                   await fetchPOs();
-                                  setPoSeleccionada({ ...poSeleccionada, guia_archivo: null, guia_nombre: null });
+                                  setPoSeleccionada({ ...poSeleccionada, guia_key: null, guia_nombre: null });
                                 } catch {
                                   message.error("Error al eliminar");
                                 }
@@ -961,14 +964,20 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                           return false;
                         }
                         try {
-                          const fd = new FormData();
-                          fd.append("file", file);
-                          const res = await fetch(`/api/compras/${poSeleccionada.id}/guia?tipo=guia`, { method: "POST", body: fd });
+                          const meta = await uploadToR2({
+                            file,
+                            uploadUrlEndpoint: `/api/compras/${poSeleccionada.id}/guia/upload-url?tipo=guia`,
+                          });
+                          const res = await fetch(`/api/compras/${poSeleccionada.id}/guia?tipo=guia`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(meta),
+                          });
                           const json = await res.json();
-                          if (!res.ok) throw new Error(json.error || "Error al subir");
+                          if (!res.ok) throw new Error(json.error || "Error al registrar");
                           message.success("Guía subida correctamente");
                           await fetchPOs();
-                          setPoSeleccionada({ ...poSeleccionada, guia_archivo: json.data.guia_archivo, guia_nombre: json.data.guia_nombre });
+                          setPoSeleccionada({ ...poSeleccionada, guia_key: json.data.guia_key, guia_nombre: json.data.guia_nombre });
                         } catch (err) {
                           message.error(err instanceof Error ? err.message : "Error");
                         }
@@ -987,19 +996,21 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                   <Text strong style={{ fontSize: 12, display: "block", marginBottom: 4 }}>
                     📎 Archivo de Factura (PDF/imagen)
                   </Text>
-                  {poSeleccionada.factura_archivo ? (
+                  {poSeleccionada.factura_key ? (
                     <Card size="small" style={{ background: "#f6ffed", borderColor: "#b7eb8f" }}>
                       <Space style={{ width: "100%", justifyContent: "space-between" }}>
                         <Space size={6}>
                           <CheckCircleOutlined style={{ color: "#52c41a" }} />
-                          <a href={poSeleccionada.factura_archivo} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12 }}>
+                          <R2FileLink
+                            resource="compra-factura"
+                            resourceId={poSeleccionada.id}
+                            r2Key={poSeleccionada.factura_key}
+                            style={{ fontSize: 12 }}
+                          >
                             {poSeleccionada.factura_nombre || "Factura adjunta"}
-                          </a>
+                          </R2FileLink>
                         </Space>
                         <Space size={4}>
-                          <Tooltip title="Descargar">
-                            <Button size="small" type="text" icon={<DownloadOutlined />} href={poSeleccionada.factura_archivo} target="_blank" />
-                          </Tooltip>
                           <Tooltip title="Eliminar">
                             <Button
                               size="small"
@@ -1012,7 +1023,7 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                                   if (!res.ok) throw new Error();
                                   message.success("Factura eliminada");
                                   await fetchPOs();
-                                  setPoSeleccionada({ ...poSeleccionada, factura_archivo: null, factura_nombre: null });
+                                  setPoSeleccionada({ ...poSeleccionada, factura_key: null, factura_nombre: null });
                                 } catch {
                                   message.error("Error al eliminar");
                                 }
@@ -1030,14 +1041,20 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                           return false;
                         }
                         try {
-                          const fd = new FormData();
-                          fd.append("file", file);
-                          const res = await fetch(`/api/compras/${poSeleccionada.id}/guia?tipo=factura`, { method: "POST", body: fd });
+                          const meta = await uploadToR2({
+                            file,
+                            uploadUrlEndpoint: `/api/compras/${poSeleccionada.id}/guia/upload-url?tipo=factura`,
+                          });
+                          const res = await fetch(`/api/compras/${poSeleccionada.id}/guia?tipo=factura`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(meta),
+                          });
                           const json = await res.json();
-                          if (!res.ok) throw new Error(json.error || "Error al subir");
+                          if (!res.ok) throw new Error(json.error || "Error al registrar");
                           message.success("Factura subida correctamente");
                           await fetchPOs();
-                          setPoSeleccionada({ ...poSeleccionada, factura_archivo: json.data.factura_archivo, factura_nombre: json.data.factura_nombre });
+                          setPoSeleccionada({ ...poSeleccionada, factura_key: json.data.factura_key, factura_nombre: json.data.factura_nombre });
                         } catch (err) {
                           message.error(err instanceof Error ? err.message : "Error");
                         }

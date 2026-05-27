@@ -25,7 +25,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
         status_oc: { select: { codigo: true, nombre: true } },
         proveedor: { select: { id: true, razon_social: true } },
         compra: { select: { id: true, numero_po: true, fecha_entrega_esperada: true } },
-        adjuntos: { select: { id: true, nombre_archivo: true, ruta: true, tamano: true } },
+        adjuntos: { select: { id: true, nombre_archivo: true, r2_key: true, tamano: true } },
       },
       orderBy: { item_req: "asc" },
     });
