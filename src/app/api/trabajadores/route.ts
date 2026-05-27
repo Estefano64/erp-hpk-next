@@ -2,18 +2,25 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 
-// Áreas/puestos cuyos trabajadores NO se asignan como operarios en tareas u
-// OTs. Confirmado con el usuario el 2026-05-26: jefes, compras y seguridad
-// quedan fuera del selector de operario.
-// LIMPIEZA dejó de excluirse el 2026-05-27 porque pasó a ser área operativa
-// que puede ejecutar OTs internas.
-const AREAS_NO_OPERATIVAS = ["SEGURIDAD"];
-const PUESTOS_NO_OPERATIVOS = ["COMPRAS"];
+// Whitelist de puestos técnicos que pueden tomar tareas en planificación.
+// Confirmado 2026-05-27: solo estos 6 puestos aparecen en el selector de
+// operario; cualquier otro (jefes, administrativos, sin puesto, etc.) queda
+// fuera. Si el día de mañana se suma un técnico nuevo, hay que asignarle uno
+// de estos puestos (o agregar el suyo a esta lista).
+const PUESTOS_TECNICOS = [
+  "Evaluación / Armado",
+  "Fresa",
+  "Mandrino",
+  "Practicante",
+  "Soldador",
+  "Torno",
+];
 
 // Áreas cuyos trabajadores NO pueden firmar como evaluador técnico. Logística
 // se excluye además de limpieza/seguridad (los técnicos de mantenimiento sí
 // pueden evaluar, los de logística no).
 const AREAS_NO_EVALUADORES = ["LIMPIEZA", "SEGURIDAD", "LOGISTICA"];
+const PUESTOS_NO_OPERATIVOS = ["COMPRAS"];
 
 export async function GET(req: NextRequest) {
   try {
@@ -40,11 +47,8 @@ export async function GET(req: NextRequest) {
       ];
     }
     if (soloOperarios) {
-      where.AND = [
-        { area: { notIn: AREAS_NO_OPERATIVAS } },
-        { puesto: { notIn: PUESTOS_NO_OPERATIVOS } },
-        { NOT: { puesto: { startsWith: "JEFE", mode: "insensitive" } } },
-      ];
+      // Solo trabajadores cuyo puesto está en la whitelist técnica.
+      where.puesto = { in: PUESTOS_TECNICOS };
     } else if (paraEvaluacion) {
       where.AND = [
         { area: { notIn: AREAS_NO_EVALUADORES } },

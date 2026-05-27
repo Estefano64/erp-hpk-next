@@ -726,8 +726,11 @@ model Trabajador {
   trabajador_id Int                    @id @default(autoincrement())
   nombre        String                 @db.VarChar(200)
   dni           String?                @db.VarChar(20)
-  area          String                 @db.VarChar(50)
-  puesto        String                 @db.VarChar(100)
+  // area y puesto son nullable porque a veces se cargan trabajadores sin esa
+  // info (ej. nuevos ingresos pendientes de configurar). Los selectores de
+  // operario filtran por puesto en una whitelist, así los sin puesto no salen.
+  area          String?                @db.VarChar(50)
+  puesto        String?                @db.VarChar(100)
   // Máquina/equipo asignado por defecto. Autocompleta al asignar tareas; editable.
   equipo_codigo String?                @db.VarChar(20)
   // Costo Hora Hombre (jornada normal) del trabajador.
