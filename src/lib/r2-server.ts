@@ -44,6 +44,29 @@ export async function assertOTAccess(
   return { ok: true, ot };
 }
 
+// Mismo patrón que assertOTAccess, pero para OT Internas. Valida sesión +
+// existencia de la OT y devuelve un OTSummary compatible con otCodigoFor.
+export async function assertOTInternaAccess(
+  req: NextRequest,
+  otId: number,
+): Promise<AccessResult> {
+  const token = await getToken({ req });
+  if (!token) {
+    return { ok: false, response: NextResponse.json({ error: "No autorizado" }, { status: 401 }) };
+  }
+  if (!Number.isFinite(otId) || otId <= 0) {
+    return { ok: false, response: NextResponse.json({ error: "OT inválida" }, { status: 400 }) };
+  }
+  const ot = await prisma.ordenTrabajoInterna.findUnique({
+    where: { id: otId },
+    select: { id: true, ot: true },
+  });
+  if (!ot) {
+    return { ok: false, response: NextResponse.json({ error: "OT no encontrada" }, { status: 404 }) };
+  }
+  return { ok: true, ot };
+}
+
 export interface UploadBodyValid {
   fileName: string;
   fileType: string;

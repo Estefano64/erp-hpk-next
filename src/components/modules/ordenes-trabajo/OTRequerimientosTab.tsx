@@ -983,7 +983,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
               </Space>
             </Col>
             <Col>
-              <Space size={6} direction="vertical" style={{ textAlign: "right" }}>
+              <Space size={6} orientation="vertical" style={{ textAlign: "right" }}>
                 <Tag color="success">{stats.itemsConPrecio} item(s) con precio</Tag>
                 {stats.itemsSinPrecio > 0 && (
                   <Tooltip title="Items sin precio_unitario y sin precio de catálogo. Editá el item o cargá precio al material.">

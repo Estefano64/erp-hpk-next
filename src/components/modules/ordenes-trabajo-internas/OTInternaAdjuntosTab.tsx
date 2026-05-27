@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  Tabs,
   Button,
   Upload,
   message,
@@ -24,10 +23,6 @@ import {
   FileWordOutlined,
   FileExcelOutlined,
   FileUnknownOutlined,
-  CameraOutlined,
-  FileTextOutlined,
-  CheckCircleOutlined,
-  CarOutlined,
   FolderOpenOutlined,
 } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
@@ -38,8 +33,7 @@ const { Dragger } = Upload;
 
 interface Adjunto {
   id: number;
-  orden_trabajo_id: number;
-  etapa_codigo: string;
+  orden_trabajo_interna_id: number;
   nombre_archivo: string;
   r2_key: string;
   tipo_mime: string;
@@ -50,45 +44,6 @@ interface Adjunto {
 interface Props {
   otId: number;
 }
-
-const ETAPAS = [
-  {
-    key: "recepcion",
-    label: "Recepción y GR",
-    icon: <CameraOutlined />,
-    description: "Fotos y documentos de la llegada del cilindro al taller — incluye guía de remisión del cliente",
-  },
-  {
-    key: "evaluacion",
-    label: "Evaluación",
-    icon: <FileTextOutlined />,
-    description: "Fotos de evaluación, informes técnicos y hoja de evaluación del componente",
-  },
-  {
-    key: "cotizacion",
-    label: "Cotización",
-    icon: <FileTextOutlined />,
-    description: "Cotización al cliente, propuestas comerciales y documentos relacionados",
-  },
-  {
-    key: "termino",
-    label: "Término de Reparación",
-    icon: <CheckCircleOutlined />,
-    description: "Fotos y documentos del término de reparación del componente",
-  },
-  {
-    key: "despacho",
-    label: "Despacho y GR",
-    icon: <CarOutlined />,
-    description: "Fotos y documentos del despacho del componente reparado — incluye guía de remisión al cliente",
-  },
-  {
-    key: "facturacion",
-    label: "Facturación",
-    icon: <FileTextOutlined />,
-    description: "Facturas emitidas al cliente y comprobantes de pago",
-  },
-];
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -108,8 +63,7 @@ function isImage(mime: string) {
   return mime.startsWith("image/");
 }
 
-/* ── Sub-panel por etapa ── */
-function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number] }) {
+export default function OTInternaAdjuntosTab({ otId }: Props) {
   const [adjuntos, setAdjuntos] = useState<Adjunto[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -119,7 +73,7 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
   const fetchAdjuntos = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/ordenes-trabajo/${otId}/adjuntos?etapa=${etapa.key}`);
+      const res = await fetch(`/api/ordenes-trabajo-internas/${otId}/adjuntos`);
       if (res.ok) {
         const json = await res.json();
         setAdjuntos(json.data ?? []);
@@ -129,31 +83,28 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
     } finally {
       setLoading(false);
     }
-  }, [otId, etapa.key]);
+  }, [otId]);
 
   useEffect(() => {
     fetchAdjuntos();
   }, [fetchAdjuntos]);
 
-  async function uploadFile(file: File) {
+  const uploadFile = useCallback(async (file: File) => {
     setUploading(true);
     try {
       const meta = await uploadToR2({
         file,
-        uploadUrlEndpoint: `/api/ordenes-trabajo/${otId}/adjuntos/upload-url`,
-        extra: { etapa: etapa.key },
+        uploadUrlEndpoint: `/api/ordenes-trabajo-internas/${otId}/adjuntos/upload-url`,
       });
-      const res = await fetch(`/api/ordenes-trabajo/${otId}/adjuntos`, {
+      const res = await fetch(`/api/ordenes-trabajo-internas/${otId}/adjuntos`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...meta, etapa: etapa.key }),
+        body: JSON.stringify(meta),
       });
-
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.error || "Error al registrar");
       }
-
       messageApi.success(`${file.name} subido correctamente`);
       fetchAdjuntos();
     } catch (err) {
@@ -161,11 +112,11 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
     } finally {
       setUploading(false);
     }
-  }
+  }, [otId, messageApi, fetchAdjuntos]);
 
   async function handleDelete(adjuntoId: number) {
     try {
-      const res = await fetch(`/api/ordenes-trabajo/${otId}/adjuntos?adjuntoId=${adjuntoId}`, {
+      const res = await fetch(`/api/ordenes-trabajo-internas/${otId}/adjuntos?adjuntoId=${adjuntoId}`, {
         method: "DELETE",
       });
       if (!res.ok) throw new Error();
@@ -194,14 +145,14 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
     <div>
       {contextHolder}
 
-      {/* Header de etapa */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-            <span style={{ fontSize: 18, color: brand.cyan }}>{etapa.icon}</span>
-            <Text strong style={{ fontSize: 16 }}>{etapa.label}</Text>
+          <Text strong style={{ fontSize: 16 }}>Adjuntos</Text>
+          <div>
+            <Text type="secondary" style={{ fontSize: 13 }}>
+              Fotos, informes y documentos relacionados con esta OT interna.
+            </Text>
           </div>
-          <Text type="secondary" style={{ fontSize: 13 }}>{etapa.description}</Text>
         </div>
         <div>
           <input
@@ -224,13 +175,12 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
         </div>
       </div>
 
-      {/* Zona de drag & drop */}
       <Dragger
         multiple
         showUploadList={false}
         beforeUpload={(file) => {
           uploadFile(file);
-          return false; // prevenir upload automático de antd
+          return false;
         }}
         style={{
           borderColor: brand.cyan,
@@ -249,7 +199,6 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
         </p>
       </Dragger>
 
-      {/* Lista de archivos */}
       {loading ? (
         <div style={{ textAlign: "center", padding: 40 }}>
           <Spin />
@@ -258,9 +207,7 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
         <Empty
           image={<FolderOpenOutlined style={{ fontSize: 48, color: brand.textSecondary }} />}
           styles={{ image: { height: 60 } }}
-          description={
-            <Text type="secondary">Sin archivos de {etapa.label.toLowerCase()}</Text>
-          }
+          description={<Text type="secondary">Sin archivos cargados</Text>}
         />
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
@@ -277,7 +224,6 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
               onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.boxShadow = "0 2px 8px rgba(0,0,0,0.12)"; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.boxShadow = "none"; }}
             >
-              {/* Preview area */}
               <div
                 style={{
                   height: 140,
@@ -295,7 +241,6 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
                 )}
               </div>
 
-              {/* Info area */}
               <div style={{ padding: "8px 10px" }}>
                 <Tooltip title={adj.nombre_archivo}>
                   <Text
@@ -323,7 +268,7 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
                         icon={<DownloadOutlined />}
                         onClick={async () => {
                           try {
-                            await openR2File({ key: adj.r2_key, resource: "ot-adjunto", resourceId: adj.id });
+                            await openR2File({ key: adj.r2_key, resource: "ot-interna-adjunto", resourceId: adj.id });
                           } catch (e) {
                             messageApi.error(e instanceof Error ? e.message : "Error abriendo archivo");
                           }
@@ -359,59 +304,6 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
   );
 }
 
-/* ── Componente principal con tabs de etapas ── */
-export default function OTAdjuntosTab({ otId }: Props) {
-  const tabItems = ETAPAS.map((etapa) => ({
-    key: etapa.key,
-    label: (
-      <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        {etapa.icon} {etapa.label}
-      </span>
-    ),
-    children: <EtapaPanel otId={otId} etapa={etapa} />,
-  }));
-
-  return (
-    <div>
-      <Tabs
-        defaultActiveKey="recepcion"
-        items={tabItems}
-        tabBarGutter={0}
-        tabBarStyle={{
-          display: "flex",
-          borderBottom: `2px solid ${brand.border}`,
-          marginBottom: 20,
-        }}
-        className="adjuntos-etapas-tabs"
-      />
-      <style>{`
-        .adjuntos-etapas-tabs > .ant-tabs-nav .ant-tabs-nav-list {
-          width: 100%;
-          display: flex !important;
-        }
-        .adjuntos-etapas-tabs > .ant-tabs-nav .ant-tabs-tab {
-          flex: 1;
-          justify-content: center;
-          margin: 0 !important;
-          padding: 10px 0;
-          font-weight: 500;
-        }
-        .adjuntos-etapas-tabs > .ant-tabs-nav .ant-tabs-tab-active {
-          border-bottom: 2px solid ${brand.cyan} !important;
-        }
-        .adjuntos-etapas-tabs > .ant-tabs-nav .ant-tabs-tab-active .ant-tabs-tab-btn {
-          color: ${brand.cyan} !important;
-        }
-        .adjuntos-etapas-tabs > .ant-tabs-nav .ant-tabs-ink-bar {
-          background: ${brand.cyan} !important;
-        }
-      `}</style>
-    </div>
-  );
-}
-
-// Wrap antd Image que resuelve la presigned URL en mount. Mantiene el preview
-// nativo de antd (mask + lightbox).
 function R2AntdImage({
   adjuntoId,
   r2Key,
@@ -426,7 +318,7 @@ function R2AntdImage({
 
   useEffect(() => {
     let cancelled = false;
-    getDownloadUrl({ key: r2Key, resource: "ot-adjunto", resourceId: adjuntoId })
+    getDownloadUrl({ key: r2Key, resource: "ot-interna-adjunto", resourceId: adjuntoId })
       .then((u) => {
         if (!cancelled) setState({ r2Key, url: u });
       })

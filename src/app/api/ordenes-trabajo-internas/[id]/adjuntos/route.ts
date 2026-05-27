@@ -1,13 +1,6 @@
-// Adjuntos de OT en Cloudflare R2.
-//
-// Flujo de subida (presigned URL):
-//   1. Cliente llama POST /api/r2/upload-url con resource="ot-adjunto" → obtiene { uploadUrl, key }
-//   2. Cliente sube el File con PUT a uploadUrl (directo a R2)
-//   3. Cliente llama POST aquí con { key, nombre_archivo, tipo_mime, tamano, etapa }
-//      para registrar el adjunto en BD.
-//
-// DELETE: borra primero de R2; si R2 OK, borra de BD. R2 devuelve OK aunque
-// la key ya no exista (idempotente), así que esto cubre registros huérfanos.
+// Adjuntos de OT Interna en R2. Mismo flujo que OT externa pero apunta a
+// orden_trabajo_interna_id. La etapa siempre es "general" — las internas
+// (preventiva/correctiva) no tienen el flujo recepción→despacho.
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
@@ -17,41 +10,34 @@ import { getAuditUser } from "@/lib/audit";
 
 type Params = { params: Promise<{ id: string }> };
 
-const ETAPAS_VALIDAS = ["recepcion", "evaluacion", "cotizacion", "termino", "despacho", "facturacion"] as const;
-type Etapa = (typeof ETAPAS_VALIDAS)[number];
+const ETAPA_INTERNA = "general";
 
-function isEtapa(value: unknown): value is Etapa {
-  return typeof value === "string" && (ETAPAS_VALIDAS as readonly string[]).includes(value);
-}
-
-// GET — listar adjuntos de una OT (opcionalmente filtrados por etapa)
+// GET — listar adjuntos de una OT interna.
 export async function GET(req: NextRequest, { params }: Params) {
   const token = await getToken({ req });
   if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
   try {
     const { id } = await params;
-    const etapa = req.nextUrl.searchParams.get("etapa");
-
-    const where: Record<string, unknown> = { orden_trabajo_id: Number(id) };
-    if (etapa && isEtapa(etapa)) {
-      where.etapa_codigo = etapa;
+    const otId = Number(id);
+    if (!Number.isFinite(otId) || otId <= 0) {
+      return NextResponse.json({ error: "ID inválido" }, { status: 400 });
     }
 
     const adjuntos = await prisma.otAdjunto.findMany({
-      where,
+      where: { orden_trabajo_interna_id: otId },
       orderBy: { fecha_subida: "desc" },
     });
 
     return NextResponse.json({ data: adjuntos });
   } catch (error) {
-    console.error("GET adjuntos error:", error);
+    console.error("GET adjuntos OT interna error:", error);
     return NextResponse.json({ error: "Error al obtener adjuntos" }, { status: 500 });
   }
 }
 
-// POST — registrar un adjunto ya subido a R2.
-// Body: { key, nombre_archivo, tipo_mime, tamano, etapa }
+// POST — registra un adjunto ya subido a R2.
+// Body: { key, nombre_archivo, tipo_mime, tamano }
 export async function POST(req: NextRequest, { params }: Params) {
   const token = await getToken({ req });
   if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -60,7 +46,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const { id } = await params;
     const otId = Number(id);
 
-    const ot = await prisma.ordenTrabajo.findUnique({
+    const ot = await prisma.ordenTrabajoInterna.findUnique({
       where: { id: otId },
       select: { id: true, ot: true },
     });
@@ -74,12 +60,11 @@ export async function POST(req: NextRequest, { params }: Params) {
     } catch {
       return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
     }
-    const { key, nombre_archivo, tipo_mime, tamano, etapa } = body as {
+    const { key, nombre_archivo, tipo_mime, tamano } = body as {
       key?: unknown;
       nombre_archivo?: unknown;
       tipo_mime?: unknown;
       tamano?: unknown;
-      etapa?: unknown;
     };
 
     if (typeof key !== "string" || key.length === 0) {
@@ -94,12 +79,9 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (typeof tamano !== "number" || !Number.isFinite(tamano) || tamano <= 0) {
       return NextResponse.json({ error: "tamano inválido" }, { status: 400 });
     }
-    if (!isEtapa(etapa)) {
-      return NextResponse.json({ error: "Etapa inválida" }, { status: 400 });
-    }
-    // La key debe vivir bajo el namespace de ESTA OT (defensa en profundidad
-    // contra clientes que firmen para una OT pero registren en otra).
-    const expectedPrefix = R2Keys.otAdjunto(otCodigoFor(ot)) + "/";
+    // Defensa en profundidad: el path firmado debe vivir bajo el namespace
+    // de ESTA OT interna.
+    const expectedPrefix = R2Keys.otInternaAdjunto(otCodigoFor(ot)) + "/";
     if (!key.startsWith(expectedPrefix)) {
       return NextResponse.json({ error: "key fuera del namespace de la OT" }, { status: 400 });
     }
@@ -108,8 +90,8 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const adjunto = await prisma.otAdjunto.create({
       data: {
-        orden_trabajo_id: otId,
-        etapa_codigo: etapa,
+        orden_trabajo_interna_id: otId,
+        etapa_codigo: ETAPA_INTERNA,
         nombre_archivo,
         r2_key: key,
         tipo_mime,
@@ -118,24 +100,23 @@ export async function POST(req: NextRequest, { params }: Params) {
       },
     });
 
-    // Auditoría: solo la subida queda en historial (delete y download no).
     await prisma.oTHistorial.create({
       data: {
-        ot_id: otId,
+        orden_trabajo_interna_id: otId,
         tipo_operacion: "ADJUNTO",
-        descripcion: `Adjunto subido (etapa ${etapa}): ${nombre_archivo}`,
+        descripcion: `Adjunto subido: ${nombre_archivo}`,
         usuario: usuario ?? "sistema",
       },
     });
 
     return NextResponse.json({ data: adjunto }, { status: 201 });
   } catch (error) {
-    console.error("POST adjuntos error:", error);
+    console.error("POST adjuntos OT interna error:", error);
     return NextResponse.json({ error: "Error al registrar adjunto" }, { status: 500 });
   }
 }
 
-// DELETE — eliminar un adjunto por query param ?adjuntoId=X
+// DELETE — elimina un adjunto por ?adjuntoId=X
 export async function DELETE(req: NextRequest, { params }: Params) {
   const token = await getToken({ req });
   if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -148,24 +129,23 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     }
 
     const adjunto = await prisma.otAdjunto.findFirst({
-      where: { id: Number(adjuntoId), orden_trabajo_id: Number(id) },
+      where: { id: Number(adjuntoId), orden_trabajo_interna_id: Number(id) },
     });
     if (!adjunto) {
       return NextResponse.json({ error: "Adjunto no encontrado" }, { status: 404 });
     }
 
-    // R2 primero. Si falla, no tocamos BD para no dejar archivos huérfanos.
     try {
       await deleteObject(adjunto.r2_key);
     } catch (error) {
-      console.error("DELETE adjuntos: fallo R2", error);
+      console.error("DELETE adjuntos OT interna: fallo R2", error);
       return NextResponse.json({ error: "No se pudo eliminar el archivo de R2" }, { status: 500 });
     }
 
     await prisma.otAdjunto.delete({ where: { id: Number(adjuntoId) } });
     return NextResponse.json({ data: { deleted: true } });
   } catch (error) {
-    console.error("DELETE adjuntos error:", error);
+    console.error("DELETE adjuntos OT interna error:", error);
     return NextResponse.json({ error: "Error al eliminar adjunto" }, { status: 500 });
   }
 }

@@ -81,6 +81,14 @@ export default function NuevaOTPage() {
   const [atencionCodigo, setAtencionCodigo] = useState("");
   const [selectedCodRep, setSelectedCodRep] = useState<CodRepOption | null>(null);
 
+  // Bloqueo de campos según Tipo OT (BIE = Bien, SER = Servicio).
+  // Bien y Servicio no son cilindros físicos a reparar, así que no aplican datos
+  // de recepción, PCR/horas, ni Tipo Reparación / Atención / Base Metálica.
+  // Servicio además fuerza Estrategia=No (no hay cod_rep asociado).
+  const tipoOTCodigo = Form.useWatch<string | undefined>("tipo_codigo", form);
+  const bloqueoBien = tipoOTCodigo === "BIE" || tipoOTCodigo === "SER";
+  const bloqueoServicio = tipoOTCodigo === "SER";
+
   // Campos calculados
   const [porcentajePcr, setPorcentajePcr] = useState<number | null>(null);
   const [contratoDias, setContratoDias] = useState<number | null>(null);
@@ -119,6 +127,39 @@ export default function NuevaOTPage() {
     }
     loadCatalogs();
   }, []);
+
+  // Al cambiar Tipo OT a Bien/Servicio, limpiamos los campos bloqueados para
+  // que no queden valores fantasma del flujo de Reparación. Disparado SOLO en
+  // la transición — si el usuario cambia de Bien a Servicio queremos preservar
+  // lo que ya escribió en campos comunes.
+  useEffect(() => {
+    if (bloqueoBien) {
+      form.setFieldsValue({
+        id_viajero: undefined,
+        guia_remision: undefined,
+        empresa_entrega: undefined,
+        fecha_recepcion: undefined,
+        pcr: undefined,
+        horas: undefined,
+        atencion_reparacion_codigo: undefined,
+        tipo_reparacion_codigo: undefined,
+        base_metalica: false,
+        fecha_requerimiento_cliente: undefined,
+      });
+      setAtencionCodigo("");
+      setPorcentajePcr(null);
+      setDiasCalculados(null);
+      setFechaReqCalculada(null);
+      setContratoDias(null);
+      setTieneContrato(false);
+    }
+    if (bloqueoServicio) {
+      setEstrategia(false);
+      form.setFieldValue("id_cod_rep", undefined);
+      setSelectedCodRep(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bloqueoBien, bloqueoServicio]);
 
   // Cuando cambia Cod Rep, autocompletar campos
   function handleCodRepChange(codRepId: number | undefined) {
@@ -214,8 +255,8 @@ export default function NuevaOTPage() {
 
       const payload: Record<string, unknown> = {
         id_cliente: values.id_cliente,
-        estrategia: estrategia,
-        id_cod_rep: estrategia ? values.id_cod_rep : null,
+        estrategia: bloqueoServicio ? false : estrategia,
+        id_cod_rep: bloqueoServicio ? null : (estrategia ? values.id_cod_rep : null),
         // Si NO hay estrategia, mandar los campos manuales. Si sí hay, el backend deriva del cod_rep.
         tipo: estrategia ? null : (values.tipo || null),
         tipo_codigo: values.tipo_codigo,
@@ -230,22 +271,24 @@ export default function NuevaOTPage() {
         wo_cliente: values.wo_cliente || null,
         po_cliente: values.po_cliente || null,
         po_item: values.po_item || null,
-        id_viajero: values.id_viajero || null,
-        guia_remision: values.guia_remision || null,
-        empresa_entrega: values.empresa_entrega || null,
-        fecha_recepcion: values.fecha_recepcion ? values.fecha_recepcion.format("YYYY-MM-DD") : null,
-        pcr: values.pcr ?? null,
-        horas: values.horas ?? null,
+        // Bloqueados para Bien/Servicio: forzar null para no persistir basura
+        // si el usuario llenó algo antes de cambiar el Tipo OT.
+        id_viajero: bloqueoBien ? null : (values.id_viajero || null),
+        guia_remision: bloqueoBien ? null : (values.guia_remision || null),
+        empresa_entrega: bloqueoBien ? null : (values.empresa_entrega || null),
+        fecha_recepcion: bloqueoBien ? null : (values.fecha_recepcion ? values.fecha_recepcion.format("YYYY-MM-DD") : null),
+        pcr: bloqueoBien ? null : (values.pcr ?? null),
+        horas: bloqueoBien ? null : (values.horas ?? null),
         garantia_codigo: garantia ? "Si" : "No",
-        atencion_reparacion_codigo: values.atencion_reparacion_codigo || null,
-        tipo_reparacion_codigo: values.tipo_reparacion_codigo || null,
+        atencion_reparacion_codigo: bloqueoBien ? null : (values.atencion_reparacion_codigo || null),
+        tipo_reparacion_codigo: bloqueoBien ? null : (values.tipo_reparacion_codigo || null),
         tipo_garantia_codigo: garantia ? (values.tipo_garantia_codigo || null) : "NA",
         prioridad_atencion_codigo: values.prioridad_atencion_codigo || null,
-        base_metalica_codigo: values.base_metalica ? "Si" : "No",
+        base_metalica_codigo: bloqueoBien ? "No" : (values.base_metalica ? "Si" : "No"),
         monto_cotizacion: values.monto_cotizacion ?? null,
         moneda_cotizacion_codigo: values.moneda_cotizacion_codigo || null,
         comentarios: values.comentarios || null,
-        fecha_requerimiento_cliente: atencionCodigo !== "Contrato" && values.fecha_requerimiento_cliente
+        fecha_requerimiento_cliente: !bloqueoBien && atencionCodigo !== "Contrato" && values.fecha_requerimiento_cliente
           ? values.fecha_requerimiento_cliente.format("YYYY-MM-DD")
           : null,
       };
@@ -310,6 +353,7 @@ export default function NuevaOTPage() {
               <Form.Item label="Estrategia">
                 <Checkbox
                   checked={estrategia}
+                  disabled={bloqueoServicio}
                   onChange={(e) => {
                     setEstrategia(e.target.checked);
                     if (!e.target.checked) {
@@ -338,8 +382,12 @@ export default function NuevaOTPage() {
                 <Select
                   showSearch
                   optionFilterProp="label"
-                  placeholder={estrategia ? "Seleccionar código reparable" : "Habilite estrategia primero"}
-                  disabled={!estrategia}
+                  placeholder={
+                    bloqueoServicio
+                      ? "No aplica para Servicio"
+                      : estrategia ? "Seleccionar código reparable" : "Habilite estrategia primero"
+                  }
+                  disabled={bloqueoServicio || !estrategia}
                   allowClear
                   onChange={(v) => { handleCodRepChange(v); buscarContrato(undefined, v); }}
                   options={codReps.map((cr) => ({
@@ -461,24 +509,29 @@ export default function NuevaOTPage() {
             </Col>
             <Col xs={12} md={6}>
               <Form.Item name="id_viajero" label="ID Viajero">
-                <Input />
+                <Input disabled={bloqueoBien} />
               </Form.Item>
             </Col>
             <Col xs={12} md={6}>
               <Form.Item name="guia_remision" label="Guía Remisión (llegada)">
-                <Input />
+                <Input disabled={bloqueoBien} />
               </Form.Item>
             </Col>
             <Col xs={12} md={8}>
               <Form.Item name="empresa_entrega" label="Empresa que entrega">
-                <Input />
+                <Input disabled={bloqueoBien} />
               </Form.Item>
             </Col>
             <Col xs={12} md={6}>
-              <Form.Item name="fecha_recepcion" label="Fecha de Recepción" rules={[{ required: true, message: "Requerido" }]}>
+              <Form.Item
+                name="fecha_recepcion"
+                label="Fecha de Recepción"
+                rules={bloqueoBien ? [] : [{ required: true, message: "Requerido" }]}
+              >
                 <DatePicker
                   style={{ width: "100%" }}
                   format="DD/MM/YYYY"
+                  disabled={bloqueoBien}
                   onChange={() => { handleFechaRecepcionChange(); }}
                 />
               </Form.Item>
@@ -491,12 +544,12 @@ export default function NuevaOTPage() {
           <Row gutter={16}>
             <Col xs={8} md={5}>
               <Form.Item name="pcr" label="PCR (horas vida)">
-                <InputNumber style={{ width: "100%" }} min={0} onChange={() => recalcPcr()} />
+                <InputNumber style={{ width: "100%" }} min={0} disabled={bloqueoBien} onChange={() => recalcPcr()} />
               </Form.Item>
             </Col>
             <Col xs={8} md={5}>
               <Form.Item name="horas" label="Horas actuales">
-                <InputNumber style={{ width: "100%" }} min={0} onChange={() => recalcPcr()} />
+                <InputNumber style={{ width: "100%" }} min={0} disabled={bloqueoBien} onChange={() => recalcPcr()} />
               </Form.Item>
             </Col>
             <Col xs={8} md={4}>
@@ -530,9 +583,14 @@ export default function NuevaOTPage() {
               </Form.Item>
             </Col>
             <Col xs={12} md={6}>
-              <Form.Item name="atencion_reparacion_codigo" label="Atención Reparación" rules={[{ required: true, message: "Requerido" }]}>
+              <Form.Item
+                name="atencion_reparacion_codigo"
+                label="Atención Reparación"
+                rules={bloqueoBien ? [] : [{ required: true, message: "Requerido" }]}
+              >
                 <Select
                   placeholder="Seleccionar"
+                  disabled={bloqueoBien}
                   onChange={(v) => {
                     setAtencionCodigo(v ?? "");
                     buscarContrato();
@@ -546,9 +604,14 @@ export default function NuevaOTPage() {
               </Form.Item>
             </Col>
             <Col xs={12} md={6}>
-              <Form.Item name="tipo_reparacion_codigo" label="Tipo Reparación" rules={[{ required: true, message: "Requerido" }]}>
+              <Form.Item
+                name="tipo_reparacion_codigo"
+                label="Tipo Reparación"
+                rules={bloqueoBien ? [] : [{ required: true, message: "Requerido" }]}
+              >
                 <Select
                   placeholder="Seleccionar"
+                  disabled={bloqueoBien}
                   options={tipoReparaciones.map((t) => ({ value: t.codigo, label: t.nombre }))}
                 />
               </Form.Item>
@@ -578,7 +641,7 @@ export default function NuevaOTPage() {
             </Col>
             <Col xs={12} md={4}>
               <Form.Item label="Base Metálica" name="base_metalica" valuePropName="checked">
-                <Checkbox>Si</Checkbox>
+                <Checkbox disabled={bloqueoBien}>Si</Checkbox>
               </Form.Item>
             </Col>
             <Col xs={16} md={8}>
@@ -610,9 +673,9 @@ export default function NuevaOTPage() {
             </Col>
           </Row>
 
-          <Divider style={{ margin: "8px 0 16px" }} />
+          {!bloqueoBien && <Divider style={{ margin: "8px 0 16px" }} />}
 
-          <Row gutter={16}>
+          <Row gutter={16} style={{ display: bloqueoBien ? "none" : undefined }}>
             {atencionCodigo === "Contrato" ? (
               <>
                 <Col xs={12} md={6}>

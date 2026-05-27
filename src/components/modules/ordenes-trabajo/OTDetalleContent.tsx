@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useSession } from "next-auth/react";
 import { useTabSync } from "@/lib/useTabSync";
 import { useCachedFetch } from "@/lib/useCachedFetch";
+import { useEditLock } from "@/lib/useEditLock";
 import {
   Tabs,
   Select,
@@ -77,6 +79,7 @@ interface OTDetalle {
   usuario_actualiza: string | null;
   fecha_actualizacion: string | null;
   ot: string;
+  tipo_codigo: string | null;
   estrategia: boolean;
   id_cliente: number | null;
   id_cod_rep: number | null;
@@ -167,6 +170,10 @@ function SectionTitle({ children }: { children: string }) {
 }
 
 export default function OTDetalleContent({ otId, onUpdated, headerActions, roundedHeader = false, onDirtyChange }: Props) {
+  const { data: session } = useSession();
+  const currentUser = (session?.user?.name ?? session?.user?.email) ?? null;
+  const lock = useEditLock("ot-externa", otId ?? null, currentUser);
+
   const [ot, setOt] = useState<OTDetalle | null>(null);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("resumen");
@@ -269,8 +276,18 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
 
 
-  function startEditing() {
+  async function startEditing() {
     if (!ot) return;
+    // Adquirir lock antes de habilitar edición. Si otro usuario lo tiene, abortar.
+    const ok = await lock.acquire();
+    if (!ok) {
+      messageApi.warning(
+        lock.lockedBy
+          ? `${lock.lockedBy} está editando esta OT. Esperá a que termine.`
+          : "No se pudo entrar a edición.",
+      );
+      return;
+    }
     setEditData({
       id_cliente: ot.id_cliente,
       estrategia: ot.estrategia,
@@ -302,6 +319,8 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   function cancelEditing() {
     setEditing(false);
     setEditData({});
+    // Soltar el lock para que otros puedan entrar
+    void lock.release();
   }
 
   function setField(key: string, value: unknown) {
@@ -388,6 +407,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
     }
     messageApi.success("OT actualizada");
     setEditing(false);
+    void lock.release();
 
     if (clearPending) {
       try {
@@ -533,6 +553,14 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   const fueReprogramada = ot?.fecha_reprogramada != null;
   const isGarantia = editing ? editData.garantia_codigo === "Si" : ot?.garantia_codigo === "Si";
 
+  // Bloqueo de campos según Tipo OT (BIE/SER). Bien y Servicio no son cilindros
+  // físicos a reparar: no aplican datos de recepción, PCR/horas, ni Tipo
+  // Reparación / Atención / Base Metálica / Taller Status. Servicio además
+  // fuerza Estrategia=No (sin cod_rep asociado).
+  const tipoOTCodigo = ot?.tipo_codigo ?? null;
+  const bloqueoBien = tipoOTCodigo === "BIE" || tipoOTCodigo === "SER";
+  const bloqueoServicio = tipoOTCodigo === "SER";
+
   // ── Validaciones inline para mostrar arriba del resumen ──
   const validaciones: { type: "warning" | "info" | "error"; message: string; description?: string }[] = [];
   if (ot) {
@@ -570,8 +598,19 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
     }
   }
 
+  const lockBanner = !ot || lock.isOwner || !lock.lockedBy ? null : (
+    <Alert
+      type="warning"
+      showIcon
+      style={{ marginBottom: 16 }}
+      message={`${lock.lockedBy} está editando esta OT`}
+      description="Solo podés ver hasta que termine. Si se quedó colgado el lock se libera solo a los 3 minutos."
+    />
+  );
+
   const resumenContent = !ot ? null : (
       <div>
+        {lockBanner}
         {/* ── Validaciones (warnings / info) ── */}
         {validaciones.length > 0 && (
           <Space orientation="vertical" size={8} style={{ width: "100%", marginBottom: 16 }}>
@@ -599,12 +638,20 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
             type="primary"
             icon={<SaveOutlined />}
             loading={savingStatus}
+            disabled={!lock.canEdit}
             onClick={handleSaveStatuses}
           >
             Guardar Estados
           </Button>
           {!editing ? (
-            <Button icon={<EditOutlined />} onClick={startEditing}>Editar OT</Button>
+            <Button
+              icon={<EditOutlined />}
+              onClick={startEditing}
+              disabled={!lock.canEdit}
+              title={!lock.canEdit && lock.lockedBy ? `Editando: ${lock.lockedBy}` : undefined}
+            >
+              Editar OT
+            </Button>
           ) : (
             <>
               <Button onClick={cancelEditing}>Cancelar</Button>
@@ -653,6 +700,8 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                 style={{ width: "100%" }}
                 value={tallerStatus || undefined}
                 onChange={setTallerStatus}
+                disabled={bloqueoBien}
+                placeholder={bloqueoBien ? "No aplica" : undefined}
                 options={tallerStatuses.map((s) => ({ value: s.codigo, label: s.nombre }))}
               />
             </Col>
@@ -735,14 +784,23 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                 </Col>
                 <Col xs={12} md={6}>
                   <FieldLabel>Estrategia</FieldLabel>
-                  <Checkbox checked={editData.estrategia as boolean}
-                    onChange={(e) => { setField("estrategia", e.target.checked); if (!e.target.checked) setField("id_cod_rep", null); }}>Sí</Checkbox>
+                  <Checkbox
+                    checked={editData.estrategia as boolean}
+                    disabled={bloqueoServicio}
+                    onChange={(e) => { setField("estrategia", e.target.checked); if (!e.target.checked) setField("id_cod_rep", null); }}
+                  >Sí</Checkbox>
                 </Col>
                 <Col xs={24} md={12}>
                   <FieldLabel>Código Reparable</FieldLabel>
-                  <Select showSearch optionFilterProp="label" style={{ width: "100%" }} disabled={!editData.estrategia} allowClear
-                    value={editData.id_cod_rep as number} onChange={(v) => setField("id_cod_rep", v)}
-                    options={codReps.map((cr) => ({ value: cr.cod_rep_id, label: `${cr.codigo} - ${cr.descripcion}` }))} />
+                  <Select
+                    showSearch optionFilterProp="label" style={{ width: "100%" }}
+                    disabled={bloqueoServicio || !editData.estrategia}
+                    allowClear
+                    placeholder={bloqueoServicio ? "No aplica para Servicio" : undefined}
+                    value={editData.id_cod_rep as number}
+                    onChange={(v) => setField("id_cod_rep", v)}
+                    options={codReps.map((cr) => ({ value: cr.cod_rep_id, label: `${cr.codigo} - ${cr.descripcion}` }))}
+                  />
                 </Col>
               </Row>
               <Row gutter={[16, 12]} style={{ marginTop: 8 }}>
@@ -804,23 +862,38 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                 </Col>
                 <Col xs={12} md={6}>
                   <FieldLabel>ID Viajero</FieldLabel>
-                  <Input value={(editData.id_viajero as string) ?? ""} onChange={(e) => setField("id_viajero", e.target.value)} />
+                  <Input
+                    disabled={bloqueoBien}
+                    value={(editData.id_viajero as string) ?? ""}
+                    onChange={(e) => setField("id_viajero", e.target.value)}
+                  />
                 </Col>
                 <Col xs={12} md={6}>
                   <FieldLabel>Guía Remisión</FieldLabel>
-                  <Input value={(editData.guia_remision as string) ?? ""} onChange={(e) => setField("guia_remision", e.target.value)} />
+                  <Input
+                    disabled={bloqueoBien}
+                    value={(editData.guia_remision as string) ?? ""}
+                    onChange={(e) => setField("guia_remision", e.target.value)}
+                  />
                 </Col>
               </Row>
               <Row gutter={[16, 12]} style={{ marginTop: 8 }}>
                 <Col xs={12} md={6}>
                   <FieldLabel>Empresa que entrega</FieldLabel>
-                  <Input value={(editData.empresa_entrega as string) ?? ""} onChange={(e) => setField("empresa_entrega", e.target.value)} />
+                  <Input
+                    disabled={bloqueoBien}
+                    value={(editData.empresa_entrega as string) ?? ""}
+                    onChange={(e) => setField("empresa_entrega", e.target.value)}
+                  />
                 </Col>
                 <Col xs={12} md={6}>
                   <FieldLabel>Fecha Recepción</FieldLabel>
-                  <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY"
+                  <DatePicker
+                    style={{ width: "100%" }} format="DD/MM/YYYY"
+                    disabled={bloqueoBien}
                     value={editData.fecha_recepcion ? dayjs(String(editData.fecha_recepcion).slice(0, 10)) : null}
-                    onChange={(d) => setField("fecha_recepcion", d ? d.format("YYYY-MM-DD") : null)} />
+                    onChange={(d) => setField("fecha_recepcion", d ? d.format("YYYY-MM-DD") : null)}
+                  />
                 </Col>
               </Row>
             </>
@@ -844,11 +917,21 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
             <Row gutter={[16, 12]}>
               <Col xs={8} md={5}>
                 <FieldLabel>PCR</FieldLabel>
-                <InputNumber style={{ width: "100%" }} min={0} value={editData.pcr as number} onChange={(v) => setField("pcr", v)} />
+                <InputNumber
+                  style={{ width: "100%" }} min={0}
+                  disabled={bloqueoBien}
+                  value={editData.pcr as number}
+                  onChange={(v) => setField("pcr", v)}
+                />
               </Col>
               <Col xs={8} md={5}>
                 <FieldLabel>Horas</FieldLabel>
-                <InputNumber style={{ width: "100%" }} min={0} value={editData.horas as number} onChange={(v) => setField("horas", v)} />
+                <InputNumber
+                  style={{ width: "100%" }} min={0}
+                  disabled={bloqueoBien}
+                  value={editData.horas as number}
+                  onChange={(v) => setField("horas", v)}
+                />
               </Col>
               <Col xs={8} md={4}>
                 <FieldLabel>% PCR</FieldLabel>
@@ -893,15 +976,23 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
             <Row gutter={[16, 12]}>
               <Col xs={12} md={6}>
                 <FieldLabel>Atención Reparación</FieldLabel>
-                <Select style={{ width: "100%" }} value={editData.atencion_reparacion_codigo as string}
+                <Select
+                  style={{ width: "100%" }}
+                  disabled={bloqueoBien}
+                  value={editData.atencion_reparacion_codigo as string}
                   onChange={(v) => setField("atencion_reparacion_codigo", v)}
-                  options={atencionReparaciones.map((a) => ({ value: a.codigo, label: a.nombre }))} />
+                  options={atencionReparaciones.map((a) => ({ value: a.codigo, label: a.nombre }))}
+                />
               </Col>
               <Col xs={12} md={6}>
                 <FieldLabel>Tipo Reparación</FieldLabel>
-                <Select style={{ width: "100%" }} value={editData.tipo_reparacion_codigo as string}
+                <Select
+                  style={{ width: "100%" }}
+                  disabled={bloqueoBien}
+                  value={editData.tipo_reparacion_codigo as string}
                   onChange={(v) => setField("tipo_reparacion_codigo", v)}
-                  options={tipoReparaciones.map((t) => ({ value: t.codigo, label: t.nombre }))} />
+                  options={tipoReparaciones.map((t) => ({ value: t.codigo, label: t.nombre }))}
+                />
               </Col>
               <Col xs={12} md={6}>
                 <FieldLabel>Prioridad de Atención</FieldLabel>
@@ -926,8 +1017,11 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
               </Col>
               <Col xs={8} md={3}>
                 <FieldLabel>Base Metálica</FieldLabel>
-                <Checkbox checked={editData.base_metalica_codigo === "Si"}
-                  onChange={(e) => setField("base_metalica_codigo", e.target.checked ? "Si" : "No")}>Sí</Checkbox>
+                <Checkbox
+                  checked={editData.base_metalica_codigo === "Si"}
+                  disabled={bloqueoBien}
+                  onChange={(e) => setField("base_metalica_codigo", e.target.checked ? "Si" : "No")}
+                >Sí</Checkbox>
               </Col>
               <Col xs={16} md={6}>
                 <FieldLabel>Cotización (monto + moneda)</FieldLabel>

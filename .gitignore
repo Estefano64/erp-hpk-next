@@ -45,3 +45,4 @@ next-env.d.ts
 
 # user uploads (runtime files, no fuente)
 /public/uploads/
+backups/

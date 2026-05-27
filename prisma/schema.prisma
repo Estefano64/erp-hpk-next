@@ -978,6 +978,10 @@ model OrdenTrabajoInterna {
   user_status_codigo        String?            @db.VarChar(20)
   ot_status_codigo          String?            @db.VarChar(30)
   recursos_status_codigo    String?            @db.VarChar(30)
+  // Operario asignado para ejecutar la OT (texto libre — guarda el nombre).
+  asignado_a                String?            @db.VarChar(150)
+  // Comentarios libres sobre la OT (instrucciones, contexto adicional).
+  comentarios               String?
   version                   Int                @default(1)
   estrategia                Estrategia?        @relation(fields: [estrategia_id], references: [estrategia_id])
   equipo                    Equipo?            @relation(fields: [equipo_codigo], references: [codigo])
@@ -987,6 +991,9 @@ model OrdenTrabajoInterna {
   recursos_status           RecursosStatus?    @relation("InternaRecursosStatus", fields: [recursos_status_codigo], references: [codigo])
   tipo_ot_interna           TipoOTInterna?     @relation(fields: [tipo_ot_interna_codigo], references: [codigo])
   user_status               UserStatus?        @relation(fields: [user_status_codigo], references: [codigo])
+  // Adjuntos e historial — polymórficos con OT externa (uno de los FKs activo).
+  adjuntos                  OtAdjunto[]
+  historial                 OTHistorial[]
 
   @@index([equipo_codigo])
   @@index([tipo_ot_interna_codigo])
@@ -994,20 +1001,26 @@ model OrdenTrabajoInterna {
   @@map("orden_trabajo_interna")
 }
 
+// OtAdjunto admite adjuntos tanto de OT externa como de OT interna. Uno y solo
+// uno de los dos FK debe estar seteado. La aplicación valida el XOR.
 model OtAdjunto {
-  id               Int          @id @default(autoincrement())
-  orden_trabajo_id Int
-  etapa_codigo     String       @db.VarChar(20)
-  nombre_archivo   String       @db.VarChar(255)
+  id                        Int                  @id @default(autoincrement())
+  orden_trabajo_id          Int?
+  orden_trabajo_interna_id  Int?
+  etapa_codigo              String               @db.VarChar(20)
+  nombre_archivo            String               @db.VarChar(255)
   // Object key en Cloudflare R2. El acceso se hace siempre vía presigned URL.
-  r2_key           String       @db.VarChar(500)
-  tipo_mime        String       @db.VarChar(100)
-  tamano           Int
-  fecha_subida     DateTime     @default(now())
-  usuario_sube     String?      @db.VarChar(100)
-  orden_trabajo    OrdenTrabajo @relation(fields: [orden_trabajo_id], references: [id], onDelete: Cascade)
-  etapa            OtEtapa      @relation(fields: [etapa_codigo], references: [codigo], onDelete: Restrict)
+  r2_key                    String               @db.VarChar(500)
+  tipo_mime                 String               @db.VarChar(100)
+  tamano                    Int
+  fecha_subida              DateTime             @default(now())
+  usuario_sube              String?              @db.VarChar(100)
+  orden_trabajo             OrdenTrabajo?        @relation(fields: [orden_trabajo_id], references: [id], onDelete: Cascade)
+  orden_trabajo_interna     OrdenTrabajoInterna? @relation(fields: [orden_trabajo_interna_id], references: [id], onDelete: Cascade)
+  etapa                     OtEtapa              @relation(fields: [etapa_codigo], references: [codigo], onDelete: Restrict)
 
+  @@index([orden_trabajo_id])
+  @@index([orden_trabajo_interna_id])
   @@map("ot_adjunto")
 }
 
@@ -1174,19 +1187,24 @@ model PrestamoHerramienta {
   @@map("prestamos_herramientas")
 }
 
+// OTHistorial admite eventos tanto de OT externa como de OT interna. Uno y solo
+// uno de los dos FK debe estar seteado. La aplicación valida el XOR.
 model OTHistorial {
-  id                Int          @id @default(autoincrement())
-  ot_id             Int
-  tipo_operacion    String       @db.VarChar(50)
-  descripcion       String
-  usuario           String       @db.VarChar(100)
-  fecha             DateTime     @default(now()) @db.Date
-  datos_adicionales String?
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
-  orden_trabajo     OrdenTrabajo @relation(fields: [ot_id], references: [id], onDelete: Cascade)
+  id                        Int                  @id @default(autoincrement())
+  ot_id                     Int?
+  orden_trabajo_interna_id  Int?
+  tipo_operacion            String               @db.VarChar(50)
+  descripcion               String
+  usuario                   String               @db.VarChar(100)
+  fecha                     DateTime             @default(now()) @db.Date
+  datos_adicionales         String?
+  createdAt                 DateTime             @default(now())
+  updatedAt                 DateTime             @updatedAt
+  orden_trabajo             OrdenTrabajo?        @relation(fields: [ot_id], references: [id], onDelete: Cascade)
+  orden_trabajo_interna     OrdenTrabajoInterna? @relation(fields: [orden_trabajo_interna_id], references: [id], onDelete: Cascade)
 
   @@index([ot_id])
+  @@index([orden_trabajo_interna_id])
   @@index([fecha])
   @@map("ot_historial")
 }
@@ -1399,4 +1417,47 @@ model EvaluacionTecnica {
   @@index([ot_id])
   @@index([estado])
   @@map("evaluaciones_tecnicas")
+}
+
+
+// ── Tickets — bugs, mejoras, preguntas reportadas por usuarios ──
+// No vinculado a OT — es un canal lateral para issues del ERP mismo.
+// Captura opcional en R2 bajo namespace `tickets/`.
+model Ticket {
+  id                Int      @id @default(autoincrement())
+  descripcion       String
+  // Estados: ABIERTO → EN_PROCESO → RESUELTO → CERRADO (lineal).
+  estado            String   @default("ABIERTO") @db.VarChar(20)
+  captura_key       String?  @db.VarChar(500)
+  captura_nombre    String?  @db.VarChar(300)
+  captura_mime      String?  @db.VarChar(100)
+  captura_tamano    Int?
+  creado_por        String   @db.VarChar(100)
+  asignado_a        String?  @db.VarChar(100)
+  notas_resolucion  String?
+  resuelto_por      String?  @db.VarChar(100)
+  fecha_resolucion  DateTime?
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  @@index([estado])
+  @@index([creado_por])
+  @@index([created_at])
+  @@map("ticket")
+}
+
+// Lock pesimista de edición. Una sola fila por (resource_type, resource_id):
+// si existe y el heartbeat es reciente, otro usuario no puede entrar a editar.
+// TTL manejado por el endpoint /api/locks: si el último heartbeat es más viejo
+// que el TTL, la fila se considera "muerta" y otro usuario puede sobreescribirla.
+model EditLock {
+  resource_type   String   @db.VarChar(40)
+  resource_id     Int
+  usuario         String   @db.VarChar(120)
+  acquired_at     DateTime @default(now())
+  last_heartbeat  DateTime @default(now())
+
+  @@id([resource_type, resource_id])
+  @@index([last_heartbeat])
+  @@map("edit_lock")
 }

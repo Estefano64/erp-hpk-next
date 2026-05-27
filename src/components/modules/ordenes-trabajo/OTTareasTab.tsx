@@ -129,6 +129,42 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
   function removeDraft(id: string) {
     setDraftRows((prev) => prev.filter((d) => d.id !== id));
   }
+
+  /**
+   * Atajo "Jalar todas las tareas {tipo} de {parte}": reemplaza el draft origen
+   * por N nuevos drafts pre-llenos, uno por cada operación que matchea
+   * (parte, clasificación). No guarda automáticamente — el usuario revisa y
+   * después confirma con "Guardar". Filtra duplicados con drafts ya activos.
+   */
+  function loadAllForRow(rowId: string) {
+    setDraftRows((prev) => {
+      const source = prev.find((d) => d.id === rowId);
+      if (!source || !source.parte) return prev;
+      const clas = source.tipo_tarea === "NoEstandar" ? "NO_STD" : "STD";
+      const candidatas = operaciones.filter((o) => o.componente_codigo === source.parte && o.clasificacion === clas);
+      // Códigos ya usados en otros drafts activos para esa misma parte (evita duplicar)
+      const yaUsados = new Set(
+        prev
+          .filter((d) => d.id !== rowId && d.parte === source.parte && d.operacion_codigo)
+          .map((d) => d.operacion_codigo as string),
+      );
+      const nuevas = candidatas.filter((o) => !yaUsados.has(o.codigo));
+      if (nuevas.length === 0) {
+        messageApi.warning("Todas las tareas de esa parte+tipo ya están en la lista de drafts.");
+        return prev;
+      }
+      const generados: DraftTarea[] = nuevas.map((o) => ({
+        ...newDraft(),
+        parte: source.parte,
+        tipo_tarea: source.tipo_tarea,
+        operacion_codigo: o.codigo,
+      }));
+      // Reemplaza el draft origen (incompleto) por los generados, conserva el resto.
+      const sinSource = prev.filter((d) => d.id !== rowId);
+      messageApi.success(`${generados.length} tarea(s) cargada(s). Revisá y guardá cuando estés listo.`);
+      return [...sinSource, ...generados];
+    });
+  }
   const [messageApi, contextHolder] = message.useMessage();
   const { ocultas, setOcultas } = useColumnasOcultas("ot-tareas-cols-v1");
   const { rango: rangoInicio, setRango: setRangoInicio } = useRangoFechas();
@@ -604,6 +640,8 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
                       onPickExisting={(codigo) => updateDraft(d.id, { operacion_codigo: codigo, nueva_operacion_nombre: null })}
                       onCreateNew={(nombre) => updateDraft(d.id, { operacion_codigo: null, nueva_operacion_nombre: nombre })}
                       onClear={() => updateDraft(d.id, { operacion_codigo: null, nueva_operacion_nombre: null })}
+                      onLoadAll={d.parte && opsFila.length > 0 ? () => loadAllForRow(d.id) : undefined}
+                      loadAllCount={opsFila.length}
                     />
                   )}
                 </Col>
@@ -719,9 +757,15 @@ interface OperacionComboProps {
   onPickExisting: (codigo: string) => void;
   onCreateNew: (nombre: string) => void;
   onClear: () => void;
+  /** Si está presente, se muestra al tope del dropdown un botón "Jalar todas
+   *  las tareas {tipo} de {parte}". El padre maneja la lógica de generar
+   *  los N drafts pre-llenos. */
+  onLoadAll?: () => void;
+  /** Cantidad de operaciones que se cargarían — para mostrar "(N)" en el botón. */
+  loadAllCount?: number;
 }
 
-function OperacionCombo({ draft, opciones, onPickExisting, onCreateNew, onClear }: OperacionComboProps) {
+function OperacionCombo({ draft, opciones, onPickExisting, onCreateNew, onClear, onLoadAll, loadAllCount = 0 }: OperacionComboProps) {
   const [search, setSearch] = useState("");
   // Valor visible en el Select: si hay operacion_codigo elegida, su código.
   // Si hay nueva_operacion_nombre (pendiente de crear), un marker "__new__:nombre".
@@ -765,6 +809,19 @@ function OperacionCombo({ draft, opciones, onPickExisting, onCreateNew, onClear 
       style={{ width: "100%" }}
       dropdownRender={(menu) => (
         <div>
+          {/* Atajo: jalar todas las operaciones que matchean parte+tipo a la vez.
+              Se borra el draft actual y se generan N drafts pre-llenos. */}
+          {onLoadAll && loadAllCount > 0 && (
+            <div style={{ borderBottom: "1px solid #f0f0f0", padding: "6px 8px", background: "#FAFAFA" }}>
+              <Button
+                type="link" size="small" block
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => onLoadAll()}
+              >
+                ⚡ Jalar todas las tareas <b>{draft.tipo_tarea === "NoEstandar" ? "no estándar" : "estándar"}</b> de <b>{draft.parte}</b> ({loadAllCount})
+              </Button>
+            </div>
+          )}
           {menu}
           {puedeCrear && (
             <div style={{ borderTop: "1px solid #f0f0f0", padding: "6px 8px" }}>

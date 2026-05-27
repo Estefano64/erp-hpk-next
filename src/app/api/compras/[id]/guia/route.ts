@@ -11,6 +11,7 @@ import { prisma } from "@/lib/prisma";
 import { sanitizarNombreArchivo } from "@/lib/file-uploads";
 import { deleteObject } from "@/lib/r2-helpers";
 import { R2Keys, otCodigoFor } from "@/lib/r2";
+import { getAuditUser } from "@/lib/audit";
 
 type Params = { params: Promise<{ id: string }> };
 type Tipo = "guia" | "factura";
@@ -117,6 +118,20 @@ export async function POST(req: NextRequest, { params }: Params) {
       where: { id: compraId },
       data: dataUpdate,
     });
+
+    // Auditoría: si la compra está vinculada a una OT, registrar en su historial.
+    // Las compras sueltas (sin OT) no tienen historial propio — se omiten.
+    if (compra.ot_id) {
+      const usuario = (await getAuditUser(req)) ?? "sistema";
+      await prisma.oTHistorial.create({
+        data: {
+          ot_id: compra.ot_id,
+          tipo_operacion: "ADJUNTO",
+          descripcion: `${tipo === "guia" ? "Guía" : "Factura"} subida en OC ${compra.numero_po}: ${nombreSanitizado}`,
+          usuario,
+        },
+      });
+    }
 
     return NextResponse.json({ data: updated });
   } catch (error) {

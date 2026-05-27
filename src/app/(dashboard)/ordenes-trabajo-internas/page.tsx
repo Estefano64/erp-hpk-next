@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import {
   Typography, Table, Button, Input, Select, Space, Tag, Modal, Form,
   Row, Col, Card, App, DatePicker, Popconfirm, Tooltip,
@@ -45,6 +46,8 @@ interface OTInternaRow {
   fecha_inicio_real: string | null;
   fecha_fin_real: string | null;
   fecha_cierre: string | null;
+  asignado_a: string | null;
+  comentarios: string | null;
   version: number;
   equipo: { codigo: string; descripcion: string } | null;
   planta: { codigo: string; nombre: string } | null;
@@ -66,11 +69,16 @@ interface FormValues {
   estrategia_id?: number;
   task_list?: string;
   user_status_codigo?: string;
+  asignado_a?: string;
+  comentarios?: string;
   fecha_inicio_plan?: Dayjs | null;
   fecha_fin_plan?: Dayjs | null;
 }
 
+interface TrabajadorOpt { nombre: string; area: string; puesto: string }
+
 export default function OrdenesTrabajoInternasPage() {
+  const router = useRouter();
   const { message, modal } = App.useApp();
   const { screens } = useResponsive();
   const [form] = Form.useForm<FormValues>();
@@ -95,6 +103,7 @@ export default function OrdenesTrabajoInternasPage() {
   const [prioridades, setPrioridades] = useState<CatalogOption[]>([]);
   const [userStatuses, setUserStatuses] = useState<CatalogOption[]>([]);
   const [estrategias, setEstrategias] = useState<EstrategiaOption[]>([]);
+  const [trabajadores, setTrabajadores] = useState<TrabajadorOpt[]>([]);
 
   const { ocultas, setOcultas } = useColumnasOcultas("ot-internas-cols-v1", [
     "fecha_inicio_real", "fecha_fin_real", "fecha_cierre", "estrategia", "task_list", "recursos_status",
@@ -103,13 +112,14 @@ export default function OrdenesTrabajoInternasPage() {
   // Cargar catálogos una vez
   useEffect(() => {
     (async () => {
-      const [tRes, eRes, pRes, prRes, usRes, estRes] = await Promise.all([
+      const [tRes, eRes, pRes, prRes, usRes, estRes, trRes] = await Promise.all([
         fetch("/api/catalogos?tabla=tipoOTInterna"),
         fetch("/api/equipos?limit=500"),
         fetch("/api/catalogos?tabla=planta"),
         fetch("/api/catalogos?tabla=prioridadAtencion"),
         fetch("/api/catalogos?tabla=userStatus"),
         fetch("/api/catalogos?tabla=estrategia"),
+        fetch("/api/trabajadores?limit=200&soloOperarios=1"),
       ]);
       if (tRes.ok) setTiposOTInterna((await tRes.json()).data ?? []);
       if (eRes.ok) setEquipos((await eRes.json()).data ?? []);
@@ -117,6 +127,7 @@ export default function OrdenesTrabajoInternasPage() {
       if (prRes.ok) setPrioridades((await prRes.json()).data ?? []);
       if (usRes.ok) setUserStatuses((await usRes.json()).data ?? []);
       if (estRes.ok) setEstrategias((await estRes.json()).data ?? []);
+      if (trRes.ok) setTrabajadores((await trRes.json()).data ?? []);
     })();
   }, []);
 
@@ -161,6 +172,8 @@ export default function OrdenesTrabajoInternasPage() {
       estrategia_id: row.estrategia?.estrategia_id,
       task_list: row.task_list ?? undefined,
       user_status_codigo: row.user_status?.codigo,
+      asignado_a: row.asignado_a ?? undefined,
+      comentarios: row.comentarios ?? undefined,
       fecha_inicio_plan: row.fecha_inicio_plan ? dayjs(row.fecha_inicio_plan) : null,
       fecha_fin_plan: row.fecha_fin_plan ? dayjs(row.fecha_fin_plan) : null,
     });
@@ -272,6 +285,16 @@ export default function OrdenesTrabajoInternasPage() {
     {
       key: "recursos_status", title: "Recursos Status", width: 150,
       render: (_: unknown, r: OTInternaRow) => r.recursos_status?.nombre ?? "-",
+    },
+    {
+      key: "asignado_a", title: "Asignado a", dataIndex: "asignado_a", width: 160, ellipsis: true,
+      render: (v: string | null) => v ?? "-",
+    },
+    {
+      key: "comentarios", title: "Comentarios", dataIndex: "comentarios", width: 220, ellipsis: true,
+      render: (v: string | null) => v
+        ? <Tooltip title={v}><span>{v}</span></Tooltip>
+        : "-",
     },
     {
       key: "estrategia", title: "Estrategia", width: 130,
@@ -405,6 +428,17 @@ export default function OrdenesTrabajoInternasPage() {
           size="small"
           scroll={{ x: 2200 }}
           sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+          // Row clickable — navega a la página detalle (igual que OT externas).
+          // Filtramos clicks de los botones de acciones para no navegar cuando
+          // ya están haciendo editar/eliminar desde la columna fija.
+          onRow={(r) => ({
+            onClick: (e) => {
+              const target = e.target as HTMLElement;
+              if (target.closest("button, .ant-popover, .ant-popconfirm")) return;
+              router.push(`/ordenes-trabajo-internas/${r.id}`);
+            },
+            style: { cursor: "pointer" },
+          })}
           pagination={paginacionEstandar({
             current: page,
             pageSize,
@@ -527,6 +561,25 @@ export default function OrdenesTrabajoInternasPage() {
                 tooltip="Texto libre por ahora. En el futuro se vinculará al catálogo de Tarea."
               >
                 <Input placeholder="MP1 · Cambio aceite trimestral" maxLength={200} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item name="asignado_a" label="Asignado a">
+                <Select
+                  allowClear
+                  showSearch
+                  placeholder="Operario que ejecuta"
+                  optionFilterProp="label"
+                  options={trabajadores.map((t) => ({
+                    value: t.nombre,
+                    label: `${t.nombre} — ${t.area}`,
+                  }))}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={24}>
+              <Form.Item name="comentarios" label="Comentarios">
+                <Input.TextArea rows={3} maxLength={2000} placeholder="Notas / instrucciones / contexto adicional" />
               </Form.Item>
             </Col>
           </Row>

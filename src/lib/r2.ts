@@ -68,6 +68,10 @@ export const R2Keys = {
     `ordenes-trabajo/${sanitize(otCodigo)}/compras/${sanitize(ocCodigo)}/factura`,
   compraSueltaGuia: (ocCodigo: string) => `compras-sueltas/${sanitize(ocCodigo)}/guia`,
   compraSueltaFactura: (ocCodigo: string) => `compras-sueltas/${sanitize(ocCodigo)}/factura`,
+  // Capturas de tickets (bugs/mejoras del ERP). No vinculados a OT.
+  ticket: () => `tickets`,
+  // Adjuntos de OT Interna — mismo patrón que OT Externa pero en otro namespace.
+  otInternaAdjunto: (otCodigo: string) => `ot-internas/${sanitize(otCodigo)}/adjuntos`,
 } as const;
 
 // Sanitiza un segmento de path para evitar inyección (../, slashes, etc.).

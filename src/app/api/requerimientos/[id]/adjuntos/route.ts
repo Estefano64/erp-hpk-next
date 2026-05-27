@@ -90,6 +90,19 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         usuario_sube: usuario,
       },
     });
+
+    // Auditoría: registrar la subida en el historial de la OT padre (si existe).
+    if (item.ot_id) {
+      await prisma.oTHistorial.create({
+        data: {
+          ot_id: item.ot_id,
+          tipo_operacion: "ADJUNTO",
+          descripcion: `Adjunto subido en requerimiento (item ${itemId}): ${nombre_archivo}`,
+          usuario,
+        },
+      });
+    }
+
     return NextResponse.json({ data: created }, { status: 201 });
   } catch (error) {
     console.error("POST adjunto requerimiento error:", error);
