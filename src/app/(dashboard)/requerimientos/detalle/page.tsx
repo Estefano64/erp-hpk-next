@@ -57,6 +57,7 @@ import { useResponsive, modalWidth } from "@/lib/responsive";
 import dayjs, { Dayjs } from "dayjs";
 
 import { formatDateOnly } from "@/lib/dates";
+import { R2FileLink } from "@/components/R2FileLink";
 const { Title, Text } = Typography;
 const { TextArea } = Input;
 
@@ -94,7 +95,7 @@ interface RequerimientoApi {
   status_requerimiento: { codigo: string; nombre: string } | null;
   status_cotizacion: { codigo: string; nombre: string } | null;
   status_oc: { codigo: string; nombre: string } | null;
-  adjuntos?: { id: number; nombre_archivo: string; ruta: string; tamano: number }[];
+  adjuntos?: { id: number; nombre_archivo: string; r2_key: string; tamano: number }[];
 }
 
 // View-model plano para la tabla
@@ -129,7 +130,7 @@ interface Requerimiento {
   cliente_nombre: string | null;
   observaciones?: string | null;
   stock_actual?: number;
-  adjuntos?: { id: number; nombre_archivo: string; ruta: string; tamano: number }[];
+  adjuntos?: { id: number; nombre_archivo: string; r2_key: string; tamano: number }[];
 }
 
 function normalize(r: RequerimientoApi): Requerimiento {
@@ -695,9 +696,9 @@ function RequerimientosDetalleInner() {
             <Space size={4} wrap>
               {r.adjuntos.map((a) => (
                 <Tag key={a.id} style={{ fontSize: 10, margin: 0 }}>
-                  <a href={a.ruta} target="_blank" rel="noopener noreferrer">
+                  <R2FileLink resource="req-adjunto" resourceId={a.id} r2Key={a.r2_key}>
                     📎 {a.nombre_archivo} ({(a.tamano / 1024).toFixed(1)} KB)
-                  </a>
+                  </R2FileLink>
                 </Tag>
               ))}
             </Space>
@@ -809,9 +810,9 @@ function RequerimientosDetalleInner() {
                   {r.adjuntos.map((a) => (
                     <Tooltip key={a.id} title={`${a.nombre_archivo} (${(a.tamano / 1024).toFixed(1)} KB)`}>
                       <Tag style={{ fontSize: 10, margin: 0 }}>
-                        <a href={a.ruta} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+                        <R2FileLink resource="req-adjunto" resourceId={a.id} r2Key={a.r2_key}>
                           📎 {a.nombre_archivo.length > 18 ? `${a.nombre_archivo.slice(0, 15)}...` : a.nombre_archivo}
-                        </a>
+                        </R2FileLink>
                       </Tag>
                     </Tooltip>
                   ))}

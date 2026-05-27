@@ -931,7 +931,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
               </Col>
               <Col xs={16} md={6}>
                 <FieldLabel>Cotización (monto + moneda)</FieldLabel>
-                <Input.Group compact style={{ display: "flex" }}>
+                <Space.Compact style={{ display: "flex" }}>
                   <InputNumber
                     placeholder="0.00"
                     min={0}
@@ -953,7 +953,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                     style={{ width: 110 }}
                     options={monedas.map((m) => ({ value: m.codigo, label: m.codigo }))}
                   />
-                </Input.Group>
+                </Space.Compact>
               </Col>
             </Row>
           )}

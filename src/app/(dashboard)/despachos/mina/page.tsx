@@ -15,6 +15,7 @@ import type { UploadFile } from "antd/es/upload/interface";
 import dayjs, { Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
 import { formatDateOnly } from "@/lib/dates";
+import { uploadToR2 } from "@/lib/r2-client";
 
 const { Title, Text } = Typography;
 
@@ -36,7 +37,7 @@ interface OTLista {
   ns: string | null;
   plaqueteo: string | null;
   items_count: number;
-  adjuntos_despacho: Array<{ id: number; nombre_archivo: string; ruta: string; fecha_subida: string; tamano: number }>;
+  adjuntos_despacho: Array<{ id: number; nombre_archivo: string; r2_key: string; fecha_subida: string; tamano: number }>;
 }
 
 export default function DespachoMinaPage() {
@@ -102,15 +103,25 @@ export default function DespachoMinaPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Error");
 
-      // 2) Subida opcional del archivo de guía (vía endpoint de adjuntos existente)
+      // 2) Subida opcional del archivo de guía (vía R2 + endpoint de adjuntos)
       if (archivoGuia.length > 0 && archivoGuia[0].originFileObj) {
-        const fd = new FormData();
-        fd.append("file", archivoGuia[0].originFileObj as File);
-        fd.append("etapa", "despacho");
-        const upRes = await fetch(`/api/ordenes-trabajo/${otSel.id}/adjuntos`, { method: "POST", body: fd });
-        if (!upRes.ok) {
-          const upErr = await upRes.json().catch(() => ({}));
-          msg.warning(`Guía emitida, pero falló la subida del archivo: ${upErr.error ?? "error"}`);
+        try {
+          const meta = await uploadToR2({
+            file: archivoGuia[0].originFileObj as File,
+            uploadUrlEndpoint: `/api/ordenes-trabajo/${otSel.id}/adjuntos/upload-url`,
+            extra: { etapa: "despacho" },
+          });
+          const upRes = await fetch(`/api/ordenes-trabajo/${otSel.id}/adjuntos`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...meta, etapa: "despacho" }),
+          });
+          if (!upRes.ok) {
+            const upErr = await upRes.json().catch(() => ({}));
+            msg.warning(`Guía emitida, pero falló el registro del archivo: ${upErr.error ?? "error"}`);
+          }
+        } catch (e) {
+          msg.warning(`Guía emitida, pero falló la subida del archivo: ${e instanceof Error ? e.message : "error"}`);
         }
       }
 

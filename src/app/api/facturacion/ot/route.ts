@@ -28,7 +28,7 @@ export async function GET(_req: NextRequest) {
         ot_status: true, taller_status: true,
         adjuntos: {
           where: { etapa_codigo: { in: ["despacho", "termino"] } },
-          select: { id: true, etapa_codigo: true, nombre_archivo: true, ruta: true, fecha_subida: true },
+          select: { id: true, etapa_codigo: true, nombre_archivo: true, r2_key: true, fecha_subida: true },
           orderBy: { fecha_subida: "desc" },
         },
       },

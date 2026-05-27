@@ -497,7 +497,7 @@ async function main() {
             orden_trabajo_id: ot.id,
             etapa_codigo: "despacho",
             nombre_archivo: `guia-firmada-${otNum}.pdf`,
-            ruta: `seed/despacho/${otNum}-guia.pdf`,
+            r2_key: `ot/adjuntos/seed-${otNum}-guia.pdf`,
             tipo_mime: "application/pdf",
             tamano: randInt(50000, 500000),
           },

@@ -82,7 +82,7 @@ export function DuplicateHint<T>({
       type="warning"
       icon={<WarningOutlined />}
       style={{ marginTop: 6 }}
-      message={
+      title={
         <Text strong style={{ fontSize: 12 }}>
           Ya existe(n) {matches.length} registro(s) similar(es)
         </Text>

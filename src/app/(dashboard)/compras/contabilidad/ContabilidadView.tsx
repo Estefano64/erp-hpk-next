@@ -5,7 +5,7 @@ import {
   Typography, Card, Table, Tag, Space, Button, Input, Empty, Row, Col, Statistic, Segmented,
 } from "antd";
 import {
-  ReloadOutlined, SearchOutlined, FileTextOutlined, DownloadOutlined,
+  ReloadOutlined, SearchOutlined, FileTextOutlined,
   FileDoneOutlined, AuditOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
@@ -16,6 +16,7 @@ import {
   useColumnasOcultas, ColumnasToggleButton, visibleColumns,
   filtroPorColumna, useColumnasRedimensionables, STICKY_HEADER,
 } from "@/lib/tables";
+import { R2FileLink } from "@/components/R2FileLink";
 
 const { Title, Text } = Typography;
 
@@ -31,9 +32,9 @@ interface CompraRow {
   fecha_entrega_real: string | null;
   nro_factura: string | null;
   nro_guia: string | null;
-  guia_archivo: string | null;
+  guia_key: string | null;
   guia_nombre: string | null;
-  factura_archivo: string | null;
+  factura_key: string | null;
   factura_nombre: string | null;
 }
 
@@ -77,10 +78,10 @@ export default function ContabilidadView({
   const filtradas = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
-      if (filtroDocs === "con_factura" && !r.factura_archivo) return false;
-      if (filtroDocs === "sin_factura" && r.factura_archivo) return false;
-      if (filtroDocs === "con_guia" && !r.guia_archivo) return false;
-      if (filtroDocs === "sin_guia" && r.guia_archivo) return false;
+      if (filtroDocs === "con_factura" && !r.factura_key) return false;
+      if (filtroDocs === "sin_factura" && r.factura_key) return false;
+      if (filtroDocs === "con_guia" && !r.guia_key) return false;
+      if (filtroDocs === "sin_guia" && r.guia_key) return false;
       if (!q) return true;
       return (
         r.numero_po.toLowerCase().includes(q) ||
@@ -93,22 +94,30 @@ export default function ContabilidadView({
   }, [rows, search, filtroDocs]);
 
   const kpis = useMemo(() => {
-    const conFactura = rows.filter((r) => r.factura_archivo).length;
-    const conGuia = rows.filter((r) => r.guia_archivo).length;
-    const sinFactura = rows.filter((r) => !r.factura_archivo).length;
+    const conFactura = rows.filter((r) => r.factura_key).length;
+    const conGuia = rows.filter((r) => r.guia_key).length;
+    const sinFactura = rows.filter((r) => !r.factura_key).length;
     return { total: rows.length, conFactura, conGuia, sinFactura };
   }, [rows]);
 
-  const archivoCell = (archivo: string | null, nombre: string | null, label: string) => {
-    if (!archivo) return <Tag color="default">Sin {label}</Tag>;
+  const archivoCell = (
+    r2Key: string | null,
+    nombre: string | null,
+    label: string,
+    resource: "compra-guia" | "compra-factura",
+    compraId: number,
+  ) => {
+    if (!r2Key) return <Tag color="default">Sin {label}</Tag>;
     return (
-      <Space size={4}>
-        <a href={archivo} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12 }}>
-          <FileTextOutlined style={{ color: brand.cyan, marginRight: 4 }} />
-          {nombre || `Ver ${label}`}
-        </a>
-        <Button size="small" type="text" icon={<DownloadOutlined />} href={archivo} target="_blank" title={`Descargar ${label}`} />
-      </Space>
+      <R2FileLink
+        resource={resource}
+        resourceId={compraId}
+        r2Key={r2Key}
+        style={{ fontSize: 12 }}
+      >
+        <FileTextOutlined style={{ color: brand.cyan, marginRight: 4 }} />
+        {nombre || `Ver ${label}`}
+      </R2FileLink>
     );
   };
 
@@ -148,7 +157,7 @@ export default function ContabilidadView({
     },
     {
       key: "guia", title: "Archivo Guía", width: 200, align: "left",
-      render: (_v, r) => archivoCell(r.guia_archivo, r.guia_nombre, "guía"),
+      render: (_v, r) => archivoCell(r.guia_key, r.guia_nombre, "guía", "compra-guia", r.id),
     },
     {
       key: "nro_factura", title: "Nro Factura", dataIndex: "nro_factura", width: 130, align: "left",
@@ -157,7 +166,7 @@ export default function ContabilidadView({
     },
     {
       key: "factura", title: "Archivo Factura", width: 200, align: "left",
-      render: (_v, r) => archivoCell(r.factura_archivo, r.factura_nombre, "factura"),
+      render: (_v, r) => archivoCell(r.factura_key, r.factura_nombre, "factura", "compra-factura", r.id),
     },
     {
       key: "fecha_entrega_real", title: "F. Recepción", dataIndex: "fecha_entrega_real", width: 110, align: "center",

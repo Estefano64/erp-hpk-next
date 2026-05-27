@@ -23,6 +23,7 @@ import { useResponsive, modalWidth } from "@/lib/responsive";
 dayjs.extend(isoWeek);
 import { useCachedFetch } from "@/lib/useCachedFetch";
 import { formatDateOnly, formatDateOnlyShort } from "@/lib/dates";
+import { R2FileLink } from "@/components/R2FileLink";
 import {
   numeracionColumn,
   paginacionEstandar,
@@ -76,7 +77,7 @@ interface RequerimientoRow {
   } | null;
   material: { codigo: string; descripcion: string; unidad_medida_codigo: string | null; stock_actual: string | number | null } | null;
   observaciones?: string | null;
-  adjuntos?: { id: number; nombre_archivo: string; ruta: string; tamano: number }[];
+  adjuntos?: { id: number; nombre_archivo: string; r2_key: string; tamano: number }[];
 }
 
 interface CatalogOpt { codigo: string; nombre: string; orden?: number | null }
@@ -943,9 +944,9 @@ export default function RequerimientosPage() {
             <Space size={4} wrap>
               {r.adjuntos.map((a) => (
                 <Tag key={a.id} style={{ fontSize: 10, margin: 0 }}>
-                  <a href={a.ruta} target="_blank" rel="noopener noreferrer">
+                  <R2FileLink resource="req-adjunto" resourceId={a.id} r2Key={a.r2_key}>
                     📎 {a.nombre_archivo} ({(a.tamano / 1024).toFixed(1)} KB)
-                  </a>
+                  </R2FileLink>
                 </Tag>
               ))}
             </Space>
@@ -1004,9 +1005,9 @@ export default function RequerimientosPage() {
                   {r.adjuntos.map((a) => (
                     <Tooltip key={a.id} title={`${a.nombre_archivo} (${(a.tamano / 1024).toFixed(1)} KB)`}>
                       <Tag style={{ fontSize: 10, margin: 0 }}>
-                        <a href={a.ruta} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+                        <R2FileLink resource="req-adjunto" resourceId={a.id} r2Key={a.r2_key}>
                           📎 {a.nombre_archivo.length > 18 ? `${a.nombre_archivo.slice(0, 15)}...` : a.nombre_archivo}
-                        </a>
+                        </R2FileLink>
                       </Tag>
                     </Tooltip>
                   ))}

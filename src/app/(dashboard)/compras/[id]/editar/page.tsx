@@ -348,7 +348,7 @@ export default function EditarOCPage() {
         type="info"
         showIcon
         icon={<FileTextOutlined />}
-        message="Editor tipo Excel: edita las celdas directamente, agrega filas libres y borra las que no necesites. Al guardar se recalcula el total de la OC."
+        title="Editor tipo Excel: edita las celdas directamente, agrega filas libres y borra las que no necesites. Al guardar se recalcula el total de la OC."
         style={{ marginBottom: 12 }}
         banner
       />
