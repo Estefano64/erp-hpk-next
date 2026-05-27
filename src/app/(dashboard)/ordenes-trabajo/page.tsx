@@ -88,6 +88,9 @@ interface OTRecord {
   base_metalica: { nombre: string } | null;
   usuario_crea: string | null;
   fecha_creacion: string | null;
+  // Estado de la hoja de evaluación técnica (último registro). null = sin
+  // evaluación todavía.
+  evaluaciones_tecnicas?: { estado: string }[];
 }
 
 interface CatalogOption {
@@ -107,6 +110,20 @@ const prioridadColor: Record<string, string> = {
   "3": "cyan",
   E: "volcano",
 };
+
+// Color e etiqueta para el icono / tag del estado de la hoja de evaluación.
+// Estados reales: BORRADOR, COMPLETADA, PENDIENTE_APROBACION, APROBADA, RECHAZADA.
+const EVAL_META: Record<string, { color: string; label: string; tag: string }> = {
+  BORRADOR: { color: "#FAAD14", label: "Borrador", tag: "warning" },          // amarillo
+  COMPLETADA: { color: "#13C2C2", label: "Completada (lista)", tag: "cyan" }, // celeste
+  PENDIENTE_APROBACION: { color: "#1677FF", label: "Pendiente aprobación", tag: "processing" },
+  APROBADA: { color: "#52C41A", label: "Aprobada", tag: "success" },          // verde
+  RECHAZADA: { color: "#cf1322", label: "Rechazada", tag: "error" },
+};
+function evalEstadoMeta(estado: string | null) {
+  if (!estado) return { color: "#bfbfbf", label: "Sin evaluación", tag: "default" };
+  return EVAL_META[estado] ?? { color: "#8c8c8c", label: estado, tag: "default" };
+}
 
 export default function OrdenesTrabajoPage() {
   const router = useRouter();
@@ -289,6 +306,25 @@ export default function OrdenesTrabajoPage() {
         ) : "-",
     },
     {
+      key: "evaluacion_estado",
+      title: "Evaluación",
+      width: 140,
+      sorter: (a, b) => (a.evaluaciones_tecnicas?.[0]?.estado ?? "").localeCompare(b.evaluaciones_tecnicas?.[0]?.estado ?? ""),
+      filters: [
+        { text: "Sin evaluación", value: "__none__" },
+        ...Object.keys(EVAL_META).map((k) => ({ text: EVAL_META[k].label, value: k })),
+      ],
+      onFilter: (value, r) => {
+        const est = r.evaluaciones_tecnicas?.[0]?.estado ?? null;
+        return value === "__none__" ? est === null : est === value;
+      },
+      render: (_: unknown, r: OTRecord) => {
+        const est = r.evaluaciones_tecnicas?.[0]?.estado ?? null;
+        const meta = evalEstadoMeta(est);
+        return <Tag color={meta.tag}>{meta.label}</Tag>;
+      },
+    },
+    {
       key: "recursos_status",
       title: "Recursos",
       width: 160,
@@ -469,13 +505,19 @@ export default function OrdenesTrabajoPage() {
               onClick={() => { setModalOtId(record.id); setModalOpen(true); }}
             />
           </Tooltip>
-          <Tooltip title="Hoja de evaluación">
-            <Button
-              type="text"
-              icon={<AuditOutlined />}
-              onClick={() => router.push(`/ordenes-trabajo/${record.id}/evaluacion`)}
-            />
-          </Tooltip>
+          {(() => {
+            const estadoEval = record.evaluaciones_tecnicas?.[0]?.estado ?? null;
+            const meta = evalEstadoMeta(estadoEval);
+            return (
+              <Tooltip title={`Hoja de evaluación — ${meta.label}`}>
+                <Button
+                  type="text"
+                  icon={<AuditOutlined style={{ color: meta.color, fontSize: 16 }} />}
+                  onClick={() => router.push(`/ordenes-trabajo/${record.id}/evaluacion`)}
+                />
+              </Tooltip>
+            );
+          })()}
         </Space>
       ),
     },

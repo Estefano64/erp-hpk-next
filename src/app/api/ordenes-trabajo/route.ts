@@ -91,6 +91,10 @@ export async function GET(req: NextRequest) {
           ot_status: true,
           recursos_status: true,
           taller_status: true,
+          // Sólo el estado de la hoja de evaluación (la fila completa no se
+          // usa en el listado). La relación es 1-N pero en la práctica solo hay
+          // una por OT; tomamos el último id por las dudas.
+          evaluaciones_tecnicas: { select: { estado: true }, orderBy: { id: "desc" }, take: 1 },
         },
         orderBy: { id: "desc" },
         skip: (page - 1) * limit,
