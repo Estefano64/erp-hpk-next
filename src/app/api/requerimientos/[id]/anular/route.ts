@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
-import { getAuditUser, isAdmin } from "@/lib/audit";
+import { getAuditUser } from "@/lib/audit";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-// POST /api/requerimientos/[id]/anular — solo admin. No se puede anular si ya tiene OC.
+// POST /api/requerimientos/[id]/anular
+// Permiso: cualquier usuario autenticado (consistente con aprobar/desaprobar).
+// No se puede anular si ya tiene OC asociada.
 export async function POST(req: NextRequest, ctx: Ctx) {
-  if (!(await isAdmin(req))) {
-    return NextResponse.json({ error: "Solo administradores pueden anular requerimientos." }, { status: 403 });
+  const token = await getToken({ req });
+  if (!token) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
   try {
     const { id } = await ctx.params;
@@ -20,7 +24,11 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       select: {
         status_requerimiento_codigo: true,
         status_cotizacion_codigo: true,
-        po_id: true, ot_id: true, nro_req: true, observaciones: true,
+        po_id: true,
+        ot_id: true,
+        orden_trabajo_interna_id: true,
+        nro_req: true,
+        observaciones: true,
       },
     });
     if (!current) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
@@ -49,9 +57,11 @@ export async function POST(req: NextRequest, ctx: Ctx) {
             : current.observaciones,
         },
       });
+      // Historial polimórfico (OT externa o interna).
       await tx.oTHistorial.create({
         data: {
           ot_id: current.ot_id,
+          orden_trabajo_interna_id: current.orden_trabajo_interna_id,
           tipo_operacion: "Otro",
           descripcion: `Requerimiento ${current.nro_req ?? id} anulado${motivo ? ` — ${motivo}` : ""}`,
           usuario,

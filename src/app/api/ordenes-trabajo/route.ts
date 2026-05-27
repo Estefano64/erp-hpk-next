@@ -310,9 +310,9 @@ export async function POST(req: NextRequest) {
           orderBy: { item_numero: "asc" },
         });
         if (tareas.length > 0) {
-          const { nextNroReq, pickDescripcionFromTarea, pickCantidadFromTarea } = await import("@/lib/requerimientos");
+          const { nextNroReqExterna, pickDescripcionFromTarea, pickCantidadFromTarea } = await import("@/lib/requerimientos");
           await prisma.$transaction(async (tx) => {
-            const nroReq = await nextNroReq(tx);
+            const nroReq = await nextNroReqExterna(tx, created.id);
 
             // Pre-cargar Materiales con todos los campos que usamos (descripción real,
             // unidad de medida y fabricante específico — no la del cod_rep que es genérica).

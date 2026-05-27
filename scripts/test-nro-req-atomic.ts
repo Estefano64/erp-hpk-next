@@ -6,7 +6,7 @@
  * Uso: npx tsx scripts/test-nro-req-atomic.ts
  */
 import { PrismaClient } from "@prisma/client";
-import { nextNroReq } from "../src/lib/requerimientos";
+import { nextNroReqExterna } from "../src/lib/requerimientos";
 
 const prisma = new PrismaClient();
 const CONCURRENCY = 20;
@@ -31,7 +31,7 @@ async function main() {
   // Lanzar N transacciones en paralelo
   const promesas = Array.from({ length: CONCURRENCY }, (_, i) =>
     prisma.$transaction(async (tx) => {
-      const nro = await nextNroReq(tx);
+      const nro = await nextNroReqExterna(tx, ot.id);
       await tx.oTRepuesto.create({
         data: {
           ot_id: ot.id,

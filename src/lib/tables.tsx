@@ -406,10 +406,16 @@ function SortableResizableTitle(props: SortableResizableTitleProps) {
     ? { ref: sort.setNodeRef as unknown as React.Ref<HTMLTableCellElement> }
     : {};
 
+  // dnd-kit asigna `aria-describedby="DndDescribedBy-{N}"` con un counter
+  // interno cuyo N puede diferir entre SSR y cliente (depende de cuántos
+  // SortableContext se inicializaron en cada pasada). suppressHydrationWarning
+  // silencia el warning de hydration para este atributo cosmético — el resto
+  // del HTML se hidrata normal.
   const dragHandle = isInteractive ? (
     <span
       {...sort.attributes}
       {...sort.listeners}
+      suppressHydrationWarning
       style={{
         position: "absolute",
         left: 0,

@@ -3,9 +3,11 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 
 // Áreas/puestos cuyos trabajadores NO se asignan como operarios en tareas u
-// OTs. Confirmado con el usuario el 2026-05-26: jefes, compras, limpieza y
-// seguridad quedan fuera del selector de operario.
-const AREAS_NO_OPERATIVAS = ["LIMPIEZA", "SEGURIDAD"];
+// OTs. Confirmado con el usuario el 2026-05-26: jefes, compras y seguridad
+// quedan fuera del selector de operario.
+// LIMPIEZA dejó de excluirse el 2026-05-27 porque pasó a ser área operativa
+// que puede ejecutar OTs internas.
+const AREAS_NO_OPERATIVAS = ["SEGURIDAD"];
 const PUESTOS_NO_OPERATIVOS = ["COMPRAS"];
 
 // Áreas cuyos trabajadores NO pueden firmar como evaluador técnico. Logística

@@ -1,39 +1,81 @@
 import { Prisma } from "@prisma/client";
 
-/**
- * Genera el próximo `nro_req` global con formato REQ-{YY}-{NNNN}.
- * Ejemplos: REQ-26-0001, REQ-26-0002.
- *
- * Debe llamarse dentro de una transacción. Usa pg_advisory_xact_lock para
- * serializar dos requests concurrentes que pidan número en simultáneo —
- * el segundo espera al COMMIT/ROLLBACK del primero antes de leer max+1.
- */
-export async function nextNroReq(tx: Prisma.TransactionClient): Promise<string> {
-  const yy = new Date().getFullYear().toString().slice(-2);
-  const prefix = `REQ-${yy}-`;
+// ─── Generación de nro_req ─────────────────────────────────────────────────
+// El nro_req identifica a un requerimiento (grupo de items). Formato:
+//   {códigoOT}-{N}  ej. "390626-1", "390626-2", ...
+//
+// El correlativo N es por OT (no global). Items dentro del mismo nro_req
+// comparten ese código y se diferencian por `item_req` (1, 2, 3...).
+//
+// Se usa pg_advisory_xact_lock dentro de la transacción para serializar dos
+// requests concurrentes que pidan número en simultáneo — el segundo espera al
+// COMMIT/ROLLBACK del primero antes de leer max+1.
 
-  // Lock por año para serializar la generación. hashtext devuelve int4;
-  // el lock se libera automáticamente al cerrar la transacción.
+async function lockNroReq(tx: Prisma.TransactionClient, otCodigo: string): Promise<void> {
   await tx.$executeRawUnsafe(
     `SELECT pg_advisory_xact_lock(hashtext($1))`,
-    `nro_req:${yy}`,
+    `nro_req:${otCodigo}`,
   );
+}
 
-  // Buscar el max numérico real (no string-sort, para que no rompa pasando 9999).
-  // Tomamos los últimos N candidatos por nro_req desc y elegimos el max numérico.
-  const candidatos = await tx.oTRepuesto.findMany({
-    where: { nro_req: { startsWith: prefix } },
-    orderBy: { nro_req: "desc" },
-    select: { nro_req: true },
-    take: 50,
-  });
+function nextCorrelativo(candidatos: { nro_req: string | null }[], prefix: string): number {
   let max = 0;
   for (const c of candidatos) {
     const n = parseInt((c.nro_req ?? "").substring(prefix.length), 10);
     if (Number.isFinite(n) && n > max) max = n;
   }
-  const seq = max + 1;
-  return `${prefix}${String(seq).padStart(4, "0")}`;
+  return max + 1;
+}
+
+/**
+ * Próximo nro_req para una OT externa. Devuelve "{códigoOT}-{N}".
+ * Si la OT no tiene `ot` (código legible), usa "OT-{id}" como fallback.
+ */
+export async function nextNroReqExterna(
+  tx: Prisma.TransactionClient,
+  otId: number,
+): Promise<string> {
+  const ot = await tx.ordenTrabajo.findUnique({
+    where: { id: otId },
+    select: { id: true, ot: true },
+  });
+  if (!ot) throw new Error(`OT ${otId} no existe`);
+  const otCodigo = (ot.ot ?? "").trim() || `OT-${ot.id}`;
+  const prefix = `${otCodigo}-`;
+
+  await lockNroReq(tx, otCodigo);
+
+  const candidatos = await tx.oTRepuesto.findMany({
+    where: { ot_id: otId, nro_req: { startsWith: prefix } },
+    select: { nro_req: true },
+  });
+  const seq = nextCorrelativo(candidatos, prefix);
+  return `${prefix}${seq}`;
+}
+
+/**
+ * Próximo nro_req para una OT interna. Mismo patrón que la externa.
+ */
+export async function nextNroReqInterna(
+  tx: Prisma.TransactionClient,
+  otInternaId: number,
+): Promise<string> {
+  const ot = await tx.ordenTrabajoInterna.findUnique({
+    where: { id: otInternaId },
+    select: { id: true, ot: true },
+  });
+  if (!ot) throw new Error(`OT interna ${otInternaId} no existe`);
+  const otCodigo = (ot.ot ?? "").trim() || `OTI-${ot.id}`;
+  const prefix = `${otCodigo}-`;
+
+  await lockNroReq(tx, otCodigo);
+
+  const candidatos = await tx.oTRepuesto.findMany({
+    where: { orden_trabajo_interna_id: otInternaId, nro_req: { startsWith: prefix } },
+    select: { nro_req: true },
+  });
+  const seq = nextCorrelativo(candidatos, prefix);
+  return `${prefix}${seq}`;
 }
 
 /**

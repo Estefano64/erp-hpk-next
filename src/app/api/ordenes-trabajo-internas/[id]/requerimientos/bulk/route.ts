@@ -1,8 +1,12 @@
+// POST /api/ordenes-trabajo-internas/[id]/requerimientos/bulk
+// Crea un requerimiento (un nro_req) con N items para una OT INTERNA.
+// Análogo a /api/ordenes-trabajo/[id]/requerimientos/bulk pero filtra/inserta
+// por orden_trabajo_interna_id.
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
-import { nextNroReqExterna, nextItemReq } from "@/lib/requerimientos";
+import { nextNroReqInterna, nextItemReqInterna } from "@/lib/requerimientos";
 import { parseDateOnly } from "@/lib/dates";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -23,19 +27,17 @@ const ItemSchema = z.object({
 
 const BulkSchema = z.object({
   items: z.array(ItemSchema).min(1).max(100),
-  // Si se especifica, los items se agregan a ese nro_req existente (debe estar en BORRADOR o SIN_APROBACION).
+  // Si se especifica, los items se agregan a ese nro_req existente.
   // Si no, se genera un nro_req nuevo.
   nro_req: z.string().trim().optional().nullable(),
 });
 
-// POST /api/ordenes-trabajo/[id]/requerimientos/bulk
-// Crea un requerimiento (un nro_req) con N items.
 export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
-    const otId = Number(id);
-    if (!Number.isFinite(otId) || otId <= 0) {
-      return NextResponse.json({ error: "ID de OT inválido" }, { status: 400 });
+    const otInternaId = Number(id);
+    if (!Number.isFinite(otInternaId) || otInternaId <= 0) {
+      return NextResponse.json({ error: "ID de OT interna inválido" }, { status: 400 });
     }
     const body = await req.json();
     const parsed = BulkSchema.safeParse(body);
@@ -44,7 +46,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     }
     const usuario = (await getAuditUser(req)) ?? "sistema";
 
-    // Resolver material_id para los MAC con material_codigo
+    // Resolver material_id para los MAC
     const codigosMAC = [...new Set(
       parsed.data.items
         .filter((i) => i.tipo_codigo === "MAC" && i.material_codigo)
@@ -58,7 +60,6 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       : [];
     const matMap = new Map(materiales.map((m) => [m.codigo, m.material_id]));
 
-    // Validar que los MAC con material_codigo existan
     for (const it of parsed.data.items) {
       if (it.tipo_codigo === "MAC") {
         if (!it.material_codigo) {
@@ -71,13 +72,16 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      const otExists = await tx.ordenTrabajo.findUnique({ where: { id: otId }, select: { id: true } });
+      const otExists = await tx.ordenTrabajoInterna.findUnique({
+        where: { id: otInternaId },
+        select: { id: true },
+      });
       if (!otExists) throw new Error("NOT_FOUND_OT");
 
       let nroReq: string;
       if (parsed.data.nro_req) {
         const existing = await tx.oTRepuesto.findFirst({
-          where: { ot_id: otId, nro_req: parsed.data.nro_req },
+          where: { orden_trabajo_interna_id: otInternaId, nro_req: parsed.data.nro_req },
           select: { status_requerimiento_codigo: true },
         });
         if (!existing) throw new Error("INVALID_NRO_REQ");
@@ -87,9 +91,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         }
         nroReq = parsed.data.nro_req;
       } else {
-        nroReq = await nextNroReqExterna(tx, otId);
+        nroReq = await nextNroReqInterna(tx, otInternaId);
       }
-      let itemReqStart = await nextItemReq(tx, otId);
+      let itemReqStart = await nextItemReqInterna(tx, otInternaId);
 
       const created = [];
       for (const it of parsed.data.items) {
@@ -98,7 +102,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           : null;
         const row = await tx.oTRepuesto.create({
           data: {
-            ot_id: otId,
+            orden_trabajo_interna_id: otInternaId,
             material_id,
             material_codigo: it.material_codigo ?? null,
             tipo_codigo: it.tipo_codigo,
@@ -121,10 +125,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         created.push(row);
       }
 
-      // Historial
       await tx.oTHistorial.create({
         data: {
-          ot_id: otId,
+          orden_trabajo_interna_id: otInternaId,
           tipo_operacion: "REQUERIMIENTO",
           descripcion: parsed.data.nro_req
             ? `Agregados ${created.length} item(s) al requerimiento ${nroReq}.`
@@ -143,15 +146,15 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message === "NOT_FOUND_OT") {
-      return NextResponse.json({ error: "OT no encontrada" }, { status: 404 });
+      return NextResponse.json({ error: "OT interna no encontrada" }, { status: 404 });
     }
     if (error instanceof Error && error.message === "INVALID_NRO_REQ") {
-      return NextResponse.json({ error: "Ese nro_req no existe en esta OT." }, { status: 400 });
+      return NextResponse.json({ error: "Ese nro_req no existe en esta OT interna." }, { status: 400 });
     }
     if (error instanceof Error && error.message === "LOCKED_NRO_REQ") {
       return NextResponse.json({ error: "No se pueden agregar items a un requerimiento aprobado o anulado." }, { status: 400 });
     }
-    console.error("POST /requerimientos/bulk error:", error);
+    console.error("POST /api/ordenes-trabajo-internas/[id]/requerimientos/bulk error:", error);
     return NextResponse.json({ error: "Error al crear requerimiento" }, { status: 500 });
   }
 }

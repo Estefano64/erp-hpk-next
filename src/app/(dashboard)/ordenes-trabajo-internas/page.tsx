@@ -8,7 +8,7 @@ import {
 } from "antd";
 import {
   ToolOutlined, PlusOutlined, ReloadOutlined, SearchOutlined,
-  EditOutlined, DeleteOutlined,
+  EditOutlined, DeleteOutlined, EyeOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { type Dayjs } from "dayjs";
@@ -64,6 +64,7 @@ interface OTInternaRow {
 interface FormValues {
   tipo_ot_interna_codigo: string;
   area_taller: string;
+  equipo_codigo?: string;
   descripcion: string;
   planta_codigo?: string;
   prioridad_atencion_codigo?: string;
@@ -107,11 +108,18 @@ export default function OrdenesTrabajoInternasPage() {
   const [estrategias, setEstrategias] = useState<EstrategiaOption[]>([]);
   const [trabajadores, setTrabajadores] = useState<TrabajadorOpt[]>([]);
 
-  // El dropdown "Asignado a" en OTs internas solo muestra trabajadores del
-  // área Logística + Antonio (Antonio Zumaeta Mendoza). Decisión del usuario.
+  // El dropdown "Asignado a" en OTs internas muestra solo trabajadores de las
+  // áreas operativas relevantes para mantenimiento del taller, más Antonio
+  // (Antonio Zumaeta Mendoza) por nombre. Decisión del usuario (2026-05-27).
+  const AREAS_ASIGNABLES_OT_INTERNA = new Set([
+    "LOGISTICA",
+    "MANTENIMIENTO",
+    "LIMPIEZA",
+    "SOFTWARE",
+  ]);
   const trabajadoresAsignables = trabajadores.filter(
     (t) =>
-      t.area?.toUpperCase() === "LOGISTICA" ||
+      (t.area && AREAS_ASIGNABLES_OT_INTERNA.has(t.area.toUpperCase())) ||
       t.nombre.toLowerCase().includes("antonio"),
   );
 
@@ -175,6 +183,7 @@ export default function OrdenesTrabajoInternasPage() {
     form.setFieldsValue({
       tipo_ot_interna_codigo: row.tipo_ot_interna?.codigo ?? "",
       area_taller: row.area_taller ?? "",
+      equipo_codigo: row.equipo?.codigo,
       descripcion: row.descripcion ?? "",
       planta_codigo: row.planta?.codigo,
       prioridad_atencion_codigo: row.prioridad_atencion?.codigo,
@@ -340,9 +349,17 @@ export default function OrdenesTrabajoInternasPage() {
       render: (v: string | null) => v ? dayjs(v).format("DD/MM/YY HH:mm") : "-",
     },
     {
-      key: "acciones", title: "", width: 90, fixed: "right",
+      key: "acciones", title: "", width: 120, fixed: "right",
       render: (_: unknown, r: OTInternaRow) => (
         <Space size="small">
+          <Tooltip title="Ver detalle">
+            <Button
+              size="small"
+              type="text"
+              icon={<EyeOutlined />}
+              onClick={() => router.push(`/ordenes-trabajo-internas/${r.id}`)}
+            />
+          </Tooltip>
           <Tooltip title="Editar">
             <Button size="small" type="text" icon={<EditOutlined />} onClick={() => openEditarModal(r)} />
           </Tooltip>
@@ -500,6 +517,21 @@ export default function OrdenesTrabajoInternasPage() {
                   showSearch
                   optionFilterProp="label"
                   options={areasTallerGrouped()}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={24}>
+              <Form.Item
+                name="equipo_codigo"
+                label="Equipo (opcional)"
+                tooltip="Si la OT es para un equipo específico del taller, seleccionalo. Para trabajos del área en general, dejá vacío."
+              >
+                <Select
+                  placeholder="Buscar equipo (código o descripción)"
+                  showSearch
+                  allowClear
+                  optionFilterProp="label"
+                  options={equipos.map((e) => ({ value: e.codigo, label: `${e.codigo} — ${e.descripcion}` }))}
                 />
               </Form.Item>
             </Col>

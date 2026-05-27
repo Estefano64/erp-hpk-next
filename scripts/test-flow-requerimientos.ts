@@ -10,7 +10,7 @@
  * Uso: npx tsx scripts/test-flow-requerimientos.ts
  */
 import { PrismaClient } from "@prisma/client";
-import { nextNroReq } from "../src/lib/requerimientos";
+import { nextNroReqExterna } from "../src/lib/requerimientos";
 
 const prisma = new PrismaClient();
 
@@ -58,7 +58,7 @@ async function main() {
   // ── 2. Aplicar template (replica lógica de aplicar-template/route.ts) ──
   const tareasPara = codRep.tareas.slice(0, 5); // Tomar 5 items para el test
   const created = await prisma.$transaction(async (tx) => {
-    const nroReq = await nextNroReq(tx);
+    const nroReq = await nextNroReqExterna(tx, ot.id);
     const ids: number[] = [];
     for (let i = 0; i < tareasPara.length; i++) {
       const t = tareasPara[i];
