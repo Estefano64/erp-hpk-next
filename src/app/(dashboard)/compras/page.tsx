@@ -112,15 +112,6 @@ export default function ComprasPage() {
   const { rango: rangoSolicitud, setRango: setRangoSolicitud } = useRangoFechas();
   const { rango: rangoEntrega, setRango: setRangoEntrega } = useRangoFechas();
 
-  const [rol, setRol] = useState<string | null>(null);
-  const isAdmin = rol === "admin";
-  useEffect(() => {
-    fetch("/api/me")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d?.user) setRol(d.user.rol); })
-      .catch(() => { /* noop */ });
-  }, []);
-
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -467,7 +458,7 @@ export default function ComprasPage() {
           <Tooltip title="Generar PDF (OC)">
             <Button type="text" icon={<FilePdfOutlined style={{ color: "#cf1322" }} />} onClick={() => window.open(`/api/compras/${r.id}/pdf`, "_blank")} />
           </Tooltip>
-          {isAdmin && r.estado === "Pendiente" && (
+          {r.estado === "Pendiente" && (
             <Tooltip title="Aceptar OC (pasa a En Proceso)">
               <Popconfirm
                 title={`¿Aceptar la OC ${r.numero_po}?`}

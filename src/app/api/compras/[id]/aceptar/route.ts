@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
-import { getAuditUser, isAdmin } from "@/lib/audit";
+import { getAuditUser } from "@/lib/audit";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -8,10 +9,14 @@ type Params = { params: Promise<{ id: string }> };
 // Acepta una OC en estado PEND_OC y la pasa a PROCESO.
 // Registra el usuario que acepta en `usuario_aprueba` y deja traza
 // en OTHistorial de cada OT vinculada.
+//
+// Permiso: cualquier usuario autenticado (decisión del usuario, 2026-05-27).
+// El nombre del aprobador queda registrado en `usuario_aprueba` y en OTHistorial.
 export async function POST(req: NextRequest, { params }: Params) {
   try {
-    if (!(await isAdmin(req))) {
-      return NextResponse.json({ error: "Solo administradores pueden aceptar OC." }, { status: 403 });
+    const token = await getToken({ req });
+    if (!token) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
     const usuario = (await getAuditUser(req)) ?? "sistema";
     const { id } = await params;
