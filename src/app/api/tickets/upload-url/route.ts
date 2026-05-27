@@ -7,15 +7,11 @@
 // Body: { fileName, fileType, fileSize }
 // Devuelve: { uploadUrl, key }
 import { NextResponse, type NextRequest } from "next/server";
-import { getToken } from "next-auth/jwt";
 import { generateUploadUrl } from "@/lib/r2-helpers";
 import { R2Keys } from "@/lib/r2";
 import { readJsonBody, validateUploadBody } from "@/lib/r2-server";
 
 export async function POST(req: NextRequest) {
-  const token = await getToken({ req });
-  if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-
   const parsed = await readJsonBody(req);
   if (!parsed.ok) return parsed.response;
 

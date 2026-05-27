@@ -1,16 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Typography, Table, Button, Input, Select, Space, Tag, Modal, Form,
-  Upload, App, Popconfirm, Tooltip, Row, Col,
+  App, Popconfirm, Tooltip, Row, Col,
 } from "antd";
 import {
   BugOutlined, PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined,
-  PaperClipOutlined, EyeOutlined,
+  PaperClipOutlined, CloseCircleOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import type { UploadFile, RcFile } from "antd/es/upload";
 import dayjs from "dayjs";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
@@ -67,10 +66,13 @@ export default function TicketsPage() {
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
   const [filterEstado, setFilterEstado] = useState<string | undefined>();
 
-  // Modal "Nuevo"
+  // Modal "Nuevo" — la captura se acepta vía Ctrl+V (paste del portapapeles).
+  // Más práctico que abrir un selector de archivos para screenshots.
   const [nuevoOpen, setNuevoOpen] = useState(false);
   const [savingNuevo, setSavingNuevo] = useState(false);
-  const [fileList, setFileList] = useState<UploadFile[]>([]);
+  const [capturaFile, setCapturaFile] = useState<File | null>(null);
+  const [capturaPreview, setCapturaPreview] = useState<string | null>(null);
+  const pasteAreaRef = useRef<HTMLDivElement>(null);
 
   // Modal "Editar / Ver detalle"
   const [editar, setEditar] = useState<Ticket | null>(null);
@@ -93,9 +95,45 @@ export default function TicketsPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   function openNuevo() {
-    formNuevo.resetFields();
-    setFileList([]);
+    setCapturaFile(null);
+    setCapturaPreview(null);
     setNuevoOpen(true);
+    // resetFields debe correr después de que el form esté montado en el modal.
+    setTimeout(() => formNuevo.resetFields(), 0);
+  }
+
+  function cerrarNuevo() {
+    setNuevoOpen(false);
+    setCapturaFile(null);
+    if (capturaPreview) URL.revokeObjectURL(capturaPreview);
+    setCapturaPreview(null);
+  }
+
+  // Maneja Ctrl+V dentro del modal: si el portapapeles trae una imagen, la usa
+  // como captura. Funciona con screenshots de Windows (Snipping Tool / Print Screen).
+  function handlePaste(e: React.ClipboardEvent) {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith("image/")) {
+        const blob = item.getAsFile();
+        if (!blob) continue;
+        e.preventDefault();
+        const ext = item.type.split("/")[1] ?? "png";
+        const file = new File([blob], `captura-${Date.now()}.${ext}`, { type: item.type });
+        setCapturaFile(file);
+        if (capturaPreview) URL.revokeObjectURL(capturaPreview);
+        setCapturaPreview(URL.createObjectURL(file));
+        message.success("Captura pegada");
+        return;
+      }
+    }
+  }
+
+  function quitarCaptura() {
+    setCapturaFile(null);
+    if (capturaPreview) URL.revokeObjectURL(capturaPreview);
+    setCapturaPreview(null);
   }
 
   async function handleCrear() {
@@ -103,12 +141,11 @@ export default function TicketsPage() {
       const values = await formNuevo.validateFields();
       setSavingNuevo(true);
 
-      // Si el usuario subió una captura, primero sube a R2.
+      // Si el usuario pegó una captura, primero sube a R2.
       let captura: { key: string; nombre: string; mime: string; tamano: number } | null = null;
-      const fileRaw = fileList[0]?.originFileObj;
-      if (fileRaw) {
+      if (capturaFile) {
         const meta = await uploadToR2({
-          file: fileRaw as RcFile,
+          file: capturaFile,
           uploadUrlEndpoint: "/api/tickets/upload-url",
         });
         captura = { key: meta.key, nombre: meta.nombre_archivo, mime: meta.tipo_mime, tamano: meta.tamano };
@@ -124,8 +161,7 @@ export default function TicketsPage() {
         throw new Error(err.error || "No se pudo crear el ticket");
       }
       message.success("Ticket creado. Gracias por reportar.");
-      setNuevoOpen(false);
-      setFileList([]);
+      cerrarNuevo();
       fetchData();
     } catch (e) {
       if (e instanceof Error) message.error(e.message);
@@ -284,7 +320,7 @@ export default function TicketsPage() {
       <Modal
         title="Nuevo ticket"
         open={nuevoOpen}
-        onCancel={() => { setNuevoOpen(false); setFileList([]); }}
+        onCancel={cerrarNuevo}
         onOk={handleCrear}
         confirmLoading={savingNuevo}
         okText="Crear"
@@ -292,32 +328,63 @@ export default function TicketsPage() {
         width={modalWidth(screens, 640)}
         destroyOnHidden
       >
-        <Form form={formNuevo} layout="vertical">
-          <Form.Item
-            name="descripcion"
-            label="Descripción"
-            rules={[{ required: true, message: "Requerido" }, { max: 5000, message: "Máx 5000 caracteres" }]}
-          >
-            <TextArea
-              rows={5}
-              maxLength={5000}
-              showCount
-              placeholder="Explicá el bug, mejora o consulta. ¿Qué pasó? ¿Qué esperabas que pase?"
-            />
-          </Form.Item>
-          <Form.Item label="Captura (opcional)">
-            <Upload
-              accept="image/*"
-              listType="picture"
-              maxCount={1}
-              fileList={fileList}
-              onChange={({ fileList: fl }) => setFileList(fl)}
-              beforeUpload={() => false}
+        <div ref={pasteAreaRef} onPaste={handlePaste}>
+          <Form form={formNuevo} layout="vertical">
+            <Form.Item
+              name="descripcion"
+              label="Descripción"
+              rules={[{ required: true, message: "Requerido" }, { max: 5000, message: "Máx 5000 caracteres" }]}
             >
-              <Button icon={<PaperClipOutlined />}>Seleccionar imagen</Button>
-            </Upload>
-          </Form.Item>
-        </Form>
+              <TextArea
+                rows={5}
+                maxLength={5000}
+                showCount
+                placeholder="Explicá el bug, mejora o consulta. ¿Qué pasó? ¿Qué esperabas que pase?"
+              />
+            </Form.Item>
+            <Form.Item label="Captura (opcional) — pegá con Ctrl+V">
+              {capturaPreview ? (
+                <div style={{ position: "relative", display: "inline-block", maxWidth: "100%" }}>
+                  <img
+                    src={capturaPreview}
+                    alt="Captura pegada"
+                    style={{ maxWidth: "100%", maxHeight: 240, borderRadius: 4, border: `1px solid ${brand.border}`, display: "block" }}
+                  />
+                  <Button
+                    size="small"
+                    icon={<CloseCircleOutlined />}
+                    onClick={quitarCaptura}
+                    style={{ position: "absolute", top: 4, right: 4 }}
+                    danger
+                  >
+                    Quitar
+                  </Button>
+                  {capturaFile && (
+                    <Text type="secondary" style={{ fontSize: 11, display: "block", marginTop: 4 }}>
+                      {capturaFile.name} · {(capturaFile.size / 1024).toFixed(1)} KB
+                    </Text>
+                  )}
+                </div>
+              ) : (
+                <div
+                  style={{
+                    border: `1px dashed ${brand.border}`,
+                    borderRadius: 6,
+                    padding: "20px 12px",
+                    textAlign: "center",
+                    background: brand.bgPage,
+                    color: brand.textSecondary,
+                  }}
+                >
+                  <PaperClipOutlined style={{ fontSize: 24, marginBottom: 6 }} />
+                  <div style={{ fontSize: 13 }}>
+                    Hacé un screenshot (PrtScr / Snipping Tool) y pegalo con <b>Ctrl+V</b> dentro de este modal
+                  </div>
+                </div>
+              )}
+            </Form.Item>
+          </Form>
+        </div>
       </Modal>
 
       {/* Modal: Ver / editar */}

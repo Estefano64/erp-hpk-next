@@ -1,7 +1,6 @@
 // Tickets: bugs / mejoras / preguntas reportadas por usuarios sobre el ERP.
 // Canal lateral — no está vinculado a OT.
 import { NextRequest, NextResponse } from "next/server";
-import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { R2Keys } from "@/lib/r2";
@@ -9,11 +8,12 @@ import { R2Keys } from "@/lib/r2";
 const ESTADOS_VALIDOS = ["ABIERTO", "EN_PROCESO", "RESUELTO", "CERRADO"] as const;
 type Estado = (typeof ESTADOS_VALIDOS)[number];
 
+// Convención del codebase: no se chequea `getToken` en endpoints — la sesión
+// se valida a nivel de layout/middleware. Acá solo usamos `getAuditUser` para
+// trazabilidad del creador/modificador.
+
 // GET — lista con filtros opcionales (?estado=ABIERTO, ?asignado_a=X)
 export async function GET(req: NextRequest) {
-  const token = await getToken({ req });
-  if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-
   try {
     const { searchParams } = req.nextUrl;
     const estado = searchParams.get("estado");
@@ -39,9 +39,6 @@ export async function GET(req: NextRequest) {
 
 // POST — crear ticket. Body: { descripcion, captura?: { key, nombre, mime, tamano } }
 export async function POST(req: NextRequest) {
-  const token = await getToken({ req });
-  if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-
   try {
     const body = await req.json().catch(() => null) as Record<string, unknown> | null;
     if (!body) return NextResponse.json({ error: "JSON inválido" }, { status: 400 });

@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { deleteObject } from "@/lib/r2-helpers";
@@ -9,10 +8,7 @@ type Params = { params: Promise<{ id: string }> };
 const ESTADOS_VALIDOS = ["ABIERTO", "EN_PROCESO", "RESUELTO", "CERRADO"] as const;
 
 // GET — detalle de un ticket
-export async function GET(req: NextRequest, { params }: Params) {
-  const token = await getToken({ req });
-  if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-
+export async function GET(_req: NextRequest, { params }: Params) {
   try {
     const { id } = await params;
     const ticket = await prisma.ticket.findUnique({ where: { id: Number(id) } });
@@ -28,9 +24,6 @@ export async function GET(req: NextRequest, { params }: Params) {
 // Body acepta: { estado, asignado_a, notas_resolucion }. Si pasa a RESUELTO,
 // se setea resuelto_por + fecha_resolucion automáticamente.
 export async function PUT(req: NextRequest, { params }: Params) {
-  const token = await getToken({ req });
-  if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-
   try {
     const { id } = await params;
     const ticketId = Number(id);
@@ -78,10 +71,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
 }
 
 // DELETE — eliminar ticket (y su captura en R2 si tiene).
-export async function DELETE(req: NextRequest, { params }: Params) {
-  const token = await getToken({ req });
-  if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-
+export async function DELETE(_req: NextRequest, { params }: Params) {
   try {
     const { id } = await params;
     const ticketId = Number(id);
