@@ -1400,3 +1400,30 @@ model EvaluacionTecnica {
   @@index([estado])
   @@map("evaluaciones_tecnicas")
 }
+
+
+// ── Tickets — bugs, mejoras, preguntas reportadas por usuarios ──
+// No vinculado a OT — es un canal lateral para issues del ERP mismo.
+// Captura opcional en R2 bajo namespace `tickets/`.
+model Ticket {
+  id                Int      @id @default(autoincrement())
+  descripcion       String
+  // Estados: ABIERTO → EN_PROCESO → RESUELTO → CERRADO (lineal).
+  estado            String   @default("ABIERTO") @db.VarChar(20)
+  captura_key       String?  @db.VarChar(500)
+  captura_nombre    String?  @db.VarChar(300)
+  captura_mime      String?  @db.VarChar(100)
+  captura_tamano    Int?
+  creado_por        String   @db.VarChar(100)
+  asignado_a        String?  @db.VarChar(100)
+  notas_resolucion  String?
+  resuelto_por      String?  @db.VarChar(100)
+  fecha_resolucion  DateTime?
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  @@index([estado])
+  @@index([creado_por])
+  @@index([created_at])
+  @@map("ticket")
+}

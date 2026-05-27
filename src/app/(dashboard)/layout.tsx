@@ -8,6 +8,7 @@ import {
   DashboardOutlined,
   ToolOutlined,
   AppstoreOutlined,
+  BugOutlined,
   ShoppingCartOutlined,
   BarChartOutlined,
   MenuFoldOutlined,
@@ -32,6 +33,7 @@ function buildMenuItems(_rol: string | null): MenuProps["items"] {
   ];
   return [
     { key: "/dashboard", icon: <DashboardOutlined />, label: "Dashboard" },
+    { key: "/tickets", icon: <BugOutlined />, label: "Tickets" },
     { key: "/aceptaciones", icon: <FileProtectOutlined />, label: "Aceptaciones" },
     {
       key: "operaciones",

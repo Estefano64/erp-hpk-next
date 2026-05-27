@@ -15,7 +15,8 @@ export type R2Resource =
   | "req-adjunto"
   | "compra-guia"
   | "compra-factura"
-  | "evaluacion-informe";
+  | "evaluacion-informe"
+  | "ticket-captura";
 
 const VALID_RESOURCES: ReadonlySet<R2Resource> = new Set([
   "ot-adjunto",
@@ -23,6 +24,7 @@ const VALID_RESOURCES: ReadonlySet<R2Resource> = new Set([
   "compra-guia",
   "compra-factura",
   "evaluacion-informe",
+  "ticket-captura",
 ]);
 
 export function isValidResource(value: unknown): value is R2Resource {
@@ -83,6 +85,13 @@ export async function authorizeR2Access(params: {
     case "evaluacion-informe": {
       const row = await prisma.evaluacionTecnica.findFirst({
         where: { id: resourceId, informe_key: key },
+        select: { id: true },
+      });
+      return row ? { ok: true } : notFound();
+    }
+    case "ticket-captura": {
+      const row = await prisma.ticket.findFirst({
+        where: { id: resourceId, captura_key: key },
         select: { id: true },
       });
       return row ? { ok: true } : notFound();

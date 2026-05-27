@@ -52,6 +52,8 @@ export const R2Keys = {
   // Fallback para compras sin OT asociada (Compra.ot_id == null).
   compraSueltaGuia: (ocCodigo: string) => `compras-sueltas/${sanitize(ocCodigo)}/guia`,
   compraSueltaFactura: (ocCodigo: string) => `compras-sueltas/${sanitize(ocCodigo)}/factura`,
+  // Capturas de tickets (bugs/mejoras del ERP). No vinculados a OT.
+  ticket: () => `tickets`,
 } as const;
 
 // Sanitiza un segmento de path para evitar inyección (../, slashes, etc.).
