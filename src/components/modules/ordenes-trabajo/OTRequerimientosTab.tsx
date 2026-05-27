@@ -194,6 +194,9 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
     fecha_requerida?: dayjs.Dayjs | null;
     observaciones?: string;
     archivos?: File[]; // archivos pendientes de subir
+    // Precio referencial para SER y CAD (MAC usa el del catálogo).
+    precio_unitario?: number;
+    moneda?: "USD" | "SOL";
   };
   const [draftOpen, setDraftOpen] = useState(false);
   const [draftItems, setDraftItems] = useState<DraftItem[]>([]);
@@ -294,6 +297,9 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
           fabricante_codigo: it.fabricante_codigo ?? null,
           fecha_requerida: it.fecha_requerida ? it.fecha_requerida.format("YYYY-MM-DD") : null,
           observaciones: it.observaciones ?? null,
+          // Precio referencial — solo aplica a SER/CAD; en MAC no se envía.
+          precio_unitario: (it.tipo_codigo !== "MAC" && it.precio_unitario != null) ? it.precio_unitario : null,
+          moneda: it.tipo_codigo !== "MAC" ? (it.moneda ?? "USD") : null,
         })),
         nro_req: draftAppendToNroReq ?? undefined,
       };
@@ -1205,6 +1211,46 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
                     }))}
                   />
                 ),
+              },
+              {
+                // Precio referencial:
+                //   - MAC: muestra el precio del catálogo (read-only). Si el
+                //     material no tiene precio cargado, muestra "—".
+                //   - SER/CAD: editable manualmente (input + selector moneda).
+                title: "Precio ref.", key: "precio", width: 140, align: "right",
+                render: (_: unknown, r: DraftItem) => {
+                  if (r.tipo_codigo === "MAC") {
+                    const mat = r.material_codigo ? materiales.find((m) => m.codigo === r.material_codigo) : null;
+                    if (!mat?.precio) return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
+                    return (
+                      <Tooltip title="Precio del catálogo de material">
+                        <Text style={{ fontSize: 12 }}>
+                          {Number(mat.precio).toFixed(2)} {mat.moneda_codigo ?? "USD"}
+                        </Text>
+                      </Tooltip>
+                    );
+                  }
+                  return (
+                    <Space.Compact style={{ width: "100%" }}>
+                      <InputNumber
+                        size="small" style={{ width: 80 }}
+                        min={0} step={0.01}
+                        placeholder="0.00"
+                        value={r.precio_unitario}
+                        onChange={(v) => actualizarDraftItem(r.id, { precio_unitario: v == null ? undefined : Number(v) })}
+                      />
+                      <Select
+                        size="small" style={{ width: 70 }}
+                        value={r.moneda ?? "USD"}
+                        onChange={(v) => actualizarDraftItem(r.id, { moneda: v })}
+                        options={[
+                          { value: "USD", label: "USD" },
+                          { value: "SOL", label: "SOL" },
+                        ]}
+                      />
+                    </Space.Compact>
+                  );
+                },
               },
               {
                 title: "F. requerida", key: "freq", width: 130,

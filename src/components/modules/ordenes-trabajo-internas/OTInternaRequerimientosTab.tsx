@@ -57,6 +57,8 @@ interface NuevoReqValues {
   fabricante_codigo?: string;
   observaciones?: string;
   nro_req?: string; // Si se especifica, agrega al nro_req existente.
+  precio_unitario?: number;
+  moneda?: string;
 }
 
 const REQ_COLOR: Record<string, string> = {
@@ -288,6 +290,28 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
               <Input placeholder="(opcional)" style={{ width: 160 }} />
             </Form.Item>
           </Space>
+          {/* Precio referencial — solo para SER y CAD. Para MAC el precio
+              viene del catálogo de material. */}
+          {(tipoSeleccionado === "SER" || tipoSeleccionado === "CAD") && (
+            <Space>
+              <Form.Item
+                name="precio_unitario"
+                label="Precio referencial"
+                tooltip="Precio orientativo. El definitivo lo carga compras en la OC."
+              >
+                <InputNumber min={0} step={0.01} style={{ width: 160 }} placeholder="0.00" />
+              </Form.Item>
+              <Form.Item name="moneda" label="Moneda" initialValue="USD">
+                <Select
+                  style={{ width: 140 }}
+                  options={[
+                    { value: "USD", label: "USD ($)" },
+                    { value: "SOL", label: "SOL (S/)" },
+                  ]}
+                />
+              </Form.Item>
+            </Space>
+          )}
           <Form.Item name="observaciones" label="Observaciones">
             <Input.TextArea rows={2} maxLength={300} placeholder="(opcional)" />
           </Form.Item>
