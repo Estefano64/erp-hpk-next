@@ -26,8 +26,6 @@ const UpdateSchema = z.object({
   horas_extras_qty: z.coerce.number().min(0).optional().nullable(),
   trabajo_externo: z.boolean().optional(),
   orden: z.coerce.number().int().min(0).optional(),
-  // Versioning para concurrencia optimista
-  version: z.coerce.number().int().min(1).optional(),
   // Si true, ignora el check de estado=realizado (uso interno: revertir)
   forzarEdicion: z.boolean().optional(),
 });
@@ -73,25 +71,14 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       const current = await tx.planificacionOT.findUnique({ where: { id: planId } });
       if (!current) throw Object.assign(new Error("No encontrado"), { code: "NOT_FOUND" });
 
-      // ── 1) Versioning (optimistic concurrency) ──
-      // Si el cliente no envía version, exigirla (evita "last write wins" silencioso).
-      if (input.version == null) {
-        throw Object.assign(
-          new Error("Falta el campo 'version' para edición concurrente"),
-          { code: "VERSION_REQUIRED", currentVersion: current.version },
-        );
-      }
-      if (input.version !== current.version) {
-        throw Object.assign(
-          new Error(`Conflicto: la tarea fue modificada por otro usuario (versión actual: ${current.version}, enviada: ${input.version})`),
-          { code: "CONFLICT", currentVersion: current.version },
-        );
-      }
+      // Nota: la concurrencia optimista por `version` se quitó — ahora la
+      // exclusividad la maneja el lock pesimista (useEditLock) en planificación
+      // y programación semanal.
 
-      // ── 2) Bloquear edición si estado = realizado ──
+      // ── Bloquear edición si estado = realizado ──
       const isRealizado = current.estado === "realizado";
-      const intentaEditar = Object.keys(input).some((k) => k !== "version" && k !== "forzarEdicion" && input[k as keyof typeof input] !== undefined);
-      const soloRevertirEstado = Object.keys(input).filter((k) => k !== "version" && k !== "forzarEdicion").length === 1
+      const intentaEditar = Object.keys(input).some((k) => k !== "forzarEdicion" && input[k as keyof typeof input] !== undefined);
+      const soloRevertirEstado = Object.keys(input).filter((k) => k !== "forzarEdicion").length === 1
         && input.estado !== undefined && input.estado !== "realizado";
       if (isRealizado && intentaEditar && !input.forzarEdicion && !soloRevertirEstado) {
         throw Object.assign(
@@ -100,11 +87,11 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         );
       }
 
-      // ── 3) Construir patch base ──
+      // ── Construir patch base ──
       const data: Record<string, unknown> = {};
       const dateFields = new Set(["fecha_inicio", "fecha_fin", "fecha_inicio_real", "fecha_fin_real"]);
       for (const k of Object.keys(input) as Array<keyof typeof input>) {
-        if (k === "version" || k === "forzarEdicion") continue;
+        if (k === "forzarEdicion") continue;
         const v = input[k];
         if (v === undefined) continue;
         if (dateFields.has(k as string)) data[k] = toDate(v as string | null);
@@ -181,9 +168,6 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         data.estado = estadoFinal;
       }
 
-      // ── 8) Incrementar version ──
-      data.version = current.version + 1;
-
       const updated = await tx.planificacionOT.update({
         where: { id: planId },
         data,
@@ -194,14 +178,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 
     return NextResponse.json({ data: result });
   } catch (error: unknown) {
-    const err = error as { code?: string; message?: string; currentVersion?: number };
+    const err = error as { code?: string; message?: string };
     if (err?.code === "NOT_FOUND") return NextResponse.json({ error: "No encontrado" }, { status: 404 });
-    if (err?.code === "CONFLICT") {
-      return NextResponse.json({ error: err.message, currentVersion: err.currentVersion }, { status: 409 });
-    }
-    if (err?.code === "VERSION_REQUIRED") {
-      return NextResponse.json({ error: err.message, currentVersion: err.currentVersion }, { status: 400 });
-    }
     if (err?.code === "REALIZADO_LOCKED") return NextResponse.json({ error: err.message }, { status: 423 });
     if (err?.code === "HE_INVALID") return NextResponse.json({ error: err.message }, { status: 400 });
     if ((err as { code?: string })?.code === "P2025") return NextResponse.json({ error: "No encontrado" }, { status: 404 });

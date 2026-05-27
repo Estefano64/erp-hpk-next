@@ -53,6 +53,8 @@ import EvaluacionFormulario, {
 import { generarWordEvaluacion } from "@/components/modules/evaluacion/generarWord";
 import { uploadToR2 } from "@/lib/r2-client";
 import { R2FileLink } from "@/components/R2FileLink";
+import { useUnsavedChangesWarning, confirmLeave } from "@/lib/unsaved-changes";
+import { useSession } from "next-auth/react";
 
 import { formatDateOnly } from "@/lib/dates";
 const { Title, Text } = Typography;
@@ -137,6 +139,8 @@ export default function EvaluacionPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  useUnsavedChangesWarning(dirty, "Hay cambios sin guardar en la hoja de evaluación.", `evaluacion-${otId}`);
   const [ot, setOt] = useState<OTDetalle | null>(null);
   const [evaluacion, setEvaluacion] = useState<Evaluacion | null>(null);
   const [modeloEvaluacion, setModeloEvaluacion] = useState<string>("cil_vastago_simple");
@@ -153,6 +157,13 @@ export default function EvaluacionPage() {
   const [modalAccion, setModalAccion] = useState<"solicitar" | "aprobar" | "rechazar" | "reabrir" | null>(null);
   const [accionForm] = Form.useForm();
   const [procesandoAccion, setProcesandoAccion] = useState(false);
+  const { data: session } = useSession();
+  const currentUser = session?.user?.name ?? session?.user?.email ?? "";
+  // Cada vez que abro el modal de acción, pre-fileo el "usuario" con el
+  // nombre del logueado. El input queda disabled — no debe poder cambiarlo.
+  useEffect(() => {
+    if (modalAccion) accionForm.setFieldValue("usuario", currentUser);
+  }, [modalAccion, currentUser, accionForm]);
 
   const cargarDatos = useCallback(async () => {
     setLoading(true);
@@ -248,9 +259,11 @@ export default function EvaluacionPage() {
     if (otId) cargarDatos();
   }, [otId, cargarDatos]);
 
-  // Cargar trabajadores (para el desplegable "Evaluado por")
+  // Cargar trabajadores (para los desplegables "Evaluado por" y "Supervisor").
+  // paraEvaluacion=1 excluye limpieza, seguridad y logística — solo personal
+  // técnico/operativo puede firmar la hoja.
   useEffect(() => {
-    fetch("/api/trabajadores?limit=200")
+    fetch("/api/trabajadores?limit=200&paraEvaluacion=1")
       .then((r) => r.ok ? r.json() : null)
       .then((j) => { if (j?.data) setTrabajadores(j.data); })
       .catch(() => { /* noop */ });
@@ -299,6 +312,7 @@ export default function EvaluacionPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Error al guardar");
       setEvaluacion(json.data);
+      setDirty(false);
       message.success("Hoja de evaluacion guardada");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Error desconocido";
@@ -421,7 +435,7 @@ export default function EvaluacionPage() {
         <Button
           type="text"
           icon={<ArrowLeftOutlined />}
-          onClick={() => router.push("/ordenes-trabajo")}
+          onClick={() => { if (confirmLeave()) router.push("/ordenes-trabajo"); }}
           style={{ marginBottom: 8 }}
         >
           Volver a Ordenes de Trabajo
@@ -629,7 +643,7 @@ export default function EvaluacionPage() {
         }
         style={{ marginBottom: 16 }}
       >
-        <Form form={form} layout="vertical" disabled={!puedeEditar}>
+        <Form form={form} layout="vertical" disabled={!puedeEditar} onValuesChange={() => { if (!dirty) setDirty(true); }}>
           <Row gutter={16}>
             <Col xs={24} md={8}>
               <Form.Item label="Modelo / Tipo de componente">
@@ -741,7 +755,7 @@ export default function EvaluacionPage() {
         }
         style={{ marginBottom: 16 }}
       >
-        <Form form={form} layout="vertical" disabled={!puedeEditar}>
+        <Form form={form} layout="vertical" disabled={!puedeEditar} onValuesChange={() => { if (!dirty) setDirty(true); }}>
           <Form.Item label="Resultado general de la evaluacion" name="resultado_general">
             <TextArea rows={3} placeholder="Conclusiones generales de la evaluacion del componente..." />
           </Form.Item>
@@ -811,7 +825,7 @@ export default function EvaluacionPage() {
       {/* Boton guardar al final */}
       <div style={{ textAlign: "right", marginBottom: 40 }}>
         <Space wrap>
-          <Button onClick={() => router.push("/ordenes-trabajo")}>Cancelar</Button>
+          <Button onClick={() => { if (confirmLeave()) router.push("/ordenes-trabajo"); }}>Cancelar</Button>
           <Button icon={<FileWordOutlined />} onClick={handleGenerarWord}>
             Descargar Word
           </Button>
@@ -868,8 +882,9 @@ export default function EvaluacionPage() {
             label={modalAccion === "solicitar" ? "Tu nombre (evaluador)" : "Tu nombre"}
             name="usuario"
             rules={[{ required: true, message: "Ingresa tu nombre" }]}
+            tooltip="Se completa automáticamente con tu usuario logueado."
           >
-            <Input placeholder="Ej. Juan Pérez" />
+            <Input placeholder="Ej. Juan Pérez" disabled />
           </Form.Item>
           {modalAccion !== "reabrir" && (
             <Form.Item

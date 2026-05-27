@@ -259,18 +259,12 @@ export default function PlanificacionPage() {
 
   const persistPatch = useCallback(async (id: number, patch: Record<string, unknown>) => {
     setSavingId(id);
-    const current = rows.find((r) => r.id === id);
     try {
       const res = await fetch(`/api/planificacion/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...patch, version: current?.version }),
+        body: JSON.stringify(patch),
       });
-      if (res.status === 409) {
-        messageApi.warning("Otro usuario actualizó esta tarea. Sincronizando…");
-        fetchData();
-        return;
-      }
       if (res.status === 423) {
         messageApi.error("Tarea cerrada (realizado), no editable.");
         fetchData();
@@ -300,7 +294,7 @@ export default function PlanificacionPage() {
     } finally {
       setSavingId(null);
     }
-  }, [messageApi, rows, fetchData, notifySync]);
+  }, [messageApi, notifySync, fetchData]);
 
   const updateField = useCallback((id: number, patch: Record<string, unknown>) => {
     if (!editMode) {
@@ -362,18 +356,15 @@ export default function PlanificacionPage() {
     if (ids.length === 0) return;
     setSavingBatch(true);
     let okCount = 0;
-    let conflictCount = 0;
     let errorCount = 0;
     for (const id of ids) {
       const patch = pendingChanges[id];
-      const current = rows.find((r) => r.id === id);
       try {
         const res = await fetch(`/api/planificacion/${id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...patch, version: current?.version }),
+          body: JSON.stringify(patch),
         });
-        if (res.status === 409) { conflictCount++; continue; }
         if (res.status === 423) { errorCount++; continue; }
         if (!res.ok) { errorCount++; continue; }
         okCount++;
@@ -385,11 +376,10 @@ export default function PlanificacionPage() {
     setPendingChanges({});
     originalSnapshots.current = {};
     if (okCount > 0) messageApi.success(`Guardadas ${okCount} de ${ids.length} tareas.`);
-    if (conflictCount > 0) messageApi.warning(`${conflictCount} con conflicto de versión.`);
     if (errorCount > 0) messageApi.error(`${errorCount} con error al guardar.`);
     notifySync();
     fetchData();
-  }, [pendingChanges, rows, messageApi, notifySync, fetchData]);
+  }, [pendingChanges, messageApi, notifySync, fetchData]);
 
   const descartarTodo = useCallback(() => {
     // Revertir cambios locales a los snapshots originales

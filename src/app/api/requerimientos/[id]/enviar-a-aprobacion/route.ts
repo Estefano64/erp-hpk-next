@@ -19,6 +19,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         ot_id: true,
         orden_trabajo_interna_id: true,
         nro_req: true,
+        fecha_requerida: true,
       },
     });
     if (!current) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
@@ -26,6 +27,11 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       return NextResponse.json({
         error: `Solo se puede enviar a aprobación desde BORRADOR. Estado actual: ${current.status_requerimiento_codigo}`,
       }, { status: 409 });
+    }
+    if (!current.fecha_requerida) {
+      return NextResponse.json({
+        error: "Falta la fecha requerida. Es obligatoria para enviar a aprobación.",
+      }, { status: 400 });
     }
 
     const updated = await prisma.$transaction(async (tx) => {

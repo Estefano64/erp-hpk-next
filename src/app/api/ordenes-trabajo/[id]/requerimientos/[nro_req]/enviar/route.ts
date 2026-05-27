@@ -24,7 +24,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const result = await prisma.$transaction(async (tx) => {
       const items = await tx.oTRepuesto.findMany({
         where: { ot_id: otId, nro_req: nroReq },
-        select: { id: true, status_requerimiento_codigo: true },
+        select: { id: true, status_requerimiento_codigo: true, fecha_requerida: true, descripcion: true },
       });
       if (items.length === 0) {
         throw new Error("NOT_FOUND");
@@ -32,6 +32,15 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       const borradores = items.filter((i) => i.status_requerimiento_codigo === "BORRADOR");
       if (borradores.length === 0) {
         throw new Error("NO_BORRADORES");
+      }
+      // Fecha requerida es obligatoria para enviar a aprobación.
+      const sinFecha = borradores.filter((b) => !b.fecha_requerida);
+      if (sinFecha.length > 0) {
+        const muestra = sinFecha.slice(0, 3).map((b) => `"${b.descripcion?.slice(0, 40) ?? `#${b.id}`}"`).join(", ");
+        const mas = sinFecha.length > 3 ? ` y ${sinFecha.length - 3} más` : "";
+        throw Object.assign(new Error("FECHA_REQ_FALTA"), {
+          detail: `Falta fecha requerida en ${sinFecha.length} item(s): ${muestra}${mas}.`,
+        });
       }
       await tx.oTRepuesto.updateMany({
         where: { id: { in: borradores.map((b) => b.id) } },
@@ -60,6 +69,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     }
     if (error instanceof Error && error.message === "NO_BORRADORES") {
       return NextResponse.json({ error: "No hay items en BORRADOR para enviar." }, { status: 409 });
+    }
+    if (error instanceof Error && error.message === "FECHA_REQ_FALTA") {
+      const detail = (error as { detail?: string }).detail;
+      return NextResponse.json({ error: detail ?? "Falta fecha requerida en algún item." }, { status: 400 });
     }
     console.error("POST enviar grupo error:", error);
     return NextResponse.json({ error: "Error al enviar requerimiento" }, { status: 500 });

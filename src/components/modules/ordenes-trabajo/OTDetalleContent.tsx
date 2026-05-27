@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useTabSync } from "@/lib/useTabSync";
 import { useCachedFetch } from "@/lib/useCachedFetch";
 import { useEditLock } from "@/lib/useEditLock";
+import { useUnsavedChangesWarning } from "@/lib/unsaved-changes";
 import {
   Tabs,
   Select,
@@ -274,6 +275,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   }, [ot, otStatus, recursosStatus, tallerStatus, comentarios, editing, editData]);
 
   useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
+  useUnsavedChangesWarning(dirty, "Hay cambios sin guardar en esta OT.", `ot-detalle-${otId ?? "?"}`);
 
 
   async function startEditing() {

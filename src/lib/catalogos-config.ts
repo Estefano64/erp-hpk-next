@@ -371,7 +371,11 @@ export const catalogosConfig: CatalogoConfig[] = [
     category: "Reparación (OT)",
     pkField: "componente_id",
     uniqueField: "codigo",
-    fields: [...codigoNombre(30), activo],
+    fields: [
+      ...codigoNombre(30),
+      { key: "color", label: "Color (hex)", type: "color", hint: "Color representativo en el dashboard de planificación (ej. #1677FF)." },
+      activo,
+    ],
   },
   {
     id: "operacionReparacion",

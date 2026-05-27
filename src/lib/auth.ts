@@ -4,7 +4,15 @@ import bcrypt from "bcryptjs";
 import { prisma } from "./prisma";
 
 export const authOptions: AuthOptions = {
-  session: { strategy: "jwt" },
+  session: {
+    strategy: "jwt",
+    // Sesión máxima absoluta: 8 horas. Tras este tiempo el JWT vence aunque el
+    // usuario haya estado activo (forzamos re-login periódico por frescura).
+    maxAge: 8 * 60 * 60,
+    // Cada hora refresca el token (extiende su validez si sigue activo, dentro
+    // del límite de maxAge). Sin esto el token podría vencer en medio de uso.
+    updateAge: 60 * 60,
+  },
   pages: { signIn: "/login" },
   providers: [
     CredentialsProvider({
@@ -19,6 +27,9 @@ export const authOptions: AuthOptions = {
         const input = credentials.identifier.trim();
         const isEmail = input.includes("@");
 
+        // El codigoEmpleado es el DNI (con la excepción de algunos USR-XXX
+        // huérfanos que no tienen DNI cargado). No hace falta una rama DNI
+        // aparte: si te logueás con el DNI matchea por codigoEmpleado.
         const user = isEmail
           ? await prisma.usuario.findUnique({ where: { email: input } })
           : await prisma.usuario.findUnique({ where: { codigoEmpleado: input } });

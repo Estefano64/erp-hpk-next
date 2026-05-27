@@ -340,6 +340,9 @@ model Componente {
   componente_id       Int                   @id @default(autoincrement())
   codigo              String                @unique @db.VarChar(30)
   nombre              String                @db.VarChar(100)
+  // Color representativo del componente en el dashboard de planificación. Hex
+  // (#RRGGBB) o preset de antd. Si es null se aplica una paleta rotativa.
+  color               String?               @db.VarChar(20)
   activo              Boolean               @default(true)
   created_at          DateTime              @default(now())
   updated_at          DateTime              @default(now()) @updatedAt

@@ -13,6 +13,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
+import { useUnsavedChangesWarning, confirmLeave } from "@/lib/unsaved-changes";
 
 const { Title, Text } = Typography;
 
@@ -158,6 +159,8 @@ export default function EditarOCPage() {
     || descuento !== originalDescuento
     || otros !== originalOtros,
   [visibleRows, originalRowsHash, rows, descuento, originalDescuento, otros, originalOtros]);
+
+  useUnsavedChangesWarning(hayCambios, "Hay cambios sin guardar en la OC.", `compra-editar-${params?.id ?? "?"}`);
 
   const totales = useMemo(() => {
     const subtotal = visibleRows.reduce((s, r) => s + r.cantidad * r.precio_unitario, 0);
@@ -328,7 +331,7 @@ export default function EditarOCPage() {
           </Col>
           <Col>
             <Space>
-              <Button icon={<RollbackOutlined />} onClick={() => router.back()}>Volver</Button>
+              <Button icon={<RollbackOutlined />} onClick={() => { if (confirmLeave()) router.back(); }}>Volver</Button>
               <Button
                 type="primary"
                 icon={<SaveOutlined />}

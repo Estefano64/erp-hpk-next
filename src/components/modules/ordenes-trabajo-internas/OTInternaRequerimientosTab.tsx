@@ -61,6 +61,11 @@ interface DraftItem {
   unidad_medida: string;
   fabricante_codigo?: string;
   observaciones?: string;
+  // precio_unitario y moneda: opcionales, solo se usan para items tipo SER y CAD
+  // (para MAC el precio viene del catálogo de materiales). Trabajo del otro dev
+  // mergeado: hace que cada draft item lleve su precio referencial.
+  precio_unitario?: number;
+  moneda?: string;
 }
 
 const REQ_COLOR: Record<string, string> = {
@@ -546,7 +551,7 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
             rowKey="key"
             dataSource={draftItems}
             pagination={false}
-            scroll={{ x: 1000 }}
+            scroll={{ x: 1200 }}
             columns={[
               {
                 title: "Tipo", dataIndex: "tipo_codigo", width: 100,
@@ -618,6 +623,38 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
                     onChange={(e) => updateDraft(row.key, { unidad_medida: e.target.value })}
                   />
                 ),
+              },
+              {
+                // Precio referencial — solo aplica a SER y CAD (MAC usa el catálogo).
+                title: "Precio ref.", dataIndex: "precio_unitario", width: 180,
+                render: (v: number | undefined, row) => {
+                  if (row.tipo_codigo !== "SER" && row.tipo_codigo !== "CAD") {
+                    return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
+                  }
+                  return (
+                    <Space size={2}>
+                      <InputNumber
+                        size="small"
+                        value={v}
+                        min={0}
+                        step={0.01}
+                        placeholder="0.00"
+                        style={{ width: 90 }}
+                        onChange={(nv) => updateDraft(row.key, { precio_unitario: nv ?? undefined })}
+                      />
+                      <Select
+                        size="small"
+                        value={row.moneda ?? "USD"}
+                        style={{ width: 70 }}
+                        onChange={(nv) => updateDraft(row.key, { moneda: nv })}
+                        options={[
+                          { value: "USD", label: "USD" },
+                          { value: "SOL", label: "SOL" },
+                        ]}
+                      />
+                    </Space>
+                  );
+                },
               },
               {
                 title: "", key: "del", width: 50, align: "center", fixed: "right",

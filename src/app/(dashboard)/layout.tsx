@@ -22,6 +22,8 @@ import {
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { brand } from "@/lib/theme";
+import IdleLogout from "@/components/IdleLogout";
+import { confirmLeave } from "@/lib/unsaved-changes";
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
@@ -35,7 +37,6 @@ function buildMenuItems(_rol: string | null): MenuProps["items"] {
     { key: "/dashboard", icon: <DashboardOutlined />, label: "Dashboard" },
     { key: "/aprobaciones", icon: <FileProtectOutlined />, label: "Aprobaciones" },
     { key: "/tickets", icon: <BugOutlined />, label: "Tickets" },
-    { key: "/aceptaciones", icon: <FileProtectOutlined />, label: "Aceptaciones" },
     {
       key: "operaciones",
       icon: <ToolOutlined />,
@@ -239,6 +240,7 @@ export default function DashboardLayout({
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
+      <IdleLogout />
       <Sider
         collapsible
         collapsed={collapsed}
@@ -285,7 +287,7 @@ export default function DashboardLayout({
           openKeys={openKeys}
           onOpenChange={(keys) => setOpenKeys(keys)}
           items={menuItems}
-          onClick={({ key }) => router.push(key)}
+          onClick={({ key }) => { if (confirmLeave()) router.push(key); }}
           style={{ borderRight: 0, marginTop: 4 }}
         />
       </Sider>

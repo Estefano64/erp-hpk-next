@@ -22,6 +22,7 @@ import { SaveOutlined, ArrowLeftOutlined, CheckCircleFilled } from "@ant-design/
 import { brand } from "@/lib/theme";
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
+import { useUnsavedChangesWarning, confirmLeave } from "@/lib/unsaved-changes";
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -60,6 +61,10 @@ export default function NuevaOTPage() {
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
   const [messageApi, contextHolder] = message.useMessage();
+  // Marca el formulario como "dirty" al primer cambio. Se limpia al guardar
+  // o al cancelar.
+  const [dirty, setDirty] = useState(false);
+  useUnsavedChangesWarning(dirty, "Estás creando una OT con datos sin guardar.", "nueva-ot");
 
   // Catálogos
   const [clientes, setClientes] = useState<ClienteOption[]>([]);
@@ -71,7 +76,6 @@ export default function NuevaOTPage() {
   const [tiposCodRep, setTiposCodRep] = useState<CatalogOption[]>([]);
   const [tiposOT, setTiposOT] = useState<CatalogOption[]>([]);
   const [fabricantes, setFabricantes] = useState<FabricanteOption[]>([]);
-  const [flotas, setFlotas] = useState<CatalogOption[]>([]);
   const [posiciones, setPosiciones] = useState<CatalogOption[]>([]);
   const [monedas, setMonedas] = useState<CatalogOption[]>([]);
 
@@ -98,7 +102,7 @@ export default function NuevaOTPage() {
 
   useEffect(() => {
     async function loadCatalogs() {
-      const [cliRes, crRes, tipoRepRes, atencionRes, prioRes, tipoGarRes, tipoCRRes, fabRes, flotaRes, posRes, tipoOTRes, monRes] = await Promise.all([
+      const [cliRes, crRes, tipoRepRes, atencionRes, prioRes, tipoGarRes, tipoCRRes, fabRes, posRes, tipoOTRes, monRes] = await Promise.all([
         fetch("/api/clientes?limit=100"),
         fetch("/api/codigos-reparacion?limit=500"),
         fetch("/api/catalogos?tabla=tipoReparacion"),
@@ -107,7 +111,6 @@ export default function NuevaOTPage() {
         fetch("/api/catalogos?tabla=tipoGarantia"),
         fetch("/api/catalogos?tabla=tipoCodRep"),
         fetch("/api/catalogos?tabla=fabricante"),
-        fetch("/api/catalogos?tabla=flotaEquipo"),
         fetch("/api/catalogos?tabla=posicion"),
         fetch("/api/catalogos?tabla=tipoOT"),
         fetch("/api/catalogos?tabla=moneda"),
@@ -120,7 +123,6 @@ export default function NuevaOTPage() {
       if (tipoGarRes.ok) setTipoGarantias((await tipoGarRes.json()).data ?? []);
       if (tipoCRRes.ok) setTiposCodRep((await tipoCRRes.json()).data ?? []);
       if (fabRes.ok) setFabricantes((await fabRes.json()).data ?? []);
-      if (flotaRes.ok) setFlotas((await flotaRes.json()).data ?? []);
       if (posRes.ok) setPosiciones((await posRes.json()).data ?? []);
       if (tipoOTRes.ok) setTiposOT((await tipoOTRes.json()).data ?? []);
       if (monRes.ok) setMonedas((await monRes.json()).data ?? []);
@@ -161,14 +163,18 @@ export default function NuevaOTPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bloqueoBien, bloqueoServicio]);
 
-  // Cuando cambia Cod Rep, autocompletar campos
+  // Cuando cambia Cod Rep, autocompletar campos. El N/P se pre-fillea en el
+  // form para que el usuario lo pueda sobreescribir (a pedido del cliente:
+  // algunas piezas comparten cod_rep pero traen variantes de N/P).
   function handleCodRepChange(codRepId: number | undefined) {
     if (!codRepId) {
       setSelectedCodRep(null);
+      form.setFieldValue("np", undefined);
       return;
     }
     const found = codReps.find((cr) => cr.cod_rep_id === codRepId);
     setSelectedCodRep(found ?? null);
+    form.setFieldValue("np", found?.np ?? undefined);
   }
 
   // Calcular % PCR cuando cambian PCR o Horas
@@ -260,7 +266,9 @@ export default function NuevaOTPage() {
         // Si NO hay estrategia, mandar los campos manuales. Si sí hay, el backend deriva del cod_rep.
         tipo: estrategia ? null : (values.tipo || null),
         tipo_codigo: values.tipo_codigo,
-        np: estrategia ? null : (values.np || null),
+        // N/P: siempre enviar el valor del form (con estrategia, el usuario
+        // puede sobreescribir el N/P sugerido por el cod_rep).
+        np: values.np || null,
         descripcion: estrategia ? null : (values.descripcion || null),
         id_fabricante: estrategia ? null : (values.id_fabricante || null),
         cod_rep_flota: estrategia ? null : (values.cod_rep_flota || null),
@@ -302,6 +310,7 @@ export default function NuevaOTPage() {
       if (!res.ok) throw new Error();
 
       messageApi.success("OT creada correctamente");
+      setDirty(false); // ya guardamos, sacamos el aviso antes de navegar
       setTimeout(() => router.push("/ordenes-trabajo"), 1000);
     } catch {
       messageApi.error("Error al crear la OT");
@@ -314,11 +323,18 @@ export default function NuevaOTPage() {
     <div>
       {contextHolder}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-        <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/ordenes-trabajo")} />
+        <Button
+          icon={<ArrowLeftOutlined />}
+          onClick={() => { if (confirmLeave()) router.push("/ordenes-trabajo"); }}
+        />
         <Title level={3} style={{ margin: 0 }}>Nueva Orden de Trabajo</Title>
       </div>
 
-      <Form form={form} layout="vertical">
+      <Form
+        form={form}
+        layout="vertical"
+        onValuesChange={() => { if (!dirty) setDirty(true); }}
+      >
         {/* ── SECCIÓN: Cliente y Código Reparable ── */}
         <Card title="Identificación" style={{ marginBottom: 16 }} styles={{ body: { paddingBottom: 0 } }}>
           <Row gutter={16}>
@@ -392,15 +408,16 @@ export default function NuevaOTPage() {
                   onChange={(v) => { handleCodRepChange(v); buscarContrato(undefined, v); }}
                   options={codReps.map((cr) => ({
                     value: cr.cod_rep_id,
-                    label: `${cr.codigo} - ${cr.descripcion}${cr.flota?.nombre ? ` · ${cr.flota.nombre}` : ""}`,
+                    label: `${cr.codigo} - ${cr.descripcion}${cr.np ? ` · N/P ${cr.np}` : ""}${cr.flota?.nombre ? ` · ${cr.flota.nombre}` : ""}`,
                   }))}
                 />
               </Form.Item>
             </Col>
           </Row>
 
-          {/* Si hay estrategia + cod_rep → mostrar info read-only del cod_rep.
-              Si NO hay estrategia → inputs editables manualmente. */}
+          {/* Si hay estrategia + cod_rep → mostrar info read-only del cod_rep,
+              excepto N/P que queda editable (puede variar entre piezas que
+              comparten cod_rep). Si NO hay estrategia → inputs editables. */}
           {estrategia && selectedCodRep && (
             <Descriptions
               bordered
@@ -409,7 +426,11 @@ export default function NuevaOTPage() {
               style={{ marginBottom: 16 }}
             >
               <Descriptions.Item label="Tipo">{selectedCodRep.tipo?.nombre ?? "-"}</Descriptions.Item>
-              <Descriptions.Item label="N/P">{selectedCodRep.np ?? "-"}</Descriptions.Item>
+              <Descriptions.Item label="N/P">
+                <Form.Item name="np" noStyle>
+                  <Input size="small" placeholder={selectedCodRep.np ?? "—"} style={{ minWidth: 140 }} />
+                </Form.Item>
+              </Descriptions.Item>
               <Descriptions.Item label="Descripción">{selectedCodRep.descripcion}</Descriptions.Item>
               <Descriptions.Item label="Fabricante">{selectedCodRep.fabricante?.nombre ?? "-"}</Descriptions.Item>
               <Descriptions.Item label="Flota">{selectedCodRep.flota?.nombre ?? "-"}</Descriptions.Item>
@@ -448,11 +469,7 @@ export default function NuevaOTPage() {
               </Col>
               <Col xs={12} md={8}>
                 <Form.Item name="cod_rep_flota" label="Flota">
-                  <Select
-                    placeholder="Seleccionar"
-                    allowClear showSearch optionFilterProp="label"
-                    options={flotas.map((f) => ({ value: f.codigo, label: f.codigo }))}
-                  />
+                  <Input placeholder="Ej. 980E" />
                 </Form.Item>
               </Col>
               <Col xs={12} md={8}>
@@ -460,7 +477,12 @@ export default function NuevaOTPage() {
                   <Select
                     placeholder="Seleccionar"
                     allowClear showSearch optionFilterProp="label"
-                    options={posiciones.map((p) => ({ value: p.codigo, label: p.nombre }))}
+                    options={posiciones.map((p) => ({
+                      value: p.codigo,
+                      label: p.codigo === "no aplica" || p.nombre?.toLowerCase() === "no aplica"
+                        ? "No aplica (unica)"
+                        : p.nombre,
+                    }))}
                   />
                 </Form.Item>
               </Col>
@@ -743,7 +765,7 @@ export default function NuevaOTPage() {
 
         {/* ── Botones ── */}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
-          <Button onClick={() => router.push("/ordenes-trabajo")}>Cancelar</Button>
+          <Button onClick={() => { if (confirmLeave()) router.push("/ordenes-trabajo"); }}>Cancelar</Button>
           <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={handleSave}>
             Crear OT
           </Button>

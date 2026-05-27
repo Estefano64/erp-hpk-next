@@ -91,6 +91,10 @@ export async function GET(req: NextRequest) {
           ot_status: true,
           recursos_status: true,
           taller_status: true,
+          // Sólo el estado de la hoja de evaluación (la fila completa no se
+          // usa en el listado). La relación es 1-N pero en la práctica solo hay
+          // una por OT; tomamos el último id por las dudas.
+          evaluaciones_tecnicas: { select: { estado: true }, orderBy: { id: "desc" }, take: 1 },
         },
         orderBy: { id: "desc" },
         skip: (page - 1) * limit,
@@ -170,7 +174,10 @@ export async function POST(req: NextRequest) {
       });
       if (codRep) {
         tipo = codRep.tipo?.nombre ?? null;
-        np = codRep.np ?? null;
+        // N/P: si el form envía un valor explícito (incluso si difiere del
+        // cod_rep), respetarlo. Solo fall back al N/P del cod_rep si el form
+        // no envió el campo del todo.
+        np = body.np !== undefined ? (body.np || null) : (codRep.np ?? null);
         descripcion = codRep.descripcion;
         idFabricante = codRep.fabricante?.fabricante_id ?? null;
         codRepFlota = codRep.flota?.nombre ?? null;
@@ -303,7 +310,7 @@ export async function POST(req: NextRequest) {
           orderBy: { item_numero: "asc" },
         });
         if (tareas.length > 0) {
-          const { nextNroReqExterna, pickDescripcionFromTarea } = await import("@/lib/requerimientos");
+          const { nextNroReqExterna, pickDescripcionFromTarea, pickCantidadFromTarea } = await import("@/lib/requerimientos");
           await prisma.$transaction(async (tx) => {
             const nroReq = await nextNroReqExterna(tx, created.id);
 
@@ -337,7 +344,7 @@ export async function POST(req: NextRequest) {
                   material_id: mat?.material_id ?? null,
                   material_codigo: t.material_codigo ?? null,
                   tipo_codigo: t.tipo_codigo,
-                  cantidad: t.requerimiento,
+                  cantidad: pickCantidadFromTarea(t),
                   descripcion: pickDescripcionFromTarea(t, matByCodigo, svcByCodigo),
                   texto: t.texto ?? null,
                   fabricante_codigo: t.fabricante_codigo ?? mat?.fabricante_codigo ?? null,

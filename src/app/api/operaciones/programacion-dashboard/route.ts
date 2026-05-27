@@ -1,16 +1,19 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-// GET — Dashboard estilo matriz: OTs (filas) × operaciones del catálogo (columnas).
-// Cada celda devuelve el estado de la planificación correspondiente (si existe).
+// GET — Dashboard estilo matriz: OTs (filas) × operaciones (columnas).
+//
+// Columnas: catálogo `Componente` × `OperacionReparacion`, EXTENDIDO con
+// cualquier (componente, operacion_codigo) que aparezca en alguna planificación
+// de OTs activas — así no se pierden tareas agregadas manualmente que no estén
+// en el catálogo.
 export async function GET() {
   try {
-    // 1) Catálogos: componentes + operaciones del maestro (columnas fijas)
-    const [componentes, operaciones, estados] = await Promise.all([
+    const [componentesCat, operacionesCat, estados] = await Promise.all([
       prisma.componente.findMany({
         where: { activo: true },
         orderBy: { codigo: "asc" },
-        select: { componente_id: true, codigo: true, nombre: true },
+        select: { componente_id: true, codigo: true, nombre: true, color: true },
       }),
       prisma.operacionReparacion.findMany({
         where: { activo: true },
@@ -29,7 +32,6 @@ export async function GET() {
       }),
     ]);
 
-    // 2) OTs activas (excluye Cerrada / Anulada / Entregada) + sus planificaciones.
     const otsRaw = await prisma.ordenTrabajo.findMany({
       where: {
         ot_status_codigo: { notIn: ["Cerrada", "Anulada", "Entregada"] },
@@ -57,6 +59,7 @@ export async function GET() {
             id: true,
             componente: true,
             operacion_codigo: true,
+            descripcion: true,
             estado: true,
             fecha_inicio: true,
             fecha_fin: true,
@@ -69,7 +72,49 @@ export async function GET() {
     type OT = (typeof otsRaw)[number];
     type Plan = OT["planificaciones"][number];
 
-    // 3) Reducir a la forma esperada por la página: cada OT con un map de "comp/op" → estado.
+    // ── Extender catálogo con (componente, op) presentes en planificaciones
+    // pero NO en el catálogo maestro. Esto cubre tareas que el usuario agrega
+    // manualmente desde el tab Planificación con códigos no catalogados.
+    const compsCatSet = new Set(componentesCat.map((c) => c.codigo));
+    const opsCatKey = new Set(
+      operacionesCat.map((o) => `${o.componente_codigo ?? "__SIN_COMP__"}__${o.codigo}`),
+    );
+    const compsExtra = new Map<string, { codigo: string; nombre: string }>();
+    const opsExtra = new Map<string, { codigo: string; nombre: string; componente_codigo: string; clasificacion: string }>();
+
+    for (const ot of otsRaw) {
+      for (const p of ot.planificaciones as Plan[]) {
+        const compCod = p.componente;
+        const opCod = p.operacion_codigo;
+        if (!compsCatSet.has(compCod) && !compsExtra.has(compCod)) {
+          compsExtra.set(compCod, { codigo: compCod, nombre: compCod });
+        }
+        const key = `${compCod}__${opCod}`;
+        if (!opsCatKey.has(key) && !opsExtra.has(key)) {
+          opsExtra.set(key, {
+            codigo: opCod,
+            // Usamos la descripción de la propia planificación si está, sino el código.
+            nombre: (p.descripcion ?? "").trim() || opCod,
+            componente_codigo: compCod,
+            clasificacion: "STD",
+          });
+        }
+      }
+    }
+
+    // Anexamos extras al final. El frontend ya tiene un orden personalizable
+    // por usuario, así que el "orden" del backend no es crítico.
+    const componentes = [
+      ...componentesCat,
+      ...Array.from(compsExtra.values()).map((c) => ({
+        componente_id: -1, // marcador: extra (no existe en BD)
+        codigo: c.codigo,
+        nombre: c.nombre,
+        color: null,
+      })),
+    ];
+    const operaciones = [...operacionesCat, ...Array.from(opsExtra.values())];
+
     const ots = otsRaw.map((o: OT) => {
       const planMap: Record<string, { estado: string | null; externo: boolean | null }> = {};
       let total = 0;
