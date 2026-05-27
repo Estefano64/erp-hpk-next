@@ -14,8 +14,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Table, Button, Tag, Space, Modal, Form, Input, InputNumber, Select,
-  Typography, Empty, App, AutoComplete, Popconfirm, Tooltip, Card,
+  Typography, Empty, App, AutoComplete, Popconfirm, Tooltip, Card, DatePicker,
 } from "antd";
+import dayjs from "dayjs";
 import {
   PlusOutlined, ReloadOutlined, SendOutlined, DeleteOutlined,
   CloseCircleOutlined, EditOutlined,
@@ -66,6 +67,8 @@ interface DraftItem {
   // mergeado: hace que cada draft item lleve su precio referencial.
   precio_unitario?: number;
   moneda?: string;
+  // Obligatoria para poder enviar a aprobación (mismo flujo que OT externa).
+  fecha_requerida?: dayjs.Dayjs | null;
 }
 
 const REQ_COLOR: Record<string, string> = {
@@ -201,6 +204,10 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
         message.error(`Item ${i + 1}: tipo MAC requiere seleccionar material.`);
         return;
       }
+      if (!it.fecha_requerida) {
+        message.error(`Item ${i + 1}: fecha requerida es obligatoria (para poder enviar a aprobación).`);
+        return;
+      }
     }
 
     try {
@@ -209,7 +216,10 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          items: draftItems.map(({ key: _key, ...rest }) => rest), // saca key local
+          items: draftItems.map(({ key: _key, fecha_requerida, ...rest }) => ({
+            ...rest,
+            fecha_requerida: fecha_requerida ? fecha_requerida.format("YYYY-MM-DD") : null,
+          })),
           nro_req: draftNroReq.trim() || undefined,
         }),
       });
@@ -655,6 +665,19 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
                     </Space>
                   );
                 },
+              },
+              {
+                // Fecha requerida — obligatoria para poder enviar a aprobación.
+                title: "F. requerida", dataIndex: "fecha_requerida", width: 140,
+                render: (_: unknown, row) => (
+                  <DatePicker
+                    size="small"
+                    value={row.fecha_requerida ?? null}
+                    format="DD/MM/YYYY"
+                    style={{ width: "100%" }}
+                    onChange={(d) => updateDraft(row.key, { fecha_requerida: d })}
+                  />
+                ),
               },
               {
                 title: "", key: "del", width: 50, align: "center", fixed: "right",
