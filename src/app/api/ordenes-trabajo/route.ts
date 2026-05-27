@@ -3,19 +3,46 @@ import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { parseDateOnly } from "@/lib/dates";
 
-// Genera el siguiente código OT-YYYY-XXXX
-async function generarNumeroOT(): Promise<string> {
-  const year = new Date().getFullYear();
-  const prefix = `OT-${year}-`;
+// Genera el siguiente código de OT en formato NNNNYY:
+//   - los últimos 2 dígitos son el año (ej. "26" para 2026)
+//   - los 4 anteriores son el correlativo del año (ej. "0001")
+// Ejemplo: la primera OT del 2026 es "000126".
+//
+// OTs antiguas con formato "OT-YYYY-NNNN" se ignoran al calcular el correlativo
+// (solo cuentan las que matchean exactamente \d{4}YY).
+//
+// MIN_CORRELATIVO_POR_ANIO: punto de partida del correlativo cuando todavía
+// no hay OTs nuevas registradas. Permite reservar números porque las OTs
+// antiguas se importarán después con código mayor al "min". Una vez importadas
+// (o cuando se cree una OT con número mayor), `maxN > minN` y este min queda
+// como histórico — se puede borrar la entrada del año cuando ya no aplique.
+const MIN_CORRELATIVO_POR_ANIO: Record<string, number> = {
+  "26": 3905, // primera OT nueva del 2026 será 390626; las anteriores se importarán después
+};
 
-  const last = await prisma.ordenTrabajo.findFirst({
-    where: { ot: { startsWith: prefix } },
-    orderBy: { id: "desc" },
+async function generarNumeroOT(): Promise<string> {
+  const year2 = String(new Date().getFullYear() % 100).padStart(2, "0");
+
+  // Trae todas las OTs cuyo `ot` termina en el año actual; después filtramos
+  // en memoria por el patrón exacto para descartar formatos legacy.
+  const candidatos = await prisma.ordenTrabajo.findMany({
+    where: { ot: { endsWith: year2 } },
     select: { ot: true },
   });
 
-  const lastNum = last?.ot ? parseInt(last.ot.replace(prefix, ""), 10) : 0;
-  return `${prefix}${String(lastNum + 1).padStart(4, "0")}`;
+  const regex = new RegExp(`^(\\d{4})${year2}$`);
+  let maxN = 0;
+  for (const { ot } of candidatos) {
+    const m = ot?.match(regex);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (n > maxN) maxN = n;
+    }
+  }
+
+  const minN = MIN_CORRELATIVO_POR_ANIO[year2] ?? 0;
+  const next = Math.max(maxN, minN) + 1;
+  return `${String(next).padStart(4, "0")}${year2}`;
 }
 
 // GET — lista con filtros y paginación
