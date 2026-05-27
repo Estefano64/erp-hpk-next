@@ -45,7 +45,13 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     }
     const item = await prisma.oTRepuesto.findUnique({
       where: { id: itemId },
-      select: { id: true, ot_id: true, orden_trabajo: { select: { id: true, ot: true } } },
+      select: {
+        id: true,
+        ot_id: true,
+        orden_trabajo_interna_id: true,
+        orden_trabajo: { select: { id: true, ot: true } },
+        orden_trabajo_interna: { select: { id: true, ot: true } },
+      },
     });
     if (!item) {
       return NextResponse.json({ error: "Item no encontrado" }, { status: 404 });
@@ -64,7 +70,15 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       tamano?: unknown;
     };
 
-    const expectedPrefix = R2Keys.requerimientoAdjunto(otCodigoFor(item.orden_trabajo), itemId) + "/";
+    // Path R2 depende de si el req pertenece a OT externa o interna.
+    const expectedPrefix = item.orden_trabajo_interna
+      ? R2Keys.otInternaRequerimientoAdjunto(otCodigoFor(item.orden_trabajo_interna), itemId) + "/"
+      : item.orden_trabajo
+        ? R2Keys.requerimientoAdjunto(otCodigoFor(item.orden_trabajo), itemId) + "/"
+        : null;
+    if (!expectedPrefix) {
+      return NextResponse.json({ error: "Requerimiento sin OT asociada" }, { status: 400 });
+    }
     if (typeof key !== "string" || !key.startsWith(expectedPrefix)) {
       return NextResponse.json({ error: "key fuera del namespace del requerimiento" }, { status: 400 });
     }

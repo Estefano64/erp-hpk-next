@@ -24,6 +24,7 @@ import {
   useColumnasRedimensionables,
   filtroPorColumna,
 } from "@/lib/tables";
+import { areasTallerGrouped, areaTallerLabel } from "@/lib/areas-taller";
 
 const { Title, Text } = Typography;
 
@@ -37,6 +38,7 @@ interface OTInternaRow {
   descripcion: string | null;
   planta_codigo: string | null;
   equipo_codigo: string | null;
+  area_taller: string | null;
   semana_revision: string | null;
   task_list: string | null;
   estrategia_id: number | null;
@@ -61,7 +63,7 @@ interface OTInternaRow {
 
 interface FormValues {
   tipo_ot_interna_codigo: string;
-  equipo_codigo: string;
+  area_taller: string;
   descripcion: string;
   planta_codigo?: string;
   prioridad_atencion_codigo?: string;
@@ -104,6 +106,14 @@ export default function OrdenesTrabajoInternasPage() {
   const [userStatuses, setUserStatuses] = useState<CatalogOption[]>([]);
   const [estrategias, setEstrategias] = useState<EstrategiaOption[]>([]);
   const [trabajadores, setTrabajadores] = useState<TrabajadorOpt[]>([]);
+
+  // El dropdown "Asignado a" en OTs internas solo muestra trabajadores del
+  // área Logística + Antonio (Antonio Zumaeta Mendoza). Decisión del usuario.
+  const trabajadoresAsignables = trabajadores.filter(
+    (t) =>
+      t.area?.toUpperCase() === "LOGISTICA" ||
+      t.nombre.toLowerCase().includes("antonio"),
+  );
 
   const { ocultas, setOcultas } = useColumnasOcultas("ot-internas-cols-v1", [
     "fecha_inicio_real", "fecha_fin_real", "fecha_cierre", "estrategia", "task_list", "recursos_status",
@@ -164,7 +174,7 @@ export default function OrdenesTrabajoInternasPage() {
     setEditing(row);
     form.setFieldsValue({
       tipo_ot_interna_codigo: row.tipo_ot_interna?.codigo ?? "",
-      equipo_codigo: row.equipo?.codigo ?? "",
+      area_taller: row.area_taller ?? "",
       descripcion: row.descripcion ?? "",
       planta_codigo: row.planta?.codigo,
       prioridad_atencion_codigo: row.prioridad_atencion?.codigo,
@@ -242,10 +252,15 @@ export default function OrdenesTrabajoInternasPage() {
       },
     },
     {
-      key: "equipo", title: "Equipo", width: 200, ellipsis: true,
-      render: (_: unknown, r: OTInternaRow) => r.equipo
-        ? <Tooltip title={r.equipo.descripcion}><span><b>{r.equipo.codigo}</b> · {r.equipo.descripcion}</span></Tooltip>
-        : "-",
+      key: "area_taller", title: "Área del taller", width: 200, ellipsis: true,
+      render: (_: unknown, r: OTInternaRow) => {
+        // Prioridad: área del taller (campo nuevo). Si no, fallback a equipo legacy.
+        if (r.area_taller) return <span>{areaTallerLabel(r.area_taller)}</span>;
+        if (r.equipo) {
+          return <Tooltip title={r.equipo.descripcion}><span><b>{r.equipo.codigo}</b> · {r.equipo.descripcion}</span></Tooltip>;
+        }
+        return "-";
+      },
     },
     {
       key: "descripcion", title: "Descripción", dataIndex: "descripcion", width: 260, ellipsis: true,
@@ -476,15 +491,15 @@ export default function OrdenesTrabajoInternasPage() {
             </Col>
             <Col xs={24} md={16}>
               <Form.Item
-                name="equipo_codigo"
-                label="Equipo del taller"
+                name="area_taller"
+                label="Área del taller"
                 rules={[{ required: true, message: "Requerido" }]}
               >
                 <Select
-                  placeholder="Buscar equipo (código o descripción)"
+                  placeholder="Elegí un área o sub-área"
                   showSearch
                   optionFilterProp="label"
-                  options={equipos.map((e) => ({ value: e.codigo, label: `${e.codigo} — ${e.descripcion}` }))}
+                  options={areasTallerGrouped()}
                 />
               </Form.Item>
             </Col>
@@ -570,7 +585,7 @@ export default function OrdenesTrabajoInternasPage() {
                   showSearch
                   placeholder="Operario que ejecuta"
                   optionFilterProp="label"
-                  options={trabajadores.map((t) => ({
+                  options={trabajadoresAsignables.map((t) => ({
                     value: t.nombre,
                     label: `${t.nombre} — ${t.area}`,
                   }))}

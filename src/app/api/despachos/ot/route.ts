@@ -84,6 +84,8 @@ export async function GET(_req: NextRequest) {
     }>();
 
     for (const it of pendientes) {
+      // Despachos son a clientes externos: ignorar items de OT interna.
+      if (it.ot_id == null) continue;
       const otId = it.ot_id;
       if (!grupos.has(otId)) {
         grupos.set(otId, {

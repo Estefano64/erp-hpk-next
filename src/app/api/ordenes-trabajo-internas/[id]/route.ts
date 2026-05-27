@@ -58,7 +58,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data: any = {};
     const editable = [
-      "planta_codigo", "equipo_codigo", "tipo_ot_interna_codigo", "descripcion",
+      "planta_codigo", "equipo_codigo", "area_taller", "tipo_ot_interna_codigo", "descripcion",
       "prioridad_atencion_codigo", "semana_revision", "estrategia_id", "task_list",
       "user_status_codigo", "ot_status_codigo", "recursos_status_codigo",
       "asignado_a", "comentarios",

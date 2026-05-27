@@ -14,7 +14,12 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const usuario = (await getAuditUser(req)) ?? "sistema";
     const current = await prisma.oTRepuesto.findUnique({
       where: { id: Number(id) },
-      select: { status_requerimiento_codigo: true, ot_id: true, nro_req: true },
+      select: {
+        status_requerimiento_codigo: true,
+        ot_id: true,
+        orden_trabajo_interna_id: true,
+        nro_req: true,
+      },
     });
     if (!current) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
     if (current.status_requerimiento_codigo !== "BORRADOR") {
@@ -32,15 +37,20 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           usuario_envia: usuario,
         },
       });
+      // Historial polimórfico: usa ot_id o orden_trabajo_interna_id según corresponda.
       await tx.oTHistorial.create({
         data: {
           ot_id: current.ot_id,
+          orden_trabajo_interna_id: current.orden_trabajo_interna_id,
           tipo_operacion: "Otro",
           descripcion: `Requerimiento ${current.nro_req ?? id} enviado a aprobación`,
           usuario,
         },
       });
-      await maybePromoveOTaRecursosSolicitados(tx, current.ot_id, usuario);
+      // Promoción de OT solo aplica a OTs externas — internas no tienen ese status.
+      if (current.ot_id != null) {
+        await maybePromoveOTaRecursosSolicitados(tx, current.ot_id, usuario);
+      }
       return r;
     });
     return NextResponse.json({ data: updated });

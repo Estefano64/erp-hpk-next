@@ -13,7 +13,9 @@ import {
 } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
+import { areasTallerGrouped, areaTallerLabel } from "@/lib/areas-taller";
 import OTInternaAdjuntosTab from "@/components/modules/ordenes-trabajo-internas/OTInternaAdjuntosTab";
+import OTInternaRequerimientosTab from "@/components/modules/ordenes-trabajo-internas/OTInternaRequerimientosTab";
 import OTInternaHistorialTab from "@/components/modules/ordenes-trabajo-internas/OTInternaHistorialTab";
 
 const { Title, Text, Paragraph } = Typography;
@@ -30,6 +32,7 @@ interface OTInternaDetalle {
   descripcion: string | null;
   planta_codigo: string | null;
   equipo_codigo: string | null;
+  area_taller: string | null;
   semana_revision: string | null;
   task_list: string | null;
   estrategia_id: number | null;
@@ -56,6 +59,7 @@ interface OTInternaDetalle {
 interface EditValues {
   tipo_ot_interna_codigo?: string;
   equipo_codigo?: string;
+  area_taller?: string;
   descripcion?: string;
   planta_codigo?: string;
   prioridad_atencion_codigo?: string;
@@ -103,6 +107,14 @@ export default function OTInternaDetallePage() {
   const [recursosStatuses, setRecursosStatuses] = useState<CatalogOption[]>([]);
   const [estrategias, setEstrategias] = useState<EstrategiaOption[]>([]);
   const [trabajadores, setTrabajadores] = useState<TrabajadorOpt[]>([]);
+
+  // El dropdown "Asignado a" en OTs internas solo muestra trabajadores del
+  // área Logística + Antonio (Antonio Zumaeta Mendoza). Decisión del usuario.
+  const trabajadoresAsignables = trabajadores.filter(
+    (t) =>
+      t.area?.toUpperCase() === "LOGISTICA" ||
+      t.nombre.toLowerCase().includes("antonio"),
+  );
 
   const fetchOt = useCallback(async () => {
     setLoading(true);
@@ -163,6 +175,7 @@ export default function OTInternaDetallePage() {
     form.setFieldsValue({
       tipo_ot_interna_codigo: ot.tipo_ot_interna?.codigo,
       equipo_codigo: ot.equipo?.codigo,
+      area_taller: ot.area_taller ?? undefined,
       descripcion: ot.descripcion ?? "",
       planta_codigo: ot.planta?.codigo,
       prioridad_atencion_codigo: ot.prioridad_atencion?.codigo,
@@ -317,7 +330,7 @@ export default function OTInternaDetallePage() {
                 ot={ot}
                 editing={editing}
                 form={form}
-                catalogos={{ tipos, equipos, plantas, prioridades, userStatuses, otStatuses, recursosStatuses, estrategias, trabajadores }}
+                catalogos={{ tipos, equipos, plantas, prioridades, userStatuses, otStatuses, recursosStatuses, estrategias, trabajadores: trabajadoresAsignables }}
               />
             ),
           },
@@ -325,6 +338,11 @@ export default function OTInternaDetallePage() {
             key: "tareas",
             label: "Tareas",
             children: <TareasTab ot={ot} editing={editing} form={form} />,
+          },
+          {
+            key: "requerimientos",
+            label: "Requerimientos",
+            children: <OTInternaRequerimientosTab otInternaId={otId} />,
           },
           {
             key: "adjuntos",
@@ -360,7 +378,11 @@ function DetalleTab({ ot, editing, form, catalogos }: {
       <Card size="small">
         <Descriptions column={{ xs: 1, sm: 2, md: 3 }} bordered size="small">
           <Descriptions.Item label="Tipo">{ot.tipo_ot_interna?.nombre ?? "—"}</Descriptions.Item>
-          <Descriptions.Item label="Equipo">{ot.equipo ? `${ot.equipo.codigo} — ${ot.equipo.descripcion}` : "—"}</Descriptions.Item>
+          <Descriptions.Item label="Área del taller">
+            {ot.area_taller
+              ? areaTallerLabel(ot.area_taller)
+              : ot.equipo ? `${ot.equipo.codigo} — ${ot.equipo.descripcion}` : "—"}
+          </Descriptions.Item>
           <Descriptions.Item label="Planta">{ot.planta?.nombre ?? "—"}</Descriptions.Item>
           <Descriptions.Item label="Prioridad">{ot.prioridad_atencion?.nombre ?? "—"}</Descriptions.Item>
           <Descriptions.Item label="Semana revisión">{ot.semana_revision ?? "—"}</Descriptions.Item>
@@ -400,11 +422,12 @@ function DetalleTab({ ot, editing, form, catalogos }: {
             </Form.Item>
           </Col>
           <Col xs={24} md={16}>
-            <Form.Item name="equipo_codigo" label="Equipo" rules={[{ required: true }]}>
+            <Form.Item name="area_taller" label="Área del taller" rules={[{ required: true }]}>
               <Select
+                placeholder="Elegí un área o sub-área"
                 showSearch
                 optionFilterProp="label"
-                options={catalogos.equipos.map((e) => ({ value: e.codigo, label: `${e.codigo} — ${e.descripcion}` }))}
+                options={areasTallerGrouped()}
               />
             </Form.Item>
           </Col>
