@@ -38,13 +38,27 @@ interface AdminUser {
 }
 
 const USERS: AdminUser[] = [
-  { currentCodigo: "USR-001", newCodigo: "41375843", nombre: "Antonio Zumaeta Mendoza", email: "mantenimiento@hpkinv.com", dni: "41375843" },
+  // Primera tanda (ya creados en seed previo). currentCodigo = el actual en BD.
+  { currentCodigo: "41375843", newCodigo: "41375843", nombre: "Antonio Zumaeta Mendoza", email: "mantenimiento@hpkinv.com", dni: "41375843" },
   { currentCodigo: "USR-002", newCodigo: "USR-002", nombre: "Carlos Viña Miranda", email: "gerente.operaciones@hpkinv.com", dni: null },
   { currentCodigo: "USR-003", newCodigo: "USR-003", nombre: "Diego Jaime Monge", email: "compras@hpkinv.com", dni: null },
-  { currentCodigo: "USR-004", newCodigo: "71502466", nombre: "Juan Diego Muñoz Manrique", email: "operaciones@hpkinv.com", dni: "71502466" },
-  { currentCodigo: "USR-005", newCodigo: "77687152", nombre: "Miriam Ccanahuire", email: "logistica@hpkinv.com", dni: "77687152" },
+  { currentCodigo: "71502466", newCodigo: "71502466", nombre: "Juan Diego Muñoz Manrique", email: "operaciones@hpkinv.com", dni: "71502466" },
+  { currentCodigo: "77687152", newCodigo: "77687152", nombre: "Miriam Ccanahuire", email: "logistica@hpkinv.com", dni: "77687152" },
   { currentCodigo: "73116071", newCodigo: "73116071", nombre: "Juan Vera Canales", email: "planeamiento@hpkinv.com", dni: "73116071" },
   { currentCodigo: "41916808", newCodigo: "41916808", nombre: "Luis Huerta Cornejo", email: "superv.taller@hpkinv.com", dni: "41916808" },
+  // Segunda tanda — resto del Excel "Usuarios de HPyK". SALA DE REUNIONES se
+  // omite (no es persona). Los que no tienen DNI cargado quedan con USR-XXX y
+  // solo pueden loguear por email.
+  { currentCodigo: "USR-008", newCodigo: "USR-008", nombre: "Angelo Mattos", email: "asist.log-mant@hpkinv.com", dni: null },
+  { currentCodigo: "USR-009", newCodigo: "USR-009", nombre: "Area Facturacion", email: "facturacion@hpkinv.com", dni: null },
+  { currentCodigo: "USR-010", newCodigo: "USR-010", nombre: "Cuenta Prueba", email: "prueba1@hpkinv.com", dni: null },
+  { currentCodigo: "USR-011", newCodigo: "USR-011", nombre: "Cuenta Administrador", email: "adminweb@hpkinv.com", dni: null },
+  { currentCodigo: "USR-012", newCodigo: "USR-012", nombre: "Isaac Foraquita", email: "asist.contabilidad@hpkinv.com", dni: null },
+  { currentCodigo: "29722406", newCodigo: "29722406", nombre: "Jose Tapia", email: "seguridad@hpkinv.com", dni: "29722406" },
+  { currentCodigo: "USR-013", newCodigo: "USR-013", nombre: "Pio Serpa", email: "pserpa@hpkinv.com", dni: null },
+  { currentCodigo: "USR-014", newCodigo: "USR-014", nombre: "Rodrigo Huamani", email: "produccion@hpkinv.com", dni: null },
+  { currentCodigo: "USR-015", newCodigo: "USR-015", nombre: "Ventas HPK", email: "ventas@hpkinv.com", dni: null },
+  { currentCodigo: "USR-016", newCodigo: "USR-016", nombre: "Victor Barreto", email: "contabilidad@hpkinv.com", dni: null },
 ];
 
 const prisma = new PrismaClient({ datasources: { db: { url } } });
