@@ -59,10 +59,10 @@ function splitTecnicos(s: string | null | undefined): string[] {
 }
 
 const JORNADA_INICIO = 8;
-const JORNADA_FIN = 18;
-const HORAS_DIA = JORNADA_FIN - JORNADA_INICIO; // 10
-const ALMUERZO_INI = 12;
-const ALMUERZO_FIN = 14; // visualmente bloque de 12-14 con almuerzo 12:30-13:30
+const JORNADA_FIN = 20;            // grid visible hasta las 20:00 para incluir horas extras
+const HORAS_DIA = JORNADA_FIN - JORNADA_INICIO; // 12
+const ALMUERZO_INI = 12.5;         // hora decimal — la franja real es 12:30 → 13:30
+const ALMUERZO_FIN = 13.5;
 const ROW_HEIGHT = 64;
 const SNAP_MIN = 15; // snap a 15 minutos
 const HOUR_PX_MIN = 28;
@@ -771,7 +771,9 @@ export default function ProgramacionSemanalPage() {
           <div>
             <div><strong>OT {r.orden_trabajo?.ot ?? r.ot_id}</strong></div>
             <div>{r.operacion_codigo} — {r.descripcion}</div>
+            <div>Cliente: {r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "—"}</div>
             <div>{ini.format("DD/MM HH:mm")} → {fin.format("DD/MM HH:mm")}</div>
+            <div>Duración: {Number(r.horas_estimadas ?? 0).toFixed(1)}h{r.qty_personal && r.qty_personal > 1 ? ` × ${r.qty_personal} pers.` : ""}</div>
             <div>Estado: {estadoNombre(r.estado)}</div>
             {hasConflict && <div style={{ color: brand.error }}>⚠ Conflicto</div>}
           </div>
@@ -901,7 +903,7 @@ export default function ProgramacionSemanalPage() {
               Programación Semanal
             </Typography.Title>
             <div style={{ fontSize: 12, opacity: 0.85 }}>
-              Gantt de tareas por {view === "equipo" ? "equipo" : "operario"} — L–V 8:00–18:00 (almuerzo 12:30–13:30)
+              Gantt de tareas por {view === "equipo" ? "equipo" : "operario"} — L–V 8:00–20:00 (almuerzo 12:30–13:30)
             </div>
           </div>
           <Space wrap>
@@ -1126,20 +1128,27 @@ export default function ProgramacionSemanalPage() {
               {days.map((d, i) => (
                 <div key={i} className="psg-day-header" style={{ width: dayPx, minWidth: dayPx }}>
                   <div className="psg-day-label">{d.format("ddd DD/MM")}</div>
-                  <div className="psg-hour-row">
+                  <div className="psg-hour-row" style={{ position: "relative" }}>
                     {Array.from({ length: HORAS_DIA }, (_, h) => {
                       const hour = JORNADA_INICIO + h;
-                      const isLunch = hour >= ALMUERZO_INI && hour < ALMUERZO_FIN;
                       return (
                         <div
                           key={h}
-                          className={`psg-hour-cell ${isLunch ? "psg-hour-lunch" : ""}`}
+                          className="psg-hour-cell"
                           style={{ width: hourPx, minWidth: hourPx }}
                         >
                           {hourPx >= 40 ? `${String(hour).padStart(2, "0")}:00` : String(hour).padStart(2, "0")}
                         </div>
                       );
                     })}
+                    {/* Banda de almuerzo (12:30 - 13:30) — posicionada con precisión de media hora */}
+                    <div
+                      className="psg-hour-lunch-band"
+                      style={{
+                        left: (ALMUERZO_INI - JORNADA_INICIO) * hourPx,
+                        width: (ALMUERZO_FIN - ALMUERZO_INI) * hourPx,
+                      }}
+                    />
                   </div>
                 </div>
               ))}
@@ -1216,13 +1225,17 @@ export default function ProgramacionSemanalPage() {
                     {/* Días + slots */}
                     {days.map((_, dIdx) => (
                       <div key={dIdx} className="psg-day-bg" style={{ left: dIdx * dayPx, width: dayPx }}>
-                        {Array.from({ length: HORAS_DIA }, (_, h) => {
-                          const hour = JORNADA_INICIO + h;
-                          const isLunch = hour >= ALMUERZO_INI && hour < ALMUERZO_FIN;
-                          return (
-                            <div key={h} className={`psg-slot ${isLunch ? "psg-slot-lunch" : ""}`} style={{ width: hourPx, minWidth: hourPx }} />
-                          );
-                        })}
+                        {Array.from({ length: HORAS_DIA }, (_, h) => (
+                          <div key={h} className="psg-slot" style={{ width: hourPx, minWidth: hourPx }} />
+                        ))}
+                        {/* Banda de almuerzo (12:30 - 13:30) */}
+                        <div
+                          className="psg-slot-lunch-band"
+                          style={{
+                            left: (ALMUERZO_INI - JORNADA_INICIO) * hourPx,
+                            width: (ALMUERZO_FIN - ALMUERZO_INI) * hourPx,
+                          }}
+                        />
                       </div>
                     ))}
                     {/* Bloques */}
@@ -1577,7 +1590,15 @@ export default function ProgramacionSemanalPage() {
           border-right: 1px solid #F0F0F0;
         }
         .psg-hour-cell:last-child { border-right: none; }
-        .psg-hour-lunch { background: #FFFBE6; color: #d48806; }
+        .psg-hour-lunch-band {
+          position: absolute;
+          top: 0; bottom: 0;
+          background: #FFFBE6;
+          pointer-events: none;
+          z-index: 0;
+          border-left: 1px dashed #d48806;
+          border-right: 1px dashed #d48806;
+        }
 
         .psg-row-strip {
           position: relative;
@@ -1593,7 +1614,13 @@ export default function ProgramacionSemanalPage() {
           flex-shrink: 0;
           border-right: 1px solid #F5F5F5;
         }
-        .psg-slot-lunch { background: repeating-linear-gradient(45deg, #FFF7CC 0 4px, #FFFBE6 4px 8px); }
+        .psg-slot-lunch-band {
+          position: absolute;
+          top: 0; bottom: 0;
+          background: repeating-linear-gradient(45deg, #FFF7CC 0 4px, #FFFBE6 4px 8px);
+          pointer-events: none;
+          z-index: 0;
+        }
 
         .psg-task-block {
           position: absolute;
