@@ -8,6 +8,7 @@ import {
   DatePicker, App, Typography, Descriptions,
 } from "antd";
 import { useEditLock } from "@/lib/useEditLock";
+import { useUnsavedChangesWarning } from "@/lib/unsaved-changes";
 import {
   ArrowLeftOutlined, EditOutlined, SaveOutlined, CloseOutlined, ToolOutlined,
 } from "@ant-design/icons";
@@ -96,6 +97,7 @@ export default function OTInternaDetallePage() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  useUnsavedChangesWarning(editing, "Estás editando esta OT interna. ¿Salir sin guardar?", `ot-interna-${otId}`);
 
   // Catálogos
   const [tipos, setTipos] = useState<CatalogOption[]>([]);
