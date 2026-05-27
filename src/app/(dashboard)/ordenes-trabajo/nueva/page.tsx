@@ -158,14 +158,18 @@ export default function NuevaOTPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bloqueoBien, bloqueoServicio]);
 
-  // Cuando cambia Cod Rep, autocompletar campos
+  // Cuando cambia Cod Rep, autocompletar campos. El N/P se pre-fillea en el
+  // form para que el usuario lo pueda sobreescribir (a pedido del cliente:
+  // algunas piezas comparten cod_rep pero traen variantes de N/P).
   function handleCodRepChange(codRepId: number | undefined) {
     if (!codRepId) {
       setSelectedCodRep(null);
+      form.setFieldValue("np", undefined);
       return;
     }
     const found = codReps.find((cr) => cr.cod_rep_id === codRepId);
     setSelectedCodRep(found ?? null);
+    form.setFieldValue("np", found?.np ?? undefined);
   }
 
   // Calcular % PCR cuando cambian PCR o Horas
@@ -257,7 +261,9 @@ export default function NuevaOTPage() {
         // Si NO hay estrategia, mandar los campos manuales. Si sí hay, el backend deriva del cod_rep.
         tipo: estrategia ? null : (values.tipo || null),
         tipo_codigo: values.tipo_codigo,
-        np: estrategia ? null : (values.np || null),
+        // N/P: siempre enviar el valor del form (con estrategia, el usuario
+        // puede sobreescribir el N/P sugerido por el cod_rep).
+        np: values.np || null,
         descripcion: estrategia ? null : (values.descripcion || null),
         id_fabricante: estrategia ? null : (values.id_fabricante || null),
         cod_rep_flota: estrategia ? null : (values.cod_rep_flota || null),
@@ -396,8 +402,9 @@ export default function NuevaOTPage() {
             </Col>
           </Row>
 
-          {/* Si hay estrategia + cod_rep → mostrar info read-only del cod_rep.
-              Si NO hay estrategia → inputs editables manualmente. */}
+          {/* Si hay estrategia + cod_rep → mostrar info read-only del cod_rep,
+              excepto N/P que queda editable (puede variar entre piezas que
+              comparten cod_rep). Si NO hay estrategia → inputs editables. */}
           {estrategia && selectedCodRep && (
             <Descriptions
               bordered
@@ -406,7 +413,11 @@ export default function NuevaOTPage() {
               style={{ marginBottom: 16 }}
             >
               <Descriptions.Item label="Tipo">{selectedCodRep.tipo?.nombre ?? "-"}</Descriptions.Item>
-              <Descriptions.Item label="N/P">{selectedCodRep.np ?? "-"}</Descriptions.Item>
+              <Descriptions.Item label="N/P">
+                <Form.Item name="np" noStyle>
+                  <Input size="small" placeholder={selectedCodRep.np ?? "—"} style={{ minWidth: 140 }} />
+                </Form.Item>
+              </Descriptions.Item>
               <Descriptions.Item label="Descripción">{selectedCodRep.descripcion}</Descriptions.Item>
               <Descriptions.Item label="Fabricante">{selectedCodRep.fabricante?.nombre ?? "-"}</Descriptions.Item>
               <Descriptions.Item label="Flota">{selectedCodRep.flota?.nombre ?? "-"}</Descriptions.Item>

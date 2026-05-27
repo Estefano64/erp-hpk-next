@@ -170,7 +170,10 @@ export async function POST(req: NextRequest) {
       });
       if (codRep) {
         tipo = codRep.tipo?.nombre ?? null;
-        np = codRep.np ?? null;
+        // N/P: si el form envía un valor explícito (incluso si difiere del
+        // cod_rep), respetarlo. Solo fall back al N/P del cod_rep si el form
+        // no envió el campo del todo.
+        np = body.np !== undefined ? (body.np || null) : (codRep.np ?? null);
         descripcion = codRep.descripcion;
         idFabricante = codRep.fabricante?.fabricante_id ?? null;
         codRepFlota = codRep.flota?.nombre ?? null;
