@@ -41,6 +41,7 @@ import {
   visibleColumns,
   STICKY_HEADER,
   filtroPorColumna,
+  paginacionEstandar,
 } from "@/lib/tables";
 
 const { Title, Text } = Typography;
@@ -119,6 +120,8 @@ export default function ProgramacionDashboardPage() {
   const [operaciones, setOperaciones] = useState<OperacionCat[]>([]);
   const [estados, setEstados] = useState<EstadoCat[]>([]);
   const [ots, setOts] = useState<OTRow[]>([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const [search, setSearch] = useState("");
   const [filtroComponente, setFiltroComponente] = useState<string | null>(null);
   const [detalle, setDetalle] = useState<OTRow | null>(null);
@@ -548,7 +551,13 @@ export default function ProgramacionDashboardPage() {
           bordered
           sticky={STICKY_HEADER}
           scroll={{ x: "max-content", y: "calc(100vh - 320px)" }}
-          pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (t) => `${t} OTs` }}
+          pagination={paginacionEstandar({
+            current: page,
+            pageSize,
+            total: otsFiltradas.length,
+            onChange: (p, s) => { setPage(p); setPageSize(s); },
+            label: "OTs",
+          })}
           onRow={(r) => ({ onClick: () => setDetalle(r), style: { cursor: "pointer" } })}
         />
       )}

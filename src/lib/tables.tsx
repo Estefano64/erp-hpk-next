@@ -562,11 +562,18 @@ export function useColumnasRedimensionables<T>(
     return [...left, ...orderedMovable, ...right];
   }, [columns, orden, claveColumna]);
 
+  // Default cuando una columna no declara su `width`. Antes esas columnas
+  // quedaban no-redimensionables porque SortableResizableTitle requiere width
+  // numérico para activar Resizable. Con este fallback, TODAS las columnas
+  // no-fixed pueden ajustarse.
+  const DEFAULT_COL_WIDTH = 150;
+
   const columnasRedim = useMemo<ColumnsType<T>>(() => {
     return columnasOrdenadas.map((c, idx) => {
       const col = c as ColumnType<T>;
       const k = claveColumna(col, idx);
-      const widthActual = anchos[k] ?? (typeof col.width === "number" ? col.width : undefined);
+      const widthActual =
+        anchos[k] ?? (typeof col.width === "number" ? col.width : DEFAULT_COL_WIDTH);
       // Las columnas fixed mantienen ancho original (Resizable rompe el sticky)
       if (col.fixed) {
         return {
@@ -576,7 +583,7 @@ export function useColumnasRedimensionables<T>(
       }
       return {
         ...col,
-        ...(widthActual ? { width: widthActual } : {}),
+        width: widthActual,
         onHeaderCell: (column: { width?: number }) => ({
           width: column.width,
           columnKey: k,

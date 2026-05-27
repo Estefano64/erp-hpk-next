@@ -23,7 +23,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
 import { EditableCell } from "@/components/EditableCell";
-import { filtroPorColumna } from "@/lib/tables";
+import { filtroPorColumna, paginacionEstandar } from "@/lib/tables";
 
 const { Title, Text } = Typography;
 
@@ -62,6 +62,8 @@ export default function SuministrosPage() {
   const router = useRouter();
   const [data, setData] = useState<StockItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(30);
   const [search, setSearch] = useState("");
 
   const fetchData = useCallback(async () => {
@@ -253,7 +255,13 @@ export default function SuministrosPage() {
             columns={columns}
             dataSource={filtrados}
             loading={loading}
-            pagination={{ pageSize: 30, showSizeChanger: true, showTotal: (t) => `${t} suministro(s)` }}
+            pagination={paginacionEstandar({
+              current: page,
+              pageSize,
+              total: filtrados.length,
+              onChange: (p, s) => { setPage(p); setPageSize(s); },
+              label: "suministro(s)",
+            })}
             scroll={{ x: 1200 }}
           />
         </Card>

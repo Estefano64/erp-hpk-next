@@ -15,6 +15,7 @@ import {
   RangoFechasFiltro,
   dentroDeRango,
   useColumnasRedimensionables,
+  paginacionEstandar,
 } from "@/lib/tables";
 import dayjs, { Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
@@ -182,6 +183,8 @@ export default function PlanificacionPage() {
   const [editMode, setEditMode] = useState(false);
 
   const [rows, setRows] = useState<PlanRow[]>([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -1324,7 +1327,13 @@ export default function PlanificacionPage() {
           )}
           loading={loading}
           size="small"
-          pagination={{ pageSize: 50, showTotal: (t) => `${t} tareas`, placement: ["topEnd", "bottomEnd"] }}
+          pagination={paginacionEstandar({
+            current: page,
+            pageSize,
+            total: rows.filter((r) => dentroDeRango(r, "fecha_inicio", rangoInicio) && dentroDeRango(r, "fecha_fin", rangoFin)).length,
+            onChange: (p, s) => { setPage(p); setPageSize(s); },
+            label: "tareas",
+          })}
           scroll={{ x: 2400 }}
           sticky={{ offsetHeader: 56, offsetScroll: 0 }}
           rowSelection={{

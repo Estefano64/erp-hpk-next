@@ -13,6 +13,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import type { UploadFile } from "antd/es/upload/interface";
 import dayjs, { Dayjs } from "dayjs";
+import { paginacionEstandar } from "@/lib/tables";
 import { brand } from "@/lib/theme";
 import { formatDateOnly } from "@/lib/dates";
 import { uploadToR2 } from "@/lib/r2-client";
@@ -45,6 +46,8 @@ export default function DespachoMinaPage() {
   const router = useRouter();
   const [data, setData] = useState<OTLista[]>([]);
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [modalOpen, setModalOpen] = useState(false);
   const [otSel, setOtSel] = useState<OTLista | null>(null);
   const [saving, setSaving] = useState(false);
@@ -253,7 +256,13 @@ export default function DespachoMinaPage() {
             columns={columns}
             dataSource={data}
             loading={loading}
-            pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `${t} OT(s)` }}
+            pagination={paginacionEstandar({
+              current: page,
+              pageSize,
+              total: data.length,
+              onChange: (p, s) => { setPage(p); setPageSize(s); },
+              label: "OT(s)",
+            })}
             scroll={{ x: 1400 }}
           />
         </Card>

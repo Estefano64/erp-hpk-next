@@ -18,6 +18,7 @@ import {
   visibleColumns,
   filtroPorColumna,
   useColumnasRedimensionables,
+  paginacionEstandar,
 } from "@/lib/tables";
 import { brand } from "@/lib/theme";
 import { catalogosById, type FieldDef } from "@/lib/catalogos-config";
@@ -37,6 +38,8 @@ export default function CatalogoCrudPage() {
 
   const [data, setData] = useState<CatalogRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const [search, setSearch] = useState("");
   const [showInactivos, setShowInactivos] = useState(true);
   const [editingId, setEditingId] = useState<number | null>(null); // null = creando
@@ -372,7 +375,12 @@ export default function CatalogoCrudPage() {
           dataSource={filtered}
           loading={loading}
           size="small"
-          pagination={{ pageSize: 50, showTotal: (t) => `${t} registros`, placement: ["topEnd", "bottomEnd"] }}
+          pagination={paginacionEstandar({
+            current: page,
+            pageSize,
+            total: filtered.length,
+            onChange: (p, s) => { setPage(p); setPageSize(s); },
+          })}
           scroll={{ x: 800 }}
           sticky={{ offsetHeader: 56, offsetScroll: 0 }}
           rowClassName={(r) => r.activo === false ? "cat-row-inactive" : ""}

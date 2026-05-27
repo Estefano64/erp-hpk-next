@@ -50,6 +50,7 @@ import {
   useRangoFechas,
   RangoFechasFiltro,
   dentroDeRango,
+  paginacionEstandar,
 } from "@/lib/tables";
 import { Popover, InputNumber, Divider, Checkbox } from "antd";
 import { brand } from "@/lib/theme";
@@ -213,6 +214,9 @@ function RequerimientosDetalleInner() {
 
   const [allData, setAllData] = useState<Requerimiento[]>([]);
   const [loading, setLoading] = useState(false);
+  // Paginación controlada — el user puede elegir 10/20/50/100/500.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const { rango: rangoSol, setRango: setRangoSol } = useRangoFechas();
   const { rango: rangoReq, setRango: setRangoReq } = useRangoFechas();
   const [search, setSearch] = useState("");
@@ -1273,7 +1277,12 @@ function RequerimientosDetalleInner() {
           components={tableComponents}
           dataSource={filteredData}
           loading={loading}
-          pagination={{ pageSize: 25, showTotal: (t) => `${t} registros`, placement: ["topEnd", "bottomEnd"] }}
+          pagination={paginacionEstandar({
+            current: page,
+            pageSize,
+            total: filteredData.length,
+            onChange: (p, s) => { setPage(p); setPageSize(s); },
+          })}
           scroll={{ x: 2000 }}
           sticky={{ offsetHeader: 56, offsetScroll: 0 }}
           size="small"
