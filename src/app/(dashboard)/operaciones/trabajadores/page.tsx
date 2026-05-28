@@ -152,7 +152,7 @@ export default function TrabajadoresPage() {
   const columns: ColumnsType<Trabajador> = [
     numeracionColumn<Trabajador>({ current: page, pageSize }),
     {
-      key: "nombre", title: "Nombre", dataIndex: "nombre", width: 240, fixed: "left",
+      key: "nombre", title: "Nombre", dataIndex: "nombre", width: 240,
       ...filtroPorColumna(rows, "nombre"),
       sorter: (a, b) => a.nombre.localeCompare(b.nombre),
       render: (v: string, r) => (

@@ -597,7 +597,7 @@ export default function PlanificacionPage() {
   const columns: ColumnsType<PlanRow> = [
     numeracionColumn<PlanRow>(),
     {
-      title: "OT", key: "ot", width: 130, fixed: "left", ellipsis: true,
+      title: "OT", key: "ot", width: 130, ellipsis: true,
       filters: otValores, filterSearch: true,
       onFilter: (value, r) => r.orden_trabajo?.ot === value,
       render: (_, r) => r.orden_trabajo?.ot

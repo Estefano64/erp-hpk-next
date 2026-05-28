@@ -387,7 +387,7 @@ export default function AceptacionesPage() {
   const ocColumns: ColumnsType<OCPendiente> = [
     numeracionColumn<OCPendiente>({ current: pageOC, pageSize }),
     {
-      key: "numero_po", title: "Nro OC", width: 130, fixed: "left",
+      key: "numero_po", title: "Nro OC", width: 130,
       ...filtroPorColumna(ocs, "numero_po"),
       sorter: (a, b) => a.numero_po.localeCompare(b.numero_po),
       render: (_, o) => <Tag color={brand.navy}>{o.numero_po}</Tag>,
@@ -467,7 +467,7 @@ export default function AceptacionesPage() {
   const rqColumns: ColumnsType<ReqPendiente> = [
     numeracionColumn<ReqPendiente>({ current: pageRQ, pageSize }),
     {
-      key: "nro_req", title: "Nro Req / Item", width: 140, fixed: "left",
+      key: "nro_req", title: "Nro Req / Item", width: 140,
       ...filtroPorColumna(reqs, "nro_req"),
       render: (_, r) => (
         <Text strong style={{ fontSize: 12 }}>{r.nro_req ?? "—"}/{r.item_req ?? "—"}</Text>

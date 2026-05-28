@@ -724,7 +724,7 @@ export default function RequerimientosPage() {
   const groupColumns: ColumnsType<GrupoReq> = [
     numeracionColumn<GrupoReq>({ current: page, pageSize }),
     {
-      title: "OT", key: "ot", width: 110, fixed: "left", align: "center",
+      title: "OT", key: "ot", width: 110, align: "center",
       ...filtroProyectado(gruposFiltrados, (g) => g.orden_trabajo?.ot ?? g.items[0]?.orden_trabajo_interna?.ot ?? null),
       sorter: (a, b) => {
         // OT externa ahora es number, interna sigue siendo string.

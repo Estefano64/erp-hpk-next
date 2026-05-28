@@ -23,6 +23,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
+import { useColumnasRedimensionables, STICKY_HEADER } from "@/lib/tables";
 
 const { Text } = Typography;
 
@@ -511,15 +512,7 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
       {rows.length === 0 && !loading ? (
         <Empty description="Sin requerimientos. Crea el primero con el botón de arriba." />
       ) : (
-        <Table
-          rowKey="id"
-          columns={columns}
-          dataSource={rows}
-          loading={loading}
-          size="small"
-          scroll={{ x: 1000 }}
-          pagination={false}
-        />
+        <TablaReqInternos columns={columns} data={rows} loading={loading} />
       )}
 
       {/* ── Modal multi-item ── */}
@@ -682,5 +675,28 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
         }
       `}</style>
     </div>
+  );
+}
+
+function TablaReqInternos({
+  columns, data, loading,
+}: { columns: ColumnsType<RequerimientoRow>; data: RequerimientoRow[]; loading: boolean }) {
+  const { columnas, components, TableDragWrapper } = useColumnasRedimensionables<RequerimientoRow>(
+    columns, "ot-interna-requerimientos-v1",
+  );
+  return (
+    <TableDragWrapper>
+      <Table
+        rowKey="id"
+        columns={columnas}
+        components={components}
+        dataSource={data}
+        loading={loading}
+        size="small"
+        scroll={{ x: 1000 }}
+        sticky={STICKY_HEADER}
+        pagination={false}
+      />
+    </TableDragWrapper>
   );
 }

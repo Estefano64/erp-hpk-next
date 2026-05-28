@@ -245,7 +245,7 @@ export default function OrdenesTrabajoInternasPage() {
   const baseColumns: ColumnsType<OTInternaRow> = useMemo(() => [
     numeracionColumn<OTInternaRow>({ current: page, pageSize }),
     {
-      key: "ot", title: "OT", dataIndex: "ot", width: 130, fixed: "left",
+      key: "ot", title: "OT", dataIndex: "ot", width: 130,
       render: (v: string | null) => v
         ? <Tag style={{ background: brand.navy, color: brand.white, border: "none", fontFamily: "monospace" }}>{v}</Tag>
         : "-",

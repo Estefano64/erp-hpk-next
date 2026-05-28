@@ -41,6 +41,7 @@ import {
   visibleColumns,
   STICKY_HEADER,
   filtroPorColumna,
+  useColumnasRedimensionables,
 } from "@/lib/tables";
 
 const { Title, Text } = Typography;
@@ -287,7 +288,6 @@ export default function ProgramacionDashboardPage() {
       title: "HP&K",
       dataIndex: "ot",
       width: 110,
-      fixed: "left",
       align: "left",
       sorter: (a, b) => Number(a.ot ?? 0) - Number(b.ot ?? 0),
       ...filtroPorColumna(otsFiltradas, "ot"),
@@ -539,17 +539,11 @@ export default function ProgramacionDashboardPage() {
       {otsFiltradas.length === 0 && !loading ? (
         <Empty description="No hay OTs activas." />
       ) : (
-        <Table<OTRow>
-          rowKey="id"
-          size="small"
+        <TablaProgramacion
           columns={visibleColumns(columns, ocultas)}
-          dataSource={otsFiltradas}
+          data={otsFiltradas}
           loading={loading}
-          bordered
-          sticky={STICKY_HEADER}
-          scroll={{ x: "max-content", y: "calc(100vh - 320px)" }}
-          pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (t) => `${t} OTs` }}
-          onRow={(r) => ({ onClick: () => setDetalle(r), style: { cursor: "pointer" } })}
+          onRowClick={(r) => setDetalle(r)}
         />
       )}
 
@@ -840,5 +834,33 @@ function ConfigurarVistaDrawer({
         ]}
       />
     </Drawer>
+  );
+}
+
+function TablaProgramacion({
+  columns, data, loading, onRowClick,
+}: {
+  columns: ColumnsType<OTRow>; data: OTRow[]; loading: boolean;
+  onRowClick: (r: OTRow) => void;
+}) {
+  const { columnas, components, TableDragWrapper } = useColumnasRedimensionables<OTRow>(
+    columns, "programacion-dashboard-v1",
+  );
+  return (
+    <TableDragWrapper>
+      <Table<OTRow>
+        rowKey="id"
+        size="small"
+        columns={columnas}
+        components={components}
+        dataSource={data}
+        loading={loading}
+        bordered
+        sticky={STICKY_HEADER}
+        scroll={{ x: "max-content", y: "calc(100vh - 320px)" }}
+        pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (t) => `${t} OTs` }}
+        onRow={(r) => ({ onClick: () => onRowClick(r), style: { cursor: "pointer" } })}
+      />
+    </TableDragWrapper>
   );
 }

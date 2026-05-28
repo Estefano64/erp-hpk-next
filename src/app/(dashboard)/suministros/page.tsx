@@ -23,7 +23,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
 import { EditableCell } from "@/components/EditableCell";
-import { filtroPorColumna } from "@/lib/tables";
+import { filtroPorColumna, useColumnasRedimensionables, STICKY_HEADER } from "@/lib/tables";
 
 const { Title, Text } = Typography;
 
@@ -123,7 +123,7 @@ export default function SuministrosPage() {
       },
     },
     {
-      key: "codigo", title: "Código", dataIndex: "codigo", width: 110, fixed: "left",
+      key: "codigo", title: "Código", dataIndex: "codigo", width: 110,
       render: (v: string) => <Text strong style={{ fontSize: 11, color: brand.navy }}>{v}</Text>,
     },
     { key: "descripcion", title: "Descripción", dataIndex: "descripcion", ellipsis: true, ...filtroPorColumna(filtrados, "descripcion") },
@@ -247,17 +247,32 @@ export default function SuministrosPage() {
         />
       ) : (
         <Card>
-          <Table<StockItem>
-            rowKey="material_id"
-            size="small"
-            columns={columns}
-            dataSource={filtrados}
-            loading={loading}
-            pagination={{ pageSize: 30, showSizeChanger: true, showTotal: (t) => `${t} suministro(s)` }}
-            scroll={{ x: 1200 }}
-          />
+          <TablaSuministros columns={columns} data={filtrados} loading={loading} />
         </Card>
       )}
     </div>
+  );
+}
+
+function TablaSuministros({
+  columns, data, loading,
+}: { columns: ColumnsType<StockItem>; data: StockItem[]; loading: boolean }) {
+  const { columnas, components, TableDragWrapper } = useColumnasRedimensionables<StockItem>(
+    columns, "suministros-v1",
+  );
+  return (
+    <TableDragWrapper>
+      <Table<StockItem>
+        rowKey="material_id"
+        size="small"
+        columns={columnas}
+        components={components}
+        dataSource={data}
+        loading={loading}
+        pagination={{ pageSize: 30, showSizeChanger: true, showTotal: (t) => `${t} suministro(s)` }}
+        scroll={{ x: 1200 }}
+        sticky={STICKY_HEADER}
+      />
+    </TableDragWrapper>
   );
 }

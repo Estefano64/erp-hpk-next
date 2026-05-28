@@ -16,6 +16,7 @@ import dayjs, { Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
 import { formatDateOnly } from "@/lib/dates";
 import { uploadToR2 } from "@/lib/r2-client";
+import { useColumnasRedimensionables, STICKY_HEADER } from "@/lib/tables";
 
 const { Title, Text } = Typography;
 
@@ -141,7 +142,7 @@ export default function DespachoMinaPage() {
 
   const columns: ColumnsType<OTLista> = useMemo(() => [
     {
-      key: "ot", title: "OT", width: 110, fixed: "left",
+      key: "ot", title: "OT", width: 110,
       render: (_v, r) => (
         <Tooltip title="Abrir OT">
           <Tag color={brand.navy} style={{ cursor: "pointer", margin: 0 }} onClick={() => router.push(`/ordenes-trabajo/${r.id}`)}>
@@ -247,15 +248,7 @@ export default function DespachoMinaPage() {
         <Empty description="No hay OTs terminadas pendientes de despacho." />
       ) : (
         <Card>
-          <Table<OTLista>
-            rowKey="id"
-            size="small"
-            columns={columns}
-            dataSource={data}
-            loading={loading}
-            pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `${t} OT(s)` }}
-            scroll={{ x: 1400 }}
-          />
+          <TablaDespachosMina columns={columns} data={data} loading={loading} />
         </Card>
       )}
 
@@ -325,5 +318,28 @@ export default function DespachoMinaPage() {
         )}
       </Modal>
     </div>
+  );
+}
+
+function TablaDespachosMina({
+  columns, data, loading,
+}: { columns: ColumnsType<OTLista>; data: OTLista[]; loading: boolean }) {
+  const { columnas, components, TableDragWrapper } = useColumnasRedimensionables<OTLista>(
+    columns, "despachos-mina-v1",
+  );
+  return (
+    <TableDragWrapper>
+      <Table<OTLista>
+        rowKey="id"
+        size="small"
+        columns={columnas}
+        components={components}
+        dataSource={data}
+        loading={loading}
+        pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `${t} OT(s)` }}
+        scroll={{ x: 1400 }}
+        sticky={STICKY_HEADER}
+      />
+    </TableDragWrapper>
   );
 }

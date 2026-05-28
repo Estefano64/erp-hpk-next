@@ -14,6 +14,7 @@ import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
 import { formatDateOnly } from "@/lib/dates";
+import { useColumnasRedimensionables, STICKY_HEADER } from "@/lib/tables";
 
 const { Title, Text } = Typography;
 
@@ -117,7 +118,7 @@ export default function FacturacionOTPage() {
 
   const columns: ColumnsType<OTLista> = useMemo(() => [
     {
-      key: "ot", title: "OT", width: 110, fixed: "left",
+      key: "ot", title: "OT", width: 110,
       render: (_v, r) => (
         <Tag color={brand.navy} style={{ cursor: "pointer", margin: 0 }} onClick={() => router.push(`/ordenes-trabajo/${r.id}`)}>
           {r.ot ?? `#${r.id}`}
@@ -227,15 +228,7 @@ export default function FacturacionOTPage() {
         <Empty description="No hay OTs entregadas pendientes de facturación." />
       ) : (
         <Card>
-          <Table<OTLista>
-            rowKey="id"
-            size="small"
-            columns={columns}
-            dataSource={data}
-            loading={loading}
-            pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `${t} OT(s)` }}
-            scroll={{ x: 1500 }}
-          />
+          <TablaFacturacionOT columns={columns} data={data} loading={loading} />
         </Card>
       )}
 
@@ -290,5 +283,28 @@ export default function FacturacionOTPage() {
         )}
       </Modal>
     </div>
+  );
+}
+
+function TablaFacturacionOT({
+  columns, data, loading,
+}: { columns: ColumnsType<OTLista>; data: OTLista[]; loading: boolean }) {
+  const { columnas, components, TableDragWrapper } = useColumnasRedimensionables<OTLista>(
+    columns, "facturacion-ot-v1",
+  );
+  return (
+    <TableDragWrapper>
+      <Table<OTLista>
+        rowKey="id"
+        size="small"
+        columns={columnas}
+        components={components}
+        dataSource={data}
+        loading={loading}
+        pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `${t} OT(s)` }}
+        scroll={{ x: 1500 }}
+        sticky={STICKY_HEADER}
+      />
+    </TableDragWrapper>
   );
 }

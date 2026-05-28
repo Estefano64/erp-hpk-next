@@ -284,7 +284,6 @@ export default function StockPage() {
       title: "Alerta",
       dataIndex: "alerta",
       width: 90,
-      fixed: "left",
       filters: [
         { text: "Sin stock", value: "SIN" },
         { text: "Bajo stock", value: "BAJO" },
@@ -303,7 +302,6 @@ export default function StockPage() {
       title: "Código",
       dataIndex: "codigo",
       width: 110,
-      fixed: "left",
       filters: valoresUnicos("codigo"),
       filterSearch: true,
       onFilter: (value, r) => r.codigo === value,

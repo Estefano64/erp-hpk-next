@@ -736,7 +736,6 @@ function RequerimientosDetalleInner() {
       title: "OT",
       dataIndex: "numero_ot",
       width: 120,
-      fixed: "left",
       filters: obtenerValoresUnicos("numero_ot"),
       filterSearch: true,
       onFilter: (value, r) => r.numero_ot === value,

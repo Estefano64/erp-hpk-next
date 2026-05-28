@@ -405,7 +405,7 @@ function TabPrestamos() {
   const columns: ColumnsType<Prestamo> = [
     numeracionColumn<Prestamo>({ current: page, pageSize }),
     {
-      key: "estado", title: "Estado", dataIndex: "estado", width: 110, fixed: "left",
+      key: "estado", title: "Estado", dataIndex: "estado", width: 110,
       filters: [
         { text: "PRESTADA", value: "PRESTADA" },
         { text: "DEVUELTA", value: "DEVUELTA" },

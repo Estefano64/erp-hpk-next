@@ -235,7 +235,6 @@ export default function ComprasPage() {
       title: "Nro OC",
       dataIndex: "numero_po",
       width: 130,
-      fixed: "left",
       filters: valoresUnicos("numero_po"),
       filterSearch: true,
       onFilter: (value, r) => r.numero_po === value,

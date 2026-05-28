@@ -33,8 +33,10 @@ export interface NumeracionOpts {
 
 // Columna "NRO" estandarizada para todas las tablas listables.
 // Mantiene la numeración correcta cuando la página o el tamaño cambian.
+// Por defecto NO es fixed-left: solo las columnas de Acciones son fijas.
+// Si por algún motivo se quiere fixearla, pasar `fixed: true` explícitamente.
 export function numeracionColumn<T>(opts: NumeracionOpts = {}): ColumnType<T> {
-  const { current = 1, pageSize = 20, width = 60, fixed = true } = opts;
+  const { current = 1, pageSize = 20, width = 60, fixed = false } = opts;
   return {
     title: "NRO",
     key: "__num",

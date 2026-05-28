@@ -229,7 +229,6 @@ export default function OrdenesTrabajoPage() {
       title: "OT",
       dataIndex: "ot",
       width: 150,
-      fixed: "left",
       sorter: (a, b) => Number(a.ot ?? 0) - Number(b.ot ?? 0),
       ...filtroPorColumna(data, "ot"),
       render: (v: string, r: OTRecord) => (

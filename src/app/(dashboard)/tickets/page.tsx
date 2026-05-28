@@ -15,7 +15,7 @@ import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import { uploadToR2 } from "@/lib/r2-client";
 import { R2Image } from "@/components/R2Image";
-import { numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE } from "@/lib/tables";
+import { numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE, useColumnasRedimensionables } from "@/lib/tables";
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -220,7 +220,7 @@ export default function TicketsPage() {
   const columns: ColumnsType<Ticket> = useMemo(() => [
     numeracionColumn<Ticket>({ current: page, pageSize }),
     {
-      key: "id", title: "Nro", dataIndex: "id", width: 70, fixed: "left",
+      key: "id", title: "Nro", dataIndex: "id", width: 70,
       render: (v: number) => <Tag style={{ background: brand.navy, color: brand.white, border: "none", fontFamily: "monospace" }}>#{v}</Tag>,
     },
     {
@@ -268,6 +268,10 @@ export default function TicketsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [page, pageSize]);
 
+  const { columnas, components, TableDragWrapper } = useColumnasRedimensionables<Ticket>(
+    columns, "tickets-v1",
+  );
+
   return (
     <div>
       <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -301,20 +305,23 @@ export default function TicketsPage() {
         </Col>
       </Row>
 
-      <Table
-        rowKey="id"
-        columns={columns}
-        dataSource={rows}
-        loading={loading}
-        size="small"
-        scroll={{ x: 1400 }}
-        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-        pagination={paginacionEstandar({
-          current: page, pageSize, total: rows.length,
-          onChange: (p, s) => { setPage(p); setPageSize(s); },
-          label: "tickets",
-        })}
-      />
+      <TableDragWrapper>
+        <Table
+          rowKey="id"
+          columns={columnas}
+          components={components}
+          dataSource={rows}
+          loading={loading}
+          size="small"
+          scroll={{ x: 1400 }}
+          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+          pagination={paginacionEstandar({
+            current: page, pageSize, total: rows.length,
+            onChange: (p, s) => { setPage(p); setPageSize(s); },
+            label: "tickets",
+          })}
+        />
+      </TableDragWrapper>
 
       {/* Modal: Nuevo ticket */}
       <Modal

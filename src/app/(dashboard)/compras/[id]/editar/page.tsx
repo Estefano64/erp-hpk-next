@@ -14,6 +14,7 @@ import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
 import { useUnsavedChangesWarning, confirmLeave } from "@/lib/unsaved-changes";
+import { useColumnasRedimensionables, STICKY_HEADER } from "@/lib/tables";
 
 const { Title, Text } = Typography;
 
@@ -220,7 +221,7 @@ export default function EditarOCPage() {
 
   const columns: ColumnsType<ItemRow> = [
     {
-      title: "#", key: "n", width: 50, align: "center", fixed: "left",
+      title: "#", key: "n", width: 50, align: "center",
       render: (_v, _r, idx) => <Text strong>{idx + 1}</Text>,
     },
     {
@@ -423,20 +424,7 @@ export default function EditarOCPage() {
         </Row>
       </Card>
 
-      <Table<ItemRow>
-        rowKey="_localId"
-        size="small"
-        columns={columns}
-        dataSource={visibleRows}
-        pagination={false}
-        scroll={{ x: "max-content" }}
-        bordered
-        footer={() => (
-          <Button type="dashed" block icon={<PlusOutlined />} onClick={addRow}>
-            Agregar fila (item libre)
-          </Button>
-        )}
-      />
+      <TablaItems columns={columns} rows={visibleRows} onAdd={addRow} />
 
       <div style={{ marginTop: 16, padding: 12, background: "#f6f6f6", borderRadius: 4, fontSize: 11, color: brand.textSecondary }}>
         <Tag color="orange">Tip</Tag>
@@ -444,5 +432,33 @@ export default function EditarOCPage() {
         Si la OC no tiene ninguna OT asociada, no podrás agregar items libres — primero tenés que generar la OC normal y luego ajustar acá.
       </div>
     </div>
+  );
+}
+
+function TablaItems({
+  columns, rows, onAdd,
+}: { columns: ColumnsType<ItemRow>; rows: ItemRow[]; onAdd: () => void }) {
+  const { columnas, components, TableDragWrapper } = useColumnasRedimensionables<ItemRow>(
+    columns, "compras-editar-items-v1",
+  );
+  return (
+    <TableDragWrapper>
+      <Table<ItemRow>
+        rowKey="_localId"
+        size="small"
+        columns={columnas}
+        components={components}
+        dataSource={rows}
+        pagination={false}
+        scroll={{ x: "max-content" }}
+        sticky={STICKY_HEADER}
+        bordered
+        footer={() => (
+          <Button type="dashed" block icon={<PlusOutlined />} onClick={onAdd}>
+            Agregar fila (item libre)
+          </Button>
+        )}
+      />
+    </TableDragWrapper>
   );
 }
