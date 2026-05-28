@@ -168,7 +168,8 @@ export async function GET() {
       planificacion_ot_id: number;
       inicio: string;
       transcurrido_seg: number;
-      ot: string | null;
+      // `ot` ahora es number (INTEGER) tras la migración del 2026-05-28.
+      ot: number | null;
       descripcion: string;
       componente: string;
       operacion: string;
