@@ -41,6 +41,9 @@ export async function GET(req: NextRequest) {
     if (tipo) where.tipo_ot_interna_codigo = tipo;
     if (otStatus) where.ot_status_codigo = otStatus;
     if (equipo) where.equipo_codigo = equipo;
+    // Por defecto solo OTs internas activas; las desactivadas (anuladas) se
+    // ocultan. El admin puede pedirlas con ?incluirInactivas=1 (para reactivar).
+    if (searchParams.get("incluirInactivas") !== "1") where.activo = true;
 
     const [data, total] = await Promise.all([
       prisma.ordenTrabajoInterna.findMany({

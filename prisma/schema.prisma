@@ -991,6 +991,10 @@ model OrdenTrabajo {
 model OrdenTrabajoInterna {
   id                        Int                @id @default(autoincrement())
   ot                        String?            @unique @db.VarChar(50)
+  // Soft-delete (desactivar): false = anulada. Se oculta de los listados; los
+  // datos se conservan y es reversible. (`ot` es @unique, así que el número no
+  // se reutiliza mientras la OT anulada exista — distinto de las externas.)
+  activo                    Boolean            @default(true)
   planta_codigo             String?            @db.VarChar(10)
   equipo_codigo             String?            @db.VarChar(50)
   tipo_ot_interna_codigo    String?            @db.VarChar(20)

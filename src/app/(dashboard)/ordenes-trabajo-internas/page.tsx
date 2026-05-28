@@ -4,13 +4,14 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   Typography, Table, Button, Input, Select, Space, Tag, Modal, Form,
-  Row, Col, Card, App, DatePicker, Popconfirm, Tooltip,
+  Row, Col, Card, App, DatePicker, Popconfirm, Tooltip, Switch,
 } from "antd";
 import {
   ToolOutlined, PlusOutlined, ReloadOutlined, SearchOutlined,
-  EditOutlined, DeleteOutlined, EyeOutlined,
+  EditOutlined, DeleteOutlined, EyeOutlined, StopOutlined, UndoOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
+import { useSession } from "next-auth/react";
 import dayjs, { type Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
@@ -35,6 +36,7 @@ interface EstrategiaOption { estrategia_id: number; codigo: string; descripcion:
 interface OTInternaRow {
   id: number;
   ot: string | null;
+  activo: boolean;
   descripcion: string | null;
   planta_codigo: string | null;
   equipo_codigo: string | null;
@@ -84,10 +86,14 @@ export default function OrdenesTrabajoInternasPage() {
   const router = useRouter();
   const { message, modal } = App.useApp();
   const { screens } = useResponsive();
+  const { data: session } = useSession();
+  // Eliminar / desactivar OTs internas es exclusivo del admin (destructivo).
+  const esAdmin = ((session?.user as { roles?: string[] } | undefined)?.roles ?? []).includes("admin");
   const [form] = Form.useForm<FormValues>();
 
   // Estado
   const [rows, setRows] = useState<OTInternaRow[]>([]);
+  const [verInactivas, setVerInactivas] = useState(false);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
@@ -159,6 +165,7 @@ export default function OrdenesTrabajoInternasPage() {
       if (search) params.set("search", search);
       if (filterTipo) params.set("tipo", filterTipo);
       if (filterEquipo) params.set("equipo", filterEquipo);
+      if (verInactivas) params.set("incluirInactivas", "1");
       const res = await fetch(`/api/ordenes-trabajo-internas?${params}`);
       if (res.ok) {
         const json = await res.json();
@@ -168,7 +175,7 @@ export default function OrdenesTrabajoInternasPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, search, filterTipo, filterEquipo]);
+  }, [page, pageSize, search, filterTipo, filterEquipo, verInactivas]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -231,14 +238,44 @@ export default function OrdenesTrabajoInternasPage() {
     }
   }
 
-  async function handleDelete(id: number) {
-    const res = await fetch(`/api/ordenes-trabajo-internas/${id}`, { method: "DELETE" });
-    if (res.ok) {
-      message.success("OT interna eliminada");
-      fetchData();
-    } else {
-      message.error("No se pudo eliminar");
-    }
+  // Desactivar (anular, reversible) / reactivar. Solo admin.
+  async function toggleActivo(r: OTInternaRow) {
+    const activar = !r.activo;
+    const res = await fetch(`/api/ordenes-trabajo-internas/${r.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ activo: activar }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) { message.error(j.error ?? "No se pudo cambiar el estado"); return; }
+    message.success(activar ? "OT interna reactivada" : "OT interna desactivada");
+    fetchData();
+  }
+
+  // Eliminar en cascada (irreversible). Solo admin. Confirmación reforzada.
+  function confirmarEliminar(r: OTInternaRow) {
+    modal.confirm({
+      title: `Eliminar OT interna ${r.ot ?? `#${r.id}`} definitivamente`,
+      okText: "Eliminar todo",
+      okButtonProps: { danger: true },
+      cancelText: "Cancelar",
+      width: 500,
+      content: (
+        <div style={{ fontSize: 13 }}>
+          Esto borra <b>permanentemente</b> la OT interna y <b>todo lo relacionado</b>
+          (requerimientos, adjuntos, historial). No se puede deshacer.
+          <br /><br />
+          Si solo querés ocultarla, usá <b>Desactivar</b> en su lugar.
+        </div>
+      ),
+      onOk: async () => {
+        const res = await fetch(`/api/ordenes-trabajo-internas/${r.id}`, { method: "DELETE" });
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok) { message.error(j.error ?? "No se pudo eliminar"); throw new Error("fail"); }
+        message.success("OT interna eliminada");
+        fetchData();
+      },
+    });
   }
 
   // Columnas
@@ -246,9 +283,14 @@ export default function OrdenesTrabajoInternasPage() {
     numeracionColumn<OTInternaRow>({ current: page, pageSize }),
     {
       key: "ot", title: "OT", dataIndex: "ot", width: 130, fixed: "left",
-      render: (v: string | null) => v
-        ? <Tag style={{ background: brand.navy, color: brand.white, border: "none", fontFamily: "monospace" }}>{v}</Tag>
-        : "-",
+      render: (_: unknown, r: OTInternaRow) => (
+        <Space size={4}>
+          {r.ot
+            ? <Tag style={{ background: brand.navy, color: brand.white, border: "none", fontFamily: "monospace" }}>{r.ot}</Tag>
+            : "-"}
+          {!r.activo && <Tag color="default">desactivada</Tag>}
+        </Space>
+      ),
     },
     {
       key: "tipo", title: "Tipo", width: 110,
@@ -349,7 +391,7 @@ export default function OrdenesTrabajoInternasPage() {
       render: (v: string | null) => v ? dayjs(v).format("DD/MM/YY HH:mm") : "-",
     },
     {
-      key: "acciones", title: "", width: 120, fixed: "right",
+      key: "acciones", title: "", width: esAdmin ? 180 : 120, fixed: "right",
       render: (_: unknown, r: OTInternaRow) => (
         <Space size="small">
           <Tooltip title="Ver detalle">
@@ -363,22 +405,32 @@ export default function OrdenesTrabajoInternasPage() {
           <Tooltip title="Editar">
             <Button size="small" type="text" icon={<EditOutlined />} onClick={() => openEditarModal(r)} />
           </Tooltip>
-          <Popconfirm
-            title="¿Eliminar esta OT interna?"
-            okText="Eliminar"
-            okButtonProps={{ danger: true }}
-            cancelText="Cancelar"
-            onConfirm={() => handleDelete(r.id)}
-          >
-            <Tooltip title="Eliminar">
-              <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+          {esAdmin && (r.activo ? (
+            <Popconfirm
+              title="Desactivar esta OT interna"
+              description="Se oculta de los listados. Reversible (los datos se conservan)."
+              okText="Desactivar" cancelText="Cancelar"
+              onConfirm={() => toggleActivo(r)}
+            >
+              <Tooltip title="Desactivar (anular)">
+                <Button size="small" type="text" icon={<StopOutlined />} />
+              </Tooltip>
+            </Popconfirm>
+          ) : (
+            <Tooltip title="Reactivar">
+              <Button size="small" type="text" icon={<UndoOutlined style={{ color: brand.success }} />} onClick={() => toggleActivo(r)} />
             </Tooltip>
-          </Popconfirm>
+          ))}
+          {esAdmin && (
+            <Tooltip title="Eliminar definitivamente (cascada)">
+              <Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => confirmarEliminar(r)} />
+            </Tooltip>
+          )}
         </Space>
       ),
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [page, pageSize, rows]);
+  ], [page, pageSize, rows, esAdmin]);
 
   const { columnas, components, resetAnchos, TableDragWrapper } =
     useColumnasRedimensionables<OTInternaRow>(baseColumns, "ot-internas-cols-widths-v1");
@@ -447,6 +499,14 @@ export default function OrdenesTrabajoInternasPage() {
               <Button onClick={resetAnchos}>Restablecer anchos</Button>
             </Space>
           </Col>
+          {esAdmin && (
+            <Col xs={24}>
+              <Switch size="small" checked={verInactivas} onChange={(v) => { setVerInactivas(v); setPage(1); }} />
+              <span style={{ marginLeft: 8, fontSize: 13, color: brand.textSecondary }}>
+                Ver OTs internas desactivadas (anuladas)
+              </span>
+            </Col>
+          )}
         </Row>
       </Card>
 
