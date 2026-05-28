@@ -179,19 +179,10 @@ export default function CatalogoCrudPage() {
     fetchData();
   }
 
-  if (!cfg) {
-    return (
-      <Card>
-        <Alert type="error" showIcon title={`Catálogo "${tabla}" no existe.`} />
-        <Button style={{ marginTop: 12 }} icon={<ArrowLeftOutlined />} onClick={() => router.push("/catalogos")}>
-          Volver al índice
-        </Button>
-      </Card>
-    );
-  }
-
-  // Columnas dinámicas — todas con filtro tipo Excel basado en los datos cargados
-  const columns: ColumnsType<CatalogRow> = cfg.fields.map<ColumnsType<CatalogRow>[number]>((f) => {
+  // Columnas dinámicas — todas con filtro tipo Excel basado en los datos cargados.
+  // Se construyen aunque falte cfg para no romper el orden de hooks (el hook de
+  // redimensionado va más abajo y debe llamarse siempre). El early-return va después.
+  const columns: ColumnsType<CatalogRow> = (cfg?.fields ?? []).map<ColumnsType<CatalogRow>[number]>((f) => {
     const base = {
       title: f.label,
       key: f.key,
@@ -257,8 +248,8 @@ export default function CatalogoCrudPage() {
     };
   });
 
-  // Columna de acciones
-  columns.push({
+  // Columna de acciones (solo si el catálogo existe)
+  if (cfg) columns.push({
     title: "",
     key: "actions",
     width: 120,
@@ -302,7 +293,18 @@ export default function CatalogoCrudPage() {
 
   const allColumns = [numeracionColumn<CatalogRow>(), ...columns];
   const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
-    useColumnasRedimensionables<CatalogRow>(allColumns, `catalogos-${cfg.id}-cols-widths-v1`);
+    useColumnasRedimensionables<CatalogRow>(allColumns, `catalogos-${cfg?.id ?? tabla}-cols-widths-v1`);
+
+  if (!cfg) {
+    return (
+      <Card>
+        <Alert type="error" showIcon title={`Catálogo "${tabla}" no existe.`} />
+        <Button style={{ marginTop: 12 }} icon={<ArrowLeftOutlined />} onClick={() => router.push("/catalogos")}>
+          Volver al índice
+        </Button>
+      </Card>
+    );
+  }
 
   return (
     <div>
