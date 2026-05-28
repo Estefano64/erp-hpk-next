@@ -3,6 +3,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { parseDateOnly } from "@/lib/dates";
+import { getAuditUser } from "@/lib/audit";
 
 const Schema = z.object({
   repuesto_ids: z.array(z.coerce.number().int().positive()).min(1),
@@ -20,7 +21,8 @@ const IGV_PCT = new Prisma.Decimal("0.18");
 const ONE_PLUS_IGV = new Prisma.Decimal(1).plus(IGV_PCT);
 const MAX_NUMERO_PO_RETRIES = 5;
 
-// Genera el próximo numero_po con formato D{YY}{NNNN} (correlativo global por año).
+// Genera el próximo numero_po con formato {YY}{NNNN} (correlativo global por año).
+// El prefijo "D" fue removido por pedido del usuario — ahora empieza con el año.
 async function siguienteNumeroPO(tx: Prisma.TransactionClient, prefix: string): Promise<string> {
   const ultima = await tx.compra.findFirst({
     where: { numero_po: { startsWith: prefix } },
@@ -49,9 +51,14 @@ export async function POST(req: NextRequest) {
     const ubicacion_codigo = d.ubicacion_codigo ?? d.almacen_id ?? null;
     const monedaInput = (d.moneda ?? "USD").toUpperCase();
     const moneda_codigo = monedaInput === "PEN" ? "SOL" : monedaInput;
-    const usuario = d.usuario || "Logistica";
+    // Tomar el nombre del usuario logueado (NextAuth) para que aparezca en el
+    // PDF como "Elaborado por" y matchee con la firma en /public/firmas/.
+    // El campo `usuario` del body queda como fallback por compatibilidad.
+    const usuarioSesion = await getAuditUser(req);
+    const usuario = usuarioSesion || d.usuario || "Logistica";
 
-    const prefix = `D${new Date().getFullYear().toString().slice(-2)}`;
+    // Antes era "D26", ahora solo "26" (los 2 dígitos del año).
+    const prefix = new Date().getFullYear().toString().slice(-2);
 
     const result = await prisma.$transaction(async (tx) => {
       // Cargamos sólo requerimientos que NO estén ya asignados a una OC.
