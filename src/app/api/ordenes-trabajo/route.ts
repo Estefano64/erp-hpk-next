@@ -56,9 +56,6 @@ export async function GET(req: NextRequest) {
     const page = Math.max(1, Number(searchParams.get("page") ?? 1));
     const limit = Math.min(10000, Math.max(1, Number(searchParams.get("limit") ?? 20)));
     const search = searchParams.get("search")?.trim() ?? "";
-    const otStatus = searchParams.get("ot_status") ?? "";
-    const recursosStatus = searchParams.get("recursos_status") ?? "";
-    const tallerStatus = searchParams.get("taller_status") ?? "";
     const clienteId = searchParams.get("cliente") ?? "";
     // El export a Excel pide ?export=1 para recibir también los campos
     // históricos. El listado normal los omite para aligerar el payload.
@@ -89,13 +86,83 @@ export async function GET(req: NextRequest) {
         { descripcion: { contains: search, mode: "insensitive" } },
       ];
     }
-    if (otStatus) where.ot_status_codigo = otStatus;
-    if (recursosStatus) where.recursos_status_codigo = recursosStatus;
-    if (tallerStatus) where.taller_status_codigo = tallerStatus;
+    // Selects/filtros por columna FK (value = codigo del catálogo).
+    const FK_CODIGO: Record<string, string> = {
+      ot_status: "ot_status_codigo",
+      recursos_status: "recursos_status_codigo",
+      taller_status: "taller_status_codigo",
+      prioridad_atencion: "prioridad_atencion_codigo",
+      atencion_reparacion: "atencion_reparacion_codigo",
+      tipo_reparacion: "tipo_reparacion_codigo",
+      tipo_garantia: "tipo_garantia_codigo",
+      tipo_ot: "tipo_codigo",
+    };
+    for (const [param, col] of Object.entries(FK_CODIGO)) {
+      const v = searchParams.get(param);
+      if (v) where[col] = v;
+    }
     if (clienteId) where.id_cliente = Number(clienteId);
+
+    // Filtros por relación (value = el valor mostrado).
+    const codRep = searchParams.get("codigo_reparacion");
+    if (codRep) where.codigo_reparacion = { is: { codigo: codRep } };
+    const fab = searchParams.get("fabricante");
+    if (fab) where.fabricante = { is: { nombre: fab } };
+
+    // Si / No: presencia de garantía / base metálica.
+    const garantia = searchParams.get("garantia");
+    if (garantia === "Si") where.garantia_codigo = { not: null };
+    else if (garantia === "No") where.garantia_codigo = null;
+    const baseMet = searchParams.get("base_metalica");
+    if (baseMet === "Si") where.base_metalica_codigo = { not: null };
+    else if (baseMet === "No") where.base_metalica_codigo = null;
+
+    // Estado de la hoja de evaluación (__none__ = sin evaluación).
+    const evalEstado = searchParams.get("evaluacion_estado");
+    if (evalEstado === "__none__") where.evaluaciones_tecnicas = { none: {} };
+    else if (evalEstado) where.evaluaciones_tecnicas = { some: { estado: evalEstado } };
+
+    // Filtros de texto libre (contains, insensitive). Llegan como txt_<campo>.
+    const TEXT_FIELDS = [
+      "equipo_codigo", "descripcion", "tipo", "np", "cod_rep_flota", "cod_rep_posicion",
+      "plaqueteo", "wo_cliente", "po_cliente", "po_item", "id_viajero",
+      "guia_remision", "empresa_entrega", "usuario_crea", "comentarios",
+    ];
+    for (const f of TEXT_FIELDS) {
+      const v = searchParams.get(`txt_${f}`)?.trim();
+      if (v) where[f] = { contains: v, mode: "insensitive" };
+    }
+
+    // Rango de fecha de recepción.
+    const fDesde = searchParams.get("fecha_recepcion_desde");
+    const fHasta = searchParams.get("fecha_recepcion_hasta");
+    if (fDesde || fHasta) {
+      where.fecha_recepcion = {} as Record<string, Date>;
+      if (fDesde) where.fecha_recepcion.gte = new Date(fDesde);
+      if (fHasta) where.fecha_recepcion.lte = new Date(fHasta + "T23:59:59.999Z");
+    }
+
     // Por defecto solo OTs activas; las desactivadas (anuladas) se ocultan.
     // El admin puede pedirlas con ?incluirInactivas=1 (para reactivarlas).
     if (searchParams.get("incluirInactivas") !== "1") where.activo = true;
+
+    // Ordenamiento server-side. La tabla manda sortField (key) + sortOrder.
+    const sortOrder = searchParams.get("sortOrder") === "ascend" ? "asc" : "desc";
+    const sortField = searchParams.get("sortField") ?? "";
+    const SORT_SCALAR: Record<string, true> = {
+      ot: true, equipo_codigo: true, descripcion: true, fecha_recepcion: true,
+      porcentaje_pcr: true, pcr: true, horas: true, contrato_dias: true,
+      fecha_requerimiento_cliente: true, fecha_reprogramada: true, fecha_creacion: true,
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let orderBy: any = { id: "desc" };
+    if (sortField === "cliente") orderBy = { cliente: { razon_social: sortOrder } };
+    else if (sortField === "codigo_reparacion") orderBy = { codigo_reparacion: { codigo: sortOrder } };
+    else if (sortField === "prioridad_atencion") orderBy = { prioridad_atencion_codigo: sortOrder };
+    else if (sortField === "ot_status") orderBy = { ot_status: { nombre: sortOrder } };
+    else if (sortField === "recursos_status") orderBy = { recursos_status: { nombre: sortOrder } };
+    else if (sortField === "taller_status") orderBy = { taller_status: { nombre: sortOrder } };
+    else if (SORT_SCALAR[sortField]) orderBy = { [sortField]: sortOrder };
 
     const [data, total] = await Promise.all([
       prisma.ordenTrabajo.findMany({
@@ -133,7 +200,7 @@ export async function GET(req: NextRequest) {
           // una por OT; tomamos el último id por las dudas.
           evaluaciones_tecnicas: { select: { estado: true }, orderBy: { id: "desc" }, take: 1 },
         },
-        orderBy: { id: "desc" },
+        orderBy,
         skip: (page - 1) * limit,
         take: limit,
       }),
