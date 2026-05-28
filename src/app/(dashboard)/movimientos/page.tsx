@@ -1383,7 +1383,7 @@ function TabSalida({ onRefresh }: { onRefresh: () => void }) {
               <Text strong style={{ color: "#389e0d" }}>⬇ ENTRADA</Text>
               <div style={{ fontSize: 12, color: "#666" }}>
                 Úsala para registrar devoluciones o material recibido manualmente
-                (sin una OC). Para recibir una OC completa usa la pestaña "Ingreso de POs".
+                (sin una OC). Para recibir una OC completa usa la pestaña &quot;Ingreso de POs&quot;.
               </div>
             </div>
             <Divider style={{ margin: 0 }} />

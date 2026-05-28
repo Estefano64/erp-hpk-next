@@ -722,7 +722,7 @@ export default function ProgramacionSemanalPage() {
     const target = e.currentTarget as HTMLElement;
     const rect = target.getBoundingClientRect();
     // Si la tarea está en el set de seleccionadas y hay más de 1, prepara multi-drag
-    let multiOffsets: { id: number; offsetMin: number; recurso: string | null }[] = [];
+    const multiOffsets: { id: number; offsetMin: number; recurso: string | null }[] = [];
     if (selectedIds.has(taskId) && selectedIds.size > 1) {
       const base = rows.find((r) => r.id === taskId) ?? allRows.find((r) => r.id === taskId);
       const baseIni = base?.fecha_inicio ? new Date(base.fecha_inicio).getTime() : null;
@@ -809,7 +809,7 @@ export default function ProgramacionSemanalPage() {
     document.body.style.userSelect = "none";
     document.body.style.cursor = "grabbing";
 
-    let scrollInterval: ReturnType<typeof setInterval> | null = null;
+    const scrollInterval: ReturnType<typeof setInterval> | null = null;
 
     function onMove(ev: MouseEvent) {
       const target = getDropTarget(ev.clientX, ev.clientY, drag!.grabOffsetX);
@@ -1665,7 +1665,7 @@ export default function ProgramacionSemanalPage() {
           showIcon
           style={{ marginTop: 12 }}
           title="Recomendación"
-          description={<>En el diálogo del navegador elegí <strong>horizontal (landscape)</strong> y <strong>A4</strong>. Si imprimís un día, en la opción "más ajustes" del navegador podés ajustar el zoom para que ese día ocupe la página entera.</>}
+          description={<>En el diálogo del navegador elegí <strong>horizontal (landscape)</strong> y <strong>A4</strong>. Si imprimís un día, en la opción &quot;más ajustes&quot; del navegador podés ajustar el zoom para que ese día ocupe la página entera.</>}
         />
         <div style={{ marginTop: 8, fontSize: 12, color: brand.textSecondary }}>
           Total filas: <strong>{recursos.length}</strong> · Tareas: <strong>{rows.length}</strong>

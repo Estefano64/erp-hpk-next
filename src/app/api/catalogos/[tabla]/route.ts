@@ -8,6 +8,7 @@ type Params = { params: Promise<{ tabla: string }> };
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function getModel(tabla: string): { model: any; cfg: ReturnType<typeof catalogoConfigOrNull> } | null {
   const cfg = catalogoConfigOrNull(tabla);
   if (!cfg) return null;
