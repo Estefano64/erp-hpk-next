@@ -9,8 +9,10 @@ type Ctx = { params: Promise<{ id: string }> };
 // POST /api/planificacion/:id/pausar — el técnico interrumpe la tarea.
 // Cierra la sesión abierta de este técnico con cierre="pausa". Recalcula
 // horas_reales sumando todas las sesiones cerradas. Estado pasa a "pausado".
-export async function POST(_req: NextRequest, ctx: Ctx) {
+export async function POST(req: NextRequest, ctx: Ctx) {
   try {
+    const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+    const obs = typeof body.observaciones === "string" ? body.observaciones.trim() : "";
     const session = await getServerSession(authOptions);
     if (!session?.user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     const userId = Number((session.user as { id?: string }).id);
@@ -46,9 +48,16 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
     });
     const horas = sumarHorasReales(todas);
 
+    // Observaciones del técnico (acumulativas): se anexan a las existentes.
+    let observaciones: string | undefined;
+    if (obs) {
+      const cur = await prisma.planificacionOT.findUnique({ where: { id: planId }, select: { observaciones: true } });
+      observaciones = cur?.observaciones ? `${cur.observaciones}\n${obs}` : obs;
+    }
+
     await prisma.planificacionOT.update({
       where: { id: planId },
-      data: { estado: "pausado", horas_reales: horas },
+      data: { estado: "pausado", horas_reales: horas, ...(observaciones !== undefined ? { observaciones } : {}) },
     });
 
     return NextResponse.json({ ok: true, horas_reales: horas, fin: now.toISOString() });

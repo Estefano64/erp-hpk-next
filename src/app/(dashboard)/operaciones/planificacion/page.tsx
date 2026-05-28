@@ -116,6 +116,7 @@ interface PlanRow {
   componente: string;
   operacion_codigo: string;
   descripcion: string;
+  comentario: string | null;
   tipo_reparacion: string | null;
   orden: number;
   horas_estimadas: string | null;
@@ -704,6 +705,12 @@ export default function PlanificacionPage() {
         const desc = (v ?? "").trim();
         return <span style={{ fontSize: 12 }}>{desc}</span>;
       },
+    },
+    {
+      key: "comentario", title: "Comentario", dataIndex: "comentario", width: 200, ellipsis: true,
+      render: (v: string | null) => v
+        ? <Tooltip title={v}><span style={{ fontSize: 12 }}>{v}</span></Tooltip>
+        : <span style={{ fontSize: 11, color: brand.textSecondary }}>—</span>,
     },
     {
       title: "Semana", key: "semana", width: 160,

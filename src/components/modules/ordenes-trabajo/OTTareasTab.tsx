@@ -46,6 +46,8 @@ interface PlanRow {
   tecnico: string | null;
   maquina: string | null;
   estado: string | null;
+  comentario: string | null;
+  observaciones: string | null;
   version: number;
   operacion_cod_rep_id: number | null;
   created_at: string;
@@ -419,6 +421,24 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
         const isFallback = !code || code === "EVAL" || code === "CUSTOM" || code.toLowerCase() === desc.toLowerCase();
         return <div style={{ fontWeight: 500 }}>{isFallback ? desc : `${code} - ${desc}`}</div>;
       },
+    },
+    {
+      key: "comentario", title: "Comentario", dataIndex: "comentario", width: 220, ellipsis: true,
+      render: (v: string | null, r: PlanRow) => (
+        <Typography.Paragraph
+          style={{ margin: 0, fontSize: 12 }}
+          editable={{
+            tooltip: "Editar comentario (le llega al técnico)",
+            text: v ?? "",
+            onChange: (val) => {
+              const nv = val.trim();
+              if (nv !== (v ?? "")) void putTarea(r, { comentario: nv || null }).then((ok) => { if (ok) fetchRows(); });
+            },
+          }}
+        >
+          {v || <Typography.Text type="secondary" style={{ fontSize: 11 }}>—</Typography.Text>}
+        </Typography.Paragraph>
+      ),
     },
     { key: "tipo_reparacion", title: "Tipo", dataIndex: "tipo_reparacion", width: 100,
       filters: [

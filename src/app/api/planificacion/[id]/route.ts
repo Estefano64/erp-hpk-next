@@ -20,6 +20,7 @@ const UpdateSchema = z.object({
   horas_estimadas: z.coerce.number().min(0).optional().nullable(),
   horas_reales: z.coerce.number().min(0).optional().nullable(),
   observaciones: z.string().trim().optional().nullable(),
+  comentario: z.string().trim().optional().nullable(),
   semana_plan: z.string().trim().optional().nullable(),
   qty_personal: z.coerce.number().int().min(1).optional(),
   horas_extras: z.boolean().optional(),

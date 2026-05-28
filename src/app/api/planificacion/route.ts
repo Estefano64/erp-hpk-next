@@ -96,6 +96,7 @@ const CreateSchema = z.object({
   tecnico: z.string().trim().optional().nullable(),
   orden: z.coerce.number().int().min(0).optional(),
   horas_estimadas: z.coerce.number().min(0).optional().nullable(),
+  comentario: z.string().trim().optional().nullable(),
 });
 
 // POST /api/planificacion — crear una fila PlanificacionOT individual
@@ -146,6 +147,7 @@ export async function POST(req: NextRequest) {
         horas_estimadas: d.horas_estimadas ?? null,
         maquina: d.maquina ?? null,
         tecnico: d.tecnico ?? null,
+        comentario: d.comentario ?? null,
         estado: "abierto",
       },
       include: {

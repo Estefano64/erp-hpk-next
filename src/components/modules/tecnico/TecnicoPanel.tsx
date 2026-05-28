@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Typography, Card, Row, Col, Table, Tag, Button, Statistic, Empty, Progress, Space, App, Tooltip, Segmented,
+  Typography, Card, Row, Col, Table, Tag, Button, Statistic, Empty, Progress, Space, App, Tooltip, Segmented, Modal, Input,
 } from "antd";
 import {
   PlayCircleOutlined, PauseCircleOutlined, CheckCircleOutlined, TrophyOutlined,
@@ -18,7 +18,12 @@ interface OTLite {
   ot: string | null;
   descripcion: string | null;
   np: string | null;
-  codigo_reparacion: { flota: { codigo: string; nombre: string } | null } | null;
+  tipo: string | null;
+  cod_rep_flota: string | null;
+  cod_rep_posicion: string | null;
+  fecha_entrega: string | null;
+  fabricante: { nombre: string } | null;
+  codigo_reparacion: { codigo: string; descripcion: string; flota: { codigo: string; nombre: string } | null } | null;
   prioridad_atencion: { codigo: string; nombre: string; nivel: number | null } | null;
 }
 interface TareaPlan {
@@ -36,6 +41,8 @@ interface TareaPlan {
   estado: string | null;
   tecnico: string | null;
   maquina: string | null;
+  comentario: string | null;      // comentario del planner → técnico
+  observaciones: string | null;   // observaciones de ejecución del técnico
   orden_trabajo: OTLite | null;
 }
 interface SesionEnCurso {
@@ -131,10 +138,14 @@ export default function TecnicoPanel() {
   // Reset del tick cuando cambia la sesión.
   useEffect(() => { setSecondsTick(0); }, [data?.sesionEnCurso?.sesion_id]);
 
-  async function accion(taskId: number, accion: "iniciar" | "pausar" | "finalizar") {
+  async function accion(taskId: number, accion: "iniciar" | "pausar" | "finalizar", observaciones?: string) {
     setAccionLoading(taskId);
     try {
-      const r = await fetch(`/api/planificacion/${taskId}/${accion}`, { method: "POST" });
+      const r = await fetch(`/api/planificacion/${taskId}/${accion}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(observaciones ? { observaciones } : {}),
+      });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.error ?? `Error al ${accion}`);
       const msg = accion === "iniciar" ? "Tarea iniciada" : accion === "pausar" ? "Tarea pausada" : "Tarea finalizada";
@@ -145,6 +156,20 @@ export default function TecnicoPanel() {
     } finally {
       setAccionLoading(null);
     }
+  }
+
+  // Modal para que el técnico deje observaciones al pausar/finalizar.
+  const [obsModal, setObsModal] = useState<{ taskId: number; accion: "pausar" | "finalizar" } | null>(null);
+  const [obsText, setObsText] = useState("");
+  function abrirObs(taskId: number, acc: "pausar" | "finalizar") {
+    setObsText("");
+    setObsModal({ taskId, accion: acc });
+  }
+  async function confirmarObs() {
+    if (!obsModal) return;
+    const { taskId, accion: acc } = obsModal;
+    setObsModal(null);
+    await accion(taskId, acc, obsText.trim() || undefined);
   }
 
   const sesionActivaSegundos = useMemo(() => {
@@ -165,6 +190,7 @@ export default function TecnicoPanel() {
           <div style={{ fontSize: 10, color: brand.textSecondary }}>
             {r.componente} · {r.operacion_codigo} {r.maquina ? `· ${r.maquina}` : ""}
           </div>
+          {r.comentario && <Tag color="cyan" style={{ fontSize: 10, marginTop: 2 }}>💬 Comentario</Tag>}
         </div>
       ),
     },
@@ -227,7 +253,7 @@ export default function TecnicoPanel() {
                     size="small"
                     icon={<PauseCircleOutlined />}
                     loading={accionLoading === r.id}
-                    onClick={() => accion(r.id, "pausar")}
+                    onClick={() => abrirObs(r.id, "pausar")}
                   >
                     Pausar
                   </Button>
@@ -238,7 +264,7 @@ export default function TecnicoPanel() {
                     type="primary"
                     icon={<CheckCircleOutlined />}
                     loading={accionLoading === r.id}
-                    onClick={() => accion(r.id, "finalizar")}
+                    onClick={() => abrirObs(r.id, "finalizar")}
                   >
                     Terminar
                   </Button>
@@ -262,6 +288,53 @@ export default function TecnicoPanel() {
       },
     },
   ];
+
+  // Color de prioridad: E=emergencia, 1=alta, 2=media, 3=baja.
+  const prioColor: Record<string, string> = { E: "volcano", "1": "red", "2": "orange", "3": "cyan" };
+  // Detalle expandible: toda la info que le llega al técnico para la tarea.
+  function renderDetalle(r: TareaPlan) {
+    const o = r.orden_trabajo;
+    const dato = (label: string, val: React.ReactNode) => (
+      <Col xs={12} md={8} lg={6}>
+        <Text type="secondary" style={{ fontSize: 11, display: "block" }}>{label}</Text>
+        <div style={{ fontSize: 12 }}>{val || <Text type="secondary">—</Text>}</div>
+      </Col>
+    );
+    const prio = o?.prioridad_atencion;
+    return (
+      <div style={{ padding: "4px 8px" }}>
+        {r.comentario && (
+          <div style={{ marginBottom: 10, padding: 8, background: brand.bgPage, borderRadius: 4, borderLeft: `3px solid ${brand.cyan}` }}>
+            <Text strong style={{ fontSize: 11 }}>Comentario del planner:</Text>
+            <div style={{ fontSize: 12, whiteSpace: "pre-wrap" }}>{r.comentario}</div>
+          </div>
+        )}
+        <Row gutter={[12, 8]}>
+          {dato("OT", o?.ot ?? `#${r.ot_id}`)}
+          {dato("Duración est.", r.horas_estimadas != null ? `${Number(r.horas_estimadas)} h` : null)}
+          {dato("Prioridad", prio ? <Tag color={prioColor[prio.codigo] ?? "default"} style={{ margin: 0 }}>{prio.nombre}</Tag> : null)}
+          {dato("Fecha de entrega", o?.fecha_entrega ? dayjs(o.fecha_entrega).format("DD/MM/YYYY") : null)}
+          {dato("Tipo", o?.tipo)}
+          {dato("N/P", o?.np)}
+          {dato("Descripción", o?.descripcion)}
+          {dato("Fabricante", o?.fabricante?.nombre)}
+          {dato("Flota", o?.cod_rep_flota ?? o?.codigo_reparacion?.flota?.nombre)}
+          {dato("Posición", o?.cod_rep_posicion)}
+        </Row>
+        {r.observaciones && (
+          <div style={{ marginTop: 10 }}>
+            <Text type="secondary" style={{ fontSize: 11 }}>Mis observaciones:</Text>
+            <div style={{ fontSize: 12, whiteSpace: "pre-wrap" }}>{r.observaciones}</div>
+          </div>
+        )}
+      </div>
+    );
+  }
+  const expandable = {
+    expandedRowRender: renderDetalle,
+    // Solo expandible si hay algo que mostrar (siempre hay OT/cilindro).
+    rowExpandable: () => true,
+  };
 
   if (!data) {
     return (
@@ -322,7 +395,7 @@ export default function TecnicoPanel() {
                   size="large"
                   icon={<PauseCircleOutlined />}
                   loading={accionLoading === data.sesionEnCurso.planificacion_ot_id}
-                  onClick={() => data.sesionEnCurso && accion(data.sesionEnCurso.planificacion_ot_id, "pausar")}
+                  onClick={() => data.sesionEnCurso && abrirObs(data.sesionEnCurso.planificacion_ot_id, "pausar")}
                 >
                   Pausar
                 </Button>
@@ -331,7 +404,7 @@ export default function TecnicoPanel() {
                   type="primary"
                   icon={<CheckCircleOutlined />}
                   loading={accionLoading === data.sesionEnCurso.planificacion_ot_id}
-                  onClick={() => data.sesionEnCurso && accion(data.sesionEnCurso.planificacion_ot_id, "finalizar")}
+                  onClick={() => data.sesionEnCurso && abrirObs(data.sesionEnCurso.planificacion_ot_id, "finalizar")}
                 >
                   Finalizar
                 </Button>
@@ -401,6 +474,7 @@ export default function TecnicoPanel() {
                   size="small"
                   pagination={false}
                   scroll={{ x: 920 }}
+                  expandable={expandable}
                 />
               )
             }
@@ -416,6 +490,7 @@ export default function TecnicoPanel() {
                 size="small"
                 pagination={false}
                 scroll={{ x: 720 }}
+                expandable={expandable}
               />
             </Card>
           )}
@@ -491,6 +566,29 @@ export default function TecnicoPanel() {
           </Card>
         </Col>
       </Row>
+
+      {/* Observaciones del técnico al pausar / finalizar (opcional). */}
+      <Modal
+        open={!!obsModal}
+        title={obsModal?.accion === "finalizar" ? "Finalizar tarea" : "Pausar tarea"}
+        okText={obsModal?.accion === "finalizar" ? "Finalizar" : "Pausar"}
+        cancelText="Cancelar"
+        onOk={confirmarObs}
+        onCancel={() => setObsModal(null)}
+        confirmLoading={obsModal ? accionLoading === obsModal.taskId : false}
+      >
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          Podés dejar una observación de lo que hiciste (opcional). Se guarda en la tarea.
+        </Text>
+        <Input.TextArea
+          rows={4}
+          value={obsText}
+          onChange={(e) => setObsText(e.target.value)}
+          placeholder="Ej: faltó repuesto X, se avanzó hasta Y, etc."
+          maxLength={1000}
+          style={{ marginTop: 8 }}
+        />
+      </Modal>
     </div>
   );
 }

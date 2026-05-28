@@ -1364,7 +1364,10 @@ model PlanificacionOT {
   tecnico              String?                  @db.VarChar(100)
   maquina              String?                  @db.VarChar(50)
   estado               String?                  @default("abierto") @db.VarChar(20)
+  // Observaciones de EJECUCIÓN que carga el técnico al pausar/cerrar la tarea.
   observaciones        String?
+  // Comentario que deja el planner al crear/editar la tarea; le llega al técnico.
+  comentario           String?
   semana_plan          String?                  @db.VarChar(10)
   qty_personal         Int?                     @default(1)
   horas_extras         Boolean?                 @default(false)

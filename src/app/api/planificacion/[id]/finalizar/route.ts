@@ -9,8 +9,10 @@ type Ctx = { params: Promise<{ id: string }> };
 // POST /api/planificacion/:id/finalizar — el técnico da por terminada la tarea.
 // Si hay una sesión abierta del mismo técnico, la cierra (cierre="finalizado")
 // y suma su duración. Setea fecha_fin_real=now y estado="realizado".
-export async function POST(_req: NextRequest, ctx: Ctx) {
+export async function POST(req: NextRequest, ctx: Ctx) {
   try {
+    const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+    const obs = typeof body.observaciones === "string" ? body.observaciones.trim() : "";
     const session = await getServerSession(authOptions);
     if (!session?.user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     const userId = Number((session.user as { id?: string }).id);
@@ -28,7 +30,7 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
 
     const plan = await prisma.planificacionOT.findUnique({
       where: { id: planId },
-      select: { id: true, estado: true },
+      select: { id: true, estado: true, observaciones: true },
     });
     if (!plan) return NextResponse.json({ error: "Tarea no encontrada" }, { status: 404 });
     if (plan.estado === "realizado") {
@@ -55,12 +57,17 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
     });
     const horas = sumarHorasReales(todas);
 
+    const observaciones = obs
+      ? (plan.observaciones ? `${plan.observaciones}\n${obs}` : obs)
+      : undefined;
+
     await prisma.planificacionOT.update({
       where: { id: planId },
       data: {
         estado: "realizado",
         fecha_fin_real: now,
         horas_reales: horas,
+        ...(observaciones !== undefined ? { observaciones } : {}),
       },
     });
 
