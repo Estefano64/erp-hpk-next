@@ -90,7 +90,7 @@ interface RequerimientoApi {
     ot: string | null;
     cliente: { codigo: string; razon_social: string; nombre_comercial: string | null } | null;
   } | null;
-  material: { codigo: string; descripcion: string; unidad_medida_codigo: string | null; stock_actual?: string | number | null } | null;
+  material: { codigo: string; descripcion: string; unidad_medida_codigo: string | null; stock_actual?: string | number | null; np?: string | null } | null;
   proveedor: { id: number; razon_social: string } | null;
   compra: { id: number; numero_po: string } | null;
   status_requerimiento: { codigo: string; nombre: string } | null;
@@ -107,6 +107,8 @@ interface Requerimiento {
   material_id: number | null;
   material_codigo: string | null;
   material_nombre: string | null;
+  // Número de parte del material (de Material.np). Se muestra al lado de Cant.
+  np: string | null;
   nro_req: string | null;
   item_req: number | null;
   tipo_codigo: string | null;
@@ -142,6 +144,7 @@ function normalize(r: RequerimientoApi): Requerimiento {
     material_id: r.material_id,
     material_codigo: r.material?.codigo ?? r.material_codigo ?? null,
     material_nombre: r.material?.descripcion ?? null,
+    np: r.material?.np ?? null,
     nro_req: r.nro_req,
     item_req: r.item_req,
     tipo_codigo: r.tipo_codigo,
@@ -864,6 +867,16 @@ function RequerimientosDetalleInner() {
           </Space>
         );
       },
+    },
+    {
+      key: "np",
+      title: "N° de Parte",
+      dataIndex: "np",
+      width: 130,
+      filters: obtenerValoresUnicos("np"),
+      filterSearch: true,
+      onFilter: (value, r) => r.np === value,
+      render: (v: string | null) => v ?? <span style={{ color: "#bbb" }}>—</span>,
     },
     { key: "unidad_medida", title: "UM", dataIndex: "unidad_medida", width: 55, align: "center" },
     {

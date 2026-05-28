@@ -98,7 +98,7 @@ export async function GET(req: NextRequest) {
           orden_trabajo_interna: {
             select: { id: true, ot: true, descripcion: true },
           },
-          material: { select: { codigo: true, descripcion: true, unidad_medida_codigo: true, stock_actual: true } },
+          material: { select: { codigo: true, descripcion: true, unidad_medida_codigo: true, stock_actual: true, np: true } },
           status_requerimiento: { select: { codigo: true, nombre: true } },
           status_cotizacion: { select: { codigo: true, nombre: true } },
           status_oc: { select: { codigo: true, nombre: true } },
