@@ -7,9 +7,10 @@ import {
 } from "antd";
 import {
   BugOutlined, PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined,
-  PaperClipOutlined, CloseCircleOutlined,
+  PaperClipOutlined, CloseCircleOutlined, EyeOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
+import { useSession } from "next-auth/react";
 import dayjs from "dayjs";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
@@ -57,6 +58,10 @@ interface EditarForm {
 export default function TicketsPage() {
   const { message } = App.useApp();
   const { screens } = useResponsive();
+  const { data: session } = useSession();
+  // Solo el admin gestiona tickets (ve todos, cambia estado, asigna, elimina).
+  // El resto ve solo los suyos en modo lectura y puede crear nuevos.
+  const esAdmin = ((session?.user as { roles?: string[] } | undefined)?.roles ?? []).includes("admin");
   const [formNuevo] = Form.useForm<NuevoForm>();
   const [formEditar] = Form.useForm<EditarForm>();
 
@@ -217,7 +222,8 @@ export default function TicketsPage() {
     }
   }
 
-  const columns: ColumnsType<Ticket> = useMemo(() => [
+  const columns: ColumnsType<Ticket> = useMemo(() => {
+    const cols: ColumnsType<Ticket> = [
     numeracionColumn<Ticket>({ current: page, pageSize }),
     {
       key: "id", title: "Nro", dataIndex: "id", width: 70, fixed: "left",
@@ -255,18 +261,27 @@ export default function TicketsPage() {
       render: (v: string | null) => v ? dayjs(v).format("DD/MM/YY HH:mm") : <Text type="secondary">—</Text>,
     },
     {
-      key: "acc", title: "", width: 100, align: "center", fixed: "right",
+      key: "acc", title: "", width: esAdmin ? 100 : 60, align: "center", fixed: "right",
       render: (_: unknown, r: Ticket) => (
         <Space size="small">
-          <Tooltip title="Ver / editar"><Button size="small" type="text" icon={<EditOutlined />} onClick={() => openEditar(r)} /></Tooltip>
-          <Popconfirm title="¿Eliminar ticket?" okText="Eliminar" okButtonProps={{ danger: true }} cancelText="Cancelar" onConfirm={() => handleEliminar(r.id)}>
-            <Tooltip title="Eliminar"><Button size="small" type="text" danger icon={<DeleteOutlined />} /></Tooltip>
-          </Popconfirm>
+          <Tooltip title={esAdmin ? "Ver / editar" : "Ver"}>
+            <Button size="small" type="text" icon={esAdmin ? <EditOutlined /> : <EyeOutlined />} onClick={() => openEditar(r)} />
+          </Tooltip>
+          {esAdmin && (
+            <Popconfirm title="¿Eliminar ticket?" okText="Eliminar" okButtonProps={{ danger: true }} cancelText="Cancelar" onConfirm={() => handleEliminar(r.id)}>
+              <Tooltip title="Eliminar"><Button size="small" type="text" danger icon={<DeleteOutlined />} /></Tooltip>
+            </Popconfirm>
+          )}
         </Space>
       ),
     },
+    ];
+    // Usuario no-admin: ocultar columnas de gestión (siempre son él / no le competen).
+    return esAdmin
+      ? cols
+      : cols.filter((c) => !["creado_por", "asignado_a"].includes((c as { key?: string }).key ?? ""));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [page, pageSize]);
+  }, [page, pageSize, esAdmin]);
 
   return (
     <div>
@@ -392,10 +407,11 @@ export default function TicketsPage() {
         title={editar ? `Ticket #${editar.id}` : ""}
         open={!!editar}
         onCancel={() => setEditar(null)}
-        onOk={handleEditar}
+        onOk={esAdmin ? handleEditar : undefined}
         confirmLoading={savingEditar}
         okText="Guardar"
-        cancelText="Cerrar"
+        okButtonProps={esAdmin ? undefined : { style: { display: "none" } }}
+        cancelText={esAdmin ? "Cancelar" : "Cerrar"}
         width={modalWidth(screens, 720)}
         destroyOnHidden
       >
@@ -422,23 +438,41 @@ export default function TicketsPage() {
                 <> · Resuelto por <b>{editar.resuelto_por}</b> el {dayjs(editar.fecha_resolucion).format("DD/MM/YY HH:mm")}</>
               )}
             </Text>
-            <Row gutter={16} style={{ marginTop: 16 }}>
-              <Col xs={12}>
-                <Form.Item name="estado" label="Estado" rules={[{ required: true }]}>
-                  <Select options={Object.entries(ESTADO_TAG).map(([k, v]) => ({ value: k, label: v.label }))} />
-                </Form.Item>
-              </Col>
-              <Col xs={12}>
-                <Form.Item name="asignado_a" label="Asignado a">
-                  <Input placeholder="Nombre o área" maxLength={100} />
-                </Form.Item>
-              </Col>
-              <Col span={24}>
-                <Form.Item name="notas_resolucion" label="Notas de resolución">
-                  <TextArea rows={3} maxLength={2000} placeholder="Qué se hizo, link a commit, etc." />
-                </Form.Item>
-              </Col>
-            </Row>
+            {esAdmin ? (
+              <Row gutter={16} style={{ marginTop: 16 }}>
+                <Col xs={12}>
+                  <Form.Item name="estado" label="Estado" rules={[{ required: true }]}>
+                    <Select options={Object.entries(ESTADO_TAG).map(([k, v]) => ({ value: k, label: v.label }))} />
+                  </Form.Item>
+                </Col>
+                <Col xs={12}>
+                  <Form.Item name="asignado_a" label="Asignado a">
+                    <Input placeholder="Nombre o área" maxLength={100} />
+                  </Form.Item>
+                </Col>
+                <Col span={24}>
+                  <Form.Item name="notas_resolucion" label="Notas de resolución">
+                    <TextArea rows={3} maxLength={2000} placeholder="Qué se hizo, link a commit, etc." />
+                  </Form.Item>
+                </Col>
+              </Row>
+            ) : (
+              // Vista de solo lectura para el creador del ticket.
+              <div style={{ marginTop: 16 }}>
+                <div style={{ marginBottom: 8 }}>
+                  <Text type="secondary" style={{ fontSize: 12, marginRight: 8 }}>Estado:</Text>
+                  <Tag color={ESTADO_TAG[editar.estado].color}>{ESTADO_TAG[editar.estado].label}</Tag>
+                </div>
+                {editar.notas_resolucion && (
+                  <div>
+                    <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 4 }}>Notas de resolución</Text>
+                    <Paragraph style={{ background: brand.bgPage, padding: 12, borderRadius: 4, whiteSpace: "pre-wrap", marginBottom: 0 }}>
+                      {editar.notas_resolucion}
+                    </Paragraph>
+                  </div>
+                )}
+              </div>
+            )}
           </Form>
         )}
       </Modal>

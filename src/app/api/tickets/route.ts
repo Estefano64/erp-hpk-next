@@ -2,7 +2,7 @@
 // Canal lateral — no está vinculado a OT.
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getAuditUser } from "@/lib/audit";
+import { getAuditUser, isAdmin } from "@/lib/audit";
 import { R2Keys } from "@/lib/r2";
 
 const ESTADOS_VALIDOS = ["ABIERTO", "EN_PROCESO", "RESUELTO", "CERRADO"] as const;
@@ -24,6 +24,15 @@ export async function GET(req: NextRequest) {
     const where: any = {};
     if (estado && (ESTADOS_VALIDOS as readonly string[]).includes(estado)) where.estado = estado;
     if (asignado_a) where.asignado_a = asignado_a;
+
+    // Visibilidad: el admin ve todos los tickets; cualquier otro usuario solo
+    // ve los que él mismo creó. `creado_por` guarda el nombre del usuario (mismo
+    // valor que devuelve getAuditUser, que es lo que se grabó al crear).
+    if (!(await isAdmin(req))) {
+      const usuario = await getAuditUser(req);
+      // Si por algún motivo no hay usuario, no devolvemos nada (mejor que filtrar todo).
+      where.creado_por = usuario ?? "__sin_usuario__";
+    }
 
     const data = await prisma.ticket.findMany({
       where,
