@@ -19,6 +19,7 @@ import {
   FileProtectOutlined,
   ControlOutlined,
   DatabaseOutlined,
+  TeamOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { brand } from "@/lib/theme";
@@ -54,9 +55,16 @@ function buildMenuItems(_rol: string | null): MenuProps["items"] {
             { key: "/operaciones/planificacion", label: "Planificación" },
             { key: "/operaciones/programacion-semanal", label: "Programación semanal" },
             { key: "/operaciones/programacion-dashboard", label: "Dashboard Planificación" },
-            { key: "/operaciones/trabajadores", label: "Trabajadores" },
           ],
         },
+      ],
+    },
+    {
+      key: "rrhh",
+      icon: <TeamOutlined />,
+      label: "RR/HH",
+      children: [
+        { key: "/rrhh/trabajadores", label: "Trabajadores" },
       ],
     },
     {

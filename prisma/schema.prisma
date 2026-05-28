@@ -30,6 +30,13 @@ model Usuario {
   nombre         String   @db.VarChar(100)
   rol            String   @default("viewer") @db.VarChar(20)
   activo         Boolean  @default(true)
+  // Vínculo opcional con un Trabajador. No es obligatorio: hay cuentas de
+  // sistema (admin/facturación/ventas) que no son trabajadores físicos del
+  // taller. Cuando existe, permite mostrar la cuenta del trabajador desde la
+  // pantalla de Trabajadores y filtrar tareas por trabajador en el panel
+  // personal del rol "tecnico".
+  trabajadorId   Int?     @unique @map("trabajador_id")
+  trabajador     Trabajador? @relation(fields: [trabajadorId], references: [trabajador_id], onDelete: SetNull)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -742,6 +749,7 @@ model Trabajador {
   updated_at    DateTime               @default(now()) @updatedAt
   equipo        Equipo?                @relation(fields: [equipo_codigo], references: [codigo], onDelete: SetNull)
   prestamos     PrestamoHerramienta[]
+  usuario       Usuario?
 
   @@index([dni])
   @@index([area])
@@ -1346,6 +1354,7 @@ model PlanificacionOT {
   operacion_cod_rep    OperacionCodRep?         @relation(fields: [operacion_cod_rep_id], references: [operacion_cod_rep_id])
   status_tarea         StatusTarea?             @relation(fields: [estado], references: [codigo])
   capturas             PlanificacionOTCaptura[]
+  sesiones             PlanificacionOTSesion[]
 
   @@index([ot_id])
   @@index([operacion_cod_rep_id])
@@ -1379,6 +1388,29 @@ model PlanificacionOTCaptura {
   @@index([planificacion_ot_id])
   @@index([campo_key])
   @@map("planificacion_ot_captura")
+}
+
+// Sesión de trabajo de un técnico sobre una tarea (PlanificacionOT). Cada vez
+// que un técnico aprieta "Iniciar" se crea una fila con inicio=now y fin=null.
+// Al pausar/finalizar se le pone fin=now. La duración real de la tarea es
+// la suma de (fin - inicio) de todas sus sesiones cerradas. La regla de
+// negocio es: solo puede haber UNA sesión abierta (fin=null) por técnico a
+// la vez (no se enforza con FK, se valida en el endpoint).
+model PlanificacionOTSesion {
+  id                  Int             @id @default(autoincrement())
+  planificacion_ot_id Int
+  tecnico             String          @db.VarChar(100)
+  inicio              DateTime        @db.Timestamp(6)
+  fin                 DateTime?       @db.Timestamp(6)
+  // motivo de cierre: "pausa" | "finalizado" | "cancelado". null = sesión abierta.
+  cierre              String?         @db.VarChar(20)
+  created_at          DateTime        @default(now())
+  planificacion_ot    PlanificacionOT @relation(fields: [planificacion_ot_id], references: [id], onDelete: Cascade)
+
+  @@index([planificacion_ot_id])
+  @@index([tecnico])
+  @@index([fin])
+  @@map("planificacion_ot_sesion")
 }
 
 model Contrato {
