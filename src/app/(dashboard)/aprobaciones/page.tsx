@@ -573,6 +573,23 @@ export default function AceptacionesPage() {
       },
     },
     {
+      key: "total_estimado", title: "P. Estimado Total", width: 140, align: "right",
+      sorter: (a, b) => {
+        const pa = Number(a.material?.precio ?? 0) * Number(a.cantidad ?? 0);
+        const pb = Number(b.material?.precio ?? 0) * Number(b.cantidad ?? 0);
+        return pa - pb;
+      },
+      render: (_, r) => {
+        if (r.material?.precio == null) return <Text type="secondary">—</Text>;
+        const total = Number(r.material.precio) * Number(r.cantidad);
+        return (
+          <Text strong style={{ color: brand.navy }}>
+            {r.material.moneda_codigo ?? "USD"} {total.toFixed(2)}
+          </Text>
+        );
+      },
+    },
+    {
       key: "fecha_solicitud", title: "F. Solicitud", width: 100,
       sorter: (a, b) => a.fecha_solicitud.localeCompare(b.fecha_solicitud),
       render: (_, r) => <Text style={{ fontSize: 11 }}>{formatDateOnlyShort(r.fecha_solicitud)}</Text>,
