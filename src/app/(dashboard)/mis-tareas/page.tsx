@@ -5,13 +5,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Typography, Card, Table, Tag, Input, Select, Row, Col, Statistic, App, Space, Button,
+  Typography, Card, Table, Tag, Input, Select, Row, Col, Statistic, App, Space, Button, DatePicker,
 } from "antd";
 import { ToolOutlined, ReloadOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
+import dayjs, { type Dayjs } from "dayjs";
+import isoWeek from "dayjs/plugin/isoWeek";
 import { brand } from "@/lib/theme";
 import { formatDateOnly } from "@/lib/dates";
 import { paginacionEstandar } from "@/lib/tables";
+
+dayjs.extend(isoWeek);
 
 const { Title, Text } = Typography;
 
@@ -76,6 +80,7 @@ export default function MisTareasPage() {
   const [estado, setEstado] = useState<string | undefined>();
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
+  const [semana, setSemana] = useState<Dayjs | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -83,6 +88,10 @@ export default function MisTareasPage() {
       const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
       if (estado) params.set("estado", estado);
       if (search) params.set("search", search);
+      if (semana) {
+        params.set("fecha_desde", semana.startOf("isoWeek").format("YYYY-MM-DD"));
+        params.set("fecha_hasta", semana.endOf("isoWeek").format("YYYY-MM-DD") + "T23:59:59");
+      }
       const res = await fetch(`/api/mi-trabajo/historico?${params.toString()}`, { cache: "no-store" });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Error");
@@ -93,7 +102,7 @@ export default function MisTareasPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, estado, search, msg]);
+  }, [page, pageSize, estado, search, semana, msg]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -174,6 +183,16 @@ export default function MisTareasPage() {
             options={ESTADO_OPCIONES}
             style={{ width: 160 }}
           />
+          <DatePicker
+            picker="week"
+            placeholder="Filtrar por semana"
+            value={semana}
+            onChange={(v) => { setPage(1); setSemana(v); }}
+            style={{ width: 200 }}
+          />
+          {semana && (
+            <Button size="small" onClick={() => { setPage(1); setSemana(null); }}>Limpiar semana</Button>
+          )}
         </Space>
         <Table<TareaHist>
           rowKey="id"

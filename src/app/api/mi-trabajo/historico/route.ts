@@ -35,6 +35,15 @@ export async function GET(req: NextRequest) {
       { tecnico: { contains: tecnico, mode: "insensitive" } },
     ];
     if (estado) and.push({ estado });
+    // Filtro por semana (rango de fechas sobre fecha_inicio programada).
+    const fDesde = searchParams.get("fecha_desde");
+    const fHasta = searchParams.get("fecha_hasta");
+    if (fDesde || fHasta) {
+      const rango: Record<string, Date> = {};
+      if (fDesde) rango.gte = new Date(fDesde);
+      if (fHasta) rango.lte = new Date(fHasta);
+      and.push({ fecha_inicio: rango });
+    }
     if (search) {
       // `ot` es INTEGER (migración 2026-05-28): no se puede usar `contains`.
       // Si el término es numérico, lo matcheamos como nro de OT exacto.
