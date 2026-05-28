@@ -43,6 +43,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
     const items = compra.ot_repuestos as typeof compra.ot_repuestos;
     type Item = (typeof compra.ot_repuestos)[number];
     const subtotal = Number(compra.subtotal || 0);
+    const descuento = Number(compra.descuento || 0);
     const igv = Number(compra.impuesto || 0);
     const total = Number(compra.total || 0);
     const moneda = compra.moneda?.codigo || compra.moneda_codigo || "USD";
@@ -313,7 +314,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
     </tr>
     <tr>
       <td class="lbl">Descuento</td>
-      <td class="val">${moneda} 0.00</td>
+      <td class="val">${moneda} ${descuento.toFixed(2)}</td>
     </tr>
     <tr>
       <td class="lbl">IGV (18%)</td>

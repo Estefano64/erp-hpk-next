@@ -26,6 +26,7 @@ const Schema = z.object({
   // Header-level (opcionales): si vienen, se persisten en la Compra.
   descuento: z.coerce.number().min(0).optional(),
   otros: z.coerce.number().min(0).optional(),
+  numero_req: z.string().trim().max(50).nullable().optional(),
 });
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -44,7 +45,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Validación", detail: parsed.error.flatten() }, { status: 400 });
     }
-    const { items, deleteIds, descuento, otros } = parsed.data;
+    const { items, deleteIds, descuento, otros, numero_req } = parsed.data;
 
     const result = await prisma.$transaction(async (tx) => {
       const compra = await tx.compra.findUnique({
@@ -146,7 +147,14 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
       const total = baseImponible.plus(impuesto).plus(otrosDec);
       await tx.compra.update({
         where: { id: compraId },
-        data: { subtotal, descuento: descuentoDec, impuesto, otros: otrosDec, total },
+        data: {
+          subtotal,
+          descuento: descuentoDec,
+          impuesto,
+          otros: otrosDec,
+          total,
+          ...(numero_req !== undefined ? { numero_req: numero_req || null } : {}),
+        },
       });
 
       return { count: itemsActuales.length, subtotal, descuento: descuentoDec, impuesto, otros: otrosDec, total };
