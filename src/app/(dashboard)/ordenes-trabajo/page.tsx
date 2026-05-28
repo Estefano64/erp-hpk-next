@@ -40,6 +40,7 @@ import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 import { formatDateOnly } from "@/lib/dates";
 import OTDetalleModal from "@/components/modules/ordenes-trabajo/OTDetalleModal";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
 const { Title } = Typography;
 
@@ -96,6 +97,25 @@ interface OTRecord {
 interface CatalogOption {
   codigo: string;
   nombre: string;
+}
+
+// Campos extra que la API devuelve y van al Excel pero no se renderizan en la
+// tabla. Son principalmente los campos históricos importados desde el Excel
+// de logística (fecha_evaluacion, monto_cotizacion, etc.).
+interface OTRecordExport extends OTRecord {
+  fecha_evaluacion?: string | null;
+  evaluador?: string | null;
+  nro_informe_evaluacion?: string | null;
+  fecha_cotizacion?: string | null;
+  nro_cotizacion?: string | null;
+  monto_cotizacion?: string | number | null;
+  fecha_aprobacion?: string | null;
+  fecha_entrega?: string | null;
+  cumplimiento?: string | null;
+  dias_proceso?: number | null;
+  dias_en_taller?: number | null;
+  nro_factura?: string | null;
+  fecha_facturacion?: string | null;
 }
 
 const otStatusColor: Record<string, string> = {
@@ -538,6 +558,58 @@ export default function OrdenesTrabajoPage() {
             obligatorias={["__num", "ot", "acciones"]}
           />
           <Button onClick={resetAnchos}>Restablecer anchos</Button>
+          <ExportarExcelButton<OTRecordExport>
+            endpoint="/api/ordenes-trabajo"
+            filename="OTs-Externas"
+            sheetName="OTs Externas"
+            columns={[
+              { label: "OT", value: (r) => r.ot ?? "" },
+              { label: "Cliente", value: (r) => r.cliente?.nombre_comercial ?? r.cliente?.razon_social ?? "" },
+              { label: "Cod. Rep", value: (r) => r.codigo_reparacion?.codigo ?? "" },
+              { label: "Cod. Rep - Descripción", value: (r) => r.codigo_reparacion?.descripcion ?? "" },
+              { label: "Equipo", value: (r) => r.equipo_codigo ?? "" },
+              { label: "Fabricante", value: (r) => r.fabricante?.nombre ?? "" },
+              { label: "Tipo (Cod. Rep)", value: (r) => r.tipo ?? "" },
+              { label: "Tipo OT", value: (r) => r.tipo_ot?.nombre ?? r.tipo_codigo ?? "" },
+              { label: "N/P", value: (r) => r.np ?? "" },
+              { label: "NS", value: (r) => r.ns ?? "" },
+              { label: "Flota", value: (r) => r.cod_rep_flota ?? "" },
+              { label: "Posición", value: (r) => r.cod_rep_posicion ?? "" },
+              { label: "Plaqueteo", value: (r) => r.plaqueteo ?? "" },
+              { label: "Descripción", value: (r) => r.descripcion ?? "" },
+              { label: "WO Cliente", value: (r) => r.wo_cliente ?? "" },
+              { label: "PO Cliente", value: (r) => r.po_cliente ?? "" },
+              { label: "PO Item", value: (r) => r.po_item ?? "" },
+              { label: "ID Viajero", value: (r) => r.id_viajero ?? "" },
+              { label: "Guía Remisión", value: (r) => r.guia_remision ?? "" },
+              { label: "Fecha Recepción", value: (r) => formatDateOnly(r.fecha_recepcion) ?? "" },
+              { label: "PCR", value: (r) => r.pcr ?? "" },
+              { label: "Horas", value: (r) => r.horas ?? "" },
+              { label: "% PCR", value: (r) => r.porcentaje_pcr ?? "" },
+              { label: "Prioridad", value: (r) => r.prioridad_atencion?.nombre ?? "" },
+              { label: "OT Status", value: (r) => r.ot_status?.nombre ?? r.ot_status_codigo ?? "" },
+              { label: "Recursos Status", value: (r) => r.recursos_status?.nombre ?? r.recursos_status_codigo ?? "" },
+              { label: "Taller Status", value: (r) => r.taller_status?.nombre ?? r.taller_status_codigo ?? "" },
+              { label: "Garantía", value: (r) => r.garantia?.nombre ?? "" },
+              { label: "Base Metálica", value: (r) => r.base_metalica?.nombre ?? "" },
+              // Histórico (importado del Excel)
+              { label: "Fecha Evaluación", value: (r) => formatDateOnly(r.fecha_evaluacion ?? null) ?? "" },
+              { label: "Evaluador", value: (r) => r.evaluador ?? "" },
+              { label: "Nro Informe Evaluación", value: (r) => r.nro_informe_evaluacion ?? "" },
+              { label: "Fecha Cotización", value: (r) => formatDateOnly(r.fecha_cotizacion ?? null) ?? "" },
+              { label: "Nro Cotización", value: (r) => r.nro_cotizacion ?? "" },
+              { label: "Monto Cotización", value: (r) => r.monto_cotizacion ?? "" },
+              { label: "Fecha Aprobación", value: (r) => formatDateOnly(r.fecha_aprobacion ?? null) ?? "" },
+              { label: "Fecha Entrega", value: (r) => formatDateOnly(r.fecha_entrega ?? null) ?? "" },
+              { label: "Cumplimiento", value: (r) => r.cumplimiento ?? "" },
+              { label: "Días Proceso", value: (r) => r.dias_proceso ?? "" },
+              { label: "Días en Taller", value: (r) => r.dias_en_taller ?? "" },
+              { label: "Nro Factura", value: (r) => r.nro_factura ?? "" },
+              { label: "Fecha Facturación", value: (r) => formatDateOnly(r.fecha_facturacion ?? null) ?? "" },
+              { label: "Usuario Crea", value: (r) => r.usuario_crea ?? "" },
+              { label: "Fecha Creación", value: (r) => formatDateOnly(r.fecha_creacion) ?? "" },
+            ]}
+          />
           <Button type="primary" icon={<PlusOutlined />} onClick={() => router.push("/ordenes-trabajo/nueva")}>
             Nueva OT
           </Button>
