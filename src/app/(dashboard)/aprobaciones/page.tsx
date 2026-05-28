@@ -662,6 +662,38 @@ export default function AceptacionesPage() {
 
   const totalPendientes = useMemo(() => ocs.length + reqs.length, [ocs, reqs]);
 
+  // Sumas de los items seleccionados, agrupadas por moneda. Para OCs se usa el
+  // `total`; para RQs se usa `cantidad * precio_unitario` (si falta alguno se
+  // suma 0). Devuelve un array de strings tipo "USD 1,234.56".
+  function formatSumasPorMoneda(sumas: Record<string, number>): string {
+    const entries = Object.entries(sumas).filter(([, v]) => v > 0);
+    if (entries.length === 0) return "";
+    return entries
+      .map(([m, v]) => `${m} ${v.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+      .join(" + ");
+  }
+  const montoSelOcs = useMemo(() => {
+    const sumas: Record<string, number> = {};
+    for (const id of selOcs) {
+      const oc = ocs.find((o) => o.id === id);
+      if (!oc) continue;
+      const m = oc.moneda_codigo ?? "USD";
+      sumas[m] = (sumas[m] ?? 0) + Number(oc.total ?? 0);
+    }
+    return formatSumasPorMoneda(sumas);
+  }, [selOcs, ocs]);
+  const montoSelReqs = useMemo(() => {
+    const sumas: Record<string, number> = {};
+    for (const id of selReqs) {
+      const r = reqs.find((x) => x.id === id);
+      if (!r) continue;
+      const m = r.moneda ?? "USD";
+      const sub = Number(r.cantidad ?? 0) * Number(r.precio_unitario ?? 0);
+      sumas[m] = (sumas[m] ?? 0) + sub;
+    }
+    return formatSumasPorMoneda(sumas);
+  }, [selReqs, reqs]);
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 12 }}>
@@ -785,6 +817,11 @@ export default function AceptacionesPage() {
                     }
                     extra={
                       <Space>
+                        {selOcs.length > 0 && montoSelOcs && (
+                          <Tag color="blue" style={{ fontWeight: 600 }}>
+                            Total seleccionado: {montoSelOcs}
+                          </Tag>
+                        )}
                         {selOcs.length > 0 && (
                           <Popconfirm
                             title={`¿Aprobar ${selOcs.length} OC(s) seleccionada(s)?`}
@@ -848,6 +885,11 @@ export default function AceptacionesPage() {
                     }
                     extra={
                       <Space>
+                        {selReqs.length > 0 && montoSelReqs && (
+                          <Tag color="blue" style={{ fontWeight: 600 }}>
+                            Total seleccionado: {montoSelReqs}
+                          </Tag>
+                        )}
                         {selReqs.length > 0 && (
                           <Popconfirm
                             title={`¿Aprobar ${selReqs.length} requerimiento(s) seleccionado(s)?`}
