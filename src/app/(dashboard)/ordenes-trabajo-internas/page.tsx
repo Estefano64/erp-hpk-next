@@ -562,15 +562,18 @@ export default function OrdenesTrabajoInternasPage() {
                 />
               </Form.Item>
             </Col>
-            <Col xs={12} md={6}>
-              <Form.Item
-                name="semana_revision"
-                label="Semana revisión"
-                tooltip="Formato ISO YYYY-Www (ej: 2026W18)"
-              >
-                <Input placeholder="2026W18" maxLength={10} />
-              </Form.Item>
-            </Col>
+            {/* Semana revisión: solo aparece al editar — al crear no se pide. */}
+            {editing && (
+              <Col xs={12} md={6}>
+                <Form.Item
+                  name="semana_revision"
+                  label="Semana revisión"
+                  tooltip="Formato ISO YYYY-Www (ej: 2026W18)"
+                >
+                  <Input placeholder="2026W18" maxLength={10} />
+                </Form.Item>
+              </Col>
+            )}
             <Col xs={12} md={6}>
               <Form.Item name="user_status_codigo" label="User Status">
                 <Select

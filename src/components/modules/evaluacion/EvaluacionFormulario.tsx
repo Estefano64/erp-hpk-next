@@ -5,6 +5,11 @@ import { Card, Row, Col, Input, Checkbox, Radio, InputNumber, Space, Typography,
 import { CameraOutlined, UploadOutlined, DeleteOutlined } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
 import { findMedidasModelo, modeloForField, type MedidaModelo } from "@/lib/medidas-modelo";
+import {
+  CATALOGOS_EVALUACION,
+  type HallazgoItem,
+  type RecomendacionItem,
+} from "@/lib/evaluacion-catalogos";
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -45,6 +50,8 @@ export const IMG_COMPONENTE: Record<string, string> = {
   spindle: "/Spindle.jpeg",
   conjunto_freno: "/ConjuntoFreno.jpeg",
   piston_freno: "/PistonFreno.jpeg",
+  housing_freno: "/HOUSING.jpeg",
+  spindle_freno: "/SPINDLE_freno.jpeg",
 };
 
 // ── Detectar modelo desde estrategia ────────────────────────
@@ -180,7 +187,9 @@ function InputMedida({
         value={v.get(name) as number | undefined}
         onChange={(val) => v.set(name, val)}
         placeholder={placeholder || ""}
-        step={0.0001}
+        // En pulgadas: 3 decimales (#.###). En mm: 2 decimales (#.##).
+        step={unidad === "in" ? 0.001 : 0.01}
+        precision={unidad === "in" ? 3 : 2}
         style={{ width: "100%" }}
         controls={false}
       />
@@ -343,6 +352,14 @@ interface ItemCheck {
   // bm = Bueno/Malo, sn = Si/No, ci = Completo/Incompleto
   tipo?: "bm" | "sn" | "ci";
 }
+
+// Devuelve los valores almacenados y las etiquetas a mostrar según el tipo.
+function opcionesPorTipo(tipo?: "bm" | "sn" | "ci"): { valores: string[]; labels: string[] } {
+  if (tipo === "sn") return { valores: ["SI", "NO", "NA"], labels: ["SI", "NO", "N/A"] };
+  if (tipo === "ci") return { valores: ["Completo", "Incompleto", "NA"], labels: ["Completo", "Incompleto", "N/A"] };
+  return { valores: ["Bueno", "Malo", "NA"], labels: ["Bueno", "Malo", "N/A"] };
+}
+
 function TablaChecks({
   prefix,
   items,
@@ -355,107 +372,48 @@ function TablaChecks({
   onChange: (d: Record<string, unknown>) => void;
 }) {
   const v = useValor(datos, onChange);
-  // Cuando hay tipos distintos, cada fila usa sus propias etiquetas; el thead
-  // muestra las del primer item como guía. Si un item tiene tipo distinto al
-  // del header se renderizan los labels en la celda mediante title.
-  const headerTipo = items[0]?.tipo;
-  const headerCols = headerTipo === "sn"
-    ? ["SI", "NO", "N/A"]
-    : headerTipo === "ci"
-      ? ["Completo", "Incompleto", "N/A"]
-      : ["Bueno", "Malo", "N/A"];
+  // Agrupa items consecutivos por tipo y renderiza una mini-tabla por grupo,
+  // así cada grupo muestra el header correcto (Bueno/Malo vs SI/NO vs etc.)
+  const grupos: { tipo?: ItemCheck["tipo"]; items: ItemCheck[] }[] = [];
+  for (const it of items) {
+    const ultimo = grupos[grupos.length - 1];
+    if (ultimo && ultimo.tipo === it.tipo) ultimo.items.push(it);
+    else grupos.push({ tipo: it.tipo, items: [it] });
+  }
   return (
-    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-      <thead>
-        <tr style={{ background: brand.bgPage }}>
-          <th style={{ border: `1px solid ${brand.border}`, padding: "4px 8px", textAlign: "left" }}></th>
-          {headerCols.map((c) => (
-            <th key={c} style={{ border: `1px solid ${brand.border}`, padding: "4px 8px", textAlign: "center", width: 70 }}>{c}</th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {items.map((it) => {
-          const opciones = it.tipo === "sn"
-            ? ["SI", "NO", "NA"]
-            : it.tipo === "ci"
-              ? ["Completo", "Incompleto", "NA"]
-              : ["Bueno", "Malo", "NA"];
-          const labels = it.tipo === "sn"
-            ? ["SI", "NO", "N/A"]
-            : it.tipo === "ci"
-              ? ["Completo", "Incompleto", "N/A"]
-              : ["Bueno", "Malo", "N/A"];
-          const name = `${prefix}_${it.key}`;
-          const valActual = v.get(name) as string | undefined;
-          const mismoTipo = it.tipo === headerTipo || (!it.tipo && headerTipo === undefined);
-          return (
-            <tr key={it.key}>
-              <td style={{ border: `1px solid ${brand.border}`, padding: "4px 8px" }}>{it.label}</td>
-              {opciones.map((op, i) => (
-                <td
-                  key={op}
-                  title={mismoTipo ? undefined : labels[i]}
-                  style={{ border: `1px solid ${brand.border}`, padding: "4px", textAlign: "center" }}
-                >
-                  <Radio checked={valActual === op} onChange={() => v.set(name, op)} />
-                </td>
-              ))}
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
-  );
-}
-
-// ── Checklist de hallazgos ──────────────────────────────────
-interface GrupoHallazgos {
-  nombre: string;
-  items: string[];
-}
-function ChecklistHallazgos({
-  id,
-  titulo,
-  grupos,
-  datos,
-  onChange,
-}: {
-  id: string;
-  titulo: string;
-  grupos: GrupoHallazgos[];
-  datos: Record<string, unknown>;
-  onChange: (d: Record<string, unknown>) => void;
-}) {
-  const v = useValor(datos, onChange);
-  return (
-    <div style={{ marginTop: 12 }}>
-      <Text strong style={{ color: brand.navy }}>
-        {titulo}
-      </Text>
-      <Row gutter={[16, 16]} style={{ marginTop: 8 }}>
-        {grupos.map((g, gi) => (
-          <Col xs={24} md={12} key={gi}>
-            <Card size="small" title={<span style={{ fontSize: 11, fontWeight: 700 }}>{g.nombre}</span>}>
-              <Space orientation="vertical" size={4} style={{ width: "100%" }}>
-                {g.items.map((item, idx) => {
-                  const key = `${id}_g${gi}_${idx}`;
-                  return (
-                    <Checkbox
-                      key={idx}
-                      checked={!!v.get(key)}
-                      onChange={(e) => v.set(key, e.target.checked ? item : false)}
-                    >
-                      <span style={{ fontSize: 12 }}>{item}</span>
-                    </Checkbox>
-                  );
-                })}
-              </Space>
-            </Card>
-          </Col>
-        ))}
-      </Row>
-    </div>
+    <>
+      {grupos.map((g, gi) => {
+        const { valores, labels } = opcionesPorTipo(g.tipo);
+        return (
+          <table key={gi} style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, marginBottom: gi < grupos.length - 1 ? 6 : 0 }}>
+            <thead>
+              <tr style={{ background: brand.bgPage }}>
+                <th style={{ border: `1px solid ${brand.border}`, padding: "4px 8px", textAlign: "left" }}></th>
+                {labels.map((lbl) => (
+                  <th key={lbl} style={{ border: `1px solid ${brand.border}`, padding: "4px 8px", textAlign: "center", width: 80 }}>{lbl}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {g.items.map((it) => {
+                const name = `${prefix}_${it.key}`;
+                const valActual = v.get(name) as string | undefined;
+                return (
+                  <tr key={it.key}>
+                    <td style={{ border: `1px solid ${brand.border}`, padding: "4px 8px" }}>{it.label}</td>
+                    {valores.map((op) => (
+                      <td key={op} style={{ border: `1px solid ${brand.border}`, padding: "4px", textAlign: "center" }}>
+                        <Radio checked={valActual === op} onChange={() => v.set(name, op)} />
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        );
+      })}
+    </>
   );
 }
 
@@ -707,74 +665,229 @@ function ImagenesComponente({
   );
 }
 
-// ── Checklist Cilindro (compartido) ────────────────────────
-const GRUPOS_CILINDRO: GrupoHallazgos[] = [
-  {
-    nombre: "Cilindro Interior",
-    items: [
-      "Presenta rayaduras axiales en interior",
-      "Presenta rayaduras radiales en interior",
-      "Diametro interior presenta deformacion",
-      "Medida interna fuera de tolerancia",
-      "Diametro interior muestra desgaste",
-      "Diametro de sellado muestra desgaste",
-    ],
-  },
-  {
-    nombre: "Cilindro Exterior",
-    items: [
-      "Presenta golpes en el exterior del cilindro",
-      "Presenta desgaste en exterior del cilindro",
-      "Presenta deformacion en exterior de cilindro",
-      "Presenta depositos de soldadura ajenos al diseño",
-    ],
-  },
-];
+// ─── Hallazgo item rico (del catálogo Excel) ────────────────
+// Soporta:
+//   - check simple (sólo marca el hallazgo)
+//   - severidades (LEVES/REGULARES/GRAVES como radio adicional)
+//   - opciones múltiples (CORROSION/PICADURAS/etc. como checkboxes anidados)
+//   - campo libre (X:_____ Y:_____ como input de texto)
+function HallazgoRichItem({
+  prefix,
+  item,
+  datos,
+  onChange,
+}: {
+  prefix: string;
+  item: HallazgoItem;
+  datos: Record<string, unknown>;
+  onChange: (d: Record<string, unknown>) => void;
+}) {
+  const v = useValor(datos, onChange);
+  const baseKey = `${prefix}_${item.key}`;
+  const checked = !!v.get(baseKey);
+  return (
+    <div style={{ marginBottom: 6 }}>
+      <Checkbox checked={checked} onChange={(e) => v.set(baseKey, e.target.checked)}>
+        <span style={{ fontSize: 12 }}>{item.texto}</span>
+      </Checkbox>
+      {checked && (
+        <div style={{ marginLeft: 22, marginTop: 2 }}>
+          {item.severidades && (
+            <Radio.Group
+              size="small"
+              value={v.get(`${baseKey}_sev`) as string | undefined}
+              onChange={(e) => v.set(`${baseKey}_sev`, e.target.value)}
+            >
+              {item.severidades.map((s) => (
+                <Radio key={s} value={s} style={{ fontSize: 11 }}>{s}</Radio>
+              ))}
+            </Radio.Group>
+          )}
+          {item.opcionesMultiples && (
+            <Space wrap size={4}>
+              {item.opcionesMultiples.map((op) => {
+                const opKey = `${baseKey}_op_${op.replace(/\s+/g, "_").toLowerCase()}`;
+                return (
+                  <Checkbox
+                    key={op}
+                    checked={!!v.get(opKey)}
+                    onChange={(e) => v.set(opKey, e.target.checked)}
+                  >
+                    <span style={{ fontSize: 11 }}>{op}</span>
+                  </Checkbox>
+                );
+              })}
+            </Space>
+          )}
+          {item.campoLibre && (
+            <Input
+              size="small"
+              placeholder={item.campoLibre}
+              value={(v.get(`${baseKey}_libre`) as string) || ""}
+              onChange={(e) => v.set(`${baseKey}_libre`, e.target.value)}
+              style={{ width: 280 }}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
-const GRUPOS_VASTAGO: GrupoHallazgos[] = [
-  {
-    nombre: "Cojinete",
-    items: [
-      "Presenta corrosion en exterior de cojinete",
-      "Presenta picaduras en exterior de cojinete",
-      "Presenta desgaste en exterior de cojinete",
-      "Cojinete llego fisurado",
-      "Llego sin cojinete",
-    ],
-  },
-  {
-    nombre: "Rotula",
-    items: [
-      "Presenta corrosion en interior de rotula",
-      "Presenta picaduras en interior de rotula",
-      "Presenta desgaste en interior de rotula",
-    ],
-  },
-];
+// ─── Hallazgos por catálogo (consume CATALOGOS_EVALUACION) ─────
+// Renderiza los grupos del catálogo cuyos keys coincidan con `filtro` (prefix
+// match). Ej: filtro="cil_" trae todos los grupos cuyo key empieza con "cil_".
+function HallazgosCatalogo({
+  modelo,
+  filtro,
+  prefix,
+  titulo,
+  datos,
+  onChange,
+}: {
+  modelo: string;
+  filtro: string | string[];
+  prefix: string;
+  titulo: string;
+  datos: Record<string, unknown>;
+  onChange: (d: Record<string, unknown>) => void;
+}) {
+  const cat = CATALOGOS_EVALUACION[modelo];
+  if (!cat) return null;
+  const filtros = Array.isArray(filtro) ? filtro : [filtro];
+  // Si el filtro termina en "_" hace prefix match, si no hace exact match.
+  // Permite: filtro="cil_" → cil_interior, cil_exterior, etc.
+  //          filtro="tapa" → exacto, solo "tapa" (no "tapa_posterior")
+  const grupos = Object.entries(cat.hallazgos).filter(([k]) =>
+    filtros.some((f) => f.endsWith("_") ? k.startsWith(f) : k === f),
+  );
+  if (grupos.length === 0) return null;
+  return (
+    <div style={{ marginTop: 12 }}>
+      <Text strong style={{ color: brand.navy }}>{titulo}</Text>
+      <Row gutter={[16, 16]} style={{ marginTop: 8 }}>
+        {grupos.map(([key, g]) => (
+          <Col xs={24} md={12} key={key}>
+            <Card size="small" title={<span style={{ fontSize: 11, fontWeight: 700 }}>{g.nombre}</span>}>
+              {g.items.map((it) => (
+                <HallazgoRichItem
+                  key={it.key}
+                  prefix={`${prefix}_${key}`}
+                  item={it}
+                  datos={datos}
+                  onChange={onChange}
+                />
+              ))}
+            </Card>
+          </Col>
+        ))}
+      </Row>
+    </div>
+  );
+}
 
-const GRUPOS_TAPA: GrupoHallazgos[] = [
-  {
-    nombre: "Tapa",
-    items: [
-      "Tapa presenta rayaduras",
-      "Tapa presenta deformacion",
-      "Tapa fuera de tolerancia",
-      "Roscas de tapa danadas",
-    ],
-  },
-];
+// ─── Recomendación item ────────────────────────────────────
+function RecomItem({
+  prefix,
+  item,
+  datos,
+  onChange,
+}: {
+  prefix: string;
+  item: RecomendacionItem;
+  datos: Record<string, unknown>;
+  onChange: (d: Record<string, unknown>) => void;
+}) {
+  const v = useValor(datos, onChange);
+  const baseKey = `${prefix}_${item.key}`;
+  const checked = !!v.get(baseKey);
+  return (
+    <div style={{ marginBottom: 6 }}>
+      <Checkbox checked={checked} onChange={(e) => v.set(baseKey, e.target.checked)}>
+        <span style={{ fontSize: 12 }}>{item.texto}</span>
+      </Checkbox>
+      {checked && (
+        <div style={{ marginLeft: 22, marginTop: 2 }}>
+          {item.subOpciones && (
+            <Radio.Group
+              size="small"
+              value={v.get(`${baseKey}_sub`) as string | undefined}
+              onChange={(e) => v.set(`${baseKey}_sub`, e.target.value)}
+            >
+              {item.subOpciones.map((s) => (
+                <Radio key={s} value={s} style={{ fontSize: 11 }}>{s}</Radio>
+              ))}
+            </Radio.Group>
+          )}
+          {item.cantidad && (
+            <Space size={4}>
+              <Text style={{ fontSize: 11 }}>Cantidad:</Text>
+              <InputNumber
+                size="small"
+                min={0}
+                value={v.get(`${baseKey}_cant`) as number | undefined}
+                onChange={(val) => v.set(`${baseKey}_cant`, val)}
+                style={{ width: 80 }}
+              />
+            </Space>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
-const GRUPOS_PISTON: GrupoHallazgos[] = [
-  {
-    nombre: "Piston / Embolo",
-    items: [
-      "Piston presenta rayaduras",
-      "Piston presenta deformacion",
-      "Piston fuera de tolerancia",
-      "Canales de sellos danados",
-    ],
-  },
-];
+// ─── Recomendaciones por catálogo (Estándar + No estándar) ─────
+// Respeta el flag global `datos.tipo_reparacion_recomendada` que el técnico
+// elige en la parte superior del form: "Estándar" / "No Estándar" / "Ambos".
+function RecomendacionesCatalogo({
+  modelo,
+  componente,
+  prefix,
+  datos,
+  onChange,
+}: {
+  modelo: string;
+  componente: string;
+  prefix: string;
+  datos: Record<string, unknown>;
+  onChange: (d: Record<string, unknown>) => void;
+}) {
+  const cat = CATALOGOS_EVALUACION[modelo];
+  if (!cat) return null;
+  const grupo = cat.recomendaciones[componente];
+  if (!grupo) return null;
+  const tipo = (datos["tipo_reparacion_recomendada"] as string) || "Ambos";
+  const mostrarEst = tipo === "Estándar" || tipo === "Ambos";
+  const mostrarNo = tipo === "No Estándar" || tipo === "Ambos";
+  // Col span: 24 cuando solo se muestra una, 12 cuando ambas
+  const span = mostrarEst && mostrarNo ? 12 : 24;
+  return (
+    <div style={{ marginTop: 12 }}>
+      <Text strong style={{ color: brand.navy }}>Recomendaciones - {grupo.nombre}</Text>
+      <Row gutter={[16, 16]} style={{ marginTop: 8 }}>
+        {mostrarEst && (
+          <Col xs={24} md={span}>
+            <Card size="small" title={<span style={{ fontSize: 11, fontWeight: 700, color: brand.cyan }}>ESTÁNDAR</span>}>
+              {grupo.estandar.map((it) => (
+                <RecomItem key={it.key} prefix={`${prefix}_recom_${componente}_est`} item={it} datos={datos} onChange={onChange} />
+              ))}
+            </Card>
+          </Col>
+        )}
+        {mostrarNo && (
+          <Col xs={24} md={span}>
+            <Card size="small" title={<span style={{ fontSize: 11, fontWeight: 700, color: "#cf1322" }}>NO ESTÁNDAR</span>}>
+              {grupo.noEstandar.map((it) => (
+                <RecomItem key={it.key} prefix={`${prefix}_recom_${componente}_no`} item={it} datos={datos} onChange={onChange} />
+              ))}
+            </Card>
+          </Col>
+        )}
+      </Row>
+    </div>
+  );
+}
 
 // ── Campos adicionales segun tipo ───────────────────────────
 function CamposAdicionales({
@@ -985,7 +1098,7 @@ function EtapasTelescopico({
                 prefix={`${prefix}_etapa${i}`}
                 items={[
                   { key: "estado_cromo", label: "Estado del cromo" },
-                  { key: "sup_roscada", label: "Est. de sup. Roscada" },
+                  { key: "sup_roscada", label: "Estado de superficie Roscada" },
                   { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
                   { key: "diam_salida_roscado", label: "Diam. Salida Roscado", tipo: "sn" },
                 ]}
@@ -995,16 +1108,24 @@ function EtapasTelescopico({
             </div>
           </Col>
         </Row>
-        <ChecklistHallazgos
-          id={`${prefix}_etapa${i}`}
-          titulo={`Hallazgos - Etapa ${i}`}
-          grupos={GRUPOS_CILINDRO}
+        <HallazgosCatalogo
+          modelo="cil_telescopico"
+          filtro="cuerpo_intermedio"
+          prefix={`${prefix}_etapa${i}`}
+          titulo={`Resultado de evaluación - Etapa ${i} (Cuerpo Intermedio)`}
           datos={datos}
           onChange={onChange}
         />
         <ImagenesComponente
           prefix={`${prefix}_etapa${i}`}
           etiqueta={`Etapa ${i}`}
+          datos={datos}
+          onChange={onChange}
+        />
+        <RecomendacionesCatalogo
+          modelo="cil_telescopico"
+          componente="cuerpo_intermedio"
+          prefix={`${prefix}_etapa${i}`}
           datos={datos}
           onChange={onChange}
         />
@@ -1070,6 +1191,7 @@ export default function EvaluacionFormulario({
     acum_vejiga: "t6",
     rueda_delantera: "t7",
     suspension_delantera: "t8",
+    freno_servicio_parqueo: "t9",
   };
   const p = prefijos[modelo] || "t1";
 
@@ -1134,7 +1256,17 @@ export default function EvaluacionFormulario({
                         />
                       </Col>
                       <Col xs={24} md={12}>
-                        <ParXY prefix={`${p}_cil_ancho_ojo`} label={`Ancho de Ojo [${unidad}]`} datos={datos} onChange={onChange} />
+                        <div>
+                        <Text strong style={{ fontSize: 12, display: "block" }}>Ancho de Ojo [{unidad}]</Text>
+                        <Row gutter={4}>
+                          <Col span={12}>
+                            <InputMedida name={`${p}_cil_ancho_ojo_1`} datos={datos} onChange={onChange} />
+                          </Col>
+                          <Col span={12}>
+                            <InputMedida name={`${p}_cil_ancho_ojo_2`} datos={datos} onChange={onChange} />
+                          </Col>
+                        </Row>
+                      </div>
                       </Col>
                     </Row>
                   </>
@@ -1143,8 +1275,8 @@ export default function EvaluacionFormulario({
                   <TablaChecks
                     prefix={`${p}_cil`}
                     items={[
-                      { key: "tomas", label: "Tomas" },
-                      { key: "roscada", label: "Estado de sup. Roscada" },
+                      { key: "tomas", label: "Tomas hidráulicas" },
+                      { key: "roscada", label: "Estado de superficie Roscada" },
                       { key: "estado_cancamo", label: "Estado de cancamo" },
                       { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
                       { key: "placa_conectores", label: "Placa / Conectores", tipo: "ci" },
@@ -1155,8 +1287,9 @@ export default function EvaluacionFormulario({
                 </div>
               </Col>
             </Row>
-            <ChecklistHallazgos id={`${p}_cil`} titulo="Check list - Cilindro Principal" grupos={GRUPOS_CILINDRO} datos={datos} onChange={onChange} />
+            <HallazgosCatalogo modelo={modelo} filtro="cil_" prefix={`${p}_cil`} titulo="Resultado de evaluación - Cilindro Principal" datos={datos} onChange={onChange} />
             <ImagenesComponente prefix={`${p}_cil`} etiqueta="Cilindro Principal" datos={datos} onChange={onChange} />
+            <RecomendacionesCatalogo modelo={modelo} componente="cilindro" prefix={p} datos={datos} onChange={onChange} />
             <ResultadoComponente prefix={`${p}_cil`} label="Cilindro Principal" datos={datos} onChange={onChange} />
           </SeccionNum>
 
@@ -1171,7 +1304,6 @@ export default function EvaluacionFormulario({
                   filas={[
                     { prefix: `${p}_vas_desp`, label: `Diametro Espiga (A) [${unidad}]`, tipo: "xy" },
                     { prefix: `${p}_vas_dext`, label: `Diametro Vastago (B) [${unidad}]`, tipo: "xy" },
-                    { prefix: `${p}_vas_dsell`, label: `Diametro Sellado (C) [${unidad}]`, tipo: "xy" },
                     { prefix: `${p}_vas_dcoj`, label: `Diametro Cojinete (D) [${unidad}]`, tipo: "xy" },
                     { prefix: `${p}_vas_lcro`, label: `Longitud Cromo (E) [${unidad}]`, tipo: "single" },
                     { prefix: `${p}_vas_ltot`, label: `Longitud Total (F) [${unidad}]`, tipo: "single" },
@@ -1213,7 +1345,17 @@ export default function EvaluacionFormulario({
                     />
                   </Col>
                   <Col xs={24} md={8}>
-                    <ParXY prefix={`${p}_vas_ancho_ojo`} label={`Ancho de Ojo [${unidad}]`} datos={datos} onChange={onChange} />
+                    <div>
+                    <Text strong style={{ fontSize: 12, display: "block" }}>Ancho de Ojo [{unidad}]</Text>
+                    <Row gutter={4}>
+                      <Col span={12}>
+                        <InputMedida name={`${p}_vas_ancho_ojo_1`} datos={datos} onChange={onChange} />
+                      </Col>
+                      <Col span={12}>
+                        <InputMedida name={`${p}_vas_ancho_ojo_2`} datos={datos} onChange={onChange} />
+                      </Col>
+                    </Row>
+                  </div>
                   </Col>
                 </Row>
                 <Divider style={{ margin: "8px 0" }}>
@@ -1248,8 +1390,9 @@ export default function EvaluacionFormulario({
                 </div>
               </Col>
             </Row>
-            <ChecklistHallazgos id={`${p}_vas`} titulo="Check list - Vástago Principal" grupos={GRUPOS_VASTAGO} datos={datos} onChange={onChange} />
+            <HallazgosCatalogo modelo={modelo} filtro="vas_" prefix={`${p}_vas`} titulo="Resultado de evaluación - Vástago Principal" datos={datos} onChange={onChange} />
             <ImagenesComponente prefix={`${p}_vas`} etiqueta="Vástago Principal" datos={datos} onChange={onChange} />
+            <RecomendacionesCatalogo modelo={modelo} componente="vastago" prefix={p} datos={datos} onChange={onChange} />
             <ResultadoComponente prefix={`${p}_vas`} label="Vástago Principal" datos={datos} onChange={onChange} />
           </SeccionNum>
 
@@ -1290,7 +1433,7 @@ export default function EvaluacionFormulario({
                     <TablaChecks
                       prefix={`${p}_tapa_sec`}
                       items={[
-                        { key: "sup_roscada", label: "Est. de sup. Roscada" },
+                        { key: "sup_roscada", label: "Estado de superficie Roscada" },
                         { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
                       ]}
                       datos={datos}
@@ -1309,7 +1452,9 @@ export default function EvaluacionFormulario({
                   </div>
                 </Col>
               </Row>
+              <HallazgosCatalogo modelo={modelo} filtro="tapa_roscada" prefix={`${p}_tapa_sec`} titulo="Resultado de evaluación - Tapa Roscada" datos={datos} onChange={onChange} />
               <ImagenesComponente prefix={`${p}_tapa_sec`} etiqueta="Tapa Roscada Secundaria" datos={datos} onChange={onChange} />
+              <RecomendacionesCatalogo modelo={modelo} componente="tapa_roscada" prefix={`${p}_tapa_sec`} datos={datos} onChange={onChange} />
               <ResultadoComponente prefix={`${p}_tapa_sec`} label="Tapa Roscada Secundaria" datos={datos} onChange={onChange} />
             </SeccionNum>
           )}
@@ -1326,7 +1471,7 @@ export default function EvaluacionFormulario({
                       { prefix: `${p}_tapa_post_dsell`, label: `Diám. Sellado [${unidad}]`, tipo: "single" },
                       { prefix: `${p}_tapa_post_dint_ojo`, label: `Diám. Int. Ojo [${unidad}]`, tipo: "single" },
                       { prefix: `${p}_tapa_post_dint_rotula`, label: `Diám. Int. Rótula [${unidad}]`, tipo: "single" },
-                      { prefix: `${p}_tapa_post_ancho_ojo`, label: `Ancho de Ojo [${unidad}]`, tipo: "single" },
+                      { prefix: `${p}_tapa_post_ancho_ojo`, label: `Ancho de Ojo [${unidad}]`, tipo: "xy" },
                     ]}
                     datos={datos}
                     onChange={onChange}
@@ -1354,7 +1499,9 @@ export default function EvaluacionFormulario({
                   </div>
                 </Col>
               </Row>
+              <HallazgosCatalogo modelo={modelo} filtro="tapa_posterior" prefix={`${p}_tapa_post`} titulo="Resultado de evaluación - Tapa Posterior" datos={datos} onChange={onChange} />
               <ImagenesComponente prefix={`${p}_tapa_post`} etiqueta="Tapa Posterior" datos={datos} onChange={onChange} />
+              <RecomendacionesCatalogo modelo={modelo} componente="tapa_posterior" prefix={`${p}_tapa_post`} datos={datos} onChange={onChange} />
               <ResultadoComponente prefix={`${p}_tapa_post`} label="Tapa Posterior" datos={datos} onChange={onChange} />
             </SeccionNum>
           )}
@@ -1382,7 +1529,7 @@ export default function EvaluacionFormulario({
                     items={[
                       { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
                       { key: "ext_roscado", label: "Exterior roscado", tipo: "sn" },
-                      { key: "sup_roscada", label: "Est. de sup. Roscada" },
+                      { key: "sup_roscada", label: "Estado de superficie Roscada" },
                     ]}
                     datos={datos}
                     onChange={onChange}
@@ -1390,8 +1537,9 @@ export default function EvaluacionFormulario({
                 </div>
               </Col>
             </Row>
-            <ChecklistHallazgos id={`${p}_tapa`} titulo="Check list - Tapa" grupos={GRUPOS_TAPA} datos={datos} onChange={onChange} />
+            <HallazgosCatalogo modelo={modelo} filtro="tapa" prefix={`${p}_tapa`} titulo="Resultado de evaluación - Tapa" datos={datos} onChange={onChange} />
             <ImagenesComponente prefix={`${p}_tapa`} etiqueta="Tapa" datos={datos} onChange={onChange} />
+            <RecomendacionesCatalogo modelo={modelo} componente="tapa" prefix={p} datos={datos} onChange={onChange} />
             <ResultadoComponente prefix={`${p}_tapa`} label="Tapa" datos={datos} onChange={onChange} />
           </SeccionNum>
 
@@ -1417,7 +1565,7 @@ export default function EvaluacionFormulario({
                     items={[
                       { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
                       { key: "int_roscado", label: "Interior roscado", tipo: "sn" },
-                      { key: "sup_roscada", label: "Est. de sup. Roscada" },
+                      { key: "sup_roscada", label: "Estado de superficie Roscada" },
                     ]}
                     datos={datos}
                     onChange={onChange}
@@ -1425,9 +1573,93 @@ export default function EvaluacionFormulario({
                 </div>
               </Col>
             </Row>
-            <ChecklistHallazgos id={`${p}_emb`} titulo="Check list - Émbolo" grupos={GRUPOS_PISTON} datos={datos} onChange={onChange} />
+            <HallazgosCatalogo modelo={modelo} filtro="embolo" prefix={`${p}_emb`} titulo="Resultado de evaluación - Émbolo" datos={datos} onChange={onChange} />
             <ImagenesComponente prefix={`${p}_emb`} etiqueta="Émbolo" datos={datos} onChange={onChange} />
+            <RecomendacionesCatalogo modelo={modelo} componente="embolo" prefix={p} datos={datos} onChange={onChange} />
             <ResultadoComponente prefix={`${p}_emb`} label="Émbolo" datos={datos} onChange={onChange} />
+          </SeccionNum>
+        </>
+      );
+    }
+
+    // ── FRENO DE SERVICIO & PARQUEO ── (tipo 9)
+    // Solo lleva las secciones HOUSING + SPINDLE + Freno (hallazgos del
+    // catálogo manual). No usa Cilindro/Vástago/Tapa/Pistón del compartido.
+    if (modelo === "freno_servicio_parqueo") {
+      return (
+        <>
+          <SeccionNum num={3} titulo="Housing">
+            <Row gutter={16}>
+              <Col xs={24} md={8}>
+                <ImagenReferencia componente="housing_freno" label="Housing (A, B)" />
+              </Col>
+              <Col xs={24} md={16}>
+                <div style={{ marginBottom: 8 }}>
+                  <Text strong style={{ fontSize: 12, display: "block" }}>REF. NP</Text>
+                  <Input
+                    size="small"
+                    value={(datos[`${p}_housing_ref_np`] as string) || ""}
+                    onChange={(e) => onChange({ ...datos, [`${p}_housing_ref_np`]: e.target.value })}
+                    placeholder="Número de parte"
+                    style={{ width: "100%" }}
+                  />
+                </div>
+                <TablaMedidas
+                  filas={[
+                    { prefix: `${p}_housing_a`, label: `Diámetro Alojamiento 1 (A) [${unidad}]`, tipo: "xy" },
+                    { prefix: `${p}_housing_b`, label: `Diámetro Alojamiento 2 (B) [${unidad}]`, tipo: "xy" },
+                  ]}
+                  datos={datos}
+                  onChange={onChange}
+                />
+              </Col>
+            </Row>
+            <ImagenesComponente prefix={`${p}_housing`} etiqueta="Housing" datos={datos} onChange={onChange} />
+            <ResultadoComponente prefix={`${p}_housing`} label="Housing" datos={datos} onChange={onChange} />
+          </SeccionNum>
+
+          <SeccionNum num={4} titulo="Spindle">
+            <Row gutter={16}>
+              <Col xs={24} md={8}>
+                <ImagenReferencia componente="spindle_freno" label="Spindle (A, L)" />
+              </Col>
+              <Col xs={24} md={16}>
+                <div style={{ marginBottom: 8 }}>
+                  <Text strong style={{ fontSize: 12, display: "block" }}>REF. NP</Text>
+                  <Input
+                    size="small"
+                    value={(datos[`${p}_spindle_ref_np`] as string) || ""}
+                    onChange={(e) => onChange({ ...datos, [`${p}_spindle_ref_np`]: e.target.value })}
+                    placeholder="Número de parte"
+                    style={{ width: "100%" }}
+                  />
+                </div>
+                <TablaMedidas
+                  filas={[
+                    { prefix: `${p}_spindle_a`, label: `Diámetro de asiento de rodamiento (A) [${unidad}]`, tipo: "xy" },
+                    { prefix: `${p}_spindle_l`, label: `Longitud (L) [${unidad}]`, tipo: "single" },
+                  ]}
+                  datos={datos}
+                  onChange={onChange}
+                />
+              </Col>
+            </Row>
+            <ImagenesComponente prefix={`${p}_spindle`} etiqueta="Spindle" datos={datos} onChange={onChange} />
+            <ResultadoComponente prefix={`${p}_spindle`} label="Spindle" datos={datos} onChange={onChange} />
+          </SeccionNum>
+
+          <SeccionNum num={5} titulo="Freno de Servicio & Parqueo">
+            <HallazgosCatalogo
+              modelo={modelo}
+              filtro="freno"
+              prefix={`${p}_freno`}
+              titulo="Resultado de evaluación - Freno"
+              datos={datos}
+              onChange={onChange}
+            />
+            <ImagenesComponente prefix={`${p}_freno`} etiqueta="Freno" datos={datos} onChange={onChange} />
+            <RecomendacionesCatalogo modelo={modelo} componente="freno" prefix={p} datos={datos} onChange={onChange} />
+            <ResultadoComponente prefix={`${p}_freno`} label="Freno" datos={datos} onChange={onChange} />
           </SeccionNum>
         </>
       );
@@ -1453,32 +1685,9 @@ export default function EvaluacionFormulario({
                 />
               </Col>
             </Row>
-            <ChecklistHallazgos
-              id={`${p}_hub`}
-              titulo="Check list - Hub"
-              grupos={[
-                {
-                  nombre: "Hallazgos HUB",
-                  items: [
-                    "Alojamientos de pistas de rodamientos conicos presentan desgaste",
-                    "Alojamientos de pistas de rodamientos conicos presentan rayaduras",
-                    "Pistas de rodamientos conicos presentan desgaste",
-                    "Pistas de rodamientos conicos presentan rayaduras",
-                    "Pernos de sujecion de rueda presentan desgaste",
-                    "Pernos de sujecion de rueda presentan fatiga",
-                    "Pernos de sujecion de rueda presentan hilos dañados",
-                    "Pernos de sujecion de rueda presentan fractura",
-                    "Presenta corrosion en portasellos",
-                    "Sello Duo Cone presenta desgaste",
-                    "Engranaje de sensor presenta corrosion",
-                    "Lainas de separacion llegaron dañadas",
-                  ],
-                },
-              ]}
-              datos={datos}
-              onChange={onChange}
-            />
+            <HallazgosCatalogo modelo={modelo} filtro="hub" prefix={`${p}_hub`} titulo="Resultado de evaluación - Hub" datos={datos} onChange={onChange} />
             <ImagenesComponente prefix={`${p}_hub`} etiqueta="Hub" datos={datos} onChange={onChange} />
+            <RecomendacionesCatalogo modelo={modelo} componente="hub" prefix={p} datos={datos} onChange={onChange} />
             <ResultadoComponente prefix={`${p}_hub`} label="Hub" datos={datos} onChange={onChange} />
           </SeccionNum>
 
@@ -1498,27 +1707,9 @@ export default function EvaluacionFormulario({
                 />
               </Col>
             </Row>
-            <ChecklistHallazgos
-              id={`${p}_spi`}
-              titulo="Check list - Spindle"
-              grupos={[
-                {
-                  nombre: "Hallazgos SPINDLE",
-                  items: [
-                    "Presenta picaduras en asiento de rodamiento",
-                    "Presenta rayaduras en asiento de rodamiento",
-                    "Daños en alojamientos roscados",
-                    "Presenta daños en alojamiento conico",
-                    "Presenta corrosion en alojamiento conico",
-                    "Presenta picaduras en alojamiento conico",
-                    "Alojamientos roscados de pernos de sujecion de bastidor",
-                  ],
-                },
-              ]}
-              datos={datos}
-              onChange={onChange}
-            />
+            <HallazgosCatalogo modelo={modelo} filtro="spindle" prefix={`${p}_spi`} titulo="Resultado de evaluación - Spindle" datos={datos} onChange={onChange} />
             <ImagenesComponente prefix={`${p}_spi`} etiqueta="Spindle" datos={datos} onChange={onChange} />
+            <RecomendacionesCatalogo modelo={modelo} componente="spindle" prefix={p} datos={datos} onChange={onChange} />
             <ResultadoComponente prefix={`${p}_spi`} label="Spindle" datos={datos} onChange={onChange} />
           </SeccionNum>
 
@@ -1528,24 +1719,9 @@ export default function EvaluacionFormulario({
                 <ImagenReferencia componente="conjunto_freno" label="Conjunto de Freno" />
               </Col>
             </Row>
-            <ChecklistHallazgos
-              id={`${p}_freno`}
-              titulo="Check list - Conjunto de Freno"
-              grupos={[
-                {
-                  nombre: "Hallazgos Freno",
-                  items: [
-                    "Piston de freno presenta rayaduras en alojamientos de sellos",
-                    "Presenta desgaste en resortes de retraccion",
-                    "Pernos de sujecion llegaron elongados",
-                    "Sellos presentan desgaste",
-                  ],
-                },
-              ]}
-              datos={datos}
-              onChange={onChange}
-            />
+            <HallazgosCatalogo modelo={modelo} filtro="conjunto_freno" prefix={`${p}_freno`} titulo="Resultado de evaluación - Conjunto de Freno" datos={datos} onChange={onChange} />
             <ImagenesComponente prefix={`${p}_freno`} etiqueta="Conjunto Freno" datos={datos} onChange={onChange} />
+            <RecomendacionesCatalogo modelo={modelo} componente="conjunto_freno" prefix={p} datos={datos} onChange={onChange} />
             <ResultadoComponente prefix={`${p}_freno`} label="Conjunto Freno" datos={datos} onChange={onChange} />
           </SeccionNum>
 
@@ -1555,46 +1731,16 @@ export default function EvaluacionFormulario({
                 <ImagenReferencia componente="piston_freno" label="Pistón de Freno" />
               </Col>
             </Row>
-            <ChecklistHallazgos
-              id={`${p}_caja`}
-              titulo="Check list - Caja de Freno"
-              grupos={[
-                {
-                  nombre: "Hallazgos Caja",
-                  items: [
-                    "Presenta rayas en asientos de sellos",
-                    "Alojamientos roscados presentan contaminacion",
-                  ],
-                },
-              ]}
-              datos={datos}
-              onChange={onChange}
-            />
+            <HallazgosCatalogo modelo={modelo} filtro="caja_freno" prefix={`${p}_caja`} titulo="Resultado de evaluación - Caja de Freno" datos={datos} onChange={onChange} />
             <ImagenesComponente prefix={`${p}_caja`} etiqueta="Caja Freno" datos={datos} onChange={onChange} />
+            <RecomendacionesCatalogo modelo={modelo} componente="caja_freno" prefix={p} datos={datos} onChange={onChange} />
             <ResultadoComponente prefix={`${p}_caja`} label="Caja Freno" datos={datos} onChange={onChange} />
           </SeccionNum>
 
           <SeccionNum num={7} titulo="GENERAL">
-            <ChecklistHallazgos
-              id={`${p}_gen`}
-              titulo="Check list - General"
-              grupos={[
-                {
-                  nombre: "Hallazgos Generales",
-                  items: [
-                    "Discos de friccion presentan desgaste",
-                    "Discos de friccion presentan marcas de temperatura (recalentamiento)",
-                    "Placas separadoras presentan rayas circulares",
-                    "Placas separadoras presentan desgaste",
-                    "Placas separadoras presentan manchas de sobrecalentamiento",
-                    "Dumpers presentan desgaste y daños por temperatura",
-                  ],
-                },
-              ]}
-              datos={datos}
-              onChange={onChange}
-            />
+            <HallazgosCatalogo modelo={modelo} filtro="general" prefix={`${p}_gen`} titulo="Resultado de evaluación - General" datos={datos} onChange={onChange} />
             <ImagenesComponente prefix={`${p}_gen`} etiqueta="General" datos={datos} onChange={onChange} />
+            <RecomendacionesCatalogo modelo={modelo} componente="general" prefix={p} datos={datos} onChange={onChange} />
             <ResultadoComponente prefix={`${p}_gen`} label="General" datos={datos} onChange={onChange} />
           </SeccionNum>
         </>
@@ -1717,22 +1863,38 @@ export default function EvaluacionFormulario({
                     />
                   </Col>
                 </Row>
-                <Row gutter={8}>
-                  <Col xs={24} md={8}>
-                    <ParXY prefix={`${p}_cil_dojo_f`} label={`Diámetro Ojo F [${unidad}]`} datos={datos} onChange={onChange} />
-                  </Col>
-                  <Col xs={24} md={8}>
-                    <ParXY
-                      prefix={`${p}_cil_dint_g`}
-                      label={`Diám. Int. ${(datos[`${p}_cil_elem_sujecion`] as string) || "G"} [${unidad}]`}
-                      datos={datos}
-                      onChange={onChange}
-                    />
-                  </Col>
-                  <Col xs={24} md={8}>
-                    <ParXY prefix={`${p}_cil_ancho_ojo`} label={`Ancho de Ojo [${unidad}]`} datos={datos} onChange={onChange} />
-                  </Col>
-                </Row>
+                {/* Si el cáncamo es Cóncavo, ocultar Diám. Ojo F, Diám. Int. G y
+                    Ancho de Ojo (items 6,7,8 del Excel). Comentario de J.F.Vera
+                    en el Excel de hoja de evaluación: "si marca concavo omitir
+                    los siguientes items". */}
+                {datos[`${p}_cil_tipo_cancamo`] !== "Concavo" && (
+                  <Row gutter={8}>
+                    <Col xs={24} md={8}>
+                      <ParXY prefix={`${p}_cil_dojo_f`} label={`Diámetro Ojo F [${unidad}]`} datos={datos} onChange={onChange} />
+                    </Col>
+                    <Col xs={24} md={8}>
+                      <ParXY
+                        prefix={`${p}_cil_dint_g`}
+                        label={`Diám. Int. ${(datos[`${p}_cil_elem_sujecion`] as string) || "G"} [${unidad}]`}
+                        datos={datos}
+                        onChange={onChange}
+                      />
+                    </Col>
+                    <Col xs={24} md={8}>
+                      <div>
+                        <Text strong style={{ fontSize: 12, display: "block" }}>Ancho de Ojo [{unidad}]</Text>
+                        <Row gutter={4}>
+                          <Col span={12}>
+                            <InputMedida name={`${p}_cil_ancho_ojo_1`} datos={datos} onChange={onChange} />
+                          </Col>
+                          <Col span={12}>
+                            <InputMedida name={`${p}_cil_ancho_ojo_2`} datos={datos} onChange={onChange} />
+                          </Col>
+                        </Row>
+                      </div>
+                    </Col>
+                  </Row>
+                )}
               </>
             )}
             {/* Extras para CHP: dos lecturas de pivotante */}
@@ -1769,8 +1931,8 @@ export default function EvaluacionFormulario({
               <TablaChecks
                 prefix={`${p}_cil`}
                 items={[
-                  { key: "tomas", label: "Tomas" },
-                  { key: "roscada", label: "Estado de sup. Roscada" },
+                  { key: "tomas", label: "Tomas hidráulicas" },
+                  { key: "roscada", label: "Estado de superficie Roscada" },
                   ...(esCilHidraulico ? [{ key: "bocina_stop_1", label: "Bocina STOP 1" }, { key: "bocina_stop_2", label: "Bocina STOP 2" }, { key: "estado_cancamo", label: "Estado de cancamo" }] : []),
                   ...(esPivotado ? [{ key: "estado_trunnion", label: "Estado de trunnion" }, { key: "pasa_estanqueidad", label: "Pasa prueba de estanqueidad", tipo: "sn" as const }] : []),
                   ...(modelo === "cil_doble_vastago" ? [{ key: "estado_soporte_sujecion", label: "Estado de soporte de sujeción" }, { key: "pasa_estanqueidad", label: "Pasa prueba de estanqueidad", tipo: "sn" as const }] : []),
@@ -1784,8 +1946,9 @@ export default function EvaluacionFormulario({
             </div>
           </Col>
         </Row>
-        <ChecklistHallazgos id={`${p}_cil`} titulo="Check list - Cilindro" grupos={GRUPOS_CILINDRO} datos={datos} onChange={onChange} />
+        <HallazgosCatalogo modelo={modelo} filtro={["cil_", "acumulador"]} prefix={`${p}_cil`} titulo="Resultado de evaluación - Cilindro" datos={datos} onChange={onChange} />
         <ImagenesComponente prefix={`${p}_cil`} etiqueta="Cilindro" datos={datos} onChange={onChange} />
+        <RecomendacionesCatalogo modelo={modelo} componente={modelo === "acum_vejiga" ? "acumulador" : "cilindro"} prefix={p} datos={datos} onChange={onChange} />
         <ResultadoComponente prefix={`${p}_cil`} label="Cilindro" datos={datos} onChange={onChange} />
       </SeccionNum>
     );
@@ -1808,7 +1971,6 @@ export default function EvaluacionFormulario({
                 filas={[
                   { prefix: `${p}_vas_desp`, label: `Diametro Espiga (A) [${unidad}]`, tipo: "xy" },
                   { prefix: `${p}_vas_dext`, label: `Diametro Vastago (B) [${unidad}]`, tipo: "xy" },
-                  { prefix: `${p}_vas_dsell`, label: `Diametro Sellado (C) [${unidad}]`, tipo: "xy" },
                   { prefix: `${p}_vas_dcoj`, label: `Diametro Cojinete (D) [${unidad}]`, tipo: "xy" },
                   { prefix: `${p}_vas_lcro`, label: `Longitud Cromo (E) [${unidad}]`, tipo: "single" },
                   { prefix: `${p}_vas_ltot`, label: `Longitud Total (F) [${unidad}]`, tipo: "single" },
@@ -1849,27 +2011,44 @@ export default function EvaluacionFormulario({
                   </Row>
                 </>
               )}
-              <Row gutter={8}>
-                <Col xs={24} md={8}>
-                  <ParXY prefix={`${p}_vas_dext_ojo_h`} label={`Diám. Ext. Ojo H [${unidad}]`} datos={datos} onChange={onChange} />
-                </Col>
-                <Col xs={24} md={8}>
-                  <ParXY prefix={`${p}_vas_dint_ojo_i`} label={`Diám. Int. Ojo I [${unidad}]`} datos={datos} onChange={onChange} />
-                </Col>
-                <Col xs={24} md={8}>
-                  <ParXY
-                    prefix={`${p}_vas_dint_j`}
-                    label={`Diám. Int. ${(datos[`${p}_vas_elem_sujecion`] as string) || "J"} [${unidad}]`}
-                    datos={datos}
-                    onChange={onChange}
-                  />
-                </Col>
-              </Row>
-              <Row gutter={8}>
-                <Col xs={24} md={8}>
-                  <ParXY prefix={`${p}_vas_ancho_ojo`} label={`Ancho de Ojo [${unidad}]`} datos={datos} onChange={onChange} />
-                </Col>
-              </Row>
+              {/* Si el cáncamo del vástago es Cóncavo, ocultar Diám. Ext. Ojo H,
+                  Diám. Int. Ojo I, Diám. Int. J y Ancho de Ojo (items 6,7,8,9
+                  del Excel). Mismo comentario de J.F.Vera. */}
+              {datos[`${p}_vas_tipo_cancamo`] !== "Concavo" && (
+                <>
+                  <Row gutter={8}>
+                    <Col xs={24} md={8}>
+                      <ParXY prefix={`${p}_vas_dext_ojo_h`} label={`Diám. Ext. Ojo H [${unidad}]`} datos={datos} onChange={onChange} />
+                    </Col>
+                    <Col xs={24} md={8}>
+                      <ParXY prefix={`${p}_vas_dint_ojo_i`} label={`Diám. Int. Ojo I [${unidad}]`} datos={datos} onChange={onChange} />
+                    </Col>
+                    <Col xs={24} md={8}>
+                      <ParXY
+                        prefix={`${p}_vas_dint_j`}
+                        label={`Diám. Int. ${(datos[`${p}_vas_elem_sujecion`] as string) || "J"} [${unidad}]`}
+                        datos={datos}
+                        onChange={onChange}
+                      />
+                    </Col>
+                  </Row>
+                  <Row gutter={8}>
+                    <Col xs={24} md={8}>
+                      <div>
+                    <Text strong style={{ fontSize: 12, display: "block" }}>Ancho de Ojo [{unidad}]</Text>
+                    <Row gutter={4}>
+                      <Col span={12}>
+                        <InputMedida name={`${p}_vas_ancho_ojo_1`} datos={datos} onChange={onChange} />
+                      </Col>
+                      <Col span={12}>
+                        <InputMedida name={`${p}_vas_ancho_ojo_2`} datos={datos} onChange={onChange} />
+                      </Col>
+                    </Row>
+                  </div>
+                    </Col>
+                  </Row>
+                </>
+              )}
               <Divider style={{ margin: "8px 0" }}>
                 <Text style={{ fontSize: 11 }}>Flexión y Espesor de Cromo</Text>
               </Divider>
@@ -1902,8 +2081,9 @@ export default function EvaluacionFormulario({
               </div>
             </Col>
           </Row>
-          <ChecklistHallazgos id={`${p}_vas`} titulo="Check list - Vastago" grupos={GRUPOS_VASTAGO} datos={datos} onChange={onChange} />
+          <HallazgosCatalogo modelo={modelo} filtro="vas_" prefix={`${p}_vas`} titulo="Resultado de evaluación - Vástago" datos={datos} onChange={onChange} />
           <ImagenesComponente prefix={`${p}_vas`} etiqueta="Vastago" datos={datos} onChange={onChange} />
+          <RecomendacionesCatalogo modelo={modelo} componente="vastago" prefix={p} datos={datos} onChange={onChange} />
           <ResultadoComponente prefix={`${p}_vas`} label="Vastago" datos={datos} onChange={onChange} />
         </SeccionNum>
       );
@@ -1960,8 +2140,9 @@ export default function EvaluacionFormulario({
               </div>
             </Col>
           </Row>
-          <ChecklistHallazgos id={`${p}_tapa`} titulo="Check list - Tapa" grupos={GRUPOS_TAPA} datos={datos} onChange={onChange} />
+          <HallazgosCatalogo modelo={modelo} filtro="tapa" prefix={`${p}_tapa`} titulo="Resultado de evaluación - Tapa" datos={datos} onChange={onChange} />
           <ImagenesComponente prefix={`${p}_tapa`} etiqueta="Tapa" datos={datos} onChange={onChange} />
+          <RecomendacionesCatalogo modelo={modelo} componente="tapa" prefix={p} datos={datos} onChange={onChange} />
           <ResultadoComponente prefix={`${p}_tapa`} label="Tapa" datos={datos} onChange={onChange} />
         </SeccionNum>
       );
@@ -1997,9 +2178,10 @@ export default function EvaluacionFormulario({
             </div>
           </Col>
         </Row>
-        <ChecklistHallazgos id={`${p}_pis`} titulo="Check list - Piston" grupos={GRUPOS_PISTON} datos={datos} onChange={onChange} />
+        <HallazgosCatalogo modelo={modelo} filtro="embolo" prefix={`${p}_pis`} titulo={`Resultado de evaluación - ${modelo === "acum_embolo" || modelo === "cil_telescopico" ? "Émbolo" : "Pistón"}`} datos={datos} onChange={onChange} />
         <ImagenesComponente prefix={`${p}_pis`} etiqueta={modelo === "acum_embolo" ? "Embolo" : "Piston"} datos={datos} onChange={onChange} />
-        <ResultadoComponente prefix={`${p}_pis`} label="Piston" datos={datos} onChange={onChange} />
+        <RecomendacionesCatalogo modelo={modelo} componente="embolo" prefix={p} datos={datos} onChange={onChange} />
+        <ResultadoComponente prefix={`${p}_pis`} label={modelo === "acum_embolo" || modelo === "cil_telescopico" ? "Émbolo" : "Pistón"} datos={datos} onChange={onChange} />
       </SeccionNum>
     );
 
@@ -2039,6 +2221,33 @@ export default function EvaluacionFormulario({
     </Card>
   ) : null;
 
+  // Selector global de tipo de reparación (Estándar / No Estándar / Ambos).
+  // Filtra qué columnas se muestran en cada bloque de Recomendaciones.
+  // Default: "Ambos" para no esconder nada hasta que el usuario decida.
+  const tipoReparacion = (datos["tipo_reparacion_recomendada"] as string) || "Ambos";
+  const bannerTipoReparacion = (
+    <Card
+      size="small"
+      style={{ marginBottom: 12, background: "#fafcff", borderColor: brand.cyan }}
+      styles={{ body: { padding: 12 } }}
+    >
+      <Space size={12} wrap>
+        <Text strong style={{ color: brand.navy }}>Tipo de reparación recomendada:</Text>
+        <Radio.Group
+          value={tipoReparacion}
+          onChange={(e) => onChange({ ...datos, tipo_reparacion_recomendada: e.target.value })}
+        >
+          <Radio value="Estándar">Estándar</Radio>
+          <Radio value="No Estándar">No Estándar</Radio>
+          <Radio value="Ambos">Ambos</Radio>
+        </Radio.Group>
+        <Text type="secondary" style={{ fontSize: 11 }}>
+          (filtra las recomendaciones mostradas por componente)
+        </Text>
+      </Space>
+    </Card>
+  );
+
   const contextValue = { medida: medidaModelo, unidad };
 
   if (readonly) {
@@ -2057,6 +2266,7 @@ export default function EvaluacionFormulario({
           }}
         >
           {bannerModelo}
+          {bannerTipoReparacion}
           {renderSecciones()}
         </fieldset>
       </MedidasModeloContext.Provider>
@@ -2066,6 +2276,7 @@ export default function EvaluacionFormulario({
   return (
     <MedidasModeloContext.Provider value={contextValue}>
       {bannerModelo}
+      {bannerTipoReparacion}
       {renderSecciones()}
     </MedidasModeloContext.Provider>
   );

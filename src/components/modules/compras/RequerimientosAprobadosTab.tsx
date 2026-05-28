@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Table, Tag, Space, Button, Modal, Form, Select, DatePicker, Input, InputNumber,
+  Table, Tag, Space, Button, Modal, Form, Select, Input, InputNumber,
   message, Empty, Alert, Row, Col, Typography, Tooltip,
 } from "antd";
 import { FileAddOutlined, ReloadOutlined, InboxOutlined, SearchOutlined, EditOutlined, CheckOutlined, CloseOutlined } from "@ant-design/icons";
@@ -213,9 +213,7 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
           proveedor_id: values.proveedor_id,
           ubicacion_codigo: values.ubicacion_codigo ?? null,
           moneda: values.moneda,
-          fecha_entrega_esperada: values.fecha_entrega_esperada ? values.fecha_entrega_esperada.format("YYYY-MM-DD") : null,
           observaciones: values.observaciones ?? null,
-          nombre: values.nombre ?? null,
         }),
       });
       if (!res.ok) {
@@ -565,27 +563,15 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
           <Form.Item name="proveedor_id" label="Proveedor" rules={[{ required: true, message: "Proveedor requerido" }]}>
             <Select showSearch optionFilterProp="label" placeholder="Buscá por nombre o RUC…" options={proveedoresOpts} />
           </Form.Item>
-          <Form.Item
-            name="nombre"
-            label="Nombre OC (opcional)"
-            tooltip="Si lo dejás vacío, se autogenera como 'OT {códigos} · {Proveedor}'."
-          >
-            <Input placeholder="Ej: Repuestos cilindro hidráulico - OT 12345" maxLength={300} />
-          </Form.Item>
           <Row gutter={12}>
-            <Col span={12}>
+            <Col span={16}>
               <Form.Item name="ubicacion_codigo" label="Ubicación de entrega">
                 <Select showSearch optionFilterProp="label" allowClear options={ubicacionesOpts} placeholder="Opcional" />
               </Form.Item>
             </Col>
-            <Col span={6}>
+            <Col span={8}>
               <Form.Item name="moneda" label="Moneda" rules={[{ required: true }]}>
                 <Select options={[{ value: "USD", label: "USD" }, { value: "SOL", label: "SOL" }]} />
-              </Form.Item>
-            </Col>
-            <Col span={6}>
-              <Form.Item name="fecha_entrega_esperada" label="Fecha entrega">
-                <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" />
               </Form.Item>
             </Col>
           </Row>

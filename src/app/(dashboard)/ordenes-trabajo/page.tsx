@@ -177,9 +177,15 @@ export default function OrdenesTrabajoPage() {
   const [modalOtId, setModalOtId] = useState<number | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
+  // Carga TODAS las OTs de una sola vez (límite alto). Necesario para que los
+  // filtros de columna (Cliente, Equipo, Fabricante, etc.) vean opciones de
+  // todo el dataset y no solo de la página actual. La paginación de la tabla
+  // pasa a ser client-side. Los filtros "globales" (search, ot_status,
+  // recursos_status, taller_status) se siguen mandando al server para reducir
+  // el payload cuando el usuario los aplica.
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
+    const params = new URLSearchParams({ page: "1", limit: "10000" });
     if (search) params.set("search", search);
     if (filterOtStatus) params.set("ot_status", filterOtStatus);
     if (filterRecursosStatus) params.set("recursos_status", filterRecursosStatus);
@@ -189,7 +195,7 @@ export default function OrdenesTrabajoPage() {
     setData(json.data ?? []);
     setTotal(json.total ?? 0);
     setLoading(false);
-  }, [page, pageSize, search, filterOtStatus, filterRecursosStatus, filterTallerStatus]);
+  }, [search, filterOtStatus, filterRecursosStatus, filterTallerStatus]);
 
   useEffect(() => {
     async function loadCatalogs() {
@@ -675,12 +681,16 @@ export default function OrdenesTrabajoPage() {
           rowKey="id"
           columns={visibleColumns(columnsResizable, ocultas)}
           components={tableComponents}
+          // Carga client-side completa: la data viene entera del server (limit
+          // alto en fetchData) y filtramos acá por rango de fechas. Los filtros
+          // de columna (Cliente/Equipo/etc.) ya operan sobre TODO el dataset.
           dataSource={data.filter((r) => dentroDeRango(r, "fecha_recepcion", rangoRecepcion))}
           loading={loading}
           pagination={paginacionEstandar({
             current: page,
             pageSize,
-            total,
+            // total = filas cargadas en cliente (post fecha_recepcion).
+            total: data.filter((r) => dentroDeRango(r, "fecha_recepcion", rangoRecepcion)).length,
             onChange: (p, s) => { setPage(p); setPageSize(s); },
             label: "órdenes de trabajo",
           })}
