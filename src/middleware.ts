@@ -4,6 +4,11 @@
 // Importante: hay que pasar `pages.signIn: "/login"` explícitamente a withAuth.
 // Si re-exportamos el default sin config, next-auth usa "/api/auth/signin"
 // (su UI por defecto) que no existe en esta app — y la redirección se rompe.
+//
+// Nota: el problema del botón "atrás" mostrando una captura cacheada tras
+// cerrar sesión NO se arregla acá. Next 16 sobreescribe el `Cache-Control` de
+// las páginas dinámicas, así que un `no-store` puesto en el middleware no gana.
+// Se resuelve en el cliente con un guard de bfcache (ver BfcacheGuard.tsx).
 import { withAuth } from "next-auth/middleware";
 
 export default withAuth({

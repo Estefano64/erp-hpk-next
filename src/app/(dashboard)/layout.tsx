@@ -24,6 +24,7 @@ import {
 import type { MenuProps } from "antd";
 import { brand } from "@/lib/theme";
 import IdleLogout from "@/components/IdleLogout";
+import BfcacheGuard from "@/components/BfcacheGuard";
 import { confirmLeave } from "@/lib/unsaved-changes";
 
 const { Header, Sider, Content } = Layout;
@@ -253,6 +254,7 @@ export default function DashboardLayout({
   return (
     <Layout style={{ minHeight: "100vh" }}>
       <IdleLogout />
+      <BfcacheGuard />
       <Sider
         collapsible
         collapsed={collapsed}
