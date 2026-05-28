@@ -873,6 +873,10 @@ model OrdenTrabajo {
   // Railway (migración manual `_migrate-ot-to-int.ts` 2026-05-28) porque
   // todos los valores siguen el formato numérico NNNNYY.
   ot                          Int?
+  // Soft-delete (desactivar): false = anulada. Se oculta de listados y su
+  // número de OT queda libre (el correlativo ignora las inactivas). Los datos
+  // se conservan para auditar / reactivar.
+  activo                      Boolean             @default(true)
   id_cliente                  Int?
   estrategia                  Boolean?
   id_cod_rep                  Int?

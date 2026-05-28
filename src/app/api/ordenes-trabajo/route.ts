@@ -30,7 +30,8 @@ async function generarNumeroOT(): Promise<number> {
   // Como Prisma no soporta modulo en where, traemos todas con ot < 1_000_000
   // y filtramos en memoria por (ot % 100 === year2).
   const candidatos = await prisma.ordenTrabajo.findMany({
-    where: { ot: { not: null, lt: 1_000_000 } },
+    // Solo OTs activas: una OT desactivada libera su número (se puede reusar).
+    where: { ot: { not: null, lt: 1_000_000 }, activo: true },
     select: { ot: true },
   });
 
@@ -92,6 +93,9 @@ export async function GET(req: NextRequest) {
     if (recursosStatus) where.recursos_status_codigo = recursosStatus;
     if (tallerStatus) where.taller_status_codigo = tallerStatus;
     if (clienteId) where.id_cliente = Number(clienteId);
+    // Por defecto solo OTs activas; las desactivadas (anuladas) se ocultan.
+    // El admin puede pedirlas con ?incluirInactivas=1 (para reactivarlas).
+    if (searchParams.get("incluirInactivas") !== "1") where.activo = true;
 
     const [data, total] = await Promise.all([
       prisma.ordenTrabajo.findMany({

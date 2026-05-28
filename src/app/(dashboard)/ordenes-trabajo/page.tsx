@@ -13,6 +13,9 @@ import {
   Col,
   Card,
   Tooltip,
+  App,
+  Popconfirm,
+  Switch,
 } from "antd";
 import {
   PlusOutlined,
@@ -20,8 +23,12 @@ import {
   ReloadOutlined,
   EyeOutlined,
   AuditOutlined,
+  DeleteOutlined,
+  StopOutlined,
+  UndoOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
+import { useSession } from "next-auth/react";
 import {
   numeracionColumn,
   paginacionEstandar,
@@ -48,6 +55,7 @@ interface OTRecord {
   id: number;
   // `ot` ahora es número (INTEGER) tras la migración del 2026-05-28.
   ot: number | null;
+  activo: boolean;
   estrategia: boolean;
   tipo: string | null;
   tipo_codigo: string | null;
@@ -148,6 +156,10 @@ function evalEstadoMeta(estado: string | null) {
 
 export default function OrdenesTrabajoPage() {
   const router = useRouter();
+  const { message, modal } = App.useApp();
+  const { data: session } = useSession();
+  // Eliminar / desactivar OTs es exclusivo del admin (operación destructiva).
+  const esAdmin = ((session?.user as { roles?: string[] } | undefined)?.roles ?? []).includes("admin");
   const [data, setData] = useState<OTRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -157,6 +169,8 @@ export default function OrdenesTrabajoPage() {
   const [filterOtStatus, setFilterOtStatus] = useState("");
   const [filterRecursosStatus, setFilterRecursosStatus] = useState("");
   const [filterTallerStatus, setFilterTallerStatus] = useState("");
+  // Admin: ver también las OTs desactivadas (para reactivarlas).
+  const [verInactivas, setVerInactivas] = useState(false);
   // v2: nuevas columnas opcionales (tipo, NP, flota, posición, fabricante, garantía, base metálica, etc.)
   // ocultas por default — el usuario las habilita desde el botón "Columnas".
   const { ocultas, setOcultas } = useColumnasOcultas("ordenes-trabajo-list-cols-v2", [
@@ -191,12 +205,55 @@ export default function OrdenesTrabajoPage() {
     if (filterOtStatus) params.set("ot_status", filterOtStatus);
     if (filterRecursosStatus) params.set("recursos_status", filterRecursosStatus);
     if (filterTallerStatus) params.set("taller_status", filterTallerStatus);
+    if (verInactivas) params.set("incluirInactivas", "1");
     const res = await fetch(`/api/ordenes-trabajo?${params}`);
     const json = await res.json();
     setData(json.data ?? []);
     setTotal(json.total ?? 0);
     setLoading(false);
-  }, [search, filterOtStatus, filterRecursosStatus, filterTallerStatus]);
+  }, [search, filterOtStatus, filterRecursosStatus, filterTallerStatus, verInactivas]);
+
+  // Desactivar (anular, reversible) / reactivar una OT. Solo admin.
+  async function toggleActivo(record: OTRecord) {
+    const activar = !record.activo;
+    const res = await fetch(`/api/ordenes-trabajo/${record.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ activo: activar }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) { message.error(json.error ?? "No se pudo cambiar el estado"); return; }
+    message.success(activar ? "OT reactivada" : "OT desactivada — su número queda libre");
+    fetchData();
+  }
+
+  // Eliminar OT en cascada (irreversible). Solo admin. Confirmación reforzada
+  // porque borra TODO lo relacionado, incluidas las Órdenes de Compra.
+  function confirmarEliminar(record: OTRecord) {
+    modal.confirm({
+      title: `Eliminar OT ${record.ot ?? `#${record.id}`} definitivamente`,
+      okText: "Eliminar todo",
+      okButtonProps: { danger: true },
+      cancelText: "Cancelar",
+      width: 520,
+      content: (
+        <div style={{ fontSize: 13 }}>
+          Esto borra <b>permanentemente</b> la OT y <b>todo lo relacionado</b>:
+          evaluación, planificación, requerimientos, adjuntos, historial
+          <b> y las Órdenes de Compra vinculadas</b>. No se puede deshacer.
+          <br /><br />
+          Si solo querés ocultarla y liberar su número, usá <b>Desactivar</b> en su lugar.
+        </div>
+      ),
+      onOk: async () => {
+        const res = await fetch(`/api/ordenes-trabajo/${record.id}`, { method: "DELETE" });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) { message.error(json.error ?? "No se pudo eliminar"); throw new Error("fail"); }
+        message.success("OT eliminada");
+        fetchData();
+      },
+    });
+  }
 
   useEffect(() => {
     async function loadCatalogs() {
@@ -233,15 +290,18 @@ export default function OrdenesTrabajoPage() {
       sorter: (a, b) => Number(a.ot ?? 0) - Number(b.ot ?? 0),
       ...filtroPorColumna(data, "ot"),
       render: (v: string, r: OTRecord) => (
-        <Tooltip title="Abrir página de la OT (URL compartible)">
-          <Tag
-            color={brand.navy}
-            style={{ cursor: "pointer" }}
-            onClick={() => router.push(`/ordenes-trabajo/${r.id}`)}
-          >
-            {v}
-          </Tag>
-        </Tooltip>
+        <Space size={4}>
+          <Tooltip title="Abrir página de la OT (URL compartible)">
+            <Tag
+              color={brand.navy}
+              style={{ cursor: "pointer" }}
+              onClick={() => router.push(`/ordenes-trabajo/${r.id}`)}
+            >
+              {v}
+            </Tag>
+          </Tooltip>
+          {!r.activo && <Tag color="default">desactivada</Tag>}
+        </Space>
       ),
     },
     {
@@ -520,7 +580,7 @@ export default function OrdenesTrabajoPage() {
     {
       key: "acciones",
       title: "",
-      width: 90,
+      width: esAdmin ? 180 : 90,
       align: "center",
       fixed: "right",
       render: (_: unknown, record: OTRecord) => (
@@ -545,6 +605,28 @@ export default function OrdenesTrabajoPage() {
               </Tooltip>
             );
           })()}
+          {esAdmin && (record.activo ? (
+            <Popconfirm
+              title="Desactivar esta OT"
+              description="Se oculta de los listados y su número queda libre. Reversible."
+              okText="Desactivar"
+              cancelText="Cancelar"
+              onConfirm={() => toggleActivo(record)}
+            >
+              <Tooltip title="Desactivar (anular)">
+                <Button type="text" icon={<StopOutlined />} />
+              </Tooltip>
+            </Popconfirm>
+          ) : (
+            <Tooltip title="Reactivar OT">
+              <Button type="text" icon={<UndoOutlined style={{ color: brand.success }} />} onClick={() => toggleActivo(record)} />
+            </Tooltip>
+          ))}
+          {esAdmin && (
+            <Tooltip title="Eliminar definitivamente (cascada)">
+              <Button type="text" danger icon={<DeleteOutlined />} onClick={() => confirmarEliminar(record)} />
+            </Tooltip>
+          )}
         </Space>
       ),
     },
@@ -674,6 +756,14 @@ export default function OrdenesTrabajoPage() {
               onChange={setRangoRecepcion}
             />
           </Col>
+          {esAdmin && (
+            <Col xs={24}>
+              <Switch size="small" checked={verInactivas} onChange={(v) => { setVerInactivas(v); setPage(1); }} />
+              <span style={{ marginLeft: 8, fontSize: 13, color: brand.textSecondary }}>
+                Ver OTs desactivadas (anuladas)
+              </span>
+            </Col>
+          )}
         </Row>
       </Card>
 

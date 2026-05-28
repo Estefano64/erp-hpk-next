@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auditOTChange, AUDIT_OT_SELECT_FIELDS, getAuditUser } from "@/lib/audit";
+import { auditOTChange, AUDIT_OT_SELECT_FIELDS, getAuditUser, isAdmin } from "@/lib/audit";
 import { parseDateOnly } from "@/lib/dates";
+import { deleteObject } from "@/lib/r2-helpers";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -122,5 +123,95 @@ export async function PUT(req: NextRequest, { params }: Params) {
   } catch (error) {
     console.error("PUT /api/ordenes-trabajo/[id] error:", error);
     return NextResponse.json({ error: "Error al actualizar OT" }, { status: 500 });
+  }
+}
+
+// PATCH — activar / desactivar (soft-delete reversible). Solo admin.
+// Body: { activo: boolean }. Desactivar oculta la OT de los listados y libera
+// su número (el correlativo ignora las inactivas); los datos se conservan.
+export async function PATCH(req: NextRequest, { params }: Params) {
+  try {
+    if (!(await isAdmin(req))) {
+      return NextResponse.json({ error: "Solo un administrador puede desactivar/reactivar OTs" }, { status: 403 });
+    }
+    const { id } = await params;
+    const otId = Number(id);
+    const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+    if (typeof body.activo !== "boolean") {
+      return NextResponse.json({ error: "Falta 'activo' (boolean)" }, { status: 400 });
+    }
+    const existing = await prisma.ordenTrabajo.findUnique({ where: { id: otId }, select: { id: true, ot: true, activo: true } });
+    if (!existing) return NextResponse.json({ error: "OT no encontrada" }, { status: 404 });
+
+    const usuario = (await getAuditUser(req)) ?? "sistema";
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.ordenTrabajo.update({
+        where: { id: otId },
+        data: { activo: body.activo as boolean, usuario_actualiza: usuario, fecha_actualizacion: new Date() },
+      });
+      await tx.oTHistorial.create({
+        data: {
+          ot_id: otId,
+          tipo_operacion: "EDICION",
+          descripcion: body.activo ? "OT reactivada" : "OT desactivada (anulada) — número liberado",
+          usuario,
+        },
+      });
+      return u;
+    });
+    return NextResponse.json({ data: updated, message: body.activo ? "OT reactivada" : "OT desactivada" });
+  } catch (error) {
+    console.error("PATCH /api/ordenes-trabajo/[id] error:", error);
+    return NextResponse.json({ error: "Error al cambiar estado de la OT" }, { status: 500 });
+  }
+}
+
+// DELETE — eliminar OT en cascada (hard delete). Solo admin. Borra TODO lo
+// relacionado: evaluaciones, planificación (+capturas/sesiones), repuestos,
+// adjuntos e historial salen por cascada de la DB. Compras (OC) + sus detalles
+// + los repuestos que las referencian se borran explícitamente en transacción
+// (la FK Compra→OT es Restrict). Los préstamos de herramienta se desvinculan
+// (SetNull). Best-effort: borra los archivos de R2 (adjuntos + informes).
+export async function DELETE(req: NextRequest, { params }: Params) {
+  try {
+    if (!(await isAdmin(req))) {
+      return NextResponse.json({ error: "Solo un administrador puede eliminar OTs" }, { status: 403 });
+    }
+    const { id } = await params;
+    const otId = Number(id);
+    const existing = await prisma.ordenTrabajo.findUnique({ where: { id: otId }, select: { id: true } });
+    if (!existing) return NextResponse.json({ error: "OT no encontrada" }, { status: 404 });
+
+    // Keys de R2 a limpiar después (los registros se borran en la transacción).
+    const [adjuntos, evaluaciones, compras] = await Promise.all([
+      prisma.otAdjunto.findMany({ where: { orden_trabajo_id: otId }, select: { r2_key: true } }),
+      prisma.evaluacionTecnica.findMany({ where: { ot_id: otId, informe_key: { not: null } }, select: { informe_key: true } }),
+      prisma.compra.findMany({ where: { ot_id: otId }, select: { id: true } }),
+    ]);
+    const compraIds = compras.map((c) => c.id);
+
+    await prisma.$transaction(async (tx) => {
+      if (compraIds.length > 0) {
+        await tx.compraDetalle.deleteMany({ where: { compra_id: { in: compraIds } } });
+      }
+      // Los repuestos referencian a las OC vía po_id; hay que borrarlos antes de la OC.
+      await tx.oTRepuesto.deleteMany({ where: { ot_id: otId } });
+      await tx.compra.deleteMany({ where: { ot_id: otId } });
+      // El resto (evaluaciones, planificación+hijos, adjuntos, historial) cae por
+      // cascada de la DB al borrar la OT. Préstamos de herramienta → SetNull.
+      await tx.ordenTrabajo.delete({ where: { id: otId } });
+    });
+
+    // Limpieza de R2 best-effort (fuera de la transacción; no debe fallar el borrado).
+    const keys = [
+      ...adjuntos.map((a) => a.r2_key),
+      ...evaluaciones.map((e) => e.informe_key).filter((k): k is string => !!k),
+    ];
+    await Promise.all(keys.map((k) => deleteObject(k).catch((e) => console.warn("R2 huérfano al borrar OT:", k, e))));
+
+    return NextResponse.json({ data: { deleted: true } });
+  } catch (error) {
+    console.error("DELETE /api/ordenes-trabajo/[id] error:", error);
+    return NextResponse.json({ error: "Error al eliminar la OT" }, { status: 500 });
   }
 }
