@@ -38,6 +38,7 @@ interface ItemRow {
 interface CompraData {
   id: number;
   numero_po: string;
+  numero_req: string | null;
   nombre: string | null;
   proveedor_nombre: string | null;
   moneda: string;
@@ -78,6 +79,8 @@ export default function EditarOCPage() {
   const [otros, setOtros] = useState<number>(0);
   const [originalDescuento, setOriginalDescuento] = useState<number>(0);
   const [originalOtros, setOriginalOtros] = useState<number>(0);
+  const [numeroReq, setNumeroReq] = useState<string>("");
+  const [originalNumeroReq, setOriginalNumeroReq] = useState<string>("");
   const [messageApi, contextHolder] = message.useMessage();
 
   const fetchCompra = useCallback(async () => {
@@ -110,6 +113,9 @@ export default function EditarOCPage() {
       setOtros(otr);
       setOriginalDescuento(desc);
       setOriginalOtros(otr);
+      const ref = c.numero_req ?? "";
+      setNumeroReq(ref);
+      setOriginalNumeroReq(ref);
     } catch (e) {
       messageApi.error(e instanceof Error ? e.message : "Error");
     } finally {
@@ -157,8 +163,9 @@ export default function EditarOCPage() {
     JSON.stringify(visibleRows) !== originalRowsHash
     || rows.some((r) => r._deleted && r.id != null)
     || descuento !== originalDescuento
-    || otros !== originalOtros,
-  [visibleRows, originalRowsHash, rows, descuento, originalDescuento, otros, originalOtros]);
+    || otros !== originalOtros
+    || numeroReq !== originalNumeroReq,
+  [visibleRows, originalRowsHash, rows, descuento, originalDescuento, otros, originalOtros, numeroReq, originalNumeroReq]);
 
   useUnsavedChangesWarning(hayCambios, "Hay cambios sin guardar en la OC.", `compra-editar-${params?.id ?? "?"}`);
 
@@ -193,6 +200,7 @@ export default function EditarOCPage() {
         deleteIds: rows.filter((r) => r._deleted && r.id != null).map((r) => r.id),
         descuento,
         otros,
+        numero_req: numeroReq.trim() || null,
       };
       const res = await fetch(`/api/compras/${compraId}/items`, {
         method: "PATCH",
@@ -355,6 +363,24 @@ export default function EditarOCPage() {
         style={{ marginBottom: 12 }}
         banner
       />
+
+      <Card size="small" style={{ marginBottom: 12 }} styles={{ body: { padding: 10 } }}>
+        <Row gutter={12} align="middle">
+          <Col xs={24} md={12}>
+            <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 2 }}>
+              Ref. Pedido
+            </div>
+            <Input
+              size="middle"
+              value={numeroReq}
+              maxLength={50}
+              placeholder="Ej: REQ-2026-001 (aparece en la cabecera del PDF de la OC)"
+              onChange={(e) => setNumeroReq(e.target.value)}
+              allowClear
+            />
+          </Col>
+        </Row>
+      </Card>
 
       <Card size="small" style={{ marginBottom: 12 }} styles={{ body: { padding: 10 } }}>
         <Row gutter={12} align="middle">
