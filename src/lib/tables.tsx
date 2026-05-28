@@ -271,11 +271,13 @@ export function filtroPorColumna<T>(
 ): {
   filters: { text: string; value: string }[];
   filterSearch: true;
+  filterMultiple: true;
   onFilter: (value: boolean | React.Key, record: T) => boolean;
 } {
   return {
     filters: valoresUnicos(data, campo),
     filterSearch: true,
+    filterMultiple: true,
     onFilter: (value, record) =>
       String((record as Record<string, unknown>)[campo as string] ?? "") === value,
   };
@@ -569,15 +571,25 @@ export function useColumnasRedimensionables<T>(
       const col = c as ColumnType<T>;
       const k = claveColumna(col, idx);
       const widthActual = anchos[k] ?? (typeof col.width === "number" ? col.width : undefined);
+
+      // Multi-select por default en todos los filtros de columna. Si la columna
+      // define `filters` y no eligió explícitamente `filterMultiple`, lo forzamos
+      // a `true` para que el dropdown rinda checkboxes en vez de radios.
+      const conMultiSelect = (col.filters && col.filterMultiple === undefined)
+        ? { filterMultiple: true as const }
+        : {};
+
       // Las columnas fixed mantienen ancho original (Resizable rompe el sticky)
       if (col.fixed) {
         return {
           ...col,
+          ...conMultiSelect,
           onHeaderCell: () => ({ columnKey: k, sortable: false }),
         } as ColumnType<T>;
       }
       return {
         ...col,
+        ...conMultiSelect,
         ...(widthActual ? { width: widthActual } : {}),
         onHeaderCell: (column: { width?: number }) => ({
           width: column.width,
