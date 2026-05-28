@@ -26,11 +26,21 @@ import { brand } from "@/lib/theme";
 import IdleLogout from "@/components/IdleLogout";
 import BfcacheGuard from "@/components/BfcacheGuard";
 import { confirmLeave } from "@/lib/unsaved-changes";
+import { esTecnicoRestringido, rutaPermitidaTecnico } from "@/lib/tecnico-acceso";
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
 
-function buildMenuItems(_rol: string | null): MenuProps["items"] {
+function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
+  // El técnico (rol "tecnico" sin "admin") solo ve su panel, sus tareas y los
+  // tickets. El resto de apartados ni aparecen. Ver lib/tecnico-acceso.ts.
+  if (tecnicoRestringido) {
+    return [
+      { key: "/dashboard", icon: <DashboardOutlined />, label: "Dashboard" },
+      { key: "/mis-tareas", icon: <ToolOutlined />, label: "Mis Tareas" },
+      { key: "/tickets", icon: <BugOutlined />, label: "Tickets" },
+    ];
+  }
   const configChildren: NonNullable<MenuProps["items"]> = [
     { key: "/configuracion-cotizacion", label: "Configuración cotización" },
     { key: "/catalogos", label: "Catálogos maestros" },
@@ -212,7 +222,18 @@ export default function DashboardLayout({
   const rolPrincipal = PRIORIDAD_VISIBLE.find((r) => roles.includes(r)) ?? null;
   const rolInfo = rolPrincipal ? (rolLabels[rolPrincipal] ?? rolLabels.viewer) : null;
 
-  const menuItems = useMemo(() => buildMenuItems(rolPrincipal), [rolPrincipal]);
+  // Técnico restringido: solo ve panel + tareas + tickets (menú y rutas).
+  const tecnicoRestringido = esTecnicoRestringido(roles);
+  const menuItems = useMemo(() => buildMenuItems(tecnicoRestringido), [tecnicoRestringido]);
+
+  // Bloqueo de rutas en cliente: si un técnico cae en una pantalla que no le
+  // corresponde (p. ej. tipeando la URL), lo devolvemos a su dashboard. El
+  // middleware hace el mismo bloqueo server-side; esto cubre la navegación SPA.
+  useEffect(() => {
+    if (tecnicoRestringido && !rutaPermitidaTecnico(pathname)) {
+      router.replace("/dashboard");
+    }
+  }, [tecnicoRestringido, pathname, router]);
 
   // Determina qué item y submenú están activos (soporta grupos anidados)
   const menuLeaves = useMemo(() => flattenMenuLeaves(menuItems), [menuItems]);
