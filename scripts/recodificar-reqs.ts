@@ -64,7 +64,8 @@ async function main() {
     let parentKey: string;
     let otCodigo: string;
     if (it.ot_id != null) {
-      const codigo = it.orden_trabajo?.ot?.trim();
+      // ot ahora es number — convertir a string para usar como código.
+      const codigo = it.orden_trabajo?.ot != null ? String(it.orden_trabajo.ot) : null;
       if (!codigo) {
         saltadosSinOTCodigo++;
         continue;

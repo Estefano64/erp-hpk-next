@@ -63,12 +63,13 @@ async function main() {
       skipSinItems++;
       continue;
     }
+    // `ot` (externa) ahora es number — convertir a string para set/comparación.
     const otsExternasUnicas = new Set(
-      c.ot_repuestos.map((r) => r.orden_trabajo?.ot?.trim()).filter((v): v is string => !!v),
+      c.ot_repuestos.map((r) => r.orden_trabajo?.ot != null ? String(r.orden_trabajo.ot) : null).filter((v): v is string => !!v),
     );
     const hayItemsInternos = c.ot_repuestos.some((r) => r.orden_trabajo_interna_id != null);
     const otsExternasSinCodigo = c.ot_repuestos.some(
-      (r) => r.ot_id != null && !r.orden_trabajo?.ot?.trim(),
+      (r) => r.ot_id != null && r.orden_trabajo?.ot == null,
     );
 
     if (hayItemsInternos) {
@@ -177,10 +178,11 @@ async function main() {
           data: { nro_oc: p.numeroPoNuevo },
         });
         // Trazas en historial de la OT afectada.
-        const otRow = await tx.ordenTrabajo.findFirst({
-          where: { ot: p.otCodigo },
-          select: { id: true },
-        });
+        // ot ahora es INT — convertir.
+        const otNumLookup = parseInt(p.otCodigo, 10);
+        const otRow = Number.isFinite(otNumLookup)
+          ? await tx.ordenTrabajo.findFirst({ where: { ot: otNumLookup }, select: { id: true } })
+          : null;
         if (otRow) {
           await tx.oTHistorial.create({
             data: {

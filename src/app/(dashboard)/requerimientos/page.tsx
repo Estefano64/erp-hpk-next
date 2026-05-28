@@ -726,7 +726,12 @@ export default function RequerimientosPage() {
     {
       title: "OT", key: "ot", width: 110, fixed: "left", align: "center",
       ...filtroProyectado(gruposFiltrados, (g) => g.orden_trabajo?.ot ?? g.items[0]?.orden_trabajo_interna?.ot ?? null),
-      sorter: (a, b) => (a.orden_trabajo?.ot ?? a.items[0]?.orden_trabajo_interna?.ot ?? "").localeCompare(b.orden_trabajo?.ot ?? b.items[0]?.orden_trabajo_interna?.ot ?? ""),
+      sorter: (a, b) => {
+        // OT externa ahora es number, interna sigue siendo string.
+        const va = String(a.orden_trabajo?.ot ?? a.items[0]?.orden_trabajo_interna?.ot ?? "");
+        const vb = String(b.orden_trabajo?.ot ?? b.items[0]?.orden_trabajo_interna?.ot ?? "");
+        return va.localeCompare(vb);
+      },
       render: (_, g) => {
         // OT externa.
         if (g.orden_trabajo?.ot) {

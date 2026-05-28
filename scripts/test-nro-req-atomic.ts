@@ -21,7 +21,7 @@ async function main() {
 
   const ot = await prisma.ordenTrabajo.create({
     data: {
-      ot: "STRESS-NRO-REQ",
+      ot: 999002, // stress-test (rango 999xxx)
       id_cliente: cliente.cliente_id,
       id_cod_rep: codRep.cod_rep_id,
       usuario_crea: "stress-test",

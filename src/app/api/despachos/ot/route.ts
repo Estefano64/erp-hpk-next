@@ -72,7 +72,7 @@ export async function GET(_req: NextRequest) {
 
     const grupos = new Map<number, {
       ot_id: number;
-      ot: string | null;
+      ot: number | null;
       cliente: string | null;
       codigo_reparacion: string | null;
       recursos_status: string | null;

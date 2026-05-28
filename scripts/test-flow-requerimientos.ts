@@ -46,7 +46,7 @@ async function main() {
   // ── 1. Crear OT ──
   const ot = await prisma.ordenTrabajo.create({
     data: {
-      ot: "TEST-OT-001",
+      ot: 999001, // test (rango 999xxx para no colisionar con producción)
       id_cliente: cliente.cliente_id,
       id_cod_rep: codRep.cod_rep_id,
       descripcion: "OT de test automático",

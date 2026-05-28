@@ -38,10 +38,11 @@ export async function GET(req: NextRequest) {
       if (conds.length) where.AND = conds;
     }
     if (search) {
+      const otNum = /^\d+$/.test(search) ? Number(search) : null;
       where.OR = [
         { descripcion: { contains: search, mode: "insensitive" } },
         { operacion_codigo: { contains: search, mode: "insensitive" } },
-        { orden_trabajo: { ot: { contains: search, mode: "insensitive" } } },
+        ...(otNum != null ? [{ orden_trabajo: { ot: otNum } }] : []),
       ];
     }
 

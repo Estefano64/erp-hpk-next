@@ -46,7 +46,8 @@ const { Title } = Typography;
 
 interface OTRecord {
   id: number;
-  ot: string;
+  // `ot` ahora es número (INTEGER) tras la migración del 2026-05-28.
+  ot: number | null;
   estrategia: boolean;
   tipo: string | null;
   tipo_codigo: string | null;
@@ -229,7 +230,7 @@ export default function OrdenesTrabajoPage() {
       dataIndex: "ot",
       width: 150,
       fixed: "left",
-      sorter: (a, b) => a.ot.localeCompare(b.ot),
+      sorter: (a, b) => Number(a.ot ?? 0) - Number(b.ot ?? 0),
       ...filtroPorColumna(data, "ot"),
       render: (v: string, r: OTRecord) => (
         <Tooltip title="Abrir página de la OT (URL compartible)">
@@ -569,7 +570,7 @@ export default function OrdenesTrabajoPage() {
             filename="OTs-Externas"
             sheetName="OTs Externas"
             columns={[
-              { label: "OT", value: (r) => r.ot ?? "" },
+              { label: "OT", value: (r) => r.ot ?? "" }, // number | "" — Excel maneja ambos
               { label: "Cliente", value: (r) => r.cliente?.nombre_comercial ?? r.cliente?.razon_social ?? "" },
               { label: "Cod. Rep", value: (r) => r.codigo_reparacion?.codigo ?? "" },
               { label: "Cod. Rep - Descripción", value: (r) => r.codigo_reparacion?.descripcion ?? "" },

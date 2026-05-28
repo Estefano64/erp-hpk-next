@@ -27,7 +27,11 @@ export async function GET(req: NextRequest) {
     if (otId) where.ot_id = Number(otId);
 
     const ot = sp.get("ot")?.trim();
-    if (ot) where.orden_trabajo = { ot: { contains: ot, mode: "insensitive" } };
+    if (ot) {
+      // `ot` ahora es INTEGER. Si la búsqueda es un número entero, exact match.
+      const otNum = /^\d+$/.test(ot) ? Number(ot) : null;
+      if (otNum != null) where.orden_trabajo = { ot: otNum };
+    }
 
     const statusReq = sp.get("status_req")?.trim();
     if (statusReq) where.status_requerimiento_codigo = statusReq;

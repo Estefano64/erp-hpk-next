@@ -127,7 +127,8 @@ export async function POST(req: NextRequest) {
 
       // Construir el nombre descriptivo: "OT-{codigos} · {Proveedor}".
       // Si vino del cliente lo respetamos; si no, lo auto-generamos.
-      const otsUnicas = [...new Set(repuestos.map((r) => r.orden_trabajo?.ot).filter(Boolean) as string[])];
+      // `ot` ahora es number — lo casteamos a string para mostrar como código.
+      const otsUnicas = [...new Set(repuestos.map((r) => r.orden_trabajo?.ot != null ? String(r.orden_trabajo.ot) : null).filter(Boolean) as string[])];
       const proveedor = await tx.proveedor.findUnique({
         where: { id: d.proveedor_id },
         select: { razon_social: true, nombre_comercial: true },

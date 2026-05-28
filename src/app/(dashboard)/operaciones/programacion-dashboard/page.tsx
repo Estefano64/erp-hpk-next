@@ -72,7 +72,7 @@ interface EstadoCat { codigo: string; nombre: string; color: string | null }
 
 interface OTRow {
   id: number;
-  ot: string | null;
+  ot: number | null;
   descripcion: string | null;
   np: string | null;
   equipo_codigo: string | null;
@@ -241,7 +241,7 @@ export default function ProgramacionDashboardPage() {
     const q = search.trim().toLowerCase();
     if (!q) return ots;
     return ots.filter((o) =>
-      (o.ot ?? "").toLowerCase().includes(q) ||
+      String(o.ot ?? "").toLowerCase().includes(q) ||
       (o.descripcion ?? "").toLowerCase().includes(q) ||
       (o.cliente_nombre ?? "").toLowerCase().includes(q) ||
       (o.equipo_codigo ?? "").toLowerCase().includes(q) ||
@@ -303,9 +303,9 @@ export default function ProgramacionDashboardPage() {
       width: 110,
       fixed: "left",
       align: "left",
-      sorter: (a, b) => (a.ot ?? "").localeCompare(b.ot ?? ""),
+      sorter: (a, b) => Number(a.ot ?? 0) - Number(b.ot ?? 0),
       ...filtroPorColumna(otsFiltradas, "ot"),
-      render: (v: string | null, r) => (
+      render: (v: number | null, r) => (
         <Link href={`/ordenes-trabajo/${r.id}`} style={{ fontSize: 11, fontWeight: 600, color: brand.navy }}>
           {v ?? `#${r.id}`}
         </Link>

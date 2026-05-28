@@ -185,7 +185,7 @@ async function main() {
         await prisma.movimientoNoCatalogado.create({
           data: {
             material_no_cat_id: m.id, tipo_movimiento: TipoMovimientoInventario.SALIDA,
-            cantidad: randInt(1, 10), motivo: "Consumo en taller", documento_referencia: ots.length ? pick(ots).ot : null,
+            cantidad: randInt(1, 10), motivo: "Consumo en taller", documento_referencia: ots.length ? (pick(ots).ot != null ? String(pick(ots).ot) : null) : null,
             usuario: "admin", fecha_movimiento: daysAgo(randInt(0, 15)),
           },
         });

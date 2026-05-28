@@ -24,7 +24,10 @@ export async function GET(req: NextRequest) {
       const whereOC: Record<string, unknown> = { status_oc_codigo: "PEND_OC" };
       if (proveedorId) whereOC.proveedor_id = Number(proveedorId);
       if (ot) {
-        whereOC.orden_trabajo = { ot: { contains: ot, mode: "insensitive" } };
+        // `ot` ahora es INTEGER. Si la búsqueda es un número, hacemos match
+        // exacto; si no, no se filtra por OT.
+        const otNum = /^\d+$/.test(ot) ? Number(ot) : null;
+        if (otNum != null) whereOC.orden_trabajo = { ot: otNum };
       }
       ocs_pendientes = await prisma.compra.findMany({
         where: whereOC,
@@ -56,7 +59,10 @@ export async function GET(req: NextRequest) {
     let reqs_pendientes: Awaited<ReturnType<typeof prisma.oTRepuesto.findMany>> = [];
     if (tipo === "ALL" || tipo === "RQ") {
       const whereRQ: Record<string, unknown> = { status_requerimiento_codigo: "SIN_APROBACION" };
-      if (ot) whereRQ.orden_trabajo = { ot: { contains: ot, mode: "insensitive" } };
+      if (ot) {
+        const otNum = /^\d+$/.test(ot) ? Number(ot) : null;
+        if (otNum != null) whereRQ.orden_trabajo = { ot: otNum };
+      }
       reqs_pendientes = await prisma.oTRepuesto.findMany({
         where: whereRQ,
         include: {
