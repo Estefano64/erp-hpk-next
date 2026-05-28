@@ -707,10 +707,22 @@ export default function PlanificacionPage() {
       },
     },
     {
-      key: "comentario", title: "Comentario", dataIndex: "comentario", width: 200, ellipsis: true,
-      render: (v: string | null) => v
-        ? <Tooltip title={v}><span style={{ fontSize: 12 }}>{v}</span></Tooltip>
-        : <span style={{ fontSize: 11, color: brand.textSecondary }}>—</span>,
+      key: "comentario", title: "Comentario", dataIndex: "comentario", width: 220, ellipsis: true,
+      render: (v: string | null, r: PlanRow) => (
+        <Typography.Paragraph
+          style={{ margin: 0, fontSize: 12 }}
+          editable={{
+            tooltip: "Editar comentario (le llega al técnico)",
+            text: v ?? "",
+            onChange: (val) => {
+              const nv = val.trim();
+              if (nv !== (v ?? "")) persistPatch(r.id, { comentario: nv || null });
+            },
+          }}
+        >
+          {v || <Typography.Text type="secondary" style={{ fontSize: 11 }}>—</Typography.Text>}
+        </Typography.Paragraph>
+      ),
     },
     {
       title: "Semana", key: "semana", width: 160,
