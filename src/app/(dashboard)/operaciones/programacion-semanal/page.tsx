@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Typography, Button, Space, Tag, Card, Modal, Descriptions, Tooltip, message, Empty, DatePicker, Collapse, Segmented, Slider, Alert, Popover, Divider, Select,
+  Typography, Button, Space, Tag, Card, Modal, Descriptions, Tooltip, message, Empty, DatePicker, Collapse, Segmented, Slider, Alert, Popover, Divider, Select, Popconfirm,
 } from "antd";
 import {
   CalendarOutlined, LeftOutlined, RightOutlined, UserOutlined, ToolOutlined, AimOutlined,
   SettingOutlined, RollbackOutlined, UnorderedListOutlined, WarningFilled, ZoomInOutlined, ZoomOutOutlined,
   PrinterOutlined, BgColorsOutlined, FilterOutlined, ClearOutlined,
+  LoadingOutlined, CheckCircleFilled, CloseCircleFilled,
 } from "@ant-design/icons";
 import dayjs, { Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
@@ -139,6 +140,17 @@ export default function ProgramacionSemanalPage() {
   const [filtroOperarios, setFiltroOperarios] = useState<string[]>([]);
   const [rows, setRows] = useState<PlanRow[]>([]);
   const [allRows, setAllRows] = useState<PlanRow[]>([]); // para "sin semana asignada"
+  // Estado de guardado visible: contador de requests en vuelo + último error.
+  // Permite mostrar al usuario "Guardando…" o "✓ Guardado" o "⚠ Error".
+  const [savingCount, setSavingCount] = useState(0);
+  const [lastSaveError, setLastSaveError] = useState<string | null>(null);
+  const [savedFlash, setSavedFlash] = useState(false);
+  const beginSave = useCallback(() => { setSavingCount((c) => c + 1); setLastSaveError(null); }, []);
+  const endSave = useCallback((error?: string | null) => {
+    setSavingCount((c) => Math.max(0, c - 1));
+    if (error) setLastSaveError(error);
+    else { setSavedFlash(true); setTimeout(() => setSavedFlash(false), 1500); }
+  }, []);
   const [trabajadores, setTrabajadores] = useState<Trabajador[]>([]);
   const [equipos, setEquipos] = useState<Equipo[]>([]);
   const [estadosCat, setEstadosCat] = useState<StatusTareaOpt[]>([]);
@@ -351,23 +363,30 @@ export default function ProgramacionSemanalPage() {
   }, [editMode, lock.isOwner, lock.lockedBy, currentUser, messageApi]);
 
   // Verifica si una tarea quedaría superpuesta con otra del mismo recurso.
-  // Devuelve la primera tarea que la solapa (para incluirla en el toast), o null
-  // si está libre. Útil tanto para drag/drop como para resize.
+  // Devuelve la primera tarea que solapa + un flag `oculta` si la tarea está
+  // siendo filtrada y no se ve en pantalla (filtroEquipos / filtroOperarios).
+  // Sin esa info el usuario no entiende por qué le dice que hay choque si "no
+  // ve nada" en la semana.
   function tareaSuperpuesta(
     taskId: number,
     ini: number,
     fin: number,
     recursoTarget: string | null | undefined,
-  ): PlanRow | null {
+  ): { task: PlanRow; oculta: boolean } | null {
     if (!recursoTarget) return null;
+    const filtradasIds = new Set(rowsFiltradas.map((r) => r.id));
     for (const t of rows) {
       if (t.id === taskId) continue;
-      const taskRecurso = view === "equipo" ? t.maquina : t.tecnico;
-      if (taskRecurso !== recursoTarget) continue;
+      // Soporta tareas con recurso multi (comma-separated por multi-personal).
+      const recursoRaw = view === "equipo" ? t.maquina : t.tecnico;
+      const recursos = splitTecnicos(recursoRaw);
+      if (!recursos.includes(recursoTarget)) continue;
       if (!t.fecha_inicio || !t.fecha_fin) continue;
       const oIni = new Date(t.fecha_inicio).getTime();
       const oFin = new Date(t.fecha_fin).getTime();
-      if (ini < oFin && fin > oIni) return t;
+      if (ini < oFin && fin > oIni) {
+        return { task: t, oculta: !filtradasIds.has(t.id) };
+      }
     }
     return null;
   }
@@ -393,10 +412,12 @@ export default function ProgramacionSemanalPage() {
       : (view === "equipo" ? original.maquina : original.tecnico);
     const choque = tareaSuperpuesta(id, nuevoInicio.toDate().getTime(), fin.getTime(), recursoDestino);
     if (choque) {
-      const cliente = choque.orden_trabajo?.cliente?.nombre_comercial
-        ?? choque.orden_trabajo?.cliente?.razon_social
-        ?? `OT ${choque.orden_trabajo?.ot ?? "#?"}`;
-      messageApi.error(`No se puede mover acá: choca con ${cliente} — ${choque.descripcion ?? choque.operacion_codigo}`);
+      const t = choque.task;
+      const cliente = t.orden_trabajo?.cliente?.nombre_comercial
+        ?? t.orden_trabajo?.cliente?.razon_social
+        ?? `OT ${t.orden_trabajo?.ot ?? "#?"}`;
+      const prefijoOculta = choque.oculta ? "[Tarea oculta por el filtro actual] " : "";
+      messageApi.error(`${prefijoOculta}No se puede mover acá: choca con ${cliente} — ${t.descripcion ?? t.operacion_codigo}`);
       return;
     }
 
@@ -433,6 +454,7 @@ export default function ProgramacionSemanalPage() {
     });
     setAllRows((prev) => prev.map((r) => r.id === id ? { ...r, ...updated } as PlanRow : r));
 
+    beginSave();
     try {
       const res = await fetch(`/api/planificacion/${id}`, {
         method: "PUT",
@@ -441,13 +463,17 @@ export default function ProgramacionSemanalPage() {
       });
       if (res.status === 423) {
         messageApi.error("Tarea cerrada (realizado), no editable.");
+        endSave("Tarea cerrada");
         fetchData();
         return;
       }
       if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Error");
+      endSave();
       notifySync();
     } catch (e) {
-      messageApi.error(e instanceof Error ? e.message : "Error al reprogramar");
+      const msg = e instanceof Error ? e.message : "Error al reprogramar";
+      endSave(msg);
+      messageApi.error(msg);
       fetchData();
     }
   }
@@ -471,14 +497,17 @@ export default function ProgramacionSemanalPage() {
       const recurso = view === "equipo" ? original.maquina : original.tecnico;
       const choque = tareaSuperpuesta(id, inicio.getTime(), finCalc.getTime(), recurso);
       if (choque) {
-        const cliente = choque.orden_trabajo?.cliente?.nombre_comercial
-          ?? choque.orden_trabajo?.cliente?.razon_social
-          ?? `OT ${choque.orden_trabajo?.ot ?? "#?"}`;
-        messageApi.error(`No se puede agrandar: choca con ${cliente} — ${choque.descripcion ?? choque.operacion_codigo}`);
+        const t = choque.task;
+        const cliente = t.orden_trabajo?.cliente?.nombre_comercial
+          ?? t.orden_trabajo?.cliente?.razon_social
+          ?? `OT ${t.orden_trabajo?.ot ?? "#?"}`;
+        const prefijoOculta = choque.oculta ? "[Tarea oculta por el filtro actual] " : "";
+        messageApi.error(`${prefijoOculta}No se puede agrandar: choca con ${cliente} — ${t.descripcion ?? t.operacion_codigo}`);
         return;
       }
     }
 
+    beginSave();
     try {
       const res = await fetch(`/api/planificacion/${id}`, {
         method: "PUT",
@@ -490,6 +519,7 @@ export default function ProgramacionSemanalPage() {
       });
       if (res.status === 423) {
         messageApi.error("Tarea cerrada (realizado), no editable.");
+        endSave("Tarea cerrada");
         fetchData();
         return;
       }
@@ -498,11 +528,152 @@ export default function ProgramacionSemanalPage() {
         throw new Error(err?.error ?? "Error");
       }
       messageApi.success(`Duración: ${horasPorPersona.toFixed(2)}h`);
+      endSave();
       notifySync();
       fetchData();
     } catch (e) {
-      messageApi.error(e instanceof Error ? e.message : "Error al redimensionar");
+      const msg = e instanceof Error ? e.message : "Error al redimensionar";
+      endSave(msg);
+      messageApi.error(msg);
     }
+  }
+
+  // ── Quitar tarea de la semana (libera fecha + semana, vuelve al pool) ──
+  async function persistRemoveFromWeek(id: number) {
+    if (!editMode) {
+      messageApi.warning("Activá Modo Edición para sacar tareas.");
+      return;
+    }
+    beginSave();
+    try {
+      const res = await fetch(`/api/planificacion/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fecha_inicio: null, fecha_fin: null, semana_plan: null }),
+      });
+      if (res.status === 423) { endSave("Tarea cerrada"); messageApi.error("Tarea cerrada (realizado), no editable."); return; }
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error ?? "Error");
+      }
+      messageApi.success("Tarea sacada de la semana");
+      endSave();
+      setSelectedTask(null);
+      notifySync();
+      fetchData();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Error al sacar tarea";
+      endSave(msg);
+      messageApi.error(msg);
+    }
+  }
+
+  // ── Multi-move: mover varias tareas a la vez con validación atómica ──
+  //
+  // Antes había un bug porque cada persistMove se disparaba en paralelo y
+  // chequeaba overlap contra el `rows` actual (sin reflejar las otras movidas
+  // del mismo grupo). Resultado: dos tareas del grupo podían terminar pisadas.
+  //
+  // Ahora calculamos las posiciones nuevas de todo el grupo, validamos que
+  // (1) no choquen entre sí y (2) no choquen con tareas que quedan fijas.
+  // Si alguna falla, abortamos sin tocar el server.
+  async function persistMultiMove(
+    baseId: number,
+    baseInicio: Dayjs,
+    baseRecurso: string,
+    offsets: { id: number; offsetMin: number; recurso: string | null }[],
+  ) {
+    if (!editMode) {
+      messageApi.warning("Activá Modo Edición para mover tareas.");
+      return;
+    }
+    interface Slot { id: number; ini: number; fin: number; recurso: string }
+    const idsGrupo = new Set<number>([baseId, ...offsets.map((o) => o.id)]);
+    const slots: Slot[] = [];
+
+    function calcSlot(id: number, ini: Dayjs, recurso: string): Slot | null {
+      const t = rows.find((r) => r.id === id) ?? allRows.find((r) => r.id === id);
+      if (!t) return null;
+      const durRaw = Number(t.horas_estimadas);
+      const dur = Number.isFinite(durRaw) && durRaw > 0 ? durRaw : 1;
+      const qty = Math.max(1, Number(t.qty_personal ?? 1));
+      const fin = calcularFinEstimado(ini.toDate(), dur * qty);
+      return { id, ini: ini.toDate().getTime(), fin: fin.getTime(), recurso };
+    }
+
+    const baseSlot = calcSlot(baseId, baseInicio, baseRecurso);
+    if (baseSlot) slots.push(baseSlot);
+    for (const o of offsets) {
+      const ini = baseInicio.add(o.offsetMin, "minute");
+      const slot = calcSlot(o.id, ini, o.recurso ?? baseRecurso);
+      if (slot) slots.push(slot);
+    }
+
+    // (1) Choque interno: tareas del grupo entre sí, mismo recurso, intervalos solapan.
+    for (let i = 0; i < slots.length; i++) {
+      for (let j = i + 1; j < slots.length; j++) {
+        const a = slots[i]; const b = slots[j];
+        const recA = splitTecnicos(a.recurso);
+        const recB = splitTecnicos(b.recurso);
+        const compartenRecurso = recA.some((r) => recB.includes(r));
+        if (!compartenRecurso) continue;
+        if (a.ini < b.fin && b.ini < a.fin) {
+          messageApi.error(`Las tareas seleccionadas se superponen entre sí — no se puede mover el grupo así.`);
+          return;
+        }
+      }
+    }
+
+    // (2) Choque con tareas fuera del grupo (mismo recurso).
+    for (const s of slots) {
+      const recsSlot = splitTecnicos(s.recurso);
+      for (const t of rows) {
+        if (idsGrupo.has(t.id)) continue;
+        if (!t.fecha_inicio || !t.fecha_fin) continue;
+        const recursoRaw = view === "equipo" ? t.maquina : t.tecnico;
+        const recursos = splitTecnicos(recursoRaw);
+        if (!recsSlot.some((r) => recursos.includes(r))) continue;
+        const oIni = new Date(t.fecha_inicio).getTime();
+        const oFin = new Date(t.fecha_fin).getTime();
+        if (s.ini < oFin && s.fin > oIni) {
+          const cliente = t.orden_trabajo?.cliente?.nombre_comercial
+            ?? t.orden_trabajo?.cliente?.razon_social
+            ?? `OT ${t.orden_trabajo?.ot ?? "#?"}`;
+          messageApi.error(`No se puede mover el grupo: choca con ${cliente} — ${t.descripcion ?? t.operacion_codigo}`);
+          return;
+        }
+      }
+    }
+
+    // Validado: disparamos las requests en paralelo (sin pasar por la
+    // validación local de persistMove porque ya las hicimos acá).
+    beginSave();
+    const reqs: Promise<unknown>[] = [];
+    for (const s of slots) {
+      reqs.push(
+        fetch(`/api/planificacion/${s.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fecha_inicio: new Date(s.ini).toISOString(),
+            fecha_fin: new Date(s.fin).toISOString(),
+            semana_plan: semanaCodigo(dayjs(s.ini)),
+            ...(view === "equipo" ? { maquina: s.recurso } : { tecnico: s.recurso }),
+          }),
+        }),
+      );
+    }
+    const results = await Promise.allSettled(reqs);
+    const fallos = results.filter((r) => r.status === "rejected" || (r.status === "fulfilled" && !(r.value as Response).ok)).length;
+    if (fallos > 0) {
+      endSave(`${fallos} de ${slots.length} fallaron`);
+      messageApi.warning(`${slots.length - fallos} de ${slots.length} movidas OK. ${fallos} fallaron.`);
+    } else {
+      endSave();
+      messageApi.success(`${slots.length} tareas movidas.`);
+    }
+    notifySync();
+    fetchData();
   }
 
   // Mouse listeners para resize en vivo
@@ -592,7 +763,9 @@ export default function ProgramacionSemanalPage() {
     return { row: foundRow, date: null };
   }, [lunes, hourPx]);
 
-  // Detector de conflicto durante drag (en vivo)
+  // Detector de conflicto durante drag (en vivo). Maneja recursos multi-personal
+  // (e.g., maquina = "TR-01,TR-02") usando splitTecnicos en lugar de igualdad
+  // de string. Antes ese caso pasaba como "no choca" aunque sí solapaba.
   const dragConflict = useMemo(() => {
     if (!drag || !drag.snappedDate || !drag.targetRow) return false;
     const original = rows.find((r) => r.id === drag.taskId) ?? allRows.find((r) => r.id === drag.taskId);
@@ -601,10 +774,12 @@ export default function ProgramacionSemanalPage() {
     const qty = Math.max(1, Number(original.qty_personal ?? 1));
     const ini = drag.snappedDate.toDate().getTime();
     const fin = calcularFinEstimado(drag.snappedDate.toDate(), dur * qty).getTime();
+    const target = drag.targetRow;
     for (const t of rows) {
       if (t.id === drag.taskId) continue;
-      const taskRecurso = view === "equipo" ? t.maquina : t.tecnico;
-      if (taskRecurso !== drag.targetRow) continue;
+      const recursoRaw = view === "equipo" ? t.maquina : t.tecnico;
+      const recursos = splitTecnicos(recursoRaw);
+      if (!recursos.includes(target)) continue;
       if (!t.fecha_inicio || !t.fecha_fin) continue;
       const oIni = new Date(t.fecha_inicio).getTime();
       const oFin = new Date(t.fecha_fin).getTime();
@@ -639,11 +814,14 @@ export default function ProgramacionSemanalPage() {
     }
     function onUp() {
       if (drag!.snappedDate && drag!.targetRow) {
-        persistMove(drag!.taskId, drag!.snappedDate, drag!.targetRow);
-        // Multi-move: replicar el desplazamiento sobre las demás seleccionadas
-        for (const m of drag!.multiOffsets) {
-          const newIni = drag!.snappedDate.add(m.offsetMin, "minute");
-          persistMove(m.id, newIni, m.recurso ?? undefined);
+        // Multi-move: pre-calculamos las posiciones de TODO el grupo y
+        // validamos overlap entre las propias tareas movidas + con las que
+        // quedan fijas. Si una choca, abortamos el batch entero (mantiene
+        // el estado consistente: o se mueven todas o ninguna).
+        if (drag!.multiOffsets.length > 0) {
+          persistMultiMove(drag!.taskId, drag!.snappedDate, drag!.targetRow, drag!.multiOffsets);
+        } else {
+          persistMove(drag!.taskId, drag!.snappedDate, drag!.targetRow);
         }
       }
       setDrag(null);
@@ -907,6 +1085,23 @@ export default function ProgramacionSemanalPage() {
             </div>
           </div>
           <Space wrap>
+            {(() => {
+              // Badge de estado de guardado. Tres estados:
+              //   - savingCount > 0 → "Guardando…" (loading)
+              //   - lastSaveError → "Error" (rojo)
+              //   - savedFlash → "Guardado" (verde, pulse breve)
+              //   - idle → "Sincronizado" (verde sutil)
+              if (savingCount > 0) {
+                return <Tag icon={<LoadingOutlined />} color="processing" style={{ fontWeight: 500 }}>Guardando…</Tag>;
+              }
+              if (lastSaveError) {
+                return <Tag icon={<CloseCircleFilled />} color="error" style={{ fontWeight: 500 }}>Error: {lastSaveError}</Tag>;
+              }
+              if (savedFlash) {
+                return <Tag icon={<CheckCircleFilled />} color="success" style={{ fontWeight: 500 }}>Guardado ✓</Tag>;
+              }
+              return <Tag icon={<CheckCircleFilled />} color="default" style={{ fontWeight: 400, color: brand.textSecondary }}>Sincronizado</Tag>;
+            })()}
             <Button
               type={editMode ? "default" : "primary"}
               danger={editMode}
@@ -1469,6 +1664,19 @@ export default function ProgramacionSemanalPage() {
         onCancel={() => setSelectedTask(null)}
         footer={[
           <Button key="close" onClick={() => setSelectedTask(null)}>Cerrar</Button>,
+          selectedTask?.fecha_inicio ? (
+            <Popconfirm
+              key="remove"
+              title="Sacar tarea de la semana"
+              description="La tarea vuelve al pool sin fecha asignada. Se puede reprogramar después."
+              okText="Sacar"
+              cancelText="Cancelar"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => selectedTask && persistRemoveFromWeek(selectedTask.id)}
+            >
+              <Button danger disabled={!editMode}>Sacar de la semana</Button>
+            </Popconfirm>
+          ) : null,
           <Button key="plan" type="primary" onClick={() => router.push("/operaciones/planificacion")}>
             Editar en Planificación
           </Button>,
