@@ -47,6 +47,7 @@ export async function GET() {
         fecha_entrega: true,
         fecha_requerimiento_cliente: true,
         ot_status_codigo: true,
+        prioridad_atencion: { select: { codigo: true, nombre: true, nivel: true } },
         cliente: { select: { codigo: true, razon_social: true, nombre_comercial: true } },
         codigo_reparacion: {
           select: {
@@ -75,23 +76,30 @@ export async function GET() {
     // ── Extender catálogo con (componente, op) presentes en planificaciones
     // pero NO en el catálogo maestro. Esto cubre tareas que el usuario agrega
     // manualmente desde el tab Planificación con códigos no catalogados.
-    const compsCatSet = new Set(componentesCat.map((c) => c.codigo));
+    //
+    // Normalizamos (trim + uppercase) para comparar — sin esto, "General",
+    // "GENERAL" y " general " aparecen como 3 columnas duplicadas en la matriz
+    // (los `componente`/`operacion_codigo` de PlanificacionOT son strings libres).
+    const norm = (s: string | null | undefined): string => (s ?? "").trim().toUpperCase();
+    const compsCatSet = new Set(componentesCat.map((c) => norm(c.codigo)));
     const opsCatKey = new Set(
-      operacionesCat.map((o) => `${o.componente_codigo ?? "__SIN_COMP__"}__${o.codigo}`),
+      operacionesCat.map((o) => `${norm(o.componente_codigo) || "__SIN_COMP__"}__${norm(o.codigo)}`),
     );
     const compsExtra = new Map<string, { codigo: string; nombre: string }>();
     const opsExtra = new Map<string, { codigo: string; nombre: string; componente_codigo: string; clasificacion: string }>();
 
     for (const ot of otsRaw) {
       for (const p of ot.planificaciones as Plan[]) {
-        const compCod = p.componente;
-        const opCod = p.operacion_codigo;
-        if (!compsCatSet.has(compCod) && !compsExtra.has(compCod)) {
-          compsExtra.set(compCod, { codigo: compCod, nombre: compCod });
+        const compCod = (p.componente ?? "").trim();
+        const opCod = (p.operacion_codigo ?? "").trim();
+        if (!compCod || !opCod) continue;
+        const compKey = norm(compCod);
+        if (!compsCatSet.has(compKey) && !compsExtra.has(compKey)) {
+          compsExtra.set(compKey, { codigo: compCod, nombre: compCod });
         }
-        const key = `${compCod}__${opCod}`;
-        if (!opsCatKey.has(key) && !opsExtra.has(key)) {
-          opsExtra.set(key, {
+        const fullKey = `${compKey}__${norm(opCod)}`;
+        if (!opsCatKey.has(fullKey) && !opsExtra.has(fullKey)) {
+          opsExtra.set(fullKey, {
             codigo: opCod,
             // Usamos la descripción de la propia planificación si está, sino el código.
             nombre: (p.descripcion ?? "").trim() || opCod,
@@ -120,7 +128,10 @@ export async function GET() {
       let total = 0;
       let realizadas = 0;
       for (const p of o.planificaciones as Plan[]) {
-        const key = `${p.componente}__${p.operacion_codigo}`;
+        // Clave normalizada (trim + upper) para que coincida con la clave
+        // que el frontend construye desde el catálogo, incluso si la
+        // planificación quedó con casing/whitespace distinto.
+        const key = `${norm(p.componente)}__${norm(p.operacion_codigo)}`;
         planMap[key] = { estado: p.estado ?? null, externo: p.trabajo_externo ?? null };
         total++;
         if ((p.estado ?? "").trim().toLowerCase() === "realizado") realizadas++;
@@ -135,6 +146,9 @@ export async function GET() {
         cliente_nombre: o.cliente?.nombre_comercial ?? o.cliente?.razon_social ?? null,
         modelo: o.codigo_reparacion?.flota?.codigo ?? null,
         modelo_nombre: o.codigo_reparacion?.flota?.nombre ?? null,
+        prioridad_codigo: o.prioridad_atencion?.codigo ?? null,
+        prioridad_nombre: o.prioridad_atencion?.nombre ?? null,
+        prioridad_nivel: o.prioridad_atencion?.nivel ?? null,
         fecha_recepcion: o.fecha_recepcion,
         fecha_entrega: o.fecha_entrega,
         fecha_requerimiento: o.fecha_requerimiento_cliente,

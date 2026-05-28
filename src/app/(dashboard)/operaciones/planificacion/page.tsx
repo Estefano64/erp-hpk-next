@@ -1084,17 +1084,23 @@ export default function PlanificacionPage() {
     },
   ];
 
+  // Opciones para los filtros del header. ANTES se calculaban desde `rows`, lo
+  // cual era un bug: al filtrar por operario X, el dropdown quedaba con solo X
+  // (porque `rows` ya venía filtrado del backend) y no se podía cambiar a otro.
+  // Ahora usamos los catálogos completos (`trabajadores`, `equipos`).
   const tecnicosUnicos = useMemo(() => {
-    const s = new Set<string>();
+    const s = new Set<string>(trabajadores.map((t) => t.nombre));
+    // Añadir valores presentes en rows que ya no estén en el catálogo (legacy /
+    // operarios que perdieron su puesto técnico), para no esconder filas viejas.
     for (const r of rows) for (const t of splitTecnicos(r.tecnico)) s.add(t);
     return [...s].sort();
-  }, [rows]);
+  }, [trabajadores, rows]);
 
   const equiposUnicos = useMemo(() => {
-    const s = new Set<string>();
+    const s = new Set<string>(equipos.map((e) => e.codigo));
     for (const r of rows) for (const m of splitTecnicos(r.maquina)) s.add(m);
     return [...s].sort();
-  }, [rows]);
+  }, [equipos, rows]);
 
   const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
     useColumnasRedimensionables<PlanRow>(columns, "planificacion-cols-widths-v1");
@@ -1237,7 +1243,11 @@ export default function PlanificacionPage() {
             <Select placeholder="Equipo" allowClear showSearch style={{ width: "100%" }}
               value={filterMaquina}
               onChange={setFilterMaquina}
-              options={equiposUnicos.map((e) => ({ value: e, label: e }))}
+              options={equiposUnicos.map((cod) => {
+                const eq = equipos.find((e) => e.codigo === cod);
+                const label = eq ? `${eq.descripcion} — ${eq.codigo}` : cod;
+                return { value: cod, label };
+              })}
               filterOption={(i, o) => (o?.label as string).toLowerCase().includes(i.toLowerCase())}
             />
           </Col>

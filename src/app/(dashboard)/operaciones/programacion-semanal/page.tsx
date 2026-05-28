@@ -44,8 +44,14 @@ interface PlanRow {
   orden_trabajo: {
     id: number;
     ot: string | null;
+    np: string | null;
+    descripcion: string | null;
     cliente: { razon_social: string; nombre_comercial: string | null } | null;
-    codigo_reparacion: { codigo: string } | null;
+    codigo_reparacion: {
+      codigo: string;
+      flota: { codigo: string; nombre: string } | null;
+    } | null;
+    prioridad_atencion: { codigo: string; nombre: string; nivel: number | null } | null;
   } | null;
 }
 
@@ -255,6 +261,15 @@ export default function ProgramacionSemanalPage() {
     const c = estadosCat.find((e) => e.codigo === est);
     return c?.nombre ?? est ?? "-";
   }, [estadosCat]);
+
+  // Color de prioridad por nivel (1 más urgente). Fallback gris si no hay nivel.
+  const prioridadColor = (nivel: number | null | undefined): string => {
+    if (nivel == null) return "default";
+    if (nivel <= 1) return "red";
+    if (nivel === 2) return "orange";
+    if (nivel === 3) return "gold";
+    return "blue";
+  };
 
   // ── Filas filtradas: aplican filtros de equipos y operarios sobre las tareas ──
   const rowsFiltradas = useMemo(() => {
@@ -1687,6 +1702,18 @@ export default function ProgramacionSemanalPage() {
           <Descriptions column={1} size="small">
             <Descriptions.Item label="OT">{selectedTask.orden_trabajo?.ot ?? `#${selectedTask.ot_id}`}</Descriptions.Item>
             <Descriptions.Item label="Cliente">{selectedTask.orden_trabajo?.cliente?.nombre_comercial ?? selectedTask.orden_trabajo?.cliente?.razon_social ?? "-"}</Descriptions.Item>
+            <Descriptions.Item label="Flota">
+              {selectedTask.orden_trabajo?.codigo_reparacion?.flota
+                ? `${selectedTask.orden_trabajo.codigo_reparacion.flota.codigo} — ${selectedTask.orden_trabajo.codigo_reparacion.flota.nombre}`
+                : "—"}
+            </Descriptions.Item>
+            <Descriptions.Item label="Descripción OT">{selectedTask.orden_trabajo?.descripcion ?? "—"}</Descriptions.Item>
+            <Descriptions.Item label="N/P">{selectedTask.orden_trabajo?.np ?? "—"}</Descriptions.Item>
+            <Descriptions.Item label="Prioridad OT">
+              {selectedTask.orden_trabajo?.prioridad_atencion
+                ? <Tag color={prioridadColor(selectedTask.orden_trabajo.prioridad_atencion.nivel)}>{selectedTask.orden_trabajo.prioridad_atencion.nombre}</Tag>
+                : "—"}
+            </Descriptions.Item>
             <Descriptions.Item label="Tarea">{selectedTask.operacion_codigo} — {selectedTask.descripcion}</Descriptions.Item>
             <Descriptions.Item label="Parte">{selectedTask.componente}</Descriptions.Item>
             <Descriptions.Item label="Operario">{selectedTask.tecnico ?? "-"}</Descriptions.Item>

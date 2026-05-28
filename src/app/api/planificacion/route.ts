@@ -53,12 +53,13 @@ export async function GET(req: NextRequest) {
             select: {
               id: true,
               ot: true,
+              np: true,
               descripcion: true,
               fecha_recepcion: true,
               fecha_requerimiento_cliente: true,
               taller_status_codigo: true,
               taller_status: { select: { codigo: true, nombre: true } },
-              prioridad_atencion: { select: { codigo: true, nombre: true } },
+              prioridad_atencion: { select: { codigo: true, nombre: true, nivel: true } },
               cliente: { select: { codigo: true, razon_social: true, nombre_comercial: true } },
               codigo_reparacion: {
                 select: {
