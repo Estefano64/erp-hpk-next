@@ -877,6 +877,10 @@ model OrdenTrabajo {
   // número de OT queda libre (el correlativo ignora las inactivas). Los datos
   // se conservan para auditar / reactivar.
   activo                      Boolean             @default(true)
+  // Año (2 dígitos) derivado del número de OT (ot % 100, formato NNNNYY).
+  // Denormalizado para filtrar el listado por año sin módulo en el where.
+  // Se setea al crear la OT (y se recalcula si cambia `ot`).
+  anio                        Int?
   id_cliente                  Int?
   estrategia                  Boolean?
   id_cod_rep                  Int?
@@ -976,6 +980,7 @@ model OrdenTrabajo {
   evaluaciones_tecnicas       EvaluacionTecnica[]
   prestamos_herramientas      PrestamoHerramienta[]
 
+  @@index([anio])
   @@map("orden_trabajo")
 }
 

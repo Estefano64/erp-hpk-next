@@ -26,6 +26,15 @@ export async function GET() {
       prisma.codigoReparacion.findMany({ select: { codigo: true }, orderBy: { codigo: "asc" } }),
     ]);
 
+    // Años disponibles (2 dígitos), para el multi-select del listado.
+    const aniosRows = await prisma.ordenTrabajo.findMany({
+      where: { anio: { not: null } },
+      select: { anio: true },
+      distinct: ["anio"],
+      orderBy: { anio: "desc" },
+    });
+    const anios = aniosRows.map((a) => a.anio).filter((a): a is number => a != null);
+
     const porCodigo = (rows: { codigo: string | null; nombre: string | null }[]) =>
       rows.filter((r) => r.codigo).map((r) => ({ value: r.codigo as string, text: r.nombre ?? r.codigo as string }));
 
@@ -41,6 +50,7 @@ export async function GET() {
       // fabricante se filtra por nombre; codigo_reparacion por su código.
       fabricante: fabricantes.filter((f) => f.nombre).map((f) => ({ value: f.nombre as string, text: f.nombre as string })),
       codigo_reparacion: codReps.filter((c) => c.codigo).map((c) => ({ value: c.codigo as string, text: c.codigo as string })),
+      anios,
     });
   } catch (error) {
     console.error("GET /api/ordenes-trabajo/facets error:", error);

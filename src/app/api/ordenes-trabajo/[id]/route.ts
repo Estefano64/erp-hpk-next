@@ -68,6 +68,9 @@ export async function PUT(req: NextRequest, { params }: Params) {
       if (body[field]) body[field] = parseDateOnly(body[field]);
     }
 
+    // Si cambia el número de OT, mantener el año derivado en sync.
+    if (body.ot != null && body.ot !== "") body.anio = Number(body.ot) % 100;
+
     const usuario = (await getAuditUser(req)) ?? "sistema";
 
     const result = await prisma.$transaction(async (tx) => {

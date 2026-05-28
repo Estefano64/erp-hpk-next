@@ -103,6 +103,15 @@ export async function GET(req: NextRequest) {
     }
     if (clienteId) where.id_cliente = Number(clienteId);
 
+    // Filtro por año (2 dígitos, ot % 100). Llega como ?anios=26,25. Si no
+    // viene, no se filtra por año (el front manda el año actual por default;
+    // el export no manda nada → trae todos los años).
+    const aniosParam = searchParams.get("anios");
+    if (aniosParam) {
+      const years = aniosParam.split(",").map((s) => Number(s.trim())).filter(Number.isFinite);
+      if (years.length) where.anio = { in: years };
+    }
+
     // Filtros por relación (value = el valor mostrado).
     const codRep = searchParams.get("codigo_reparacion");
     if (codRep) where.codigo_reparacion = { is: { codigo: codRep } };
@@ -304,6 +313,7 @@ export async function POST(req: NextRequest) {
     const created = await prisma.ordenTrabajo.create({
       data: {
         ot,
+        anio: ot % 100, // año derivado del número de OT (para filtrar por año)
         id_cliente: body.id_cliente || null,
         estrategia: body.estrategia ?? false,
         id_cod_rep: body.id_cod_rep || null,

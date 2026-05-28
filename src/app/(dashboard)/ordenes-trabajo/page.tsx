@@ -6,6 +6,7 @@ import {
   Table,
   Button,
   Input,
+  Select,
   Space,
   Tag,
   Row,
@@ -187,6 +188,9 @@ export default function OrdenesTrabajoPage() {
   const [columnFilters, setColumnFilters] = useState<Record<string, Key[] | null>>({});
   const [sorter, setSorter] = useState<{ field: string | null; order: "ascend" | "descend" | null }>({ field: null, order: null });
   const [facets, setFacets] = useState<Record<string, { value: string; text: string }[]>>({});
+  // Años disponibles (2 dígitos) y los seleccionados. Por default, el año actual.
+  const [aniosDisponibles, setAniosDisponibles] = useState<number[]>([]);
+  const [aniosSel, setAniosSel] = useState<number[]>([new Date().getFullYear() % 100]);
   // Admin: ver también las OTs desactivadas (para reactivarlas).
   const [verInactivas, setVerInactivas] = useState(false);
   // v2: nuevas columnas opcionales (tipo, NP, flota, posición, fabricante, garantía, base metálica, etc.)
@@ -224,13 +228,14 @@ export default function OrdenesTrabajoPage() {
     }
     if (rangoRecepcion.desde) params.set("fecha_recepcion_desde", rangoRecepcion.desde.format("YYYY-MM-DD"));
     if (rangoRecepcion.hasta) params.set("fecha_recepcion_hasta", rangoRecepcion.hasta.format("YYYY-MM-DD"));
+    if (aniosSel.length) params.set("anios", aniosSel.join(","));
     if (verInactivas) params.set("incluirInactivas", "1");
     const res = await fetch(`/api/ordenes-trabajo?${params}`);
     const json = await res.json();
     setData(json.data ?? []);
     setTotal(json.total ?? 0);
     setLoading(false);
-  }, [page, pageSize, search, columnFilters, sorter, rangoRecepcion, verInactivas]);
+  }, [page, pageSize, search, columnFilters, sorter, rangoRecepcion, aniosSel, verInactivas]);
 
   // Desactivar (anular, reversible) / reactivar una OT. Solo admin.
   async function toggleActivo(record: OTRecord) {
@@ -278,7 +283,7 @@ export default function OrdenesTrabajoPage() {
   useEffect(() => {
     fetch("/api/ordenes-trabajo/facets")
       .then((r) => (r.ok ? r.json() : null))
-      .then((j) => { if (j && !j.error) setFacets(j); })
+      .then((j) => { if (j && !j.error) { setFacets(j); setAniosDisponibles(j.anios ?? []); } })
       .catch(() => { /* ignore */ });
   }, []);
 
@@ -289,6 +294,7 @@ export default function OrdenesTrabajoPage() {
     setColumnFilters({});
     setSorter({ field: null, order: null });
     setRangoRecepcion({ desde: null, hasta: null });
+    setAniosSel([new Date().getFullYear() % 100]); // vuelve al año actual
     setPage(1);
   }
 
@@ -768,6 +774,18 @@ export default function OrdenesTrabajoPage() {
               allowClear
               value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            />
+          </Col>
+          <Col xs={24} sm={12} md={8}>
+            <Select
+              mode="multiple"
+              allowClear
+              style={{ width: "100%" }}
+              placeholder="Año(s) — por defecto el actual"
+              value={aniosSel}
+              onChange={(vals) => { setAniosSel(vals); setPage(1); }}
+              maxTagCount="responsive"
+              options={aniosDisponibles.map((y) => ({ value: y, label: String(2000 + y) }))}
             />
           </Col>
           <Col xs={12} sm={6} md={4}>
