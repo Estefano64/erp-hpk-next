@@ -54,7 +54,7 @@ async function main() {
 
   // ─── USUARIOS DEL SISTEMA ──────────────────────────────────────
   const users = await prisma.usuario.findMany({
-    orderBy: [{ rol: "asc" }, { nombre: "asc" }],
+    orderBy: [{ nombre: "asc" }],
   });
 
   console.log(`\n\n═══════════════════════════════════════════════════════════════`);
@@ -64,15 +64,15 @@ async function main() {
   for (const u of users) {
     console.log(`#${u.id}  ${u.nombre}`);
     console.log(`  Código: ${u.codigoEmpleado}   DNI: ${u.dni ?? "—"}   Email: ${u.email ?? "—"}`);
-    console.log(`  Rol: ${u.rol}   Activo: ${u.activo}   Creado: ${u.createdAt.toISOString().slice(0, 10)}`);
+    console.log(`  Roles: ${u.roles.join(", ") || "(ninguno)"}   Activo: ${u.activo}   Creado: ${u.createdAt.toISOString().slice(0, 10)}`);
     console.log();
   }
 
   console.log(`─── Por rol ───`);
   const porRol = new Map<string, number>();
-  for (const u of users) porRol.set(u.rol, (porRol.get(u.rol) ?? 0) + 1);
+  for (const u of users) for (const r of u.roles) porRol.set(r, (porRol.get(r) ?? 0) + 1);
   for (const [r, n] of [...porRol.entries()].sort()) {
-    console.log(`  ${r.padEnd(20)} ${n}`);
+    console.log(`  ${r.padEnd(25)} ${n}`);
   }
 
   await prisma.$disconnect();

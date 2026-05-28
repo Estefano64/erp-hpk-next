@@ -28,7 +28,14 @@ model Usuario {
   dni            String?  @unique @db.VarChar(20)
   password       String   @db.VarChar(255)
   nombre         String   @db.VarChar(100)
-  rol            String   @default("viewer") @db.VarChar(20)
+  // Roles del usuario. Multi-rol: una cuenta puede tener varios. Por ejemplo
+  // un jefe que también es operario lleva ["admin", "tecnico", "evaluador"].
+  // Roles bien definidos hoy:
+  //   admin, viewer, tecnico, evaluador, aprobador_evaluacion, aprobador_requerimiento.
+  // Roles "placeholder" (el admin los puede asignar pero su efecto en sidebar
+  // y accesos se define en una fase posterior): planner, supervisor,
+  // logistica, mantenimiento, contabilidad.
+  roles          String[] @default([])
   activo         Boolean  @default(true)
   // Vínculo opcional con un Trabajador. No es obligatorio: hay cuentas de
   // sistema (admin/facturación/ventas) que no son trabajadores físicos del

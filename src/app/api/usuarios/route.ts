@@ -4,12 +4,12 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { hasRole } from "@/lib/permisos";
 
-// Solo los usuarios con rol "admin" pueden listar / crear cuentas.
+// Solo cuentas con rol "admin" pueden listar / crear / editar usuarios.
 async function requireAdmin() {
   const session = await getServerSession(authOptions);
-  const rol = (session?.user as { rol?: string } | undefined)?.rol;
-  if (rol !== "admin") return null;
+  if (!hasRole(session, "admin")) return null;
   return session;
 }
 
@@ -34,14 +34,14 @@ export async function GET(req: NextRequest) {
     }
     const data = await prisma.usuario.findMany({
       where,
-      orderBy: [{ rol: "asc" }, { nombre: "asc" }],
+      orderBy: { nombre: "asc" },
       select: {
         id: true,
         codigoEmpleado: true,
         email: true,
         dni: true,
         nombre: true,
-        rol: true,
+        roles: true,
         activo: true,
         trabajadorId: true,
         createdAt: true,
@@ -56,14 +56,31 @@ export async function GET(req: NextRequest) {
   }
 }
 
-const ROLES = ["admin", "planner", "supervisor", "tecnico", "viewer"] as const;
+// Roles válidos del sistema. Los marcados como "placeholder" no afectan acceso
+// todavía — el admin puede asignarlos pero la sidebar/permisos asociados se
+// implementan en una fase posterior.
+const ROLES = [
+  "admin",                  // todo
+  "viewer",                 // solo lectura
+  "tecnico",                // operario + panel personal
+  "evaluador",              // aparece en "Evaluado por"
+  "aprobador_evaluacion",   // aparece en "Supervisor" + aprueba hojas
+  "aprobador_requerimiento",// aprueba requerimientos
+  "planner",                // placeholder
+  "supervisor",             // placeholder
+  "logistica",              // placeholder
+  "mantenimiento",          // placeholder
+  "contabilidad",           // placeholder
+] as const;
 
 const CreateSchema = z.object({
   codigoEmpleado: z.string().trim().min(1).max(20),
   email: z.string().trim().email().optional().nullable(),
   dni: z.string().trim().optional().nullable(),
   nombre: z.string().trim().min(1).max(100),
-  rol: z.enum(ROLES).default("viewer"),
+  // Multi-rol: array de códigos válidos, sin duplicados, no vacío
+  // (mínimo "viewer" si el admin no asignó otra cosa).
+  roles: z.array(z.enum(ROLES)).default(["viewer"]),
   password: z.string().min(6).max(100),
   activo: z.boolean().optional(),
   trabajadorId: z.number().int().positive().optional().nullable(),
@@ -90,6 +107,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // De-dup el array de roles (por las dudas) y aseguramos que tenga al menos uno.
+    const rolesUnicos = [...new Set(d.roles)];
+    if (rolesUnicos.length === 0) rolesUnicos.push("viewer");
+
     const hashed = await bcrypt.hash(d.password, 10);
     const created = await prisma.usuario.create({
       data: {
@@ -97,14 +118,14 @@ export async function POST(req: NextRequest) {
         email: d.email ?? null,
         dni: d.dni ?? null,
         nombre: d.nombre,
-        rol: d.rol,
+        roles: rolesUnicos,
         activo: d.activo ?? true,
         password: hashed,
         trabajadorId: d.trabajadorId ?? null,
       },
       select: {
         id: true, codigoEmpleado: true, email: true, dni: true,
-        nombre: true, rol: true, activo: true, trabajadorId: true,
+        nombre: true, roles: true, activo: true, trabajadorId: true,
       },
     });
     return NextResponse.json({ data: created }, { status: 201 });

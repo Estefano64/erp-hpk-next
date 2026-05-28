@@ -27,7 +27,7 @@ async function main() {
         codigoEmpleado: u.codigo,
         nombre: u.nombre,
         password: hash,
-        rol: "supervisor",
+        roles: ["admin", "aprobador_evaluacion"],
       },
     });
     console.log(`✓ ${u.codigo} — ${u.nombre} (id=${result.id})`);

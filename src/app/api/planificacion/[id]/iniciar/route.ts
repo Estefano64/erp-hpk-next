@@ -20,7 +20,7 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
     const userId = Number((session.user as { id?: string }).id);
     const me = await prisma.usuario.findUnique({
       where: { id: userId },
-      select: { id: true, nombre: true, rol: true, trabajador: { select: { trabajador_id: true, nombre: true } } },
+      select: { id: true, nombre: true, roles: true, trabajador: { select: { trabajador_id: true, nombre: true } } },
     });
     if (!me?.trabajador) {
       return NextResponse.json({ error: "Tu usuario no está enlazado a un trabajador. Pedí al admin que lo configure." }, { status: 403 });
@@ -39,7 +39,7 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
     // El técnico solo puede arrancar tareas que tenga asignadas (su nombre en
     // el campo `tecnico`, que puede tener múltiples separados por coma).
     const asignados = (plan.tecnico ?? "").split(",").map((s) => s.trim());
-    if (!asignados.includes(tecnicoNombre) && me.rol !== "admin") {
+    if (!asignados.includes(tecnicoNombre) && !me.roles.includes("admin")) {
       return NextResponse.json({ error: "Esta tarea no está asignada a vos" }, { status: 403 });
     }
     if (plan.estado === "realizado") {

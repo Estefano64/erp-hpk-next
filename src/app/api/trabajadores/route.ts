@@ -2,25 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 
-// Whitelist de puestos técnicos que pueden tomar tareas en planificación.
-// Confirmado 2026-05-27: solo estos 6 puestos aparecen en el selector de
-// operario; cualquier otro (jefes, administrativos, sin puesto, etc.) queda
-// fuera. Si el día de mañana se suma un técnico nuevo, hay que asignarle uno
-// de estos puestos (o agregar el suyo a esta lista).
-const PUESTOS_TECNICOS = [
-  "Evaluación / Armado",
-  "Fresa",
-  "Mandrino",
-  "Practicante",
-  "Soldador",
-  "Torno",
-];
-
-// Áreas cuyos trabajadores NO pueden firmar como evaluador técnico. Logística
-// se excluye además de limpieza/seguridad (los técnicos de mantenimiento sí
-// pueden evaluar, los de logística no).
-const AREAS_NO_EVALUADORES = ["LIMPIEZA", "SEGURIDAD", "LOGISTICA"];
-const PUESTOS_NO_OPERATIVOS = ["COMPRAS"];
+// Los selectores de operario / evaluador / supervisor filtran ahora por el ROL
+// del Usuario vinculado al Trabajador (no por su puesto). Esto significa que:
+//   - Un técnico SIN cuenta de usuario NO aparece en selectores (debe tener
+//     cuenta — el iniciar/finalizar tareas igual lo requiere).
+//   - El rol "tecnico" decide si aparece como operario.
+//   - El rol "evaluador" decide si aparece en "Evaluado por" de la hoja.
+//   - El rol "aprobador_evaluacion" decide si aparece en "Supervisor" de la hoja.
 
 export async function GET(req: NextRequest) {
   try {
@@ -29,12 +17,10 @@ export async function GET(req: NextRequest) {
     const search = searchParams.get("search")?.trim();
     const area = searchParams.get("area")?.trim();
     const activos = searchParams.get("activos") !== "false";
-    // ?soloOperarios=1 excluye limpieza, seguridad, compras y jefes (cualquier puesto que arranque con "JEFE").
-    // Usado por los selectores de operario en OTTareasTab y operaciones/planificacion.
-    const soloOperarios = searchParams.get("soloOperarios") === "1";
-    // ?paraEvaluacion=1 excluye además logística (los selectores "Evaluado por"
-    // / "Supervisor" de la hoja de evaluación no deberían incluirlos).
-    const paraEvaluacion = searchParams.get("paraEvaluacion") === "1";
+    // Filtros por rol del Usuario vinculado al Trabajador:
+    const soloOperarios = searchParams.get("soloOperarios") === "1";       // rol "tecnico"
+    const paraEvaluacion = searchParams.get("paraEvaluacion") === "1";     // rol "evaluador"
+    const paraSupervisor = searchParams.get("paraSupervisor") === "1";     // rol "aprobador_evaluacion"
 
     const where: Record<string, unknown> = {};
     if (activos) where.activo = true;
@@ -46,14 +32,22 @@ export async function GET(req: NextRequest) {
         { puesto: { contains: search, mode: "insensitive" } },
       ];
     }
-    if (soloOperarios) {
-      // Solo trabajadores cuyo puesto está en la whitelist técnica.
-      where.puesto = { in: PUESTOS_TECNICOS };
-    } else if (paraEvaluacion) {
-      where.AND = [
-        { area: { notIn: AREAS_NO_EVALUADORES } },
-        { puesto: { notIn: PUESTOS_NO_OPERATIVOS } },
-      ];
+
+    // Filtro por rol del Usuario asociado. Usamos `usuario.is.roles.has` que
+    // mapea a SQL `roles @> ARRAY['rol']` (el trabajador debe tener cuenta
+    // vinculada Y esa cuenta debe contener el rol pedido).
+    let rolRequerido: string | null = null;
+    if (soloOperarios) rolRequerido = "tecnico";
+    else if (paraSupervisor) rolRequerido = "aprobador_evaluacion";
+    else if (paraEvaluacion) rolRequerido = "evaluador";
+
+    if (rolRequerido) {
+      where.usuario = {
+        is: {
+          activo: true,
+          roles: { has: rolRequerido },
+        },
+      };
     }
 
     const data = await prisma.trabajador.findMany({

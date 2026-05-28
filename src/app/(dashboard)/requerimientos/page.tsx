@@ -266,9 +266,9 @@ export default function RequerimientosPage() {
   // Selección
   const [selectedKeys, setSelectedKeys] = useState<number[]>([]);
 
-  // Rol
-  const [rol, setRol] = useState<string | null>(null);
-  const isAdmin = rol === "admin";
+  // Roles
+  const [roles, setRoles] = useState<string[]>([]);
+  const isAdmin = roles.includes("admin");
 
   const [messageApi, contextHolder] = message.useMessage();
   const { screens } = useResponsive();
@@ -307,7 +307,7 @@ export default function RequerimientosPage() {
   const ubicacionesOpts = (ubicRes?.data ?? []).map((u) => ({ value: u.codigo, label: `${u.codigo} — ${u.nombre}` }));
 
   useEffect(() => {
-    fetch("/api/me").then((r) => r.ok ? r.json() : null).then((d) => { if (d?.user) setRol(d.user.rol); }).catch(() => { /* noop */ });
+    fetch("/api/me").then((r) => r.ok ? r.json() : null).then((d) => { if (Array.isArray(d?.user?.roles)) setRoles(d.user.roles); }).catch(() => { /* noop */ });
   }, []);
 
   // ── Stats (agregadas en backend sobre TODO el conjunto filtrado, no sólo la página visible) ──

@@ -21,7 +21,7 @@ interface ConfigData {
 
 export default function ConfiguracionCotizacionPage() {
   const { data: session, status } = useSession();
-  const isAdminUser = (session?.user as { rol?: string } | undefined)?.rol === "admin";
+  const isAdminUser = ((session?.user as { roles?: string[] } | undefined)?.roles ?? []).includes("admin");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [config, setConfig] = useState<ConfigData | null>(null);

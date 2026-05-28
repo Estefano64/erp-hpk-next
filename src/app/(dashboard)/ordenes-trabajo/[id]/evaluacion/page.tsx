@@ -152,6 +152,7 @@ export default function EvaluacionPage() {
   const [modeloBloqueado, setModeloBloqueado] = useState(false);
   const [datosFormulario, setDatosFormulario] = useState<Record<string, unknown>>({});
   const [trabajadores, setTrabajadores] = useState<{ trabajador_id: number; nombre: string; puesto: string }[]>([]);
+  const [supervisores, setSupervisores] = useState<{ trabajador_id: number; nombre: string; puesto: string }[]>([]);
 
   // Modal revision
   const [modalAccion, setModalAccion] = useState<"solicitar" | "aprobar" | "rechazar" | "reabrir" | null>(null);
@@ -259,13 +260,18 @@ export default function EvaluacionPage() {
     if (otId) cargarDatos();
   }, [otId, cargarDatos]);
 
-  // Cargar trabajadores (para los desplegables "Evaluado por" y "Supervisor").
-  // paraEvaluacion=1 excluye limpieza, seguridad y logística — solo personal
-  // técnico/operativo puede firmar la hoja.
+  // Cargar trabajadores para los desplegables de la hoja:
+  //   - "Evaluado por" → rol "evaluador" (técnicos del taller + algunos jefes).
+  //   - "Supervisor"   → rol "aprobador_evaluacion" (solo los que pueden
+  //     aprobar la hoja una vez llenada).
   useEffect(() => {
     fetch("/api/trabajadores?limit=200&paraEvaluacion=1")
       .then((r) => r.ok ? r.json() : null)
       .then((j) => { if (j?.data) setTrabajadores(j.data); })
+      .catch(() => { /* noop */ });
+    fetch("/api/trabajadores?limit=200&paraSupervisor=1")
+      .then((r) => r.ok ? r.json() : null)
+      .then((j) => { if (j?.data) setSupervisores(j.data); })
       .catch(() => { /* noop */ });
   }, []);
 
@@ -725,7 +731,13 @@ export default function EvaluacionPage() {
             </Col>
             <Col xs={24} md={3}>
               <Form.Item label="Supervisor" name="supervisor">
-                <Input placeholder="Nombre" />
+                <Select
+                  placeholder="Seleccioná un supervisor..."
+                  showSearch
+                  allowClear
+                  filterOption={(input, option) => (option?.label as string).toLowerCase().includes(input.toLowerCase())}
+                  options={supervisores.map((t) => ({ value: t.nombre, label: `${t.nombre} — ${t.puesto}` }))}
+                />
               </Form.Item>
             </Col>
           </Row>

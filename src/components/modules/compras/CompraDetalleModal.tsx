@@ -116,12 +116,12 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
   const [aceptando, setAceptando] = useState(false);
   const { ocultas: itemsOcultas, setOcultas: setItemsOcultas } = useColumnasOcultas("compra-detalle-items-cols-v1");
 
-  const [rol, setRol] = useState<string | null>(null);
-  const isAdmin = rol === "admin";
+  const [roles, setRoles] = useState<string[]>([]);
+  const isAdmin = roles.includes("admin");
   useEffect(() => {
     fetch("/api/me")
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d?.user) setRol(d.user.rol); })
+      .then((d) => { if (Array.isArray(d?.user?.roles)) setRoles(d.user.roles); })
       .catch(() => { /* noop */ });
   }, []);
 

@@ -41,18 +41,39 @@ interface Usuario {
   email: string | null;
   dni: string | null;
   nombre: string;
-  rol: string;
+  roles: string[];
   activo: boolean;
   trabajadorId: number | null;
 }
 
+// Roles disponibles para asignar. Los "bien definidos" tienen comportamiento
+// implementado (filtros, acceso al panel, aprobaciones). Los "placeholder" se
+// pueden asignar pero su efecto se irá habilitando en fases posteriores.
 const ROLES = [
-  { value: "admin", label: "Admin (acceso total)" },
-  { value: "planner", label: "Planner (planificación + OTs)" },
-  { value: "supervisor", label: "Supervisor (lectura + aprobación)" },
-  { value: "tecnico", label: "Técnico (panel personal)" },
-  { value: "viewer", label: "Viewer (solo lectura)" },
+  // Bien definidos
+  { value: "admin", label: "Admin — acceso total + gestiona usuarios" },
+  { value: "viewer", label: "Viewer — solo lectura" },
+  { value: "tecnico", label: "Técnico — operario + panel personal" },
+  { value: "evaluador", label: "Evaluador — firma 'Evaluado por' en hojas" },
+  { value: "aprobador_evaluacion", label: "Aprobador de hojas — firma 'Supervisor' y aprueba evaluaciones" },
+  { value: "aprobador_requerimiento", label: "Aprobador de requerimientos" },
+  // Placeholders (sin efecto todavía)
+  { value: "planner", label: "Planner (placeholder)" },
+  { value: "supervisor", label: "Supervisor (placeholder)" },
+  { value: "logistica", label: "Logística (placeholder)" },
+  { value: "mantenimiento", label: "Mantenimiento (placeholder)" },
+  { value: "contabilidad", label: "Contabilidad (placeholder)" },
 ];
+
+// Colores de tags por rol para los badges en la tabla.
+const COLOR_POR_ROL: Record<string, string> = {
+  admin: "magenta",
+  tecnico: "cyan",
+  evaluador: "geekblue",
+  aprobador_evaluacion: "purple",
+  aprobador_requerimiento: "volcano",
+  viewer: "default",
+};
 
 export default function TrabajadoresPage() {
   const { message, modal } = App.useApp();
@@ -92,7 +113,7 @@ export default function TrabajadoresPage() {
   const [cuentaAVincular, setCuentaAVincular] = useState<number | undefined>();
   const [cuentaForm] = Form.useForm<{
     email?: string;
-    rol: string;
+    roles: string[];
     password?: string;
     activo: boolean;
   }>();
@@ -150,12 +171,14 @@ export default function TrabajadoresPage() {
     if (u) {
       cuentaForm.setFieldsValue({
         email: u.email ?? undefined,
-        rol: u.rol,
+        roles: u.roles ?? [],
         password: undefined,
         activo: u.activo,
       });
     } else {
-      cuentaForm.setFieldsValue({ email: undefined, rol: "tecnico", password: undefined, activo: true });
+      // Default sensato al crear: "tecnico" y "evaluador" (todos los operarios
+      // del taller son ambos por defecto). El admin puede quitar o agregar.
+      cuentaForm.setFieldsValue({ email: undefined, roles: ["tecnico", "evaluador"], password: undefined, activo: true });
     }
     setCuentaModalOpen(true);
   }
@@ -250,7 +273,7 @@ export default function TrabajadoresPage() {
       let res: Response;
       if (cuentaUsuario) {
         // Update existente
-        const body: Record<string, unknown> = { rol: v.rol, activo: v.activo, email: v.email ?? null };
+        const body: Record<string, unknown> = { roles: v.roles, activo: v.activo, email: v.email ?? null };
         if (v.password) body.password = v.password;
         res = await fetch(`/api/usuarios/${cuentaUsuario.id}`, {
           method: "PUT",
@@ -269,7 +292,7 @@ export default function TrabajadoresPage() {
             email: v.email ?? null,
             dni: cuentaTrabajador.dni ?? null,
             nombre: cuentaTrabajador.nombre,
-            rol: v.rol,
+            roles: v.roles,
             password: v.password,
             activo: v.activo,
             trabajadorId: cuentaTrabajador.trabajador_id,
@@ -414,7 +437,7 @@ export default function TrabajadoresPage() {
       },
     },
     {
-      key: "cuenta", title: "Cuenta", width: 130, align: "center",
+      key: "cuenta", title: "Cuenta", width: 220, align: "center",
       render: (_, r) => {
         const u = usuariosByTrabajador[r.trabajador_id];
         if (!u) {
@@ -427,15 +450,17 @@ export default function TrabajadoresPage() {
           );
         }
         return (
-          <Tooltip title={`${u.codigoEmpleado}${u.email ? ` · ${u.email}` : ""} · rol ${u.rol}`}>
-            <Tag
-              icon={<UserOutlined />}
-              color={u.activo ? (u.rol === "admin" ? "magenta" : u.rol === "tecnico" ? "cyan" : "blue") : "default"}
-              style={{ cursor: "pointer", fontSize: 11 }}
-              onClick={() => openCuenta(r)}
-            >
-              {u.rol}{!u.activo && " (inactiva)"}
-            </Tag>
+          <Tooltip title={`${u.codigoEmpleado}${u.email ? ` · ${u.email}` : ""} · ${u.roles.join(", ") || "sin roles"}`}>
+            <Space size={2} wrap onClick={() => openCuenta(r)} style={{ cursor: "pointer" }}>
+              <UserOutlined style={{ color: u.activo ? brand.cyan : brand.textSecondary }} />
+              {u.roles.length === 0
+                ? <Tag color="default" style={{ fontSize: 10, margin: 0 }}>sin rol</Tag>
+                : u.roles.map((r) => (
+                    <Tag key={r} color={u.activo ? (COLOR_POR_ROL[r] ?? "blue") : "default"} style={{ fontSize: 10, margin: 0 }}>{r}</Tag>
+                  ))
+              }
+              {!u.activo && <Tag color="default" style={{ fontSize: 10, margin: 0 }}>inactiva</Tag>}
+            </Space>
           </Tooltip>
         );
       },
@@ -654,7 +679,7 @@ export default function TrabajadoresPage() {
                     const trabActual = yaVinculada ? rows.find((r) => r.trabajador_id === u.trabajadorId) : null;
                     return {
                       value: u.id,
-                      search: `${u.codigoEmpleado} ${u.nombre} ${u.email ?? ""} ${u.rol}`,
+                      search: `${u.codigoEmpleado} ${u.nombre} ${u.email ?? ""} ${u.roles.join(" ")}`,
                       label: (
                         <div style={{ display: "flex", alignItems: "center", gap: 8, opacity: yaVinculada ? 0.6 : 1 }}>
                           <UserOutlined />
@@ -663,7 +688,7 @@ export default function TrabajadoresPage() {
                               {u.nombre} <Text type="secondary" style={{ fontSize: 11 }}>— {u.codigoEmpleado}</Text>
                             </div>
                             <div style={{ fontSize: 11, color: brand.textSecondary }}>
-                              {u.email ?? "(sin email)"} · rol {u.rol}
+                              {u.email ?? "(sin email)"} · {u.roles.join(", ") || "sin rol"}
                               {yaVinculada && trabActual && ` · vinculada a ${trabActual.nombre}`}
                               {yaVinculada && !trabActual && ` · vinculada a trabajador #${u.trabajadorId}`}
                               {!u.activo && " · INACTIVA"}
@@ -690,8 +715,28 @@ export default function TrabajadoresPage() {
                 <Form.Item name="email" label="Email (opcional, para login por correo)">
                   <Input type="email" placeholder="usuario@hpkinv.com" />
                 </Form.Item>
-                <Form.Item name="rol" label="Rol" rules={[{ required: true }]}>
-                  <Select options={ROLES} />
+                <Form.Item
+                  name="roles"
+                  label="Roles (multi-rol)"
+                  rules={[{ required: true, type: "array", min: 1, message: "Asigná al menos un rol" }]}
+                  extra="Tip: para un operario asignale tecnico + evaluador. Para un jefe que aprueba hojas, sumá aprobador_evaluacion."
+                >
+                  <Select
+                    mode="multiple"
+                    options={ROLES}
+                    placeholder="Elegí uno o más roles..."
+                    optionFilterProp="label"
+                    tagRender={({ value, closable, onClose }) => (
+                      <Tag
+                        color={COLOR_POR_ROL[value as string] ?? "blue"}
+                        closable={closable}
+                        onClose={onClose}
+                        style={{ marginInlineEnd: 4 }}
+                      >
+                        {value}
+                      </Tag>
+                    )}
+                  />
                 </Form.Item>
                 <Form.Item
                   name="password"

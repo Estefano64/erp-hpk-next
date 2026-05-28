@@ -191,7 +191,7 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const router = useRouter();
   const [userName, setUserName] = useState<string | null>(null);
-  const [rol, setRol] = useState<string | null>(null);
+  const [roles, setRoles] = useState<string[]>([]);
 
   useEffect(() => {
     fetch("/api/me")
@@ -199,15 +199,19 @@ export default function DashboardLayout({
       .then((data) => {
         if (data?.user) {
           setUserName(data.user.name);
-          setRol(data.user.rol);
+          setRoles(Array.isArray(data.user.roles) ? data.user.roles : []);
         }
       })
       .catch(() => { /* ignore */ });
   }, []);
 
-  const rolInfo = rol ? (rolLabels[rol] ?? rolLabels.viewer) : null;
+  // Rol "principal" para el badge del header: el primero según una prioridad
+  // visual (admin gana). Para chequeos de acceso se debe usar roles.includes(x).
+  const PRIORIDAD_VISIBLE = ["admin", "supervisor", "planner", "tecnico", "evaluador", "aprobador_evaluacion", "aprobador_requerimiento", "logistica", "mantenimiento", "contabilidad", "viewer"];
+  const rolPrincipal = PRIORIDAD_VISIBLE.find((r) => roles.includes(r)) ?? null;
+  const rolInfo = rolPrincipal ? (rolLabels[rolPrincipal] ?? rolLabels.viewer) : null;
 
-  const menuItems = useMemo(() => buildMenuItems(rol), [rol]);
+  const menuItems = useMemo(() => buildMenuItems(rolPrincipal), [rolPrincipal]);
 
   // Determina qué item y submenú están activos (soporta grupos anidados)
   const menuLeaves = useMemo(() => flattenMenuLeaves(menuItems), [menuItems]);

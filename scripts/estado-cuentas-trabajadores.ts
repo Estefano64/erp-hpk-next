@@ -12,11 +12,11 @@ const prisma = new PrismaClient({ datasources: { db: { url } } });
 async function main() {
   const trabajadores = await prisma.trabajador.findMany({
     orderBy: [{ area: "asc" }, { nombre: "asc" }],
-    include: { usuario: { select: { codigoEmpleado: true, email: true, rol: true, activo: true } } },
+    include: { usuario: { select: { codigoEmpleado: true, email: true, roles: true, activo: true } } },
   });
   const usuarios = await prisma.usuario.findMany({
     orderBy: { nombre: "asc" },
-    select: { id: true, codigoEmpleado: true, email: true, nombre: true, rol: true, activo: true, trabajadorId: true },
+    select: { id: true, codigoEmpleado: true, email: true, nombre: true, roles: true, activo: true, trabajadorId: true },
   });
 
   const sinCuenta = trabajadores.filter((t) => !t.usuario);
@@ -37,7 +37,7 @@ async function main() {
 
   console.log(`\n── Cuentas SIN trabajador (${orphanUsuarios.length}) ──`);
   for (const u of orphanUsuarios) {
-    console.log(`  #${u.id}  ${u.codigoEmpleado.padEnd(10)} ${u.nombre.padEnd(30)}  ${u.email ?? ""}  rol=${u.rol}`);
+    console.log(`  #${u.id}  ${u.codigoEmpleado.padEnd(10)} ${u.nombre.padEnd(30)}  ${u.email ?? ""}  roles=[${u.roles.join(",")}]`);
   }
 
   await prisma.$disconnect();

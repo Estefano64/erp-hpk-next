@@ -12,12 +12,12 @@ export default function DashboardPage() {
     return <Spin />;
   }
 
-  const rol = (session?.user as { rol?: string } | undefined)?.rol ?? "viewer";
+  const roles = ((session?.user as { roles?: string[] } | undefined)?.roles ?? []);
 
   // El técnico tiene un panel propio con sus tareas, ranking y rendimiento.
   // Los demás roles ven la bienvenida genérica por ahora (los dashboards de
   // operaciones, planificación, etc. ya viven en sus propias rutas).
-  if (rol === "tecnico") {
+  if (roles.includes("tecnico")) {
     return <TecnicoPanel />;
   }
 

@@ -4,22 +4,27 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { hasRole } from "@/lib/permisos";
 
 async function requireAdmin() {
   const session = await getServerSession(authOptions);
-  const rol = (session?.user as { rol?: string } | undefined)?.rol;
-  if (rol !== "admin") return null;
+  if (!hasRole(session, "admin")) return null;
   return session;
 }
 
-const ROLES = ["admin", "planner", "supervisor", "tecnico", "viewer"] as const;
+const ROLES = [
+  "admin", "viewer", "tecnico", "evaluador",
+  "aprobador_evaluacion", "aprobador_requerimiento",
+  "planner", "supervisor", "logistica", "mantenimiento", "contabilidad",
+] as const;
 
 const UpdateSchema = z.object({
   codigoEmpleado: z.string().trim().min(1).max(20).optional(),
   email: z.string().trim().email().optional().nullable(),
   dni: z.string().trim().optional().nullable(),
   nombre: z.string().trim().min(1).max(100).optional(),
-  rol: z.enum(ROLES).optional(),
+  // Multi-rol: array de roles válidos sin duplicados.
+  roles: z.array(z.enum(ROLES)).optional(),
   activo: z.boolean().optional(),
   // Si viene password (no vacío), se rehashea. Si viene null/"" o no viene, no se toca.
   password: z.string().min(6).max(100).optional().nullable(),
@@ -38,7 +43,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
       where: { id: Number(id) },
       select: {
         id: true, codigoEmpleado: true, email: true, dni: true,
-        nombre: true, rol: true, activo: true, trabajadorId: true,
+        nombre: true, roles: true, activo: true, trabajadorId: true,
         createdAt: true, updatedAt: true,
         trabajador: { select: { trabajador_id: true, nombre: true, area: true, puesto: true } },
       },
@@ -51,7 +56,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   }
 }
 
-// PUT /api/usuarios/:id — actualiza cuenta. Cambios habituales: rol, activo,
+// PUT /api/usuarios/:id — actualiza cuenta. Cambios habituales: roles, activo,
 // password (reset por admin), vincular/desvincular trabajador.
 export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   if (!(await requireAdmin())) {
@@ -80,7 +85,10 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
     if (d.email !== undefined) data.email = d.email;
     if (d.dni !== undefined) data.dni = d.dni;
     if (d.nombre !== undefined) data.nombre = d.nombre;
-    if (d.rol !== undefined) data.rol = d.rol;
+    if (d.roles !== undefined) {
+      const rolesUnicos = [...new Set(d.roles)];
+      data.roles = rolesUnicos.length > 0 ? rolesUnicos : ["viewer"];
+    }
     if (d.activo !== undefined) data.activo = d.activo;
     if (d.trabajadorId !== undefined) data.trabajadorId = d.trabajadorId;
     if (d.password) data.password = await bcrypt.hash(d.password, 10);
@@ -90,7 +98,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
       data,
       select: {
         id: true, codigoEmpleado: true, email: true, dni: true,
-        nombre: true, rol: true, activo: true, trabajadorId: true,
+        nombre: true, roles: true, activo: true, trabajadorId: true,
       },
     });
     return NextResponse.json({ data: updated });

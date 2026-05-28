@@ -10,7 +10,8 @@ export async function getAuditUser(req: NextRequest): Promise<string | null> {
 
 export async function isAdmin(req: NextRequest): Promise<boolean> {
   const token = await getToken({ req });
-  return token?.rol === "admin";
+  const roles = (token?.roles as string[] | undefined) ?? [];
+  return roles.includes("admin");
 }
 
 type OTSnapshot = Record<string, unknown>;
