@@ -21,8 +21,6 @@ const ONE_PLUS_IGV = new Prisma.Decimal(1).plus(IGV_PCT);
 const MAX_NUMERO_PO_RETRIES = 5;
 
 // Genera el próximo numero_po con formato D{YY}{NNNN} (correlativo global por año).
-// Se usa como fallback cuando la OC mezcla items de varias OTs o tiene items
-// de OT interna sin código.
 async function siguienteNumeroPO(tx: Prisma.TransactionClient, prefix: string): Promise<string> {
   const ultima = await tx.compra.findFirst({
     where: { numero_po: { startsWith: prefix } },
@@ -35,22 +33,6 @@ async function siguienteNumeroPO(tx: Prisma.TransactionClient, prefix: string): 
     if (!Number.isNaN(lastNum)) seq = lastNum + 1;
   }
   return `${prefix}${String(seq).padStart(4, "0")}`;
-}
-
-// Genera el próximo numero_po con formato {códigoOT}-{N}.
-// Se usa cuando todos los items de la OC son de una sola OT externa con código.
-async function siguienteNumeroPOporOT(tx: Prisma.TransactionClient, otCodigo: string): Promise<string> {
-  const prefix = `${otCodigo}-`;
-  const candidatos = await tx.compra.findMany({
-    where: { numero_po: { startsWith: prefix } },
-    select: { numero_po: true },
-  });
-  let max = 0;
-  for (const c of candidatos) {
-    const n = parseInt(c.numero_po.substring(prefix.length), 10);
-    if (Number.isFinite(n) && n > max) max = n;
-  }
-  return `${prefix}${max + 1}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -159,31 +141,11 @@ export async function POST(req: NextRequest) {
       const nombreAuto = `${otsLabel} · ${provLabel}`;
       const nombreFinal = (d.nombre?.trim() || nombreAuto).slice(0, 300);
 
-      // Generar numero_po. Si la OC viene de UNA SOLA OT externa con código,
-      // usar formato {códigoOT}-{N}. Si mezcla varias OTs, tiene items de OT
-      // interna, o la OT no tiene código → fallback a D{YY}{NNNN}.
-      // Decisión del usuario, 2026-05-27.
-      const otsExternasUnicas = new Set(
-        repuestos
-          .map((r) => r.orden_trabajo?.ot?.trim())
-          .filter((v): v is string => !!v),
-      );
-      const hayItemsInternos = repuestos.some((r) => r.orden_trabajo_interna_id != null);
-      const otsExternasSinCodigo = repuestos.some(
-        (r) => r.ot_id != null && !r.orden_trabajo?.ot?.trim(),
-      );
-      const ocPorOT =
-        otsExternasUnicas.size === 1 && !hayItemsInternos && !otsExternasSinCodigo
-          ? [...otsExternasUnicas][0]
-          : null;
-
       // Generar numero_po con reintento por colisión P2002.
       let compraCreada: Awaited<ReturnType<typeof tx.compra.create>> | null = null;
       let lastError: unknown = null;
       for (let intento = 0; intento < MAX_NUMERO_PO_RETRIES; intento++) {
-        const numero_po = ocPorOT
-          ? await siguienteNumeroPOporOT(tx, ocPorOT)
-          : await siguienteNumeroPO(tx, prefix);
+        const numero_po = await siguienteNumeroPO(tx, prefix);
         try {
           compraCreada = await tx.compra.create({
             data: {

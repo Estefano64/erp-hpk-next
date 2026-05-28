@@ -340,7 +340,8 @@ function ParXY({
 interface ItemCheck {
   key: string;
   label: string;
-  tipo?: "bm" | "sn"; // Bueno/Malo o Si/No
+  // bm = Bueno/Malo, sn = Si/No, ci = Completo/Incompleto
+  tipo?: "bm" | "sn" | "ci";
 }
 function TablaChecks({
   prefix,
@@ -354,30 +355,49 @@ function TablaChecks({
   onChange: (d: Record<string, unknown>) => void;
 }) {
   const v = useValor(datos, onChange);
+  // Cuando hay tipos distintos, cada fila usa sus propias etiquetas; el thead
+  // muestra las del primer item como guía. Si un item tiene tipo distinto al
+  // del header se renderizan los labels en la celda mediante title.
+  const headerTipo = items[0]?.tipo;
+  const headerCols = headerTipo === "sn"
+    ? ["SI", "NO", "N/A"]
+    : headerTipo === "ci"
+      ? ["Completo", "Incompleto", "N/A"]
+      : ["Bueno", "Malo", "N/A"];
   return (
     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
       <thead>
         <tr style={{ background: brand.bgPage }}>
           <th style={{ border: `1px solid ${brand.border}`, padding: "4px 8px", textAlign: "left" }}></th>
-          <th style={{ border: `1px solid ${brand.border}`, padding: "4px 8px", textAlign: "center", width: 50 }}>
-            {items[0]?.tipo === "sn" ? "SI" : "Bueno"}
-          </th>
-          <th style={{ border: `1px solid ${brand.border}`, padding: "4px 8px", textAlign: "center", width: 50 }}>
-            {items[0]?.tipo === "sn" ? "NO" : "Malo"}
-          </th>
-          <th style={{ border: `1px solid ${brand.border}`, padding: "4px 8px", textAlign: "center", width: 50 }}>N/A</th>
+          {headerCols.map((c) => (
+            <th key={c} style={{ border: `1px solid ${brand.border}`, padding: "4px 8px", textAlign: "center", width: 70 }}>{c}</th>
+          ))}
         </tr>
       </thead>
       <tbody>
         {items.map((it) => {
-          const opciones = it.tipo === "sn" ? ["SI", "NO", "NA"] : ["Bueno", "Malo", "NA"];
+          const opciones = it.tipo === "sn"
+            ? ["SI", "NO", "NA"]
+            : it.tipo === "ci"
+              ? ["Completo", "Incompleto", "NA"]
+              : ["Bueno", "Malo", "NA"];
+          const labels = it.tipo === "sn"
+            ? ["SI", "NO", "N/A"]
+            : it.tipo === "ci"
+              ? ["Completo", "Incompleto", "N/A"]
+              : ["Bueno", "Malo", "N/A"];
           const name = `${prefix}_${it.key}`;
           const valActual = v.get(name) as string | undefined;
+          const mismoTipo = it.tipo === headerTipo || (!it.tipo && headerTipo === undefined);
           return (
             <tr key={it.key}>
               <td style={{ border: `1px solid ${brand.border}`, padding: "4px 8px" }}>{it.label}</td>
-              {opciones.map((op) => (
-                <td key={op} style={{ border: `1px solid ${brand.border}`, padding: "4px", textAlign: "center" }}>
+              {opciones.map((op, i) => (
+                <td
+                  key={op}
+                  title={mismoTipo ? undefined : labels[i]}
+                  style={{ border: `1px solid ${brand.border}`, padding: "4px", textAlign: "center" }}
+                >
                   <Radio checked={valActual === op} onChange={() => v.set(name, op)} />
                 </td>
               ))}
@@ -453,32 +473,46 @@ function ResultadoComponente({
 }) {
   const v = useValor(datos, onChange);
   return (
-    <Row gutter={16} style={{ marginTop: 12 }}>
-      <Col xs={24} md={12}>
+    <>
+      <Row gutter={16} style={{ marginTop: 12 }}>
+        <Col xs={24} md={12}>
+          <Text strong style={{ fontSize: 12, color: brand.navy }}>
+            Resultado evaluacion - {label}
+          </Text>
+          <TextArea
+            rows={2}
+            value={(v.get(`${prefix}_resultado`) as string) || ""}
+            onChange={(e) => v.set(`${prefix}_resultado`, e.target.value)}
+            placeholder="Conclusiones..."
+            style={{ marginTop: 4 }}
+          />
+        </Col>
+        <Col xs={24} md={12}>
+          <Text strong style={{ fontSize: 12, color: brand.navy }}>
+            Recomendaciones - {label}
+          </Text>
+          <TextArea
+            rows={2}
+            value={(v.get(`${prefix}_recomendaciones`) as string) || ""}
+            onChange={(e) => v.set(`${prefix}_recomendaciones`, e.target.value)}
+            placeholder="Recomendaciones tecnicas..."
+            style={{ marginTop: 4 }}
+          />
+        </Col>
+      </Row>
+      <div style={{ marginTop: 12 }}>
         <Text strong style={{ fontSize: 12, color: brand.navy }}>
-          Resultado evaluacion - {label}
+          Comentarios - {label}
         </Text>
         <TextArea
           rows={2}
-          value={(v.get(`${prefix}_resultado`) as string) || ""}
-          onChange={(e) => v.set(`${prefix}_resultado`, e.target.value)}
-          placeholder="Conclusiones..."
+          value={(v.get(`${prefix}_comentarios`) as string) || ""}
+          onChange={(e) => v.set(`${prefix}_comentarios`, e.target.value)}
+          placeholder="Notas adicionales..."
           style={{ marginTop: 4 }}
         />
-      </Col>
-      <Col xs={24} md={12}>
-        <Text strong style={{ fontSize: 12, color: brand.navy }}>
-          Recomendaciones - {label}
-        </Text>
-        <TextArea
-          rows={2}
-          value={(v.get(`${prefix}_recomendaciones`) as string) || ""}
-          onChange={(e) => v.set(`${prefix}_recomendaciones`, e.target.value)}
-          placeholder="Recomendaciones tecnicas..."
-          style={{ marginTop: 4 }}
-        />
-      </Col>
-    </Row>
+      </div>
+    </>
   );
 }
 
@@ -1092,7 +1126,12 @@ export default function EvaluacionFormulario({
                     </Row>
                     <Row gutter={8}>
                       <Col xs={24} md={12}>
-                        <ParXY prefix={`${p}_cil_dint_g`} label={`Diám. Int. G [${unidad}]`} datos={datos} onChange={onChange} />
+                        <ParXY
+                          prefix={`${p}_cil_dint_g`}
+                          label={`Diám. Int. ${(datos[`${p}_cil_elem_sujecion`] as string) || "G"} [${unidad}]`}
+                          datos={datos}
+                          onChange={onChange}
+                        />
                       </Col>
                       <Col xs={24} md={12}>
                         <ParXY prefix={`${p}_cil_ancho_ojo`} label={`Ancho de Ojo [${unidad}]`} datos={datos} onChange={onChange} />
@@ -1108,6 +1147,7 @@ export default function EvaluacionFormulario({
                       { key: "roscada", label: "Estado de sup. Roscada" },
                       { key: "estado_cancamo", label: "Estado de cancamo" },
                       { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                      { key: "placa_conectores", label: "Placa / Conectores", tipo: "ci" },
                     ]}
                     datos={datos}
                     onChange={onChange}
@@ -1130,7 +1170,7 @@ export default function EvaluacionFormulario({
                 <TablaMedidas
                   filas={[
                     { prefix: `${p}_vas_desp`, label: `Diametro Espiga (A) [${unidad}]`, tipo: "xy" },
-                    { prefix: `${p}_vas_dext`, label: `Diametro Exterior (B) [${unidad}]`, tipo: "xy" },
+                    { prefix: `${p}_vas_dext`, label: `Diametro Vastago (B) [${unidad}]`, tipo: "xy" },
                     { prefix: `${p}_vas_dsell`, label: `Diametro Sellado (C) [${unidad}]`, tipo: "xy" },
                     { prefix: `${p}_vas_dcoj`, label: `Diametro Cojinete (D) [${unidad}]`, tipo: "xy" },
                     { prefix: `${p}_vas_lcro`, label: `Longitud Cromo (E) [${unidad}]`, tipo: "single" },
@@ -1165,7 +1205,12 @@ export default function EvaluacionFormulario({
                     <ParXY prefix={`${p}_vas_dint_ojo_i`} label={`Diám. Int. Ojo I [${unidad}]`} datos={datos} onChange={onChange} />
                   </Col>
                   <Col xs={24} md={8}>
-                    <ParXY prefix={`${p}_vas_dint_j`} label={`Diám. Int. J [${unidad}]`} datos={datos} onChange={onChange} />
+                    <ParXY
+                      prefix={`${p}_vas_dint_j`}
+                      label={`Diám. Int. ${(datos[`${p}_vas_elem_sujecion`] as string) || "J"} [${unidad}]`}
+                      datos={datos}
+                      onChange={onChange}
+                    />
                   </Col>
                   <Col xs={24} md={8}>
                     <ParXY prefix={`${p}_vas_ancho_ojo`} label={`Ancho de Ojo [${unidad}]`} datos={datos} onChange={onChange} />
@@ -1677,7 +1722,12 @@ export default function EvaluacionFormulario({
                     <ParXY prefix={`${p}_cil_dojo_f`} label={`Diámetro Ojo F [${unidad}]`} datos={datos} onChange={onChange} />
                   </Col>
                   <Col xs={24} md={8}>
-                    <ParXY prefix={`${p}_cil_dint_g`} label={`Diám. Int. G [${unidad}]`} datos={datos} onChange={onChange} />
+                    <ParXY
+                      prefix={`${p}_cil_dint_g`}
+                      label={`Diám. Int. ${(datos[`${p}_cil_elem_sujecion`] as string) || "G"} [${unidad}]`}
+                      datos={datos}
+                      onChange={onChange}
+                    />
                   </Col>
                   <Col xs={24} md={8}>
                     <ParXY prefix={`${p}_cil_ancho_ojo`} label={`Ancho de Ojo [${unidad}]`} datos={datos} onChange={onChange} />
@@ -1726,6 +1776,7 @@ export default function EvaluacionFormulario({
                   ...(modelo === "cil_doble_vastago" ? [{ key: "estado_soporte_sujecion", label: "Estado de soporte de sujeción" }, { key: "pasa_estanqueidad", label: "Pasa prueba de estanqueidad", tipo: "sn" as const }] : []),
                   ...(modelo === "suspension_delantera" ? [{ key: "est_cartelas", label: "Est. De cartelas" }] : []),
                   { key: "ndt", label: "Pasa a NDT", tipo: "sn" as const },
+                  { key: "placa_conectores", label: "Placa / Conectores", tipo: "ci" as const },
                 ]}
                 datos={datos}
                 onChange={onChange}
@@ -1756,7 +1807,7 @@ export default function EvaluacionFormulario({
               <TablaMedidas
                 filas={[
                   { prefix: `${p}_vas_desp`, label: `Diametro Espiga (A) [${unidad}]`, tipo: "xy" },
-                  { prefix: `${p}_vas_dext`, label: `Diametro Exterior (B) [${unidad}]`, tipo: "xy" },
+                  { prefix: `${p}_vas_dext`, label: `Diametro Vastago (B) [${unidad}]`, tipo: "xy" },
                   { prefix: `${p}_vas_dsell`, label: `Diametro Sellado (C) [${unidad}]`, tipo: "xy" },
                   { prefix: `${p}_vas_dcoj`, label: `Diametro Cojinete (D) [${unidad}]`, tipo: "xy" },
                   { prefix: `${p}_vas_lcro`, label: `Longitud Cromo (E) [${unidad}]`, tipo: "single" },
@@ -1806,7 +1857,12 @@ export default function EvaluacionFormulario({
                   <ParXY prefix={`${p}_vas_dint_ojo_i`} label={`Diám. Int. Ojo I [${unidad}]`} datos={datos} onChange={onChange} />
                 </Col>
                 <Col xs={24} md={8}>
-                  <ParXY prefix={`${p}_vas_dint_j`} label={`Diám. Int. J [${unidad}]`} datos={datos} onChange={onChange} />
+                  <ParXY
+                    prefix={`${p}_vas_dint_j`}
+                    label={`Diám. Int. ${(datos[`${p}_vas_elem_sujecion`] as string) || "J"} [${unidad}]`}
+                    datos={datos}
+                    onChange={onChange}
+                  />
                 </Col>
               </Row>
               <Row gutter={8}>
@@ -1853,8 +1909,8 @@ export default function EvaluacionFormulario({
       );
     }
 
-    // Tapa
-    if (!modelo.startsWith("acum")) {
+    // Tapa — incluye también acum_embolo (acumulador de émbolo tiene tapa)
+    if (!modelo.startsWith("acum") || modelo === "acum_embolo") {
       const esDobleVastago = modelo === "cil_doble_vastago";
       secciones.push(
         <SeccionNum key="tapa" num={5} titulo="Tapa">
