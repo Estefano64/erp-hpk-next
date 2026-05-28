@@ -36,14 +36,18 @@ export async function GET(req: NextRequest) {
     ];
     if (estado) and.push({ estado });
     if (search) {
-      and.push({
-        OR: [
-          { descripcion: { contains: search, mode: "insensitive" } },
-          { componente: { contains: search, mode: "insensitive" } },
-          { operacion_codigo: { contains: search, mode: "insensitive" } },
-          { orden_trabajo: { is: { ot: { contains: search, mode: "insensitive" } } } },
-        ],
-      });
+      // `ot` es INTEGER (migración 2026-05-28): no se puede usar `contains`.
+      // Si el término es numérico, lo matcheamos como nro de OT exacto.
+      const or: Record<string, unknown>[] = [
+        { descripcion: { contains: search, mode: "insensitive" } },
+        { componente: { contains: search, mode: "insensitive" } },
+        { operacion_codigo: { contains: search, mode: "insensitive" } },
+      ];
+      const otNum = Number(search);
+      if (search.trim() !== "" && Number.isInteger(otNum)) {
+        or.push({ orden_trabajo: { is: { ot: otNum } } });
+      }
+      and.push({ OR: or });
     }
     const where = { AND: and };
 

@@ -29,7 +29,7 @@ interface TareaHist {
   fecha_fin_real: string | null;
   estado: string | null;
   status_tarea: { codigo: string; nombre: string } | null;
-  orden_trabajo: { ot: string | null; descripcion: string | null } | null;
+  orden_trabajo: { ot: number | null; descripcion: string | null } | null;
 }
 
 // Refleja el catálogo StatusTarea.
