@@ -160,7 +160,9 @@ export default function ComprasPage() {
   const pendientes = data.filter((c) => c.estado === "Pendiente").length;
   const enProceso = data.filter((c) => c.estado === "En Proceso" || c.estado === "Aprobado").length;
   const recibidas = data.filter((c) => c.estado === "Recibido").length;
-  const totalValor = data.reduce((s, c) => s + Number(c.total || 0), 0);
+  // Suma del valor total sin IGV (= subtotal). El usuario pidió ver montos
+  // sin IGV en este listado.
+  const totalValor = data.reduce((s, c) => s + Number(c.subtotal || 0), 0);
 
   const exportarExcel = async () => {
     try {
@@ -346,30 +348,38 @@ export default function ComprasPage() {
       onFilter: (value, r) => String(r.cantidad_items) === value,
     },
     {
-      key: "subtotal",
-      title: "Subtotal",
-      dataIndex: "subtotal",
+      // "PU (sin igv)" = precio unitario promedio sin IGV = subtotal / cantidad_items.
+      // Para OCs de un único item equivale al precio unitario exacto; para OCs
+      // multi-item es el promedio. Útil como referencia.
+      key: "pu_sin_igv",
+      title: "PU (sin IGV)",
       width: 110,
       align: "right",
-      sorter: (a, b) => Number(a.subtotal) - Number(b.subtotal),
-      filters: [...new Set(data.map((r) => Number(r.subtotal)))].sort((a, b) => a - b)
-        .map((v) => ({ text: v.toFixed(2), value: String(v) })),
-      filterSearch: true,
-      onFilter: (value, r) => String(Number(r.subtotal)) === value,
-      render: (v: number) => Number(v).toFixed(2),
+      sorter: (a, b) => {
+        const puA = a.cantidad_items > 0 ? Number(a.subtotal) / a.cantidad_items : 0;
+        const puB = b.cantidad_items > 0 ? Number(b.subtotal) / b.cantidad_items : 0;
+        return puA - puB;
+      },
+      render: (_: unknown, r: Compra) => {
+        const pu = r.cantidad_items > 0 ? Number(r.subtotal) / r.cantidad_items : 0;
+        return pu.toFixed(2);
+      },
     },
     {
-      key: "total",
-      title: "Total",
-      dataIndex: "total",
-      width: 120,
+      // "Total (sin IGV) = PU × CANT" — es el subtotal del modelo (sin IGV).
+      // Antes acá se mostraba `total` que SÍ incluye IGV; el usuario pidió ver
+      // el total sin IGV en este listado.
+      key: "total_sin_igv",
+      title: "Total (sin IGV)",
+      dataIndex: "subtotal",
+      width: 130,
       align: "right",
       render: (v: number, r: Compra) => (
         <span style={{ fontWeight: 600, color: brand.navy }}>
           {r.moneda} {Number(v).toFixed(2)}
         </span>
       ),
-      sorter: (a, b) => Number(a.total) - Number(b.total),
+      sorter: (a, b) => Number(a.subtotal) - Number(b.subtotal),
     },
     {
       key: "nro_guia",
@@ -529,7 +539,7 @@ export default function ComprasPage() {
         <Col xs={12} md={6}>
           <Card styles={{ body: { padding: 16 } }}>
             <Statistic
-              title="Valor total"
+              title="Valor total (sin IGV)"
               value={totalValor}
               precision={2}
               prefix="$"

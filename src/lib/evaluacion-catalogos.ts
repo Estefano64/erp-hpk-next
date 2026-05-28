@@ -758,18 +758,92 @@ const RECOM_GENERAL_RUEDA_ESTANDAR: RecomendacionItem[] = [
 ];
 
 // ─── HALLAZGOS - FRENO DE SERVICIO & PARQUEO ───────────────────────────────
+// Estructura provista por el usuario (check-list del Excel/PNG): cada sub-
+// componente (Sprocket, Housing, Spindle, Pistón Freno Servicio, Pistón Freno
+// Parqueo) tiene su propio set de hallazgos y recomendaciones.
 
-const HALLAZGOS_FRENO: HallazgoItem[] = [
-  { key: "estado_housing", texto: "Estado de housing" },
-  { key: "estado_esplinde", texto: "Estado de espíndle" },
-  { key: "estado_rodamientos", texto: "Estado de rodamientos" },
-  { key: "estado_resortes_platos", texto: "Estado de resortes / platos discos" },
+const HALLAZGOS_FRENO_SPROCKET: HallazgoItem[] = [
+  {
+    key: "sproc_estado",
+    texto: "Sprocket se encuentra en ____ estado",
+    severidades: ["Buen", "Mal"],
+  },
+  { key: "sproc_desmontaje", texto: "Se realiza el desmontaje de damper, discos de fricción" },
+  {
+    key: "sproc_discos_presentan",
+    texto: "Discos presentan ____",
+    opcionesMultiples: ["Desgaste", "Rayaduras"],
+  },
 ];
 
-const RECOM_FRENO_ESTANDAR: RecomendacionItem[] = [
-  { key: "pulido", texto: "Pulido" },
-  { key: "ndt", texto: "NDT" },
-  { key: "repaso_aloj_rosc", texto: "Repaso alojamientos roscados" },
+const HALLAZGOS_FRENO_HOUSING: HallazgoItem[] = [
+  {
+    key: "hou_desgaste_pista_sellos",
+    texto: "Presenta desgaste ____ en pista de alojamiento de sellos",
+    severidades: ["Leve", "Excesivo"],
+  },
+];
+
+const HALLAZGOS_FRENO_SPINDLE: HallazgoItem[] = [
+  { key: "sp_rayas_pistas", texto: "Presenta rayas en pistas de alojamiento de rodamientos" },
+  { key: "sp_rodamiento_desgaste", texto: "Rodamiento llegó con desgaste" },
+  { key: "sp_esparragos_danados", texto: "Espárragos llegaron dañados" },
+  { key: "sp_dentada_corr", texto: "Superficie dentada presenta corrosión" },
+  { key: "sp_espaciadores_desg", texto: "Espaciadores presentan desgaste" },
+  {
+    key: "sp_rueda_matriz",
+    texto: "Rueda matriz con ____ desgaste",
+    severidades: ["Leve", "Excesivo"],
+  },
+];
+
+const HALLAZGOS_FRENO_PISTON_SERVICIO: HallazgoItem[] = [
+  { key: "pfs_desgaste", texto: "Presenta desgaste" },
+  {
+    key: "pfs_estado_general",
+    texto: "Presenta ____ estado en general",
+    severidades: ["Buen", "Mal"],
+  },
+];
+
+const HALLAZGOS_FRENO_PISTON_PARQUEO: HallazgoItem[] = [
+  { key: "pfp_desgaste", texto: "Presenta desgaste" },
+  {
+    key: "pfp_estado_general",
+    texto: "Presenta ____ estado en general",
+    severidades: ["Buen", "Mal"],
+  },
+];
+
+const RECOM_FRENO_SPROCKET: RecomendacionItem[] = [
+  { key: "pulido_sproc", texto: "Realizar pulido de sprocket" },
+  { key: "cambio_sproc", texto: "Realizar cambio de sprocket" },
+  { key: "cambio_discos_friccion", texto: "Realizar cambio de discos de fricción" },
+  { key: "cambio_damper", texto: "Realizar cambio de damper" },
+];
+
+const RECOM_FRENO_HOUSING: RecomendacionItem[] = [
+  { key: "metalizado_pista_sellos", texto: "Recuperar con metalizado superficie de pista de alojamiento de sellos" },
+  { key: "pulido_general", texto: "Realizar pulido en general" },
+  { key: "cambio_housing", texto: "Realizar cambio de housing" },
+];
+
+const RECOM_FRENO_SPINDLE: RecomendacionItem[] = [
+  { key: "metalizado_pista_rod", texto: "Recuperar con metalizado pista de alojamiento de rodamiento" },
+  { key: "cambio_rodamiento", texto: "Realizar cambio de rodamiento" },
+  { key: "pulido_dentada", texto: "Realizar pulido de superficie dentada" },
+  { key: "cambio_espaciadores", texto: "Realizar cambio de espaciadores" },
+  { key: "pulido_matriz", texto: "Realizar pulido de matriz" },
+];
+
+const RECOM_FRENO_PISTON_SERVICIO: RecomendacionItem[] = [
+  { key: "pulido", texto: "Realizar pulido" },
+  { key: "cambio", texto: "Realizar cambio" },
+];
+
+const RECOM_FRENO_PISTON_PARQUEO: RecomendacionItem[] = [
+  { key: "pulido", texto: "Realizar pulido" },
+  { key: "cambio", texto: "Realizar cambio" },
 ];
 
 // ─── CATÁLOGOS POR TIPO ────────────────────────────────────────────────────
@@ -877,14 +951,23 @@ export const CATALOGOS_EVALUACION: Record<string, CatalogoEvaluacion> = {
       embolo: { nombre: "Émbolo", estandar: RECOM_EMBOLO_ESTANDAR, noEstandar: RECOM_EMBOLO_NO_ESTANDAR },
     },
   },
-  // Freno de Servicio & Parqueo — sin datos en los Excels originales. Catálogo
-  // definido manualmente con los items que pidió el usuario.
+  // Freno de Servicio & Parqueo — check-list por sub-componente provisto por
+  // el usuario (Sprocket, Housing, Spindle, Pistón Servicio, Pistón Parqueo).
+  // Sin split estándar/no estándar — todas las recomendaciones van en `estandar`.
   freno_servicio_parqueo: {
     hallazgos: {
-      freno: { nombre: "Freno de Servicio & Parqueo", items: HALLAZGOS_FRENO },
+      sprocket: { nombre: "Sprocket", items: HALLAZGOS_FRENO_SPROCKET },
+      housing: { nombre: "Housing", items: HALLAZGOS_FRENO_HOUSING },
+      spindle: { nombre: "Spindle", items: HALLAZGOS_FRENO_SPINDLE },
+      piston_servicio: { nombre: "Pistón Freno Servicio", items: HALLAZGOS_FRENO_PISTON_SERVICIO },
+      piston_parqueo: { nombre: "Pistón Freno Parqueo", items: HALLAZGOS_FRENO_PISTON_PARQUEO },
     },
     recomendaciones: {
-      freno: { nombre: "Freno de Servicio & Parqueo", estandar: RECOM_FRENO_ESTANDAR, noEstandar: [] },
+      sprocket: { nombre: "Sprocket", estandar: RECOM_FRENO_SPROCKET, noEstandar: [] },
+      housing: { nombre: "Housing", estandar: RECOM_FRENO_HOUSING, noEstandar: [] },
+      spindle: { nombre: "Spindle", estandar: RECOM_FRENO_SPINDLE, noEstandar: [] },
+      piston_servicio: { nombre: "Pistón Freno Servicio", estandar: RECOM_FRENO_PISTON_SERVICIO, noEstandar: [] },
+      piston_parqueo: { nombre: "Pistón Freno Parqueo", estandar: RECOM_FRENO_PISTON_PARQUEO, noEstandar: [] },
     },
   },
   // Rueda Delantera — único tipo con checklist propio en Excel 1 sheet 7. No

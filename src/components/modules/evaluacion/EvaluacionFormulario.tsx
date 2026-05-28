@@ -52,6 +52,7 @@ export const IMG_COMPONENTE: Record<string, string> = {
   piston_freno: "/PistonFreno.jpeg",
   housing_freno: "/HOUSING.jpeg",
   spindle_freno: "/SPINDLE_freno.jpeg",
+  cuerpo_intermedio: "/CuerposIntermedios.jpeg",
 };
 
 // ── Detectar modelo desde estrategia ────────────────────────
@@ -1032,7 +1033,7 @@ function EtapasTelescopico({
       <SeccionNum key={`etapa-${i}`} num={`E${i}`} titulo={`Etapa ${i} - Cuerpo intermedio / Vastago telescopico`}>
         <Row gutter={16}>
           <Col xs={24} md={8}>
-            <ImagenReferencia componente="cilindro" label={`Etapa ${i}`} />
+            <ImagenReferencia componente="cuerpo_intermedio" label={`Etapa ${i} - Cuerpo Intermedio (LT, A, B, C, L)`} />
           </Col>
           <Col xs={24} md={16}>
             <TablaA1A4 prefix={`${prefix}_etapa${i}_cil`} datos={datos} onChange={onChange} />
@@ -1583,8 +1584,9 @@ export default function EvaluacionFormulario({
     }
 
     // ── FRENO DE SERVICIO & PARQUEO ── (tipo 9)
-    // Solo lleva las secciones HOUSING + SPINDLE + Freno (hallazgos del
-    // catálogo manual). No usa Cilindro/Vástago/Tapa/Pistón del compartido.
+    // 5 sub-secciones: Housing + Spindle (con medidas), Sprocket, Pistón Freno
+    // Servicio, Pistón Freno Parqueo (solo hallazgos+recomendaciones). El
+    // catálogo está en `evaluacion-catalogos.ts`.
     if (modelo === "freno_servicio_parqueo") {
       return (
         <>
@@ -1614,7 +1616,9 @@ export default function EvaluacionFormulario({
                 />
               </Col>
             </Row>
+            <HallazgosCatalogo modelo={modelo} filtro="housing" prefix={`${p}_housing`} titulo="Resultado de evaluación - Housing" datos={datos} onChange={onChange} />
             <ImagenesComponente prefix={`${p}_housing`} etiqueta="Housing" datos={datos} onChange={onChange} />
+            <RecomendacionesCatalogo modelo={modelo} componente="housing" prefix={p} datos={datos} onChange={onChange} />
             <ResultadoComponente prefix={`${p}_housing`} label="Housing" datos={datos} onChange={onChange} />
           </SeccionNum>
 
@@ -1644,22 +1648,31 @@ export default function EvaluacionFormulario({
                 />
               </Col>
             </Row>
+            <HallazgosCatalogo modelo={modelo} filtro="spindle" prefix={`${p}_spindle`} titulo="Resultado de evaluación - Spindle" datos={datos} onChange={onChange} />
             <ImagenesComponente prefix={`${p}_spindle`} etiqueta="Spindle" datos={datos} onChange={onChange} />
+            <RecomendacionesCatalogo modelo={modelo} componente="spindle" prefix={p} datos={datos} onChange={onChange} />
             <ResultadoComponente prefix={`${p}_spindle`} label="Spindle" datos={datos} onChange={onChange} />
           </SeccionNum>
 
-          <SeccionNum num={5} titulo="Freno de Servicio & Parqueo">
-            <HallazgosCatalogo
-              modelo={modelo}
-              filtro="freno"
-              prefix={`${p}_freno`}
-              titulo="Resultado de evaluación - Freno"
-              datos={datos}
-              onChange={onChange}
-            />
-            <ImagenesComponente prefix={`${p}_freno`} etiqueta="Freno" datos={datos} onChange={onChange} />
-            <RecomendacionesCatalogo modelo={modelo} componente="freno" prefix={p} datos={datos} onChange={onChange} />
-            <ResultadoComponente prefix={`${p}_freno`} label="Freno" datos={datos} onChange={onChange} />
+          <SeccionNum num={5} titulo="Sprocket">
+            <HallazgosCatalogo modelo={modelo} filtro="sprocket" prefix={`${p}_sprocket`} titulo="Resultado de evaluación - Sprocket" datos={datos} onChange={onChange} />
+            <ImagenesComponente prefix={`${p}_sprocket`} etiqueta="Sprocket" datos={datos} onChange={onChange} />
+            <RecomendacionesCatalogo modelo={modelo} componente="sprocket" prefix={p} datos={datos} onChange={onChange} />
+            <ResultadoComponente prefix={`${p}_sprocket`} label="Sprocket" datos={datos} onChange={onChange} />
+          </SeccionNum>
+
+          <SeccionNum num={6} titulo="Pistón Freno Servicio">
+            <HallazgosCatalogo modelo={modelo} filtro="piston_servicio" prefix={`${p}_piston_servicio`} titulo="Resultado de evaluación - Pistón Freno Servicio" datos={datos} onChange={onChange} />
+            <ImagenesComponente prefix={`${p}_piston_servicio`} etiqueta="Pistón Freno Servicio" datos={datos} onChange={onChange} />
+            <RecomendacionesCatalogo modelo={modelo} componente="piston_servicio" prefix={p} datos={datos} onChange={onChange} />
+            <ResultadoComponente prefix={`${p}_piston_servicio`} label="Pistón Freno Servicio" datos={datos} onChange={onChange} />
+          </SeccionNum>
+
+          <SeccionNum num={7} titulo="Pistón Freno Parqueo">
+            <HallazgosCatalogo modelo={modelo} filtro="piston_parqueo" prefix={`${p}_piston_parqueo`} titulo="Resultado de evaluación - Pistón Freno Parqueo" datos={datos} onChange={onChange} />
+            <ImagenesComponente prefix={`${p}_piston_parqueo`} etiqueta="Pistón Freno Parqueo" datos={datos} onChange={onChange} />
+            <RecomendacionesCatalogo modelo={modelo} componente="piston_parqueo" prefix={p} datos={datos} onChange={onChange} />
+            <ResultadoComponente prefix={`${p}_piston_parqueo`} label="Pistón Freno Parqueo" datos={datos} onChange={onChange} />
           </SeccionNum>
         </>
       );
