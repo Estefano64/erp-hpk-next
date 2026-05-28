@@ -59,6 +59,19 @@ export async function GET(req: NextRequest) {
     const recursosStatus = searchParams.get("recursos_status") ?? "";
     const tallerStatus = searchParams.get("taller_status") ?? "";
     const clienteId = searchParams.get("cliente") ?? "";
+    // El export a Excel pide ?export=1 para recibir también los campos
+    // históricos. El listado normal los omite para aligerar el payload.
+    const isExport = searchParams.get("export") === "1";
+
+    // Campos escalares que SOLO usa el export (históricos importados del Excel).
+    // La tabla del listado no los muestra, así que los omitimos cuando no es
+    // export — con 3000+ OTs aligera bastante la respuesta.
+    const omitExportOnly = {
+      fecha_evaluacion: true, evaluador: true, nro_informe_evaluacion: true,
+      fecha_cotizacion: true, nro_cotizacion: true, monto_cotizacion: true,
+      fecha_aprobacion: true, fecha_entrega: true, cumplimiento: true,
+      dias_proceso: true, dias_en_taller: true, nro_factura: true, fecha_facturacion: true,
+    } as const;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const where: any = {};
@@ -83,20 +96,34 @@ export async function GET(req: NextRequest) {
     const [data, total] = await Promise.all([
       prisma.ordenTrabajo.findMany({
         where,
+        ...(isExport ? {} : { omit: omitExportOnly }),
+        // `include` conserva TODOS los campos escalares de la OT (incluidos los
+        // históricos que van al Excel: monto_cotizacion, fecha_evaluacion, etc.),
+        // pero a cada relación le pedimos SOLO los sub-campos que el listado y el
+        // export usan. Antes se traía la fila completa de cada relación (+ anidados):
+        // con 3000+ OTs eso hacía el payload enorme y la carga lenta.
         include: {
-          cliente: true,
-          codigo_reparacion: { include: { tipo: true, flota: true, fabricante: true, posicion: true } },
-          fabricante: true,
-          garantia: true,
-          atencion_reparacion: true,
-          tipo_reparacion: true,
-          tipo_garantia: true,
-          tipo_ot: true,
-          prioridad_atencion: true,
-          base_metalica: true,
-          ot_status: true,
-          recursos_status: true,
-          taller_status: true,
+          cliente: { select: { codigo: true, nombre_comercial: true, razon_social: true } },
+          codigo_reparacion: {
+            select: {
+              codigo: true, descripcion: true,
+              tipo: { select: { nombre: true } },
+              flota: { select: { nombre: true } },
+              fabricante: { select: { nombre: true } },
+              posicion: { select: { nombre: true } },
+            },
+          },
+          fabricante: { select: { nombre: true } },
+          garantia: { select: { nombre: true } },
+          atencion_reparacion: { select: { nombre: true } },
+          tipo_reparacion: { select: { nombre: true } },
+          tipo_garantia: { select: { nombre: true } },
+          tipo_ot: { select: { codigo: true, nombre: true } },
+          prioridad_atencion: { select: { codigo: true, nombre: true } },
+          base_metalica: { select: { nombre: true } },
+          ot_status: { select: { nombre: true } },
+          recursos_status: { select: { nombre: true } },
+          taller_status: { select: { nombre: true } },
           // Sólo el estado de la hoja de evaluación (la fila completa no se
           // usa en el listado). La relación es 1-N pero en la práctica solo hay
           // una por OT; tomamos el último id por las dudas.

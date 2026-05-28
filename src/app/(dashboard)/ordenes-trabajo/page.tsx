@@ -566,7 +566,7 @@ export default function OrdenesTrabajoPage() {
           />
           <Button onClick={resetAnchos}>Restablecer anchos</Button>
           <ExportarExcelButton<OTRecordExport>
-            endpoint="/api/ordenes-trabajo"
+            endpoint="/api/ordenes-trabajo?export=1"
             filename="OTs-Externas"
             sheetName="OTs Externas"
             columns={[
