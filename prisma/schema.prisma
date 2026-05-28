@@ -851,7 +851,10 @@ model CodigoReparacion {
 
 model OrdenTrabajo {
   id                          Int                 @id @default(autoincrement())
-  ot                          String?             @db.VarChar(50)
+  // Código de la OT externa. Antes era VarChar(50); convertido a INTEGER en
+  // Railway (migración manual `_migrate-ot-to-int.ts` 2026-05-28) porque
+  // todos los valores siguen el formato numérico NNNNYY.
+  ot                          Int?
   id_cliente                  Int?
   estrategia                  Boolean?
   id_cod_rep                  Int?

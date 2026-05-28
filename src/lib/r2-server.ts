@@ -11,7 +11,9 @@ import { validarArchivo, type CategoriaUpload } from "./file-uploads";
 
 export interface OTSummary {
   id: number;
-  ot: string | null;
+  // OT externa: number (tras la migración VARCHAR → INTEGER, 2026-05-28).
+  // OT interna: string (formato OT-INT-NNNN, sigue siendo VARCHAR).
+  ot: number | string | null;
 }
 
 export type AccessResult =

@@ -320,11 +320,15 @@ async function main() {
   for (const s of sheets) {
     for (const r of s.dataRows) todasOTsXls.add(String(r[s.config.cols.ot]).trim());
   }
-  const otsExistentes = new Set(
+  // OT ahora es INTEGER. Convertimos los strings del Excel a int para el `in`.
+  const todasOTsXlsNum = [...todasOTsXls]
+    .map((s) => parseInt(s, 10))
+    .filter((n) => Number.isFinite(n));
+  const otsExistentes = new Set<string>(
     (await prisma.ordenTrabajo.findMany({
-      where: { ot: { in: [...todasOTsXls] } },
+      where: { ot: { in: todasOTsXlsNum } },
       select: { ot: true },
-    })).map((o) => o.ot ?? ""),
+    })).map((o) => o.ot != null ? String(o.ot) : ""),
   );
 
   // 6. Reporte previo por hoja.
@@ -454,9 +458,12 @@ async function main() {
       const otStatusCodigo = tallerCodigo && TALLER_CIERRA_OT.has(tallerCodigo) ? "Cerrada" : "Abierta";
 
       try {
+        // OT ahora es INTEGER → convertir el string del Excel.
+        const otNum = parseInt(ot, 10);
+        if (!Number.isFinite(otNum)) throw new Error(`OT no numérico: "${ot}"`);
         await prisma.ordenTrabajo.create({
           data: {
-            ot,
+            ot: otNum,
             tipo_codigo: "REP",
             id_cliente,
             id_fabricante,

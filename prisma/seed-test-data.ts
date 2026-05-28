@@ -50,14 +50,16 @@ async function main() {
   const recursosStatusOpts = ["En revision procesos", "Recursos solicitados", "En cotización", "Recursos completos"];
   const tiposOT = ["Reparación general", "Mantenimiento preventivo", "Falla crítica", "Inspección programada"];
 
-  const otsCreadas: { id: number; ot: string; cod_rep_id: number | null }[] = [];
+  const otsCreadas: { id: number; ot: number; cod_rep_id: number | null }[] = [];
   for (let i = 1; i <= 20; i++) {
     const cliente = pick(clientes);
     const codRep = pick(codRepsAll);
     const fab = pick(fabricantes);
     const equipo = equipos.length ? pick(equipos) : null;
     const num = String(i).padStart(4, "0");
-    const otNum = `OT-25-${num}`;
+    // OT post-migración: número entero (formato NNNNYY). Para evitar colisión
+    // con producción usamos rango 100000+ que está fuera del rango real.
+    const otNum = 100000 + i; // p. ej. 100001, 100002…
 
     // upsert por número OT
     const existing = await prisma.ordenTrabajo.findFirst({ where: { ot: otNum } });
@@ -353,7 +355,7 @@ async function main() {
   console.log("   • T2: OTs terminadas para despacho a mina…");
   const otsTerminadas: number[] = [];
   for (let i = 0; i < 5; i++) {
-    const otNum = `OT-25-T${String(i + 1).padStart(3, "0")}`;
+    const otNum = 200000 + i; // batch T → rango 200xxx
     let ot = await prisma.ordenTrabajo.findFirst({ where: { ot: otNum } });
     if (!ot) {
       const cliente = pick(clientes);
@@ -440,7 +442,7 @@ async function main() {
   const otsConAdjuntos: number[] = [];
   const otsSinAdjuntos: number[] = [];
   for (let i = 0; i < 6; i++) {
-    const otNum = `OT-25-E${String(i + 1).padStart(3, "0")}`;
+    const otNum = 300000 + i; // batch E → rango 300xxx
     let ot = await prisma.ordenTrabajo.findFirst({ where: { ot: otNum } });
     const conAdjunto = i < 3;
     if (!ot) {

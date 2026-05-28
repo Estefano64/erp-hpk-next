@@ -170,7 +170,6 @@ function normalize(r: RequerimientoApi): Requerimiento {
 }
 
 interface ProveedorApi { id: number; razon_social: string }
-interface AlmacenApi { id: string; codigo: string; nombre: string }
 
 const reqColor: Record<string, string> = {
   SIN_APROBACION: "default",
@@ -229,7 +228,6 @@ function RequerimientosDetalleInner() {
   // del modal se redibuje con el símbolo correcto.
   const monedaModal = Form.useWatch("moneda", ocForm) as string | undefined;
   const [proveedores, setProveedores] = useState<ProveedorApi[]>([]);
-  const [almacenes, setAlmacenes] = useState<AlmacenApi[]>([]);
   const [creatingOC, setCreatingOC] = useState(false);
   // Precios editados dentro del modal (id_requerimiento → precio). Se persisten
   // al confirmar "Generar OC" vía PATCH /api/requerimientos/[id]/precio.
@@ -295,10 +293,9 @@ function RequerimientosDetalleInner() {
   }, [fetchData, params]);
 
   useEffect(() => {
-    Promise.all([fetch("/api/proveedores?limit=500"), fetch("/api/almacenes")])
-      .then(async ([pr, al]) => {
+    fetch("/api/proveedores?limit=500")
+      .then(async (pr) => {
         if (pr.ok) setProveedores((await pr.json()).data ?? []);
-        if (al.ok) setAlmacenes((await al.json()).data ?? []);
       })
       .catch(() => {});
   }, []);
@@ -403,7 +400,6 @@ function RequerimientosDetalleInner() {
     ocForm.setFieldsValue({
       moneda: "USD",
       fecha_entrega_esperada: dayjs().add(15, "day"),
-      almacen_id: almacenes[0]?.id,
     });
     setModalOpen(true);
   };
@@ -454,7 +450,6 @@ function RequerimientosDetalleInner() {
         body: JSON.stringify({
           repuesto_ids: selectedRows,
           proveedor_id: values.proveedor_id,
-          almacen_id: values.almacen_id,
           moneda: values.moneda,
           fecha_entrega_esperada: values.fecha_entrega_esperada
             ? (values.fecha_entrega_esperada as Dayjs).format("YYYY-MM-DD")
@@ -1442,18 +1437,6 @@ function RequerimientosDetalleInner() {
                   showSearch
                   optionFilterProp="label"
                   options={proveedores.map((p) => ({ value: p.id, label: p.razon_social }))}
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={12}>
-              <Form.Item
-                label="Almacén destino"
-                name="almacen_id"
-              >
-                <Select
-                  placeholder="Seleccionar almacén (opcional)"
-                  allowClear
-                  options={almacenes.map((a) => ({ value: a.id, label: `${a.codigo} — ${a.nombre}` }))}
                 />
               </Form.Item>
             </Col>

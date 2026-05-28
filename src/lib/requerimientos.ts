@@ -40,7 +40,8 @@ export async function nextNroReqExterna(
     select: { id: true, ot: true },
   });
   if (!ot) throw new Error(`OT ${otId} no existe`);
-  const otCodigo = (ot.ot ?? "").trim() || `OT-${ot.id}`;
+  // `ot.ot` ahora es number (INTEGER tras migración). Convertir a string.
+  const otCodigo = ot.ot != null ? String(ot.ot) : `OT-${ot.id}`;
   const prefix = `${otCodigo}-`;
 
   await lockNroReq(tx, otCodigo);

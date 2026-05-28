@@ -88,9 +88,11 @@ function sanitize(segment: string): string {
 }
 
 // Devuelve el código legible de una OT (su campo `ot`) o un fallback `OT-{id}`
-// cuando el código está vacío.
-export function otCodigoFor(ot: { id: number; ot: string | null }): string {
-  const codigo = (ot.ot ?? "").trim();
+// cuando el código está vacío. Acepta `ot` como number (externa, tras la
+// migración a INTEGER) o string (interna).
+export function otCodigoFor(ot: { id: number; ot: number | string | null }): string {
+  if (ot.ot == null) return `OT-${ot.id}`;
+  const codigo = String(ot.ot).trim();
   return codigo.length > 0 ? codigo : `OT-${ot.id}`;
 }
 

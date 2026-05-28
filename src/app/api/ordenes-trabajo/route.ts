@@ -20,29 +20,32 @@ const MIN_CORRELATIVO_POR_ANIO: Record<string, number> = {
   "26": 3905, // primera OT nueva del 2026 será 390626; las anteriores se importarán después
 };
 
-async function generarNumeroOT(): Promise<string> {
-  const year2 = String(new Date().getFullYear() % 100).padStart(2, "0");
+async function generarNumeroOT(): Promise<number> {
+  const year2 = new Date().getFullYear() % 100; // ej. 26
 
-  // Trae todas las OTs cuyo `ot` termina en el año actual; después filtramos
-  // en memoria por el patrón exacto para descartar formatos legacy.
+  // Tras la migración de VARCHAR → INTEGER, `ot` es un número en formato
+  // NNNNYY. Para encontrar las OTs del año actual usamos rango numérico:
+  //   - mínimo del año: YY * 1 (ej. 26)         → OT "000026"
+  //   - máximo: 999999 + YY... mejor cota: el año encaja en `ot % 100`.
+  // Como Prisma no soporta modulo en where, traemos todas con ot < 1_000_000
+  // y filtramos en memoria por (ot % 100 === year2).
   const candidatos = await prisma.ordenTrabajo.findMany({
-    where: { ot: { endsWith: year2 } },
+    where: { ot: { not: null, lt: 1_000_000 } },
     select: { ot: true },
   });
 
-  const regex = new RegExp(`^(\\d{4})${year2}$`);
   let maxN = 0;
   for (const { ot } of candidatos) {
-    const m = ot?.match(regex);
-    if (m) {
-      const n = parseInt(m[1], 10);
-      if (n > maxN) maxN = n;
-    }
+    if (ot == null) continue;
+    if (ot % 100 !== year2) continue;
+    const n = Math.floor(ot / 100);
+    if (n > maxN) maxN = n;
   }
 
-  const minN = MIN_CORRELATIVO_POR_ANIO[year2] ?? 0;
+  const minN = MIN_CORRELATIVO_POR_ANIO[String(year2).padStart(2, "0")] ?? 0;
   const next = Math.max(maxN, minN) + 1;
-  return `${String(next).padStart(4, "0")}${year2}`;
+  // Devolvemos el código como número: NNNNYY = N * 100 + YY (sin padding).
+  return next * 100 + year2;
 }
 
 // GET — lista con filtros y paginación
@@ -61,8 +64,11 @@ export async function GET(req: NextRequest) {
     const where: any = {};
 
     if (search) {
+      // `ot` ahora es INTEGER en DB. Si la búsqueda es un número, hacemos
+      // exact match contra `ot`. Si no, no se busca por ot.
+      const otNum = /^\d+$/.test(search) ? Number(search) : null;
       where.OR = [
-        { ot: { contains: search, mode: "insensitive" } },
+        ...(otNum != null ? [{ ot: otNum }] : []),
         { equipo_codigo: { contains: search, mode: "insensitive" } },
         { ns: { contains: search, mode: "insensitive" } },
         { wo_cliente: { contains: search, mode: "insensitive" } },
