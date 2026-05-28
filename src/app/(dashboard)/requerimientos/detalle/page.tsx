@@ -225,7 +225,6 @@ function RequerimientosDetalleInner() {
   const [filtroRapido, setFiltroRapido] = useState<string>("todos");
   const [filtroNroReq, setFiltroNroReq] = useState<string | undefined>(undefined);
   const [selectedRows, setSelectedRows] = useState<number[]>([]);
-  const [selectedRecords, setSelectedRecords] = useState<Requerimiento[]>([]);
 
   // Modal de Crear OC
   const [modalOpen, setModalOpen] = useState(false);
@@ -358,6 +357,19 @@ function RequerimientosDetalleInner() {
       .map(([id, label]) => ({ value: String(id), label }));
   }, [allData]);
 
+  // Derivar selectedRecords desde allData + selectedRows. Esto evita que se
+  // pierdan los seleccionados cuando cambian los filtros (antd's onChange solo
+  // pasa los `records` visibles en la página/filtro actual). También garantiza
+  // que los KPIs reflejen TODOS los items seleccionados aunque algunos no estén
+  // en la vista por filtros.
+  const selectedRecords = useMemo(
+    () => {
+      const set = new Set(selectedRows);
+      return allData.filter((r) => set.has(r.id));
+    },
+    [allData, selectedRows],
+  );
+
   // Totales seleccion
   const totalSub = selectedRecords.reduce(
     (s, r) => s + (parseFloat(String(r.precio_unitario || 0)) * parseFloat(String(r.cantidad || 0))),
@@ -368,10 +380,12 @@ function RequerimientosDetalleInner() {
 
   const rowSelection: TableRowSelection<Requerimiento> = {
     selectedRowKeys: selectedRows,
-    onChange: (keys, records) => {
+    // Solo guardamos las keys; selectedRecords se deriva arriba.
+    onChange: (keys) => {
       setSelectedRows(keys as number[]);
-      setSelectedRecords(records);
     },
+    // Mostrar checkboxes para items de TODAS las páginas (no perder selección al paginar).
+    preserveSelectedRowKeys: true,
     getCheckboxProps: (r) => ({
       disabled: r.po_id != null || r.status_req === "ANULADO" || r.status_req === "DESAPROBADO",
     }),
@@ -459,7 +473,7 @@ function RequerimientosDetalleInner() {
       message.success(`OC ${json.compra?.numero_po} creada con éxito`);
       setModalOpen(false);
       setSelectedRows([]);
-      setSelectedRecords([]);
+      setSelectedRows([]);
       await fetchData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Error desconocido";

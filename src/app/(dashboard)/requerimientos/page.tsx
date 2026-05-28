@@ -75,6 +75,13 @@ interface RequerimientoRow {
     cliente: { codigo: string; razon_social: string; nombre_comercial: string | null } | null;
     codigo_reparacion: { codigo: string; descripcion: string } | null;
   } | null;
+  // Para items que pertenecen a una OT interna (la API ahora devuelve esta
+  // relación). Si orden_trabajo es null, se usa este como fallback.
+  orden_trabajo_interna?: {
+    id: number;
+    ot: string | null;
+    descripcion: string | null;
+  } | null;
   material: { codigo: string; descripcion: string; unidad_medida_codigo: string | null; stock_actual: string | number | null } | null;
   observaciones?: string | null;
   adjuntos?: { id: number; nombre_archivo: string; r2_key: string; tamano: number }[];
@@ -373,7 +380,10 @@ export default function RequerimientosPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
+      // Carga TODOS los requerimientos de una sola vez (limit alto). Sin esto,
+      // con limit=100 default el usuario solo veía la primera página y algunos
+      // items externos no aparecían. La paginación pasa a ser client-side.
+      const params = new URLSearchParams({ page: "1", limit: "10000" });
       if (search) params.set("search", search);
       if (filterOt) params.set("ot", filterOt);
       if (filterStatusReq) params.set("status_req", filterStatusReq);
@@ -400,7 +410,7 @@ export default function RequerimientosPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, search, filterOt, filterStatusReq, filterStatusCot, filterStatusOc, filterTipo, filterProveedor, filterFechas, rangoSol, rangoReq, soloAprobadosSinOC, fetchStats]);
+  }, [search, filterOt, filterStatusReq, filterStatusCot, filterStatusOc, filterTipo, filterProveedor, filterFechas, rangoSol, rangoReq, soloAprobadosSinOC, fetchStats]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -608,7 +618,13 @@ export default function RequerimientosPage() {
   const grupos = useMemo<GrupoReq[]>(() => {
     const map = new Map<string, RequerimientoRow[]>();
     for (const r of rows) {
-      const key = r.nro_req ?? `__sin_req_${r.id}`;
+      // Key compuesta: incluye ot_id + ot_interna para que reqs con el mismo
+      // nro_req pero de distintas OTs (externa vs interna) no se fusionen.
+      // Antes se usaba sólo `r.nro_req` y los items externos se "perdían" al
+      // colisionar con internos del mismo nro.
+      const otiId = r.orden_trabajo_interna?.id ?? "_";
+      const baseKey = r.nro_req ?? `__sin_req_${r.id}`;
+      const key = `${r.ot_id ?? "_"}|${otiId}|${baseKey}`;
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(r);
     }
@@ -633,7 +649,9 @@ export default function RequerimientosPage() {
       }
       return {
         key,
-        nro_req: key.startsWith("__sin_req_") ? null : key,
+        // Tomamos el nro_req del primer item (todos en el grupo lo comparten
+        // por construcción de la key compuesta arriba).
+        nro_req: first.nro_req,
         ot_id: first.ot_id,
         orden_trabajo: first.orden_trabajo,
         fecha_solicitud: fSol,
@@ -707,13 +725,28 @@ export default function RequerimientosPage() {
     numeracionColumn<GrupoReq>({ current: page, pageSize }),
     {
       title: "OT", key: "ot", width: 110, fixed: "left", align: "center",
-      ...filtroProyectado(gruposFiltrados, (g) => g.orden_trabajo?.ot ?? null),
-      sorter: (a, b) => (a.orden_trabajo?.ot ?? "").localeCompare(b.orden_trabajo?.ot ?? ""),
-      render: (_, g) => g.orden_trabajo?.ot ? (
-        <a onClick={() => router.push(`/ordenes-trabajo/${g.ot_id}`)} style={{ fontSize: 11 }}>
-          <Tag color={brand.navy} style={{ margin: 0 }}>{g.orden_trabajo.ot}</Tag>
-        </a>
-      ) : <Tag>#{g.ot_id}</Tag>,
+      ...filtroProyectado(gruposFiltrados, (g) => g.orden_trabajo?.ot ?? g.items[0]?.orden_trabajo_interna?.ot ?? null),
+      sorter: (a, b) => (a.orden_trabajo?.ot ?? a.items[0]?.orden_trabajo_interna?.ot ?? "").localeCompare(b.orden_trabajo?.ot ?? b.items[0]?.orden_trabajo_interna?.ot ?? ""),
+      render: (_, g) => {
+        // OT externa.
+        if (g.orden_trabajo?.ot) {
+          return (
+            <a onClick={() => router.push(`/ordenes-trabajo/${g.ot_id}`)} style={{ fontSize: 11 }}>
+              <Tag color={brand.navy} style={{ margin: 0 }}>{g.orden_trabajo.ot}</Tag>
+            </a>
+          );
+        }
+        // OT interna (cuando la externa es null).
+        const oti = g.items[0]?.orden_trabajo_interna;
+        if (oti?.ot) {
+          return (
+            <a onClick={() => router.push(`/ordenes-trabajo-internas/${oti.id}`)} style={{ fontSize: 11 }}>
+              <Tag color={brand.cyan} style={{ margin: 0 }}>{oti.ot}</Tag>
+            </a>
+          );
+        }
+        return <Tag>#{g.ot_id}</Tag>;
+      },
     },
     {
       title: "Nro Req", key: "nro", width: 160, align: "center",

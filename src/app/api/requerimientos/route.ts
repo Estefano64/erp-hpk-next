@@ -88,6 +88,12 @@ export async function GET(req: NextRequest) {
               codigo_reparacion: { select: { codigo: true, descripcion: true } },
             },
           },
+          // Para items que pertenecen a una OT interna (orden_trabajo es null),
+          // traemos los datos de la OT interna así el frontend puede renderear
+          // OT-INT-XXXX en lugar de mostrar la fila vacía o desaparecida.
+          orden_trabajo_interna: {
+            select: { id: true, ot: true, descripcion: true },
+          },
           material: { select: { codigo: true, descripcion: true, unidad_medida_codigo: true, stock_actual: true } },
           status_requerimiento: { select: { codigo: true, nombre: true } },
           status_cotizacion: { select: { codigo: true, nombre: true } },
