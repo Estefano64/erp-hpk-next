@@ -87,9 +87,11 @@ interface RequerimientoApi {
   orden_trabajo: {
     id: number;
     ot: string | null;
+    descripcion: string | null;
+    cod_rep_flota: string | null;
     cliente: { codigo: string; razon_social: string; nombre_comercial: string | null } | null;
   } | null;
-  material: { codigo: string; descripcion: string; unidad_medida_codigo: string | null; stock_actual?: string | number | null; np?: string | null } | null;
+  material: { codigo: string; descripcion: string; unidad_medida_codigo: string | null; stock_actual?: string | number | null; np?: string | null; precio?: string | number | null; moneda_codigo?: string | null } | null;
   proveedor: { id: number; razon_social: string } | null;
   compra: { id: number; numero_po: string } | null;
   status_requerimiento: { codigo: string; nombre: string } | null;
@@ -103,6 +105,10 @@ interface Requerimiento {
   id: number;
   ot_id: number;
   numero_ot: string | null;
+  // Descripción de la OT (no del material) — proviene de OrdenTrabajo.descripcion.
+  descripcion_ot: string | null;
+  // Flota de la OT — proviene de OrdenTrabajo.cod_rep_flota.
+  flota: string | null;
   material_id: number | null;
   material_codigo: string | null;
   material_nombre: string | null;
@@ -128,6 +134,11 @@ interface Requerimiento {
   po_id: number | null;
   proveedor_nombre: string | null;
   precio_unitario: number | null;
+  // Precio unitario estimado (catálogo del material). Distinto del precio_unitario,
+  // que es el precio efectivo del proveedor cuando ya hay cotización u OC.
+  precio_estimado: number | null;
+  // Moneda del precio estimado (catálogo). Puede diferir de `moneda`.
+  moneda_estimada: string | null;
   moneda: string | null;
   cliente_nombre: string | null;
   observaciones?: string | null;
@@ -140,6 +151,8 @@ function normalize(r: RequerimientoApi): Requerimiento {
     id: r.id,
     ot_id: r.ot_id,
     numero_ot: r.orden_trabajo?.ot ?? null,
+    descripcion_ot: r.orden_trabajo?.descripcion ?? null,
+    flota: r.orden_trabajo?.cod_rep_flota ?? null,
     material_id: r.material_id,
     material_codigo: r.material?.codigo ?? r.material_codigo ?? null,
     material_nombre: r.material?.descripcion ?? null,
@@ -164,6 +177,8 @@ function normalize(r: RequerimientoApi): Requerimiento {
     po_id: r.po_id,
     proveedor_nombre: r.proveedor?.razon_social ?? null,
     precio_unitario: r.precio_unitario != null ? Number(r.precio_unitario) : null,
+    precio_estimado: r.material?.precio != null ? Number(r.material.precio) : null,
+    moneda_estimada: r.material?.moneda_codigo ?? null,
     moneda: r.moneda,
     cliente_nombre: r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? null,
     observaciones: r.observaciones,
@@ -742,6 +757,32 @@ function RequerimientosDetalleInner() {
       render: (v) => (v ? <Tag color={brand.navy}>{v}</Tag> : "-"),
     },
     {
+      key: "descripcion_ot",
+      title: "Descripción OT",
+      dataIndex: "descripcion_ot",
+      width: 220,
+      ellipsis: true,
+      filters: obtenerValoresUnicos("descripcion_ot"),
+      filterSearch: true,
+      onFilter: (value, r) => r.descripcion_ot === value,
+      sorter: (a, b) => (a.descripcion_ot ?? "").localeCompare(b.descripcion_ot ?? ""),
+      render: (v: string | null) => v ?? <span style={{ color: "#bbb" }}>—</span>,
+    },
+    {
+      key: "flota",
+      title: "Flota",
+      dataIndex: "flota",
+      width: 130,
+      ellipsis: true,
+      filters: obtenerValoresUnicos("flota"),
+      filterSearch: true,
+      onFilter: (value, r) => r.flota === value,
+      sorter: (a, b) => (a.flota ?? "").localeCompare(b.flota ?? ""),
+      render: (v: string | null) => v
+        ? <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag>
+        : <span style={{ color: "#bbb" }}>—</span>,
+    },
+    {
       key: "status_req",
       title: "Estado REQ",
       dataIndex: "status_req",
@@ -777,7 +818,13 @@ function RequerimientosDetalleInner() {
       filterSearch: true,
       onFilter: (value, r) => r.nro_req === value,
     },
-    { key: "item_req", title: "Item", dataIndex: "item_req", width: 55, align: "center", sorter: (a, b) => (a.item_req || 0) - (b.item_req || 0) },
+    {
+      key: "item_req", title: "Item", dataIndex: "item_req", width: 55, align: "center",
+      sorter: (a, b) => (a.item_req || 0) - (b.item_req || 0),
+      filters: obtenerValoresUnicos("item_req"),
+      filterSearch: true,
+      onFilter: (value, r) => String(r.item_req ?? "") === String(value),
+    },
     {
       key: "tipo_codigo",
       title: "Tipo",
@@ -806,6 +853,10 @@ function RequerimientosDetalleInner() {
       title: "Descripción",
       width: 260,
       ellipsis: true,
+      filters: obtenerValoresUnicos("material_nombre"),
+      filterSearch: true,
+      onFilter: (value, r) => (r.material_nombre ?? r.descripcion ?? "") === value,
+      sorter: (a, b) => (a.material_nombre ?? a.descripcion ?? "").localeCompare(b.material_nombre ?? b.descripcion ?? ""),
       render: (_: unknown, r: Requerimiento) => (
         <Popover content={popoverContent(r)} placement="right" mouseEnterDelay={0.3} trigger="hover">
           <div style={{ lineHeight: 1.2, cursor: "help" }}>
@@ -844,6 +895,9 @@ function RequerimientosDetalleInner() {
       width: 70,
       align: "center",
       sorter: (a, b) => Number(a.cantidad) - Number(b.cantidad),
+      filters: obtenerValoresUnicos("cantidad"),
+      filterSearch: true,
+      onFilter: (value, r) => String(r.cantidad) === String(value),
       render: (v: number, r: Requerimiento) => {
         const canSplit = Number(v) >= 2 && r.po_id == null;
         return (
@@ -873,7 +927,12 @@ function RequerimientosDetalleInner() {
       onFilter: (value, r) => r.np === value,
       render: (v: string | null) => v ?? <span style={{ color: "#bbb" }}>—</span>,
     },
-    { key: "unidad_medida", title: "UM", dataIndex: "unidad_medida", width: 55, align: "center" },
+    {
+      key: "unidad_medida", title: "UM", dataIndex: "unidad_medida", width: 55, align: "center",
+      filters: obtenerValoresUnicos("unidad_medida"),
+      filterSearch: true,
+      onFilter: (value, r) => r.unidad_medida === value,
+    },
     {
       key: "cliente_nombre",
       title: "Cliente",
@@ -905,12 +964,29 @@ function RequerimientosDetalleInner() {
       onFilter: (value, r) => r.proveedor_nombre === value,
     },
     {
+      key: "precio_estimado",
+      title: "P. Estimado",
+      dataIndex: "precio_estimado",
+      width: 100,
+      align: "right",
+      sorter: (a, b) => Number(a.precio_estimado || 0) - Number(b.precio_estimado || 0),
+      filters: obtenerValoresUnicos("precio_estimado"),
+      filterSearch: true,
+      onFilter: (value, r) => String(r.precio_estimado ?? "") === String(value),
+      render: (v: number | null, r: Requerimiento) => v != null
+        ? <Text style={{ fontSize: 11 }}>{Number(v).toFixed(2)} <Text type="secondary" style={{ fontSize: 9 }}>{r.moneda_estimada ?? "USD"}</Text></Text>
+        : <Text type="secondary">—</Text>,
+    },
+    {
       key: "precio_unitario",
       title: "P. Unit.",
       dataIndex: "precio_unitario",
       width: 80,
       align: "right",
       sorter: (a, b) => Number(a.precio_unitario || 0) - Number(b.precio_unitario || 0),
+      filters: obtenerValoresUnicos("precio_unitario"),
+      filterSearch: true,
+      onFilter: (value, r) => String(r.precio_unitario ?? "") === String(value),
       render: (v: number | null) => (v != null ? Number(v).toFixed(2) : "-"),
     },
     {
@@ -928,6 +1004,10 @@ function RequerimientosDetalleInner() {
       dataIndex: "fecha_solicitud",
       width: 105,
       sorter: (a, b) => (a.fecha_solicitud || "").localeCompare(b.fecha_solicitud || ""),
+      filters: [...new Set(allData.map((r) => r.fecha_solicitud ? formatDateOnly(r.fecha_solicitud) : null).filter(Boolean) as string[])]
+        .sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => (r.fecha_solicitud ? formatDateOnly(r.fecha_solicitud) : "") === value,
       render: (v: string | null) => (v ? formatDateOnly(v) : "-"),
     },
     {
@@ -936,6 +1016,10 @@ function RequerimientosDetalleInner() {
       dataIndex: "fecha_requerida",
       width: 105,
       sorter: (a, b) => (a.fecha_requerida || "").localeCompare(b.fecha_requerida || ""),
+      filters: [...new Set(allData.map((r) => r.fecha_requerida ? formatDateOnly(r.fecha_requerida) : null).filter(Boolean) as string[])]
+        .sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, r) => (r.fecha_requerida ? formatDateOnly(r.fecha_requerida) : "") === value,
       render: (v: string | null) => (v ? formatDateOnly(v) : "-"),
     },
     {

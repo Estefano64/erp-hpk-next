@@ -72,6 +72,8 @@ interface RequerimientoRow {
   orden_trabajo: {
     id: number;
     ot: string | null;
+    descripcion: string | null;
+    cod_rep_flota: string | null;
     cliente: { codigo: string; razon_social: string; nombre_comercial: string | null } | null;
     codigo_reparacion: { codigo: string; descripcion: string } | null;
   } | null;
@@ -82,7 +84,7 @@ interface RequerimientoRow {
     ot: string | null;
     descripcion: string | null;
   } | null;
-  material: { codigo: string; descripcion: string; unidad_medida_codigo: string | null; stock_actual: string | number | null } | null;
+  material: { codigo: string; descripcion: string; unidad_medida_codigo: string | null; stock_actual: string | number | null; precio: string | number | null; moneda_codigo: string | null } | null;
   observaciones?: string | null;
   adjuntos?: { id: number; nombre_archivo: string; r2_key: string; tamano: number }[];
 }
@@ -595,6 +597,10 @@ export default function RequerimientosPage() {
     fecha_entrega_esperada: string | null;
     total_items: number;
     cantidad_total: number;
+    // Total estimado del grupo = Σ (cantidad × material.precio).
+    // Si los items tienen monedas distintas, se reporta el total de cada una.
+    total_estimado_usd: number;
+    total_estimado_sol: number;
     items: RequerimientoRow[];
     // Agregados de status (códigos únicos presentes)
     estados_req: string[];
@@ -634,6 +640,17 @@ export default function RequerimientosPage() {
       const setUniq = (vals: (string | undefined | null)[]) =>
         Array.from(new Set(vals.filter((v): v is string => !!v)));
       const cantidad_total = items.reduce((s, i) => s + Number(i.cantidad), 0);
+      // Precio estimado por moneda (USD vs SOL). Tomamos material.precio del catálogo.
+      let total_estimado_usd = 0;
+      let total_estimado_sol = 0;
+      for (const i of items) {
+        const precioCat = Number(i.material?.precio ?? 0);
+        if (!Number.isFinite(precioCat) || precioCat <= 0) continue;
+        const subt = precioCat * Number(i.cantidad);
+        const mon = (i.material?.moneda_codigo ?? "USD").toUpperCase();
+        if (mon === "SOL" || mon === "PEN") total_estimado_sol += subt;
+        else total_estimado_usd += subt;
+      }
       const numerosPo = setUniq(items.map((i) => i.compra?.numero_po ?? null));
       const proveedores = setUniq(items.map((i) => i.proveedor?.razon_social ?? null));
       let fSol: string | null = null;
@@ -659,6 +676,8 @@ export default function RequerimientosPage() {
         fecha_entrega_esperada: fEnt,
         total_items: items.length,
         cantidad_total,
+        total_estimado_usd,
+        total_estimado_sol,
         items,
         estados_req: setUniq(items.map((i) => i.status_requerimiento?.codigo)),
         estados_cot: setUniq(items.map((i) => i.status_cotizacion?.codigo)),
@@ -782,6 +801,22 @@ export default function RequerimientosPage() {
       ),
     },
     {
+      title: "Descripción OT", key: "desc_ot", width: 220, ellipsis: true, align: "left",
+      ...filtroProyectado(gruposFiltrados, (g) => g.orden_trabajo?.descripcion ?? null),
+      sorter: (a, b) => (a.orden_trabajo?.descripcion ?? "").localeCompare(b.orden_trabajo?.descripcion ?? ""),
+      render: (_, g) => g.orden_trabajo?.descripcion
+        ? <Text style={{ fontSize: 11 }}>{g.orden_trabajo.descripcion}</Text>
+        : <Text type="secondary">—</Text>,
+    },
+    {
+      title: "Flota", key: "flota", width: 130, ellipsis: true, align: "left",
+      ...filtroProyectado(gruposFiltrados, (g) => g.orden_trabajo?.cod_rep_flota ?? null),
+      sorter: (a, b) => (a.orden_trabajo?.cod_rep_flota ?? "").localeCompare(b.orden_trabajo?.cod_rep_flota ?? ""),
+      render: (_, g) => g.orden_trabajo?.cod_rep_flota
+        ? <Tag color="geekblue" style={{ margin: 0 }}>{g.orden_trabajo.cod_rep_flota}</Tag>
+        : <Text type="secondary">—</Text>,
+    },
+    {
       title: "Proveedor", key: "prov", width: 140, ellipsis: true, align: "left",
       ...filtroPorColumna(gruposFiltrados, "proveedor_nombre"),
       sorter: (a, b) => (a.proveedor_nombre ?? "").localeCompare(b.proveedor_nombre ?? ""),
@@ -799,6 +834,22 @@ export default function RequerimientosPage() {
       ],
       onFilter: (value, g) => g.estados_req.includes(String(value)),
       render: (_, g) => renderStatusResumen(g.estados_req, REQ_COLOR, reqLabel),
+    },
+    {
+      title: "Precio Estimado", key: "precio_estimado", width: 130, align: "right",
+      sorter: (a, b) =>
+        (a.total_estimado_usd + a.total_estimado_sol) - (b.total_estimado_usd + b.total_estimado_sol),
+      render: (_, g) => {
+        const hasUsd = g.total_estimado_usd > 0;
+        const hasSol = g.total_estimado_sol > 0;
+        if (!hasUsd && !hasSol) return <Text type="secondary">—</Text>;
+        return (
+          <Flex vertical gap={2} align="end" style={{ lineHeight: 1.1 }}>
+            {hasUsd && <Text style={{ fontSize: 11 }}>USD {fmtMonto(g.total_estimado_usd)}</Text>}
+            {hasSol && <Text style={{ fontSize: 11 }}>SOL {fmtMonto(g.total_estimado_sol)}</Text>}
+          </Flex>
+        );
+      },
     },
     {
       title: "OC", key: "oc", width: 140, align: "center",
@@ -830,6 +881,7 @@ export default function RequerimientosPage() {
         </Tooltip>
       ),
       key: "fsol", width: 100, align: "center",
+      ...filtroProyectado(gruposFiltrados, (g) => g.fecha_solicitud ? formatDateOnlyShort(g.fecha_solicitud) : null),
       sorter: (a, b) => (a.fecha_solicitud ? new Date(a.fecha_solicitud).getTime() : 0)
         - (b.fecha_solicitud ? new Date(b.fecha_solicitud).getTime() : 0),
       render: (_, g) => g.fecha_solicitud
@@ -843,6 +895,7 @@ export default function RequerimientosPage() {
         </Tooltip>
       ),
       key: "freq", width: 100, align: "center",
+      ...filtroProyectado(gruposFiltrados, (g) => g.fecha_requerida ? formatDateOnlyShort(g.fecha_requerida) : null),
       sorter: (a, b) => (a.fecha_requerida ? new Date(a.fecha_requerida).getTime() : 0)
         - (b.fecha_requerida ? new Date(b.fecha_requerida).getTime() : 0),
       render: (_, g) => g.fecha_requerida
@@ -851,6 +904,7 @@ export default function RequerimientosPage() {
     },
     {
       title: "F. Entrega", key: "fent", width: 100, align: "center",
+      ...filtroProyectado(gruposFiltrados, (g) => g.fecha_entrega_esperada ? formatDateOnlyShort(g.fecha_entrega_esperada) : null),
       sorter: (a, b) => (a.fecha_entrega_esperada ? new Date(a.fecha_entrega_esperada).getTime() : 0)
         - (b.fecha_entrega_esperada ? new Date(b.fecha_entrega_esperada).getTime() : 0),
       render: (_, g) => g.fecha_entrega_esperada
