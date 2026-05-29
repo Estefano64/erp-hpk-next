@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   Typography,
@@ -111,6 +111,10 @@ export default function ComprasPage() {
   ]);
   const { rango: rangoSolicitud, setRango: setRangoSolicitud } = useRangoFechas();
   const { rango: rangoEntrega, setRango: setRangoEntrega } = useRangoFechas();
+  // Filas después de TODOS los filtros (búsqueda + rangos de fecha + filtros de
+  // columna). La setea el Table.onChange. Si está null, el export cae a
+  // `data` filtrada solo por los rangos de fecha (sin filtros de columna).
+  const [vistaActual, setVistaActual] = useState<Compra[] | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -164,10 +168,29 @@ export default function ComprasPage() {
   // sin IGV en este listado.
   const totalValor = data.reduce((s, c) => s + Number(c.subtotal || 0), 0);
 
+  // Filas que efectivamente se muestran en la tabla (rangos aplicados).
+  // El Table.onChange aplica encima los filtros de columna y lo persistimos
+  // en `vistaActual` para que el export respete esos filtros también.
+  const filasMostradas = useMemo(
+    () => data.filter((r) =>
+      dentroDeRango(r, "fecha_solicitud", rangoSolicitud) &&
+      dentroDeRango(r, "fecha_entrega_esperada", rangoEntrega)),
+    [data, rangoSolicitud, rangoEntrega],
+  );
+
+  // Reset cuando cambian datos o rangos: el Table reaplica filtros sobre el
+  // nuevo dataset y vuelve a avisarnos vía onChange.
+  useEffect(() => { setVistaActual(null); }, [filasMostradas]);
+
   const exportarExcel = async () => {
     try {
       const XLSX = await import("xlsx");
-      const rows = data.map((c) => ({
+      const dataset = vistaActual ?? filasMostradas;
+      if (dataset.length === 0) {
+        message.warning("No hay datos para exportar con los filtros actuales.");
+        return;
+      }
+      const rows = dataset.map((c) => ({
         "Nro OC": c.numero_po,
         Estado: c.estado,
         Proveedor: c.proveedor_nombre ?? "",
@@ -596,10 +619,7 @@ export default function ComprasPage() {
           rowKey="id"
           columns={visibleColumns(columnsResizable, ocultas)}
           components={tableComponents}
-          dataSource={data.filter((r) =>
-            dentroDeRango(r, "fecha_solicitud", rangoSolicitud) &&
-            dentroDeRango(r, "fecha_entrega_esperada", rangoEntrega)
-          )}
+          dataSource={filasMostradas}
           loading={loading}
           pagination={paginacionEstandar({
             current: page,
@@ -611,6 +631,7 @@ export default function ComprasPage() {
           scroll={{ x: 1500 }}
           sticky={{ offsetHeader: 56, offsetScroll: 0 }}
           size="small"
+          onChange={(_p, _f, _s, extra) => setVistaActual(extra.currentDataSource)}
         />
       </TableDragWrapper>
     </>

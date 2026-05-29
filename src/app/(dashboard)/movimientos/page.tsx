@@ -180,6 +180,9 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
   const [desde, setDesde] = useState<Dayjs | null>(null);
   const [hasta, setHasta] = useState<Dayjs | null>(null);
   const { ocultas, setOcultas } = useColumnasOcultas("movimientos-historial-cols-v1");
+  // Filas después de TODOS los filtros (search + tipo/rango + filtros de
+  // columna). La setea Table.onChange; el export la usa para respetar todo.
+  const [vistaActual, setVistaActual] = useState<Movimiento[] | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -213,10 +216,19 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
     );
   });
 
+  // Reset vistaActual cuando cambia el dataset visible — el Table reaplica
+  // sus filtros de columna sobre el nuevo data y vuelve a llamar onChange.
+  useEffect(() => { setVistaActual(null); }, [data, search]);
+
   const exportarMovExcel = async () => {
     try {
       const XLSX = await import("xlsx");
-      const rows = filtered.map((m) => ({
+      const dataset = vistaActual ?? filtered;
+      if (dataset.length === 0) {
+        message.warning("No hay datos para exportar con los filtros actuales.");
+        return;
+      }
+      const rows = dataset.map((m) => ({
         Fecha: formatDateOnly(m.fecha_movimiento),
         Tipo: m.tipo_movimiento,
         Código: m.material_codigo ?? "",
@@ -439,6 +451,7 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
           size="small"
           scroll={{ x: 1200 }}
           sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+          onChange={(_p, _f, _s, extra) => setVistaActual(extra.currentDataSource)}
         />
       </TableDragWrapper>
     </div>

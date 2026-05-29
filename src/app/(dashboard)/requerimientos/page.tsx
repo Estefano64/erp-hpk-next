@@ -232,6 +232,11 @@ export default function RequerimientosPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
   const { ocultas, setOcultas } = useColumnasOcultas("requerimientos-list-cols-v1");
+  // Grupos efectivamente visibles después de TODOS los filtros (rangos +
+  // filtros de columna). La setea Table.onChange; el export aplana sus items.
+  // Usamos un tipo mínimo porque la interfaz `GrupoReq` está declarada
+  // más abajo en este mismo componente — un tipo estructural sirve igual.
+  const [vistaActual, setVistaActual] = useState<readonly { items: RequerimientoRow[] }[] | null>(null);
   const { rango: rangoSol, setRango: setRangoSol } = useRangoFechas();
   const { rango: rangoReq, setRango: setRangoReq } = useRangoFechas();
   const [semanaSel, setSemanaSel] = useState<dayjs.Dayjs | null>(null);
@@ -550,10 +555,21 @@ export default function RequerimientosPage() {
   }
 
   // ── Export Excel ──
-  const exportarExcel = useCallback(async () => {
+  // Respeta TODOS los filtros visibles: si el user filtró por columna en la
+  // tabla, `vistaActual` tiene los grupos visibles; sino caemos a
+  // `gruposFiltrados` (rangos de fecha aplicados). Aplanamos los items.
+  // No usamos useCallback porque `gruposFiltrados` está declarado más abajo
+  // (temporal dead zone si lo metemos en deps array eagerly).
+  const exportarExcel = async () => {
     try {
       const XLSX = await import("xlsx");
-      const data = rows.map((r) => ({
+      const baseGroups = vistaActual ?? gruposFiltrados;
+      const dataset = baseGroups.flatMap((g) => g.items);
+      if (dataset.length === 0) {
+        messageApi.warning("No hay datos para exportar con los filtros actuales.");
+        return;
+      }
+      const data = dataset.map((r) => ({
         OT: r.orden_trabajo?.ot ?? "",
         "Estado REQ": r.status_requerimiento?.nombre ?? r.status_requerimiento_codigo ?? "",
         "Estado OC": r.status_oc?.nombre ?? r.status_oc_codigo ?? "",
@@ -583,7 +599,7 @@ export default function RequerimientosPage() {
     } catch {
       messageApi.error("Error al exportar Excel");
     }
-  }, [rows, messageApi]);
+  };
 
   // ── Agrupación por nro_req ──
   // Cada grupo es un "Requerimiento" (header) con N items adentro.
@@ -719,6 +735,10 @@ export default function RequerimientosPage() {
     dentroDeRango(g, "fecha_solicitud", rangoSol) &&
     dentroDeRango(g, "fecha_requerida", rangoReq)
   ), [grupos, rangoSol, rangoReq]);
+
+  // Reset vistaActual cuando cambian los grupos base — el Table reaplica
+  // sus filtros de columna sobre el nuevo dataset y vuelve a llamar onChange.
+  useEffect(() => { setVistaActual(null); }, [gruposFiltrados]);
 
   // Helper local: filtros únicos sobre una proyección arbitraria (rutas anidadas).
   function filtroProyectado(
@@ -1565,6 +1585,7 @@ export default function RequerimientosPage() {
             })}
             scroll={{ x: 1500 }}
             sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+            onChange={(_p, _f, _s, extra) => setVistaActual(extra.currentDataSource)}
           />
         </TableDragWrapper>
       )}

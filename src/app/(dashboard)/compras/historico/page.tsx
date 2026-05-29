@@ -6,7 +6,7 @@ import {
   Tag, InputNumber, DatePicker, App, Tooltip,
 } from "antd";
 import dayjs, { Dayjs } from "dayjs";
-import { ReloadOutlined, SearchOutlined, FileSearchOutlined, EditOutlined } from "@ant-design/icons";
+import { ReloadOutlined, SearchOutlined, FileSearchOutlined, EditOutlined, FileExcelOutlined } from "@ant-design/icons";
 import type { ColumnsType, ColumnGroupType, ColumnType } from "antd/es/table/interface";
 import { brand } from "@/lib/theme";
 import {
@@ -47,6 +47,9 @@ export default function HistoricoComprasPage() {
   // Fecha de la cotización (editable, default a hoy).
   const [editFecha, setEditFecha] = useState<Dayjs>(dayjs());
   const { ocultas, setOcultas } = useColumnasOcultas("historico-matriz-cols-v1");
+  // Vista actual después de filtros de columna + sort (la setea el Table.onChange).
+  // Permite que el export Excel respete TODOS los filtros visibles, no solo la búsqueda libre.
+  const [vistaActual, setVistaActual] = useState<MatRow[] | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -64,6 +67,10 @@ export default function HistoricoComprasPage() {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Reset vistaActual cuando cambian datos/búsqueda: el Table reaplicará
+  // sus filtros de columna sobre el nuevo dataset y avisará vía onChange.
+  useEffect(() => { setVistaActual(null); }, [busqueda, materiales]);
 
   const filtradas = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
@@ -97,6 +104,77 @@ export default function HistoricoComprasPage() {
 
   const fmt = (n: number | null | undefined) =>
     n == null ? "—" : n.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // Descarga la matriz visible en Excel respetando filtros (búsqueda + filtros de columna).
+  // Genera 2 hojas:
+  //  - "Matriz": una fila por material, con un PU por proveedor (igual a lo que ve en pantalla)
+  //  - "Cotizaciones (long)": una fila por (material, proveedor) — pivoteable en Excel
+  const exportarExcel = async () => {
+    try {
+      const XLSX = await import("xlsx");
+      // Fuente: filas que pasan filtros de columna del Table (o filtradas por búsqueda si todavía no se interactuó).
+      const dataset = vistaActual ?? filtradas;
+      if (dataset.length === 0) {
+        message.warning("No hay datos para exportar con los filtros actuales.");
+        return;
+      }
+
+      // ── Hoja 1: matriz (1 fila por material, 1 columna por proveedor) ──
+      const matriz = dataset.map((m) => {
+        const row: Record<string, unknown> = {
+          "Código": m.codigo ?? "",
+          "N° Parte": m.np ?? "",
+          "Descripción": m.descripcion ?? "",
+          "Marca": m.marca ?? "",
+        };
+        for (const p of proveedores) {
+          const c = m.precios[String(p.id)];
+          row[`PU ${p.nombre}`] = c?.precio ?? null;
+        }
+        row["Precio mínimo"] = m.precio_minimo ?? null;
+        row["Proveedor ganador"] = m.proveedor_ganador ?? "";
+        row["Últ. compra ($)"] = m.ultima_compra_precio ?? null;
+        row["Últ. compra (fecha)"] = m.ultima_compra_fecha
+          ? new Date(m.ultima_compra_fecha).toLocaleDateString("es-PE")
+          : "";
+        row["Últ. compra (proveedor)"] = m.ultima_compra_prov ?? "";
+        return row;
+      });
+
+      // ── Hoja 2: formato long — pivoteable ──
+      const long: Array<Record<string, unknown>> = [];
+      for (const m of dataset) {
+        for (const p of proveedores) {
+          const c = m.precios[String(p.id)];
+          if (!c) continue;
+          long.push({
+            "Código": m.codigo ?? "",
+            "N° Parte": m.np ?? "",
+            "Descripción": m.descripcion ?? "",
+            "Marca": m.marca ?? "",
+            "Proveedor": p.nombre,
+            "Precio ($)": c.precio,
+            "Moneda": c.moneda,
+            "Origen": c.origen === "cotizacion" ? "Cotización manual" : "Precio de OC",
+            "Fecha": c.fecha ? new Date(c.fecha).toLocaleDateString("es-PE") : "",
+            "Es ganador": m.proveedor_ganador_id === p.id ? "Sí" : "",
+          });
+        }
+      }
+
+      const wb = XLSX.utils.book_new();
+      const wsMatriz = XLSX.utils.json_to_sheet(matriz);
+      const wsLong = XLSX.utils.json_to_sheet(long);
+      XLSX.utils.book_append_sheet(wb, wsMatriz, "Matriz");
+      XLSX.utils.book_append_sheet(wb, wsLong, "Cotizaciones (long)");
+      const stamp = dayjs().format("YYYYMMDD-HHmm");
+      XLSX.writeFile(wb, `Cotizaciones-${stamp}.xlsx`);
+      message.success(`Excel descargado (${dataset.length} repuestos · ${long.length} cotizaciones)`);
+    } catch (e) {
+      console.error(e);
+      message.error("Error al generar el Excel");
+    }
+  };
 
   // Columnas de identificación (fijas a la izquierda)
   const infoCols: ColumnsType<MatRow> = [
@@ -226,7 +304,18 @@ export default function HistoricoComprasPage() {
           <FileSearchOutlined style={{ marginRight: 8 }} />
           Listado de Repuestos — Precios Unitarios por Proveedor
         </Title>
-        <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>Refrescar</Button>
+        <Space>
+          <Tooltip title="Descarga lo que está visible en la tabla — respeta búsqueda y filtros de columna">
+            <Button
+              icon={<FileExcelOutlined />}
+              onClick={exportarExcel}
+              style={{ background: "#1d6f42", color: brand.white, borderColor: "#1d6f42" }}
+            >
+              Descargar Excel
+            </Button>
+          </Tooltip>
+          <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>Refrescar</Button>
+        </Space>
       </div>
       <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 12 }}>
         Matriz de precios. Cada celda muestra el precio de OC real o tu cotización manual (override). Hacé click en una celda para cotizar/editar — soporta cualquier número de proveedores. El proveedor con el menor precio se resalta en verde.
@@ -267,6 +356,7 @@ export default function HistoricoComprasPage() {
           page={page}
           pageSize={pageSize}
           onPageChange={(p, s) => { setPage(p); setPageSize(s); }}
+          onFilteredChange={setVistaActual}
         />
       )}
     </div>
@@ -274,7 +364,7 @@ export default function HistoricoComprasPage() {
 }
 
 function TablaHistorico({
-  columns, data, loading, page, pageSize, onPageChange,
+  columns, data, loading, page, pageSize, onPageChange, onFilteredChange,
 }: {
   columns: ColumnsType<MatRow>;
   data: MatRow[];
@@ -282,6 +372,7 @@ function TablaHistorico({
   page: number;
   pageSize: number;
   onPageChange: (p: number, s: number) => void;
+  onFilteredChange: (rows: MatRow[]) => void;
 }) {
   const { columnas, components, TableDragWrapper } = useColumnasRedimensionables<MatRow>(
     columns, "compras-historico-v1",
@@ -305,6 +396,9 @@ function TablaHistorico({
           onChange: onPageChange,
           label: "repuestos",
         })}
+        onChange={(_pagination, _filters, _sorter, extra) => {
+          onFilteredChange(extra.currentDataSource);
+        }}
       />
     </TableDragWrapper>
   );
