@@ -9,6 +9,7 @@ import {
   Button,
   Input,
   Select,
+  AutoComplete,
   Space,
   Tag,
   Modal,
@@ -437,7 +438,7 @@ export default function CodigosReparacionPage() {
           <Col xs={12} sm={6} md={4}>
             <Select
               placeholder="Tipo"
-              allowClear
+              allowClear showSearch optionFilterProp="label"
               style={{ width: "100%" }}
               value={filterTipo || undefined}
               onChange={(v) => { setFilterTipo(v ?? ""); setPage(1); }}
@@ -447,7 +448,7 @@ export default function CodigosReparacionPage() {
           <Col xs={12} sm={6} md={4}>
             <Select
               placeholder="Flota"
-              allowClear
+              allowClear showSearch optionFilterProp="label"
               style={{ width: "100%" }}
               value={filterFlota || undefined}
               onChange={(v) => { setFilterFlota(v ?? ""); setPage(1); }}
@@ -457,7 +458,7 @@ export default function CodigosReparacionPage() {
           <Col xs={12} sm={6} md={4}>
             <Select
               placeholder="Fabricante"
-              allowClear
+              allowClear showSearch optionFilterProp="label"
               style={{ width: "100%" }}
               value={filterFab || undefined}
               onChange={(v) => { setFilterFab(v ?? ""); setPage(1); }}
@@ -510,22 +511,31 @@ export default function CodigosReparacionPage() {
             </Col>
             <Col span={8}>
               <Form.Item name="tipo_codigo" label="Tipo" rules={[{ required: true, message: "Requerido" }]}>
-                <Select options={tipos.map((t) => ({ value: t.codigo, label: `${t.codigo} - ${t.nombre}` }))} />
+                <Select showSearch optionFilterProp="label" options={tipos.map((t) => ({ value: t.codigo, label: `${t.codigo} - ${t.nombre}` }))} />
               </Form.Item>
             </Col>
             <Col span={8}>
               <Form.Item name="categoria_codigo" label="Categoría" rules={[{ required: true, message: "Requerido" }]}>
-                <Select options={categorias.map((c) => ({ value: c.codigo, label: `${c.codigo} - ${c.nombre}` }))} />
+                <Select showSearch optionFilterProp="label" options={categorias.map((c) => ({ value: c.codigo, label: `${c.codigo} - ${c.nombre}` }))} />
               </Form.Item>
             </Col>
             <Col span={8}>
               <Form.Item name="flota_codigo" label="Flota" rules={[{ required: true, message: "Requerido" }]}>
-                <Select options={flotas.map((f) => ({ value: f.codigo, label: `${f.codigo} - ${f.nombre}` }))} />
+                {/* Combobox: se puede elegir una flota existente o escribir una
+                    nueva (se crea al vuelo en el catálogo al guardar). */}
+                <AutoComplete
+                  allowClear
+                  placeholder="Elegí o escribí una flota (p.ej. 980E)"
+                  options={flotas.map((f) => ({ value: f.codigo, label: `${f.codigo} - ${f.nombre}` }))}
+                  filterOption={(input, option) =>
+                    String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())
+                  }
+                />
               </Form.Item>
             </Col>
             <Col span={8}>
               <Form.Item name="fabricante_codigo" label="Fabricante">
-                <Select allowClear options={fabricantes.map((f) => ({ value: f.codigo, label: f.nombre }))} />
+                <Select showSearch optionFilterProp="label" allowClear options={fabricantes.map((f) => ({ value: f.codigo, label: f.nombre }))} />
               </Form.Item>
             </Col>
             <Col span={8}>
@@ -535,7 +545,7 @@ export default function CodigosReparacionPage() {
             </Col>
             <Col span={8}>
               <Form.Item name="posicion_codigo" label="Posición">
-                <Select allowClear options={posiciones.map((p) => ({ value: p.codigo, label: `${p.codigo} - ${p.nombre}` }))} />
+                <Select showSearch optionFilterProp="label" allowClear options={posiciones.map((p) => ({ value: p.codigo, label: `${p.codigo} - ${p.nombre}` }))} />
               </Form.Item>
             </Col>
             <Col span={12}>
@@ -545,7 +555,7 @@ export default function CodigosReparacionPage() {
             </Col>
             <Col span={12}>
               <Form.Item name="moneda_codigo" label="Moneda">
-                <Select allowClear options={monedas.map((m) => ({ value: m.codigo, label: m.codigo }))} />
+                <Select showSearch optionFilterProp="label" allowClear options={monedas.map((m) => ({ value: m.codigo, label: m.codigo }))} />
               </Form.Item>
             </Col>
           </Row>

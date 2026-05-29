@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { ensureFlotaCodigo } from "@/lib/flota";
 
 // GET — lista con filtros y paginación
 export async function GET(req: NextRequest) {
@@ -62,13 +63,19 @@ export async function POST(req: NextRequest) {
     const lastNum = last?.codigo ? parseInt(last.codigo.replace("CR-", ""), 10) : 0;
     const codigo = `CR-${String(lastNum + 1).padStart(4, "0")}`;
 
+    // Flota escrita a mano: si no existe en el catálogo, se crea al vuelo.
+    const flotaCodigo = await ensureFlotaCodigo(body.flota_codigo);
+    if (!flotaCodigo) {
+      return NextResponse.json({ error: "La flota es requerida" }, { status: 400 });
+    }
+
     const created = await prisma.codigoReparacion.create({
       data: {
         codigo,
         descripcion: body.descripcion,
         tipo_codigo: body.tipo_codigo,
         categoria_codigo: body.categoria_codigo,
-        flota_codigo: body.flota_codigo,
+        flota_codigo: flotaCodigo,
         fabricante_codigo: body.fabricante_codigo || null,
         np: body.np || null,
         posicion_codigo: body.posicion_codigo || null,
