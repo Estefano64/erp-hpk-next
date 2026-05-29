@@ -318,6 +318,9 @@ definirInv("SYNC1-SEMANA", "fecha_inicio y semana_plan quedan inconsistentes");
 definirInv("SYNC2-OVERLAP", "Tarea de la semana N no entra en el rango de esa semana");
 definirInv("SYNC3-SACAR", "Sacar de la semana no la manda al pool 'sin semana'");
 definirInv("SYNC4-EXTERNO", "Bulk 'Tercero' no marca trabajo_externo / no limpia equipo");
+definirInv("BULK1-AUTOMAQ", "Bulk operario no autocompleta la máquina asignada del técnico");
+definirInv("BULK2-NO-PISA", "Bulk operario pisa una máquina ya asignada en la fila");
+definirInv("BULK3-EXPLICITA", "Bulk con máquina explícita no respeta la elección");
 
 // ═════════════════════════════════════════════════════════════════════════
 // SUITE 1 — COLOCACIÓN (programación semanal)
@@ -533,6 +536,78 @@ definirInv("SYNC4-EXTERNO", "Bulk 'Tercero' no marca trabajo_externo / no limpia
   }
 }
 
+// ═════════════════════════════════════════════════════════════════════════
+// SUITE 5 — BULK: autoasignado de máquina al elegir operario (planificación)
+// ═════════════════════════════════════════════════════════════════════════
+{
+  // Catálogo de operarios con su equipo asignado.
+  const trabajadores: { nombre: string; equipo_codigo: string | null }[] = [
+    { nombre: "Juan Pérez", equipo_codigo: "TR-09" },
+    { nombre: "Pedro Gómez", equipo_codigo: null }, // operario sin máquina
+  ];
+
+  // Réplica de la lógica por fila de aplicarBulk (tras el fix).
+  function bulkFilaPatch(
+    r: Row,
+    bulkTecnico: string | undefined,
+    bulkMaquina: string | undefined,
+  ): Patch {
+    const patch: Patch = {};
+    if (bulkTecnico !== undefined) {
+      patch.tecnico = bulkTecnico ?? null;
+      if (bulkTecnico === "Tercero") {
+        patch.trabajo_externo = true;
+        if (bulkMaquina === undefined) patch.maquina = null;
+      } else if (bulkTecnico) {
+        patch.trabajo_externo = false;
+      }
+    }
+    if (bulkMaquina !== undefined) patch.maquina = bulkMaquina ?? null;
+
+    const autoMaquina =
+      bulkTecnico && bulkTecnico !== "Tercero" && bulkMaquina === undefined
+        ? (trabajadores.find((t) => t.nombre === bulkTecnico)?.equipo_codigo ?? null)
+        : null;
+
+    const filaPatch: Patch = { ...patch };
+    if (autoMaquina && !r.maquina) filaPatch.maquina = autoMaquina;
+    return filaPatch;
+  }
+
+  // BULK1: operario con máquina, fila SIN máquina → autocompleta.
+  {
+    totalCasos++;
+    const r = nuevaFila({ maquina: null });
+    const out = servidorPut(r, bulkFilaPatch(r, "Juan Pérez", undefined)).row!;
+    if (out.maquina !== "TR-09")
+      reportar("BULK1-AUTOMAQ", `fila sin máquina + operario Juan(TR-09) → maquina=${out.maquina}`);
+  }
+  // BULK2: operario con máquina, fila CON máquina → no la pisa.
+  {
+    totalCasos++;
+    const r = nuevaFila({ maquina: "TR-05" });
+    const out = servidorPut(r, bulkFilaPatch(r, "Juan Pérez", undefined)).row!;
+    if (out.maquina !== "TR-05")
+      reportar("BULK2-NO-PISA", `fila con TR-05 + operario Juan → maquina=${out.maquina} (debía quedar TR-05)`);
+  }
+  // BULK3: máquina explícita en el bulk → manda la elección, no la del operario.
+  {
+    totalCasos++;
+    const r = nuevaFila({ maquina: null });
+    const out = servidorPut(r, bulkFilaPatch(r, "Juan Pérez", "TR-02")).row!;
+    if (out.maquina !== "TR-02")
+      reportar("BULK3-EXPLICITA", `bulk maquina=TR-02 + operario Juan → maquina=${out.maquina}`);
+  }
+  // Operario sin máquina asignada: fila queda sin máquina (no rompe).
+  {
+    totalCasos++;
+    const r = nuevaFila({ maquina: null });
+    const out = servidorPut(r, bulkFilaPatch(r, "Pedro Gómez", undefined)).row!;
+    if (out.maquina !== null)
+      reportar("BULK1-AUTOMAQ", `operario sin equipo → maquina=${out.maquina} (esperaba null)`);
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Reporte
 // ─────────────────────────────────────────────────────────────────────────
@@ -541,6 +616,7 @@ const GRUPOS: { titulo: string; invs: string[] }[] = [
   { titulo: "2. FORM (planificación)", invs: ["FORM1-FIN-PARITY", "FORM2-HE-MANUAL", "FORM3-HE-RECHAZO", "FORM4-HH"] },
   { titulo: "3. FILTROS (planificación ↔ programación)", invs: ["FILT1-MULTI", "FILT2-SEMANA"] },
   { titulo: "4. SINCRONIZACIÓN", invs: ["SYNC1-SEMANA", "SYNC2-OVERLAP", "SYNC3-SACAR", "SYNC4-EXTERNO"] },
+  { titulo: "5. BULK (autoasignado de máquina)", invs: ["BULK1-AUTOMAQ", "BULK2-NO-PISA", "BULK3-EXPLICITA"] },
 ];
 
 console.log("\n══════════════════════════════════════════════════════════════════════");
