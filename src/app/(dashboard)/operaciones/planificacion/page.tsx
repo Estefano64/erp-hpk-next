@@ -855,7 +855,7 @@ export default function PlanificacionPage() {
         if (esTercero) {
           return (
             <Tooltip title="Tarea terciarizada: no aplica equipo del taller.">
-              <Select size="small" disabled placeholder="— (Tercero)" style={{ width: "100%" }} />
+              <Select showSearch optionFilterProp="label" size="small" disabled placeholder="— (Tercero)" style={{ width: "100%" }} />
             </Tooltip>
           );
         }
@@ -1107,7 +1107,7 @@ export default function PlanificacionPage() {
       filters: estadoValores, filterSearch: true,
       onFilter: (value, r) => (r.estado ?? "abierto") === value,
       render: (_, r) => (
-        <Select
+        <Select showSearch optionFilterProp="label"
           value={r.estado ?? "abierto"}
           onChange={(v) => updateField(r.id, { estado: v })}
           options={estados.map((e) => ({ value: e.codigo, label: e.nombre }))}
@@ -1260,7 +1260,7 @@ export default function PlanificacionPage() {
             />
           </Col>
           <Col xs={12} md={3}>
-            <Select placeholder="Estado" allowClear style={{ width: "100%" }}
+            <Select showSearch optionFilterProp="label" placeholder="Estado" allowClear style={{ width: "100%" }}
               value={filterEstado}
               onChange={setFilterEstado}
               options={estados.map((e) => ({ value: e.codigo, label: e.nombre }))}

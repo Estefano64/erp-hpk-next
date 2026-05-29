@@ -345,7 +345,7 @@ export default function NuevaOTPage() {
                 rules={[{ required: true, message: "Requerido" }]}
                 tooltip="Reparación: cilindro a reparar. Bien: venta de repuesto. Servicio: servicio facturado."
               >
-                <Select
+                <Select showSearch optionFilterProp="label"
                   placeholder="Seleccionar tipo"
                   options={tiposOT.map((t) => ({ value: t.codigo, label: t.nombre }))}
                 />
@@ -610,7 +610,7 @@ export default function NuevaOTPage() {
                 label="Atención Reparación"
                 rules={bloqueoBien ? [] : [{ required: true, message: "Requerido" }]}
               >
-                <Select
+                <Select showSearch optionFilterProp="label"
                   placeholder="Seleccionar"
                   disabled={bloqueoBien}
                   onChange={(v) => {
@@ -631,7 +631,7 @@ export default function NuevaOTPage() {
                 label="Tipo Reparación"
                 rules={bloqueoBien ? [] : [{ required: true, message: "Requerido" }]}
               >
-                <Select
+                <Select showSearch optionFilterProp="label"
                   placeholder="Seleccionar"
                   disabled={bloqueoBien}
                   options={tipoReparaciones.map((t) => ({ value: t.codigo, label: t.nombre }))}
@@ -644,7 +644,7 @@ export default function NuevaOTPage() {
                 label="Tipo Garantía"
                 rules={garantia ? [{ required: true, message: "Seleccioná un tipo" }] : []}
               >
-                <Select
+                <Select showSearch optionFilterProp="label"
                   placeholder={garantia ? "Seleccionar" : "NA"}
                   disabled={!garantia}
                   options={tipoGarantias
@@ -655,7 +655,7 @@ export default function NuevaOTPage() {
             </Col>
             <Col xs={12} md={6}>
               <Form.Item name="prioridad_atencion_codigo" label="Prioridad de Atención" rules={[{ required: true, message: "Requerido" }]}>
-                <Select
+                <Select showSearch optionFilterProp="label"
                   placeholder="Seleccionar"
                   options={prioridades.map((p) => ({ value: p.codigo, label: `${p.codigo} - ${p.nombre}` }))}
                 />

@@ -1069,7 +1069,7 @@ export default function AceptacionesPage() {
                   placeholder="0.00"
                   style={{ width: 180 }}
                 />
-                <Select
+                <Select showSearch optionFilterProp="label"
                   value={aprobarMoneda}
                   onChange={setAprobarMoneda}
                   style={{ width: 100 }}

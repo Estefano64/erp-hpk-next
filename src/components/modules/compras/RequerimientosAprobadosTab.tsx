@@ -571,7 +571,7 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
             </Col>
             <Col span={8}>
               <Form.Item name="moneda" label="Moneda" rules={[{ required: true }]}>
-                <Select options={[{ value: "USD", label: "USD" }, { value: "SOL", label: "SOL" }]} />
+                <Select showSearch optionFilterProp="label" options={[{ value: "USD", label: "USD" }, { value: "SOL", label: "SOL" }]} />
               </Form.Item>
             </Col>
           </Row>

@@ -730,7 +730,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
           <Row gutter={[16, 12]}>
             <Col xs={12} md={6}>
               <FieldLabel>Estado OT</FieldLabel>
-              <Select
+              <Select showSearch optionFilterProp="label"
                 style={{ width: "100%" }}
                 value={otStatus || undefined}
                 onChange={setOtStatus}
@@ -739,7 +739,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
             </Col>
             <Col xs={12} md={6}>
               <FieldLabel>Estado Recursos</FieldLabel>
-              <Select
+              <Select showSearch optionFilterProp="label"
                 style={{ width: "100%" }}
                 value={recursosStatus || undefined}
                 onChange={setRecursosStatus}
@@ -748,7 +748,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
             </Col>
             <Col xs={12} md={6}>
               <FieldLabel>Estado Taller</FieldLabel>
-              <Select
+              <Select showSearch optionFilterProp="label"
                 style={{ width: "100%" }}
                 value={tallerStatus || undefined}
                 onChange={setTallerStatus}
@@ -831,7 +831,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                 <Col xs={12} md={6}><Field label="Nro OT" value={ot.ot} /></Col>
                 <Col xs={12} md={6}>
                   <FieldLabel>Tipo OT</FieldLabel>
-                  <Select style={{ width: "100%" }} value={editData.tipo_codigo as string} onChange={(v) => setField("tipo_codigo", v)}
+                  <Select showSearch optionFilterProp="label" style={{ width: "100%" }} value={editData.tipo_codigo as string} onChange={(v) => setField("tipo_codigo", v)}
                     options={tiposOT.map((t) => ({ value: t.codigo, label: t.nombre }))} />
                 </Col>
                 <Col xs={12} md={6}>
@@ -1095,7 +1095,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
             <Row gutter={[16, 12]}>
               <Col xs={12} md={6}>
                 <FieldLabel>Atención Reparación</FieldLabel>
-                <Select
+                <Select showSearch optionFilterProp="label"
                   style={{ width: "100%" }}
                   disabled={bloqueoBien}
                   value={editData.atencion_reparacion_codigo as string}
@@ -1105,7 +1105,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
               </Col>
               <Col xs={12} md={6}>
                 <FieldLabel>Tipo Reparación</FieldLabel>
-                <Select
+                <Select showSearch optionFilterProp="label"
                   style={{ width: "100%" }}
                   disabled={bloqueoBien}
                   value={editData.tipo_reparacion_codigo as string}
@@ -1115,7 +1115,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
               </Col>
               <Col xs={12} md={6}>
                 <FieldLabel>Prioridad de Atención</FieldLabel>
-                <Select style={{ width: "100%" }} value={editData.prioridad_atencion_codigo as string}
+                <Select showSearch optionFilterProp="label" style={{ width: "100%" }} value={editData.prioridad_atencion_codigo as string}
                   onChange={(v) => setField("prioridad_atencion_codigo", v)}
                   options={prioridades.map((p) => ({ value: p.codigo, label: `${p.codigo} - ${p.nombre}` }))} />
               </Col>
@@ -1129,7 +1129,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
               </Col>
               <Col xs={12} md={6}>
                 <FieldLabel>Tipo Garantía</FieldLabel>
-                <Select style={{ width: "100%" }} disabled={isGarantia}
+                <Select showSearch optionFilterProp="label" style={{ width: "100%" }} disabled={isGarantia}
                   value={editData.tipo_garantia_codigo as string}
                   onChange={(v) => setField("tipo_garantia_codigo", v)}
                   options={tipoGarantias.map((t) => ({ value: t.codigo, label: t.nombre }))} />
@@ -1159,7 +1159,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                     }}
                     parser={(v) => Number((v ?? "").replace(/[^\d.]/g, "")) as 0}
                   />
-                  <Select
+                  <Select showSearch optionFilterProp="label"
                     placeholder="Moneda"
                     value={editData.moneda_cotizacion_codigo as string}
                     onChange={(v) => setField("moneda_cotizacion_codigo", v)}

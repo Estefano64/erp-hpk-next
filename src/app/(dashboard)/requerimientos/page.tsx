@@ -1390,7 +1390,7 @@ export default function RequerimientosPage() {
             />
           </Col>
           <Col xs={12} md={4}>
-            <Select
+            <Select showSearch optionFilterProp="label"
               placeholder="Estado REQ"
               value={filterStatusReq}
               onChange={(v) => { setFilterStatusReq(v); setPage(1); }}
@@ -1399,7 +1399,7 @@ export default function RequerimientosPage() {
             />
           </Col>
           <Col xs={12} md={3}>
-            <Select
+            <Select showSearch optionFilterProp="label"
               placeholder="Estado OC"
               value={filterStatusOc}
               onChange={(v) => { setFilterStatusOc(v); setPage(1); }}
@@ -1408,7 +1408,7 @@ export default function RequerimientosPage() {
             />
           </Col>
           <Col xs={12} md={3}>
-            <Select
+            <Select showSearch optionFilterProp="label"
               placeholder="Tipo"
               value={filterTipo}
               onChange={(v) => { setFilterTipo(v); setPage(1); }}

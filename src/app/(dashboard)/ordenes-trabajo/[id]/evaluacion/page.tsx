@@ -653,7 +653,7 @@ export default function EvaluacionPage() {
           <Row gutter={16}>
             <Col xs={24} md={8}>
               <Form.Item label="Modelo / Tipo de componente">
-                <Select
+                <Select showSearch optionFilterProp="label"
                   value={modeloEvaluacion}
                   onChange={setModeloEvaluacion}
                   disabled={modeloBloqueado || !puedeEditar}
@@ -702,7 +702,7 @@ export default function EvaluacionPage() {
             </Col>
             <Col xs={24} md={6}>
               <Form.Item label="Sistema de Medicion">
-                <Select
+                <Select showSearch optionFilterProp="label"
                   value={sistemaMedicion}
                   onChange={setSistemaMedicion}
                   disabled={!puedeEditar}

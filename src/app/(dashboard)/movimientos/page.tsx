@@ -375,7 +375,7 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
             />
           </Col>
           <Col xs={12} sm={6} md={4}>
-            <Select
+            <Select showSearch optionFilterProp="label"
               placeholder="Tipo"
               allowClear
               style={{ width: "100%" }}
@@ -790,7 +790,7 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
             />
           </Col>
           <Col xs={12} sm={6} md={4}>
-            <Select
+            <Select showSearch optionFilterProp="label"
               placeholder="Estado"
               allowClear
               style={{ width: "100%" }}
@@ -1306,7 +1306,7 @@ function TabSalida({ onRefresh }: { onRefresh: () => void }) {
                   name="tipo_ingreso"
                   tooltip="BIEN: mercadería física. SERVICIO: servicio facturado. CARGO DIRECTO: cargo a OT sin pasar por stock."
                 >
-                  <Select
+                  <Select showSearch optionFilterProp="label"
                     placeholder="Bien / Servicio / Cargo directo"
                     allowClear
                     options={[

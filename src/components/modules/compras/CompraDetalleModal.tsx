@@ -470,7 +470,7 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
               <Descriptions.Item label="Moneda">{compra.moneda}</Descriptions.Item>
               <Descriptions.Item label="Estado">
                 {editing ? (
-                  <Select
+                  <Select showSearch optionFilterProp="label"
                     value={estado}
                     onChange={setEstado}
                     style={{ width: 150 }}

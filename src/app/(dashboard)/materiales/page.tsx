@@ -578,7 +578,7 @@ export default function MaterialesPage() {
             />
           </Col>
           <Col xs={12} sm={6} md={3}>
-            <Select
+            <Select showSearch optionFilterProp="label"
               placeholder="Planta"
               allowClear
               style={{ width: "100%" }}
@@ -588,7 +588,7 @@ export default function MaterialesPage() {
             />
           </Col>
           <Col xs={12} sm={6} md={3}>
-            <Select
+            <Select showSearch optionFilterProp="label"
               placeholder="Área"
               allowClear
               style={{ width: "100%" }}
@@ -598,7 +598,7 @@ export default function MaterialesPage() {
             />
           </Col>
           <Col xs={12} sm={6} md={3}>
-            <Select
+            <Select showSearch optionFilterProp="label"
               placeholder="Categoría"
               allowClear
               style={{ width: "100%" }}
@@ -608,7 +608,7 @@ export default function MaterialesPage() {
             />
           </Col>
           <Col xs={12} sm={6} md={3}>
-            <Select
+            <Select showSearch optionFilterProp="label"
               placeholder="Clasificación"
               allowClear
               style={{ width: "100%" }}
@@ -618,7 +618,7 @@ export default function MaterialesPage() {
             />
           </Col>
           <Col xs={12} sm={6} md={3}>
-            <Select
+            <Select showSearch optionFilterProp="label"
               placeholder="Fabricante"
               allowClear
               style={{ width: "100%" }}
@@ -709,32 +709,32 @@ export default function MaterialesPage() {
             </Col>
             <Col span={8}>
               <Form.Item name="planta_codigo" label="Planta" rules={[{ required: true, message: "Campo obligatorio" }]}>
-                <Select options={plantas.map((p) => ({ value: p.codigo, label: `${p.codigo} - ${p.nombre}` }))} />
+                <Select showSearch optionFilterProp="label" options={plantas.map((p) => ({ value: p.codigo, label: `${p.codigo} - ${p.nombre}` }))} />
               </Form.Item>
             </Col>
             <Col span={8}>
               <Form.Item name="area_codigo" label="Área" rules={[{ required: true, message: "Campo obligatorio" }]}>
-                <Select options={areas.map((a) => ({ value: a.codigo, label: `${a.codigo} - ${a.nombre}` }))} />
+                <Select showSearch optionFilterProp="label" options={areas.map((a) => ({ value: a.codigo, label: `${a.codigo} - ${a.nombre}` }))} />
               </Form.Item>
             </Col>
             <Col span={8}>
               <Form.Item name="categoria_codigo" label="Categoría" rules={[{ required: true, message: "Campo obligatorio" }]}>
-                <Select options={categorias.map((c) => ({ value: c.codigo, label: `${c.codigo} - ${c.nombre}` }))} />
+                <Select showSearch optionFilterProp="label" options={categorias.map((c) => ({ value: c.codigo, label: `${c.codigo} - ${c.nombre}` }))} />
               </Form.Item>
             </Col>
             <Col span={8}>
               <Form.Item name="clasificacion_codigo" label="Clasificación" rules={[{ required: true, message: "Campo obligatorio" }]}>
-                <Select options={clasificaciones.map((c) => ({ value: c.codigo, label: `${c.codigo} - ${c.nombre}` }))} />
+                <Select showSearch optionFilterProp="label" options={clasificaciones.map((c) => ({ value: c.codigo, label: `${c.codigo} - ${c.nombre}` }))} />
               </Form.Item>
             </Col>
             <Col span={8}>
               <Form.Item name="unidad_medida_codigo" label="Und. Medida" rules={[{ required: true, message: "Campo obligatorio" }]}>
-                <Select options={unidades.map((u) => ({ value: u.codigo, label: `${u.codigo} - ${u.nombre}` }))} />
+                <Select showSearch optionFilterProp="label" options={unidades.map((u) => ({ value: u.codigo, label: `${u.codigo} - ${u.nombre}` }))} />
               </Form.Item>
             </Col>
             <Col span={8}>
               <Form.Item name="fabricante_codigo" label="Fabricante">
-                <Select allowClear options={fabricantes.map((f) => ({ value: f.codigo, label: f.nombre }))} />
+                <Select showSearch optionFilterProp="label" allowClear options={fabricantes.map((f) => ({ value: f.codigo, label: f.nombre }))} />
               </Form.Item>
             </Col>
             <Col span={8}>
@@ -754,7 +754,7 @@ export default function MaterialesPage() {
             </Col>
             <Col span={6}>
               <Form.Item name="moneda_codigo" label="Moneda">
-                <Select allowClear options={monedas.map((m) => ({ value: m.codigo, label: m.codigo }))} />
+                <Select showSearch optionFilterProp="label" allowClear options={monedas.map((m) => ({ value: m.codigo, label: m.codigo }))} />
               </Form.Item>
             </Col>
             <Col span={6}>

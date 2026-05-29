@@ -559,7 +559,7 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
               {
                 title: "Tipo", dataIndex: "tipo_codigo", width: 100,
                 render: (v: string, row) => (
-                  <Select
+                  <Select showSearch optionFilterProp="label"
                     size="small"
                     value={v}
                     style={{ width: 90 }}
@@ -645,7 +645,7 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
                         style={{ width: 90 }}
                         onChange={(nv) => updateDraft(row.key, { precio_unitario: nv ?? undefined })}
                       />
-                      <Select
+                      <Select showSearch optionFilterProp="label"
                         size="small"
                         value={row.moneda ?? "USD"}
                         style={{ width: 70 }}

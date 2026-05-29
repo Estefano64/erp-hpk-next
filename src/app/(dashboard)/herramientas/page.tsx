@@ -276,7 +276,7 @@ function TabCatalogo() {
             </Col>
             <Col span={8}>
               <Form.Item name="estado" label="Estado">
-                <Select options={["Disponible", "Mantenimiento", "Inactiva", "Reservada"].map((v) => ({ value: v, label: v }))} />
+                <Select showSearch optionFilterProp="label" options={["Disponible", "Mantenimiento", "Inactiva", "Reservada"].map((v) => ({ value: v, label: v }))} />
               </Form.Item>
             </Col>
           </Row>
@@ -524,7 +524,7 @@ function TabPrestamos() {
       <Card size="small" style={{ marginBottom: 12 }}>
         <Row gutter={[8, 8]}>
           <Col xs={24} md={8}>
-            <Select placeholder="Filtrar por estado" value={filtroEstado} onChange={setFiltroEstado} allowClear style={{ width: "100%" }}
+            <Select showSearch optionFilterProp="label" placeholder="Filtrar por estado" value={filtroEstado} onChange={setFiltroEstado} allowClear style={{ width: "100%" }}
               options={[
                 { value: "PRESTADA", label: "Prestadas" },
                 { value: "DEVUELTA", label: "Devueltas" },

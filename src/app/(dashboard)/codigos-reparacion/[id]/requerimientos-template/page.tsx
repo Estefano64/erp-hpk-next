@@ -355,7 +355,7 @@ export default function TemplateRequerimientosPage() {
       onFilter: (value, r) => (drafts[r.tarea_id]?.tipo_codigo ?? r.tipo_codigo) === value,
       sorter: (a, b) => (a.tipo_codigo ?? "").localeCompare(b.tipo_codigo ?? ""),
       render: (_, r) => (
-        <Select
+        <Select showSearch optionFilterProp="label"
           value={drafts[r.tarea_id]?.tipo_codigo ?? r.tipo_codigo}
           onChange={(v) => updateImmediate(r.tarea_id, { tipo_codigo: v })}
           options={[
@@ -619,7 +619,7 @@ export default function TemplateRequerimientosPage() {
       >
         <Form form={form} layout="vertical">
           <Form.Item name="tipo_codigo" label="Tipo" rules={[{ required: true }]}>
-            <Select options={[
+            <Select showSearch optionFilterProp="label" options={[
               { value: "MAC", label: "MAC — Material catalogado" },
               { value: "CAD", label: "CAD — Cargo directo" },
               { value: "SER", label: "SER — Servicio" },

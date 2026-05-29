@@ -309,7 +309,7 @@ export default function TicketsPage() {
 
       <Row gutter={12} style={{ marginBottom: 12 }}>
         <Col xs={24} md={6}>
-          <Select
+          <Select showSearch optionFilterProp="label"
             placeholder="Filtrar por estado"
             allowClear
             value={filterEstado}
@@ -449,7 +449,7 @@ export default function TicketsPage() {
               <Row gutter={16} style={{ marginTop: 16 }}>
                 <Col xs={12}>
                   <Form.Item name="estado" label="Estado" rules={[{ required: true }]}>
-                    <Select options={Object.entries(ESTADO_TAG).map(([k, v]) => ({ value: k, label: v.label }))} />
+                    <Select showSearch optionFilterProp="label" options={Object.entries(ESTADO_TAG).map(([k, v]) => ({ value: k, label: v.label }))} />
                   </Form.Item>
                 </Col>
                 <Col xs={12}>

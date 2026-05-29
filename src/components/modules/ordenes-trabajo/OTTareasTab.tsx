@@ -627,7 +627,7 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
               <Row key={d.id} gutter={12} align="bottom" style={{ marginBottom: 8, paddingBottom: 8, borderBottom: idx < draftRows.length - 1 ? "1px dashed #e8e8e8" : "none" }}>
                 <Col xs={24} sm={12} md={4}>
                   <div style={{ fontSize: 11, color: "#888", marginBottom: 2 }}>Parte *</div>
-                  <Select
+                  <Select showSearch optionFilterProp="label"
                     size="small"
                     value={d.parte ?? undefined}
                     onChange={(v) => updateDraft(d.id, { parte: v })}
@@ -638,7 +638,7 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
                 </Col>
                 <Col xs={24} sm={12} md={3}>
                   <div style={{ fontSize: 11, color: "#888", marginBottom: 2 }}>Tipo *</div>
-                  <Select
+                  <Select showSearch optionFilterProp="label"
                     size="small"
                     value={d.tipo_tarea}
                     onChange={(v) => updateDraft(d.id, { tipo_tarea: v })}

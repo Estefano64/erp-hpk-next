@@ -646,7 +646,7 @@ export default function StockPage() {
             />
           </Col>
           <Col xs={12} sm={8} md={6}>
-            <Select
+            <Select showSearch optionFilterProp="label"
               value={filtro}
               onChange={setFiltro}
               style={{ width: "100%" }}
