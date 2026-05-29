@@ -847,18 +847,24 @@ function HallazgosCatalogo({
     filtros.some((f) => f.endsWith("_") ? k.startsWith(f) : k === f),
   );
 
-  // Filtrar por articulación seleccionada: si elegiste "Cojinete", ocultar
-  // grupos *_rotula y *_pin (idem para las otras dos). Si no hay selección,
-  // se muestran los 3 — comportamiento backward-compatible.
+  // Filtrar por articulación seleccionada:
+  //  - Si elegiste una opción válida, mostrar solo el grupo correspondiente.
+  //  - Si NO eligió nada (undefined / ""), OCULTAR los 3 grupos *_cojinete /
+  //    *_rotula / *_pin: el user debe elegir primero para ver hallazgos.
+  // (Decisión confirmada por el usuario el 2026-05-29.)
   const SUJECION_SLUG: Record<string, string> = {
     "Cojinete": "cojinete",
     "Rótula": "rotula",
     "Pin directo": "pin",
   };
+  const todosSlugs = Object.values(SUJECION_SLUG);
   if (sujecion && SUJECION_SLUG[sujecion]) {
     const elegido = SUJECION_SLUG[sujecion];
-    const otros = Object.values(SUJECION_SLUG).filter((s) => s !== elegido);
+    const otros = todosSlugs.filter((s) => s !== elegido);
     grupos = grupos.filter(([k]) => !otros.some((s) => k.endsWith(`_${s}`)));
+  } else if (sujecion === undefined || sujecion === "") {
+    // Nada elegido → ocultar TODOS los grupos de articulación.
+    grupos = grupos.filter(([k]) => !todosSlugs.some((s) => k.endsWith(`_${s}`)));
   }
 
   if (grupos.length === 0) return null;
@@ -1392,29 +1398,25 @@ export default function EvaluacionFormulario({
                         />
                       </Col>
                     </Row>
-                    <Row gutter={8}>
-                      <Col xs={24} md={12}>
-                        <ParXY
-                          prefix={`${p}_cil_dint_g`}
-                          label={`Diám. Int. ${(datos[`${p}_cil_elem_sujecion`] as string) || "G"} [${unidad}]`}
-                          datos={datos}
-                          onChange={onChange}
-                        />
-                      </Col>
-                      <Col xs={24} md={12}>
-                        <div>
-                        <Text strong style={{ fontSize: 12, display: "block" }}>Ancho de Ojo [{unidad}]</Text>
-                        <Row gutter={4}>
-                          <Col span={12}>
-                            <InputMedida name={`${p}_cil_ancho_ojo_1`} datos={datos} onChange={onChange} />
-                          </Col>
-                          <Col span={12}>
-                            <InputMedida name={`${p}_cil_ancho_ojo_2`} datos={datos} onChange={onChange} />
-                          </Col>
-                        </Row>
-                      </div>
-                      </Col>
-                    </Row>
+                    {/* Pin directo: ocultar Diám. Int. G y Ancho de Ojo. */}
+                    {datos[`${p}_cil_elem_sujecion`] !== "Pin directo" && (
+                      <Row gutter={8}>
+                        <Col xs={24} md={12}>
+                          <ParXY
+                            prefix={`${p}_cil_dint_g`}
+                            label={`Diám. Int. ${(datos[`${p}_cil_elem_sujecion`] as string) || "G"} [${unidad}]`}
+                            datos={datos}
+                            onChange={onChange}
+                          />
+                        </Col>
+                        <Col xs={24} md={12}>
+                          <div>
+                            <Text strong style={{ fontSize: 12, display: "block" }}>Ancho de Ojo [{unidad}]</Text>
+                            <InputMedida name={`${p}_cil_ancho_ojo`} datos={datos} onChange={onChange} />
+                          </div>
+                        </Col>
+                      </Row>
+                    )}
                   </>
                 )}
                 <div style={{ marginTop: 12 }}>
@@ -1430,10 +1432,21 @@ export default function EvaluacionFormulario({
                     datos={datos}
                     onChange={onChange}
                   />
+                  {/* Comentario libre debajo de Placa / Conectores. */}
+                  <div style={{ marginTop: 6 }}>
+                    <Text style={{ fontSize: 11, color: "rgba(0,0,0,0.55)" }}>Comentario — Placa / Conectores</Text>
+                    <TextArea
+                      rows={2}
+                      placeholder="Ej: faltan 2 conectores, placa ilegible, etc."
+                      value={(datos[`${p}_cil_placa_conectores_coment`] as string) || ""}
+                      onChange={(e) => onChange({ ...datos, [`${p}_cil_placa_conectores_coment`]: e.target.value })}
+                      style={{ fontSize: 12 }}
+                    />
+                  </div>
                 </div>
               </Col>
             </Row>
-            <HallazgosCatalogo modelo={modelo} filtro="cil_" prefix={`${p}_cil`} titulo="Resultado de evaluación - Cilindro Principal" datos={datos} onChange={onChange} sujecion={datos[`${p}_cil_elem_sujecion`] as string | undefined} />
+            <HallazgosCatalogo modelo={modelo} filtro="cil_" prefix={`${p}_cil`} titulo="Resultado de evaluación - Cilindro Principal" datos={datos} onChange={onChange} sujecion={(datos[`${p}_cil_elem_sujecion`] as string) || (datos[`${p}_elem_sujecion`] as string) || undefined} />
             <ImagenesComponente prefix={`${p}_cil`} etiqueta="Cilindro Principal" datos={datos} onChange={onChange} />
             <RecomendacionesCatalogo modelo={modelo} componente="cilindro" prefix={p} datos={datos} onChange={onChange} />
             <ResultadoComponente prefix={`${p}_cil`} label="Cilindro Principal" datos={datos} onChange={onChange} />
@@ -1495,31 +1508,29 @@ export default function EvaluacionFormulario({
                     />
                   </Col>
                 </Row>
+                {/* Pin directo: ocultar Diám. Int. J y Ancho de Ojo. */}
                 <Row gutter={8}>
                   <Col xs={24} md={8}>
                     <ParXY prefix={`${p}_vas_dint_ojo_i`} label={`Diám. Int. Ojo I [${unidad}]`} datos={datos} onChange={onChange} />
                   </Col>
-                  <Col xs={24} md={8}>
-                    <ParXY
-                      prefix={`${p}_vas_dint_j`}
-                      label={`Diám. Int. ${(datos[`${p}_vas_elem_sujecion`] as string) || "J"} [${unidad}]`}
-                      datos={datos}
-                      onChange={onChange}
-                    />
-                  </Col>
-                  <Col xs={24} md={8}>
-                    <div>
-                    <Text strong style={{ fontSize: 12, display: "block" }}>Ancho de Ojo [{unidad}]</Text>
-                    <Row gutter={4}>
-                      <Col span={12}>
-                        <InputMedida name={`${p}_vas_ancho_ojo_1`} datos={datos} onChange={onChange} />
+                  {datos[`${p}_vas_elem_sujecion`] !== "Pin directo" && (
+                    <>
+                      <Col xs={24} md={8}>
+                        <ParXY
+                          prefix={`${p}_vas_dint_j`}
+                          label={`Diám. Int. ${(datos[`${p}_vas_elem_sujecion`] as string) || "J"} [${unidad}]`}
+                          datos={datos}
+                          onChange={onChange}
+                        />
                       </Col>
-                      <Col span={12}>
-                        <InputMedida name={`${p}_vas_ancho_ojo_2`} datos={datos} onChange={onChange} />
+                      <Col xs={24} md={8}>
+                        <div>
+                          <Text strong style={{ fontSize: 12, display: "block" }}>Ancho de Ojo [{unidad}]</Text>
+                          <InputMedida name={`${p}_vas_ancho_ojo`} datos={datos} onChange={onChange} />
+                        </div>
                       </Col>
-                    </Row>
-                  </div>
-                  </Col>
+                    </>
+                  )}
                 </Row>
                 <Divider style={{ margin: "8px 0" }}>
                   <Text style={{ fontSize: 11 }}>Flexión y Espesor de Cromo</Text>
@@ -1540,7 +1551,7 @@ export default function EvaluacionFormulario({
                 </div>
               </Col>
             </Row>
-            <HallazgosCatalogo modelo={modelo} filtro="vas_" prefix={`${p}_vas`} titulo="Resultado de evaluación - Vástago Principal" datos={datos} onChange={onChange} sujecion={datos[`${p}_vas_elem_sujecion`] as string | undefined} flexionRootPrefix={`${p}_vas`} />
+            <HallazgosCatalogo modelo={modelo} filtro="vas_" prefix={`${p}_vas`} titulo="Resultado de evaluación - Vástago Principal" datos={datos} onChange={onChange} sujecion={(datos[`${p}_vas_elem_sujecion`] as string) || (datos[`${p}_elem_sujecion`] as string) || undefined} flexionRootPrefix={`${p}_vas`} />
             <ImagenesComponente prefix={`${p}_vas`} etiqueta="Vástago Principal" datos={datos} onChange={onChange} />
             <RecomendacionesCatalogo modelo={modelo} componente="vastago" prefix={p} datos={datos} onChange={onChange} />
             <ResultadoComponente prefix={`${p}_vas`} label="Vástago Principal" datos={datos} onChange={onChange} />
@@ -2060,34 +2071,35 @@ export default function EvaluacionFormulario({
                     Ancho de Ojo (items 6,7,8 del Excel). Comentario de J.F.Vera
                     en el Excel de hoja de evaluación: "si marca concavo omitir
                     los siguientes items". */}
-                {datos[`${p}_cil_tipo_cancamo`] !== "Concavo" && (
-                  <Row gutter={8}>
-                    <Col xs={24} md={8}>
-                      <ParXY prefix={`${p}_cil_dojo_f`} label={`Diámetro Ojo F [${unidad}]`} datos={datos} onChange={onChange} />
-                    </Col>
-                    <Col xs={24} md={8}>
-                      <ParXY
-                        prefix={`${p}_cil_dint_g`}
-                        label={`Diám. Int. ${(datos[`${p}_cil_elem_sujecion`] as string) || "G"} [${unidad}]`}
-                        datos={datos}
-                        onChange={onChange}
-                      />
-                    </Col>
-                    <Col xs={24} md={8}>
-                      <div>
-                        <Text strong style={{ fontSize: 12, display: "block" }}>Ancho de Ojo [{unidad}]</Text>
-                        <Row gutter={4}>
-                          <Col span={12}>
-                            <InputMedida name={`${p}_cil_ancho_ojo_1`} datos={datos} onChange={onChange} />
-                          </Col>
-                          <Col span={12}>
-                            <InputMedida name={`${p}_cil_ancho_ojo_2`} datos={datos} onChange={onChange} />
-                          </Col>
-                        </Row>
-                      </div>
-                    </Col>
-                  </Row>
-                )}
+                {datos[`${p}_cil_tipo_cancamo`] !== "Concavo" && (() => {
+                  // Pin directo: ocultar Diám. Int. y Ancho de Ojo (no aplican).
+                  const esPin = datos[`${p}_cil_elem_sujecion`] === "Pin directo";
+                  return (
+                    <Row gutter={8}>
+                      <Col xs={24} md={8}>
+                        <ParXY prefix={`${p}_cil_dojo_f`} label={`Diámetro Ojo F [${unidad}]`} datos={datos} onChange={onChange} />
+                      </Col>
+                      {!esPin && (
+                        <Col xs={24} md={8}>
+                          <ParXY
+                            prefix={`${p}_cil_dint_g`}
+                            label={`Diám. Int. ${(datos[`${p}_cil_elem_sujecion`] as string) || "G"} [${unidad}]`}
+                            datos={datos}
+                            onChange={onChange}
+                          />
+                        </Col>
+                      )}
+                      {!esPin && (
+                        <Col xs={24} md={8}>
+                          <div>
+                            <Text strong style={{ fontSize: 12, display: "block" }}>Ancho de Ojo [{unidad}]</Text>
+                            <InputMedida name={`${p}_cil_ancho_ojo`} datos={datos} onChange={onChange} />
+                          </div>
+                        </Col>
+                      )}
+                    </Row>
+                  );
+                })()}
               </>
             )}
             {/* Extras para CHP: dos lecturas de pivotante */}
@@ -2136,10 +2148,21 @@ export default function EvaluacionFormulario({
                 datos={datos}
                 onChange={onChange}
               />
+              {/* Comentario libre debajo de Placa / Conectores. */}
+              <div style={{ marginTop: 6 }}>
+                <Text style={{ fontSize: 11, color: "rgba(0,0,0,0.55)" }}>Comentario — Placa / Conectores</Text>
+                <TextArea
+                  rows={2}
+                  placeholder="Ej: faltan 2 conectores, placa ilegible, etc."
+                  value={(datos[`${p}_cil_placa_conectores_coment`] as string) || ""}
+                  onChange={(e) => onChange({ ...datos, [`${p}_cil_placa_conectores_coment`]: e.target.value })}
+                  style={{ fontSize: 12 }}
+                />
+              </div>
             </div>
           </Col>
         </Row>
-        <HallazgosCatalogo modelo={modelo} filtro={["cil_", "acumulador"]} prefix={`${p}_cil`} titulo="Resultado de evaluación - Cilindro" datos={datos} onChange={onChange} sujecion={datos[`${p}_cil_elem_sujecion`] as string | undefined} />
+        <HallazgosCatalogo modelo={modelo} filtro={["cil_", "acumulador"]} prefix={`${p}_cil`} titulo="Resultado de evaluación - Cilindro" datos={datos} onChange={onChange} sujecion={(datos[`${p}_cil_elem_sujecion`] as string) || (datos[`${p}_elem_sujecion`] as string) || undefined} />
         <ImagenesComponente prefix={`${p}_cil`} etiqueta="Cilindro" datos={datos} onChange={onChange} />
         <RecomendacionesCatalogo modelo={modelo} componente={modelo === "acum_vejiga" ? "acumulador" : "cilindro"} prefix={p} datos={datos} onChange={onChange} />
         <ResultadoComponente prefix={`${p}_cil`} label="Cilindro" datos={datos} onChange={onChange} />
@@ -2228,41 +2251,42 @@ export default function EvaluacionFormulario({
               {/* Si el cáncamo del vástago es Cóncavo, ocultar Diám. Ext. Ojo H,
                   Diám. Int. Ojo I, Diám. Int. J y Ancho de Ojo (items 6,7,8,9
                   del Excel). Mismo comentario de J.F.Vera. */}
-              {datos[`${p}_vas_tipo_cancamo`] !== "Concavo" && (
-                <>
-                  <Row gutter={8}>
-                    <Col xs={24} md={8}>
-                      <ParXY prefix={`${p}_vas_dext_ojo_h`} label={`Diám. Ext. Ojo H [${unidad}]`} datos={datos} onChange={onChange} />
-                    </Col>
-                    <Col xs={24} md={8}>
-                      <ParXY prefix={`${p}_vas_dint_ojo_i`} label={`Diám. Int. Ojo I [${unidad}]`} datos={datos} onChange={onChange} />
-                    </Col>
-                    <Col xs={24} md={8}>
-                      <ParXY
-                        prefix={`${p}_vas_dint_j`}
-                        label={`Diám. Int. ${(datos[`${p}_vas_elem_sujecion`] as string) || "J"} [${unidad}]`}
-                        datos={datos}
-                        onChange={onChange}
-                      />
-                    </Col>
-                  </Row>
-                  <Row gutter={8}>
-                    <Col xs={24} md={8}>
-                      <div>
-                    <Text strong style={{ fontSize: 12, display: "block" }}>Ancho de Ojo [{unidad}]</Text>
-                    <Row gutter={4}>
-                      <Col span={12}>
-                        <InputMedida name={`${p}_vas_ancho_ojo_1`} datos={datos} onChange={onChange} />
+              {datos[`${p}_vas_tipo_cancamo`] !== "Concavo" && (() => {
+                // Pin directo: ocultar Diám. Int. J y Ancho de Ojo (no aplican).
+                const esPin = datos[`${p}_vas_elem_sujecion`] === "Pin directo";
+                return (
+                  <>
+                    <Row gutter={8}>
+                      <Col xs={24} md={8}>
+                        <ParXY prefix={`${p}_vas_dext_ojo_h`} label={`Diám. Ext. Ojo H [${unidad}]`} datos={datos} onChange={onChange} />
                       </Col>
-                      <Col span={12}>
-                        <InputMedida name={`${p}_vas_ancho_ojo_2`} datos={datos} onChange={onChange} />
+                      <Col xs={24} md={8}>
+                        <ParXY prefix={`${p}_vas_dint_ojo_i`} label={`Diám. Int. Ojo I [${unidad}]`} datos={datos} onChange={onChange} />
                       </Col>
+                      {!esPin && (
+                        <Col xs={24} md={8}>
+                          <ParXY
+                            prefix={`${p}_vas_dint_j`}
+                            label={`Diám. Int. ${(datos[`${p}_vas_elem_sujecion`] as string) || "J"} [${unidad}]`}
+                            datos={datos}
+                            onChange={onChange}
+                          />
+                        </Col>
+                      )}
                     </Row>
-                  </div>
-                    </Col>
-                  </Row>
-                </>
-              )}
+                    {!esPin && (
+                      <Row gutter={8}>
+                        <Col xs={24} md={8}>
+                          <div>
+                            <Text strong style={{ fontSize: 12, display: "block" }}>Ancho de Ojo [{unidad}]</Text>
+                            <InputMedida name={`${p}_vas_ancho_ojo`} datos={datos} onChange={onChange} />
+                          </div>
+                        </Col>
+                      </Row>
+                    )}
+                  </>
+                );
+              })()}
               <Divider style={{ margin: "8px 0" }}>
                 <Text style={{ fontSize: 11 }}>Flexión y Espesor de Cromo</Text>
               </Divider>
@@ -2282,7 +2306,7 @@ export default function EvaluacionFormulario({
               </div>
             </Col>
           </Row>
-          <HallazgosCatalogo modelo={modelo} filtro="vas_" prefix={`${p}_vas`} titulo="Resultado de evaluación - Vástago" datos={datos} onChange={onChange} sujecion={datos[`${p}_vas_elem_sujecion`] as string | undefined} flexionRootPrefix={`${p}_vas`} />
+          <HallazgosCatalogo modelo={modelo} filtro="vas_" prefix={`${p}_vas`} titulo="Resultado de evaluación - Vástago" datos={datos} onChange={onChange} sujecion={(datos[`${p}_vas_elem_sujecion`] as string) || (datos[`${p}_elem_sujecion`] as string) || undefined} flexionRootPrefix={`${p}_vas`} />
           <ImagenesComponente prefix={`${p}_vas`} etiqueta="Vastago" datos={datos} onChange={onChange} />
           <RecomendacionesCatalogo modelo={modelo} componente="vastago" prefix={p} datos={datos} onChange={onChange} />
           <ResultadoComponente prefix={`${p}_vas`} label="Vastago" datos={datos} onChange={onChange} />
