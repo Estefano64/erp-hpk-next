@@ -362,16 +362,28 @@ export default function ProgramacionSemanalPage() {
     return map;
   }, [rowsFiltradas, view]);
 
+  // "Ahora" calculado SOLO en el cliente (con la hora local del navegador). Si
+  // se usaba dayjs() directo, el render del servidor (Railway en UTC) ponía la
+  // línea en hora UTC (p.ej. 16:xx en vez de 11:xx en Perú). Se actualiza cada
+  // minuto, así la línea también avanza sola.
+  const [ahoraTick, setAhoraTick] = useState<Dayjs | null>(null);
+  useEffect(() => {
+    setAhoraTick(dayjs());
+    const id = setInterval(() => setAhoraTick(dayjs()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   // Posición X de "ahora" si la semana actual es la mostrada
   const lineaHoy = useMemo(() => {
-    const ahora = dayjs();
+    if (!ahoraTick) return null;
+    const ahora = ahoraTick;
     if (ahora.isoWeek() !== lunes.isoWeek() || ahora.isoWeekYear() !== lunes.isoWeekYear()) return null;
     const dayIdx = ahora.diff(lunes, "day");
     if (dayIdx < 0 || dayIdx > 4) return null;
     const h = ahora.hour() + ahora.minute() / 60;
     if (h < JORNADA_INICIO || h > JORNADA_FIN) return null;
     return dayIdx * dayPx + (h - JORNADA_INICIO) * hourPx;
-  }, [lunes, dayPx, hourPx]);
+  }, [ahoraTick, lunes, dayPx, hourPx]);
 
   // Toggle de edit mode pesimista. Adquiere / libera el lock global de la página.
   const toggleEditMode = useCallback(async () => {
@@ -1445,7 +1457,7 @@ export default function ProgramacionSemanalPage() {
           onMouseDown={startPan}
         >
           {lineaHoy != null && (
-            <div className="psg-now-line" style={{ left: 220 + lineaHoy }} title={`Ahora: ${dayjs().format("ddd DD/MM HH:mm")}`}>
+            <div className="psg-now-line" style={{ left: 220 + lineaHoy }} title={`Ahora: ${(ahoraTick ?? dayjs()).format("ddd DD/MM HH:mm")}`}>
               <div className="psg-now-dot" />
             </div>
           )}
