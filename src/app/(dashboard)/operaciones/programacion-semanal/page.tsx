@@ -773,7 +773,9 @@ export default function ProgramacionSemanalPage() {
           multiOffsets.push({
             id,
             offsetMin,
-            recurso: view === "equipo" ? t.maquina : t.tecnico,
+            // startDrag solo corre en vista Operarios (Equipos es solo lectura),
+            // así que el recurso es siempre el técnico.
+            recurso: t.tecnico,
           });
         }
       }
