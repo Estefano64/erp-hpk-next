@@ -291,6 +291,9 @@ export default function TecnicoPanel() {
         <Row gutter={[12, 8]}>
           {dato("OT", o?.ot ?? `#${r.ot_id}`)}
           {dato("Duración est.", r.horas_estimadas != null ? `${Number(r.horas_estimadas)} h` : null)}
+          {dato("Inicio real", r.fecha_inicio_real ? dayjs(r.fecha_inicio_real).format("DD/MM/YY HH:mm") : null)}
+          {dato("Fin real", r.fecha_fin_real ? dayjs(r.fecha_fin_real).format("DD/MM/YY HH:mm") : null)}
+          {dato("Horas reales", r.horas_reales != null ? `${Number(r.horas_reales)} h` : null)}
           {dato("Prioridad", prio ? <Tag color={prioColor[prio.codigo] ?? "default"} style={{ margin: 0 }}>{prio.nombre}</Tag> : null)}
           {dato("Fecha de entrega", o?.fecha_entrega ? dayjs(o.fecha_entrega).format("DD/MM/YYYY") : null)}
           {dato("Tipo", o?.tipo)}

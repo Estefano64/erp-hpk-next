@@ -1086,8 +1086,11 @@ export default function ProgramacionSemanalPage() {
             if (t.classList.contains("psg-resize-handle")) return;
             // Shift+Click NO inicia drag, solo toggle selección
             if (e.shiftKey) return;
-            // No drag si la tarea continúa de otra semana (no sabemos a qué punto la mueve)
-            if (continuaDeAntes || continuaDespues) return;
+            // Solo bloqueamos el drag si la tarea EMPIEZA en una semana anterior
+            // (su inicio no está visible, no sabríamos reubicarla). Las que se
+            // desbordan hacia adelante (continuaDespues) SÍ se pueden mover —
+            // así una tarea quedó "muy larga / tarde" se puede reacomodar.
+            if (continuaDeAntes) return;
             startDrag(e, r.id, false);
           }}
           onClick={(e) => {
@@ -1106,7 +1109,7 @@ export default function ProgramacionSemanalPage() {
             top: 8,
             height: ROW_HEIGHT - 16,
             opacity: drag?.taskId === r.id || (drag && selectedIds.has(r.id)) ? 0.25 : 1,
-            cursor: (continuaDeAntes || continuaDespues) ? "pointer" : undefined,
+            cursor: continuaDeAntes ? "pointer" : undefined,
           }}
           data-color={color}
           data-conflict={hasConflict ? "1" : "0"}
