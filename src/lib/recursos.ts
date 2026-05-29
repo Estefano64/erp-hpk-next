@@ -24,3 +24,12 @@ export function joinRecursos(arr: string[]): string | null {
   const clean = arr.map((x) => x.trim()).filter(Boolean);
   return clean.length === 0 ? null : clean.join(SEP_RECURSO);
 }
+
+/**
+ * Normaliza el nombre de un trabajador: quita comas (rompen el separador de
+ * multi-recurso) y colapsa espacios. "APELLIDOS, NOMBRES" → "APELLIDOS NOMBRES".
+ * Usar en el alta/edición de trabajador para que ningún nombre nuevo traiga coma.
+ */
+export function normalizarNombreRecurso(s: string): string {
+  return s.replace(/,\s*/g, " ").replace(/\s+/g, " ").trim();
+}
