@@ -1881,6 +1881,33 @@ export default function EvaluacionFormulario({
     // Cilindro (Botella)
     const esCilHidraulico = modelo === "cil_vastago_simple" || modelo === "cil_pivotado" || modelo === "cil_doble_vastago";
     const esPivotado = modelo === "cil_pivotado";
+
+    // Pregunta global de sujeción — aplica al CILINDRO + VÁSTAGO. El Excel
+    // pide "PREGUNTAR SI LLEVA COJINETE, ROTULA O PIN DIRECTO" como pregunta
+    // única para ambas secciones. Solo se muestra en cilindros hidráulicos
+    // (los acumuladores y suspensiones no tienen vástago con sujeción).
+    if (esCilHidraulico) {
+      secciones.push(
+        <Card
+          key="elem_sujecion_global"
+          title={<span style={{ color: brand.navy }}>Tipo de sujeción del cilindro / vástago</span>}
+          style={{ marginBottom: 16, background: "#fafcff", border: `1px dashed ${brand.cyan}` }}
+          styles={{ body: { padding: 12 } }}
+        >
+          <RadioInline
+            name={`${p}_elem_sujecion`}
+            label="¿Lleva cojinete, rótula o pin directo? (aplica al cilindro y al vástago)"
+            opciones={["Cojinete", "Rótula", "Pin directo"]}
+            datos={datos}
+            onChange={onChange}
+          />
+          <Text type="secondary" style={{ fontSize: 11, display: "block", marginTop: 4 }}>
+            Esta elección determina las preguntas de Cojinete/Rótula/Pin que aparecen
+            en los resultados de evaluación del cilindro y el vástago.
+          </Text>
+        </Card>,
+      );
+    }
     secciones.push(
       <SeccionNum key="cil" num={3} titulo="Cilindro (Botella)">
         <Row gutter={16}>
@@ -2033,7 +2060,6 @@ export default function EvaluacionFormulario({
               <TablaMedidas
                 filas={[
                   { prefix: `${p}_vas_desp`, label: `Diametro Espiga (A) [${unidad}]`, tipo: "xy" },
-                  { prefix: `${p}_vas_dext`, label: `Diametro Vastago (B) [${unidad}]`, tipo: "xy" },
                   { prefix: `${p}_vas_dcoj`, label: `Diametro Cojinete (D) [${unidad}]`, tipo: "xy" },
                   { prefix: `${p}_vas_lcro`, label: `Longitud Cromo (E) [${unidad}]`, tipo: "single" },
                   { prefix: `${p}_vas_ltot`, label: `Longitud Total (F) [${unidad}]`, tipo: "single" },
@@ -2041,6 +2067,18 @@ export default function EvaluacionFormulario({
                 datos={datos}
                 onChange={onChange}
               />
+              {/* Diámetro Vástago (B) — 3 puntos según Excel de evaluación. */}
+              <div style={{ marginTop: 8 }}>
+                <TablaPuntos
+                  prefix={`${p}_vas_dext`}
+                  datos={datos}
+                  onChange={onChange}
+                  titulo={`Diametro Vástago (B1-B3) [${unidad}]`}
+                  puntos={3}
+                  letra="B"
+                  sufijo="b"
+                />
+              </div>
               <Row gutter={8} style={{ marginTop: 8 }}>
                 <Col xs={24} md={8}>
                   <Text strong style={{ fontSize: 12 }}>Longitud de Espiga G [{unidad}]</Text>
