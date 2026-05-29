@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   Typography, Card, Button, Space, Table, Input, InputNumber, DatePicker, Alert,
-  Popconfirm, message, Tag, Row, Col, Statistic, Spin, Empty,
+  Popconfirm, message, Tag, Row, Col, Statistic, Spin, Empty, Switch, Tooltip,
 } from "antd";
 import {
   SaveOutlined, PlusOutlined, DeleteOutlined, RollbackOutlined,
@@ -82,6 +82,11 @@ export default function EditarOCPage() {
   const [originalOtros, setOriginalOtros] = useState<number>(0);
   const [numeroReq, setNumeroReq] = useState<string>("");
   const [originalNumeroReq, setOriginalNumeroReq] = useState<string>("");
+  // Toggle de captura: si está ON, los precios que el usuario ingresa en la
+  // tabla incluyen IGV. Al guardar se dividen por 1.18 para que en la BD
+  // queden como precios sin IGV (formato esperado por la plantilla PDF de OC).
+  // No persiste — es solo un helper de captura por sesión de edición.
+  const [preciosConIgv, setPreciosConIgv] = useState<boolean>(false);
   const [messageApi, contextHolder] = message.useMessage();
 
   const fetchCompra = useCallback(async () => {
@@ -171,19 +176,28 @@ export default function EditarOCPage() {
   useUnsavedChangesWarning(hayCambios, "Hay cambios sin guardar en la OC.", `compra-editar-${params?.id ?? "?"}`);
 
   const totales = useMemo(() => {
-    const subtotal = visibleRows.reduce((s, r) => s + r.cantidad * r.precio_unitario, 0);
+    const sumaIngresada = visibleRows.reduce((s, r) => s + r.cantidad * r.precio_unitario, 0);
+    // Si los precios ingresados ya incluyen IGV, derivamos el subtotal sin IGV.
+    // De lo contrario, la suma es directamente el subtotal sin IGV (comportamiento histórico).
+    const subtotal = preciosConIgv ? sumaIngresada / 1.18 : sumaIngresada;
     // Convención HP&K: descuento aplica al subtotal, IGV se calcula sobre la base
     // ya descontada, "otros" se suma al final.
     const baseImponible = Math.max(0, subtotal - descuento);
     const igv = baseImponible * 0.18;
     const total = baseImponible + igv + otros;
-    return { subtotal, descuento, igv, otros, total };
-  }, [visibleRows, descuento, otros]);
+    return { sumaIngresada, subtotal, descuento, igv, otros, total };
+  }, [visibleRows, descuento, otros, preciosConIgv]);
 
   const handleGuardar = async () => {
     if (!compra) return;
     setSaving(true);
     try {
+      // Si el toggle "Precios incluyen IGV" está ON, dividimos cada precio
+      // por 1.18 antes de enviarlo a la API — la BD y el PDF esperan precios
+      // sin IGV. Redondeamos a 4 decimales (mismo Decimal(15,4) que el schema).
+      const normalizarPrecio = (p: number): number => preciosConIgv
+        ? Number((p / 1.18).toFixed(4))
+        : p;
       const payload = {
         items: visibleRows.map((r) => ({
           id: r.id,
@@ -193,7 +207,7 @@ export default function EditarOCPage() {
           texto: r.texto,
           unidad_medida: r.unidad_medida,
           cantidad: r.cantidad,
-          precio_unitario: r.precio_unitario,
+          precio_unitario: normalizarPrecio(r.precio_unitario),
           moneda: r.moneda,
           fabricante_codigo: r.fabricante_codigo,
           fecha_entrega_esperada: r.fecha_entrega_esperada,
@@ -379,6 +393,26 @@ export default function EditarOCPage() {
               onChange={(e) => setNumeroReq(e.target.value)}
               allowClear
             />
+          </Col>
+          <Col xs={24} md={12}>
+            <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 2 }}>
+              <Tooltip title="Si está activado, los precios que ingresas en la tabla incluyen IGV. Al guardar se dividen por 1.18 para almacenarlos sin IGV (como espera la plantilla de OC); el TOTAL final queda igual al monto con IGV que ingresaste.">
+                Precios ingresados incluyen IGV
+              </Tooltip>
+            </div>
+            <Space>
+              <Switch
+                checked={preciosConIgv}
+                onChange={(v) => setPreciosConIgv(v)}
+                checkedChildren="Con IGV"
+                unCheckedChildren="Sin IGV"
+              />
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                {preciosConIgv
+                  ? "Suma ingresada: " + totales.sumaIngresada.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " (= Subtotal × 1.18)"
+                  : "Modo estándar: el IGV se suma al final"}
+              </Text>
+            </Space>
           </Col>
         </Row>
       </Card>
