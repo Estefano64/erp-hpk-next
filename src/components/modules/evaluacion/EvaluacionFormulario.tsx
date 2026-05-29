@@ -260,6 +260,52 @@ interface FilaMedida {
   label: string;
   tipo: "xy" | "single";
 }
+// Tabla compacta para Flexión + Espesor de Cromo del vástago (3 puntos: B/C/D).
+// Reemplaza la versión anterior de inputs sueltos en columnas.
+function TablaFlexionCromo({
+  prefix,
+  unidad,
+  datos,
+  onChange,
+}: {
+  prefix: string;   // ej: "{p}_vas"
+  unidad: string;
+  datos: Record<string, unknown>;
+  onChange: (d: Record<string, unknown>) => void;
+}) {
+  const puntos = ["b", "c", "d"] as const;
+  const cell: React.CSSProperties = { border: `1px solid ${brand.border}`, padding: 2 };
+  const head: React.CSSProperties = { ...cell, padding: "4px 8px", textAlign: "center", background: brand.bgPage };
+  return (
+    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+      <thead>
+        <tr>
+          <th style={{ ...head, textAlign: "left" }}>Parametro</th>
+          {puntos.map((s) => <th key={s} style={head}>{s.toUpperCase()}</th>)}
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style={{ ...cell, padding: "4px 8px" }}>Flexión [{unidad}]</td>
+          {puntos.map((s) => (
+            <td key={s} style={cell}>
+              <InputMedida name={`${prefix}_flexion_${s}`} datos={datos} onChange={onChange} />
+            </td>
+          ))}
+        </tr>
+        <tr>
+          <td style={{ ...cell, padding: "4px 8px" }}>Espesor de Cromo [{unidad}]</td>
+          {puntos.map((s) => (
+            <td key={s} style={cell}>
+              <InputMedida name={`${prefix}_esp_cromo_${s}`} datos={datos} onChange={onChange} />
+            </td>
+          ))}
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
 function TablaMedidas({
   filas,
   datos,
@@ -269,13 +315,22 @@ function TablaMedidas({
   datos: Record<string, unknown>;
   onChange: (d: Record<string, unknown>) => void;
 }) {
+  // Si NINGUNA fila es xy, ocultamos las columnas X/Y y mostramos una sola
+  // "Medida". Esto aplica a Émbolo, Tapa, Émbolo del Acumulador, etc.
+  const hayXY = filas.some((f) => f.tipo === "xy");
   return (
     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
       <thead>
         <tr style={{ background: brand.bgPage }}>
           <th style={{ border: `1px solid ${brand.border}`, padding: "4px 8px", textAlign: "left" }}>Parametro</th>
-          <th style={{ border: `1px solid ${brand.border}`, padding: "4px 8px", textAlign: "center" }}>X</th>
-          <th style={{ border: `1px solid ${brand.border}`, padding: "4px 8px", textAlign: "center" }}>Y</th>
+          {hayXY ? (
+            <>
+              <th style={{ border: `1px solid ${brand.border}`, padding: "4px 8px", textAlign: "center" }}>X</th>
+              <th style={{ border: `1px solid ${brand.border}`, padding: "4px 8px", textAlign: "center" }}>Y</th>
+            </>
+          ) : (
+            <th style={{ border: `1px solid ${brand.border}`, padding: "4px 8px", textAlign: "center" }}>Medida</th>
+          )}
         </tr>
       </thead>
       <tbody>
@@ -292,7 +347,7 @@ function TablaMedidas({
                 </td>
               </>
             ) : (
-              <td colSpan={2} style={{ border: `1px solid ${brand.border}`, padding: 2 }}>
+              <td colSpan={hayXY ? 2 : 1} style={{ border: `1px solid ${brand.border}`, padding: 2 }}>
                 <InputMedida name={f.prefix} datos={datos} onChange={onChange} />
               </td>
             )}
@@ -1118,9 +1173,9 @@ function EtapasTelescopico({
               <TablaChecks
                 prefix={`${prefix}_etapa${i}`}
                 items={[
-                  { key: "estado_cromo", label: "Estado del cromo" },
+                  { key: "estado_cromo", label: "Estado de superficie cromada" },
                   { key: "sup_roscada", label: "Estado de superficie Roscada" },
-                  { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                  { key: "ndt", label: "Pasa NDT", tipo: "sn" },
                   { key: "diam_salida_roscado", label: "Diam. Salida Roscado", tipo: "sn" },
                 ]}
                 datos={datos}
@@ -1279,7 +1334,7 @@ export default function EvaluacionFormulario({
                       <Col xs={24} md={12}>
                         <RadioInline
                           name={`${p}_cil_elem_sujecion`}
-                          label="Elemento de sujeción"
+                          label="Tipo de articulación"
                           opciones={["Cojinete", "Rótula", "Pin directo"]}
                           datos={datos}
                           onChange={onChange}
@@ -1318,7 +1373,7 @@ export default function EvaluacionFormulario({
                       { key: "tomas", label: "Tomas hidráulicas" },
                       { key: "roscada", label: "Estado de superficie Roscada" },
                       { key: "estado_cancamo", label: "Estado de cancamo" },
-                      { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                      { key: "ndt", label: "Pasa NDT", tipo: "sn" },
                       { key: "placa_conectores", label: "Placa / Conectores", tipo: "ci" },
                     ]}
                     datos={datos}
@@ -1340,12 +1395,12 @@ export default function EvaluacionFormulario({
                 <ImagenReferencia componente="vastago" label="Vástago Principal" />
               </Col>
               <Col xs={24} md={16}>
+                {/* Orden del Excel: A (Espiga) → B (Vástago 3 puntos) → D (Cojinete)
+                    → E (Cromo) → F (Total) → G (Espiga). Longitud de Espiga (G)
+                    ahora vive dentro de la tabla principal (antes era input suelto). */}
                 <TablaMedidas
                   filas={[
                     { prefix: `${p}_vas_desp`, label: `Diametro Espiga (A) [${unidad}]`, tipo: "xy" },
-                    { prefix: `${p}_vas_dcoj`, label: `Diametro Cojinete (D) [${unidad}]`, tipo: "xy" },
-                    { prefix: `${p}_vas_lcro`, label: `Longitud Cromo (E) [${unidad}]`, tipo: "single" },
-                    { prefix: `${p}_vas_ltot`, label: `Longitud Total (F) [${unidad}]`, tipo: "single" },
                   ]}
                   datos={datos}
                   onChange={onChange}
@@ -1362,12 +1417,18 @@ export default function EvaluacionFormulario({
                     sufijo="b"
                   />
                 </div>
-                <Row gutter={8} style={{ marginTop: 8 }}>
-                  <Col xs={24} md={8}>
-                    <Text strong style={{ fontSize: 12 }}>Longitud de Espiga G [{unidad}]</Text>
-                    <InputMedida name={`${p}_vas_long_espiga_g`} datos={datos} onChange={onChange} />
-                  </Col>
-                </Row>
+                <div style={{ marginTop: 8 }}>
+                  <TablaMedidas
+                    filas={[
+                      { prefix: `${p}_vas_dcoj`, label: `Diametro Cojinete (D) [${unidad}]`, tipo: "xy" },
+                      { prefix: `${p}_vas_lcro`, label: `Longitud Cromo (E) [${unidad}]`, tipo: "single" },
+                      { prefix: `${p}_vas_ltot`, label: `Longitud Total (F) [${unidad}]`, tipo: "single" },
+                      { prefix: `${p}_vas_long_espiga_g`, label: `Longitud de Espiga (G) [${unidad}]`, tipo: "single" },
+                    ]}
+                    datos={datos}
+                    onChange={onChange}
+                  />
+                </div>
                 <Divider style={{ margin: "8px 0" }} />
                 <Row gutter={8}>
                   <Col xs={24} md={12}>
@@ -1376,7 +1437,7 @@ export default function EvaluacionFormulario({
                   <Col xs={24} md={12}>
                     <RadioInline
                       name={`${p}_vas_elem_sujecion`}
-                      label="Elemento de sujeción"
+                      label="Tipo de articulación"
                       opciones={["Cojinete", "Rótula", "Pin directo"]}
                       datos={datos}
                       onChange={onChange}
@@ -1412,27 +1473,14 @@ export default function EvaluacionFormulario({
                 <Divider style={{ margin: "8px 0" }}>
                   <Text style={{ fontSize: 11 }}>Flexión y Espesor de Cromo</Text>
                 </Divider>
-                <Row gutter={8}>
-                  {(["b", "c", "d"] as const).map((s) => (
-                    <Col span={4} key={`fx-${s}`}>
-                      <Text strong style={{ fontSize: 11 }}>Flexión {s.toUpperCase()}</Text>
-                      <InputMedida name={`${p}_vas_flexion_${s}`} datos={datos} onChange={onChange} />
-                    </Col>
-                  ))}
-                  {(["b", "c", "d"] as const).map((s) => (
-                    <Col span={4} key={`ec-${s}`}>
-                      <Text strong style={{ fontSize: 11 }}>Esp. Cromo {s.toUpperCase()}</Text>
-                      <InputMedida name={`${p}_vas_esp_cromo_${s}`} datos={datos} onChange={onChange} />
-                    </Col>
-                  ))}
-                </Row>
+                <TablaFlexionCromo prefix={`${p}_vas`} unidad={unidad} datos={datos} onChange={onChange} />
                 <div style={{ marginTop: 12 }}>
                   <TablaChecks
                     prefix={`${p}_vas`}
                     items={[
-                      { key: "estado_cromo", label: "Estado del cromo" },
+                      { key: "estado_cromo", label: "Estado de superficie cromada" },
                       { key: "chk_estado_cancamo", label: "Estado de cancamo" },
-                      { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                      { key: "ndt", label: "Pasa NDT", tipo: "sn" },
                       { key: "sensor", label: "Sensor", tipo: "sn" },
                     ]}
                     datos={datos}
@@ -1485,7 +1533,7 @@ export default function EvaluacionFormulario({
                       prefix={`${p}_tapa_sec`}
                       items={[
                         { key: "sup_roscada", label: "Estado de superficie Roscada" },
-                        { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                        { key: "ndt", label: "Pasa NDT", tipo: "sn" },
                       ]}
                       datos={datos}
                       onChange={onChange}
@@ -1532,7 +1580,7 @@ export default function EvaluacionFormulario({
                       prefix={`${p}_tapa_post`}
                       items={[
                         { key: "est_soldadura", label: "Est. de soldadura" },
-                        { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                        { key: "ndt", label: "Pasa NDT", tipo: "sn" },
                       ]}
                       datos={datos}
                       onChange={onChange}
@@ -1578,7 +1626,7 @@ export default function EvaluacionFormulario({
                   <TablaChecks
                     prefix={`${p}_tapa`}
                     items={[
-                      { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                      { key: "ndt", label: "Pasa NDT", tipo: "sn" },
                       { key: "ext_roscado", label: "Exterior roscado", tipo: "sn" },
                       { key: "sup_roscada", label: "Estado de superficie Roscada" },
                     ]}
@@ -1614,7 +1662,7 @@ export default function EvaluacionFormulario({
                   <TablaChecks
                     prefix={`${p}_emb`}
                     items={[
-                      { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                      { key: "ndt", label: "Pasa NDT", tipo: "sn" },
                       { key: "int_roscado", label: "Interior roscado", tipo: "sn" },
                       { key: "sup_roscada", label: "Estado de superficie Roscada" },
                     ]}
@@ -1855,7 +1903,7 @@ export default function EvaluacionFormulario({
                   items={[
                     { key: "valv_muelle", label: "Valvula hidraulica de muelle" },
                     { key: "estado_vejiga", label: "Estado vejiga" },
-                    { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                    { key: "ndt", label: "Pasa NDT", tipo: "sn" },
                   ]}
                   datos={datos}
                   onChange={onChange}
@@ -1931,7 +1979,7 @@ export default function EvaluacionFormulario({
             {esCilHidraulico && (
               <>
                 <Divider style={{ margin: "8px 0" }}>
-                  <Text style={{ fontSize: 11 }}>Cáncamo y elemento de sujeción</Text>
+                  <Text style={{ fontSize: 11 }}>Cáncamo y tipo de articulación</Text>
                 </Divider>
                 <Row gutter={8}>
                   <Col xs={24} md={12}>
@@ -1943,15 +1991,19 @@ export default function EvaluacionFormulario({
                       onChange={onChange}
                     />
                   </Col>
+                  {/* Si se eligió un Tipo de cancamo, NO se muestra Tipo de
+                      articulación (son alternativos según el usuario). */}
+                  {!datos[`${p}_cil_tipo_cancamo`] && (
                   <Col xs={24} md={12}>
                     <RadioInline
                       name={`${p}_cil_elem_sujecion`}
-                      label="Elemento de sujeción"
+                      label="Tipo de articulación"
                       opciones={["Cojinete", "Rótula", "Pin directo"]}
                       datos={datos}
                       onChange={onChange}
                     />
                   </Col>
+                  )}
                 </Row>
                 {/* Si el cáncamo es Cóncavo, ocultar Diám. Ojo F, Diám. Int. G y
                     Ancho de Ojo (items 6,7,8 del Excel). Comentario de J.F.Vera
@@ -2027,7 +2079,7 @@ export default function EvaluacionFormulario({
                   ...(esPivotado ? [{ key: "estado_trunnion", label: "Estado de trunnion" }, { key: "pasa_estanqueidad", label: "Pasa prueba de estanqueidad", tipo: "sn" as const }] : []),
                   ...(modelo === "cil_doble_vastago" ? [{ key: "estado_soporte_sujecion", label: "Estado de soporte de sujeción" }, { key: "pasa_estanqueidad", label: "Pasa prueba de estanqueidad", tipo: "sn" as const }] : []),
                   ...(modelo === "suspension_delantera" ? [{ key: "est_cartelas", label: "Est. De cartelas" }] : []),
-                  { key: "ndt", label: "Pasa a NDT", tipo: "sn" as const },
+                  { key: "ndt", label: "Pasa NDT", tipo: "sn" as const },
                   { key: "placa_conectores", label: "Placa / Conectores", tipo: "ci" as const },
                 ]}
                 datos={datos}
@@ -2057,12 +2109,12 @@ export default function EvaluacionFormulario({
               <ImagenReferencia componente="vastago" label="Vastago (A-J)" />
             </Col>
             <Col xs={24} md={16}>
+              {/* Orden del Excel: A (Espiga) → B (Vástago 3 puntos) → D (Cojinete)
+                  → E (Cromo) → F (Total) → G (Espiga). Longitud de Espiga (G)
+                  ahora vive dentro de la tabla principal (antes era un input suelto). */}
               <TablaMedidas
                 filas={[
                   { prefix: `${p}_vas_desp`, label: `Diametro Espiga (A) [${unidad}]`, tipo: "xy" },
-                  { prefix: `${p}_vas_dcoj`, label: `Diametro Cojinete (D) [${unidad}]`, tipo: "xy" },
-                  { prefix: `${p}_vas_lcro`, label: `Longitud Cromo (E) [${unidad}]`, tipo: "single" },
-                  { prefix: `${p}_vas_ltot`, label: `Longitud Total (F) [${unidad}]`, tipo: "single" },
                 ]}
                 datos={datos}
                 onChange={onChange}
@@ -2079,16 +2131,22 @@ export default function EvaluacionFormulario({
                   sufijo="b"
                 />
               </div>
-              <Row gutter={8} style={{ marginTop: 8 }}>
-                <Col xs={24} md={8}>
-                  <Text strong style={{ fontSize: 12 }}>Longitud de Espiga G [{unidad}]</Text>
-                  <InputMedida name={`${p}_vas_long_espiga_g`} datos={datos} onChange={onChange} />
-                </Col>
-              </Row>
+              <div style={{ marginTop: 8 }}>
+                <TablaMedidas
+                  filas={[
+                    { prefix: `${p}_vas_dcoj`, label: `Diametro Cojinete (D) [${unidad}]`, tipo: "xy" },
+                    { prefix: `${p}_vas_lcro`, label: `Longitud Cromo (E) [${unidad}]`, tipo: "single" },
+                    { prefix: `${p}_vas_ltot`, label: `Longitud Total (F) [${unidad}]`, tipo: "single" },
+                    { prefix: `${p}_vas_long_espiga_g`, label: `Longitud de Espiga (G) [${unidad}]`, tipo: "single" },
+                  ]}
+                  datos={datos}
+                  onChange={onChange}
+                />
+              </div>
               {muestraCancamoVastago && (
                 <>
                   <Divider style={{ margin: "8px 0" }}>
-                    <Text style={{ fontSize: 11 }}>Cáncamo y elemento de sujeción</Text>
+                    <Text style={{ fontSize: 11 }}>Cáncamo y tipo de articulación</Text>
                   </Divider>
                   <Row gutter={8}>
                     <Col xs={24} md={12}>
@@ -2100,15 +2158,19 @@ export default function EvaluacionFormulario({
                         onChange={onChange}
                       />
                     </Col>
-                    <Col xs={24} md={12}>
-                      <RadioInline
-                        name={`${p}_vas_elem_sujecion`}
-                        label="Elemento de sujeción"
-                        opciones={["Cojinete", "Rótula", "Pin directo"]}
-                        datos={datos}
-                        onChange={onChange}
-                      />
-                    </Col>
+                    {/* Si se eligió un Tipo de cancamo, NO se muestra Tipo de
+                        articulación (son alternativos según el usuario). */}
+                    {!datos[`${p}_vas_tipo_cancamo`] && (
+                      <Col xs={24} md={12}>
+                        <RadioInline
+                          name={`${p}_vas_elem_sujecion`}
+                          label="Tipo de articulación"
+                          opciones={["Cojinete", "Rótula", "Pin directo"]}
+                          datos={datos}
+                          onChange={onChange}
+                        />
+                      </Col>
+                    )}
                   </Row>
                 </>
               )}
@@ -2153,27 +2215,14 @@ export default function EvaluacionFormulario({
               <Divider style={{ margin: "8px 0" }}>
                 <Text style={{ fontSize: 11 }}>Flexión y Espesor de Cromo</Text>
               </Divider>
-              <Row gutter={8}>
-                {(["b", "c", "d"] as const).map((s) => (
-                  <Col span={4} key={`fx-${s}`}>
-                    <Text strong style={{ fontSize: 11 }}>Flexión {s.toUpperCase()}</Text>
-                    <InputMedida name={`${p}_vas_flexion_${s}`} datos={datos} onChange={onChange} />
-                  </Col>
-                ))}
-                {(["b", "c", "d"] as const).map((s) => (
-                  <Col span={4} key={`ec-${s}`}>
-                    <Text strong style={{ fontSize: 11 }}>Esp. Cromo {s.toUpperCase()}</Text>
-                    <InputMedida name={`${p}_vas_esp_cromo_${s}`} datos={datos} onChange={onChange} />
-                  </Col>
-                ))}
-              </Row>
+              <TablaFlexionCromo prefix={`${p}_vas`} unidad={unidad} datos={datos} onChange={onChange} />
               <div style={{ marginTop: 12 }}>
                 <TablaChecks
                   prefix={`${p}_vas`}
                   items={[
-                    { key: "estado_cromo", label: "Estado del cromo" },
+                    { key: "estado_cromo", label: "Estado de superficie cromada" },
                     ...(muestraCancamoVastago ? [{ key: "chk_estado_cancamo", label: "Estado de cancamo" }] : []),
-                    { key: "ndt", label: "Pasa a NDT", tipo: "sn" as const },
+                    { key: "ndt", label: "Pasa NDT", tipo: "sn" as const },
                     { key: "sensor", label: "Sensor", tipo: "sn" as const },
                   ]}
                   datos={datos}
@@ -2232,7 +2281,7 @@ export default function EvaluacionFormulario({
                 <TablaChecks
                   prefix={`${p}_tapa`}
                   items={[
-                    { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                    { key: "ndt", label: "Pasa NDT", tipo: "sn" },
                     { key: "ext_roscado", label: "Exterior roscado", tipo: "sn" },
                   ]}
                   datos={datos}
@@ -2270,7 +2319,7 @@ export default function EvaluacionFormulario({
               <TablaChecks
                 prefix={`${p}_pis`}
                 items={[
-                  { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                  { key: "ndt", label: "Pasa NDT", tipo: "sn" },
                   { key: "int_roscado", label: "Interior roscado", tipo: "sn" },
                 ]}
                 datos={datos}
