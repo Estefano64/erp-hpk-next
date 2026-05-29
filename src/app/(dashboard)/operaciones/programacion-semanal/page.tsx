@@ -145,7 +145,8 @@ export default function ProgramacionSemanalPage() {
   const lock = useEditLock("programacion-semanal", 1, currentUser);
   const [editMode, setEditMode] = useState(false);
   const [lunes, setLunes] = useState<Dayjs>(() => dayjs().startOf("isoWeek"));
-  const [view, setView] = useState<"equipo" | "operario">("equipo");
+  // Operarios es la vista principal (ahí se asigna); Equipos es solo lectura.
+  const [view, setView] = useState<"equipo" | "operario">("operario");
   const [filtroEquipos, setFiltroEquipos] = useState<string[]>([]);
   const [filtroOperarios, setFiltroOperarios] = useState<string[]>([]);
   const [rows, setRows] = useState<PlanRow[]>([]);
@@ -1203,8 +1204,8 @@ export default function ProgramacionSemanalPage() {
                 }
               }}
               options={[
-                { value: "equipo", icon: <ToolOutlined />, label: "Equipos" },
                 { value: "operario", icon: <UserOutlined />, label: "Operarios" },
+                { value: "equipo", icon: <ToolOutlined />, label: "Equipos" },
               ]}
             />
             <Button icon={<UnorderedListOutlined />} onClick={() => router.push("/operaciones/planificacion")}>Planificación</Button>
