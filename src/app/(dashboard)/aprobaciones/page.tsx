@@ -671,11 +671,11 @@ export default function AceptacionesPage() {
   ];
 
   const { columnas: ocColumnsRz, components: ocComponents, resetAnchos: resetOcAnchos, TableDragWrapper: OcDragWrapper } =
-    useColumnasRedimensionables<OCPendiente>(ocColumns, "aceptaciones-oc-cols-widths-v1");
+    useColumnasRedimensionables<OCPendiente>(ocColumns, "aceptaciones-oc-cols-widths-v1", { data: ocs });
   const { columnas: rqColumnsRz, components: rqComponents, resetAnchos: resetRqAnchos, TableDragWrapper: RqDragWrapper } =
-    useColumnasRedimensionables<ReqPendiente>(rqColumns, "aceptaciones-rq-cols-widths-v1");
+    useColumnasRedimensionables<ReqPendiente>(rqColumns, "aceptaciones-rq-cols-widths-v1", { data: reqs });
   const { columnas: histColumnsRz, components: histComponents, resetAnchos: resetHistAnchos, TableDragWrapper: HistDragWrapper } =
-    useColumnasRedimensionables<HistorialItem>(histColumns, "aceptaciones-hist-cols-widths-v1");
+    useColumnasRedimensionables<HistorialItem>(histColumns, "aceptaciones-hist-cols-widths-v1", { data: historial });
 
   const totalPendientes = useMemo(() => ocs.length + reqs.length, [ocs, reqs]);
 

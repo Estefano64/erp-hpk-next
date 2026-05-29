@@ -293,7 +293,7 @@ export default function CatalogoCrudPage() {
 
   const allColumns = [numeracionColumn<CatalogRow>(), ...columns];
   const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
-    useColumnasRedimensionables<CatalogRow>(allColumns, `catalogos-${cfg?.id ?? tabla}-cols-widths-v1`);
+    useColumnasRedimensionables<CatalogRow>(allColumns, `catalogos-${cfg?.id ?? tabla}-cols-widths-v1`, { data: filtered });
 
   if (!cfg) {
     return (

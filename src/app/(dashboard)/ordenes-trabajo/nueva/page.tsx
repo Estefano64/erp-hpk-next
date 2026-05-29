@@ -666,33 +666,6 @@ export default function NuevaOTPage() {
                 <Checkbox disabled={bloqueoBien}>Si</Checkbox>
               </Form.Item>
             </Col>
-            <Col xs={16} md={8}>
-              <Form.Item label="Cotización (monto + moneda)">
-                <Space.Compact style={{ display: "flex" }}>
-                  <Form.Item name="monto_cotizacion" noStyle>
-                    <InputNumber
-                      placeholder="0.00"
-                      min={0}
-                      step={100}
-                      style={{ flex: 1 }}
-                      formatter={(v) => {
-                        if (v == null) return "";
-                        const n = Number(v);
-                        return Number.isNaN(n) ? "" : n.toLocaleString("es-PE", { minimumFractionDigits: 2 });
-                      }}
-                      parser={(v) => Number((v ?? "").replace(/[^\d.]/g, "")) as 0}
-                    />
-                  </Form.Item>
-                  <Form.Item name="moneda_cotizacion_codigo" noStyle>
-                    <Select
-                      placeholder="Moneda"
-                      style={{ width: 110 }}
-                      options={monedas.map((m) => ({ value: m.codigo, label: m.codigo }))}
-                    />
-                  </Form.Item>
-                </Space.Compact>
-              </Form.Item>
-            </Col>
           </Row>
 
           {!bloqueoBien && <Divider style={{ margin: "8px 0 16px" }} />}

@@ -975,7 +975,7 @@ export default function RequerimientosPage() {
 
   // Hacer las columnas redimensionables (drag horizontal en el borde derecho del header).
   const { columnas: groupColumnsResizable, components: tableComponents , TableDragWrapper } =
-    useColumnasRedimensionables<GrupoReq>(groupColumns, "requerimientos-list-cols-widths-v1");
+    useColumnasRedimensionables<GrupoReq>(groupColumns, "requerimientos-list-cols-widths-v1", { data: gruposFiltrados });
 
   // Columnas del nivel "item" (filas dentro de un grupo expandido)
   // Popover de detalle del item (en hover sobre Material / Descripción).

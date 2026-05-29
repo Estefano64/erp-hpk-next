@@ -196,7 +196,7 @@ export default function OrdenesTrabajoPage() {
   // v2: nuevas columnas opcionales (tipo, NP, flota, posición, fabricante, garantía, base metálica, etc.)
   // ocultas por default — el usuario las habilita desde el botón "Columnas".
   const { ocultas, setOcultas } = useColumnasOcultas("ordenes-trabajo-list-cols-v2", [
-    "tipo", "np", "cod_rep_flota", "cod_rep_posicion", "fabricante",
+    "tipo", "np", "cod_rep_flota", "fabricante",
     "plaqueteo", "wo_cliente", "po_cliente", "po_item", "id_viajero", "guia_remision", "empresa_entrega",
     "usuario_crea", "fecha_creacion",
     "pcr", "horas", "contrato_dias",
@@ -692,7 +692,7 @@ export default function OrdenesTrabajoPage() {
   });
 
   const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
-    useColumnasRedimensionables<OTRecord>(serverColumns, "ot-list-cols-widths-v1");
+    useColumnasRedimensionables<OTRecord>(serverColumns, "ot-list-cols-widths-v1", { data });
 
   return (
     <div>

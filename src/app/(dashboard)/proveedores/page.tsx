@@ -262,7 +262,7 @@ export default function ProveedoresPage() {
   ];
 
   const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
-    useColumnasRedimensionables<ProveedorRecord>(columns, "proveedores-list-cols-widths-v1");
+    useColumnasRedimensionables<ProveedorRecord>(columns, "proveedores-list-cols-widths-v1", { data });
 
   return (
     <div>

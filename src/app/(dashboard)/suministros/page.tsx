@@ -1,27 +1,29 @@
 "use client";
 
-// Página /suministros — vista del almacén de suministros (consumibles que
-// gestiona Don Juve: trapos, pintura, pernos, disolventes, etc.).
+// Página /suministros — gestión de consumibles (trapos, pintura, pernos, etc.).
 //
-// Reutiliza /api/stock + /api/movimientos sin schema nuevo. Filtra por:
-//   - categoria_codigo / clasificacion_codigo configurable
-//   - O por una palabra clave "suministro" en la descripción si no hay categoría
-//
-// Cuando se implementen los 3 almacenes formalmente con su propia tabla,
-// esta página se conectará a ese modelo. Por ahora es una vista filtrada.
+// Tabs:
+//   - Catálogo:    muestra el stock actual de suministros (vista filtrada de /stock).
+//   - Entregas:    historial + formulario para entregar suministros a un
+//                  trabajador o a una OT. Usa /api/movimientos con SALIDA;
+//                  el OT/trabajador se guardan en documento_referencia y
+//                  persona_recibe respectivamente.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Typography, Card, Table, Tag, Space, Button, Row, Col, Statistic, Empty,
-  Input, App, Tooltip, Alert,
+  Input, App, Tooltip, Alert, Tabs, Modal, Form, Select, InputNumber, DatePicker,
 } from "antd";
 import {
-  InboxOutlined, ReloadOutlined, SearchOutlined, ArrowDownOutlined, ArrowUpOutlined,
-  CheckCircleOutlined, WarningOutlined,
+  InboxOutlined, ReloadOutlined, SearchOutlined, ArrowDownOutlined,
+  CheckCircleOutlined, WarningOutlined, PlusOutlined, SendOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
+import dayjs, { Dayjs } from "dayjs";
+import { useSession } from "next-auth/react";
 import { brand } from "@/lib/theme";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 import { EditableCell } from "@/components/EditableCell";
 import { filtroPorColumna, useColumnasRedimensionables, STICKY_HEADER, paginacionEstandar } from "@/lib/tables";
 
@@ -46,7 +48,6 @@ interface StockItem {
 }
 
 // Lista de codigos / palabras que identifican a un suministro consumible.
-// Si no hay match, la página muestra "sin suministros configurados".
 const FILTRO_CATEGORIA = ["SUM", "SUMI", "SUMINISTRO", "CONS", "CONSUMIBLE"];
 const FILTRO_PALABRAS = ["trapo", "pintura", "perno", "disolvente", "lija", "tornillo", "tuerca", "wd-40", "thinner", "lubricante"];
 
@@ -58,6 +59,27 @@ function esSuministro(item: StockItem): boolean {
 }
 
 export default function SuministrosPage() {
+  return (
+    <div>
+      <Title level={3} style={{ marginTop: 0 }}>
+        <InboxOutlined style={{ marginRight: 8 }} />
+        Suministros
+      </Title>
+      <Tabs
+        defaultActiveKey="catalogo"
+        items={[
+          { key: "catalogo", label: <span><InboxOutlined /> Catálogo</span>, children: <TabCatalogo /> },
+          { key: "entregas", label: <span><SendOutlined /> Entregar suministros</span>, children: <TabEntregas /> },
+        ]}
+      />
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
+// TAB 1 — Catálogo (vista de stock filtrada)
+// ════════════════════════════════════════════════════════════
+function TabCatalogo() {
   const { message } = App.useApp();
   const router = useRouter();
   const [data, setData] = useState<StockItem[]>([]);
@@ -81,9 +103,7 @@ export default function SuministrosPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Filtrar a sólo los que califican como suministro
   const suministros = useMemo(() => data.filter(esSuministro), [data]);
-
   const filtrados = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return suministros;
@@ -96,8 +116,7 @@ export default function SuministrosPage() {
 
   const guardarUbicacion = async (materialId: number, nueva: string | null) => {
     const res = await fetch(`/api/materiales/${materialId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ubicacion: nueva ?? "" }),
     });
     if (!res.ok) {
@@ -152,9 +171,7 @@ export default function SuministrosPage() {
       key: "ubicacion", title: "Ubicación", dataIndex: "ubicacion", width: 130,
       render: (v: string | null, r) => (
         <EditableCell
-          value={v}
-          type="string"
-          emptyPlaceholder="+ ubicar"
+          value={v} type="string" emptyPlaceholder="+ ubicar"
           onSave={async (next) => {
             const txt = (next == null || next === "") ? null : String(next).trim() || null;
             await guardarUbicacion(r.material_id, txt);
@@ -174,19 +191,13 @@ export default function SuministrosPage() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 12 }}>
-        <Title level={3} style={{ margin: 0 }}>
-          <InboxOutlined style={{ marginRight: 8 }} />
-          Almacén de suministros
-        </Title>
-        <Space>
-          <Tooltip title="Ir a movimientos para registrar entrada/salida">
-            <Button icon={<ArrowDownOutlined />} onClick={() => router.push("/movimientos")}>
-              Registrar movimiento
-            </Button>
-          </Tooltip>
-          <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>Actualizar</Button>
-        </Space>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12, gap: 8 }}>
+        <Tooltip title="Ir a movimientos para registrar entrada/salida con más opciones">
+          <Button icon={<ArrowDownOutlined />} onClick={() => router.push("/movimientos")}>
+            Movimientos
+          </Button>
+        </Tooltip>
+        <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>Actualizar</Button>
       </div>
 
       <Alert
@@ -196,7 +207,7 @@ export default function SuministrosPage() {
           <div style={{ fontSize: 12 }}>
             Esta vista muestra materiales identificados como suministros por categoría
             (<b>{FILTRO_CATEGORIA.join(", ")}</b>) o por palabras clave en la descripción.
-            Para gestionar ingresos/salidas usá <a onClick={() => router.push("/movimientos")}>Movimiento de repuestos</a> con el tipo de ingreso correspondiente.
+            Para entregar suministros a un trabajador / OT, usá la pestaña <b>Entregar suministros</b>.
           </div>
         }
       />
@@ -228,9 +239,7 @@ export default function SuministrosPage() {
         <Input
           placeholder="Buscar código, descripción, N/P..."
           prefix={<SearchOutlined />}
-          allowClear
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          allowClear value={search} onChange={(e) => setSearch(e.target.value)}
           style={{ width: 360 }}
         />
       </Card>
@@ -250,11 +259,8 @@ export default function SuministrosPage() {
       ) : (
         <Card>
           <TablaSuministros
-            columns={columns}
-            data={filtrados}
-            loading={loading}
-            page={page}
-            pageSize={pageSize}
+            columns={columns} data={filtrados} loading={loading}
+            page={page} pageSize={pageSize}
             onPageChange={(p, s) => { setPage(p); setPageSize(s); }}
           />
         </Card>
@@ -266,35 +272,321 @@ export default function SuministrosPage() {
 function TablaSuministros({
   columns, data, loading, page, pageSize, onPageChange,
 }: {
-  columns: ColumnsType<StockItem>;
-  data: StockItem[];
-  loading: boolean;
-  page: number;
-  pageSize: number;
-  onPageChange: (p: number, s: number) => void;
+  columns: ColumnsType<StockItem>; data: StockItem[]; loading: boolean;
+  page: number; pageSize: number; onPageChange: (p: number, s: number) => void;
 }) {
   const { columnas, components, TableDragWrapper } = useColumnasRedimensionables<StockItem>(
-    columns, "suministros-v1",
+    columns, "suministros-v1", { data },
   );
   return (
     <TableDragWrapper>
       <Table<StockItem>
-        rowKey="material_id"
-        size="small"
-        columns={columnas}
-        components={components}
-        dataSource={data}
-        loading={loading}
+        rowKey="material_id" size="small" columns={columnas} components={components}
+        dataSource={data} loading={loading}
         pagination={paginacionEstandar({
-          current: page,
-          pageSize,
-          total: data.length,
-          onChange: onPageChange,
-          label: "suministro(s)",
+          current: page, pageSize, total: data.length,
+          onChange: onPageChange, label: "suministro(s)",
         })}
-        scroll={{ x: 1200 }}
-        sticky={STICKY_HEADER}
+        scroll={{ x: 1200 }} sticky={STICKY_HEADER}
       />
     </TableDragWrapper>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
+// TAB 2 — Entregar suministros
+// ════════════════════════════════════════════════════════════
+interface EntregaRow {
+  id: number;
+  material_id: number;
+  material_codigo: string | null;
+  material_nombre: string | null;
+  unidad_medida: string | null;
+  cantidad: string | number;
+  persona_recibe: string | null;
+  documento_referencia: string | null;
+  observacion: string | null;
+  usuario: string;
+  fecha_movimiento: string;
+}
+
+interface TrabajadorOpt {
+  trabajador_id: number;
+  nombre: string;
+  dni: string | null;
+  area: string | null;
+  puesto: string | null;
+}
+
+interface OTLookup {
+  id: number;
+  ot: number | null;
+  descripcion: string | null;
+  cliente: string | null;
+}
+
+interface MaterialDispo {
+  material_id: number;
+  codigo: string;
+  descripcion: string;
+  stock_actual: number;
+  unidad_medida: string | null;
+}
+
+function TabEntregas() {
+  const { message } = App.useApp();
+  const { data: session } = useSession();
+  const { screens } = useResponsive();
+  const usuarioActual = session?.user?.name ?? session?.user?.email ?? "usuario";
+
+  const [rows, setRows] = useState<EntregaRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+
+  const [trabajadores, setTrabajadores] = useState<TrabajadorOpt[]>([]);
+  const [suministros, setSuministros] = useState<MaterialDispo[]>([]);
+  const [otOpts, setOtOpts] = useState<OTLookup[]>([]);
+  const [otSearchTimer, setOtSearchTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form] = Form.useForm();
+
+  // Cargar entregas (filtramos por tipo=SALIDA en el server) + catálogos.
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [movRes, trabRes, stockRes] = await Promise.all([
+        fetch("/api/movimientos?tipo=SALIDA"),
+        fetch("/api/trabajadores?limit=10000&activos=true"),
+        fetch("/api/stock"),
+      ]);
+      const movJ = await movRes.json();
+      const trabJ = await trabRes.json();
+      const stockJ = await stockRes.json();
+      // Solo SALIDAs cuya material sea un suministro.
+      const stockItems: StockItem[] = stockJ.data ?? [];
+      const suministroIds = new Set(stockItems.filter(esSuministro).map((s) => s.material_id));
+      const entregas: EntregaRow[] = (movJ.data ?? []).filter((m: EntregaRow) => suministroIds.has(m.material_id));
+      setRows(entregas);
+      setTrabajadores(trabJ.data ?? []);
+      setSuministros(
+        stockItems.filter(esSuministro).filter((s) => s.stock_actual > 0).map((s) => ({
+          material_id: s.material_id, codigo: s.codigo, descripcion: s.descripcion,
+          stock_actual: s.stock_actual, unidad_medida: s.unidad_medida,
+        })),
+      );
+    } catch {
+      message.error("Error al cargar entregas");
+    } finally {
+      setLoading(false);
+    }
+  }, [message]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Búsqueda de OTs con debounce.
+  const buscarOTs = useCallback((q: string) => {
+    if (otSearchTimer) clearTimeout(otSearchTimer);
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/ordenes-trabajo/lookup?q=${encodeURIComponent(q)}&limit=50`);
+        if (!res.ok) return;
+        const j = await res.json();
+        setOtOpts(j.data ?? []);
+      } catch { /* ignore */ }
+    }, 250);
+    setOtSearchTimer(t);
+  }, [otSearchTimer]);
+
+  // Precarga inicial de algunas OTs (al abrir modal).
+  const precargarOTs = useCallback(async () => {
+    try {
+      const res = await fetch("/api/ordenes-trabajo/lookup?limit=50");
+      if (!res.ok) return;
+      const j = await res.json();
+      setOtOpts(j.data ?? []);
+    } catch { /* ignore */ }
+  }, []);
+
+  const openNuevo = () => {
+    form.resetFields();
+    form.setFieldsValue({ cantidad: 1, fecha: dayjs() });
+    precargarOTs();
+    setModalOpen(true);
+  };
+
+  const handleCrear = async () => {
+    try {
+      const values = await form.validateFields();
+      setSaving(true);
+      const trab = trabajadores.find((t) => t.trabajador_id === values.trabajador_id);
+      const personaRecibe = trab ? trab.nombre : "—";
+      // Si vino OT, guardamos su número (string) en documento_referencia.
+      const otSel = otOpts.find((o) => o.id === values.ot_id);
+      const docRef = otSel?.ot != null ? `OT ${otSel.ot}` : (values.ot_libre || null);
+      const payload = {
+        material_id: values.material_id,
+        tipo_movimiento: "SALIDA",
+        cantidad: values.cantidad,
+        persona_recibe: personaRecibe,
+        documento_referencia: docRef,
+        observacion: values.observaciones ?? null,
+        usuario: usuarioActual,
+        fecha_movimiento: (values.fecha as Dayjs).format("YYYY-MM-DD"),
+      };
+      const res = await fetch("/api/movimientos", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Error");
+      message.success("Entrega registrada");
+      setModalOpen(false);
+      fetchData();
+    } catch (err: unknown) {
+      if (err instanceof Error) message.error(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const columns: ColumnsType<EntregaRow> = [
+    {
+      key: "fecha", title: "Fecha", dataIndex: "fecha_movimiento", width: 110,
+      render: (v: string) => v ? dayjs(v).format("DD/MM/YYYY") : "—",
+      sorter: (a, b) => (a.fecha_movimiento || "").localeCompare(b.fecha_movimiento || ""),
+    },
+    {
+      key: "codigo", title: "Código", dataIndex: "material_codigo", width: 110,
+      render: (v: string | null) => v ? <Text strong style={{ fontSize: 11, color: brand.navy }}>{v}</Text> : "—",
+    },
+    { key: "material", title: "Suministro", dataIndex: "material_nombre", ellipsis: true },
+    {
+      key: "cantidad", title: "Cant.", dataIndex: "cantidad", width: 80, align: "right",
+      render: (v: string | number, r: EntregaRow) =>
+        <span><b>{Number(v)}</b> <Text type="secondary" style={{ fontSize: 10 }}>{r.unidad_medida ?? ""}</Text></span>,
+    },
+    { key: "persona", title: "Entregado a", dataIndex: "persona_recibe", width: 200 },
+    {
+      key: "doc", title: "OT / Documento", dataIndex: "documento_referencia", width: 130,
+      render: (v: string | null) => v ? <Tag color="geekblue">{v}</Tag> : <Text type="secondary">—</Text>,
+    },
+    { key: "obs", title: "Observaciones", dataIndex: "observacion", ellipsis: true },
+    { key: "usuario", title: "Registró", dataIndex: "usuario", width: 140, ellipsis: true },
+  ];
+
+  const { columnas, components, TableDragWrapper } = useColumnasRedimensionables<EntregaRow>(
+    columns, "suministros-entregas-v1", { data: rows },
+  );
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8 }}>
+        <Text type="secondary">
+          {rows.length} entrega(s) registrada(s)
+        </Text>
+        <Space>
+          <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>Actualizar</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={openNuevo}>Nueva entrega</Button>
+        </Space>
+      </div>
+
+      <Card>
+        <TableDragWrapper>
+          <Table<EntregaRow>
+            rowKey="id" size="small" columns={columnas} components={components}
+            dataSource={rows} loading={loading}
+            pagination={paginacionEstandar({
+              current: page, pageSize, total: rows.length,
+              onChange: (p, s) => { setPage(p); setPageSize(s); },
+              label: "entregas",
+            })}
+            scroll={{ x: 1100 }} sticky={STICKY_HEADER}
+          />
+        </TableDragWrapper>
+      </Card>
+
+      <Modal
+        title="Nueva entrega de suministro"
+        open={modalOpen}
+        onCancel={() => setModalOpen(false)}
+        onOk={handleCrear}
+        confirmLoading={saving}
+        okText="Registrar entrega"
+        cancelText="Cancelar"
+        width={modalWidth(screens, 640)}
+      >
+        <Form form={form} layout="vertical">
+          <Form.Item
+            name="material_id" label="Suministro"
+            rules={[{ required: true, message: "Seleccioná un suministro" }]}
+          >
+            <Select
+              showSearch optionFilterProp="label"
+              placeholder="Buscá por código o descripción"
+              options={suministros.map((s) => ({
+                value: s.material_id,
+                label: `${s.codigo} — ${s.descripcion} (disp: ${s.stock_actual} ${s.unidad_medida ?? ""})`,
+              }))}
+            />
+          </Form.Item>
+
+          <Row gutter={12}>
+            <Col span={8}>
+              <Form.Item
+                name="cantidad" label="Cantidad"
+                rules={[{ required: true, message: "Cantidad obligatoria" }]}
+              >
+                <InputNumber min={1} step={1} style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+            <Col span={16}>
+              <Form.Item
+                name="trabajador_id" label="Entregado a (trabajador)"
+                rules={[{ required: true, message: "Seleccioná un trabajador" }]}
+              >
+                <Select
+                  showSearch optionFilterProp="label"
+                  placeholder="Buscá por nombre, DNI, puesto o área"
+                  options={trabajadores.map((t) => ({
+                    value: t.trabajador_id,
+                    label: `${t.nombre}${t.dni ? ` · DNI ${t.dni}` : ""}${t.area ? ` · ${t.area}` : ""}${t.puesto ? ` · ${t.puesto}` : ""}`,
+                  }))}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Form.Item name="ot_id" label="OT asociada (opcional)" extra="Aceptá un número de OT o buscá por cliente / descripción.">
+            <Select
+              showSearch allowClear
+              placeholder="Buscar OT por número, cliente o descripción..."
+              optionFilterProp="label"
+              filterOption={false}
+              onSearch={(q) => { if (q) buscarOTs(q); }}
+              options={otOpts.map((o) => ({
+                value: o.id,
+                label: `${o.ot ?? "?"} — ${o.cliente ?? "—"} — ${o.descripcion ?? ""}`.slice(0, 90),
+              }))}
+              notFoundContent="Escribí para buscar"
+            />
+          </Form.Item>
+          {/* Fallback libre — si el usuario quiere asociar a una OT que no aparece, puede escribirla manualmente. */}
+          <Form.Item name="ot_libre" label="OT libre (si no está en el listado)">
+            <Input placeholder="Ej: 245024 o REQ-2026-XX" maxLength={50} />
+          </Form.Item>
+
+          <Form.Item name="fecha" label="Fecha de entrega" rules={[{ required: true }]}>
+            <DatePicker format="DD/MM/YYYY" style={{ width: "100%" }} />
+          </Form.Item>
+
+          <Form.Item name="observaciones" label="Observaciones">
+            <Input.TextArea rows={2} placeholder="Notas adicionales (lote, motivo, etc.)" />
+          </Form.Item>
+        </Form>
+      </Modal>
+    </div>
   );
 }
