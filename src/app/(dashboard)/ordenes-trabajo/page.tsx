@@ -149,10 +149,14 @@ function evalEstadoMeta(estado: string | null) {
 
 // ── Config de filtros server-side (post-procesado de columnas) ──
 // Columnas de texto libre: filtran por `contains` (param txt_<key>).
+// usuario_crea NO va aquí: la columna "Creada por" usa el filtro
+// automático de useColumnasRedimensionables (checkboxes con valores únicos
+// del dataset). Decisión del usuario — más natural para columnas con pocos
+// valores repetidos como nombre del creador.
 const TEXT_KEYS = new Set<string>([
   "equipo_codigo", "descripcion", "tipo", "np", "cod_rep_flota", "cod_rep_posicion",
   "plaqueteo", "wo_cliente", "po_cliente", "po_item", "id_viajero",
-  "guia_remision", "empresa_entrega", "usuario_crea", "comentarios",
+  "guia_remision", "empresa_entrega", "comentarios",
 ]);
 // Columnas enum cuyas opciones vienen del endpoint /facets.
 const ENUM_FACET_KEYS = new Set<string>([
