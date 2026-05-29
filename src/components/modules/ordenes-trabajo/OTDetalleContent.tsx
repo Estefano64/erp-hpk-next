@@ -835,42 +835,55 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                   />
                 </Col>
               </Row>
-              <Row gutter={[16, 12]} style={{ marginTop: 8 }}>
-                <Col xs={12} md={6}>
-                  <FieldLabel>N/P</FieldLabel>
-                  <Input value={(editData.np as string) ?? ""} onChange={(e) => setField("np", e.target.value)} />
-                </Col>
-                <Col xs={24} md={18}>
-                  <FieldLabel>Descripción</FieldLabel>
-                  <Input value={(editData.descripcion as string) ?? ""} onChange={(e) => setField("descripcion", e.target.value)} />
-                </Col>
-              </Row>
-              {/* Datos del cilindro: editables solo sin estrategia (con estrategia
-                  se derivan del Código Reparable). Mismos valores que en "nueva". */}
-              {!editData.estrategia && (
-                <Row gutter={[16, 12]} style={{ marginTop: 8 }}>
-                  <Col xs={12} md={6}>
-                    <FieldLabel>Tipo</FieldLabel>
-                    <Select showSearch optionFilterProp="label" allowClear style={{ width: "100%" }}
-                      value={editData.tipo as string} onChange={(v) => setField("tipo", v ?? null)}
-                      options={tiposCodRep.map((t) => ({ value: t.codigo, label: t.nombre }))} />
-                  </Col>
-                  <Col xs={12} md={6}>
-                    <FieldLabel>Fabricante</FieldLabel>
-                    <Select showSearch optionFilterProp="label" allowClear style={{ width: "100%" }}
-                      value={editData.id_fabricante as number} onChange={(v) => setField("id_fabricante", v ?? null)}
-                      options={fabricantes.map((f) => ({ value: f.fabricante_id, label: f.nombre }))} />
-                  </Col>
-                  <Col xs={12} md={6}>
-                    <FieldLabel>Flota</FieldLabel>
-                    <Input value={(editData.cod_rep_flota as string) ?? ""} onChange={(e) => setField("cod_rep_flota", e.target.value)} />
-                  </Col>
-                  <Col xs={12} md={6}>
-                    <FieldLabel>Posición</FieldLabel>
-                    <Select showSearch optionFilterProp="label" allowClear style={{ width: "100%" }}
-                      value={editData.cod_rep_posicion as string} onChange={(v) => setField("cod_rep_posicion", v ?? null)}
-                      options={posiciones.map((p) => ({ value: p.codigo, label: p.nombre }))} />
-                  </Col>
+              {/* Datos del cilindro. CON estrategia vienen del Código Reparable
+                  → solo lectura (no se editan a mano). SIN estrategia → editables.
+                  N/S y Equipo NO dependen del cod_rep (son del cilindro físico),
+                  así que se editan siempre, más abajo. */}
+              {!editData.estrategia ? (
+                <>
+                  <Row gutter={[16, 12]} style={{ marginTop: 8 }}>
+                    <Col xs={12} md={6}>
+                      <FieldLabel>N/P</FieldLabel>
+                      <Input value={(editData.np as string) ?? ""} onChange={(e) => setField("np", e.target.value)} />
+                    </Col>
+                    <Col xs={24} md={18}>
+                      <FieldLabel>Descripción</FieldLabel>
+                      <Input value={(editData.descripcion as string) ?? ""} onChange={(e) => setField("descripcion", e.target.value)} />
+                    </Col>
+                  </Row>
+                  <Row gutter={[16, 12]} style={{ marginTop: 8 }}>
+                    <Col xs={12} md={6}>
+                      <FieldLabel>Tipo</FieldLabel>
+                      <Select showSearch optionFilterProp="label" allowClear style={{ width: "100%" }}
+                        value={editData.tipo as string} onChange={(v) => setField("tipo", v ?? null)}
+                        options={tiposCodRep.map((t) => ({ value: t.codigo, label: t.nombre }))} />
+                    </Col>
+                    <Col xs={12} md={6}>
+                      <FieldLabel>Fabricante</FieldLabel>
+                      <Select showSearch optionFilterProp="label" allowClear style={{ width: "100%" }}
+                        value={editData.id_fabricante as number} onChange={(v) => setField("id_fabricante", v ?? null)}
+                        options={fabricantes.map((f) => ({ value: f.fabricante_id, label: f.nombre }))} />
+                    </Col>
+                    <Col xs={12} md={6}>
+                      <FieldLabel>Flota</FieldLabel>
+                      <Input value={(editData.cod_rep_flota as string) ?? ""} onChange={(e) => setField("cod_rep_flota", e.target.value)} />
+                    </Col>
+                    <Col xs={12} md={6}>
+                      <FieldLabel>Posición</FieldLabel>
+                      <Select showSearch optionFilterProp="label" allowClear style={{ width: "100%" }}
+                        value={editData.cod_rep_posicion as string} onChange={(v) => setField("cod_rep_posicion", v ?? null)}
+                        options={posiciones.map((p) => ({ value: p.codigo, label: p.nombre }))} />
+                    </Col>
+                  </Row>
+                </>
+              ) : (
+                <Row gutter={[16, 4]} style={{ marginTop: 12 }}>
+                  <Col xs={12} md={6}><Field label="N/P" value={ot.np} /></Col>
+                  <Col xs={12} md={6}><Field label="Tipo" value={ot.tipo} /></Col>
+                  <Col xs={24} md={12}><Field label="Descripción" value={ot.descripcion} /></Col>
+                  <Col xs={12} md={6}><Field label="Fabricante" value={ot.fabricante?.nombre} /></Col>
+                  <Col xs={12} md={6}><Field label="Flota" value={ot.cod_rep_flota} /></Col>
+                  <Col xs={12} md={6}><Field label="Posición" value={ot.cod_rep_posicion} /></Col>
                 </Row>
               )}
               <Row gutter={[16, 12]} style={{ marginTop: 8 }}>
