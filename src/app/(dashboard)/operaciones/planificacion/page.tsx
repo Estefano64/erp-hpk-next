@@ -419,11 +419,25 @@ export default function PlanificacionPage() {
       return;
     }
     if (selectedKeys.length === 0) return;
+
+    // Si se eligió un operario real (no Tercero) y NO se eligió una máquina
+    // explícita en el bulk, autocompletamos la máquina del operario (su
+    // equipo_codigo) — igual que el editor por fila. Solo se aplica a filas que
+    // todavía no tengan máquina, para no pisar asignaciones manuales.
+    const autoMaquina = (bulkTecnico && bulkTecnico !== "Tercero" && bulkMaquina === undefined)
+      ? (trabajadores.find((t) => t.nombre === bulkTecnico)?.equipo_codigo ?? null)
+      : null;
+
     // No bulk-editar tareas realizadas (servidor las rechaza, mejor avisar antes)
     const realizadas = selectedKeys.filter((id) => rows.find((r) => r.id === id)?.estado === "realizado");
     const editables = selectedKeys.filter((id) => !realizadas.includes(id));
     for (const id of editables) {
-      updateField(id, { ...patch });
+      const filaPatch = { ...patch };
+      if (autoMaquina) {
+        const r = rows.find((x) => x.id === id);
+        if (r && !r.maquina) filaPatch.maquina = autoMaquina;
+      }
+      updateField(id, filaPatch);
     }
     if (realizadas.length > 0) {
       messageApi.warning(`${realizadas.length} tarea(s) "realizado" se omitieron.`);
@@ -433,7 +447,7 @@ export default function PlanificacionPage() {
     setBulkMaquina(undefined);
     setBulkSemana(undefined);
     setSelectedKeys([]);
-  }, [bulkTecnico, bulkMaquina, bulkSemana, selectedKeys, rows, updateField, messageApi, autoSave]);
+  }, [bulkTecnico, bulkMaquina, bulkSemana, selectedKeys, rows, trabajadores, updateField, messageApi, autoSave]);
 
   // Auto-calcular fecha_fin cuando cambian inicio / duración / qty.
   // Si HE está marcado, el Fin Estimado lo maneja el usuario manualmente (no se sobrescribe).
