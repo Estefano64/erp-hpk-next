@@ -16,6 +16,7 @@ import {
   App,
   Popconfirm,
   Switch,
+  Segmented,
 } from "antd";
 import {
   PlusOutlined,
@@ -767,6 +768,31 @@ export default function OrdenesTrabajoPage() {
           </Button>
         </Space>
       </div>
+
+      {/* Filtro rápido por tipo de OT (sincronizado con el filtro de columna
+          `tipo_ot`). "Todas" limpia ese filtro. */}
+      <Segmented
+        style={{ marginBottom: 12 }}
+        value={(columnFilters.tipo_ot?.[0] as string) || "todas"}
+        onChange={(v) => {
+          setColumnFilters((prev) => {
+            const next = { ...prev };
+            if (v === "todas") {
+              delete next.tipo_ot;
+            } else {
+              next.tipo_ot = [v as string];
+            }
+            return next;
+          });
+          setPage(1);
+        }}
+        options={[
+          { value: "todas", label: "Todas" },
+          { value: "Reparación", label: "Reparación" },
+          { value: "Bien", label: "Bien" },
+          { value: "Servicio", label: "Servicio" },
+        ]}
+      />
 
       <Card styles={{ body: { padding: 16 } }} style={{ marginBottom: 16 }}>
         <Row gutter={[12, 12]}>
