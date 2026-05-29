@@ -75,13 +75,14 @@ function semanaCodigo(d: Dayjs): string {
 function semanaCodigoFromDate(d: Date): string {
   return semanaCodigo(dayjs(d));
 }
+// Separador de multi-recurso = "|" (NO coma): los nombres traen coma.
 function splitTecnicos(s: string | null | undefined): string[] {
   if (!s) return [];
-  return s.split(",").map((x) => x.trim()).filter(Boolean);
+  return s.split("|").map((x) => x.trim()).filter(Boolean);
 }
 function joinTecnicos(arr: string[]): string | null {
   const clean = arr.map((x) => x.trim()).filter(Boolean);
-  return clean.length === 0 ? null : clean.join(", ");
+  return clean.length === 0 ? null : clean.join(" | ");
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -321,6 +322,7 @@ definirInv("SYNC4-EXTERNO", "Bulk 'Tercero' no marca trabajo_externo / no limpia
 definirInv("BULK1-AUTOMAQ", "Bulk operario no autocompleta la máquina asignada del técnico");
 definirInv("BULK2-NO-PISA", "Bulk operario pisa una máquina ya asignada en la fila");
 definirInv("BULK3-EXPLICITA", "Bulk con máquina explícita no respeta la elección");
+definirInv("LANE1-COMA", "Operario con coma en el nombre no aparece en su franja del Gantt");
 
 // ═════════════════════════════════════════════════════════════════════════
 // SUITE 1 — COLOCACIÓN (programación semanal)
@@ -608,6 +610,45 @@ definirInv("BULK3-EXPLICITA", "Bulk con máquina explícita no respeta la elecci
   }
 }
 
+// ═════════════════════════════════════════════════════════════════════════
+// SUITE 6 — NOMBRES DE OPERARIO CON COMA ("APELLIDO, NOMBRE")
+// Reproduce el bug real: la tarea desaparecía de la franja del operario porque
+// la coma del nombre se tomaba como separador de multi-recurso.
+// ═════════════════════════════════════════════════════════════════════════
+{
+  const OPERARIOS_COMA = [
+    "GALLEGOS AQUINO, EDUARDO GABRIEL",
+    "HUERTA CORNEJO, LUIS ENRIQUE",
+    "MATTOS BERNAL, GUILLERMO ANGELO MICHEL",
+  ];
+
+  // Una tarea asignada a un operario con coma debe agruparse bajo SU lane
+  // (la clave del lane es el nombre completo). Si splitTecnicos lo parte, la
+  // tarea no matchea ningún lane y desaparece.
+  for (const op of OPERARIOS_COMA) {
+    totalCasos++;
+    const r = nuevaFila({ tecnico: op, fecha_inicio: MONDAY.hour(9).toDate() });
+    const keys = splitTecnicos(r.tecnico); // claves de lane donde aparecería
+    if (!keys.includes(op))
+      reportar("LANE1-COMA", `"${op}": splitTecnicos=${JSON.stringify(keys)} → no matchea su lane (desaparece)`);
+
+    // El filtro del servidor por ese operario debe traer su tarea.
+    const got = servidorFiltrar([{ ...r, id: 1 }], { tecnico: op });
+    if (got.length !== 1)
+      reportar("LANE1-COMA", `filtro server por "${op}" trajo ${got.length} (esperaba 1)`);
+  }
+
+  // Multi-persona real (separador "|") con nombres que tienen coma: deben
+  // quedar 2 operarios completos, no 4 pedazos.
+  {
+    totalCasos++;
+    const multi = joinTecnicos([OPERARIOS_COMA[0], OPERARIOS_COMA[1]]);
+    const keys = splitTecnicos(multi);
+    if (keys.length !== 2 || !keys.includes(OPERARIOS_COMA[0]) || !keys.includes(OPERARIOS_COMA[1]))
+      reportar("LANE1-COMA", `multi "${multi}" → ${JSON.stringify(keys)} (esperaba los 2 nombres completos)`);
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Reporte
 // ─────────────────────────────────────────────────────────────────────────
@@ -617,6 +658,7 @@ const GRUPOS: { titulo: string; invs: string[] }[] = [
   { titulo: "3. FILTROS (planificación ↔ programación)", invs: ["FILT1-MULTI", "FILT2-SEMANA"] },
   { titulo: "4. SINCRONIZACIÓN", invs: ["SYNC1-SEMANA", "SYNC2-OVERLAP", "SYNC3-SACAR", "SYNC4-EXTERNO"] },
   { titulo: "5. BULK (autoasignado de máquina)", invs: ["BULK1-AUTOMAQ", "BULK2-NO-PISA", "BULK3-EXPLICITA"] },
+  { titulo: "6. NOMBRES CON COMA (operarios)", invs: ["LANE1-COMA"] },
 ];
 
 console.log("\n══════════════════════════════════════════════════════════════════════");
