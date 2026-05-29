@@ -61,6 +61,12 @@ interface ClienteOption {
   razon_social: string;
 }
 
+interface FabricanteOption {
+  fabricante_id: number;
+  codigo: string;
+  nombre: string;
+}
+
 interface CodRepOption {
   cod_rep_id: number;
   codigo: string;
@@ -92,6 +98,7 @@ interface OTDetalle {
   np: string | null;
   cod_rep_flota: string | null;
   cod_rep_posicion: string | null;
+  id_fabricante: number | null;
   wo_cliente: string | null;
   po_cliente: string | null;
   po_item: string | null;
@@ -211,6 +218,10 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   const prioridadesRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=prioridadAtencion");
   const tipoGarantiasRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=tipoGarantia");
   const monedasRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=moneda");
+  const tiposOTRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=tipoOT");
+  const tiposCodRepRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=tipoCodRep");
+  const fabricantesRes = useCachedFetch<Wrapped<FabricanteOption>>("/api/catalogos?tabla=fabricante");
+  const posicionesRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=posicion");
 
   const otStatuses = otStatusesRes?.data ?? [];
   const recursosStatuses = recursosStatusesRes?.data ?? [];
@@ -222,6 +233,10 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   const prioridades = prioridadesRes?.data ?? [];
   const tipoGarantias = tipoGarantiasRes?.data ?? [];
   const monedas = monedasRes?.data ?? [];
+  const tiposOT = tiposOTRes?.data ?? [];
+  const tiposCodRep = tiposCodRepRes?.data ?? [];
+  const fabricantes = fabricantesRes?.data ?? [];
+  const posiciones = posicionesRes?.data ?? [];
 
   const fetchOT = useCallback(async () => {
     if (!otId) return;
@@ -294,8 +309,13 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
       id_cliente: ot.id_cliente,
       estrategia: ot.estrategia,
       id_cod_rep: ot.id_cod_rep,
+      tipo_codigo: ot.tipo_codigo,
       np: ot.np,
       descripcion: ot.descripcion,
+      tipo: ot.tipo,
+      id_fabricante: ot.id_fabricante,
+      cod_rep_flota: ot.cod_rep_flota,
+      cod_rep_posicion: ot.cod_rep_posicion,
       fecha_requerimiento_cliente: ot.fecha_requerimiento_cliente,
       equipo_codigo: ot.equipo_codigo,
       ns: ot.ns,
@@ -562,7 +582,9 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   // físicos a reparar: no aplican datos de recepción, PCR/horas, ni Tipo
   // Reparación / Atención / Base Metálica / Taller Status. Servicio además
   // fuerza Estrategia=No (sin cod_rep asociado).
-  const tipoOTCodigo = ot?.tipo_codigo ?? null;
+  // En edición seguimos el Tipo OT del form (editData) para que bloquear/
+  // habilitar campos reaccione en vivo; fuera de edición, el valor guardado.
+  const tipoOTCodigo = (editing ? (editData.tipo_codigo as string | null) : ot?.tipo_codigo) ?? null;
   const bloqueoBien = tipoOTCodigo === "BIE" || tipoOTCodigo === "SER";
   const bloqueoServicio = tipoOTCodigo === "SER";
 
@@ -783,6 +805,11 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
               <Row gutter={[16, 12]}>
                 <Col xs={12} md={6}><Field label="Nro OT" value={ot.ot} /></Col>
                 <Col xs={12} md={6}>
+                  <FieldLabel>Tipo OT</FieldLabel>
+                  <Select style={{ width: "100%" }} value={editData.tipo_codigo as string} onChange={(v) => setField("tipo_codigo", v)}
+                    options={tiposOT.map((t) => ({ value: t.codigo, label: t.nombre }))} />
+                </Col>
+                <Col xs={12} md={6}>
                   <FieldLabel>Cliente</FieldLabel>
                   <Select showSearch optionFilterProp="label" style={{ width: "100%" }} value={editData.id_cliente as number} onChange={(v) => setField("id_cliente", v)}
                     options={clientes.map((c) => ({ value: c.cliente_id, label: `${c.codigo} - ${c.nombre_comercial ?? c.razon_social}` }))} />
@@ -818,6 +845,34 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                   <Input value={(editData.descripcion as string) ?? ""} onChange={(e) => setField("descripcion", e.target.value)} />
                 </Col>
               </Row>
+              {/* Datos del cilindro: editables solo sin estrategia (con estrategia
+                  se derivan del Código Reparable). Mismos valores que en "nueva". */}
+              {!editData.estrategia && (
+                <Row gutter={[16, 12]} style={{ marginTop: 8 }}>
+                  <Col xs={12} md={6}>
+                    <FieldLabel>Tipo</FieldLabel>
+                    <Select showSearch optionFilterProp="label" allowClear style={{ width: "100%" }}
+                      value={editData.tipo as string} onChange={(v) => setField("tipo", v ?? null)}
+                      options={tiposCodRep.map((t) => ({ value: t.codigo, label: t.nombre }))} />
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <FieldLabel>Fabricante</FieldLabel>
+                    <Select showSearch optionFilterProp="label" allowClear style={{ width: "100%" }}
+                      value={editData.id_fabricante as number} onChange={(v) => setField("id_fabricante", v ?? null)}
+                      options={fabricantes.map((f) => ({ value: f.fabricante_id, label: f.nombre }))} />
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <FieldLabel>Flota</FieldLabel>
+                    <Input value={(editData.cod_rep_flota as string) ?? ""} onChange={(e) => setField("cod_rep_flota", e.target.value)} />
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <FieldLabel>Posición</FieldLabel>
+                    <Select showSearch optionFilterProp="label" allowClear style={{ width: "100%" }}
+                      value={editData.cod_rep_posicion as string} onChange={(v) => setField("cod_rep_posicion", v ?? null)}
+                      options={posiciones.map((p) => ({ value: p.codigo, label: p.nombre }))} />
+                  </Col>
+                </Row>
+              )}
               <Row gutter={[16, 12]} style={{ marginTop: 8 }}>
                 <Col xs={12} md={6}>
                   <FieldLabel>Equipo</FieldLabel>
