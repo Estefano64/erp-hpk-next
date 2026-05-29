@@ -53,6 +53,7 @@ interface PlanRow {
       codigo: string;
       flota: { codigo: string; nombre: string } | null;
     } | null;
+    cod_rep_flota: string | null;
     prioridad_atencion: { codigo: string; nombre: string; nivel: number | null } | null;
   } | null;
 }
@@ -1727,7 +1728,7 @@ export default function ProgramacionSemanalPage() {
             <Descriptions.Item label="Flota">
               {selectedTask.orden_trabajo?.codigo_reparacion?.flota
                 ? `${selectedTask.orden_trabajo.codigo_reparacion.flota.codigo} — ${selectedTask.orden_trabajo.codigo_reparacion.flota.nombre}`
-                : "—"}
+                : selectedTask.orden_trabajo?.cod_rep_flota ?? "—"}
             </Descriptions.Item>
             <Descriptions.Item label="Descripción OT">{selectedTask.orden_trabajo?.descripcion ?? "—"}</Descriptions.Item>
             <Descriptions.Item label="N/P">{selectedTask.orden_trabajo?.np ?? "—"}</Descriptions.Item>
