@@ -266,6 +266,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Fecha de requerimiento del cliente obligatoria para OTs de reparación
+    // (no aplica a Bien/Servicio). En "Contrato" se calcula sola arriba; en el
+    // resto debe venir del form. Guard de servidor que respalda la validación UI.
+    const esReparacion = body.tipo_codigo !== "BIE" && body.tipo_codigo !== "SER";
+    if (esReparacion && !fechaRequerimiento) {
+      return NextResponse.json(
+        { error: "La fecha de requerimiento del cliente es obligatoria." },
+        { status: 400 },
+      );
+    }
+
     // Calcular % PCR
     let porcentajePcr: number | null = null;
     if (body.pcr && body.horas && Number(body.pcr) > 0) {

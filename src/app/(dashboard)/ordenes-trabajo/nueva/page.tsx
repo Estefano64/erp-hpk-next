@@ -721,6 +721,9 @@ export default function NuevaOTPage() {
                     label="Fecha Requerimiento Cliente"
                     dependencies={["fecha_recepcion"]}
                     rules={[
+                      // Obligatoria salvo Bien/Servicio (no aplica) o Contrato
+                      // (se calcula sola desde los días del contrato).
+                      { required: !bloqueoBien, message: "Requerido" },
                       ({ getFieldValue }) => ({
                         validator(_, value) {
                           const recepcion = getFieldValue("fecha_recepcion");
