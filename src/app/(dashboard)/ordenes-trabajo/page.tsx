@@ -821,14 +821,17 @@ export default function OrdenesTrabajoPage() {
           // server vía onChange + fetchData (ver arriba).
           dataSource={data}
           loading={loading}
-          onChange={(_pag, filters, srt) => {
+          onChange={(_pag, filters, srt, extra) => {
             setColumnFilters(filters as Record<string, Key[] | null>);
             const s = Array.isArray(srt) ? srt[0] : srt;
             setSorter({
               field: (s?.order ? (s.field ?? s.columnKey) : null) as string | null,
               order: (s?.order ?? null) as "ascend" | "descend" | null,
             });
-            setPage(1);
+            // Volver a la página 1 SOLO si cambió un filtro o el orden. Al paginar
+            // (extra.action === "paginate") la página la maneja pagination.onChange;
+            // si acá reseteábamos a 1 siempre, la paginación quedaba trabada en 1.
+            if (extra?.action !== "paginate") setPage(1);
           }}
           pagination={paginacionEstandar({
             current: page,
