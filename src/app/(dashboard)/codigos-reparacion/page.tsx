@@ -350,7 +350,7 @@ export default function CodigosReparacionPage() {
   ];
 
   const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
-    useColumnasRedimensionables<CodRep>(columns, "codrep-list-cols-widths-v1");
+    useColumnasRedimensionables<CodRep>(columns, "codrep-list-cols-widths-v1", { data });
 
   return (
     <div>

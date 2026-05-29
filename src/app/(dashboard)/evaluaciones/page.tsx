@@ -342,7 +342,7 @@ export default function EvaluacionesPage() {
   ];
 
   const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
-    useColumnasRedimensionables<Evaluacion>(columns, "evaluaciones-list-cols-widths-v1");
+    useColumnasRedimensionables<Evaluacion>(columns, "evaluaciones-list-cols-widths-v1", { data: filtered });
 
   const tituloModal: Record<string, string> = {
     solicitar: "Solicitar Revisión",

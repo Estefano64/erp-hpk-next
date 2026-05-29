@@ -499,7 +499,7 @@ export default function ComprasPage() {
   ];
 
   const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
-    useColumnasRedimensionables<Compra>(columns, "compras-list-cols-widths-v1");
+    useColumnasRedimensionables<Compra>(columns, "compras-list-cols-widths-v1", { data });
 
   const ocsContent = (
     <>

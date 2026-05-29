@@ -484,7 +484,7 @@ export default function MaterialesPage() {
   ];
 
   const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
-    useColumnasRedimensionables<MaterialRecord>(columns, "materiales-list-cols-widths-v1");
+    useColumnasRedimensionables<MaterialRecord>(columns, "materiales-list-cols-widths-v1", { data });
 
   return (
     <div>

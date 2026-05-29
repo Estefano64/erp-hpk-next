@@ -280,7 +280,7 @@ export default function ClientesPage() {
   ];
 
   const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
-    useColumnasRedimensionables<ClienteRecord>(columns, "clientes-list-cols-widths-v1");
+    useColumnasRedimensionables<ClienteRecord>(columns, "clientes-list-cols-widths-v1", { data });
 
   return (
     <div>

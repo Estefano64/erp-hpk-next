@@ -1136,7 +1136,7 @@ function RequerimientosDetalleInner() {
 
   // Hacer las columnas redimensionables (drag horizontal en el borde derecho del header).
   const { columnas: columnasResizable, components: tableComponents , TableDragWrapper } =
-    useColumnasRedimensionables<Requerimiento>(columns, "req-detalle-cols-widths-v1");
+    useColumnasRedimensionables<Requerimiento>(columns, "req-detalle-cols-widths-v1", { data: filteredData });
 
   // Filtrar columnas visibles (respetando orden)
   const columnasVisibles = columnasResizable.filter((c) => !columnasOcultas.includes(String(c.key)));

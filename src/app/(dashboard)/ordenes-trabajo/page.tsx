@@ -692,7 +692,7 @@ export default function OrdenesTrabajoPage() {
   });
 
   const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
-    useColumnasRedimensionables<OTRecord>(serverColumns, "ot-list-cols-widths-v1");
+    useColumnasRedimensionables<OTRecord>(serverColumns, "ot-list-cols-widths-v1", { data });
 
   return (
     <div>

@@ -249,17 +249,35 @@ export function ColumnasToggleButton<T>({
 // Genera el array de filtros únicos para una columna a partir del dataSource.
 // Usar como: `filters: valoresUnicos(data, "campo"), filterSearch: true,
 //           onFilter: (v, r) => String(r.campo ?? "") === v`
+// Sentinel value para representar "celda vacía" en el filtro.
+// Las columnas que tengan algún valor null/undefined/"" en el dataSource
+// reciben automáticamente una opción "(vacío)" con este value, y `onFilter`
+// la reconoce. Si no hay celdas vacías, no se agrega esta opción.
+export const FILTRO_VACIO_VALUE = "__vacio__";
+export const FILTRO_VACIO_LABEL = "(vacío)";
+
+function esVacio(v: unknown): boolean {
+  return v === null || v === undefined || v === "";
+}
+
 export function valoresUnicos<T>(
   data: T[],
   campo: keyof T,
 ): { text: string; value: string }[] {
   const set = new Set<string>();
+  let hayVacios = false;
   for (const r of data) {
     const v = (r as Record<string, unknown>)[campo as string];
-    if (v === null || v === undefined || v === "") continue;
+    if (esVacio(v)) { hayVacios = true; continue; }
     set.add(String(v));
   }
-  return [...set].sort((a, b) => a.localeCompare(b)).map((v) => ({ text: v, value: v }));
+  const opciones = [...set]
+    .sort((a, b) => a.localeCompare(b, "es", { numeric: true, sensitivity: "base" }))
+    .map((v) => ({ text: v, value: v }));
+  // Si hay celdas vacías en el dataSource, agregar la opción "(vacío)" al final
+  // para que el usuario pueda filtrar por filas sin dato (Excel-style).
+  if (hayVacios) opciones.push({ text: FILTRO_VACIO_LABEL, value: FILTRO_VACIO_VALUE });
+  return opciones;
 }
 
 // Devuelve un fragmento de columna con filtros únicos basados en los datos.
@@ -278,8 +296,12 @@ export function filtroPorColumna<T>(
     filters: valoresUnicos(data, campo),
     filterSearch: true,
     filterMultiple: true,
-    onFilter: (value, record) =>
-      String((record as Record<string, unknown>)[campo as string] ?? "") === value,
+    onFilter: (value, record) => {
+      const raw = (record as Record<string, unknown>)[campo as string];
+      // Filtro especial "(vacío)" — matchea cuando la celda está vacía.
+      if (value === FILTRO_VACIO_VALUE) return esVacio(raw);
+      return String(raw ?? "") === value;
+    },
   };
 }
 
@@ -494,13 +516,20 @@ function SortableResizableTitle(props: SortableResizableTitleProps) {
 // `components` para pasar al <Table>. Persiste los anchos en localStorage si
 // se le pasa un `storageKey`.
 //
+// Si se pasa `opts.data` (el mismo array que va al dataSource del Table), el
+// hook auto-inyecta filtros tipo Excel en cada columna que tenga `dataIndex`
+// y NO tenga `filters` / `filterDropdown` definidos. Los filtros incluyen
+// "(vacío)" como opción cuando hay celdas nulas/vacías en esa columna.
+//
 // Uso:
-//   const { columnas, components } = useColumnasRedimensionables(myColumns, "mi-tabla");
-//   <Table columns={columnas} components={components} ... />
+//   const { columnas, components } = useColumnasRedimensionables(myColumns, "mi-tabla", { data: rows });
+//   <Table columns={columnas} components={components} dataSource={rows} ... />
 export function useColumnasRedimensionables<T>(
   columns: ColumnsType<T>,
   storageKey?: string,
+  opts?: { data?: readonly T[] },
 ) {
+  const dataParaFiltros = opts?.data;
   const claveColumna = useCallback(
     (c: ColumnType<T>, idx: number): string =>
       String((c as { key?: React.Key }).key ?? (c as { dataIndex?: React.Key }).dataIndex ?? `col-${idx}`),
@@ -621,6 +650,50 @@ export function useColumnasRedimensionables<T>(
     };
   }
 
+  // Auto-filtros: para una columna con `dataIndex`, construye `filters` +
+  // `onFilter` a partir de los valores únicos presentes en `data`. Devuelve {}
+  // si no hay dataIndex o si la columna ya tiene filtros/filterDropdown.
+  function autoFiltros(col: ColumnType<T>): Partial<ColumnType<T>> {
+    if (!dataParaFiltros || dataParaFiltros.length === 0) return {};
+    if (col.filters || col.filterDropdown) return {};
+    const di = (col as { dataIndex?: React.Key | React.Key[] }).dataIndex;
+    if (di === undefined) return {};
+    const path = Array.isArray(di) ? di : [di];
+    const read = (row: T): unknown => {
+      let v: unknown = row;
+      for (const seg of path) {
+        if (v == null || typeof v !== "object") return undefined;
+        v = (v as Record<string, unknown>)[String(seg)];
+      }
+      return v;
+    };
+    const set = new Set<string>();
+    let hayVacios = false;
+    for (const r of dataParaFiltros) {
+      const v = read(r);
+      if (esVacio(v)) { hayVacios = true; continue; }
+      if (v instanceof Date) set.add(v.toISOString().slice(0, 10));
+      else set.add(String(v));
+    }
+    // Si la columna NO tiene ningún valor (todos vacíos), no inyectar filtros.
+    if (set.size === 0 && !hayVacios) return {};
+    const filters = [...set]
+      .sort((a, b) => a.localeCompare(b, "es", { numeric: true, sensitivity: "base" }))
+      .map((v) => ({ text: v, value: v }));
+    if (hayVacios) filters.push({ text: FILTRO_VACIO_LABEL, value: FILTRO_VACIO_VALUE });
+    return {
+      filters,
+      filterSearch: true,
+      filterMultiple: true,
+      onFilter: (value: boolean | React.Key, record: T) => {
+        const raw = read(record);
+        if (value === FILTRO_VACIO_VALUE) return esVacio(raw);
+        const str = raw instanceof Date ? raw.toISOString().slice(0, 10) : String(raw ?? "");
+        return str === value;
+      },
+    };
+  }
+
   const columnasRedim = useMemo<ColumnsType<T>>(() => {
     return columnasOrdenadas.map((c, idx) => {
       const col = c as ColumnType<T>;
@@ -629,16 +702,19 @@ export function useColumnasRedimensionables<T>(
         anchos[k] ?? (typeof col.width === "number" ? col.width : DEFAULT_COL_WIDTH);
       // Auto-sorter si la columna no lo declara: usa el dataIndex para comparar.
       const sorterFinal = col.sorter ?? autoSorter((col as { dataIndex?: React.Key | React.Key[] }).dataIndex);
+      // Auto-filtros desde data (si está disponible y la columna no los tiene).
+      const auto = autoFiltros(col);
       // Multi-select por default en todos los filtros de columna. Si la columna
       // define `filters` y no eligió explícitamente `filterMultiple`, lo forzamos
       // a `true` para que el dropdown rinda checkboxes en vez de radios.
-      const conMultiSelect = (col.filters && col.filterMultiple === undefined)
+      const conMultiSelect = ((col.filters || auto.filters) && col.filterMultiple === undefined)
         ? { filterMultiple: true as const }
         : {};
       // Las columnas fixed mantienen ancho original (Resizable rompe el sticky)
       if (col.fixed) {
         return {
           ...col,
+          ...auto,
           ...conMultiSelect,
           ...(col.sorter ? {} : { sorter: sorterFinal }),
           onHeaderCell: () => ({ columnKey: k, sortable: false }),
@@ -646,6 +722,7 @@ export function useColumnasRedimensionables<T>(
       }
       return {
         ...col,
+        ...auto,
         ...conMultiSelect,
         width: widthActual,
         ...(col.sorter ? {} : { sorter: sorterFinal }),
@@ -661,7 +738,7 @@ export function useColumnasRedimensionables<T>(
         }),
       } as ColumnType<T>;
     });
-  }, [columnasOrdenadas, anchos, claveColumna]);
+  }, [columnasOrdenadas, anchos, claveColumna, dataParaFiltros]);
 
   const components = useMemo(
     () => ({ header: { cell: SortableResizableTitle } }),

@@ -284,7 +284,7 @@ export default function TicketsPage() {
   }, [page, pageSize, esAdmin]);
 
   const { columnas, components, TableDragWrapper } = useColumnasRedimensionables<Ticket>(
-    columns, "tickets-v1",
+    columns, "tickets-v1", { data: rows },
   );
 
   return (
