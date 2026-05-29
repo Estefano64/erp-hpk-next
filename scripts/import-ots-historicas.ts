@@ -461,10 +461,13 @@ async function main() {
         // OT ahora es INTEGER → convertir el string del Excel.
         const otNum = parseInt(ot, 10);
         if (!Number.isFinite(otNum)) throw new Error(`OT no numérico: "${ot}"`);
+        // IMPORTANTE: solo seteamos campos que vienen del Excel. NO hardcodeamos
+        // tipo_codigo, recursos_status_codigo, usuario_crea ni garantia_codigo
+        // por default (decisión del usuario 2026-05-28). El cleanup
+        // scripts/cleanup-ots-autorelleno-railway.ts arregla los datos viejos.
         await prisma.ordenTrabajo.create({
           data: {
             ot: otNum,
-            tipo_codigo: "REP",
             id_cliente,
             id_fabricante,
             descripcion: clean(r[c.descripcion]),
@@ -475,7 +478,12 @@ async function main() {
             horas: cleanNum(r[c.horas]) != null ? new Prisma.Decimal(cleanNum(r[c.horas])!) : null,
             pcr: cleanNum(r[c.pcr]) != null ? new Prisma.Decimal(cleanNum(r[c.pcr])!) : null,
             id_viajero: clean(r[c.id_viajero]),
-            garantia_codigo: clean(r[c.garantia]) === "SI" ? "Si" : "No",
+            // Solo seteamos garantia_codigo si el Excel dice "SI" o "NO"
+            // explícito. Si está en blanco/null, queda como null (no
+            // asumimos "No").
+            garantia_codigo: clean(r[c.garantia]) === "SI" ? "Si"
+              : clean(r[c.garantia]) === "NO" ? "No"
+              : null,
             guia_remision: clean(r[c.guia_remision]),
             fecha_evaluacion: excelDateToJs(r[c.fecha_evaluacion]),
             evaluador: clean(r[c.evaluador]),
@@ -503,10 +511,12 @@ async function main() {
             dias_en_taller: cleanNum(r[c.dias_en_taller]),
             base_metalica_codigo: clean(r[c.base_metalica]) === "SI" ? "Si"
               : clean(r[c.base_metalica]) === "NO" ? "No" : null,
+            // ot_status_codigo y taller_status_codigo se derivan del status
+            // final del Excel (col 47/36) — vienen DEL EXCEL, no son inventados.
             ot_status_codigo: otStatusCodigo,
-            recursos_status_codigo: "Recursos completos",
             taller_status_codigo: tallerCodigo,
-            usuario_crea: "import-xlsx",
+            // tipo_codigo, recursos_status_codigo y usuario_crea quedan null
+            // por default — el Excel no los tiene.
           },
         });
         creadas++;
