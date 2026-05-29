@@ -80,26 +80,29 @@ export async function nextNroReqInterna(
 }
 
 /**
- * Próximo `item_req` dentro de una OT externa (1, 2, 3, ...).
+ * Próximo `item_req` DENTRO de un requerimiento (1, 2, 3, ...). La numeración
+ * es por `nro_req`, no por OT: cada requerimiento arranca en 1. (Antes contaba
+ * por OT entera, así que el 2º requerimiento seguía la numeración del 1º.)
  */
-export async function nextItemReq(tx: Prisma.TransactionClient, otId: number): Promise<number> {
+export async function nextItemReq(tx: Prisma.TransactionClient, otId: number, nroReq: string): Promise<number> {
   const max = await tx.oTRepuesto.aggregate({
-    where: { ot_id: otId },
+    where: { ot_id: otId, nro_req: nroReq },
     _max: { item_req: true },
   });
   return (max._max.item_req ?? 0) + 1;
 }
 
 /**
- * Próximo `item_req` dentro de una OT interna (1, 2, 3, ...).
- * Variante de nextItemReq que filtra por orden_trabajo_interna_id.
+ * Próximo `item_req` dentro de un requerimiento de una OT interna (1, 2, 3...).
+ * Variante de nextItemReq que filtra por orden_trabajo_interna_id + nro_req.
  */
 export async function nextItemReqInterna(
   tx: Prisma.TransactionClient,
   otInternaId: number,
+  nroReq: string,
 ): Promise<number> {
   const max = await tx.oTRepuesto.aggregate({
-    where: { orden_trabajo_interna_id: otInternaId },
+    where: { orden_trabajo_interna_id: otInternaId, nro_req: nroReq },
     _max: { item_req: true },
   });
   return (max._max.item_req ?? 0) + 1;
