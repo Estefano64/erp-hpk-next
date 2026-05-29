@@ -3,10 +3,10 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Typography, Table, Input, Space, Button, Empty, Row, Col, Card, Statistic,
-  Tag, InputNumber, DatePicker, App, Tooltip,
+  Tag, InputNumber, DatePicker, App, Tooltip, Select, Segmented, Switch, Badge,
 } from "antd";
 import dayjs, { Dayjs } from "dayjs";
-import { ReloadOutlined, SearchOutlined, FileSearchOutlined, EditOutlined, FileExcelOutlined } from "@ant-design/icons";
+import { ReloadOutlined, SearchOutlined, FileSearchOutlined, EditOutlined, FileExcelOutlined, ClearOutlined } from "@ant-design/icons";
 import type { ColumnsType, ColumnGroupType, ColumnType } from "antd/es/table/interface";
 import { brand } from "@/lib/theme";
 import {
@@ -51,6 +51,16 @@ export default function HistoricoComprasPage() {
   // Permite que el export Excel respete TODOS los filtros visibles, no solo la búsqueda libre.
   const [vistaActual, setVistaActual] = useState<MatRow[] | null>(null);
 
+  // ── Filtros adicionales (state controlado, se aplican antes que el Table) ──
+  const [filtroMarcas, setFiltroMarcas] = useState<string[]>([]);
+  const [filtroProvCotiz, setFiltroProvCotiz] = useState<number[]>([]);
+  const [filtroProvGanador, setFiltroProvGanador] = useState<number[]>([]);
+  const [filtroEstadoCot, setFiltroEstadoCot] = useState<"todos" | "manual" | "oc" | "sin">("todos");
+  const [precioMin, setPrecioMin] = useState<number | null>(null);
+  const [precioMax, setPrecioMax] = useState<number | null>(null);
+  const [minCantProveedores, setMinCantProveedores] = useState<number | null>(null);
+  const [soloConCompra, setSoloConCompra] = useState(false);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -68,19 +78,105 @@ export default function HistoricoComprasPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Reset vistaActual cuando cambian datos/búsqueda: el Table reaplicará
-  // sus filtros de columna sobre el nuevo dataset y avisará vía onChange.
-  useEffect(() => { setVistaActual(null); }, [busqueda, materiales]);
+  // Opciones únicas de marca calculadas desde los datos cargados.
+  const marcasOpts = useMemo(() => {
+    const set = new Set<string>();
+    materiales.forEach((m) => { if (m.marca) set.add(m.marca); });
+    return [...set].sort().map((v) => ({ value: v, label: v }));
+  }, [materiales]);
 
+  // Aplica TODOS los filtros del state (búsqueda + multi-selects + numéricos).
+  // Esto define el dataSource del Table; los filtros de columna van por encima.
   const filtradas = useMemo(() => {
+    let rows = materiales;
+
+    // Búsqueda libre
     const q = busqueda.trim().toLowerCase();
-    if (!q) return materiales;
-    return materiales.filter((m) =>
+    if (q) rows = rows.filter((m) =>
       (m.codigo || "").toLowerCase().includes(q) ||
       (m.np || "").toLowerCase().includes(q) ||
       (m.descripcion || "").toLowerCase().includes(q) ||
       (m.marca || "").toLowerCase().includes(q));
-  }, [materiales, busqueda]);
+
+    // Marca (multi)
+    if (filtroMarcas.length > 0) {
+      const set = new Set(filtroMarcas);
+      rows = rows.filter((m) => m.marca != null && set.has(m.marca));
+    }
+
+    // Proveedor con cotización (multi) — material tiene precio cargado de
+    // al menos uno de los proveedores seleccionados.
+    if (filtroProvCotiz.length > 0) {
+      rows = rows.filter((m) =>
+        filtroProvCotiz.some((pid) => m.precios[String(pid)] != null));
+    }
+
+    // Proveedor ganador (multi) — el ganador actual es uno de los seleccionados.
+    if (filtroProvGanador.length > 0) {
+      const set = new Set(filtroProvGanador);
+      rows = rows.filter((m) => m.proveedor_ganador_id != null && set.has(m.proveedor_ganador_id));
+    }
+
+    // Estado de cotización
+    if (filtroEstadoCot !== "todos") {
+      rows = rows.filter((m) => {
+        const tieneAlgo = m.precio_minimo != null;
+        const celdas = Object.values(m.precios);
+        const tieneManual = celdas.some((c) => c?.origen === "cotizacion");
+        const tieneOC = celdas.some((c) => c?.origen === "oc");
+        if (filtroEstadoCot === "sin") return !tieneAlgo;
+        if (filtroEstadoCot === "manual") return tieneManual;
+        if (filtroEstadoCot === "oc") return tieneOC;
+        return true;
+      });
+    }
+
+    // Rango de precio mínimo
+    if (precioMin != null) rows = rows.filter((m) => m.precio_minimo != null && m.precio_minimo >= precioMin);
+    if (precioMax != null) rows = rows.filter((m) => m.precio_minimo != null && m.precio_minimo <= precioMax);
+
+    // Cantidad mínima de proveedores con cotización (≥ N).
+    if (minCantProveedores != null && minCantProveedores > 0) {
+      rows = rows.filter((m) => {
+        const cant = Object.values(m.precios).filter((c) => c != null).length;
+        return cant >= minCantProveedores;
+      });
+    }
+
+    // Solo con compra reciente
+    if (soloConCompra) rows = rows.filter((m) => m.ultima_compra_precio != null);
+
+    return rows;
+  }, [materiales, busqueda, filtroMarcas, filtroProvCotiz, filtroProvGanador, filtroEstadoCot, precioMin, precioMax, minCantProveedores, soloConCompra]);
+
+  // Reset vistaActual cuando cambian datos o filtros: el Table reaplicará
+  // sus filtros de columna sobre el nuevo dataset y avisará vía onChange.
+  useEffect(() => { setVistaActual(null); }, [filtradas]);
+
+  // Resetea TODOS los filtros (botón "Limpiar").
+  const limpiarFiltros = () => {
+    setBusqueda("");
+    setFiltroMarcas([]);
+    setFiltroProvCotiz([]);
+    setFiltroProvGanador([]);
+    setFiltroEstadoCot("todos");
+    setPrecioMin(null);
+    setPrecioMax(null);
+    setMinCantProveedores(null);
+    setSoloConCompra(false);
+  };
+
+  // Cuántos filtros hay activos (para el badge del botón "Limpiar").
+  const cantFiltrosActivos =
+    (busqueda ? 1 : 0) +
+    (filtroMarcas.length > 0 ? 1 : 0) +
+    (filtroProvCotiz.length > 0 ? 1 : 0) +
+    (filtroProvGanador.length > 0 ? 1 : 0) +
+    (filtroEstadoCot !== "todos" ? 1 : 0) +
+    (precioMin != null ? 1 : 0) +
+    (precioMax != null ? 1 : 0) +
+    (minCantProveedores != null && minCantProveedores > 0 ? 1 : 0) +
+    (soloConCompra ? 1 : 0);
 
   const guardarCotizacion = async (matId: number, provId: number, precio: number | null) => {
     try {
@@ -328,21 +424,123 @@ export default function HistoricoComprasPage() {
       </Row>
 
       <Card size="small" style={{ marginBottom: 12 }} styles={{ body: { padding: 10 } }}>
-        <Space wrap>
-          <Input
-            placeholder="Buscar código, N° parte, descripción, marca…"
-            prefix={<SearchOutlined />} allowClear
-            value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
-            style={{ width: 360 }}
-          />
-          <ColumnasToggleButton<MatRow>
-            columns={infoCols}
-            ocultas={ocultas}
-            setOcultas={setOcultas}
-            obligatorias={["codigo", "descripcion"]}
-          />
-          <Tag color="green">Verde = mejor precio</Tag>
-          <Tag color="orange">Naranja = cotización manual</Tag>
+        <Space direction="vertical" size={8} style={{ width: "100%" }}>
+          {/* Fila 1: búsqueda + columnas + leyenda */}
+          <Space wrap>
+            <Input
+              placeholder="Buscar código, N° parte, descripción, marca…"
+              prefix={<SearchOutlined />} allowClear
+              value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
+              style={{ width: 360 }}
+            />
+            <ColumnasToggleButton<MatRow>
+              columns={infoCols}
+              ocultas={ocultas}
+              setOcultas={setOcultas}
+              obligatorias={["codigo", "descripcion"]}
+            />
+            <Badge count={cantFiltrosActivos} size="small" offset={[-4, 4]}>
+              <Button
+                icon={<ClearOutlined />}
+                onClick={limpiarFiltros}
+                disabled={cantFiltrosActivos === 0}
+              >
+                Limpiar filtros
+              </Button>
+            </Badge>
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              {filtradas.length} de {materiales.length} materiales
+            </Text>
+            <Tag color="green">Verde = mejor precio</Tag>
+            <Tag color="orange">Naranja = cotización manual</Tag>
+          </Space>
+
+          {/* Fila 2: filtros categóricos */}
+          <Space wrap>
+            <Select
+              mode="multiple"
+              allowClear
+              placeholder="Marca"
+              value={filtroMarcas}
+              onChange={setFiltroMarcas}
+              options={marcasOpts}
+              style={{ minWidth: 180 }}
+              maxTagCount="responsive"
+            />
+            <Select
+              mode="multiple"
+              allowClear
+              placeholder="Con cotización de proveedor…"
+              value={filtroProvCotiz}
+              onChange={setFiltroProvCotiz}
+              options={proveedores.map((p) => ({ value: p.id, label: p.nombre }))}
+              style={{ minWidth: 220 }}
+              maxTagCount="responsive"
+              optionFilterProp="label"
+              showSearch
+            />
+            <Select
+              mode="multiple"
+              allowClear
+              placeholder="Proveedor ganador…"
+              value={filtroProvGanador}
+              onChange={setFiltroProvGanador}
+              options={proveedores.map((p) => ({ value: p.id, label: p.nombre }))}
+              style={{ minWidth: 200 }}
+              maxTagCount="responsive"
+              optionFilterProp="label"
+              showSearch
+            />
+            <Tooltip title="Filtra por estado del precio: ninguno / al menos una manual / al menos uno de OC / sin precio">
+              <Segmented
+                value={filtroEstadoCot}
+                onChange={(v) => setFiltroEstadoCot(v as typeof filtroEstadoCot)}
+                options={[
+                  { value: "todos", label: "Todos" },
+                  { value: "manual", label: "Con cotiz. manual" },
+                  { value: "oc", label: "Con precio de OC" },
+                  { value: "sin", label: "Sin precio" },
+                ]}
+                size="small"
+              />
+            </Tooltip>
+          </Space>
+
+          {/* Fila 3: filtros numéricos */}
+          <Space wrap>
+            <span style={{ fontSize: 12, color: "rgba(0,0,0,0.55)" }}>Precio mínimo:</span>
+            <InputNumber
+              placeholder="Min $"
+              value={precioMin}
+              onChange={(v) => setPrecioMin(v == null ? null : Number(v))}
+              min={0}
+              step={1}
+              style={{ width: 110 }}
+            />
+            <InputNumber
+              placeholder="Max $"
+              value={precioMax}
+              onChange={(v) => setPrecioMax(v == null ? null : Number(v))}
+              min={0}
+              step={1}
+              style={{ width: 110 }}
+            />
+            <span style={{ fontSize: 12, color: "rgba(0,0,0,0.55)", marginLeft: 8 }}>≥</span>
+            <InputNumber
+              placeholder="N proveedores"
+              value={minCantProveedores}
+              onChange={(v) => setMinCantProveedores(v == null ? null : Number(v))}
+              min={0}
+              max={proveedores.length}
+              style={{ width: 130 }}
+            />
+            <Tooltip title="Solo materiales con al menos una OC ya ingresada (la columna Últ. compra tiene valor)">
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, marginLeft: 8 }}>
+                <Switch checked={soloConCompra} onChange={setSoloConCompra} size="small" />
+                <span style={{ fontSize: 12 }}>Solo con última compra</span>
+              </span>
+            </Tooltip>
+          </Space>
         </Space>
       </Card>
 
