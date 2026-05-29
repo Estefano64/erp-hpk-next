@@ -2,11 +2,19 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import dayjs from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
+import utc from "dayjs/plugin/utc";
+import timezone from "dayjs/plugin/timezone";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sumarHorasReales } from "@/lib/plan-sesion";
 
 dayjs.extend(isoWeek);
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
+// El servidor corre en UTC (Railway). Para que "hoy" y "esta semana" coincidan
+// con el día/semana real del taller, calculamos los límites en hora de Perú.
+const TZ = "America/Lima";
 
 // GET /api/mi-trabajo — vista personal del técnico autenticado.
 // Devuelve:
@@ -38,12 +46,16 @@ export async function GET() {
     // múltiples operarios separados por coma).
     const whereTecnico = { tecnico: { contains: tecnico, mode: "insensitive" as const } };
 
-    const hoyIni = dayjs().startOf("day").toDate();
-    const hoyFin = dayjs().endOf("day").toDate();
-    const semIni = dayjs().startOf("isoWeek").toDate();
-    const semFin = dayjs().endOf("isoWeek").toDate();
-    const mesIni = dayjs().startOf("month").toDate();
-    const mesFin = dayjs().endOf("month").toDate();
+    const ahoraLima = dayjs().tz(TZ);
+    const hoyIni = ahoraLima.startOf("day").toDate();
+    const hoyFin = ahoraLima.endOf("day").toDate();
+    const semIni = ahoraLima.startOf("isoWeek").toDate();
+    const semFin = ahoraLima.endOf("isoWeek").toDate();
+    const mesIni = ahoraLima.startOf("month").toDate();
+    const mesFin = ahoraLima.endOf("month").toDate();
+    // Código de la semana actual (ej. "2026W22"), igual que semana_plan, para
+    // incluir tareas asignadas a esta semana aunque todavía no tengan hora.
+    const semanaActual = `${ahoraLima.isoWeekYear()}W${String(ahoraLima.isoWeek()).padStart(2, "0")}`;
 
     // Sesión abierta (si el técnico está trabajando algo ahora)
     const sesionAbierta = await prisma.planificacionOTSesion.findFirst({
@@ -87,11 +99,22 @@ export async function GET() {
       orderBy: { fecha_inicio: "asc" },
       include,
     });
+    // Tareas de la semana del técnico: las que tienen fecha en el rango O las
+    // que están asignadas a esta semana (semana_plan) aunque todavía no tengan
+    // hora. Así el técnico ve TODO lo de su semana, no solo lo ya calendarizado.
     const tareasSemana = await prisma.planificacionOT.findMany({
       where: {
-        AND: [whereTecnico, { fecha_inicio: { gte: semIni, lte: semFin } }],
+        AND: [
+          whereTecnico,
+          {
+            OR: [
+              { fecha_inicio: { gte: semIni, lte: semFin } },
+              { semana_plan: semanaActual },
+            ],
+          },
+        ],
       },
-      orderBy: { fecha_inicio: "asc" },
+      orderBy: [{ fecha_inicio: "asc" }, { id: "asc" }],
       include,
     });
 

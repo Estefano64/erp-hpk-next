@@ -234,7 +234,9 @@ export default function TecnicoPanel() {
         if (cancelado) return <Tag color="default">Cancelada</Tag>;
         return (
           <Space size={4}>
-            {!enProceso && !tieneSesion && (
+            {/* "Iniciar" solo para tareas no arrancadas (abierto/programado).
+                Una tarea pausada usa "Retomar" (abajo), no "Iniciar". */}
+            {!enProceso && !tieneSesion && r.estado !== "pausado" && (
               <Button
                 size="small"
                 type="primary"
