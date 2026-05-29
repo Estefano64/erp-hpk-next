@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Typography, Button, Space, Tag, Card, Modal, Descriptions, Tooltip, message, Empty, DatePicker, Collapse, Segmented, Slider, Alert, Popover, Divider, Select, Popconfirm,
+  Typography, Button, Space, Tag, Card, Modal, Descriptions, Tooltip, message, Empty, DatePicker, Collapse, Segmented, Slider, Alert, Popover, Divider, Select, Popconfirm, Switch,
 } from "antd";
 import {
   CalendarOutlined, LeftOutlined, RightOutlined, UserOutlined, ToolOutlined, AimOutlined,
@@ -149,6 +149,9 @@ export default function ProgramacionSemanalPage() {
   const [view, setView] = useState<"equipo" | "operario">("operario");
   const [filtroEquipos, setFiltroEquipos] = useState<string[]>([]);
   const [filtroOperarios, setFiltroOperarios] = useState<string[]>([]);
+  // Por defecto el filtro de arriba también aplica a los pendientes de abajo.
+  // Con este switch (visible solo si hay filtro activo) se ignora abajo.
+  const [verTodasPendientes, setVerTodasPendientes] = useState(false);
   const [rows, setRows] = useState<PlanRow[]>([]);
   const [allRows, setAllRows] = useState<PlanRow[]>([]); // para "sin semana asignada"
   // Estado de guardado visible: contador de requests en vuelo + último error.
@@ -276,21 +279,36 @@ export default function ProgramacionSemanalPage() {
     return "blue";
   };
 
-  // ── Filas filtradas: aplican filtros de equipos y operarios sobre las tareas ──
-  const rowsFiltradas = useMemo(() => {
-    if (filtroEquipos.length === 0 && filtroOperarios.length === 0) return rows;
-    return rows.filter((r) => {
-      if (filtroEquipos.length > 0) {
-        const maqs = splitTecnicos(r.maquina);
-        if (!maqs.some((m) => filtroEquipos.includes(m))) return false;
-      }
-      if (filtroOperarios.length > 0) {
-        const tecs = splitTecnicos(r.tecnico);
-        if (!tecs.some((t) => filtroOperarios.includes(t))) return false;
-      }
-      return true;
-    });
-  }, [rows, filtroEquipos, filtroOperarios]);
+  // ── Filtro de recurso (equipos/operarios) reutilizable para filas y pendientes ──
+  const hayFiltro = filtroEquipos.length > 0 || filtroOperarios.length > 0;
+  const pasaFiltroRecurso = useCallback((r: PlanRow): boolean => {
+    if (filtroEquipos.length > 0) {
+      const maqs = splitTecnicos(r.maquina);
+      if (!maqs.some((m) => filtroEquipos.includes(m))) return false;
+    }
+    if (filtroOperarios.length > 0) {
+      const tecs = splitTecnicos(r.tecnico);
+      if (!tecs.some((t) => filtroOperarios.includes(t))) return false;
+    }
+    return true;
+  }, [filtroEquipos, filtroOperarios]);
+
+  const rowsFiltradas = useMemo(
+    () => (hayFiltro ? rows.filter(pasaFiltroRecurso) : rows),
+    [rows, hayFiltro, pasaFiltroRecurso],
+  );
+
+  // Pendientes (pools) mostrados: aplican el mismo filtro que arriba, salvo que
+  // el usuario active "Ver todas" para ignorarlo solo abajo.
+  const filtrarPendientes = hayFiltro && !verTodasPendientes;
+  const sinSemanaMostrar = useMemo(
+    () => (filtrarPendientes ? sinSemanaLista.filter(pasaFiltroRecurso) : sinSemanaLista),
+    [sinSemanaLista, filtrarPendientes, pasaFiltroRecurso],
+  );
+  const sinFechaMostrar = useMemo(
+    () => (filtrarPendientes ? sinFechaListaSemana.filter(pasaFiltroRecurso) : sinFechaListaSemana),
+    [sinFechaListaSemana, filtrarPendientes, pasaFiltroRecurso],
+  );
 
   // ── Agrupación por recurso ──
   const recursos = useMemo(() => {
@@ -1109,6 +1127,50 @@ export default function ProgramacionSemanalPage() {
     ));
   }
 
+  // Flota de la tarea (desde el cod_rep, con respaldo al texto cod_rep_flota).
+  function flotaDe(t: PlanRow): string {
+    return t.orden_trabajo?.codigo_reparacion?.flota?.nombre
+      ?? t.orden_trabajo?.cod_rep_flota
+      ?? "—";
+  }
+
+  // Tarjeta de tarea en los pools (pendientes). Estructura pedida:
+  // OT - FLOTA / DESCRIPCIÓN OT / PARTE / TAREA / OPERARIO · duración
+  function renderPoolCard(t: PlanRow, semanaCard: boolean) {
+    const horas = Number(t.horas_estimadas ?? 0);
+    const sinHoras = !Number.isFinite(horas) || horas <= 0;
+    const recurso = view === "equipo" ? t.maquina : t.tecnico;
+    return (
+      <div
+        key={t.id}
+        onMouseDown={(e) => startDrag(e, t.id, true)}
+        onClick={() => { if (!drag) setSelectedTask(t); }}
+        className={`psg-pool-card${semanaCard ? " psg-pool-card-semana" : ""}`}
+        data-color={estadoColor(t.estado)}
+        data-externo={t.trabajo_externo ? "1" : "0"}
+        style={{ opacity: drag?.taskId === t.id ? 0.25 : 1 }}
+      >
+        <div style={{ fontWeight: 600, fontSize: 12 }}>
+          OT-{t.orden_trabajo?.ot ?? t.ot_id} · {flotaDe(t)}
+        </div>
+        <div style={{ fontSize: 11, opacity: 0.95, fontWeight: 500 }}>
+          {t.orden_trabajo?.descripcion ?? "—"}
+        </div>
+        <div style={{ fontSize: 10, opacity: 0.85, marginTop: 2 }}>Parte: {t.componente}</div>
+        <div style={{ fontSize: 10, opacity: 0.85 }}>
+          Tarea: {t.operacion_codigo}{t.descripcion ? ` — ${t.descripcion}` : ""}
+        </div>
+        <div style={{ fontSize: 10, opacity: 0.85, marginTop: 2, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+          <span>{recurso || "Sin asignar"}</span>
+          <span>·</span>
+          {sinHoras
+            ? <Tag color="warning" style={{ margin: 0, fontSize: 10, lineHeight: "16px" }}>sin duración</Tag>
+            : <span>{horas.toFixed(1)}h</span>}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ minHeight: "100%" }}>
       {contextHolder}
@@ -1517,22 +1579,33 @@ export default function ProgramacionSemanalPage() {
         </div>
       </Card>
 
+      {/* Switch: por defecto el filtro de arriba aplica a los pendientes; con
+          esto se ignora solo abajo (p.ej. ver todo el backlog para asignarlo). */}
+      {hayFiltro && (
+        <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <Switch size="small" checked={verTodasPendientes} onChange={setVerTodasPendientes} />
+          <span style={{ fontSize: 12, color: brand.textSecondary }}>
+            Ver todas las pendientes de abajo (ignorar el filtro de {view === "equipo" ? "equipo" : "operario"})
+          </span>
+        </div>
+      )}
+
       {/* Panel: tareas de ESTA semana sin fecha estimada */}
       <Collapse
-        defaultActiveKey={sinFechaListaSemana.length > 0 ? ["semsf"] : []}
+        defaultActiveKey={sinFechaMostrar.length > 0 ? ["semsf"] : []}
         style={{ marginTop: 12 }}
         items={[{
           key: "semsf",
           label: (
             <span>
               <CalendarOutlined /> <strong>Tareas de la semana {semanaActual} sin fecha asignada</strong>
-              <Tag color={sinFechaListaSemana.length > 0 ? "processing" : "default"} style={{ marginLeft: 8 }}>
-                {sinFechaListaSemana.length}
+              <Tag color={sinFechaMostrar.length > 0 ? "processing" : "default"} style={{ marginLeft: 8 }}>
+                {sinFechaMostrar.length}
               </Tag>
             </span>
           ),
-          children: sinFechaListaSemana.length === 0 ? (
-            <Empty description="Todas las tareas de esta semana ya tienen fecha asignada." />
+          children: sinFechaMostrar.length === 0 ? (
+            <Empty description={filtrarPendientes ? "Sin tareas que coincidan con el filtro." : "Todas las tareas de esta semana ya tienen fecha asignada."} />
           ) : (
             <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 8 }}>
               Estas tareas tienen semana asignada pero no fecha. Arrastrálas sobre una fila del Gantt para fijarles inicio.
@@ -1541,46 +1614,9 @@ export default function ProgramacionSemanalPage() {
           ),
         }]}
       />
-      {sinFechaListaSemana.length > 0 && (
+      {sinFechaMostrar.length > 0 && (
         <div className="psg-pool">
-          {sinFechaListaSemana.map((t) => {
-            const horas = Number(t.horas_estimadas ?? 0);
-            const sinHoras = !Number.isFinite(horas) || horas <= 0;
-            return (
-              <div
-                key={t.id}
-                onMouseDown={(e) => startDrag(e, t.id, true)}
-                onClick={() => { if (!drag) setSelectedTask(t); }}
-                className="psg-pool-card psg-pool-card-semana"
-                data-color={estadoColor(t.estado)}
-                data-externo={t.trabajo_externo ? "1" : "0"}
-                style={{ opacity: drag?.taskId === t.id ? 0.25 : 1 }}
-              >
-                <div style={{ fontWeight: 600, fontSize: 12 }}>
-                  OT-{t.orden_trabajo?.ot ?? t.ot_id} · {t.operacion_codigo}
-                </div>
-                <div style={{ fontSize: 11, opacity: 0.9 }}>{t.descripcion}</div>
-                <div style={{ fontSize: 10, opacity: 0.8, marginTop: 2, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
-                  <span>Parte: {t.componente}</span>
-                  <span>·</span>
-                  {sinHoras
-                    ? <Tag color="warning" style={{ margin: 0, fontSize: 10, lineHeight: "16px" }}>sin duración</Tag>
-                    : <span>{horas.toFixed(1)}h</span>
-                  }
-                  {(t.tecnico || t.maquina) && (
-                    <>
-                      <span>·</span>
-                      <span style={{ opacity: 0.85 }}>
-                        {view === "equipo"
-                          ? (t.maquina ?? "—")
-                          : (t.tecnico ?? "—")}
-                      </span>
-                    </>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+          {sinFechaMostrar.map((t) => renderPoolCard(t, true))}
         </div>
       )}
 
@@ -1593,11 +1629,11 @@ export default function ProgramacionSemanalPage() {
           label: (
             <span>
               <UnorderedListOutlined /> <strong>Tareas sin semana asignada</strong>
-              <Tag color="warning" style={{ marginLeft: 8 }}>{sinSemanaLista.length}</Tag>
+              <Tag color="warning" style={{ marginLeft: 8 }}>{sinSemanaMostrar.length}</Tag>
             </span>
           ),
-          children: sinSemanaLista.length === 0 ? (
-            <Empty description="No hay tareas pendientes de programar." />
+          children: sinSemanaMostrar.length === 0 ? (
+            <Empty description={filtrarPendientes ? "Sin tareas que coincidan con el filtro." : "No hay tareas pendientes de programar."} />
           ) : (
             <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 8 }}>
               Arrastrá una tarjeta y soltala sobre una fila del Gantt para asignarla a un recurso y horario.
@@ -1605,27 +1641,9 @@ export default function ProgramacionSemanalPage() {
           ),
         }]}
       />
-      {sinSemanaLista.length > 0 && (
+      {sinSemanaMostrar.length > 0 && (
         <div className="psg-pool">
-          {sinSemanaLista.map((t) => (
-            <div
-              key={t.id}
-              onMouseDown={(e) => startDrag(e, t.id, true)}
-              onClick={() => { if (!drag) setSelectedTask(t); }}
-              className="psg-pool-card"
-              data-color={estadoColor(t.estado)}
-              data-externo={t.trabajo_externo ? "1" : "0"}
-              style={{ opacity: drag?.taskId === t.id ? 0.25 : 1 }}
-            >
-              <div style={{ fontWeight: 600, fontSize: 12 }}>
-                OT-{t.orden_trabajo?.ot ?? t.ot_id} · {t.operacion_codigo}
-              </div>
-              <div style={{ fontSize: 11, opacity: 0.9 }}>{t.descripcion}</div>
-              <div style={{ fontSize: 10, opacity: 0.8, marginTop: 2 }}>
-                Parte: {t.componente} · {Number(t.horas_estimadas ?? 0).toFixed(1)}h
-              </div>
-            </div>
-          ))}
+          {sinSemanaMostrar.map((t) => renderPoolCard(t, false))}
         </div>
       )}
 
