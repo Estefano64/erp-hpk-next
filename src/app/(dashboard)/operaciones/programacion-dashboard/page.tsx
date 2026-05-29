@@ -528,7 +528,7 @@ export default function ProgramacionDashboardPage() {
           />
           <Select
             placeholder="Filtrar componente"
-            allowClear
+            allowClear showSearch optionFilterProp="label"
             value={filtroComponente ?? undefined}
             onChange={(v) => setFiltroComponente(v ?? null)}
             options={componentes.map((c) => ({ value: c.codigo, label: c.nombre }))}
