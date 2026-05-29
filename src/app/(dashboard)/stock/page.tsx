@@ -118,6 +118,11 @@ export default function StockPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
   const { ocultas, setOcultas } = useColumnasOcultas("stock-list-cols-v1");
+  // Filas que pasan TODOS los filtros (toggle de origen + búsqueda + filtros
+  // de columna). Lo setea Table.onChange — se usa para exportar exactamente
+  // lo que el user ve. Si está null, el export usa `displayData` (sin filtros
+  // de columna), igual respeta el toggle y la búsqueda.
+  const [vistaActual, setVistaActual] = useState<StockItem[] | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -173,6 +178,10 @@ export default function StockPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Reset vistaActual cuando cambia el dataset base — el Table reaplica
+  // sus filtros de columna sobre el nuevo data y vuelve a llamar onChange.
+  useEffect(() => { setVistaActual(null); }, [data, noCatRaw, vistaOrigen, search]);
 
   // Data mostrada según el toggle de origen (catálogo / no catalogado / todos).
   const displayData = useMemo(() => {
@@ -467,7 +476,12 @@ export default function StockPage() {
   const exportarStockExcel = async () => {
     try {
       const XLSX = await import("xlsx");
-      const rows = data.map((m) => ({
+      const dataset = vistaActual ?? displayData;
+      if (dataset.length === 0) {
+        message.warning("No hay datos para exportar con los filtros actuales.");
+        return;
+      }
+      const rows = dataset.map((m) => ({
         Alerta: m.alerta,
         Código: m.codigo,
         Descripción: m.descripcion,
@@ -698,6 +712,7 @@ export default function StockPage() {
         scroll={{ x: 1700 }}
         sticky={{ offsetHeader: 56, offsetScroll: 0 }}
         size="small"
+        onChange={(_p, _f, _s, extra) => setVistaActual(extra.currentDataSource)}
       />
     </div>
   );
