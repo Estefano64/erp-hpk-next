@@ -47,6 +47,9 @@ interface TareaPlan {
   // Estado del técnico logueado en esta tarea (derivado de sus sesiones).
   // Independiente del estado global de la tarea (que es multi-técnico).
   miEstado?: "sin_empezar" | "en_proceso" | "pausado" | "realizado";
+  // Planificación publicada por el planner. Si es borrador, el técnico la ve
+  // pero no la puede iniciar todavía.
+  publicado?: boolean;
 }
 interface SesionEnCurso {
   sesion_id: number;
@@ -235,6 +238,10 @@ export default function TecnicoPanel() {
         const tieneSesion = data?.sesionEnCurso?.planificacion_ot_id === r.id;
         if (r.estado === "cancelado") return <Tag color="default">Cancelada</Tag>;
         if (mi === "realizado") return <Tag color="success" icon={<CheckCircleOutlined />}>Terminada</Tag>;
+        // Borrador (el planner no publicó): visible pero aún no ejecutable.
+        if (r.publicado === false && mi === "sin_empezar" && !tieneSesion) {
+          return <Tooltip title="El planner todavía no confirmó (publicó) esta tarea."><Tag color="warning">Borrador</Tag></Tooltip>;
+        }
         if (mi === "en_proceso" || tieneSesion) {
           return (
             <Space size={4}>

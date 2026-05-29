@@ -44,6 +44,7 @@ interface PlanRow {
   horas_extras: boolean | null;
   horas_extras_qty: number | null;
   trabajo_externo: boolean | null;
+  publicado: boolean;
   orden_trabajo: {
     id: number;
     ot: string | null;
@@ -637,6 +638,33 @@ export default function ProgramacionSemanalPage() {
       fetchData();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Error al sacar tarea";
+      endSave(msg);
+      messageApi.error(msg);
+    }
+  }
+
+  // ── Publicar / reabrir la semana de un operario ──
+  // El planner marca su planificación como publicada (deja de ser borrador para
+  // el técnico) o la reabre para seguir editándola.
+  async function publicarSemana(tecnico: string, publicado: boolean) {
+    if (!editMode) {
+      messageApi.warning("Activá Modo Edición para publicar.");
+      return;
+    }
+    beginSave();
+    try {
+      const res = await fetch("/api/planificacion/publicar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ semana: semanaActual, tecnico, publicado }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Error");
+      endSave();
+      messageApi.success(publicado ? `Semana de ${tecnico} publicada` : `Semana de ${tecnico} reabierta`);
+      notifySync();
+      fetchData();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Error al publicar";
       endSave(msg);
       messageApi.error(msg);
     }
@@ -1523,6 +1551,22 @@ export default function ProgramacionSemanalPage() {
                           <span className="psg-load-text" style={{ color: barColor }}>
                             {carga.toFixed(1)}/{CAPACIDAD_SEMANA}h
                           </span>
+                        </div>
+                      );
+                    })()}
+                    {/* Publicar / reabrir la semana de este operario (planner). */}
+                    {view === "operario" && tasks.length > 0 && (() => {
+                      const pub = tasks.every((t) => t.publicado);
+                      return (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+                          <Tag color={pub ? "success" : "default"} style={{ fontSize: 9, margin: 0, lineHeight: "14px" }}>
+                            {pub ? "Publicada" : "Borrador"}
+                          </Tag>
+                          {editMode && (
+                            <a style={{ fontSize: 10 }} onClick={() => publicarSemana(res.key, !pub)}>
+                              {pub ? "Reabrir" : "Publicar"}
+                            </a>
+                          )}
                         </div>
                       );
                     })()}
