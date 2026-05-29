@@ -42,6 +42,7 @@ import {
   STICKY_HEADER,
   filtroPorColumna,
   useColumnasRedimensionables,
+  paginacionEstandar,
 } from "@/lib/tables";
 
 const { Title, Text } = Typography;
@@ -80,12 +81,23 @@ interface OTRow {
   cliente_nombre: string | null;
   modelo: string | null;
   modelo_nombre: string | null;
+  prioridad_codigo: string | null;
+  prioridad_nombre: string | null;
+  prioridad_nivel: number | null;
   fecha_recepcion: string | null;
   fecha_entrega: string | null;
   fecha_requerimiento: string | null;
   ot_status: string | null;
   plan: Record<string, { estado: string | null; externo: boolean | null }>;
   progreso: { total: number; realizadas: number };
+}
+
+function prioridadColor(nivel: number | null | undefined): string {
+  if (nivel == null) return "default";
+  if (nivel <= 1) return "red";
+  if (nivel === 2) return "orange";
+  if (nivel === 3) return "gold";
+  return "blue";
 }
 
 // Color por defecto si el catálogo de status_tarea no tiene `color` asignado.
@@ -120,6 +132,8 @@ export default function ProgramacionDashboardPage() {
   const [operaciones, setOperaciones] = useState<OperacionCat[]>([]);
   const [estados, setEstados] = useState<EstadoCat[]>([]);
   const [ots, setOts] = useState<OTRow[]>([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const [search, setSearch] = useState("");
   const [filtroComponente, setFiltroComponente] = useState<string | null>(null);
   const [detalle, setDetalle] = useState<OTRow | null>(null);
@@ -320,13 +334,40 @@ export default function ProgramacionDashboardPage() {
     },
     {
       key: "modelo",
-      title: "Modelo",
+      title: "Flota",
       dataIndex: "modelo",
-      width: 90,
+      width: 110,
       align: "center",
       sorter: (a, b) => (a.modelo ?? "").localeCompare(b.modelo ?? ""),
       ...filtroPorColumna(otsFiltradas, "modelo"),
-      render: (_, r) => <span style={{ fontSize: 11 }}>{r.modelo ?? "—"}</span>,
+      render: (_, r) => (
+        <Tooltip title={r.modelo_nombre ?? undefined}>
+          <span style={{ fontSize: 11 }}>{r.modelo ?? "—"}</span>
+        </Tooltip>
+      ),
+    },
+    {
+      key: "np",
+      title: "N/P",
+      dataIndex: "np",
+      width: 130,
+      align: "left",
+      ellipsis: true,
+      sorter: (a, b) => (a.np ?? "").localeCompare(b.np ?? ""),
+      ...filtroPorColumna(otsFiltradas, "np"),
+      render: (v: string | null) => <span style={{ fontSize: 11 }}>{v ?? "—"}</span>,
+    },
+    {
+      key: "prioridad",
+      title: "Prioridad",
+      dataIndex: "prioridad_codigo",
+      width: 100,
+      align: "center",
+      sorter: (a, b) => (a.prioridad_nivel ?? 99) - (b.prioridad_nivel ?? 99),
+      ...filtroPorColumna(otsFiltradas, "prioridad_codigo"),
+      render: (_, r) => r.prioridad_codigo
+        ? <Tag color={prioridadColor(r.prioridad_nivel)} style={{ fontSize: 10, margin: 0 }}>{r.prioridad_codigo}</Tag>
+        : <Text type="secondary">—</Text>,
     },
     {
       key: "fecha_recepcion",
@@ -405,7 +446,9 @@ export default function ProgramacionDashboardPage() {
         width: 38,
         align: "center" as const,
         render: (_: unknown, r: OTRow) => {
-          const key = `${comp.codigo}__${op.codigo}`;
+          // El backend normaliza las claves de planMap (trim + uppercase) para
+          // que coincidan aunque la planificación tenga casing distinto.
+          const key = `${comp.codigo.trim().toUpperCase()}__${op.codigo.trim().toUpperCase()}`;
           const cell = r.plan[key];
           return renderCelda(cell?.estado ?? null, cell?.externo ?? null);
         },
@@ -544,6 +587,9 @@ export default function ProgramacionDashboardPage() {
           data={otsFiltradas}
           loading={loading}
           onRowClick={(r) => setDetalle(r)}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={(p, s) => { setPage(p); setPageSize(s); }}
         />
       )}
 
@@ -838,10 +884,13 @@ function ConfigurarVistaDrawer({
 }
 
 function TablaProgramacion({
-  columns, data, loading, onRowClick,
+  columns, data, loading, onRowClick, page, pageSize, onPageChange,
 }: {
   columns: ColumnsType<OTRow>; data: OTRow[]; loading: boolean;
   onRowClick: (r: OTRow) => void;
+  page: number;
+  pageSize: number;
+  onPageChange: (p: number, s: number) => void;
 }) {
   const { columnas, components, TableDragWrapper } = useColumnasRedimensionables<OTRow>(
     columns, "programacion-dashboard-v1",
@@ -858,7 +907,13 @@ function TablaProgramacion({
         bordered
         sticky={STICKY_HEADER}
         scroll={{ x: "max-content", y: "calc(100vh - 320px)" }}
-        pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (t) => `${t} OTs` }}
+        pagination={paginacionEstandar({
+          current: page,
+          pageSize,
+          total: data.length,
+          onChange: onPageChange,
+          label: "OTs",
+        })}
         onRow={(r) => ({ onClick: () => onRowClick(r), style: { cursor: "pointer" } })}
       />
     </TableDragWrapper>

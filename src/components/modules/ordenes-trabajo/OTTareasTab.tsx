@@ -46,6 +46,8 @@ interface PlanRow {
   tecnico: string | null;
   maquina: string | null;
   estado: string | null;
+  comentario: string | null;
+  observaciones: string | null;
   version: number;
   operacion_cod_rep_id: number | null;
   created_at: string;
@@ -92,6 +94,7 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
     qty: number;
     tecnico: string | null;
     equipo: string | null;
+    comentario: string | null; // comentario del planner para el técnico
   };
   const newDraft = (): DraftTarea => ({
     id: crypto.randomUUID(),
@@ -103,6 +106,7 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
     qty: 1,
     tecnico: null,
     equipo: null,
+    comentario: null,
   });
   const [draftRows, setDraftRows] = useState<DraftTarea[]>([]);
   function updateDraft(id: string, patch: Partial<DraftTarea>) {
@@ -281,6 +285,7 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
           qty: Number(d.qty ?? 1),
           maquina: d.equipo ?? null,
           tecnico: d.tecnico ?? null,
+          comentario: d.comentario?.trim() || null,
         };
         if (usaTextoLibrePara(d)) {
           body.trabajo = d.trabajo_manual;
@@ -419,6 +424,24 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
         const isFallback = !code || code === "EVAL" || code === "CUSTOM" || code.toLowerCase() === desc.toLowerCase();
         return <div style={{ fontWeight: 500 }}>{isFallback ? desc : `${code} - ${desc}`}</div>;
       },
+    },
+    {
+      key: "comentario", title: "Comentario", dataIndex: "comentario", width: 220, ellipsis: true,
+      render: (v: string | null, r: PlanRow) => (
+        <Typography.Paragraph
+          style={{ margin: 0, fontSize: 12 }}
+          editable={{
+            tooltip: "Editar comentario (le llega al técnico)",
+            text: v ?? "",
+            onChange: (val) => {
+              const nv = val.trim();
+              if (nv !== (v ?? "")) void putTarea(r, { comentario: nv || null }).then((ok) => { if (ok) fetchRows(); });
+            },
+          }}
+        >
+          {v || <Typography.Text type="secondary" style={{ fontSize: 11 }}>—</Typography.Text>}
+        </Typography.Paragraph>
+      ),
     },
     { key: "tipo_reparacion", title: "Tipo", dataIndex: "tipo_reparacion", width: 100,
       filters: [
@@ -679,6 +702,16 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
                     filterOption={(input, option) => (option?.label as string).toLowerCase().includes(input.toLowerCase())}
                     options={equipos.map((e) => ({ value: e.codigo, label: `${e.codigo} — ${e.descripcion}` }))}
                     style={{ width: "100%" }}
+                  />
+                </Col>
+                <Col xs={24} md={22}>
+                  <div style={{ fontSize: 11, color: "#888", marginBottom: 2 }}>Comentario para el técnico (opcional)</div>
+                  <Input.TextArea
+                    size="small"
+                    autoSize={{ minRows: 1, maxRows: 3 }}
+                    value={d.comentario ?? ""}
+                    onChange={(e) => updateDraft(d.id, { comentario: e.target.value })}
+                    placeholder="Ej: revisar fuga, usar repuesto X, ojo con la rosca…"
                   />
                 </Col>
                 <Col xs={24} sm={24} md={2} style={{ display: "flex", alignItems: "flex-end", justifyContent: "flex-end" }}>

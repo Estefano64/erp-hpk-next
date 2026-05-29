@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
       id: token.sub,
       name: token.name,
       email: token.email,
-      rol: token.rol,
+      roles: (token.roles as string[] | undefined) ?? [],
     },
   });
 }

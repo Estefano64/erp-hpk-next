@@ -75,7 +75,7 @@ interface Option {
 export default function CodigosReparacionPage() {
   const router = useRouter();
   const { data: session } = useSession();
-  const isAdminUser = (session?.user as { rol?: string } | undefined)?.rol === "admin";
+  const isAdminUser = ((session?.user as { roles?: string[] } | undefined)?.roles ?? []).includes("admin");
   const [data, setData] = useState<CodRep[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);

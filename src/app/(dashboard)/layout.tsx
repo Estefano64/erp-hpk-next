@@ -19,16 +19,28 @@ import {
   FileProtectOutlined,
   ControlOutlined,
   DatabaseOutlined,
+  TeamOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { brand } from "@/lib/theme";
 import IdleLogout from "@/components/IdleLogout";
+import BfcacheGuard from "@/components/BfcacheGuard";
 import { confirmLeave } from "@/lib/unsaved-changes";
+import { esTecnicoRestringido, rutaPermitidaTecnico } from "@/lib/tecnico-acceso";
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
 
-function buildMenuItems(_rol: string | null): MenuProps["items"] {
+function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
+  // El técnico (rol "tecnico" sin "admin") solo ve su panel, sus tareas y los
+  // tickets. El resto de apartados ni aparecen. Ver lib/tecnico-acceso.ts.
+  if (tecnicoRestringido) {
+    return [
+      { key: "/dashboard", icon: <DashboardOutlined />, label: "Dashboard" },
+      { key: "/mis-tareas", icon: <ToolOutlined />, label: "Mis Tareas" },
+      { key: "/tickets", icon: <BugOutlined />, label: "Tickets" },
+    ];
+  }
   const configChildren: NonNullable<MenuProps["items"]> = [
     { key: "/configuracion-cotizacion", label: "Configuración cotización" },
     { key: "/catalogos", label: "Catálogos maestros" },
@@ -54,9 +66,16 @@ function buildMenuItems(_rol: string | null): MenuProps["items"] {
             { key: "/operaciones/planificacion", label: "Planificación" },
             { key: "/operaciones/programacion-semanal", label: "Programación semanal" },
             { key: "/operaciones/programacion-dashboard", label: "Dashboard Planificación" },
-            { key: "/operaciones/trabajadores", label: "Trabajadores" },
           ],
         },
+      ],
+    },
+    {
+      key: "rrhh",
+      icon: <TeamOutlined />,
+      label: "RR/HH",
+      children: [
+        { key: "/rrhh/trabajadores", label: "Trabajadores" },
       ],
     },
     {
@@ -183,7 +202,7 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const router = useRouter();
   const [userName, setUserName] = useState<string | null>(null);
-  const [rol, setRol] = useState<string | null>(null);
+  const [roles, setRoles] = useState<string[]>([]);
 
   useEffect(() => {
     fetch("/api/me")
@@ -191,15 +210,30 @@ export default function DashboardLayout({
       .then((data) => {
         if (data?.user) {
           setUserName(data.user.name);
-          setRol(data.user.rol);
+          setRoles(Array.isArray(data.user.roles) ? data.user.roles : []);
         }
       })
       .catch(() => { /* ignore */ });
   }, []);
 
-  const rolInfo = rol ? (rolLabels[rol] ?? rolLabels.viewer) : null;
+  // Rol "principal" para el badge del header: el primero según una prioridad
+  // visual (admin gana). Para chequeos de acceso se debe usar roles.includes(x).
+  const PRIORIDAD_VISIBLE = ["admin", "supervisor", "planner", "tecnico", "evaluador", "aprobador_evaluacion", "aprobador_requerimiento", "logistica", "mantenimiento", "contabilidad", "viewer"];
+  const rolPrincipal = PRIORIDAD_VISIBLE.find((r) => roles.includes(r)) ?? null;
+  const rolInfo = rolPrincipal ? (rolLabels[rolPrincipal] ?? rolLabels.viewer) : null;
 
-  const menuItems = useMemo(() => buildMenuItems(rol), [rol]);
+  // Técnico restringido: solo ve panel + tareas + tickets (menú y rutas).
+  const tecnicoRestringido = esTecnicoRestringido(roles);
+  const menuItems = useMemo(() => buildMenuItems(tecnicoRestringido), [tecnicoRestringido]);
+
+  // Bloqueo de rutas en cliente: si un técnico cae en una pantalla que no le
+  // corresponde (p. ej. tipeando la URL), lo devolvemos a su dashboard. El
+  // middleware hace el mismo bloqueo server-side; esto cubre la navegación SPA.
+  useEffect(() => {
+    if (tecnicoRestringido && !rutaPermitidaTecnico(pathname)) {
+      router.replace("/dashboard");
+    }
+  }, [tecnicoRestringido, pathname, router]);
 
   // Determina qué item y submenú están activos (soporta grupos anidados)
   const menuLeaves = useMemo(() => flattenMenuLeaves(menuItems), [menuItems]);
@@ -241,6 +275,7 @@ export default function DashboardLayout({
   return (
     <Layout style={{ minHeight: "100vh" }}>
       <IdleLogout />
+      <BfcacheGuard />
       <Sider
         collapsible
         collapsed={collapsed}

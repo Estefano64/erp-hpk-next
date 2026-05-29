@@ -30,7 +30,8 @@ async function generarNumeroOT(): Promise<number> {
   // Como Prisma no soporta modulo en where, traemos todas con ot < 1_000_000
   // y filtramos en memoria por (ot % 100 === year2).
   const candidatos = await prisma.ordenTrabajo.findMany({
-    where: { ot: { not: null, lt: 1_000_000 } },
+    // Solo OTs activas: una OT desactivada libera su número (se puede reusar).
+    where: { ot: { not: null, lt: 1_000_000 }, activo: true },
     select: { ot: true },
   });
 
@@ -55,10 +56,20 @@ export async function GET(req: NextRequest) {
     const page = Math.max(1, Number(searchParams.get("page") ?? 1));
     const limit = Math.min(10000, Math.max(1, Number(searchParams.get("limit") ?? 20)));
     const search = searchParams.get("search")?.trim() ?? "";
-    const otStatus = searchParams.get("ot_status") ?? "";
-    const recursosStatus = searchParams.get("recursos_status") ?? "";
-    const tallerStatus = searchParams.get("taller_status") ?? "";
     const clienteId = searchParams.get("cliente") ?? "";
+    // El export a Excel pide ?export=1 para recibir también los campos
+    // históricos. El listado normal los omite para aligerar el payload.
+    const isExport = searchParams.get("export") === "1";
+
+    // Campos escalares que SOLO usa el export (históricos importados del Excel).
+    // La tabla del listado no los muestra, así que los omitimos cuando no es
+    // export — con 3000+ OTs aligera bastante la respuesta.
+    const omitExportOnly = {
+      fecha_evaluacion: true, evaluador: true, nro_informe_evaluacion: true,
+      fecha_cotizacion: true, nro_cotizacion: true, monto_cotizacion: true,
+      fecha_aprobacion: true, fecha_entrega: true, cumplimiento: true,
+      dias_proceso: true, dias_en_taller: true, nro_factura: true, fecha_facturacion: true,
+    } as const;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const where: any = {};
@@ -75,34 +86,130 @@ export async function GET(req: NextRequest) {
         { descripcion: { contains: search, mode: "insensitive" } },
       ];
     }
-    if (otStatus) where.ot_status_codigo = otStatus;
-    if (recursosStatus) where.recursos_status_codigo = recursosStatus;
-    if (tallerStatus) where.taller_status_codigo = tallerStatus;
+    // Selects/filtros por columna FK (value = codigo del catálogo).
+    const FK_CODIGO: Record<string, string> = {
+      ot_status: "ot_status_codigo",
+      recursos_status: "recursos_status_codigo",
+      taller_status: "taller_status_codigo",
+      prioridad_atencion: "prioridad_atencion_codigo",
+      atencion_reparacion: "atencion_reparacion_codigo",
+      tipo_reparacion: "tipo_reparacion_codigo",
+      tipo_garantia: "tipo_garantia_codigo",
+      tipo_ot: "tipo_codigo",
+    };
+    for (const [param, col] of Object.entries(FK_CODIGO)) {
+      const v = searchParams.get(param);
+      if (v) where[col] = v;
+    }
     if (clienteId) where.id_cliente = Number(clienteId);
+
+    // Filtro por año (2 dígitos, ot % 100). Llega como ?anios=26,25. Si no
+    // viene, no se filtra por año (el front manda el año actual por default;
+    // el export no manda nada → trae todos los años).
+    const aniosParam = searchParams.get("anios");
+    if (aniosParam) {
+      const years = aniosParam.split(",").map((s) => Number(s.trim())).filter(Number.isFinite);
+      if (years.length) where.anio = { in: years };
+    }
+
+    // Filtros por relación (value = el valor mostrado).
+    const codRep = searchParams.get("codigo_reparacion");
+    if (codRep) where.codigo_reparacion = { is: { codigo: codRep } };
+    const fab = searchParams.get("fabricante");
+    if (fab) where.fabricante = { is: { nombre: fab } };
+
+    // Si / No: presencia de garantía / base metálica.
+    const garantia = searchParams.get("garantia");
+    if (garantia === "Si") where.garantia_codigo = { not: null };
+    else if (garantia === "No") where.garantia_codigo = null;
+    const baseMet = searchParams.get("base_metalica");
+    if (baseMet === "Si") where.base_metalica_codigo = { not: null };
+    else if (baseMet === "No") where.base_metalica_codigo = null;
+
+    // Estado de la hoja de evaluación (__none__ = sin evaluación).
+    const evalEstado = searchParams.get("evaluacion_estado");
+    if (evalEstado === "__none__") where.evaluaciones_tecnicas = { none: {} };
+    else if (evalEstado) where.evaluaciones_tecnicas = { some: { estado: evalEstado } };
+
+    // Filtros de texto libre (contains, insensitive). Llegan como txt_<campo>.
+    const TEXT_FIELDS = [
+      "equipo_codigo", "descripcion", "tipo", "np", "cod_rep_flota", "cod_rep_posicion",
+      "plaqueteo", "wo_cliente", "po_cliente", "po_item", "id_viajero",
+      "guia_remision", "empresa_entrega", "usuario_crea", "comentarios",
+    ];
+    for (const f of TEXT_FIELDS) {
+      const v = searchParams.get(`txt_${f}`)?.trim();
+      if (v) where[f] = { contains: v, mode: "insensitive" };
+    }
+
+    // Rango de fecha de recepción.
+    const fDesde = searchParams.get("fecha_recepcion_desde");
+    const fHasta = searchParams.get("fecha_recepcion_hasta");
+    if (fDesde || fHasta) {
+      where.fecha_recepcion = {} as Record<string, Date>;
+      if (fDesde) where.fecha_recepcion.gte = new Date(fDesde);
+      if (fHasta) where.fecha_recepcion.lte = new Date(fHasta + "T23:59:59.999Z");
+    }
+
+    // Por defecto solo OTs activas; las desactivadas (anuladas) se ocultan.
+    // El admin puede pedirlas con ?incluirInactivas=1 (para reactivarlas).
+    if (searchParams.get("incluirInactivas") !== "1") where.activo = true;
+
+    // Ordenamiento server-side. La tabla manda sortField (key) + sortOrder.
+    const sortOrder = searchParams.get("sortOrder") === "ascend" ? "asc" : "desc";
+    const sortField = searchParams.get("sortField") ?? "";
+    const SORT_SCALAR: Record<string, true> = {
+      ot: true, equipo_codigo: true, descripcion: true, fecha_recepcion: true,
+      porcentaje_pcr: true, pcr: true, horas: true, contrato_dias: true,
+      fecha_requerimiento_cliente: true, fecha_reprogramada: true, fecha_creacion: true,
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let orderBy: any = { id: "desc" };
+    if (sortField === "cliente") orderBy = { cliente: { razon_social: sortOrder } };
+    else if (sortField === "codigo_reparacion") orderBy = { codigo_reparacion: { codigo: sortOrder } };
+    else if (sortField === "prioridad_atencion") orderBy = { prioridad_atencion_codigo: sortOrder };
+    else if (sortField === "ot_status") orderBy = { ot_status: { nombre: sortOrder } };
+    else if (sortField === "recursos_status") orderBy = { recursos_status: { nombre: sortOrder } };
+    else if (sortField === "taller_status") orderBy = { taller_status: { nombre: sortOrder } };
+    else if (SORT_SCALAR[sortField]) orderBy = { [sortField]: sortOrder };
 
     const [data, total] = await Promise.all([
       prisma.ordenTrabajo.findMany({
         where,
+        ...(isExport ? {} : { omit: omitExportOnly }),
+        // `include` conserva TODOS los campos escalares de la OT (incluidos los
+        // históricos que van al Excel: monto_cotizacion, fecha_evaluacion, etc.),
+        // pero a cada relación le pedimos SOLO los sub-campos que el listado y el
+        // export usan. Antes se traía la fila completa de cada relación (+ anidados):
+        // con 3000+ OTs eso hacía el payload enorme y la carga lenta.
         include: {
-          cliente: true,
-          codigo_reparacion: { include: { tipo: true, flota: true, fabricante: true, posicion: true } },
-          fabricante: true,
-          garantia: true,
-          atencion_reparacion: true,
-          tipo_reparacion: true,
-          tipo_garantia: true,
-          tipo_ot: true,
-          prioridad_atencion: true,
-          base_metalica: true,
-          ot_status: true,
-          recursos_status: true,
-          taller_status: true,
+          cliente: { select: { codigo: true, nombre_comercial: true, razon_social: true } },
+          codigo_reparacion: {
+            select: {
+              codigo: true, descripcion: true,
+              tipo: { select: { nombre: true } },
+              flota: { select: { nombre: true } },
+              fabricante: { select: { nombre: true } },
+              posicion: { select: { nombre: true } },
+            },
+          },
+          fabricante: { select: { nombre: true } },
+          garantia: { select: { nombre: true } },
+          atencion_reparacion: { select: { nombre: true } },
+          tipo_reparacion: { select: { nombre: true } },
+          tipo_garantia: { select: { nombre: true } },
+          tipo_ot: { select: { codigo: true, nombre: true } },
+          prioridad_atencion: { select: { codigo: true, nombre: true } },
+          base_metalica: { select: { nombre: true } },
+          ot_status: { select: { nombre: true } },
+          recursos_status: { select: { nombre: true } },
+          taller_status: { select: { nombre: true } },
           // Sólo el estado de la hoja de evaluación (la fila completa no se
           // usa en el listado). La relación es 1-N pero en la práctica solo hay
           // una por OT; tomamos el último id por las dudas.
           evaluaciones_tecnicas: { select: { estado: true }, orderBy: { id: "desc" }, take: 1 },
         },
-        orderBy: { id: "desc" },
+        orderBy,
         skip: (page - 1) * limit,
         take: limit,
       }),
@@ -206,6 +313,7 @@ export async function POST(req: NextRequest) {
     const created = await prisma.ordenTrabajo.create({
       data: {
         ot,
+        anio: ot % 100, // año derivado del número de OT (para filtrar por año)
         id_cliente: body.id_cliente || null,
         estrategia: body.estrategia ?? false,
         id_cod_rep: body.id_cod_rep || null,

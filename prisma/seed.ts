@@ -14,7 +14,7 @@ async function main() {
       email: "admin@empresa.com",
       nombre: "Administrador",
       password: hash,
-      rol: "admin",
+      roles: ["admin"],
     },
   });
   console.log("✓ Usuario admin creado");
@@ -39,7 +39,7 @@ async function main() {
         codigoEmpleado: u.codigo,
         nombre: u.nombre,
         password: firmaHash,
-        rol: "supervisor",
+        roles: ["admin"],
       },
     });
   }

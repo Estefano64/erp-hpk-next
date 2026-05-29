@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getAuditUser } from "@/lib/audit";
+import { getAuditUser, isAdmin } from "@/lib/audit";
+import { deleteObject } from "@/lib/r2-helpers";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -95,11 +96,64 @@ export async function PUT(req: NextRequest, { params }: Params) {
   }
 }
 
-// DELETE — elimina una OT interna por id.
-export async function DELETE(_req: NextRequest, { params }: Params) {
+// PATCH — activar / desactivar (soft-delete reversible). Solo admin.
+// Body: { activo: boolean }. Desactivar oculta la OT interna de los listados;
+// los datos se conservan. (El `ot` es @unique → su número no se reutiliza.)
+export async function PATCH(req: NextRequest, { params }: Params) {
   try {
+    if (!(await isAdmin(req))) {
+      return NextResponse.json({ error: "Solo un administrador puede desactivar/reactivar OTs internas" }, { status: 403 });
+    }
     const { id } = await params;
-    await prisma.ordenTrabajoInterna.delete({ where: { id: Number(id) } });
+    const otId = Number(id);
+    const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+    if (typeof body.activo !== "boolean") {
+      return NextResponse.json({ error: "Falta 'activo' (boolean)" }, { status: 400 });
+    }
+    const existing = await prisma.ordenTrabajoInterna.findUnique({ where: { id: otId }, select: { id: true } });
+    if (!existing) return NextResponse.json({ error: "No encontrada" }, { status: 404 });
+
+    const usuario = (await getAuditUser(req)) ?? "sistema";
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.ordenTrabajoInterna.update({
+        where: { id: otId },
+        data: { activo: body.activo as boolean, version: { increment: 1 } },
+      });
+      await tx.oTHistorial.create({
+        data: {
+          orden_trabajo_interna_id: otId,
+          tipo_operacion: "EDICION",
+          descripcion: body.activo ? "OT interna reactivada" : "OT interna desactivada (anulada)",
+          usuario,
+        },
+      });
+      return u;
+    });
+    return NextResponse.json({ data: updated, message: body.activo ? "OT interna reactivada" : "OT interna desactivada" });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Error" }, { status: 500 });
+  }
+}
+
+// DELETE — elimina una OT interna en cascada (hard delete). Solo admin. Sus
+// hijos (adjuntos, historial, requerimientos) caen por cascada de la DB.
+// Best-effort: borra los archivos de R2 (adjuntos).
+export async function DELETE(req: NextRequest, { params }: Params) {
+  try {
+    if (!(await isAdmin(req))) {
+      return NextResponse.json({ error: "Solo un administrador puede eliminar OTs internas" }, { status: 403 });
+    }
+    const { id } = await params;
+    const otId = Number(id);
+    const existing = await prisma.ordenTrabajoInterna.findUnique({ where: { id: otId }, select: { id: true } });
+    if (!existing) return NextResponse.json({ error: "No encontrada" }, { status: 404 });
+
+    // Keys de R2 a limpiar después (los registros se borran por cascade).
+    const adjuntos = await prisma.otAdjunto.findMany({ where: { orden_trabajo_interna_id: otId }, select: { r2_key: true } });
+
+    await prisma.ordenTrabajoInterna.delete({ where: { id: otId } });
+
+    await Promise.all(adjuntos.map((a) => deleteObject(a.r2_key).catch((e) => console.warn("R2 huérfano al borrar OT interna:", a.r2_key, e))));
     return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json(

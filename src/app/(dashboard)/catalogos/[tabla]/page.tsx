@@ -18,6 +18,7 @@ import {
   visibleColumns,
   filtroPorColumna,
   useColumnasRedimensionables,
+  paginacionEstandar,
 } from "@/lib/tables";
 import { brand } from "@/lib/theme";
 import { catalogosById, type FieldDef } from "@/lib/catalogos-config";
@@ -37,6 +38,8 @@ export default function CatalogoCrudPage() {
 
   const [data, setData] = useState<CatalogRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const [search, setSearch] = useState("");
   const [showInactivos, setShowInactivos] = useState(true);
   const [editingId, setEditingId] = useState<number | null>(null); // null = creando
@@ -176,19 +179,10 @@ export default function CatalogoCrudPage() {
     fetchData();
   }
 
-  if (!cfg) {
-    return (
-      <Card>
-        <Alert type="error" showIcon title={`Catálogo "${tabla}" no existe.`} />
-        <Button style={{ marginTop: 12 }} icon={<ArrowLeftOutlined />} onClick={() => router.push("/catalogos")}>
-          Volver al índice
-        </Button>
-      </Card>
-    );
-  }
-
-  // Columnas dinámicas — todas con filtro tipo Excel basado en los datos cargados
-  const columns: ColumnsType<CatalogRow> = cfg.fields.map<ColumnsType<CatalogRow>[number]>((f) => {
+  // Columnas dinámicas — todas con filtro tipo Excel basado en los datos cargados.
+  // Se construyen aunque falte cfg para no romper el orden de hooks (el hook de
+  // redimensionado va más abajo y debe llamarse siempre). El early-return va después.
+  const columns: ColumnsType<CatalogRow> = (cfg?.fields ?? []).map<ColumnsType<CatalogRow>[number]>((f) => {
     const base = {
       title: f.label,
       key: f.key,
@@ -254,8 +248,8 @@ export default function CatalogoCrudPage() {
     };
   });
 
-  // Columna de acciones
-  columns.push({
+  // Columna de acciones (solo si el catálogo existe)
+  if (cfg) columns.push({
     title: "",
     key: "actions",
     width: 120,
@@ -299,7 +293,18 @@ export default function CatalogoCrudPage() {
 
   const allColumns = [numeracionColumn<CatalogRow>(), ...columns];
   const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
-    useColumnasRedimensionables<CatalogRow>(allColumns, `catalogos-${cfg.id}-cols-widths-v1`);
+    useColumnasRedimensionables<CatalogRow>(allColumns, `catalogos-${cfg?.id ?? tabla}-cols-widths-v1`);
+
+  if (!cfg) {
+    return (
+      <Card>
+        <Alert type="error" showIcon title={`Catálogo "${tabla}" no existe.`} />
+        <Button style={{ marginTop: 12 }} icon={<ArrowLeftOutlined />} onClick={() => router.push("/catalogos")}>
+          Volver al índice
+        </Button>
+      </Card>
+    );
+  }
 
   return (
     <div>
@@ -372,7 +377,12 @@ export default function CatalogoCrudPage() {
           dataSource={filtered}
           loading={loading}
           size="small"
-          pagination={{ pageSize: 50, showTotal: (t) => `${t} registros`, placement: ["topEnd", "bottomEnd"] }}
+          pagination={paginacionEstandar({
+            current: page,
+            pageSize,
+            total: filtered.length,
+            onChange: (p, s) => { setPage(p); setPageSize(s); },
+          })}
           scroll={{ x: 800 }}
           sticky={{ offsetHeader: 56, offsetScroll: 0 }}
           rowClassName={(r) => r.activo === false ? "cat-row-inactive" : ""}

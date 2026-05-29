@@ -11,7 +11,7 @@ import type { ColumnsType, ColumnGroupType, ColumnType } from "antd/es/table/int
 import { brand } from "@/lib/theme";
 import {
   useColumnasOcultas, ColumnasToggleButton, visibleColumns, STICKY_HEADER,
-  filtroPorColumna, useColumnasRedimensionables,
+  filtroPorColumna, paginacionEstandar, useColumnasRedimensionables,
 } from "@/lib/tables";
 
 const { Title, Text } = Typography;
@@ -39,6 +39,8 @@ export default function HistoricoComprasPage() {
   const [proveedores, setProveedores] = useState<Prov[]>([]);
   const [stats, setStats] = useState({ materiales: 0, proveedores: 0, cotizaciones: 0 });
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const [busqueda, setBusqueda] = useState("");
   const [editando, setEditando] = useState<{ matId: number; provId: number } | null>(null);
   const [editValor, setEditValor] = useState<number | null>(null);
@@ -262,6 +264,9 @@ export default function HistoricoComprasPage() {
           columns={[...visibleColumns(infoCols, ocultas), provGroup, ...ofertaCols] as ColumnsType<MatRow>}
           data={filtradas}
           loading={loading}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={(p, s) => { setPage(p); setPageSize(s); }}
         />
       )}
     </div>
@@ -269,8 +274,15 @@ export default function HistoricoComprasPage() {
 }
 
 function TablaHistorico({
-  columns, data, loading,
-}: { columns: ColumnsType<MatRow>; data: MatRow[]; loading: boolean }) {
+  columns, data, loading, page, pageSize, onPageChange,
+}: {
+  columns: ColumnsType<MatRow>;
+  data: MatRow[];
+  loading: boolean;
+  page: number;
+  pageSize: number;
+  onPageChange: (p: number, s: number) => void;
+}) {
   const { columnas, components, TableDragWrapper } = useColumnasRedimensionables<MatRow>(
     columns, "compras-historico-v1",
   );
@@ -286,7 +298,13 @@ function TablaHistorico({
         loading={loading}
         sticky={STICKY_HEADER}
         scroll={{ x: "max-content", y: "calc(100vh - 360px)" }}
-        pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (t) => `${t} repuestos` }}
+        pagination={paginacionEstandar({
+          current: page,
+          pageSize,
+          total: data.length,
+          onChange: onPageChange,
+          label: "repuestos",
+        })}
       />
     </TableDragWrapper>
   );

@@ -76,7 +76,7 @@ function ClienteDupHint({ form, excludeId }: { form: ReturnType<typeof Form.useF
 
 export default function ClientesPage() {
   const { data: session } = useSession();
-  const isAdminUser = (session?.user as { rol?: string } | undefined)?.rol === "admin";
+  const isAdminUser = ((session?.user as { roles?: string[] } | undefined)?.roles ?? []).includes("admin");
   const [data, setData] = useState<ClienteRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);

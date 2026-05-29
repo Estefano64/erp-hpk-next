@@ -115,8 +115,8 @@ const OC_COLOR: Record<string, string> = {
 export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepcion, onUpdated }: Props) {
   const [rows, setRows] = useState<RequerimientoRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [rol, setRol] = useState<string | null>(null);
-  const isAdmin = rol === "admin";
+  const [roles, setRoles] = useState<string[]>([]);
+  const isAdmin = roles.includes("admin");
   const [messageApi, contextHolder] = message.useMessage();
   const { screens } = useResponsive();
   const [modalApi, modalCtx] = Modal.useModal();
@@ -403,10 +403,10 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
   const umsRes = useCachedFetch<Wrapped<{ codigo: string; nombre: string; abreviatura?: string }>>("/api/catalogos?tabla=unidadMedida");
   const unidades = umsRes?.data ?? [];
 
-  // Rol del usuario (para acciones admin)
+  // Roles del usuario (para acciones admin/aprobador)
   useEffect(() => {
     fetch("/api/me").then((r) => r.ok ? r.json() : null).then((d) => {
-      if (d?.user) setRol(d.user.rol);
+      if (Array.isArray(d?.user?.roles)) setRoles(d.user.roles);
     }).catch(() => { /* noop */ });
   }, []);
 

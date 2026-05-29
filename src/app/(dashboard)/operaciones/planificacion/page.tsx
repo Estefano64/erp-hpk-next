@@ -15,6 +15,7 @@ import {
   RangoFechasFiltro,
   dentroDeRango,
   useColumnasRedimensionables,
+  paginacionEstandar,
 } from "@/lib/tables";
 import dayjs, { Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
@@ -115,6 +116,7 @@ interface PlanRow {
   componente: string;
   operacion_codigo: string;
   descripcion: string;
+  comentario: string | null;
   tipo_reparacion: string | null;
   orden: number;
   horas_estimadas: string | null;
@@ -182,6 +184,8 @@ export default function PlanificacionPage() {
   const [editMode, setEditMode] = useState(false);
 
   const [rows, setRows] = useState<PlanRow[]>([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -493,6 +497,9 @@ export default function PlanificacionPage() {
     const cargaMap = semanaRef ? cargaIndex.op.get(semanaRef) : null;
     const opcionTercero = {
       value: "Tercero",
+      // search: string que el filterOption usa para matchear lo que tipea el
+      // usuario (porque label es JSX y no se puede usar como string).
+      search: "tercero proveedor externo",
       label: (
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           <Tag color="purple" style={{ fontSize: 10, margin: 0, lineHeight: "16px" }}>TERCERO</Tag>
@@ -505,6 +512,7 @@ export default function PlanificacionPage() {
       const showCarga = !!cargaMap;
       return {
         value: t.nombre,
+        search: `${t.nombre} ${t.area ?? ""} ${t.puesto ?? ""}`.toLowerCase(),
         label: showCarga ? (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6, width: "100%" }}>
             <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -528,6 +536,9 @@ export default function PlanificacionPage() {
       // Pedido del usuario: primero el nombre (descripcion), después el código.
       return {
         value: e.codigo,
+        // search: string para que filterOption matchee por código O descripción.
+        // Necesario porque label es JSX cuando hay carga (no se puede searchar).
+        search: `${e.codigo} ${e.descripcion ?? ""}`.toLowerCase(),
         label: showCarga ? (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6, width: "100%" }}>
             <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -696,6 +707,24 @@ export default function PlanificacionPage() {
       },
     },
     {
+      key: "comentario", title: "Comentario", dataIndex: "comentario", width: 220, ellipsis: true,
+      render: (v: string | null, r: PlanRow) => (
+        <Typography.Paragraph
+          style={{ margin: 0, fontSize: 12 }}
+          editable={{
+            tooltip: "Editar comentario (le llega al técnico)",
+            text: v ?? "",
+            onChange: (val) => {
+              const nv = val.trim();
+              if (nv !== (v ?? "")) persistPatch(r.id, { comentario: nv || null });
+            },
+          }}
+        >
+          {v || <Typography.Text type="secondary" style={{ fontSize: 11 }}>—</Typography.Text>}
+        </Typography.Paragraph>
+      ),
+    },
+    {
       title: "Semana", key: "semana", width: 160,
       filters: semanaValores, filterSearch: true,
       onFilter: (value, r) => r.semana_plan === value,
@@ -758,7 +787,7 @@ export default function PlanificacionPage() {
                 // Mostramos todos los tags (sin colapsar). El alto de la fila crece si hay varios.
                 style={{ width: "100%" }}
                 showSearch
-                filterOption={(i, o) => String(o?.value ?? "").toLowerCase().includes(i.toLowerCase())}
+                filterOption={(i, o) => ((o as { search?: string })?.search ?? String(o?.value ?? "")).toLowerCase().includes(i.toLowerCase())}
                 tagRender={({ label, onClose }) => (
                   <span
                     style={{
@@ -792,7 +821,7 @@ export default function PlanificacionPage() {
             size="small"
             style={{ width: "100%" }}
             showSearch
-            filterOption={(i, o) => String(o?.value ?? "").toLowerCase().includes(i.toLowerCase())}
+            filterOption={(i, o) => ((o as { search?: string })?.search ?? String(o?.value ?? "")).toLowerCase().includes(i.toLowerCase())}
           />
         );
       },
@@ -827,7 +856,7 @@ export default function PlanificacionPage() {
                 size="small"
                 style={{ width: "100%" }}
                 showSearch
-                filterOption={(i, o) => String(o?.value ?? "").toLowerCase().includes(i.toLowerCase())}
+                filterOption={(i, o) => ((o as { search?: string })?.search ?? String(o?.value ?? "")).toLowerCase().includes(i.toLowerCase())}
                 tagRender={({ label, onClose }) => (
                   <span
                     style={{
@@ -861,7 +890,7 @@ export default function PlanificacionPage() {
             size="small"
             style={{ width: "100%" }}
             showSearch
-            filterOption={(i, o) => String(o?.value ?? "").toLowerCase().includes(i.toLowerCase())}
+            filterOption={(i, o) => ((o as { search?: string })?.search ?? String(o?.value ?? "")).toLowerCase().includes(i.toLowerCase())}
           />
         );
       },
@@ -1074,17 +1103,23 @@ export default function PlanificacionPage() {
     },
   ];
 
+  // Opciones para los filtros del header. ANTES se calculaban desde `rows`, lo
+  // cual era un bug: al filtrar por operario X, el dropdown quedaba con solo X
+  // (porque `rows` ya venía filtrado del backend) y no se podía cambiar a otro.
+  // Ahora usamos los catálogos completos (`trabajadores`, `equipos`).
   const tecnicosUnicos = useMemo(() => {
-    const s = new Set<string>();
+    const s = new Set<string>(trabajadores.map((t) => t.nombre));
+    // Añadir valores presentes en rows que ya no estén en el catálogo (legacy /
+    // operarios que perdieron su puesto técnico), para no esconder filas viejas.
     for (const r of rows) for (const t of splitTecnicos(r.tecnico)) s.add(t);
     return [...s].sort();
-  }, [rows]);
+  }, [trabajadores, rows]);
 
   const equiposUnicos = useMemo(() => {
-    const s = new Set<string>();
+    const s = new Set<string>(equipos.map((e) => e.codigo));
     for (const r of rows) for (const m of splitTecnicos(r.maquina)) s.add(m);
     return [...s].sort();
-  }, [rows]);
+  }, [equipos, rows]);
 
   const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
     useColumnasRedimensionables<PlanRow>(columns, "planificacion-cols-widths-v1");
@@ -1227,7 +1262,11 @@ export default function PlanificacionPage() {
             <Select placeholder="Equipo" allowClear showSearch style={{ width: "100%" }}
               value={filterMaquina}
               onChange={setFilterMaquina}
-              options={equiposUnicos.map((e) => ({ value: e, label: e }))}
+              options={equiposUnicos.map((cod) => {
+                const eq = equipos.find((e) => e.codigo === cod);
+                const label = eq ? `${eq.descripcion} — ${eq.codigo}` : cod;
+                return { value: cod, label };
+              })}
               filterOption={(i, o) => (o?.label as string).toLowerCase().includes(i.toLowerCase())}
             />
           </Col>
@@ -1267,7 +1306,7 @@ export default function PlanificacionPage() {
                 allowClear
                 showSearch
                 style={{ width: "100%" }}
-                filterOption={(i, o) => String(o?.value ?? "").toLowerCase().includes(i.toLowerCase())}
+                filterOption={(i, o) => ((o as { search?: string })?.search ?? String(o?.value ?? "")).toLowerCase().includes(i.toLowerCase())}
               />
             </Col>
             <Col flex="1 1 220px">
@@ -1279,7 +1318,7 @@ export default function PlanificacionPage() {
                 allowClear
                 showSearch
                 style={{ width: "100%" }}
-                filterOption={(i, o) => String(o?.value ?? "").toLowerCase().includes(i.toLowerCase())}
+                filterOption={(i, o) => ((o as { search?: string })?.search ?? String(o?.value ?? "")).toLowerCase().includes(i.toLowerCase())}
               />
             </Col>
             <Col flex="1 1 220px">
@@ -1324,7 +1363,13 @@ export default function PlanificacionPage() {
           )}
           loading={loading}
           size="small"
-          pagination={{ pageSize: 50, showTotal: (t) => `${t} tareas`, placement: ["topEnd", "bottomEnd"] }}
+          pagination={paginacionEstandar({
+            current: page,
+            pageSize,
+            total: rows.filter((r) => dentroDeRango(r, "fecha_inicio", rangoInicio) && dentroDeRango(r, "fecha_fin", rangoFin)).length,
+            onChange: (p, s) => { setPage(p); setPageSize(s); },
+            label: "tareas",
+          })}
           scroll={{ x: 2400 }}
           sticky={{ offsetHeader: 56, offsetScroll: 0 }}
           rowSelection={{

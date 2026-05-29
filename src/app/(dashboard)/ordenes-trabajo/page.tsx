@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, type Key } from "react";
 import {
   Typography,
   Table,
@@ -13,6 +13,9 @@ import {
   Col,
   Card,
   Tooltip,
+  App,
+  Popconfirm,
+  Switch,
 } from "antd";
 import {
   PlusOutlined,
@@ -20,19 +23,21 @@ import {
   ReloadOutlined,
   EyeOutlined,
   AuditOutlined,
+  DeleteOutlined,
+  StopOutlined,
+  UndoOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
+import { useSession } from "next-auth/react";
 import {
   numeracionColumn,
   paginacionEstandar,
-  PAGINATION_PAGE_SIZE,
   useColumnasOcultas,
   ColumnasToggleButton,
   visibleColumns,
   filtroPorColumna,
   useRangoFechas,
   RangoFechasFiltro,
-  dentroDeRango,
   useColumnasRedimensionables,
 } from "@/lib/tables";
 import { brand } from "@/lib/theme";
@@ -48,6 +53,7 @@ interface OTRecord {
   id: number;
   // `ot` ahora es número (INTEGER) tras la migración del 2026-05-28.
   ot: number | null;
+  activo: boolean;
   estrategia: boolean;
   tipo: string | null;
   tipo_codigo: string | null;
@@ -93,11 +99,6 @@ interface OTRecord {
   // Estado de la hoja de evaluación técnica (último registro). null = sin
   // evaluación todavía.
   evaluaciones_tecnicas?: { estado: string }[];
-}
-
-interface CatalogOption {
-  codigo: string;
-  nombre: string;
 }
 
 // Campos extra que la API devuelve y van al Excel pero no se renderizan en la
@@ -146,17 +147,52 @@ function evalEstadoMeta(estado: string | null) {
   return EVAL_META[estado] ?? { color: "#8c8c8c", label: estado, tag: "default" };
 }
 
+// ── Config de filtros server-side (post-procesado de columnas) ──
+// Columnas de texto libre: filtran por `contains` (param txt_<key>).
+const TEXT_KEYS = new Set<string>([
+  "equipo_codigo", "descripcion", "tipo", "np", "cod_rep_flota", "cod_rep_posicion",
+  "plaqueteo", "wo_cliente", "po_cliente", "po_item", "id_viajero",
+  "guia_remision", "empresa_entrega", "usuario_crea", "comentarios",
+]);
+// Columnas enum cuyas opciones vienen del endpoint /facets.
+const ENUM_FACET_KEYS = new Set<string>([
+  "codigo_reparacion", "prioridad_atencion", "ot_status", "recursos_status",
+  "taller_status", "tipo_ot", "fabricante", "atencion_reparacion",
+  "tipo_reparacion", "tipo_garantia",
+]);
+// Columnas con lista de opciones fija (no facets).
+const FIXED_FILTERS: Record<string, { text: string; value: string }[]> = {
+  garantia: [{ text: "Si", value: "Si" }, { text: "No", value: "No" }],
+  base_metalica: [{ text: "Si", value: "Si" }, { text: "No", value: "No" }],
+  evaluacion_estado: [
+    { text: "Sin evaluación", value: "__none__" },
+    ...Object.keys(EVAL_META).map((k) => ({ text: EVAL_META[k].label, value: k })),
+  ],
+};
+
 export default function OrdenesTrabajoPage() {
   const router = useRouter();
+  const { message, modal } = App.useApp();
+  const { data: session } = useSession();
+  // Eliminar / desactivar OTs es exclusivo del admin (operación destructiva).
+  const esAdmin = ((session?.user as { roles?: string[] } | undefined)?.roles ?? []).includes("admin");
   const [data, setData] = useState<OTRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
+  const [pageSize, setPageSize] = useState(50);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
-  const [filterOtStatus, setFilterOtStatus] = useState("");
-  const [filterRecursosStatus, setFilterRecursosStatus] = useState("");
-  const [filterTallerStatus, setFilterTallerStatus] = useState("");
+  // Paginación server-side: los filtros de columna y el orden se mandan al
+  // server. `columnFilters` = estado de filtros de la tabla (key → valores),
+  // `sorter` = columna+orden activos, `facets` = opciones de los dropdowns enum.
+  const [columnFilters, setColumnFilters] = useState<Record<string, Key[] | null>>({});
+  const [sorter, setSorter] = useState<{ field: string | null; order: "ascend" | "descend" | null }>({ field: null, order: null });
+  const [facets, setFacets] = useState<Record<string, { value: string; text: string }[]>>({});
+  // Años disponibles (2 dígitos) y los seleccionados. Por default, el año actual.
+  const [aniosDisponibles, setAniosDisponibles] = useState<number[]>([]);
+  const [aniosSel, setAniosSel] = useState<number[]>([new Date().getFullYear() % 100]);
+  // Admin: ver también las OTs desactivadas (para reactivarlas).
+  const [verInactivas, setVerInactivas] = useState(false);
   // v2: nuevas columnas opcionales (tipo, NP, flota, posición, fabricante, garantía, base metálica, etc.)
   // ocultas por default — el usuario las habilita desde el botón "Columnas".
   const { ocultas, setOcultas } = useColumnasOcultas("ordenes-trabajo-list-cols-v2", [
@@ -170,55 +206,95 @@ export default function OrdenesTrabajoPage() {
   ]);
   const { rango: rangoRecepcion, setRango: setRangoRecepcion } = useRangoFechas();
 
-  const [otStatuses, setOtStatuses] = useState<CatalogOption[]>([]);
-  const [recursosStatuses, setRecursosStatuses] = useState<CatalogOption[]>([]);
-  const [tallerStatuses, setTallerStatuses] = useState<CatalogOption[]>([]);
-
   // Modal detalle
   const [modalOtId, setModalOtId] = useState<number | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
-  // Carga TODAS las OTs de una sola vez (límite alto). Necesario para que los
-  // filtros de columna (Cliente, Equipo, Fabricante, etc.) vean opciones de
-  // todo el dataset y no solo de la página actual. La paginación de la tabla
-  // pasa a ser client-side. Los filtros "globales" (search, ot_status,
-  // recursos_status, taller_status) se siguen mandando al server para reducir
-  // el payload cuando el usuario los aplica.
+  // Paginación server-side: trae solo la página actual (50). Manda al server
+  // la búsqueda, los filtros de columna, el rango de fecha y el orden. Campos
+  // de texto van como txt_<campo>; el resto (enum) por su nombre de columna.
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams({ page: "1", limit: "10000" });
+    const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
     if (search) params.set("search", search);
-    if (filterOtStatus) params.set("ot_status", filterOtStatus);
-    if (filterRecursosStatus) params.set("recursos_status", filterRecursosStatus);
-    if (filterTallerStatus) params.set("taller_status", filterTallerStatus);
+    for (const [key, vals] of Object.entries(columnFilters)) {
+      const v = Array.isArray(vals) ? vals[0] : vals;
+      if (v == null || v === "") continue;
+      params.set(TEXT_KEYS.has(key) ? `txt_${key}` : key, String(v));
+    }
+    if (sorter.field && sorter.order) {
+      params.set("sortField", sorter.field);
+      params.set("sortOrder", sorter.order);
+    }
+    if (rangoRecepcion.desde) params.set("fecha_recepcion_desde", rangoRecepcion.desde.format("YYYY-MM-DD"));
+    if (rangoRecepcion.hasta) params.set("fecha_recepcion_hasta", rangoRecepcion.hasta.format("YYYY-MM-DD"));
+    if (aniosSel.length) params.set("anios", aniosSel.join(","));
+    if (verInactivas) params.set("incluirInactivas", "1");
     const res = await fetch(`/api/ordenes-trabajo?${params}`);
     const json = await res.json();
     setData(json.data ?? []);
     setTotal(json.total ?? 0);
     setLoading(false);
-  }, [search, filterOtStatus, filterRecursosStatus, filterTallerStatus]);
+  }, [page, pageSize, search, columnFilters, sorter, rangoRecepcion, aniosSel, verInactivas]);
 
+  // Desactivar (anular, reversible) / reactivar una OT. Solo admin.
+  async function toggleActivo(record: OTRecord) {
+    const activar = !record.activo;
+    const res = await fetch(`/api/ordenes-trabajo/${record.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ activo: activar }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) { message.error(json.error ?? "No se pudo cambiar el estado"); return; }
+    message.success(activar ? "OT reactivada" : "OT desactivada — su número queda libre");
+    fetchData();
+  }
+
+  // Eliminar OT en cascada (irreversible). Solo admin. Confirmación reforzada
+  // porque borra TODO lo relacionado, incluidas las Órdenes de Compra.
+  function confirmarEliminar(record: OTRecord) {
+    modal.confirm({
+      title: `Eliminar OT ${record.ot ?? `#${record.id}`} definitivamente`,
+      okText: "Eliminar todo",
+      okButtonProps: { danger: true },
+      cancelText: "Cancelar",
+      width: 520,
+      content: (
+        <div style={{ fontSize: 13 }}>
+          Esto borra <b>permanentemente</b> la OT y <b>todo lo relacionado</b>:
+          evaluación, planificación, requerimientos, adjuntos, historial
+          <b> y las Órdenes de Compra vinculadas</b>. No se puede deshacer.
+          <br /><br />
+          Si solo querés ocultarla y liberar su número, usá <b>Desactivar</b> en su lugar.
+        </div>
+      ),
+      onOk: async () => {
+        const res = await fetch(`/api/ordenes-trabajo/${record.id}`, { method: "DELETE" });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) { message.error(json.error ?? "No se pudo eliminar"); throw new Error("fail"); }
+        message.success("OT eliminada");
+        fetchData();
+      },
+    });
+  }
+
+  // Opciones de los filtros enum (todas, no solo las de la página actual).
   useEffect(() => {
-    async function loadCatalogs() {
-      const [otRes, recRes, talRes] = await Promise.all([
-        fetch("/api/catalogos?tabla=otStatus"),
-        fetch("/api/catalogos?tabla=recursosStatus"),
-        fetch("/api/catalogos?tabla=tallerStatus"),
-      ]);
-      if (otRes.ok) setOtStatuses((await otRes.json()).data ?? []);
-      if (recRes.ok) setRecursosStatuses((await recRes.json()).data ?? []);
-      if (talRes.ok) setTallerStatuses((await talRes.json()).data ?? []);
-    }
-    loadCatalogs();
+    fetch("/api/ordenes-trabajo/facets")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (j && !j.error) { setFacets(j); setAniosDisponibles(j.anios ?? []); } })
+      .catch(() => { /* ignore */ });
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   function clearFilters() {
     setSearch("");
-    setFilterOtStatus("");
-    setFilterRecursosStatus("");
-    setFilterTallerStatus("");
+    setColumnFilters({});
+    setSorter({ field: null, order: null });
+    setRangoRecepcion({ desde: null, hasta: null });
+    setAniosSel([new Date().getFullYear() % 100]); // vuelve al año actual
     setPage(1);
   }
 
@@ -232,15 +308,18 @@ export default function OrdenesTrabajoPage() {
       sorter: (a, b) => Number(a.ot ?? 0) - Number(b.ot ?? 0),
       ...filtroPorColumna(data, "ot"),
       render: (v: string, r: OTRecord) => (
-        <Tooltip title="Abrir página de la OT (URL compartible)">
-          <Tag
-            color={brand.navy}
-            style={{ cursor: "pointer" }}
-            onClick={() => router.push(`/ordenes-trabajo/${r.id}`)}
-          >
-            {v}
-          </Tag>
-        </Tooltip>
+        <Space size={4}>
+          <Tooltip title="Abrir página de la OT (URL compartible)">
+            <Tag
+              color={brand.navy}
+              style={{ cursor: "pointer" }}
+              onClick={() => router.push(`/ordenes-trabajo/${r.id}`)}
+            >
+              {v}
+            </Tag>
+          </Tooltip>
+          {!r.activo && <Tag color="default">desactivada</Tag>}
+        </Space>
       ),
     },
     {
@@ -519,7 +598,7 @@ export default function OrdenesTrabajoPage() {
     {
       key: "acciones",
       title: "",
-      width: 90,
+      width: esAdmin ? 180 : 90,
       align: "center",
       fixed: "right",
       render: (_: unknown, record: OTRecord) => (
@@ -544,13 +623,76 @@ export default function OrdenesTrabajoPage() {
               </Tooltip>
             );
           })()}
+          {esAdmin && (record.activo ? (
+            <Popconfirm
+              title="Desactivar esta OT"
+              description="Se oculta de los listados y su número queda libre. Reversible."
+              okText="Desactivar"
+              cancelText="Cancelar"
+              onConfirm={() => toggleActivo(record)}
+            >
+              <Tooltip title="Desactivar (anular)">
+                <Button type="text" icon={<StopOutlined />} />
+              </Tooltip>
+            </Popconfirm>
+          ) : (
+            <Tooltip title="Reactivar OT">
+              <Button type="text" icon={<UndoOutlined style={{ color: brand.success }} />} onClick={() => toggleActivo(record)} />
+            </Tooltip>
+          ))}
+          {esAdmin && (
+            <Tooltip title="Eliminar definitivamente (cascada)">
+              <Button type="text" danger icon={<DeleteOutlined />} onClick={() => confirmarEliminar(record)} />
+            </Tooltip>
+          )}
         </Space>
       ),
     },
   ];
 
+  // ── Post-proceso: convierte los filtros/orden client-side de cada columna en
+  // server-side (paginación server-side). Mantiene render/width/etc. intactos.
+  //   - enum (facets o lista fija) → dropdown con opciones completas
+  //   - texto libre → input de búsqueda (contains)
+  //   - sorter función → sorter: true (orden en el server)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const serverColumns = (columns as any[]).map((col) => {
+    const key = col.key as string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const c: any = { ...col };
+    if (c.sorter) { c.sorter = true; c.sortOrder = sorter.field === key ? sorter.order : null; }
+    // limpiar config de filtro client-side
+    delete c.onFilter; delete c.filterSearch; delete c.filters; delete c.filterDropdown; delete c.filterIcon; delete c.filterMultiple;
+    if (FIXED_FILTERS[key]) {
+      c.filters = FIXED_FILTERS[key]; c.filterMultiple = false; c.filteredValue = columnFilters[key] ?? null;
+    } else if (ENUM_FACET_KEYS.has(key)) {
+      c.filters = facets[key] ?? []; c.filterSearch = true; c.filterMultiple = false; c.filteredValue = columnFilters[key] ?? null;
+    } else if (TEXT_KEYS.has(key)) {
+      c.filteredValue = columnFilters[key] ?? null;
+      c.filterIcon = (filtered: boolean) => <SearchOutlined style={{ color: filtered ? brand.navy : undefined }} />;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      c.filterDropdown = ({ setSelectedKeys, selectedKeys, confirm, clearFilters: clr }: any) => (
+        <div style={{ padding: 8 }} onKeyDown={(e) => e.stopPropagation()}>
+          <Input
+            autoFocus
+            placeholder={`Buscar ${typeof col.title === "string" ? col.title : ""}`}
+            value={selectedKeys[0] as string}
+            onChange={(e) => setSelectedKeys(e.target.value ? [e.target.value] : [])}
+            onPressEnter={() => confirm()}
+            style={{ width: 200, marginBottom: 8, display: "block" }}
+          />
+          <Space>
+            <Button type="primary" size="small" onClick={() => confirm()}>Buscar</Button>
+            <Button size="small" onClick={() => { clr?.(); confirm(); }}>Limpiar</Button>
+          </Space>
+        </div>
+      );
+    }
+    return c;
+  });
+
   const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
-    useColumnasRedimensionables<OTRecord>(columns, "ot-list-cols-widths-v1");
+    useColumnasRedimensionables<OTRecord>(serverColumns, "ot-list-cols-widths-v1");
 
   return (
     <div>
@@ -565,7 +707,7 @@ export default function OrdenesTrabajoPage() {
           />
           <Button onClick={resetAnchos}>Restablecer anchos</Button>
           <ExportarExcelButton<OTRecordExport>
-            endpoint="/api/ordenes-trabajo"
+            endpoint="/api/ordenes-trabajo?export=1"
             filename="OTs-Externas"
             sheetName="OTs Externas"
             columns={[
@@ -633,38 +775,20 @@ export default function OrdenesTrabajoPage() {
               onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             />
           </Col>
+          <Col xs={24} sm={12} md={8}>
+            <Select
+              mode="multiple"
+              allowClear
+              style={{ width: "100%" }}
+              placeholder="Año(s) — por defecto el actual"
+              value={aniosSel}
+              onChange={(vals) => { setAniosSel(vals); setPage(1); }}
+              maxTagCount="responsive"
+              options={aniosDisponibles.map((y) => ({ value: y, label: String(2000 + y) }))}
+            />
+          </Col>
           <Col xs={12} sm={6} md={4}>
-            <Select
-              placeholder="OT Status"
-              allowClear
-              style={{ width: "100%" }}
-              value={filterOtStatus || undefined}
-              onChange={(v) => { setFilterOtStatus(v ?? ""); setPage(1); }}
-              options={otStatuses.map((s) => ({ value: s.codigo, label: s.nombre }))}
-            />
-          </Col>
-          <Col xs={12} sm={6} md={5}>
-            <Select
-              placeholder="Recursos Status"
-              allowClear
-              style={{ width: "100%" }}
-              value={filterRecursosStatus || undefined}
-              onChange={(v) => { setFilterRecursosStatus(v ?? ""); setPage(1); }}
-              options={recursosStatuses.map((s) => ({ value: s.codigo, label: s.nombre }))}
-            />
-          </Col>
-          <Col xs={12} sm={6} md={5}>
-            <Select
-              placeholder="Taller Status"
-              allowClear
-              style={{ width: "100%" }}
-              value={filterTallerStatus || undefined}
-              onChange={(v) => { setFilterTallerStatus(v ?? ""); setPage(1); }}
-              options={tallerStatuses.map((s) => ({ value: s.codigo, label: s.nombre }))}
-            />
-          </Col>
-          <Col xs={12} sm={6} md={3}>
-            <Button icon={<ReloadOutlined />} onClick={clearFilters}>Limpiar</Button>
+            <Button icon={<ReloadOutlined />} onClick={clearFilters}>Limpiar filtros</Button>
           </Col>
           <Col xs={24}>
             <RangoFechasFiltro
@@ -673,6 +797,14 @@ export default function OrdenesTrabajoPage() {
               onChange={setRangoRecepcion}
             />
           </Col>
+          {esAdmin && (
+            <Col xs={24}>
+              <Switch size="small" checked={verInactivas} onChange={(v) => { setVerInactivas(v); setPage(1); }} />
+              <span style={{ marginLeft: 8, fontSize: 13, color: brand.textSecondary }}>
+                Ver OTs desactivadas (anuladas)
+              </span>
+            </Col>
+          )}
         </Row>
       </Card>
 
@@ -681,16 +813,24 @@ export default function OrdenesTrabajoPage() {
           rowKey="id"
           columns={visibleColumns(columnsResizable, ocultas)}
           components={tableComponents}
-          // Carga client-side completa: la data viene entera del server (limit
-          // alto en fetchData) y filtramos acá por rango de fechas. Los filtros
-          // de columna (Cliente/Equipo/etc.) ya operan sobre TODO el dataset.
-          dataSource={data.filter((r) => dentroDeRango(r, "fecha_recepcion", rangoRecepcion))}
+          // Paginación server-side: `data` ya es la página actual del server.
+          // Los filtros de columna, el orden y el rango de fecha se mandan al
+          // server vía onChange + fetchData (ver arriba).
+          dataSource={data}
           loading={loading}
+          onChange={(_pag, filters, srt) => {
+            setColumnFilters(filters as Record<string, Key[] | null>);
+            const s = Array.isArray(srt) ? srt[0] : srt;
+            setSorter({
+              field: (s?.order ? (s.field ?? s.columnKey) : null) as string | null,
+              order: (s?.order ?? null) as "ascend" | "descend" | null,
+            });
+            setPage(1);
+          }}
           pagination={paginacionEstandar({
             current: page,
             pageSize,
-            // total = filas cargadas en cliente (post fecha_recepcion).
-            total: data.filter((r) => dentroDeRango(r, "fecha_recepcion", rangoRecepcion)).length,
+            total,
             onChange: (p, s) => { setPage(p); setPageSize(s); },
             label: "órdenes de trabajo",
           })}

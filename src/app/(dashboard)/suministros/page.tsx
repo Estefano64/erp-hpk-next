@@ -23,7 +23,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
 import { EditableCell } from "@/components/EditableCell";
-import { filtroPorColumna, useColumnasRedimensionables, STICKY_HEADER } from "@/lib/tables";
+import { filtroPorColumna, useColumnasRedimensionables, STICKY_HEADER, paginacionEstandar } from "@/lib/tables";
 
 const { Title, Text } = Typography;
 
@@ -62,6 +62,8 @@ export default function SuministrosPage() {
   const router = useRouter();
   const [data, setData] = useState<StockItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(30);
   const [search, setSearch] = useState("");
 
   const fetchData = useCallback(async () => {
@@ -247,7 +249,14 @@ export default function SuministrosPage() {
         />
       ) : (
         <Card>
-          <TablaSuministros columns={columns} data={filtrados} loading={loading} />
+          <TablaSuministros
+            columns={columns}
+            data={filtrados}
+            loading={loading}
+            page={page}
+            pageSize={pageSize}
+            onPageChange={(p, s) => { setPage(p); setPageSize(s); }}
+          />
         </Card>
       )}
     </div>
@@ -255,8 +264,15 @@ export default function SuministrosPage() {
 }
 
 function TablaSuministros({
-  columns, data, loading,
-}: { columns: ColumnsType<StockItem>; data: StockItem[]; loading: boolean }) {
+  columns, data, loading, page, pageSize, onPageChange,
+}: {
+  columns: ColumnsType<StockItem>;
+  data: StockItem[];
+  loading: boolean;
+  page: number;
+  pageSize: number;
+  onPageChange: (p: number, s: number) => void;
+}) {
   const { columnas, components, TableDragWrapper } = useColumnasRedimensionables<StockItem>(
     columns, "suministros-v1",
   );
@@ -269,7 +285,13 @@ function TablaSuministros({
         components={components}
         dataSource={data}
         loading={loading}
-        pagination={{ pageSize: 30, showSizeChanger: true, showTotal: (t) => `${t} suministro(s)` }}
+        pagination={paginacionEstandar({
+          current: page,
+          pageSize,
+          total: data.length,
+          onChange: onPageChange,
+          label: "suministro(s)",
+        })}
         scroll={{ x: 1200 }}
         sticky={STICKY_HEADER}
       />

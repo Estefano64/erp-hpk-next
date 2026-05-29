@@ -13,6 +13,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import type { UploadFile } from "antd/es/upload/interface";
 import dayjs, { Dayjs } from "dayjs";
+import { paginacionEstandar } from "@/lib/tables";
 import { brand } from "@/lib/theme";
 import { formatDateOnly } from "@/lib/dates";
 import { uploadToR2 } from "@/lib/r2-client";
@@ -46,6 +47,8 @@ export default function DespachoMinaPage() {
   const router = useRouter();
   const [data, setData] = useState<OTLista[]>([]);
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [modalOpen, setModalOpen] = useState(false);
   const [otSel, setOtSel] = useState<OTLista | null>(null);
   const [saving, setSaving] = useState(false);
@@ -248,7 +251,14 @@ export default function DespachoMinaPage() {
         <Empty description="No hay OTs terminadas pendientes de despacho." />
       ) : (
         <Card>
-          <TablaDespachosMina columns={columns} data={data} loading={loading} />
+          <TablaDespachosMina
+            columns={columns}
+            data={data}
+            loading={loading}
+            page={page}
+            pageSize={pageSize}
+            onPageChange={(p, s) => { setPage(p); setPageSize(s); }}
+          />
         </Card>
       )}
 
@@ -322,8 +332,15 @@ export default function DespachoMinaPage() {
 }
 
 function TablaDespachosMina({
-  columns, data, loading,
-}: { columns: ColumnsType<OTLista>; data: OTLista[]; loading: boolean }) {
+  columns, data, loading, page, pageSize, onPageChange,
+}: {
+  columns: ColumnsType<OTLista>;
+  data: OTLista[];
+  loading: boolean;
+  page: number;
+  pageSize: number;
+  onPageChange: (p: number, s: number) => void;
+}) {
   const { columnas, components, TableDragWrapper } = useColumnasRedimensionables<OTLista>(
     columns, "despachos-mina-v1",
   );
@@ -336,7 +353,13 @@ function TablaDespachosMina({
         components={components}
         dataSource={data}
         loading={loading}
-        pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `${t} OT(s)` }}
+        pagination={paginacionEstandar({
+          current: page,
+          pageSize,
+          total: data.length,
+          onChange: onPageChange,
+          label: "OT(s)",
+        })}
         scroll={{ x: 1400 }}
         sticky={STICKY_HEADER}
       />

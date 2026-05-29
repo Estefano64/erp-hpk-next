@@ -71,7 +71,7 @@ async function main() {
   const todosCodigos = [...new Set(USERS.flatMap((u) => [u.currentCodigo, u.newCodigo]))];
   const existentes = await prisma.usuario.findMany({
     where: { codigoEmpleado: { in: todosCodigos } },
-    select: { codigoEmpleado: true, email: true, rol: true, dni: true, nombre: true },
+    select: { codigoEmpleado: true, email: true, roles: true, dni: true, nombre: true },
   });
   const existMap = new Map(existentes.map((e) => [e.codigoEmpleado, e]));
 
@@ -81,7 +81,7 @@ async function main() {
       const codigoChange = u.currentCodigo !== u.newCodigo ? `\n  codigoEmpleado: ${u.currentCodigo} → ${u.newCodigo}` : "";
       console.log(
         `[UPDATE] ${u.currentCodigo} ${u.nombre}${codigoChange}`,
-        `\n  rol: ${prev.rol} → admin`,
+        `\n  roles: [${prev.roles.join(",")}] → [admin]`,
         `\n  email: ${prev.email ?? "(null)"} → ${u.email}`,
         `\n  dni: ${prev.dni ?? "(null)"} → ${u.dni ?? "(sin cambio)"}`,
         `\n  password: reset a "${GENERIC_PASSWORD}"`,
@@ -104,7 +104,7 @@ async function main() {
           nombre: u.nombre,
           email: u.email,
           dni: u.dni,
-          rol: "admin",
+          roles: ["admin"],
           password: hashed,
           activo: true,
         },
@@ -116,7 +116,7 @@ async function main() {
           nombre: u.nombre,
           email: u.email,
           dni: u.dni,
-          rol: "admin",
+          roles: ["admin"],
           password: hashed,
           activo: true,
         },
@@ -126,12 +126,12 @@ async function main() {
 
   // Resumen final.
   const final = await prisma.usuario.findMany({
-    select: { codigoEmpleado: true, email: true, dni: true, nombre: true, rol: true, activo: true },
+    select: { codigoEmpleado: true, email: true, dni: true, nombre: true, roles: true, activo: true },
     orderBy: { codigoEmpleado: "asc" },
   });
   console.log("\n=== usuarios después de correr el seed ===");
   for (const u of final) {
-    console.log(`  ${u.codigoEmpleado.padEnd(8)} ${u.rol.padEnd(12)} ${u.dni ?? "-".padEnd(10)}  ${u.email ?? "-"}  (${u.nombre})`);
+    console.log(`  ${u.codigoEmpleado.padEnd(8)} [${u.roles.join(",")}] ${u.dni ?? "-".padEnd(10)}  ${u.email ?? "-"}  (${u.nombre})`);
   }
   await prisma.$disconnect();
 }

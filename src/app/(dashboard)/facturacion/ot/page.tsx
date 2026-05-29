@@ -14,7 +14,7 @@ import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
 import { formatDateOnly } from "@/lib/dates";
-import { useColumnasRedimensionables, STICKY_HEADER } from "@/lib/tables";
+import { useColumnasRedimensionables, STICKY_HEADER, paginacionEstandar } from "@/lib/tables";
 
 const { Title, Text } = Typography;
 
@@ -43,6 +43,8 @@ export default function FacturacionOTPage() {
   const router = useRouter();
   const [data, setData] = useState<OTLista[]>([]);
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [modalOpen, setModalOpen] = useState(false);
   const [otSel, setOtSel] = useState<OTLista | null>(null);
   const [saving, setSaving] = useState(false);
@@ -228,7 +230,14 @@ export default function FacturacionOTPage() {
         <Empty description="No hay OTs entregadas pendientes de facturación." />
       ) : (
         <Card>
-          <TablaFacturacionOT columns={columns} data={data} loading={loading} />
+          <TablaFacturacionOT
+            columns={columns}
+            data={data}
+            loading={loading}
+            page={page}
+            pageSize={pageSize}
+            onPageChange={(p, s) => { setPage(p); setPageSize(s); }}
+          />
         </Card>
       )}
 
@@ -287,8 +296,15 @@ export default function FacturacionOTPage() {
 }
 
 function TablaFacturacionOT({
-  columns, data, loading,
-}: { columns: ColumnsType<OTLista>; data: OTLista[]; loading: boolean }) {
+  columns, data, loading, page, pageSize, onPageChange,
+}: {
+  columns: ColumnsType<OTLista>;
+  data: OTLista[];
+  loading: boolean;
+  page: number;
+  pageSize: number;
+  onPageChange: (p: number, s: number) => void;
+}) {
   const { columnas, components, TableDragWrapper } = useColumnasRedimensionables<OTLista>(
     columns, "facturacion-ot-v1",
   );
@@ -301,7 +317,13 @@ function TablaFacturacionOT({
         components={components}
         dataSource={data}
         loading={loading}
-        pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `${t} OT(s)` }}
+        pagination={paginacionEstandar({
+          current: page,
+          pageSize,
+          total: data.length,
+          onChange: onPageChange,
+          label: "OT(s)",
+        })}
         scroll={{ x: 1500 }}
         sticky={STICKY_HEADER}
       />

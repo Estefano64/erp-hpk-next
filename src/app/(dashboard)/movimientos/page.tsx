@@ -57,6 +57,7 @@ import {
   RangoFechasFiltro,
   dentroDeRango,
   useColumnasRedimensionables,
+  paginacionEstandar,
 } from "@/lib/tables";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
@@ -172,6 +173,8 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
   const { message } = App.useApp();
   const [data, setData] = useState<Movimiento[]>([]);
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [tipo, setTipo] = useState<string | undefined>();
   const [search, setSearch] = useState("");
   const [desde, setDesde] = useState<Dayjs | null>(null);
@@ -426,7 +429,13 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
           components={tableComponents}
           dataSource={filtered}
           loading={loading}
-          pagination={{ pageSize: 25, placement: ["topEnd", "bottomEnd"] }}
+          pagination={paginacionEstandar({
+            current: page,
+            pageSize,
+            total: filtered.length,
+            onChange: (p, s) => { setPage(p); setPageSize(s); },
+            label: "movimientos",
+          })}
           size="small"
           scroll={{ x: 1200 }}
           sticky={{ offsetHeader: 56, offsetScroll: 0 }}
@@ -463,6 +472,8 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
   const { screens } = useResponsive();
   const [pos, setPos] = useState<POPendiente[]>([]);
   const [loading, setLoading] = useState(false);
+  const [itemsPage, setItemsPage] = useState(1);
+  const [itemsPageSize, setItemsPageSize] = useState(25);
   const [poSeleccionada, setPoSeleccionada] = useState<POPendiente | null>(null);
   const [cantidadesRecibidas, setCantidadesRecibidas] = useState<Record<number, number>>({});
   const [nroGuia, setNroGuia] = useState("");
@@ -823,7 +834,13 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
           dataSource={filasFiltradas.filter((r) => dentroDeRango(r, "fecha_entrega_esperada", rangoEntrega))}
           columns={visibleColumns(itemsResizable, ingresoOcultas)}
           components={itemsComponents}
-          pagination={{ pageSize: 25, showTotal: (t) => `${t} items`, placement: ["topEnd", "bottomEnd"] }}
+          pagination={paginacionEstandar({
+            current: itemsPage,
+            pageSize: itemsPageSize,
+            total: filasFiltradas.filter((r) => dentroDeRango(r, "fecha_entrega_esperada", rangoEntrega)).length,
+            onChange: (p, s) => { setItemsPage(p); setItemsPageSize(s); },
+            label: "items",
+          })}
           scroll={{ x: 1500 }}
           sticky={{ offsetHeader: 56, offsetScroll: 0 }}
         />
@@ -1365,7 +1382,7 @@ function TabSalida({ onRefresh }: { onRefresh: () => void }) {
               <Text strong style={{ color: "#389e0d" }}>⬇ ENTRADA</Text>
               <div style={{ fontSize: 12, color: "#666" }}>
                 Úsala para registrar devoluciones o material recibido manualmente
-                (sin una OC). Para recibir una OC completa usa la pestaña "Ingreso de POs".
+                (sin una OC). Para recibir una OC completa usa la pestaña &quot;Ingreso de POs&quot;.
               </div>
             </div>
             <Divider style={{ margin: 0 }} />

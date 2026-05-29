@@ -50,6 +50,7 @@ import {
   useRangoFechas,
   RangoFechasFiltro,
   dentroDeRango,
+  paginacionEstandar,
 } from "@/lib/tables";
 import { Popover, InputNumber, Divider, Checkbox } from "antd";
 import { brand } from "@/lib/theme";
@@ -230,6 +231,9 @@ function RequerimientosDetalleInner() {
 
   const [allData, setAllData] = useState<Requerimiento[]>([]);
   const [loading, setLoading] = useState(false);
+  // Paginación controlada — el user puede elegir 10/20/50/100/500.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const { rango: rangoSol, setRango: setRangoSol } = useRangoFechas();
   const { rango: rangoReq, setRango: setRangoReq } = useRangoFechas();
   const [search, setSearch] = useState("");
@@ -256,14 +260,14 @@ function RequerimientosDetalleInner() {
   const [partesDividir, setPartesDividir] = useState<number[]>([]);
   const [dividiendo, setDividiendo] = useState(false);
 
-  // Rol (para mostrar acciones admin de aprobar/desaprobar/anular)
-  const [rol, setRol] = useState<string | null>(null);
-  const isAdmin = rol === "admin";
+  // Roles (para mostrar acciones admin/aprobador de aprobar/desaprobar/anular)
+  const [roles, setRoles] = useState<string[]>([]);
+  const isAdmin = roles.includes("admin");
 
   useEffect(() => {
     fetch("/api/me")
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d?.user) setRol(d.user.rol); })
+      .then((d) => { if (Array.isArray(d?.user?.roles)) setRoles(d.user.roles); })
       .catch(() => { /* noop */ });
   }, []);
 
@@ -1378,7 +1382,12 @@ function RequerimientosDetalleInner() {
           components={tableComponents}
           dataSource={filteredData}
           loading={loading}
-          pagination={{ pageSize: 25, showTotal: (t) => `${t} registros`, placement: ["topEnd", "bottomEnd"] }}
+          pagination={paginacionEstandar({
+            current: page,
+            pageSize,
+            total: filteredData.length,
+            onChange: (p, s) => { setPage(p); setPageSize(s); },
+          })}
           scroll={{ x: 2000 }}
           sticky={{ offsetHeader: 56, offsetScroll: 0 }}
           size="small"

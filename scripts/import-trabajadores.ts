@@ -60,7 +60,7 @@ async function main() {
 
   const porArea = await p.trabajador.groupBy({ by: ["area"], _count: true });
   console.log(`\nPor área:`);
-  for (const g of porArea) console.log(`  ${g.area.padEnd(20)} ${g._count}`);
+  for (const g of porArea) console.log(`  ${(g.area ?? "(sin área)").padEnd(20)} ${g._count}`);
 
   await p.$disconnect();
 }

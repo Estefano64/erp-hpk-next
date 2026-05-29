@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "trabajador" ALTER COLUMN "area" DROP NOT NULL,
+ALTER COLUMN "puesto" DROP NOT NULL;
