@@ -294,6 +294,9 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
       id_cliente: ot.id_cliente,
       estrategia: ot.estrategia,
       id_cod_rep: ot.id_cod_rep,
+      np: ot.np,
+      descripcion: ot.descripcion,
+      fecha_requerimiento_cliente: ot.fecha_requerimiento_cliente,
       equipo_codigo: ot.equipo_codigo,
       ns: ot.ns,
       plaqueteo: ot.plaqueteo,
@@ -807,6 +810,16 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
               </Row>
               <Row gutter={[16, 12]} style={{ marginTop: 8 }}>
                 <Col xs={12} md={6}>
+                  <FieldLabel>N/P</FieldLabel>
+                  <Input value={(editData.np as string) ?? ""} onChange={(e) => setField("np", e.target.value)} />
+                </Col>
+                <Col xs={24} md={18}>
+                  <FieldLabel>Descripción</FieldLabel>
+                  <Input value={(editData.descripcion as string) ?? ""} onChange={(e) => setField("descripcion", e.target.value)} />
+                </Col>
+              </Row>
+              <Row gutter={[16, 12]} style={{ marginTop: 8 }}>
+                <Col xs={12} md={6}>
                   <FieldLabel>Equipo</FieldLabel>
                   <Input value={(editData.equipo_codigo as string) ?? ""} onChange={(e) => setField("equipo_codigo", e.target.value)} />
                 </Col>
@@ -895,6 +908,14 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                     disabled={bloqueoBien}
                     value={editData.fecha_recepcion ? dayjs(String(editData.fecha_recepcion).slice(0, 10)) : null}
                     onChange={(d) => setField("fecha_recepcion", d ? d.format("YYYY-MM-DD") : null)}
+                  />
+                </Col>
+                <Col xs={12} md={6}>
+                  <FieldLabel>Fecha Requerimiento Cliente</FieldLabel>
+                  <DatePicker
+                    style={{ width: "100%" }} format="DD/MM/YYYY"
+                    value={editData.fecha_requerimiento_cliente ? dayjs(String(editData.fecha_requerimiento_cliente).slice(0, 10)) : null}
+                    onChange={(d) => setField("fecha_requerimiento_cliente", d ? d.format("YYYY-MM-DD") : null)}
                   />
                 </Col>
               </Row>
