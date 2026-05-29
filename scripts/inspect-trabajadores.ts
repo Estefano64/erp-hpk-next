@@ -13,7 +13,7 @@ async function main() {
 
   const grupos = new Map<string, typeof trabajadores>();
   for (const t of trabajadores) {
-    const key = t.area;
+    const key = t.area ?? "(sin área)";
     if (!grupos.has(key)) grupos.set(key, []);
     grupos.get(key)!.push(t);
   }
