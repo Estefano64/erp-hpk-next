@@ -60,6 +60,13 @@ interface TrabajadorOpt {
   puesto: string;
 }
 
+interface OTLookup {
+  id: number;
+  ot: number | null;
+  descripcion: string | null;
+  cliente: string | null;
+}
+
 const estadoColor: Record<string, string> = {
   Disponible: "green",
   Mantenimiento: "orange",
@@ -298,6 +305,8 @@ function TabPrestamos() {
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
   const [devolverModal, setDevolverModal] = useState<Prestamo | null>(null);
   const [devolverForm] = Form.useForm();
+  const [otOpts, setOtOpts] = useState<OTLookup[]>([]);
+  const [otSearchTimer, setOtSearchTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -326,10 +335,35 @@ function TabPrestamos() {
 
   const [destinoExterno, setDestinoExterno] = useState(false);
 
+  // Búsqueda de OTs con debounce (mismo patrón que /suministros).
+  const buscarOTs = useCallback((q: string) => {
+    if (otSearchTimer) clearTimeout(otSearchTimer);
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/ordenes-trabajo/lookup?q=${encodeURIComponent(q)}&limit=50`);
+        if (!res.ok) return;
+        const j = await res.json();
+        setOtOpts(j.data ?? []);
+      } catch { /* ignore */ }
+    }, 250);
+    setOtSearchTimer(t);
+  }, [otSearchTimer]);
+
+  // Precarga inicial al abrir el modal.
+  const precargarOTs = useCallback(async () => {
+    try {
+      const res = await fetch("/api/ordenes-trabajo/lookup?limit=50");
+      if (!res.ok) return;
+      const j = await res.json();
+      setOtOpts(j.data ?? []);
+    } catch { /* ignore */ }
+  }, []);
+
   const openNuevo = () => {
     form.resetFields();
     form.setFieldsValue({ cantidad: 1, fecha_entrega: dayjs() });
     setDestinoExterno(false);
+    precargarOTs();
     setModalOpen(true);
   };
 
@@ -600,8 +634,19 @@ function TabPrestamos() {
               )}
             </Col>
           </Row>
-          <Form.Item name="ot_id" label="OT asociada (opcional)">
-            <InputNumber placeholder="ID de OT" style={{ width: "100%" }} />
+          <Form.Item name="ot_id" label="OT asociada (opcional)" extra="Buscá por número de OT, cliente o descripción.">
+            <Select
+              showSearch allowClear
+              placeholder="Buscar OT por número, cliente o descripción..."
+              optionFilterProp="label"
+              filterOption={false}
+              onSearch={(q) => { if (q) buscarOTs(q); }}
+              options={otOpts.map((o) => ({
+                value: o.id,
+                label: `${o.ot ?? "?"} — ${o.cliente ?? "—"} — ${o.descripcion ?? ""}`.slice(0, 90),
+              }))}
+              notFoundContent="Escribí para buscar"
+            />
           </Form.Item>
           <Row gutter={12}>
             <Col span={12}>
