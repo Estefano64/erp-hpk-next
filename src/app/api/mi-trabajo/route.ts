@@ -6,7 +6,7 @@ import utc from "dayjs/plugin/utc";
 import timezone from "dayjs/plugin/timezone";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { sumarHorasReales } from "@/lib/plan-sesion";
+import { sumarHorasReales, estadoTecnico, type EstadoTecnico } from "@/lib/plan-sesion";
 
 dayjs.extend(isoWeek);
 dayjs.extend(utc);
@@ -118,6 +118,33 @@ export async function GET() {
       include,
     });
 
+    // ── Estado PERSONAL del técnico en cada tarea (multi-técnico) ──────────
+    // Una tarea puede tener varios técnicos; cada uno avanza por su cuenta. El
+    // estado del técnico logueado se deriva de SUS sesiones en esa tarea.
+    const idsLista = [...new Set([...tareasHoy, ...tareasSemana].map((t) => t.id))];
+    const misSesiones = idsLista.length
+      ? await prisma.planificacionOTSesion.findMany({
+          where: { tecnico, planificacion_ot_id: { in: idsLista } },
+          select: { planificacion_ot_id: true, tecnico: true, inicio: true, fin: true, cierre: true },
+        })
+      : [];
+    const miEstadoPorTarea = new Map<number, EstadoTecnico>();
+    for (const id of idsLista) {
+      miEstadoPorTarea.set(id, estadoTecnico(misSesiones.filter((s) => s.planificacion_ot_id === id)));
+    }
+    const conMiEstado = <T extends { id: number }>(arr: T[]) =>
+      arr.map((t) => ({ ...t, miEstado: miEstadoPorTarea.get(t.id) ?? "sin_empezar" as EstadoTecnico }));
+
+    // Horas reales del técnico logueado en un conjunto de tareas (sus sesiones).
+    async function horasRealesTecnico(taskIds: number[]): Promise<number> {
+      if (taskIds.length === 0) return 0;
+      const ss = await prisma.planificacionOTSesion.findMany({
+        where: { tecnico, planificacion_ot_id: { in: taskIds } },
+        select: { inicio: true, fin: true },
+      });
+      return sumarHorasReales(ss);
+    }
+
     // ── Rendimiento ────────────────────────────────────────────────
     // "Programado": tareas cuya fecha_inicio cae en el rango.
     // "Realizado": tareas con fecha_fin_real en el rango y estado=realizado.
@@ -142,28 +169,29 @@ export async function GET() {
       select: { id: true, horas_estimadas: true, horas_reales: true },
     });
 
-    function calcRendimiento(realizadas: { horas_estimadas: unknown; horas_reales: unknown }[], total: number) {
-      let est = 0, real = 0;
-      for (const t of realizadas) {
-        est += Number(t.horas_estimadas ?? 0);
-        real += Number(t.horas_reales ?? 0);
-      }
-      // Eficiencia = horas_estimadas / horas_reales. Sin horas reales, null.
-      const eficiencia = real > 0 ? Math.round((est / real) * 100) : null;
+    // `realHoras` son las horas reales DEL TÉCNICO (sus sesiones), no la suma de
+    // todos los que trabajaron la tarea. Antes se comparaba horas_estimadas (por
+    // persona) contra horas_reales (de todos) → eficiencia falsa en multi-técnico.
+    function calcRendimiento(realizadas: { horas_estimadas: unknown }[], total: number, realHoras: number) {
+      let est = 0;
+      for (const t of realizadas) est += Number(t.horas_estimadas ?? 0);
+      const eficiencia = realHoras > 0 ? Math.round((est / realHoras) * 100) : null;
       return {
         totalProgramadas: total,
         realizadas: realizadas.length,
         horas_estimadas: Math.round(est * 10) / 10,
-        horas_reales: Math.round(real * 10) / 10,
+        horas_reales: Math.round(realHoras * 10) / 10,
         eficienciaPct: eficiencia,
       };
     }
 
-    const rendimientoSemana = calcRendimiento(tareasRealizadasSem, tareasSemana.length);
+    const realSem = await horasRealesTecnico(tareasRealizadasSem.map((t) => t.id));
+    const rendimientoSemana = calcRendimiento(tareasRealizadasSem, tareasSemana.length, realSem);
     const totalMes = await prisma.planificacionOT.count({
       where: { AND: [whereTecnico, { fecha_inicio: { gte: mesIni, lte: mesFin } }] },
     });
-    const rendimientoMes = calcRendimiento(tareasRealizadasMes, totalMes);
+    const realMes = await horasRealesTecnico(tareasRealizadasMes.map((t) => t.id));
+    const rendimientoMes = calcRendimiento(tareasRealizadasMes, totalMes, realMes);
 
     // ── Histórico últimas 4 semanas ───────────────────────────────
     const historico: Array<{ semana: string; estimadas: number; reales: number; eficienciaPct: number | null }> = [];
@@ -236,8 +264,8 @@ export async function GET() {
         puesto: me.trabajador.puesto,
       },
       sesionEnCurso,
-      tareasHoy,
-      tareasSemana,
+      tareasHoy: conMiEstado(tareasHoy),
+      tareasSemana: conMiEstado(tareasSemana),
       rendimientoSemana,
       rendimientoMes,
       historico,

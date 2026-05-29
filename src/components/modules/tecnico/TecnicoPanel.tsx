@@ -44,6 +44,9 @@ interface TareaPlan {
   comentario: string | null;      // comentario del planner → técnico
   observaciones: string | null;   // observaciones de ejecución del técnico
   orden_trabajo: OTLite | null;
+  // Estado del técnico logueado en esta tarea (derivado de sus sesiones).
+  // Independiente del estado global de la tarea (que es multi-técnico).
+  miEstado?: "sin_empezar" | "en_proceso" | "pausado" | "realizado";
 }
 interface SesionEnCurso {
   sesion_id: number;
@@ -226,66 +229,33 @@ export default function TecnicoPanel() {
     {
       title: "Acción", width: 200, align: "center", fixed: "right",
       render: (_, r) => {
-        const enProceso = r.estado === "en_proceso";
-        const realizado = r.estado === "realizado";
-        const cancelado = r.estado === "cancelado";
+        // Acciones según el estado PERSONAL del técnico (miEstado), no el global
+        // de la tarea: así dos técnicos en la misma tarea actúan por separado.
+        const mi = r.miEstado ?? "sin_empezar";
         const tieneSesion = data?.sesionEnCurso?.planificacion_ot_id === r.id;
-        if (realizado) return <Tag color="success" icon={<CheckCircleOutlined />}>Finalizada</Tag>;
-        if (cancelado) return <Tag color="default">Cancelada</Tag>;
+        if (r.estado === "cancelado") return <Tag color="default">Cancelada</Tag>;
+        if (mi === "realizado") return <Tag color="success" icon={<CheckCircleOutlined />}>Terminada</Tag>;
+        if (mi === "en_proceso" || tieneSesion) {
+          return (
+            <Space size={4}>
+              <Tooltip title="Pausar — la tarea queda lista para retomarse después">
+                <Button size="small" icon={<PauseCircleOutlined />} loading={accionLoading === r.id}
+                  onClick={() => abrirObs(r.id, "pausar")}>Pausar</Button>
+              </Tooltip>
+              <Tooltip title="Finalizar — registra tu fin y horas reales">
+                <Button size="small" type="primary" icon={<CheckCircleOutlined />} loading={accionLoading === r.id}
+                  onClick={() => abrirObs(r.id, "finalizar")}>Terminar</Button>
+              </Tooltip>
+            </Space>
+          );
+        }
+        // sin_empezar → Iniciar · pausado → Retomar. Deshabilitado si el técnico
+        // ya tiene otra tarea en curso (solo puede trabajar una a la vez).
         return (
-          <Space size={4}>
-            {/* "Iniciar" solo para tareas no arrancadas (abierto/programado).
-                Una tarea pausada usa "Retomar" (abajo), no "Iniciar". */}
-            {!enProceso && !tieneSesion && r.estado !== "pausado" && (
-              <Button
-                size="small"
-                type="primary"
-                icon={<PlayCircleOutlined />}
-                loading={accionLoading === r.id}
-                onClick={() => accion(r.id, "iniciar")}
-                disabled={!!data?.sesionEnCurso}
-              >
-                Iniciar
-              </Button>
-            )}
-            {(enProceso || tieneSesion) && (
-              <>
-                <Tooltip title="Pausar — la tarea queda lista para retomarse después">
-                  <Button
-                    size="small"
-                    icon={<PauseCircleOutlined />}
-                    loading={accionLoading === r.id}
-                    onClick={() => abrirObs(r.id, "pausar")}
-                  >
-                    Pausar
-                  </Button>
-                </Tooltip>
-                <Tooltip title="Finalizar — registra fin y horas reales totales">
-                  <Button
-                    size="small"
-                    type="primary"
-                    icon={<CheckCircleOutlined />}
-                    loading={accionLoading === r.id}
-                    onClick={() => abrirObs(r.id, "finalizar")}
-                  >
-                    Terminar
-                  </Button>
-                </Tooltip>
-              </>
-            )}
-            {r.estado === "pausado" && !tieneSesion && (
-              <Button
-                size="small"
-                type="primary"
-                icon={<PlayCircleOutlined />}
-                loading={accionLoading === r.id}
-                onClick={() => accion(r.id, "iniciar")}
-                disabled={!!data?.sesionEnCurso}
-              >
-                Retomar
-              </Button>
-            )}
-          </Space>
+          <Button size="small" type="primary" icon={<PlayCircleOutlined />} loading={accionLoading === r.id}
+            onClick={() => accion(r.id, "iniciar")} disabled={!!data?.sesionEnCurso}>
+            {mi === "pausado" ? "Retomar" : "Iniciar"}
+          </Button>
         );
       },
     },
