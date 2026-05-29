@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useMemo } from "react";
-import { Card, Row, Col, Input, Checkbox, Radio, InputNumber, Space, Typography, Divider, Image, Upload, Button, App, Tag } from "antd";
+import { Card, Row, Col, Input, Checkbox, Radio, InputNumber, Space, Typography, Divider, Image, Upload, Button, App, Tag, Alert } from "antd";
 import { CameraOutlined, UploadOutlined, DeleteOutlined } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
 import { findMedidasModelo, modeloForField, type MedidaModelo } from "@/lib/medidas-modelo";
@@ -820,6 +820,8 @@ function HallazgosCatalogo({
   titulo,
   datos,
   onChange,
+  sujecion,
+  flexionRootPrefix,
 }: {
   modelo: string;
   filtro: string | string[];
@@ -827,6 +829,13 @@ function HallazgosCatalogo({
   titulo: string;
   datos: Record<string, unknown>;
   onChange: (d: Record<string, unknown>) => void;
+  // Cuando se pasa, filtra grupos *_cojinete/*_rotula/*_pin dejando solo el
+  // correspondiente a la articulación elegida ("Cojinete" | "Rótula" | "Pin directo").
+  sujecion?: string;
+  // Prefijo base donde están las medidas de flexión {prefix}_flexion_{b,c,d}.
+  // Cuando se pasa Y el hallazgo "vas_flexion_barra" está marcado sin medida
+  // cargada, mostramos warning. Solo aplica al vástago.
+  flexionRootPrefix?: string;
 }) {
   const cat = CATALOGOS_EVALUACION[modelo];
   if (!cat) return null;
@@ -834,10 +843,35 @@ function HallazgosCatalogo({
   // Si el filtro termina en "_" hace prefix match, si no hace exact match.
   // Permite: filtro="cil_" → cil_interior, cil_exterior, etc.
   //          filtro="tapa" → exacto, solo "tapa" (no "tapa_posterior")
-  const grupos = Object.entries(cat.hallazgos).filter(([k]) =>
+  let grupos = Object.entries(cat.hallazgos).filter(([k]) =>
     filtros.some((f) => f.endsWith("_") ? k.startsWith(f) : k === f),
   );
+
+  // Filtrar por articulación seleccionada: si elegiste "Cojinete", ocultar
+  // grupos *_rotula y *_pin (idem para las otras dos). Si no hay selección,
+  // se muestran los 3 — comportamiento backward-compatible.
+  const SUJECION_SLUG: Record<string, string> = {
+    "Cojinete": "cojinete",
+    "Rótula": "rotula",
+    "Pin directo": "pin",
+  };
+  if (sujecion && SUJECION_SLUG[sujecion]) {
+    const elegido = SUJECION_SLUG[sujecion];
+    const otros = Object.values(SUJECION_SLUG).filter((s) => s !== elegido);
+    grupos = grupos.filter(([k]) => !otros.some((s) => k.endsWith(`_${s}`)));
+  }
+
   if (grupos.length === 0) return null;
+
+  // Detecta si hay alguna medida de flexión cargada en la tabla Flexión/Cromo
+  // (para warning bajo "Barra presenta flexión").
+  const tieneAlgunaMedidaFlexion =
+    !!flexionRootPrefix &&
+    (["b", "c", "d"] as const).some((s) => {
+      const v = datos[`${flexionRootPrefix}_flexion_${s}`];
+      return v != null && String(v).trim() !== "";
+    });
+
   return (
     <div style={{ marginTop: 12 }}>
       <Text strong style={{ color: brand.navy }}>{titulo}</Text>
@@ -845,15 +879,32 @@ function HallazgosCatalogo({
         {grupos.map(([key, g]) => (
           <Col xs={24} md={12} key={key}>
             <Card size="small" title={<span style={{ fontSize: 11, fontWeight: 700 }}>{g.nombre}</span>}>
-              {g.items.map((it) => (
-                <HallazgoRichItem
-                  key={it.key}
-                  prefix={`${prefix}_${key}`}
-                  item={it}
-                  datos={datos}
-                  onChange={onChange}
-                />
-              ))}
+              {g.items.map((it) => {
+                // Warning: si es "Barra presenta flexión" y el check está marcado
+                // pero ninguna medida de Flexión fue cargada en la tabla de arriba.
+                const itemBaseKey = `${prefix}_${key}_${it.key}`;
+                const isFlexionBarra = it.key === "vas_flexion_barra";
+                const checked = !!datos[itemBaseKey];
+                const mostrarWarningFlex = isFlexionBarra && checked && flexionRootPrefix && !tieneAlgunaMedidaFlexion;
+                return (
+                  <div key={it.key}>
+                    <HallazgoRichItem
+                      prefix={`${prefix}_${key}`}
+                      item={it}
+                      datos={datos}
+                      onChange={onChange}
+                    />
+                    {mostrarWarningFlex && (
+                      <Alert
+                        type="warning"
+                        showIcon
+                        message="Falta cargar las medidas de Flexión (B/C/D) en la tabla de Flexión/Cromo arriba."
+                        style={{ marginTop: 4, marginBottom: 8, fontSize: 11, padding: "4px 8px" }}
+                      />
+                    )}
+                  </div>
+                );
+              })}
             </Card>
           </Col>
         ))}
@@ -1382,7 +1433,7 @@ export default function EvaluacionFormulario({
                 </div>
               </Col>
             </Row>
-            <HallazgosCatalogo modelo={modelo} filtro="cil_" prefix={`${p}_cil`} titulo="Resultado de evaluación - Cilindro Principal" datos={datos} onChange={onChange} />
+            <HallazgosCatalogo modelo={modelo} filtro="cil_" prefix={`${p}_cil`} titulo="Resultado de evaluación - Cilindro Principal" datos={datos} onChange={onChange} sujecion={datos[`${p}_cil_elem_sujecion`] as string | undefined} />
             <ImagenesComponente prefix={`${p}_cil`} etiqueta="Cilindro Principal" datos={datos} onChange={onChange} />
             <RecomendacionesCatalogo modelo={modelo} componente="cilindro" prefix={p} datos={datos} onChange={onChange} />
             <ResultadoComponente prefix={`${p}_cil`} label="Cilindro Principal" datos={datos} onChange={onChange} />
@@ -1489,7 +1540,7 @@ export default function EvaluacionFormulario({
                 </div>
               </Col>
             </Row>
-            <HallazgosCatalogo modelo={modelo} filtro="vas_" prefix={`${p}_vas`} titulo="Resultado de evaluación - Vástago Principal" datos={datos} onChange={onChange} />
+            <HallazgosCatalogo modelo={modelo} filtro="vas_" prefix={`${p}_vas`} titulo="Resultado de evaluación - Vástago Principal" datos={datos} onChange={onChange} sujecion={datos[`${p}_vas_elem_sujecion`] as string | undefined} flexionRootPrefix={`${p}_vas`} />
             <ImagenesComponente prefix={`${p}_vas`} etiqueta="Vástago Principal" datos={datos} onChange={onChange} />
             <RecomendacionesCatalogo modelo={modelo} componente="vastago" prefix={p} datos={datos} onChange={onChange} />
             <ResultadoComponente prefix={`${p}_vas`} label="Vástago Principal" datos={datos} onChange={onChange} />
@@ -2088,7 +2139,7 @@ export default function EvaluacionFormulario({
             </div>
           </Col>
         </Row>
-        <HallazgosCatalogo modelo={modelo} filtro={["cil_", "acumulador"]} prefix={`${p}_cil`} titulo="Resultado de evaluación - Cilindro" datos={datos} onChange={onChange} />
+        <HallazgosCatalogo modelo={modelo} filtro={["cil_", "acumulador"]} prefix={`${p}_cil`} titulo="Resultado de evaluación - Cilindro" datos={datos} onChange={onChange} sujecion={datos[`${p}_cil_elem_sujecion`] as string | undefined} />
         <ImagenesComponente prefix={`${p}_cil`} etiqueta="Cilindro" datos={datos} onChange={onChange} />
         <RecomendacionesCatalogo modelo={modelo} componente={modelo === "acum_vejiga" ? "acumulador" : "cilindro"} prefix={p} datos={datos} onChange={onChange} />
         <ResultadoComponente prefix={`${p}_cil`} label="Cilindro" datos={datos} onChange={onChange} />
@@ -2231,7 +2282,7 @@ export default function EvaluacionFormulario({
               </div>
             </Col>
           </Row>
-          <HallazgosCatalogo modelo={modelo} filtro="vas_" prefix={`${p}_vas`} titulo="Resultado de evaluación - Vástago" datos={datos} onChange={onChange} />
+          <HallazgosCatalogo modelo={modelo} filtro="vas_" prefix={`${p}_vas`} titulo="Resultado de evaluación - Vástago" datos={datos} onChange={onChange} sujecion={datos[`${p}_vas_elem_sujecion`] as string | undefined} flexionRootPrefix={`${p}_vas`} />
           <ImagenesComponente prefix={`${p}_vas`} etiqueta="Vastago" datos={datos} onChange={onChange} />
           <RecomendacionesCatalogo modelo={modelo} componente="vastago" prefix={p} datos={datos} onChange={onChange} />
           <ResultadoComponente prefix={`${p}_vas`} label="Vastago" datos={datos} onChange={onChange} />
