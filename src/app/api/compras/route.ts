@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
       include: {
         proveedor: { select: { id: true, razon_social: true, ruc: true } },
         ubicacion: { select: { codigo: true, nombre: true } },
-        orden_trabajo: { select: { id: true, ot: true } },
+        orden_trabajo: { select: { id: true, ot: true, descripcion: true } },
         detalles: {
           include: { material: { select: { codigo: true, descripcion: true } } },
         },
@@ -97,6 +97,7 @@ export async function GET(req: NextRequest) {
       numero_req: r.numero_req,
       ot_id: r.ot_id,
       ot_numero: r.orden_trabajo?.ot ?? null,
+      ot_descripcion: r.orden_trabajo?.descripcion ?? null,
       proveedor_id: r.proveedor_id,
       proveedor_nombre: r.proveedor?.razon_social ?? null,
       proveedor_ruc: r.proveedor?.ruc ?? null,

@@ -133,8 +133,7 @@ function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
           children: [
             { key: "/despachos/mina", label: "Despacho a mina (Guía de remisión)" },
             { key: "/facturacion/ot", label: "Facturación de OT (mina)" },
-            { key: "/compras/contabilidad/guias", label: "Guías de OC" },
-            { key: "/compras/contabilidad/facturas", label: "Facturación de OC" },
+            { key: "/compras/contabilidad", label: "Guía y factura de OC" },
           ],
         },
       ],
