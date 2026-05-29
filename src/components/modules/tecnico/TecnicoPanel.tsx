@@ -97,6 +97,16 @@ function eficienciaColor(pct: number | null): string {
   if (pct >= 80) return "#faad14";
   return "#cf1322";
 }
+// Nombres de trabajador vienen como "APELLIDO APELLIDO NOMBRE NOMBRE" (sin coma).
+// Para el saludo mostramos "Primer nombre Primer apellido" (ej. "Jose Huamani").
+function saludoNombre(full: string): string {
+  const cap = (w: string) => (w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w);
+  const w = (full ?? "").trim().split(/\s+/).filter(Boolean);
+  if (w.length === 0) return "";
+  const primerApellido = w[0];
+  const primerNombre = w.length >= 3 ? w[2] : (w[1] ?? w[0]);
+  return `${cap(primerNombre)} ${cap(primerApellido)}`.trim();
+}
 function formatSegundos(s: number): string {
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
@@ -376,7 +386,7 @@ export default function TecnicoPanel() {
     <div>
       <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
         <Col>
-          <Title level={3} style={{ margin: 0 }}>Hola, {data.me.nombre.split(",")[0].split(" ")[0]} 👋</Title>
+          <Title level={3} style={{ margin: 0 }}>Hola, {saludoNombre(data.me.nombre)} 👋</Title>
           <Text type="secondary" style={{ fontSize: 13 }}>{data.me.area} · {data.me.puesto}</Text>
         </Col>
         <Col>
