@@ -59,7 +59,9 @@ export async function GET() {
 
     // Sesión abierta (si el técnico está trabajando algo ahora)
     const sesionAbierta = await prisma.planificacionOTSesion.findFirst({
-      where: { tecnico, fin: null },
+      // Ignora sesiones abiertas de tareas ya canceladas/realizadas (evita que el
+      // cronómetro "Trabajando ahora" quede colgado si una se cerró por otra vía).
+      where: { tecnico, fin: null, planificacion_ot: { estado: { notIn: ["cancelado", "realizado"] } } },
       include: {
         planificacion_ot: {
           select: {

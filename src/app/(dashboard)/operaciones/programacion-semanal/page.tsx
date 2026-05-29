@@ -816,6 +816,12 @@ export default function ProgramacionSemanalPage() {
     // (la máquina sale del operario). Acá solo se visualiza la carga.
     if (view === "equipo") return;
     if (e.button !== 0) return; // solo click izquierdo
+    // Tarea publicada = plan congelado: no se mueve hasta reabrir la semana.
+    const tDrag = rows.find((r) => r.id === taskId) ?? allRows.find((r) => r.id === taskId);
+    if (tDrag?.publicado) {
+      messageApi.info("Tarea publicada. Reabrí la semana del operario para moverla.");
+      return;
+    }
     const target = e.currentTarget as HTMLElement;
     const rect = target.getBoundingClientRect();
     // Si la tarea está en el set de seleccionadas y hay más de 1, prepara multi-drag
@@ -1125,9 +1131,10 @@ export default function ProgramacionSemanalPage() {
             {hasConflict && <WarningFilled style={{ marginLeft: 4 }} />}
           </div>
           <div className="psg-task-sub" style={{ paddingLeft: continuaDeAntes ? 14 : 0, paddingRight: continuaDespues ? 14 : 0 }}>{r.descripcion}</div>
-          {/* Resize handle: solo en vista Operarios (Equipos es solo lectura) y
-              si la tarea NO continúa hacia la próxima semana. */}
-          {!continuaDespues && view !== "equipo" && (
+          {/* Resize handle: solo en vista Operarios (Equipos es solo lectura),
+              si la tarea NO continúa a la próxima semana y NO está publicada
+              (publicada = plan congelado). */}
+          {!continuaDespues && view !== "equipo" && !r.publicado && (
             <div
               className="psg-resize-handle"
               onMouseDown={(e) => {
@@ -1822,7 +1829,7 @@ export default function ProgramacionSemanalPage() {
               okButtonProps={{ danger: true }}
               onConfirm={() => selectedTask && persistRemoveFromWeek(selectedTask.id)}
             >
-              <Button danger disabled={!editMode}>Sacar de la semana</Button>
+              <Button danger disabled={!editMode || !!selectedTask?.publicado}>Sacar de la semana</Button>
             </Popconfirm>
           ) : null,
           <Button key="plan" type="primary" onClick={() => router.push("/operaciones/planificacion")}>
