@@ -8,7 +8,7 @@ import {
   CalendarOutlined, LeftOutlined, RightOutlined, UserOutlined, ToolOutlined, AimOutlined,
   SettingOutlined, RollbackOutlined, UnorderedListOutlined, WarningFilled, ZoomInOutlined, ZoomOutOutlined,
   PrinterOutlined, BgColorsOutlined, FilterOutlined, ClearOutlined,
-  LoadingOutlined, CheckCircleFilled, CloseCircleFilled,
+  LoadingOutlined, CheckCircleFilled, CloseCircleFilled, EyeOutlined,
 } from "@ant-design/icons";
 import dayjs, { Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
@@ -753,6 +753,9 @@ export default function ProgramacionSemanalPage() {
   // ── Drag con pointer events (más fluido + ghost en vivo) ──
   function startDrag(e: React.MouseEvent, taskId: number, fromPool: boolean) {
     if (resizing) return;
+    // La vista por Equipos es SOLO LECTURA: las tareas se asignan a operarios
+    // (la máquina sale del operario). Acá solo se visualiza la carga.
+    if (view === "equipo") return;
     if (e.button !== 0) return; // solo click izquierdo
     const target = e.currentTarget as HTMLElement;
     const rect = target.getBoundingClientRect();
@@ -1061,8 +1064,9 @@ export default function ProgramacionSemanalPage() {
             {hasConflict && <WarningFilled style={{ marginLeft: 4 }} />}
           </div>
           <div className="psg-task-sub" style={{ paddingLeft: continuaDeAntes ? 14 : 0, paddingRight: continuaDespues ? 14 : 0 }}>{r.descripcion}</div>
-          {/* Resize handle: solo si la tarea NO continúa hacia la próxima semana */}
-          {!continuaDespues && (
+          {/* Resize handle: solo en vista Operarios (Equipos es solo lectura) y
+              si la tarea NO continúa hacia la próxima semana. */}
+          {!continuaDespues && view !== "equipo" && (
             <div
               className="psg-resize-handle"
               onMouseDown={(e) => {
@@ -1133,7 +1137,9 @@ export default function ProgramacionSemanalPage() {
               Programación Semanal
             </Typography.Title>
             <div style={{ fontSize: 12, opacity: 0.85 }}>
-              Gantt de tareas por {view === "equipo" ? "equipo" : "operario"} — L–V 8:00–20:00 (almuerzo 12:30–13:30)
+              {view === "equipo"
+                ? "Carga por equipo (solo lectura) — la asignación se hace en vista Operarios"
+                : "Gantt de tareas por operario — L–V 8:00–20:00 (almuerzo 12:30–13:30)"}
             </div>
           </div>
           <Space wrap>
@@ -1154,15 +1160,19 @@ export default function ProgramacionSemanalPage() {
               }
               return <Tag icon={<CheckCircleFilled />} color="default" style={{ fontWeight: 400, color: brand.textSecondary }}>Sincronizado</Tag>;
             })()}
-            <Button
-              type={editMode ? "default" : "primary"}
-              danger={editMode}
-              onClick={toggleEditMode}
-              disabled={!editMode && !lock.canEdit}
-              title={!lock.canEdit && lock.lockedBy ? `Editando: ${lock.lockedBy}` : undefined}
-            >
-              {editMode ? "Salir de edición" : "Modo edición"}
-            </Button>
+            {view === "equipo" ? (
+              <Tag icon={<EyeOutlined />} color="default" style={{ fontWeight: 500 }}>Solo visualización</Tag>
+            ) : (
+              <Button
+                type={editMode ? "default" : "primary"}
+                danger={editMode}
+                onClick={toggleEditMode}
+                disabled={!editMode && !lock.canEdit}
+                title={!lock.canEdit && lock.lockedBy ? `Editando: ${lock.lockedBy}` : undefined}
+              >
+                {editMode ? "Salir de edición" : "Modo edición"}
+              </Button>
+            )}
             <Button shape="circle" icon={<LeftOutlined />} onClick={() => setLunes((m) => m.subtract(1, "week"))} />
             <DatePicker
               value={lunes}
@@ -1181,8 +1191,14 @@ export default function ProgramacionSemanalPage() {
                 const nuevo = v as "equipo" | "operario";
                 setView(nuevo);
                 // Limpiar el filtro opuesto al cambiar de vista (no tiene sentido mantenerlo aplicado).
-                if (nuevo === "equipo") setFiltroOperarios([]);
-                else setFiltroEquipos([]);
+                if (nuevo === "equipo") {
+                  setFiltroOperarios([]);
+                  // Equipos es solo lectura: si veníamos editando, salimos y
+                  // soltamos el lock (no hay nada para editar acá).
+                  if (editMode) { setEditMode(false); void lock.release(); }
+                } else {
+                  setFiltroEquipos([]);
+                }
               }}
               options={[
                 { value: "equipo", icon: <ToolOutlined />, label: "Equipos" },
