@@ -1,23 +1,15 @@
 /**
- * Simulación intensiva de planificación / programación semanal.
+ * Simulación intensiva de PLANIFICACIÓN + PROGRAMACIÓN SEMANAL.
  *
- * Reproduce FIELMENTE la cadena real:
- *   1. Cliente suelta un bloque en el Gantt  (persistMove → patch)
- *   2. El servidor procesa el PUT            (normalizar + recalcular Fin)
- *   3. La UI vuelve a leer y renderiza        (renderTaskBlock → ¿visible?)
+ * Reproduce FIELMENTE la lógica real de ambos módulos (cliente + servidor +
+ * render) e importa las funciones reales de `src/lib/planification-hours.ts`,
+ * así que lo que acá falle, falla igual en producción.
  *
- * Importa la lógica REAL de `src/lib/planification-hours.ts`, así que lo que
- * acá falle, falla igual en producción.
- *
- * Corre miles de escenarios (cada día, cada slot de 15', varias duraciones y
- * cantidades de personal, con y sin horas extra) y verifica invariantes:
- *
- *   INV-1  No-salto:     donde lo suelto = donde queda (sin reubicación silenciosa)
- *   INV-2  Visible:      el bloque sigue visible en la semana donde lo solté
- *   INV-3  HE mismo día: una tarea de horas-extra termina el MISMO día (no se
- *                        desborda a la mañana siguiente)
- *   INV-4  Fin > Inicio: el fin siempre es posterior al inicio
- *   INV-5  Sin choque-fantasma: una tarea HE no bloquea la mañana del día siguiente
+ * Suites:
+ *   1. COLOCACIÓN (programación semanal): arrastrar bloques al Gantt.
+ *   2. FORM (planificación): recalcularFin, HH, flujo del check de HE.
+ *   3. FILTROS (planificación): réplica del where del servidor + multi-recurso.
+ *   4. SINCRONIZACIÓN planificación ↔ programación semanal.
  *
  * Uso:  npx tsx scripts/sim-planificacion.ts
  */
@@ -27,21 +19,21 @@ import isoWeek from "dayjs/plugin/isoWeek";
 import {
   calcularFin,
   calcularFinEstimado,
+  calcularHH,
   normalizarAInicioHabil,
 } from "../src/lib/planification-hours";
 
 dayjs.extend(isoWeek);
 
 // ── Constantes del grid (idénticas a programacion-semanal/page.tsx) ──
-const VIEW_INICIO = 8; // el grid se ve desde las 08:00
-const VIEW_FIN = 20; // hasta las 20:00 (la banda 18–20 es "horas extra")
+const VIEW_INICIO = 8;
+const VIEW_FIN = 20;
 const SNAP_MIN = 15;
 
-// Lunes de referencia fijo para que la corrida sea determinística.
-// 2026-05-25 es lunes (la semana de "hoy" = 2026-05-28).
+// Lunes de referencia fijo (la semana de "hoy" 2026-05-28).
 const MONDAY = dayjs("2026-05-25T00:00:00");
 
-// ── Modelo mínimo de una fila de planificación ──
+// ── Modelo mínimo de una fila ──
 interface Row {
   id: number;
   horas_estimadas: number | null;
@@ -50,9 +42,11 @@ interface Row {
   horas_extras_qty: number | null;
   fecha_inicio: Date | null;
   fecha_fin: Date | null;
+  fecha_fin_real: Date | null;
   semana_plan: string | null;
   tecnico: string | null;
   maquina: string | null;
+  trabajo_externo: boolean | null;
   estado: string | null;
 }
 
@@ -65,9 +59,11 @@ function nuevaFila(over: Partial<Row>): Row {
     horas_extras_qty: null,
     fecha_inicio: null,
     fecha_fin: null,
+    fecha_fin_real: null,
     semana_plan: null,
     tecnico: null,
     maquina: null,
+    trabajo_externo: false,
     estado: "abierto",
     ...over,
   };
@@ -79,19 +75,30 @@ function semanaCodigo(d: Dayjs): string {
 function semanaCodigoFromDate(d: Date): string {
   return semanaCodigo(dayjs(d));
 }
+function splitTecnicos(s: string | null | undefined): string[] {
+  if (!s) return [];
+  return s.split(",").map((x) => x.trim()).filter(Boolean);
+}
+function joinTecnicos(arr: string[]): string | null {
+  const clean = arr.map((x) => x.trim()).filter(Boolean);
+  return clean.length === 0 ? null : clean.join(", ");
+}
 
 // ─────────────────────────────────────────────────────────────────────────
 // CLIENTE — réplica de persistMove() (programacion-semanal/page.tsx)
 // ─────────────────────────────────────────────────────────────────────────
 interface Patch {
-  fecha_inicio?: Date;
-  fecha_fin?: Date;
-  semana_plan?: string;
-  horas_estimadas?: number;
+  fecha_inicio?: Date | null;
+  fecha_fin?: Date | null;
+  semana_plan?: string | null;
+  horas_estimadas?: number | null;
   horas_extras?: boolean;
-  horas_extras_qty?: number;
-  maquina?: string;
-  tecnico?: string;
+  horas_extras_qty?: number | null;
+  qty_personal?: number;
+  maquina?: string | null;
+  tecnico?: string | null;
+  fecha_fin_real?: Date | null;
+  trabajo_externo?: boolean;
 }
 
 function clienteSoltarBloque(
@@ -107,7 +114,6 @@ function clienteSoltarBloque(
 
   const inicioHoraDec = ini.hour() + ini.minute() / 60;
   const enBandaHE = inicioHoraDec >= 18;
-  // Normal: normalizamos a la jornada (igual que el server). HE: queda donde cae.
   const inicioReal = enBandaHE ? ini : dayjs(normalizarAInicioHabil(ini.toDate()));
   const fin = calcularFin(inicioReal.toDate(), dur * qty, enBandaHE);
 
@@ -128,6 +134,25 @@ function clienteSoltarBloque(
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// CLIENTE — réplica de recalcularFin() (planificacion/page.tsx)
+// ─────────────────────────────────────────────────────────────────────────
+function recalcularFin(r: Row, patch: Partial<Row>): Partial<Row> {
+  const out: Partial<Row> = { ...patch };
+  const merged = { ...r, ...patch };
+  if (merged.horas_extras) return out; // HE: el usuario maneja el fin
+  const inicio = merged.fecha_inicio ? new Date(merged.fecha_inicio) : null;
+  const duracion = Number(merged.horas_estimadas ?? 0);
+  const qty = Math.max(1, Number(merged.qty_personal ?? 1));
+  const horasTotalTarea = duracion * qty;
+  if (inicio && horasTotalTarea > 0) {
+    out.fecha_fin = calcularFinEstimado(inicio, horasTotalTarea);
+  } else {
+    out.fecha_fin = null;
+  }
+  return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // SERVIDOR — réplica de PUT /api/planificacion/[id] (route.ts)
 // ─────────────────────────────────────────────────────────────────────────
 function servidorPut(
@@ -139,9 +164,15 @@ function servidorPut(
     if (patch[k] !== undefined) data[k] = patch[k];
   }
 
+  // Bloqueo si estado = realizado (replicado simplificado)
+  const isRealizado = current.estado === "realizado";
+  const intentaEditar = Object.keys(data).length > 0;
+  if (isRealizado && intentaEditar && !("estado" in data)) {
+    return { ok: false, status: 423, error: "REALIZADO_LOCKED" };
+  }
+
   const fechaInicioCambia = "fecha_inicio" in data;
   const semanaCambia = "semana_plan" in data;
-
   if (fechaInicioCambia && data.fecha_inicio) {
     data.semana_plan = semanaCodigoFromDate(data.fecha_inicio as Date);
   } else if (semanaCambia && !fechaInicioCambia) {
@@ -152,7 +183,6 @@ function servidorPut(
     if (nuevaSemana && nuevaSemana !== semanaActualDeFecha) data.fecha_inicio = null;
   }
 
-  // ── Normalizar a jornada hábil (solo si NO es HE) ──
   const finalHE =
     (patch.horas_extras !== undefined ? patch.horas_extras : current.horas_extras) ?? false;
   if (data.fecha_inicio && !finalHE) {
@@ -165,21 +195,18 @@ function servidorPut(
     patch.horas_extras_qty !== undefined
       ? Number(patch.horas_extras_qty ?? 0)
       : Number(current.horas_extras_qty ?? 0);
-  if (finalHE && finalHEQty <= 0) {
-    return { ok: false, status: 400, error: "HE_INVALID" };
-  }
+  if (finalHE && finalHEQty <= 0) return { ok: false, status: 400, error: "HE_INVALID" };
 
   const finalDur =
     patch.horas_estimadas !== undefined
       ? Number(patch.horas_estimadas ?? 0)
       : Number(current.horas_estimadas ?? 0);
   const finalQty =
-    (patch as { qty_personal?: number }).qty_personal !== undefined
-      ? Number((patch as { qty_personal?: number }).qty_personal ?? 1)
+    patch.qty_personal !== undefined
+      ? Number(patch.qty_personal ?? 1)
       : Number(current.qty_personal ?? 1);
   const finalIni =
     "fecha_inicio" in data ? (data.fecha_inicio as Date | null) : current.fecha_inicio;
-
   if (!finalHE) {
     if (finalIni && finalDur > 0) {
       data.fecha_fin = calcularFinEstimado(finalIni, finalDur * Math.max(1, finalQty));
@@ -188,8 +215,52 @@ function servidorPut(
     }
   }
 
+  // Auto-transición a "realizado" al setear fecha_fin_real
+  if ("fecha_fin_real" in data && data.fecha_fin_real != null && !("estado" in data)) {
+    data.estado = "realizado";
+  }
+  // abierto → programado al asignar fecha + recurso
+  const finalRecurso =
+    patch.tecnico !== undefined || patch.maquina !== undefined
+      ? ((data.tecnico as string | null) ?? current.tecnico) ||
+        ((data.maquina as string | null) ?? current.maquina)
+      : current.tecnico || current.maquina;
+  if (current.estado === "abierto" && finalIni && finalRecurso && !("estado" in data)) {
+    data.estado = "programado";
+  }
+
   const row: Row = { ...current, ...(data as Partial<Row>) };
   return { ok: true, status: 200, row };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// SERVIDOR — réplica del WHERE de GET /api/planificacion (filtros)
+// ─────────────────────────────────────────────────────────────────────────
+interface Filtros {
+  semana?: string;
+  estado?: string;
+  tecnico?: string;
+  maquina?: string;
+}
+// Réplica del WHERE del servidor. tecnico/maquina ahora hacen match por TOKEN
+// (reconocen valores multi-recurso "Juan, Pedro"), igual que tokenMatch() en
+// el route real.
+function servidorFiltrar(rows: Row[], f: Filtros): Row[] {
+  return rows.filter((r) => {
+    if (f.semana && r.semana_plan !== f.semana) return false;
+    if (f.estado && r.estado !== f.estado) return false;
+    if (f.tecnico && !splitTecnicos(r.tecnico).includes(f.tecnico)) return false;
+    if (f.maquina && !splitTecnicos(r.maquina).includes(f.maquina)) return false;
+    return true;
+  });
+}
+
+// ── Réplica del filtro de OVERLAP por rango (desde/hasta) del GET ──
+function pasaOverlap(r: Row, desde: Date, hasta: Date): boolean {
+  if (!r.fecha_inicio) return false; // sin fecha no entra al rango
+  if (r.fecha_inicio.getTime() > hasta.getTime()) return false;
+  if (r.fecha_fin) return r.fecha_fin.getTime() >= desde.getTime();
+  return r.fecha_inicio.getTime() >= desde.getTime();
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -204,182 +275,302 @@ function bloqueVisible(monday: Dayjs, ini: Date | null, fin: Date | null): boole
   if (f.isBefore(semanaIni) || i.isAfter(semanaFin)) return false;
   return true;
 }
-
-// ── Detección de solapamiento (réplica de tareaSuperpuesta / detectarConflictos) ──
 function solapan(a: Row, b: Row): boolean {
   if (!a.fecha_inicio || !a.fecha_fin || !b.fecha_inicio || !b.fecha_fin) return false;
-  const aIni = a.fecha_inicio.getTime();
-  const aFin = a.fecha_fin.getTime();
-  const bIni = b.fecha_inicio.getTime();
-  const bFin = b.fecha_fin.getTime();
-  return aIni < bFin && bFin > aIni && aIni < bFin && bIni < aFin;
+  return a.fecha_inicio.getTime() < b.fecha_fin.getTime() && b.fecha_inicio.getTime() < a.fecha_fin.getTime();
 }
 
 // ─────────────────────────────────────────────────────────────────────────
 // Recolección de fallas
 // ─────────────────────────────────────────────────────────────────────────
-interface Falla {
-  inv: string;
-  detalle: string;
-}
-const fallas: Falla[] = [];
 const conteo: Record<string, number> = {};
+const ejemplos: Record<string, string[]> = {};
+const descripciones: Record<string, string> = {};
+function definirInv(inv: string, desc: string) {
+  descripciones[inv] = desc;
+  conteo[inv] = conteo[inv] ?? 0;
+}
 function reportar(inv: string, detalle: string) {
   conteo[inv] = (conteo[inv] ?? 0) + 1;
-  if ((conteo[inv] ?? 0) <= 4) fallas.push({ inv, detalle }); // guardo hasta 4 ejemplos por invariante
+  ejemplos[inv] = ejemplos[inv] ?? [];
+  if (ejemplos[inv].length < 4) ejemplos[inv].push(detalle);
 }
-
 function fmt(d: Date | null): string {
   return d ? dayjs(d).format("ddd DD/MM HH:mm") : "—";
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// SIMULACIÓN PRINCIPAL: barrido de colocaciones
-// ─────────────────────────────────────────────────────────────────────────
 let totalCasos = 0;
 
-const DURACIONES = [0.5, 1, 2, 3, 4.5, 6, 9]; // horas por persona
-const QTYS = [1, 2, 3];
-const VIEWS: ("equipo" | "operario")[] = ["equipo", "operario"];
+// Invariantes
+definirInv("INV1-SALTO", "El bloque se reubica solo (cae distinto de donde lo soltás)");
+definirInv("INV2-INVISIBLE", "El bloque queda invisible en la semana donde lo soltaste");
+definirInv("INV3-HE-DESBORDA", "El fin de una HE no es reloj continuo (inicio + horas)");
+definirInv("INV4-FIN<=INI", "Fin anterior o igual al inicio");
+definirInv("INV5-CHOQUE-FANTASMA", "Una tarea HE bloquea la mañana del día siguiente");
+definirInv("SRV-ERROR", "El servidor rechaza la colocación");
+definirInv("FORM1-FIN-PARITY", "recalcularFin (planif.) ≠ fin del server / programación");
+definirInv("FORM2-HE-MANUAL", "Marcar HE NO debe recalcular el fin automáticamente");
+definirInv("FORM3-HE-RECHAZO", "Marcar HE deja la tarea en estado que el server rechaza");
+definirInv("FORM4-HH", "calcularHH no coincide con dur×qty(+HE)");
+definirInv("FILT1-MULTI", "Filtro por operario/equipo pierde tareas multi-recurso");
+definirInv("FILT2-SEMANA", "Filtro por semana no coincide con semana_plan");
+definirInv("SYNC1-SEMANA", "fecha_inicio y semana_plan quedan inconsistentes");
+definirInv("SYNC2-OVERLAP", "Tarea de la semana N no entra en el rango de esa semana");
+definirInv("SYNC3-SACAR", "Sacar de la semana no la manda al pool 'sin semana'");
+definirInv("SYNC4-EXTERNO", "Bulk 'Tercero' no marca trabajo_externo / no limpia equipo");
 
-for (const view of VIEWS) {
-  for (let day = 0; day < 5; day++) {
-    for (let slot = VIEW_INICIO; slot <= VIEW_FIN; slot += SNAP_MIN / 60) {
-      const hh = Math.floor(slot);
-      const mm = Math.round((slot - hh) * 60);
-      const ini = MONDAY.add(day, "day").hour(hh).minute(mm).second(0).millisecond(0);
-      for (const dur of DURACIONES) {
-        for (const qty of QTYS) {
-          totalCasos++;
-          const recurso = view === "equipo" ? "TR-01" : "Juan Pérez";
-          const original = nuevaFila({ horas_estimadas: dur, qty_personal: qty });
-          const { patch, optimistaIni } = clienteSoltarBloque(original, ini, recurso, view);
-          const res = servidorPut(original, patch);
+// ═════════════════════════════════════════════════════════════════════════
+// SUITE 1 — COLOCACIÓN (programación semanal)
+// ═════════════════════════════════════════════════════════════════════════
+{
+  const DURACIONES = [0.5, 1, 2, 3, 4.5, 6, 9];
+  const QTYS = [1, 2, 3];
+  const VIEWS: ("equipo" | "operario")[] = ["equipo", "operario"];
 
-          if (!res.ok) {
-            reportar(
-              "SRV-ERROR",
-              `[${view}] soltar ${fmt(ini.toDate())} dur=${dur} qty=${qty} → ${res.error}`,
-            );
-            continue;
-          }
-          const row = res.row!;
-          const esHE = !!patch.horas_extras;
-
-          // INV-1: no-salto (donde lo suelto debería quedar)
-          if (row.fecha_inicio!.getTime() !== optimistaIni.getTime()) {
-            reportar(
-              "INV1-SALTO",
-              `[${view}] solté ${fmt(optimistaIni)} → quedó en ${fmt(row.fecha_inicio)} (dur=${dur} qty=${qty})`,
-            );
-          }
-
-          // INV-2: visible en la semana donde lo solté
-          if (!bloqueVisible(MONDAY, row.fecha_inicio, row.fecha_fin)) {
-            reportar(
-              "INV2-INVISIBLE",
-              `[${view}] solté ${fmt(ini.toDate())} dur=${dur} qty=${qty} HE=${esHE} → ini=${fmt(row.fecha_inicio)} fin=${fmt(row.fecha_fin)} NO se ve`,
-            );
-          }
-
-          // INV-3: el fin de una tarea HE es reloj CONTINUO = inicio + horas.
-          // (El bug era que la jornada normal lo empujaba a la mañana del día
-          // siguiente. Que una HE muy larga cruce medianoche es correcto.)
-          if (esHE && row.fecha_inicio && row.fecha_fin) {
-            const esperadoFin = row.fecha_inicio.getTime() + dur * qty * 3_600_000;
-            if (row.fecha_fin.getTime() !== esperadoFin) {
-              reportar(
-                "INV3-HE-DESBORDA",
-                `[${view}] HE soltada ${fmt(row.fecha_inicio)} dur=${dur} qty=${qty} → fin ${fmt(row.fecha_fin)} (esperaba ${fmt(new Date(esperadoFin))})`,
-              );
+  for (const view of VIEWS) {
+    for (let day = 0; day < 5; day++) {
+      for (let slot = VIEW_INICIO; slot <= VIEW_FIN; slot += SNAP_MIN / 60) {
+        const hh = Math.floor(slot);
+        const mm = Math.round((slot - hh) * 60);
+        const ini = MONDAY.add(day, "day").hour(hh).minute(mm).second(0).millisecond(0);
+        for (const dur of DURACIONES) {
+          for (const qty of QTYS) {
+            totalCasos++;
+            const recurso = view === "equipo" ? "TR-01" : "Juan Pérez";
+            const original = nuevaFila({ horas_estimadas: dur, qty_personal: qty });
+            const { patch, optimistaIni } = clienteSoltarBloque(original, ini, recurso, view);
+            const res = servidorPut(original, patch);
+            if (!res.ok) {
+              reportar("SRV-ERROR", `[${view}] ${fmt(ini.toDate())} dur=${dur} qty=${qty} → ${res.error}`);
+              continue;
             }
-          }
+            const row = res.row!;
+            const esHE = !!patch.horas_extras;
 
-          // INV-4: fin > inicio
-          if (row.fecha_inicio && row.fecha_fin && row.fecha_fin.getTime() <= row.fecha_inicio.getTime()) {
-            reportar(
-              "INV4-FIN<=INI",
-              `[${view}] ${fmt(row.fecha_inicio)} → ${fmt(row.fecha_fin)} (dur=${dur} qty=${qty})`,
-            );
+            if (row.fecha_inicio!.getTime() !== optimistaIni.getTime())
+              reportar("INV1-SALTO", `[${view}] solté ${fmt(optimistaIni)} → quedó ${fmt(row.fecha_inicio)}`);
+            if (!bloqueVisible(MONDAY, row.fecha_inicio, row.fecha_fin))
+              reportar("INV2-INVISIBLE", `[${view}] ${fmt(ini.toDate())} dur=${dur} qty=${qty} HE=${esHE} → ${fmt(row.fecha_inicio)}→${fmt(row.fecha_fin)}`);
+            if (esHE && row.fecha_inicio && row.fecha_fin) {
+              const esperado = row.fecha_inicio.getTime() + dur * qty * 3_600_000;
+              if (row.fecha_fin.getTime() !== esperado)
+                reportar("INV3-HE-DESBORDA", `[${view}] HE ${fmt(row.fecha_inicio)} dur=${dur} qty=${qty} → ${fmt(row.fecha_fin)} (esperaba ${fmt(new Date(esperado))})`);
+            }
+            if (row.fecha_inicio && row.fecha_fin && row.fecha_fin.getTime() <= row.fecha_inicio.getTime())
+              reportar("INV4-FIN<=INI", `[${view}] ${fmt(row.fecha_inicio)} → ${fmt(row.fecha_fin)}`);
           }
         }
       }
     }
   }
+
+  // INV5: choque-fantasma — HE lunes 18:30 no debe bloquear martes 08:00
+  totalCasos++;
+  const lunesHE = MONDAY.hour(18).minute(30);
+  const tareaHE = nuevaFila({ id: 100, horas_estimadas: 1, qty_personal: 1, maquina: "TR-01" });
+  const storedHE = servidorPut(tareaHE, clienteSoltarBloque(tareaHE, lunesHE, "TR-01", "equipo").patch).row!;
+  storedHE.id = 100;
+  const martes8 = MONDAY.add(1, "day").hour(8).minute(0);
+  const tareaMartes = nuevaFila({ id: 101, maquina: "TR-01", fecha_inicio: martes8.toDate(), fecha_fin: calcularFinEstimado(martes8.toDate(), 1) });
+  if (solapan(storedHE, tareaMartes))
+    reportar("INV5-CHOQUE-FANTASMA", `HE lunes 18:30 quedó ${fmt(storedHE.fecha_inicio)}→${fmt(storedHE.fecha_fin)} y choca martes 08:00`);
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// ESCENARIO DE CHOQUE-FANTASMA (INV-5)
-// Coloco una tarea HE el lunes a las 18:30 (1h) y verifico que NO bloquee
-// la mañana del martes.
-// ─────────────────────────────────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════════
+// SUITE 2 — FORM (planificación): recalcularFin, HE, HH
+// ═════════════════════════════════════════════════════════════════════════
 {
-  const recurso = "TR-01";
-  const lunesHE = MONDAY.hour(18).minute(30);
-  const tareaHE = nuevaFila({ id: 100, horas_estimadas: 1, qty_personal: 1, maquina: recurso });
-  const { patch } = clienteSoltarBloque(tareaHE, lunesHE, recurso, "equipo");
-  const stored = servidorPut(tareaHE, patch).row!;
-  stored.id = 100;
+  const DURACIONES = [0.5, 1, 2.5, 4.5, 9];
+  const QTYS = [1, 2, 3];
+  const HEQTYS = [0, 1, 2.5];
 
-  // Intento colocar otra tarea el martes 08:00 en el mismo recurso.
-  const martes8 = MONDAY.add(1, "day").hour(8).minute(0);
-  const finMartes = calcularFinEstimado(martes8.toDate(), 1);
-  const tareaMartes = nuevaFila({
-    id: 101,
-    maquina: recurso,
-    fecha_inicio: martes8.toDate(),
-    fecha_fin: finMartes,
-  });
+  for (let day = 0; day < 5; day++) {
+    for (let h = 8; h <= 16; h++) {
+      const inicio = MONDAY.add(day, "day").hour(h).minute(0);
+      for (const dur of DURACIONES) {
+        for (const qty of QTYS) {
+          totalCasos++;
+          const r = nuevaFila({ horas_estimadas: dur, qty_personal: qty, tecnico: "Juan Pérez" });
 
-  totalCasos++;
-  if (solapan(stored, tareaMartes)) {
-    reportar(
-      "INV5-CHOQUE-FANTASMA",
-      `HE lunes 18:30 (1h) quedó ${fmt(stored.fecha_inicio)}→${fmt(stored.fecha_fin)} y bloquea martes 08:00 (choque falso)`,
-    );
+          // FORM1: recalcularFin (planif.) debe coincidir con el fin que produce
+          // el servidor y con el de programación semanal (mismo calcularFinEstimado).
+          const patchPlanif = recalcularFin(r, { fecha_inicio: inicio.toDate() });
+          const finServer = servidorPut(r, { fecha_inicio: inicio.toDate() }).row!.fecha_fin;
+          if (patchPlanif.fecha_fin && finServer) {
+            if (patchPlanif.fecha_fin.getTime() !== finServer.getTime())
+              reportar("FORM1-FIN-PARITY", `dur=${dur} qty=${qty} ini=${fmt(inicio.toDate())}: planif=${fmt(patchPlanif.fecha_fin)} server=${fmt(finServer)}`);
+          }
+
+          // FORM4: HH
+          for (const heq of HEQTYS) {
+            const heOn = heq > 0;
+            const hh = calcularHH({ duracionHrs: dur, qtyPersonal: qty, horasExtras: heOn, horasExtrasQty: heq });
+            const esperado = dur * qty + (heOn ? heq : 0);
+            if (Math.abs(hh - esperado) > 1e-9)
+              reportar("FORM4-HH", `dur=${dur} qty=${qty} HEq=${heq} → ${hh} (esperaba ${esperado})`);
+          }
+        }
+      }
+    }
+  }
+
+  // FORM2 + FORM3: flujo del checkbox de HE.
+  // Al marcar HE, la UI fija horas_extras_qty=1 si estaba vacío y NO recalcula el fin.
+  {
+    totalCasos++;
+    const base = nuevaFila({ horas_estimadas: 2, qty_personal: 1, fecha_inicio: MONDAY.hour(10).toDate(), tecnico: "Juan Pérez" });
+    base.fecha_fin = calcularFinEstimado(base.fecha_inicio!, 2);
+    const finAntes = base.fecha_fin.getTime();
+
+    // Marca HE (réplica del onChange checked=true)
+    const qtyActual = base.horas_extras_qty != null ? Number(base.horas_extras_qty) : 0;
+    const patchHE: Patch = { horas_extras: true };
+    if (!(qtyActual > 0)) patchHE.horas_extras_qty = 1;
+    const trasMarcar = servidorPut(base, patchHE);
+    if (!trasMarcar.ok)
+      reportar("FORM3-HE-RECHAZO", `marcar HE → server ${trasMarcar.error}`);
+    else if (trasMarcar.row!.fecha_fin && trasMarcar.row!.fecha_fin.getTime() !== finAntes)
+      reportar("FORM2-HE-MANUAL", `al marcar HE el fin cambió de ${fmt(new Date(finAntes))} a ${fmt(trasMarcar.row!.fecha_fin)}`);
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// SUITE 3 — FILTROS (planificación) + paridad con programación semanal
+// ═════════════════════════════════════════════════════════════════════════
+{
+  // Dataset con tareas single y MULTI-recurso (qty>1 → "Juan, Pedro").
+  const dataset: Row[] = [
+    nuevaFila({ id: 1, tecnico: "Juan Pérez", maquina: "TR-01", semana_plan: "2026W22", estado: "programado" }),
+    nuevaFila({ id: 2, tecnico: joinTecnicos(["Juan Pérez", "Pedro Gómez"]), maquina: joinTecnicos(["TR-01", "TR-02"]), qty_personal: 2, semana_plan: "2026W22", estado: "programado" }),
+    nuevaFila({ id: 3, tecnico: "Pedro Gómez", maquina: "TR-02", semana_plan: "2026W23", estado: "abierto" }),
+    nuevaFila({ id: 4, tecnico: "Tercero", maquina: null, trabajo_externo: true, semana_plan: "2026W22", estado: "programado" }),
+  ];
+
+  const OPERARIOS = ["Juan Pérez", "Pedro Gómez", "Tercero"];
+  const EQUIPOS = ["TR-01", "TR-02"];
+
+  // FILT1: el resultado del filtro del servidor debe coincidir con lo que
+  // programación semanal muestra en la franja de ese recurso (splitTecnicos).
+  for (const op of OPERARIOS) {
+    totalCasos++;
+    const delServidor = new Set(servidorFiltrar(dataset, { tecnico: op }).map((r) => r.id));
+    const enLaFranja = new Set(dataset.filter((r) => splitTecnicos(r.tecnico).includes(op)).map((r) => r.id));
+    const faltan = [...enLaFranja].filter((id) => !delServidor.has(id));
+    if (faltan.length > 0)
+      reportar("FILT1-MULTI", `operario "${op}": programación muestra OT ${faltan.join(",")} pero el filtro del server no las trae`);
+  }
+  for (const eq of EQUIPOS) {
+    totalCasos++;
+    const delServidor = new Set(servidorFiltrar(dataset, { maquina: eq }).map((r) => r.id));
+    const enLaFranja = new Set(dataset.filter((r) => splitTecnicos(r.maquina).includes(eq)).map((r) => r.id));
+    const faltan = [...enLaFranja].filter((id) => !delServidor.has(id));
+    if (faltan.length > 0)
+      reportar("FILT1-MULTI", `equipo "${eq}": programación muestra OT ${faltan.join(",")} pero el filtro del server no las trae`);
+  }
+
+  // FILT2: filtrar por semana = exactamente las filas con esa semana_plan.
+  for (const sem of ["2026W22", "2026W23"]) {
+    totalCasos++;
+    const delServidor = new Set(servidorFiltrar(dataset, { semana: sem }).map((r) => r.id));
+    const esperado = new Set(dataset.filter((r) => r.semana_plan === sem).map((r) => r.id));
+    if (delServidor.size !== esperado.size || [...esperado].some((id) => !delServidor.has(id)))
+      reportar("FILT2-SEMANA", `semana ${sem}: server=${[...delServidor]} esperado=${[...esperado]}`);
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// SUITE 4 — SINCRONIZACIÓN planificación ↔ programación semanal
+// ═════════════════════════════════════════════════════════════════════════
+{
+  const desde = MONDAY.hour(0).minute(0).second(0).toDate();
+  const hasta = MONDAY.add(4, "day").endOf("day").toDate();
+
+  // SYNC1 + SYNC2: cualquier edición que fije fecha_inicio deja semana_plan
+  // consistente, y la tarea entra en el rango [desde,hasta] de esa semana.
+  for (let day = 0; day < 5; day++) {
+    for (let h = 8; h <= 17; h++) {
+      totalCasos++;
+      const inicio = MONDAY.add(day, "day").hour(h).minute(0);
+      const r = nuevaFila({ horas_estimadas: 2, qty_personal: 1, tecnico: "Juan Pérez" });
+      // Edición desde planificación: setear inicio (con recalcularFin) → server.
+      const patch = recalcularFin(r, { fecha_inicio: inicio.toDate() });
+      const stored = servidorPut(r, patch as Patch).row!;
+
+      const semanaEsperada = semanaCodigoFromDate(stored.fecha_inicio!);
+      if (stored.semana_plan !== semanaEsperada)
+        reportar("SYNC1-SEMANA", `ini=${fmt(stored.fecha_inicio)} semana_plan=${stored.semana_plan} (esperaba ${semanaEsperada})`);
+
+      // La semana de referencia es la del inicio guardado.
+      const monday = dayjs(stored.fecha_inicio!).startOf("isoWeek");
+      const d = monday.hour(0).minute(0).second(0).toDate();
+      const h2 = monday.add(4, "day").endOf("day").toDate();
+      if (!pasaOverlap(stored, d, h2))
+        reportar("SYNC2-OVERLAP", `tarea ${fmt(stored.fecha_inicio)}→${fmt(stored.fecha_fin)} no entra en su propia semana`);
+    }
+  }
+
+  // SYNC3: "Sacar de la semana" (fecha_inicio/fin/semana = null) → al pool.
+  {
+    totalCasos++;
+    const r = nuevaFila({ fecha_inicio: MONDAY.hour(10).toDate(), tecnico: "Juan Pérez", semana_plan: "2026W22", estado: "programado" });
+    r.fecha_fin = calcularFinEstimado(r.fecha_inicio!, 1);
+    const stored = servidorPut(r, { fecha_inicio: null, fecha_fin: null, semana_plan: null }).row!;
+    const enPool = !stored.semana_plan && !stored.fecha_inicio;
+    const enRango = pasaOverlap(stored, desde, hasta);
+    if (!enPool || enRango)
+      reportar("SYNC3-SACAR", `tras sacar: semana=${stored.semana_plan} ini=${fmt(stored.fecha_inicio)} enRango=${enRango}`);
+  }
+
+  // SYNC4: bulk "Tercero" → trabajo_externo=true + maquina=null + tecnico="Tercero".
+  {
+    totalCasos++;
+    const r = nuevaFila({ tecnico: "Juan Pérez", maquina: "TR-01" });
+    // Réplica de aplicarBulk con bulkTecnico="Tercero"
+    const patch: Patch = { tecnico: "Tercero", trabajo_externo: true, maquina: null };
+    const stored = servidorPut(r, patch).row!;
+    if (stored.tecnico !== "Tercero" || stored.trabajo_externo !== true || stored.maquina !== null)
+      reportar("SYNC4-EXTERNO", `tercero → tecnico=${stored.tecnico} externo=${stored.trabajo_externo} maquina=${stored.maquina}`);
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────
 // Reporte
 // ─────────────────────────────────────────────────────────────────────────
-console.log("\n══════════════════════════════════════════════════════════════");
-console.log("  SIMULACIÓN INTENSIVA — Planificación / Programación Semanal");
-console.log("══════════════════════════════════════════════════════════════");
-console.log(`  Casos simulados: ${totalCasos.toLocaleString("es")}`);
-console.log("──────────────────────────────────────────────────────────────");
-
-const INVS = [
-  ["INV1-SALTO", "El bloque se reubica solo (cae distinto de donde lo soltás)"],
-  ["INV2-INVISIBLE", "El bloque queda invisible en la semana donde lo soltaste"],
-  ["INV3-HE-DESBORDA", "Tarea de horas-extra termina al día siguiente (mal)"],
-  ["INV4-FIN<=INI", "Fin anterior o igual al inicio"],
-  ["INV5-CHOQUE-FANTASMA", "Una tarea HE bloquea la mañana del día siguiente"],
-  ["SRV-ERROR", "El servidor rechaza la colocación"],
+const GRUPOS: { titulo: string; invs: string[] }[] = [
+  { titulo: "1. COLOCACIÓN (programación semanal)", invs: ["INV1-SALTO", "INV2-INVISIBLE", "INV3-HE-DESBORDA", "INV4-FIN<=INI", "INV5-CHOQUE-FANTASMA", "SRV-ERROR"] },
+  { titulo: "2. FORM (planificación)", invs: ["FORM1-FIN-PARITY", "FORM2-HE-MANUAL", "FORM3-HE-RECHAZO", "FORM4-HH"] },
+  { titulo: "3. FILTROS (planificación ↔ programación)", invs: ["FILT1-MULTI", "FILT2-SEMANA"] },
+  { titulo: "4. SINCRONIZACIÓN", invs: ["SYNC1-SEMANA", "SYNC2-OVERLAP", "SYNC3-SACAR", "SYNC4-EXTERNO"] },
 ];
 
-let hayFallas = false;
-for (const [inv, desc] of INVS) {
-  const n = conteo[inv] ?? 0;
-  if (n > 0) hayFallas = true;
-  const icon = n > 0 ? "❌" : "✅";
-  console.log(`  ${icon} ${inv.padEnd(22)} ${String(n).padStart(6)}  ${desc}`);
-}
+console.log("\n══════════════════════════════════════════════════════════════════════");
+console.log("  SIMULACIÓN INTENSIVA — Planificación / Programación Semanal");
+console.log("══════════════════════════════════════════════════════════════════════");
+console.log(`  Casos simulados: ${totalCasos.toLocaleString("es")}`);
 
-console.log("──────────────────────────────────────────────────────────────");
-if (fallas.length > 0) {
-  console.log("  EJEMPLOS DE FALLAS:");
-  let lastInv = "";
-  for (const f of fallas) {
-    if (f.inv !== lastInv) {
-      console.log(`\n  ▸ ${f.inv}`);
-      lastInv = f.inv;
-    }
-    console.log(`      ${f.detalle}`);
+let hayFallas = false;
+for (const g of GRUPOS) {
+  console.log(`\n  ── ${g.titulo} ──`);
+  for (const inv of g.invs) {
+    const n = conteo[inv] ?? 0;
+    if (n > 0) hayFallas = true;
+    const icon = n > 0 ? "❌" : "✅";
+    console.log(`  ${icon} ${inv.padEnd(20)} ${String(n).padStart(6)}  ${descripciones[inv]}`);
   }
 }
-console.log("\n══════════════════════════════════════════════════════════════");
+
+const conFallas = Object.keys(conteo).filter((k) => (conteo[k] ?? 0) > 0);
+if (conFallas.length > 0) {
+  console.log("\n──────────────────────────────────────────────────────────────────────");
+  console.log("  EJEMPLOS DE FALLAS:");
+  for (const inv of conFallas) {
+    console.log(`\n  ▸ ${inv}`);
+    for (const e of ejemplos[inv]) console.log(`      ${e}`);
+  }
+}
+
+console.log("\n══════════════════════════════════════════════════════════════════════");
 console.log(hayFallas ? "  RESULTADO: HAY BUGS ❌" : "  RESULTADO: TODO OK ✅");
-console.log("══════════════════════════════════════════════════════════════\n");
+console.log("══════════════════════════════════════════════════════════════════════\n");
 
 process.exit(hayFallas ? 1 : 0);
