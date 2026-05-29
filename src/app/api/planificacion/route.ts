@@ -24,13 +24,14 @@ export async function GET(req: NextRequest) {
     const and: Record<string, unknown>[] = [];
 
     // Una tarea puede tener varios operarios/equipos en un único string separado
-    // por coma (p.ej. "Juan, Pedro" cuando qty_personal > 1). El filtro debe
-    // reconocer el valor buscado como UN token completo dentro de ese string,
-    // igual que programación semanal (que usa splitTecnicos). Antes hacía
-    // igualdad estricta y se "perdían" las tareas multi-recurso.
+    // por "|" (p.ej. "A | B" cuando qty_personal > 1). NO se usa coma como
+    // separador porque los nombres de operario la contienen ("APELLIDO, NOMBRE").
+    // El filtro reconoce el valor buscado como UN token completo dentro del
+    // string, igual que splitRecursos en el front. Un valor simple (sin "|"),
+    // como un nombre con coma, matchea por igualdad exacta.
     const tokenMatch = (field: "tecnico" | "maquina", val: string): Record<string, unknown> => {
       const ors: Record<string, unknown>[] = [{ [field]: val }];
-      for (const sep of [", ", ","]) {
+      for (const sep of [" | ", "|"]) {
         ors.push({ [field]: { startsWith: `${val}${sep}` } });
         ors.push({ [field]: { endsWith: `${sep}${val}` } });
         ors.push({ [field]: { contains: `${sep}${val}${sep}` } });

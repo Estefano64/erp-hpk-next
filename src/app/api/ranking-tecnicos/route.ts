@@ -4,6 +4,7 @@ import dayjs from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { splitRecursos } from "@/lib/recursos";
 
 dayjs.extend(isoWeek);
 
@@ -45,7 +46,7 @@ export async function GET(req: NextRequest) {
     // se prorratea: cada uno recibe est/N y real/N.
     const acumulado = new Map<string, { tareas: number; estimadas: number; reales: number }>();
     for (const r of realizadas) {
-      const tecnicos = (r.tecnico ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+      const tecnicos = splitRecursos(r.tecnico);
       if (tecnicos.length === 0) continue;
       const est = Number(r.horas_estimadas ?? 0) / tecnicos.length;
       const real = Number(r.horas_reales ?? 0) / tecnicos.length;

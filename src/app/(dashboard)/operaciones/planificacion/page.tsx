@@ -22,6 +22,7 @@ import isoWeek from "dayjs/plugin/isoWeek";
 import customParseFormat from "dayjs/plugin/customParseFormat";
 import { brand } from "@/lib/theme";
 import { calcularFinEstimado, calcularHH } from "@/lib/planification-hours";
+import { splitRecursos, joinRecursos } from "@/lib/recursos";
 import { useTabSync } from "@/lib/useTabSync";
 import { useSession } from "next-auth/react";
 import { useEditLock } from "@/lib/useEditLock";
@@ -85,13 +86,13 @@ const DEFAULT_PICKER_TIME = dayjs("00:00", "HH:mm");
 // Helpers para el campo tecnico (multi-operario en una tarea con qty_personal > 1).
 // Storage: string separado por coma+espacio (ej. "Juan Pérez, María López"). Compatibilidad:
 // tareas con 1 solo operario quedan como antes; las que tengan varios usan la misma columna.
+// Separador de multi-recurso = "|" (NO coma): los nombres traen coma
+// ("APELLIDO, NOMBRE"). Lógica centralizada en @/lib/recursos.
 function splitTecnicos(s: string | null | undefined): string[] {
-  if (!s) return [];
-  return s.split(",").map((x) => x.trim()).filter(Boolean);
+  return splitRecursos(s);
 }
 function joinTecnicos(arr: string[]): string | null {
-  const clean = arr.map((x) => x.trim()).filter(Boolean);
-  return clean.length === 0 ? null : clean.join(", ");
+  return joinRecursos(arr);
 }
 
 /**

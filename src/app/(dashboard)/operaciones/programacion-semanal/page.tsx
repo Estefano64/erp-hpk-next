@@ -17,6 +17,7 @@ import { useRouter } from "next/navigation";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import { calcularFin, normalizarAInicioHabil } from "@/lib/planification-hours";
+import { splitRecursos } from "@/lib/recursos";
 import { useTabSync } from "@/lib/useTabSync";
 import { useSession } from "next-auth/react";
 import { useEditLock } from "@/lib/useEditLock";
@@ -62,10 +63,10 @@ interface Trabajador { trabajador_id: number; nombre: string; area: string; pues
 interface Equipo { codigo: string; descripcion: string }
 interface StatusTareaOpt { codigo: string; nombre: string; color: string | null }
 
-// Helpers para multi-operario en `tecnico` (string separado por coma).
+// Helpers para multi-operario/equipo en `tecnico`/`maquina`.
+// El separador es "|" (NO coma): los nombres traen coma ("APELLIDO, NOMBRE").
 function splitTecnicos(s: string | null | undefined): string[] {
-  if (!s) return [];
-  return s.split(",").map((x) => x.trim()).filter(Boolean);
+  return splitRecursos(s);
 }
 
 const JORNADA_INICIO = 8;
