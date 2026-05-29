@@ -352,6 +352,31 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
     setEditData((prev) => ({ ...prev, [key]: value }));
   }
 
+  // Al elegir otro Código Reparable (con estrategia), derivamos en el acto los
+  // datos del cilindro para que se vean en vivo (igual que en "nueva"). El
+  // server vuelve a derivarlos al guardar, así que quedan consistentes.
+  function aplicarCodRepEdit(codRepId: number | undefined) {
+    if (!codRepId) {
+      setEditData((prev) => ({ ...prev, id_cod_rep: null }));
+      return;
+    }
+    const cr = codReps.find((c) => c.cod_rep_id === codRepId);
+    setEditData((prev) => ({
+      ...prev,
+      id_cod_rep: codRepId,
+      ...(cr
+        ? {
+            tipo: cr.tipo?.nombre ?? null,
+            np: cr.np ?? null,
+            descripcion: cr.descripcion,
+            id_fabricante: cr.fabricante?.fabricante_id ?? null,
+            cod_rep_flota: cr.flota?.nombre ?? null,
+            cod_rep_posicion: cr.posicion?.nombre ?? null,
+          }
+        : {}),
+    }));
+  }
+
   /* ── Guardar estados + comentarios ── */
   async function handleSaveStatuses() {
     if (!ot) return;
@@ -830,8 +855,11 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                     allowClear
                     placeholder={bloqueoServicio ? "No aplica para Servicio" : undefined}
                     value={editData.id_cod_rep as number}
-                    onChange={(v) => setField("id_cod_rep", v)}
-                    options={codReps.map((cr) => ({ value: cr.cod_rep_id, label: `${cr.codigo} - ${cr.descripcion}` }))}
+                    onChange={(v) => aplicarCodRepEdit(v)}
+                    options={codReps.map((cr) => ({
+                      value: cr.cod_rep_id,
+                      label: `${cr.codigo} - ${cr.descripcion}${cr.np ? ` · N/P ${cr.np}` : ""}${cr.flota?.nombre ? ` · ${cr.flota.nombre}` : ""}`,
+                    }))}
                   />
                 </Col>
               </Row>
@@ -878,12 +906,12 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                 </>
               ) : (
                 <Row gutter={[16, 4]} style={{ marginTop: 12 }}>
-                  <Col xs={12} md={6}><Field label="N/P" value={ot.np} /></Col>
-                  <Col xs={12} md={6}><Field label="Tipo" value={ot.tipo} /></Col>
-                  <Col xs={24} md={12}><Field label="Descripción" value={ot.descripcion} /></Col>
-                  <Col xs={12} md={6}><Field label="Fabricante" value={ot.fabricante?.nombre} /></Col>
-                  <Col xs={12} md={6}><Field label="Flota" value={ot.cod_rep_flota} /></Col>
-                  <Col xs={12} md={6}><Field label="Posición" value={ot.cod_rep_posicion} /></Col>
+                  <Col xs={12} md={6}><Field label="N/P" value={(editData.np as string) ?? ot.np} /></Col>
+                  <Col xs={12} md={6}><Field label="Tipo" value={(editData.tipo as string) ?? ot.tipo} /></Col>
+                  <Col xs={24} md={12}><Field label="Descripción" value={(editData.descripcion as string) ?? ot.descripcion} /></Col>
+                  <Col xs={12} md={6}><Field label="Fabricante" value={fabricantes.find((f) => f.fabricante_id === editData.id_fabricante)?.nombre ?? ot.fabricante?.nombre} /></Col>
+                  <Col xs={12} md={6}><Field label="Flota" value={(editData.cod_rep_flota as string) ?? ot.cod_rep_flota} /></Col>
+                  <Col xs={12} md={6}><Field label="Posición" value={(editData.cod_rep_posicion as string) ?? ot.cod_rep_posicion} /></Col>
                 </Row>
               )}
               <Row gutter={[16, 12]} style={{ marginTop: 8 }}>
