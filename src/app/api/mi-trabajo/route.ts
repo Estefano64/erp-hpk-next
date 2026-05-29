@@ -24,7 +24,7 @@ const TZ = "America/Lima";
 //   - tareasSemana: tareas asignadas esta semana
 //   - rendimientoSemana / rendimientoMes: agregados de horas estim vs reales
 //   - historico: últimas 4 semanas (programado vs realizado)
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
@@ -47,15 +47,21 @@ export async function GET() {
     const whereTecnico = { tecnico: { contains: tecnico, mode: "insensitive" as const } };
 
     const ahoraLima = dayjs().tz(TZ);
+    // Semana a mostrar: por defecto la actual; el dashboard puede pedir otra con
+    // ?semana=YYYY-MM-DD (cualquier día dentro de esa semana) para navegar.
+    const semanaParam = new URL(req.url).searchParams.get("semana");
+    const refParsed = semanaParam ? dayjs.tz(semanaParam, TZ) : ahoraLima;
+    const refLima = refParsed.isValid() ? refParsed : ahoraLima;
+
     const hoyIni = ahoraLima.startOf("day").toDate();
     const hoyFin = ahoraLima.endOf("day").toDate();
-    const semIni = ahoraLima.startOf("isoWeek").toDate();
-    const semFin = ahoraLima.endOf("isoWeek").toDate();
+    const semIni = refLima.startOf("isoWeek").toDate();
+    const semFin = refLima.endOf("isoWeek").toDate();
     const mesIni = ahoraLima.startOf("month").toDate();
     const mesFin = ahoraLima.endOf("month").toDate();
-    // Código de la semana actual (ej. "2026W22"), igual que semana_plan, para
-    // incluir tareas asignadas a esta semana aunque todavía no tengan hora.
-    const semanaActual = `${ahoraLima.isoWeekYear()}W${String(ahoraLima.isoWeek()).padStart(2, "0")}`;
+    // Código de la semana mostrada (ej. "2026W22"), igual que semana_plan, para
+    // incluir tareas asignadas a esa semana aunque todavía no tengan hora.
+    const semanaActual = `${refLima.isoWeekYear()}W${String(refLima.isoWeek()).padStart(2, "0")}`;
 
     // Sesión abierta (si el técnico está trabajando algo ahora)
     const sesionAbierta = await prisma.planificacionOTSesion.findFirst({
@@ -265,6 +271,7 @@ export async function GET() {
         area: me.trabajador.area,
         puesto: me.trabajador.puesto,
       },
+      semana: semanaActual,
       sesionEnCurso,
       tareasHoy: conMiEstado(tareasHoy),
       tareasSemana: conMiEstado(tareasSemana),

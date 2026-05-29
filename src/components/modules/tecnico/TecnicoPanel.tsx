@@ -7,10 +7,14 @@ import {
 import {
   PlayCircleOutlined, PauseCircleOutlined, CheckCircleOutlined, TrophyOutlined,
   ClockCircleOutlined, ReloadOutlined, FireOutlined, LineChartOutlined,
+  LeftOutlined, RightOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import dayjs from "dayjs";
+import dayjs, { type Dayjs } from "dayjs";
+import isoWeek from "dayjs/plugin/isoWeek";
 import { brand } from "@/lib/theme";
+
+dayjs.extend(isoWeek);
 
 const { Title, Text } = Typography;
 
@@ -109,11 +113,14 @@ export default function TecnicoPanel() {
   const [accionLoading, setAccionLoading] = useState<number | null>(null);
   // Cronómetro local que avanza desde transcurrido_seg
   const [secondsTick, setSecondsTick] = useState(0);
+  // Semana que se está viendo (navegable con flechas) y filtro por día.
+  const [semanaRef, setSemanaRef] = useState<Dayjs>(() => dayjs());
+  const [diaFiltro, setDiaFiltro] = useState<string>("all");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch("/api/mi-trabajo");
+      const r = await fetch(`/api/mi-trabajo?semana=${semanaRef.format("YYYY-MM-DD")}`);
       if (r.ok) {
         const j = await r.json();
         setData(j);
@@ -121,7 +128,30 @@ export default function TecnicoPanel() {
     } finally {
       setLoading(false);
     }
+  }, [semanaRef]);
+
+  const irSemana = useCallback((delta: number) => {
+    setDiaFiltro("all");
+    setSemanaRef((s) => (delta === 0 ? dayjs() : s.add(delta, "week")));
   }, []);
+
+  // Navegación de semana + filtro por día para la tabla de "Mis tareas".
+  const lunesRef = semanaRef.startOf("isoWeek");
+  const viernesRef = lunesRef.add(4, "day");
+  const hoyDj = dayjs();
+  const esSemanaActual = semanaRef.isoWeek() === hoyDj.isoWeek() && semanaRef.isoWeekYear() === hoyDj.isoWeekYear();
+  const diaOpts = [
+    { value: "all", label: "Semana" },
+    ...["Lun", "Mar", "Mié", "Jue", "Vie"].map((nm, i) => {
+      const d = lunesRef.add(i, "day");
+      return { value: d.format("YYYY-MM-DD"), label: `${nm} ${d.format("DD")}` };
+    }),
+  ];
+  const tareasFiltradas = !data
+    ? []
+    : diaFiltro === "all"
+      ? data.tareasSemana
+      : data.tareasSemana.filter((t) => t.fecha_inicio && dayjs(t.fecha_inicio).format("YYYY-MM-DD") === diaFiltro);
 
   const fetchRanking = useCallback(async (periodo: "semana" | "mes") => {
     const r = await fetch(`/api/ranking-tecnicos?periodo=${periodo}`);
@@ -458,20 +488,44 @@ export default function TecnicoPanel() {
       <Row gutter={[16, 16]}>
         {/* Tareas de TODA la semana (hoy resaltado con el tag "Hoy") */}
         <Col xs={24} lg={16}>
-          <Card size="small" title={`Mis tareas de la semana (${data.tareasSemana.length}) · hoy: ${data.tareasHoy.length}`}>
+          <Card
+            size="small"
+            title={
+              <Space wrap size={4}>
+                <Button size="small" type="text" icon={<LeftOutlined />} onClick={() => irSemana(-1)} aria-label="Semana anterior" />
+                <span style={{ fontWeight: 600 }}>{lunesRef.format("DD/MM")} – {viernesRef.format("DD/MM")}</span>
+                <Button size="small" type="text" icon={<RightOutlined />} onClick={() => irSemana(1)} aria-label="Semana siguiente" />
+                <Button size="small" onClick={() => irSemana(0)} disabled={esSemanaActual}>Hoy</Button>
+                <Tag color={esSemanaActual ? "blue" : "default"}>
+                  {data.tareasSemana.length} {data.tareasSemana.length === 1 ? "tarea" : "tareas"}
+                  {esSemanaActual && data.tareasHoy.length ? ` · hoy ${data.tareasHoy.length}` : ""}
+                </Tag>
+              </Space>
+            }
+            extra={
+              <Segmented
+                size="small"
+                value={diaFiltro}
+                onChange={(v) => setDiaFiltro(v as string)}
+                options={diaOpts}
+              />
+            }
+          >
             {data.tareasSemana.length === 0
               ? <Empty description="No tenés tareas programadas esta semana" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-              : (
-                <Table<TareaPlan>
-                  rowKey="id"
-                  columns={columnasSemana}
-                  dataSource={data.tareasSemana}
-                  size="small"
-                  pagination={false}
-                  scroll={{ x: 1010 }}
-                  expandable={expandable}
-                />
-              )
+              : tareasFiltradas.length === 0
+                ? <Empty description="Sin tareas para el día seleccionado" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                : (
+                  <Table<TareaPlan>
+                    rowKey="id"
+                    columns={columnasSemana}
+                    dataSource={tareasFiltradas}
+                    size="small"
+                    pagination={false}
+                    scroll={{ x: 1010 }}
+                    expandable={expandable}
+                  />
+                )
             }
           </Card>
         </Col>
