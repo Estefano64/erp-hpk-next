@@ -65,7 +65,10 @@ const { TextArea } = Input;
 // Shape devuelto por /api/requerimientos (HEAD: anidado)
 interface RequerimientoApi {
   id: number;
-  ot_id: number;
+  // ot_id puede ser null para items pertenecientes a una OT INTERNA
+  // (la fuente del id en ese caso es orden_trabajo_interna_id).
+  ot_id: number | null;
+  orden_trabajo_interna_id?: number | null;
   material_id: number | null;
   material_codigo: string | null;
   nro_req: string | null;
@@ -87,11 +90,15 @@ interface RequerimientoApi {
   status_oc_codigo: string | null;
   orden_trabajo: {
     id: number;
-    ot: string | null;
+    // En BD, OrdenTrabajo.ot es Int? (no string). Lo declaramos union por defensa.
+    ot: number | string | null;
     descripcion: string | null;
     cod_rep_flota: string | null;
     cliente: { codigo: string; razon_social: string; nombre_comercial: string | null } | null;
   } | null;
+  // Para items pertenecientes a una OT INTERNA, viene en este campo.
+  // OrdenTrabajoInterna.ot es string (ej: "OT-INT-0002").
+  orden_trabajo_interna?: { id: number; ot: string | null; descripcion: string | null } | null;
   material: { codigo: string; descripcion: string; unidad_medida_codigo: string | null; stock_actual?: string | number | null; np?: string | null; precio?: string | number | null; moneda_codigo?: string | null } | null;
   proveedor: { id: number; razon_social: string } | null;
   compra: { id: number; numero_po: string } | null;
@@ -104,7 +111,8 @@ interface RequerimientoApi {
 // View-model plano para la tabla
 interface Requerimiento {
   id: number;
-  ot_id: number;
+  // ot_id puede ser null si el item pertenece a una OT INTERNA.
+  ot_id: number | null;
   numero_ot: string | null;
   // Descripción de la OT (no del material) — proviene de OrdenTrabajo.descripcion.
   descripcion_ot: string | null;
@@ -148,11 +156,21 @@ interface Requerimiento {
 }
 
 function normalize(r: RequerimientoApi): Requerimiento {
+  // Si el item pertenece a una OT INTERNA, la info de OT viene en orden_trabajo_interna.
+  // Soportamos los dos casos (OT externa y OT interna) acá para que la tabla
+  // muestre el número en lugar de un guion.
+  const esInterna = r.orden_trabajo == null && r.orden_trabajo_interna != null;
+  const otRaw = esInterna
+    ? r.orden_trabajo_interna?.ot ?? null
+    : r.orden_trabajo?.ot ?? null;
+  const descripcionOt = esInterna
+    ? r.orden_trabajo_interna?.descripcion ?? null
+    : r.orden_trabajo?.descripcion ?? null;
   return {
     id: r.id,
     ot_id: r.ot_id,
-    numero_ot: r.orden_trabajo?.ot ?? null,
-    descripcion_ot: r.orden_trabajo?.descripcion ?? null,
+    numero_ot: otRaw != null ? String(otRaw) : null,
+    descripcion_ot: descripcionOt,
     flota: r.orden_trabajo?.cod_rep_flota ?? null,
     material_id: r.material_id,
     material_codigo: r.material?.codigo ?? r.material_codigo ?? null,
@@ -1403,10 +1421,10 @@ function RequerimientosDetalleInner() {
         />
       </TableDragWrapper>
 
-      <style jsx global>{`
+      <style dangerouslySetInnerHTML={{ __html: `
         .req-row-stock > td { background: #FFFBE6 !important; }
         .req-row-stock:hover > td { background: #FFF1B8 !important; }
-      `}</style>
+      ` }} />
 
       {/* Modal Crear OC */}
       <Modal
