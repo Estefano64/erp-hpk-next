@@ -811,7 +811,10 @@ export default function OrdenesTrabajoPage() {
       <TableDragWrapper>
         <Table
           rowKey="id"
-          columns={visibleColumns(columnsResizable, ocultas)}
+          // Pasamos `obligatorias` también aquí — protege contra localStorage
+          // de versiones viejas donde estas keys podrían haber sido ocultadas
+          // (NRO, OT y Acciones son no-ocultables por diseño).
+          columns={visibleColumns(columnsResizable, ocultas, ["__num", "ot", "acciones"])}
           components={tableComponents}
           // Paginación server-side: `data` ya es la página actual del server.
           // Los filtros de columna, el orden y el rango de fecha se mandan al

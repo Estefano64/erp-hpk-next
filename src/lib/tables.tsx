@@ -548,18 +548,40 @@ export function useColumnasRedimensionables<T>(
     // Separar fixed (no reordenables) de las normales
     const fixedCols = columns.filter((c) => (c as ColumnType<T>).fixed);
     const movableCols = columns.filter((c) => !(c as ColumnType<T>).fixed);
-    const byKey = new Map(movableCols.map((c, i) => [claveColumna(c as ColumnType<T>, i), c] as const));
-    // Aplicar orden persistido + agregar al final las que no estaban (columnas nuevas)
-    const orderedMovable: ColumnsType<T> = [];
+    // Calcular claves estables UNA vez, manteniendo el índice original. Es
+    // importante usar el índice de la columna en `movableCols` para que el
+    // fallback `col-N` matchee tanto en `byKey` como en `originalIndex`.
+    const movableKeys = movableCols.map((c, i) => claveColumna(c as ColumnType<T>, i));
+    const byKey = new Map(movableCols.map((c, i) => [movableKeys[i], c] as const));
+    const originalIndex = new Map(movableKeys.map((k, i) => [k, i] as const));
+
+    // Aplicar orden persistido respetando solo las keys que existen.
+    const orderedKeys: string[] = [];
     const seen = new Set<string>();
     for (const k of orden) {
-      const c = byKey.get(k);
-      if (c) { orderedMovable.push(c); seen.add(k); }
+      if (byKey.has(k) && !seen.has(k)) { orderedKeys.push(k); seen.add(k); }
     }
-    for (const c of movableCols) {
-      const k = claveColumna(c as ColumnType<T>, 0);
-      if (!seen.has(k)) orderedMovable.push(c);
+    // Las columnas que no están en `orden` son columnas nuevas o columnas que
+    // antes eran fixed y ahora son movables (ej: NRO/OT cuando se quitó el
+    // fixed-left). Las insertamos en su posición ORIGINAL para no romper la
+    // disposición esperada (antes se agregaban al final, lo que tiraba esas
+    // columnas off-screen para usuarios con orden previo guardado).
+    const restantes = movableKeys
+      .filter((k) => !seen.has(k))
+      .map((k) => ({ k, idx: originalIndex.get(k) ?? Number.MAX_SAFE_INTEGER }));
+    for (const { k, idx } of restantes) {
+      // Buscamos la posición correcta en orderedKeys: la primera key cuyo
+      // índice ORIGINAL sea mayor que el de `k`. Si no hay, va al final.
+      let insertAt = orderedKeys.length;
+      for (let j = 0; j < orderedKeys.length; j++) {
+        const jIdx = originalIndex.get(orderedKeys[j]) ?? Number.MAX_SAFE_INTEGER;
+        if (jIdx > idx) { insertAt = j; break; }
+      }
+      orderedKeys.splice(insertAt, 0, k);
+      seen.add(k);
     }
+    const orderedMovable: ColumnsType<T> = orderedKeys.map((k) => byKey.get(k)!).filter(Boolean);
+
     // Reinsertar fixed manteniendo su side
     const left = fixedCols.filter((c) => (c as ColumnType<T>).fixed === "left");
     const right = fixedCols.filter((c) => (c as ColumnType<T>).fixed === "right");
