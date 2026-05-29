@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useMemo } from "react";
-import { Card, Row, Col, Input, Checkbox, Radio, InputNumber, Space, Typography, Divider, Image, Upload, Button, App, Tag } from "antd";
+import { Card, Row, Col, Input, Checkbox, Radio, InputNumber, Space, Typography, Divider, Image, Upload, Button, App, Tag, Alert } from "antd";
 import { CameraOutlined, UploadOutlined, DeleteOutlined } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
 import { findMedidasModelo, modeloForField, type MedidaModelo } from "@/lib/medidas-modelo";
@@ -260,6 +260,52 @@ interface FilaMedida {
   label: string;
   tipo: "xy" | "single";
 }
+// Tabla compacta para Flexión + Espesor de Cromo del vástago (3 puntos: B/C/D).
+// Reemplaza la versión anterior de inputs sueltos en columnas.
+function TablaFlexionCromo({
+  prefix,
+  unidad,
+  datos,
+  onChange,
+}: {
+  prefix: string;   // ej: "{p}_vas"
+  unidad: string;
+  datos: Record<string, unknown>;
+  onChange: (d: Record<string, unknown>) => void;
+}) {
+  const puntos = ["b", "c", "d"] as const;
+  const cell: React.CSSProperties = { border: `1px solid ${brand.border}`, padding: 2 };
+  const head: React.CSSProperties = { ...cell, padding: "4px 8px", textAlign: "center", background: brand.bgPage };
+  return (
+    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+      <thead>
+        <tr>
+          <th style={{ ...head, textAlign: "left" }}>Parametro</th>
+          {puntos.map((s) => <th key={s} style={head}>{s.toUpperCase()}</th>)}
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style={{ ...cell, padding: "4px 8px" }}>Flexión [{unidad}]</td>
+          {puntos.map((s) => (
+            <td key={s} style={cell}>
+              <InputMedida name={`${prefix}_flexion_${s}`} datos={datos} onChange={onChange} />
+            </td>
+          ))}
+        </tr>
+        <tr>
+          <td style={{ ...cell, padding: "4px 8px" }}>Espesor de Cromo [{unidad}]</td>
+          {puntos.map((s) => (
+            <td key={s} style={cell}>
+              <InputMedida name={`${prefix}_esp_cromo_${s}`} datos={datos} onChange={onChange} />
+            </td>
+          ))}
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
 function TablaMedidas({
   filas,
   datos,
@@ -269,13 +315,22 @@ function TablaMedidas({
   datos: Record<string, unknown>;
   onChange: (d: Record<string, unknown>) => void;
 }) {
+  // Si NINGUNA fila es xy, ocultamos las columnas X/Y y mostramos una sola
+  // "Medida". Esto aplica a Émbolo, Tapa, Émbolo del Acumulador, etc.
+  const hayXY = filas.some((f) => f.tipo === "xy");
   return (
     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
       <thead>
         <tr style={{ background: brand.bgPage }}>
           <th style={{ border: `1px solid ${brand.border}`, padding: "4px 8px", textAlign: "left" }}>Parametro</th>
-          <th style={{ border: `1px solid ${brand.border}`, padding: "4px 8px", textAlign: "center" }}>X</th>
-          <th style={{ border: `1px solid ${brand.border}`, padding: "4px 8px", textAlign: "center" }}>Y</th>
+          {hayXY ? (
+            <>
+              <th style={{ border: `1px solid ${brand.border}`, padding: "4px 8px", textAlign: "center" }}>X</th>
+              <th style={{ border: `1px solid ${brand.border}`, padding: "4px 8px", textAlign: "center" }}>Y</th>
+            </>
+          ) : (
+            <th style={{ border: `1px solid ${brand.border}`, padding: "4px 8px", textAlign: "center" }}>Medida</th>
+          )}
         </tr>
       </thead>
       <tbody>
@@ -292,7 +347,7 @@ function TablaMedidas({
                 </td>
               </>
             ) : (
-              <td colSpan={2} style={{ border: `1px solid ${brand.border}`, padding: 2 }}>
+              <td colSpan={hayXY ? 2 : 1} style={{ border: `1px solid ${brand.border}`, padding: 2 }}>
                 <InputMedida name={f.prefix} datos={datos} onChange={onChange} />
               </td>
             )}
@@ -765,6 +820,8 @@ function HallazgosCatalogo({
   titulo,
   datos,
   onChange,
+  sujecion,
+  flexionRootPrefix,
 }: {
   modelo: string;
   filtro: string | string[];
@@ -772,6 +829,13 @@ function HallazgosCatalogo({
   titulo: string;
   datos: Record<string, unknown>;
   onChange: (d: Record<string, unknown>) => void;
+  // Cuando se pasa, filtra grupos *_cojinete/*_rotula/*_pin dejando solo el
+  // correspondiente a la articulación elegida ("Cojinete" | "Rótula" | "Pin directo").
+  sujecion?: string;
+  // Prefijo base donde están las medidas de flexión {prefix}_flexion_{b,c,d}.
+  // Cuando se pasa Y el hallazgo "vas_flexion_barra" está marcado sin medida
+  // cargada, mostramos warning. Solo aplica al vástago.
+  flexionRootPrefix?: string;
 }) {
   const cat = CATALOGOS_EVALUACION[modelo];
   if (!cat) return null;
@@ -779,10 +843,41 @@ function HallazgosCatalogo({
   // Si el filtro termina en "_" hace prefix match, si no hace exact match.
   // Permite: filtro="cil_" → cil_interior, cil_exterior, etc.
   //          filtro="tapa" → exacto, solo "tapa" (no "tapa_posterior")
-  const grupos = Object.entries(cat.hallazgos).filter(([k]) =>
+  let grupos = Object.entries(cat.hallazgos).filter(([k]) =>
     filtros.some((f) => f.endsWith("_") ? k.startsWith(f) : k === f),
   );
+
+  // Filtrar por articulación seleccionada:
+  //  - Si elegiste una opción válida, mostrar solo el grupo correspondiente.
+  //  - Si NO eligió nada (undefined / ""), OCULTAR los 3 grupos *_cojinete /
+  //    *_rotula / *_pin: el user debe elegir primero para ver hallazgos.
+  // (Decisión confirmada por el usuario el 2026-05-29.)
+  const SUJECION_SLUG: Record<string, string> = {
+    "Cojinete": "cojinete",
+    "Rótula": "rotula",
+    "Pin directo": "pin",
+  };
+  const todosSlugs = Object.values(SUJECION_SLUG);
+  if (sujecion && SUJECION_SLUG[sujecion]) {
+    const elegido = SUJECION_SLUG[sujecion];
+    const otros = todosSlugs.filter((s) => s !== elegido);
+    grupos = grupos.filter(([k]) => !otros.some((s) => k.endsWith(`_${s}`)));
+  } else if (sujecion === undefined || sujecion === "") {
+    // Nada elegido → ocultar TODOS los grupos de articulación.
+    grupos = grupos.filter(([k]) => !todosSlugs.some((s) => k.endsWith(`_${s}`)));
+  }
+
   if (grupos.length === 0) return null;
+
+  // Detecta si hay alguna medida de flexión cargada en la tabla Flexión/Cromo
+  // (para warning bajo "Barra presenta flexión").
+  const tieneAlgunaMedidaFlexion =
+    !!flexionRootPrefix &&
+    (["b", "c", "d"] as const).some((s) => {
+      const v = datos[`${flexionRootPrefix}_flexion_${s}`];
+      return v != null && String(v).trim() !== "";
+    });
+
   return (
     <div style={{ marginTop: 12 }}>
       <Text strong style={{ color: brand.navy }}>{titulo}</Text>
@@ -790,15 +885,32 @@ function HallazgosCatalogo({
         {grupos.map(([key, g]) => (
           <Col xs={24} md={12} key={key}>
             <Card size="small" title={<span style={{ fontSize: 11, fontWeight: 700 }}>{g.nombre}</span>}>
-              {g.items.map((it) => (
-                <HallazgoRichItem
-                  key={it.key}
-                  prefix={`${prefix}_${key}`}
-                  item={it}
-                  datos={datos}
-                  onChange={onChange}
-                />
-              ))}
+              {g.items.map((it) => {
+                // Warning: si es "Barra presenta flexión" y el check está marcado
+                // pero ninguna medida de Flexión fue cargada en la tabla de arriba.
+                const itemBaseKey = `${prefix}_${key}_${it.key}`;
+                const isFlexionBarra = it.key === "vas_flexion_barra";
+                const checked = !!datos[itemBaseKey];
+                const mostrarWarningFlex = isFlexionBarra && checked && flexionRootPrefix && !tieneAlgunaMedidaFlexion;
+                return (
+                  <div key={it.key}>
+                    <HallazgoRichItem
+                      prefix={`${prefix}_${key}`}
+                      item={it}
+                      datos={datos}
+                      onChange={onChange}
+                    />
+                    {mostrarWarningFlex && (
+                      <Alert
+                        type="warning"
+                        showIcon
+                        message="Falta cargar las medidas de Flexión (B/C/D) en la tabla de Flexión/Cromo arriba."
+                        style={{ marginTop: 4, marginBottom: 8, fontSize: 11, padding: "4px 8px" }}
+                      />
+                    )}
+                  </div>
+                );
+              })}
             </Card>
           </Col>
         ))}
@@ -1118,9 +1230,9 @@ function EtapasTelescopico({
               <TablaChecks
                 prefix={`${prefix}_etapa${i}`}
                 items={[
-                  { key: "estado_cromo", label: "Estado del cromo" },
+                  { key: "estado_cromo", label: "Estado de superficie cromada" },
                   { key: "sup_roscada", label: "Estado de superficie Roscada" },
-                  { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                  { key: "ndt", label: "Pasa NDT", tipo: "sn" },
                   { key: "diam_salida_roscado", label: "Diam. Salida Roscado", tipo: "sn" },
                 ]}
                 datos={datos}
@@ -1279,36 +1391,32 @@ export default function EvaluacionFormulario({
                       <Col xs={24} md={12}>
                         <RadioInline
                           name={`${p}_cil_elem_sujecion`}
-                          label="Elemento de sujeción"
+                          label="Tipo de articulación"
                           opciones={["Cojinete", "Rótula", "Pin directo"]}
                           datos={datos}
                           onChange={onChange}
                         />
                       </Col>
                     </Row>
-                    <Row gutter={8}>
-                      <Col xs={24} md={12}>
-                        <ParXY
-                          prefix={`${p}_cil_dint_g`}
-                          label={`Diám. Int. ${(datos[`${p}_cil_elem_sujecion`] as string) || "G"} [${unidad}]`}
-                          datos={datos}
-                          onChange={onChange}
-                        />
-                      </Col>
-                      <Col xs={24} md={12}>
-                        <div>
-                        <Text strong style={{ fontSize: 12, display: "block" }}>Ancho de Ojo [{unidad}]</Text>
-                        <Row gutter={4}>
-                          <Col span={12}>
-                            <InputMedida name={`${p}_cil_ancho_ojo_1`} datos={datos} onChange={onChange} />
-                          </Col>
-                          <Col span={12}>
-                            <InputMedida name={`${p}_cil_ancho_ojo_2`} datos={datos} onChange={onChange} />
-                          </Col>
-                        </Row>
-                      </div>
-                      </Col>
-                    </Row>
+                    {/* Pin directo: ocultar Diám. Int. G y Ancho de Ojo. */}
+                    {datos[`${p}_cil_elem_sujecion`] !== "Pin directo" && (
+                      <Row gutter={8}>
+                        <Col xs={24} md={12}>
+                          <ParXY
+                            prefix={`${p}_cil_dint_g`}
+                            label={`Diám. Int. ${(datos[`${p}_cil_elem_sujecion`] as string) || "G"} [${unidad}]`}
+                            datos={datos}
+                            onChange={onChange}
+                          />
+                        </Col>
+                        <Col xs={24} md={12}>
+                          <div>
+                            <Text strong style={{ fontSize: 12, display: "block" }}>Ancho de Ojo [{unidad}]</Text>
+                            <InputMedida name={`${p}_cil_ancho_ojo`} datos={datos} onChange={onChange} />
+                          </div>
+                        </Col>
+                      </Row>
+                    )}
                   </>
                 )}
                 <div style={{ marginTop: 12 }}>
@@ -1318,16 +1426,27 @@ export default function EvaluacionFormulario({
                       { key: "tomas", label: "Tomas hidráulicas" },
                       { key: "roscada", label: "Estado de superficie Roscada" },
                       { key: "estado_cancamo", label: "Estado de cancamo" },
-                      { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                      { key: "ndt", label: "Pasa NDT", tipo: "sn" },
                       { key: "placa_conectores", label: "Placa / Conectores", tipo: "ci" },
                     ]}
                     datos={datos}
                     onChange={onChange}
                   />
+                  {/* Comentario libre debajo de Placa / Conectores. */}
+                  <div style={{ marginTop: 6 }}>
+                    <Text style={{ fontSize: 11, color: "rgba(0,0,0,0.55)" }}>Comentario — Placa / Conectores</Text>
+                    <TextArea
+                      rows={2}
+                      placeholder="Ej: faltan 2 conectores, placa ilegible, etc."
+                      value={(datos[`${p}_cil_placa_conectores_coment`] as string) || ""}
+                      onChange={(e) => onChange({ ...datos, [`${p}_cil_placa_conectores_coment`]: e.target.value })}
+                      style={{ fontSize: 12 }}
+                    />
+                  </div>
                 </div>
               </Col>
             </Row>
-            <HallazgosCatalogo modelo={modelo} filtro="cil_" prefix={`${p}_cil`} titulo="Resultado de evaluación - Cilindro Principal" datos={datos} onChange={onChange} />
+            <HallazgosCatalogo modelo={modelo} filtro="cil_" prefix={`${p}_cil`} titulo="Resultado de evaluación - Cilindro Principal" datos={datos} onChange={onChange} sujecion={(datos[`${p}_cil_elem_sujecion`] as string) || (datos[`${p}_elem_sujecion`] as string) || undefined} />
             <ImagenesComponente prefix={`${p}_cil`} etiqueta="Cilindro Principal" datos={datos} onChange={onChange} />
             <RecomendacionesCatalogo modelo={modelo} componente="cilindro" prefix={p} datos={datos} onChange={onChange} />
             <ResultadoComponente prefix={`${p}_cil`} label="Cilindro Principal" datos={datos} onChange={onChange} />
@@ -1340,12 +1459,12 @@ export default function EvaluacionFormulario({
                 <ImagenReferencia componente="vastago" label="Vástago Principal" />
               </Col>
               <Col xs={24} md={16}>
+                {/* Orden del Excel: A (Espiga) → B (Vástago 3 puntos) → D (Cojinete)
+                    → E (Cromo) → F (Total) → G (Espiga). Longitud de Espiga (G)
+                    ahora vive dentro de la tabla principal (antes era input suelto). */}
                 <TablaMedidas
                   filas={[
                     { prefix: `${p}_vas_desp`, label: `Diametro Espiga (A) [${unidad}]`, tipo: "xy" },
-                    { prefix: `${p}_vas_dcoj`, label: `Diametro Cojinete (D) [${unidad}]`, tipo: "xy" },
-                    { prefix: `${p}_vas_lcro`, label: `Longitud Cromo (E) [${unidad}]`, tipo: "single" },
-                    { prefix: `${p}_vas_ltot`, label: `Longitud Total (F) [${unidad}]`, tipo: "single" },
                   ]}
                   datos={datos}
                   onChange={onChange}
@@ -1362,12 +1481,18 @@ export default function EvaluacionFormulario({
                     sufijo="b"
                   />
                 </div>
-                <Row gutter={8} style={{ marginTop: 8 }}>
-                  <Col xs={24} md={8}>
-                    <Text strong style={{ fontSize: 12 }}>Longitud de Espiga G [{unidad}]</Text>
-                    <InputMedida name={`${p}_vas_long_espiga_g`} datos={datos} onChange={onChange} />
-                  </Col>
-                </Row>
+                <div style={{ marginTop: 8 }}>
+                  <TablaMedidas
+                    filas={[
+                      { prefix: `${p}_vas_dcoj`, label: `Diametro Cojinete (D) [${unidad}]`, tipo: "xy" },
+                      { prefix: `${p}_vas_lcro`, label: `Longitud Cromo (E) [${unidad}]`, tipo: "single" },
+                      { prefix: `${p}_vas_ltot`, label: `Longitud Total (F) [${unidad}]`, tipo: "single" },
+                      { prefix: `${p}_vas_long_espiga_g`, label: `Longitud de Espiga (G) [${unidad}]`, tipo: "single" },
+                    ]}
+                    datos={datos}
+                    onChange={onChange}
+                  />
+                </div>
                 <Divider style={{ margin: "8px 0" }} />
                 <Row gutter={8}>
                   <Col xs={24} md={12}>
@@ -1376,63 +1501,48 @@ export default function EvaluacionFormulario({
                   <Col xs={24} md={12}>
                     <RadioInline
                       name={`${p}_vas_elem_sujecion`}
-                      label="Elemento de sujeción"
+                      label="Tipo de articulación"
                       opciones={["Cojinete", "Rótula", "Pin directo"]}
                       datos={datos}
                       onChange={onChange}
                     />
                   </Col>
                 </Row>
+                {/* Pin directo: ocultar Diám. Int. J y Ancho de Ojo. */}
                 <Row gutter={8}>
                   <Col xs={24} md={8}>
                     <ParXY prefix={`${p}_vas_dint_ojo_i`} label={`Diám. Int. Ojo I [${unidad}]`} datos={datos} onChange={onChange} />
                   </Col>
-                  <Col xs={24} md={8}>
-                    <ParXY
-                      prefix={`${p}_vas_dint_j`}
-                      label={`Diám. Int. ${(datos[`${p}_vas_elem_sujecion`] as string) || "J"} [${unidad}]`}
-                      datos={datos}
-                      onChange={onChange}
-                    />
-                  </Col>
-                  <Col xs={24} md={8}>
-                    <div>
-                    <Text strong style={{ fontSize: 12, display: "block" }}>Ancho de Ojo [{unidad}]</Text>
-                    <Row gutter={4}>
-                      <Col span={12}>
-                        <InputMedida name={`${p}_vas_ancho_ojo_1`} datos={datos} onChange={onChange} />
+                  {datos[`${p}_vas_elem_sujecion`] !== "Pin directo" && (
+                    <>
+                      <Col xs={24} md={8}>
+                        <ParXY
+                          prefix={`${p}_vas_dint_j`}
+                          label={`Diám. Int. ${(datos[`${p}_vas_elem_sujecion`] as string) || "J"} [${unidad}]`}
+                          datos={datos}
+                          onChange={onChange}
+                        />
                       </Col>
-                      <Col span={12}>
-                        <InputMedida name={`${p}_vas_ancho_ojo_2`} datos={datos} onChange={onChange} />
+                      <Col xs={24} md={8}>
+                        <div>
+                          <Text strong style={{ fontSize: 12, display: "block" }}>Ancho de Ojo [{unidad}]</Text>
+                          <InputMedida name={`${p}_vas_ancho_ojo`} datos={datos} onChange={onChange} />
+                        </div>
                       </Col>
-                    </Row>
-                  </div>
-                  </Col>
+                    </>
+                  )}
                 </Row>
                 <Divider style={{ margin: "8px 0" }}>
                   <Text style={{ fontSize: 11 }}>Flexión y Espesor de Cromo</Text>
                 </Divider>
-                <Row gutter={8}>
-                  {(["b", "c", "d"] as const).map((s) => (
-                    <Col span={4} key={`fx-${s}`}>
-                      <Text strong style={{ fontSize: 11 }}>Flexión {s.toUpperCase()}</Text>
-                      <InputMedida name={`${p}_vas_flexion_${s}`} datos={datos} onChange={onChange} />
-                    </Col>
-                  ))}
-                  {(["b", "c", "d"] as const).map((s) => (
-                    <Col span={4} key={`ec-${s}`}>
-                      <Text strong style={{ fontSize: 11 }}>Esp. Cromo {s.toUpperCase()}</Text>
-                      <InputMedida name={`${p}_vas_esp_cromo_${s}`} datos={datos} onChange={onChange} />
-                    </Col>
-                  ))}
-                </Row>
+                <TablaFlexionCromo prefix={`${p}_vas`} unidad={unidad} datos={datos} onChange={onChange} />
                 <div style={{ marginTop: 12 }}>
                   <TablaChecks
                     prefix={`${p}_vas`}
                     items={[
-                      { key: "estado_cromo", label: "Estado del cromo" },
+                      { key: "estado_cromo", label: "Estado de superficie cromada" },
                       { key: "chk_estado_cancamo", label: "Estado de cancamo" },
-                      { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                      { key: "ndt", label: "Pasa NDT", tipo: "sn" },
                       { key: "sensor", label: "Sensor", tipo: "sn" },
                     ]}
                     datos={datos}
@@ -1441,7 +1551,7 @@ export default function EvaluacionFormulario({
                 </div>
               </Col>
             </Row>
-            <HallazgosCatalogo modelo={modelo} filtro="vas_" prefix={`${p}_vas`} titulo="Resultado de evaluación - Vástago Principal" datos={datos} onChange={onChange} />
+            <HallazgosCatalogo modelo={modelo} filtro="vas_" prefix={`${p}_vas`} titulo="Resultado de evaluación - Vástago Principal" datos={datos} onChange={onChange} sujecion={(datos[`${p}_vas_elem_sujecion`] as string) || (datos[`${p}_elem_sujecion`] as string) || undefined} flexionRootPrefix={`${p}_vas`} />
             <ImagenesComponente prefix={`${p}_vas`} etiqueta="Vástago Principal" datos={datos} onChange={onChange} />
             <RecomendacionesCatalogo modelo={modelo} componente="vastago" prefix={p} datos={datos} onChange={onChange} />
             <ResultadoComponente prefix={`${p}_vas`} label="Vástago Principal" datos={datos} onChange={onChange} />
@@ -1485,7 +1595,7 @@ export default function EvaluacionFormulario({
                       prefix={`${p}_tapa_sec`}
                       items={[
                         { key: "sup_roscada", label: "Estado de superficie Roscada" },
-                        { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                        { key: "ndt", label: "Pasa NDT", tipo: "sn" },
                       ]}
                       datos={datos}
                       onChange={onChange}
@@ -1532,7 +1642,7 @@ export default function EvaluacionFormulario({
                       prefix={`${p}_tapa_post`}
                       items={[
                         { key: "est_soldadura", label: "Est. de soldadura" },
-                        { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                        { key: "ndt", label: "Pasa NDT", tipo: "sn" },
                       ]}
                       datos={datos}
                       onChange={onChange}
@@ -1578,7 +1688,7 @@ export default function EvaluacionFormulario({
                   <TablaChecks
                     prefix={`${p}_tapa`}
                     items={[
-                      { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                      { key: "ndt", label: "Pasa NDT", tipo: "sn" },
                       { key: "ext_roscado", label: "Exterior roscado", tipo: "sn" },
                       { key: "sup_roscada", label: "Estado de superficie Roscada" },
                     ]}
@@ -1614,7 +1724,7 @@ export default function EvaluacionFormulario({
                   <TablaChecks
                     prefix={`${p}_emb`}
                     items={[
-                      { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                      { key: "ndt", label: "Pasa NDT", tipo: "sn" },
                       { key: "int_roscado", label: "Interior roscado", tipo: "sn" },
                       { key: "sup_roscada", label: "Estado de superficie Roscada" },
                     ]}
@@ -1855,7 +1965,7 @@ export default function EvaluacionFormulario({
                   items={[
                     { key: "valv_muelle", label: "Valvula hidraulica de muelle" },
                     { key: "estado_vejiga", label: "Estado vejiga" },
-                    { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                    { key: "ndt", label: "Pasa NDT", tipo: "sn" },
                   ]}
                   datos={datos}
                   onChange={onChange}
@@ -1931,7 +2041,7 @@ export default function EvaluacionFormulario({
             {esCilHidraulico && (
               <>
                 <Divider style={{ margin: "8px 0" }}>
-                  <Text style={{ fontSize: 11 }}>Cáncamo y elemento de sujeción</Text>
+                  <Text style={{ fontSize: 11 }}>Cáncamo y tipo de articulación</Text>
                 </Divider>
                 <Row gutter={8}>
                   <Col xs={24} md={12}>
@@ -1943,48 +2053,53 @@ export default function EvaluacionFormulario({
                       onChange={onChange}
                     />
                   </Col>
+                  {/* Si se eligió un Tipo de cancamo, NO se muestra Tipo de
+                      articulación (son alternativos según el usuario). */}
+                  {!datos[`${p}_cil_tipo_cancamo`] && (
                   <Col xs={24} md={12}>
                     <RadioInline
                       name={`${p}_cil_elem_sujecion`}
-                      label="Elemento de sujeción"
+                      label="Tipo de articulación"
                       opciones={["Cojinete", "Rótula", "Pin directo"]}
                       datos={datos}
                       onChange={onChange}
                     />
                   </Col>
+                  )}
                 </Row>
                 {/* Si el cáncamo es Cóncavo, ocultar Diám. Ojo F, Diám. Int. G y
                     Ancho de Ojo (items 6,7,8 del Excel). Comentario de J.F.Vera
                     en el Excel de hoja de evaluación: "si marca concavo omitir
                     los siguientes items". */}
-                {datos[`${p}_cil_tipo_cancamo`] !== "Concavo" && (
-                  <Row gutter={8}>
-                    <Col xs={24} md={8}>
-                      <ParXY prefix={`${p}_cil_dojo_f`} label={`Diámetro Ojo F [${unidad}]`} datos={datos} onChange={onChange} />
-                    </Col>
-                    <Col xs={24} md={8}>
-                      <ParXY
-                        prefix={`${p}_cil_dint_g`}
-                        label={`Diám. Int. ${(datos[`${p}_cil_elem_sujecion`] as string) || "G"} [${unidad}]`}
-                        datos={datos}
-                        onChange={onChange}
-                      />
-                    </Col>
-                    <Col xs={24} md={8}>
-                      <div>
-                        <Text strong style={{ fontSize: 12, display: "block" }}>Ancho de Ojo [{unidad}]</Text>
-                        <Row gutter={4}>
-                          <Col span={12}>
-                            <InputMedida name={`${p}_cil_ancho_ojo_1`} datos={datos} onChange={onChange} />
-                          </Col>
-                          <Col span={12}>
-                            <InputMedida name={`${p}_cil_ancho_ojo_2`} datos={datos} onChange={onChange} />
-                          </Col>
-                        </Row>
-                      </div>
-                    </Col>
-                  </Row>
-                )}
+                {datos[`${p}_cil_tipo_cancamo`] !== "Concavo" && (() => {
+                  // Pin directo: ocultar Diám. Int. y Ancho de Ojo (no aplican).
+                  const esPin = datos[`${p}_cil_elem_sujecion`] === "Pin directo";
+                  return (
+                    <Row gutter={8}>
+                      <Col xs={24} md={8}>
+                        <ParXY prefix={`${p}_cil_dojo_f`} label={`Diámetro Ojo F [${unidad}]`} datos={datos} onChange={onChange} />
+                      </Col>
+                      {!esPin && (
+                        <Col xs={24} md={8}>
+                          <ParXY
+                            prefix={`${p}_cil_dint_g`}
+                            label={`Diám. Int. ${(datos[`${p}_cil_elem_sujecion`] as string) || "G"} [${unidad}]`}
+                            datos={datos}
+                            onChange={onChange}
+                          />
+                        </Col>
+                      )}
+                      {!esPin && (
+                        <Col xs={24} md={8}>
+                          <div>
+                            <Text strong style={{ fontSize: 12, display: "block" }}>Ancho de Ojo [{unidad}]</Text>
+                            <InputMedida name={`${p}_cil_ancho_ojo`} datos={datos} onChange={onChange} />
+                          </div>
+                        </Col>
+                      )}
+                    </Row>
+                  );
+                })()}
               </>
             )}
             {/* Extras para CHP: dos lecturas de pivotante */}
@@ -2027,16 +2142,27 @@ export default function EvaluacionFormulario({
                   ...(esPivotado ? [{ key: "estado_trunnion", label: "Estado de trunnion" }, { key: "pasa_estanqueidad", label: "Pasa prueba de estanqueidad", tipo: "sn" as const }] : []),
                   ...(modelo === "cil_doble_vastago" ? [{ key: "estado_soporte_sujecion", label: "Estado de soporte de sujeción" }, { key: "pasa_estanqueidad", label: "Pasa prueba de estanqueidad", tipo: "sn" as const }] : []),
                   ...(modelo === "suspension_delantera" ? [{ key: "est_cartelas", label: "Est. De cartelas" }] : []),
-                  { key: "ndt", label: "Pasa a NDT", tipo: "sn" as const },
+                  { key: "ndt", label: "Pasa NDT", tipo: "sn" as const },
                   { key: "placa_conectores", label: "Placa / Conectores", tipo: "ci" as const },
                 ]}
                 datos={datos}
                 onChange={onChange}
               />
+              {/* Comentario libre debajo de Placa / Conectores. */}
+              <div style={{ marginTop: 6 }}>
+                <Text style={{ fontSize: 11, color: "rgba(0,0,0,0.55)" }}>Comentario — Placa / Conectores</Text>
+                <TextArea
+                  rows={2}
+                  placeholder="Ej: faltan 2 conectores, placa ilegible, etc."
+                  value={(datos[`${p}_cil_placa_conectores_coment`] as string) || ""}
+                  onChange={(e) => onChange({ ...datos, [`${p}_cil_placa_conectores_coment`]: e.target.value })}
+                  style={{ fontSize: 12 }}
+                />
+              </div>
             </div>
           </Col>
         </Row>
-        <HallazgosCatalogo modelo={modelo} filtro={["cil_", "acumulador"]} prefix={`${p}_cil`} titulo="Resultado de evaluación - Cilindro" datos={datos} onChange={onChange} />
+        <HallazgosCatalogo modelo={modelo} filtro={["cil_", "acumulador"]} prefix={`${p}_cil`} titulo="Resultado de evaluación - Cilindro" datos={datos} onChange={onChange} sujecion={(datos[`${p}_cil_elem_sujecion`] as string) || (datos[`${p}_elem_sujecion`] as string) || undefined} />
         <ImagenesComponente prefix={`${p}_cil`} etiqueta="Cilindro" datos={datos} onChange={onChange} />
         <RecomendacionesCatalogo modelo={modelo} componente={modelo === "acum_vejiga" ? "acumulador" : "cilindro"} prefix={p} datos={datos} onChange={onChange} />
         <ResultadoComponente prefix={`${p}_cil`} label="Cilindro" datos={datos} onChange={onChange} />
@@ -2057,12 +2183,12 @@ export default function EvaluacionFormulario({
               <ImagenReferencia componente="vastago" label="Vastago (A-J)" />
             </Col>
             <Col xs={24} md={16}>
+              {/* Orden del Excel: A (Espiga) → B (Vástago 3 puntos) → D (Cojinete)
+                  → E (Cromo) → F (Total) → G (Espiga). Longitud de Espiga (G)
+                  ahora vive dentro de la tabla principal (antes era un input suelto). */}
               <TablaMedidas
                 filas={[
                   { prefix: `${p}_vas_desp`, label: `Diametro Espiga (A) [${unidad}]`, tipo: "xy" },
-                  { prefix: `${p}_vas_dcoj`, label: `Diametro Cojinete (D) [${unidad}]`, tipo: "xy" },
-                  { prefix: `${p}_vas_lcro`, label: `Longitud Cromo (E) [${unidad}]`, tipo: "single" },
-                  { prefix: `${p}_vas_ltot`, label: `Longitud Total (F) [${unidad}]`, tipo: "single" },
                 ]}
                 datos={datos}
                 onChange={onChange}
@@ -2079,16 +2205,22 @@ export default function EvaluacionFormulario({
                   sufijo="b"
                 />
               </div>
-              <Row gutter={8} style={{ marginTop: 8 }}>
-                <Col xs={24} md={8}>
-                  <Text strong style={{ fontSize: 12 }}>Longitud de Espiga G [{unidad}]</Text>
-                  <InputMedida name={`${p}_vas_long_espiga_g`} datos={datos} onChange={onChange} />
-                </Col>
-              </Row>
+              <div style={{ marginTop: 8 }}>
+                <TablaMedidas
+                  filas={[
+                    { prefix: `${p}_vas_dcoj`, label: `Diametro Cojinete (D) [${unidad}]`, tipo: "xy" },
+                    { prefix: `${p}_vas_lcro`, label: `Longitud Cromo (E) [${unidad}]`, tipo: "single" },
+                    { prefix: `${p}_vas_ltot`, label: `Longitud Total (F) [${unidad}]`, tipo: "single" },
+                    { prefix: `${p}_vas_long_espiga_g`, label: `Longitud de Espiga (G) [${unidad}]`, tipo: "single" },
+                  ]}
+                  datos={datos}
+                  onChange={onChange}
+                />
+              </div>
               {muestraCancamoVastago && (
                 <>
                   <Divider style={{ margin: "8px 0" }}>
-                    <Text style={{ fontSize: 11 }}>Cáncamo y elemento de sujeción</Text>
+                    <Text style={{ fontSize: 11 }}>Cáncamo y tipo de articulación</Text>
                   </Divider>
                   <Row gutter={8}>
                     <Col xs={24} md={12}>
@@ -2100,80 +2232,72 @@ export default function EvaluacionFormulario({
                         onChange={onChange}
                       />
                     </Col>
-                    <Col xs={24} md={12}>
-                      <RadioInline
-                        name={`${p}_vas_elem_sujecion`}
-                        label="Elemento de sujeción"
-                        opciones={["Cojinete", "Rótula", "Pin directo"]}
-                        datos={datos}
-                        onChange={onChange}
-                      />
-                    </Col>
+                    {/* Si se eligió un Tipo de cancamo, NO se muestra Tipo de
+                        articulación (son alternativos según el usuario). */}
+                    {!datos[`${p}_vas_tipo_cancamo`] && (
+                      <Col xs={24} md={12}>
+                        <RadioInline
+                          name={`${p}_vas_elem_sujecion`}
+                          label="Tipo de articulación"
+                          opciones={["Cojinete", "Rótula", "Pin directo"]}
+                          datos={datos}
+                          onChange={onChange}
+                        />
+                      </Col>
+                    )}
                   </Row>
                 </>
               )}
               {/* Si el cáncamo del vástago es Cóncavo, ocultar Diám. Ext. Ojo H,
                   Diám. Int. Ojo I, Diám. Int. J y Ancho de Ojo (items 6,7,8,9
                   del Excel). Mismo comentario de J.F.Vera. */}
-              {datos[`${p}_vas_tipo_cancamo`] !== "Concavo" && (
-                <>
-                  <Row gutter={8}>
-                    <Col xs={24} md={8}>
-                      <ParXY prefix={`${p}_vas_dext_ojo_h`} label={`Diám. Ext. Ojo H [${unidad}]`} datos={datos} onChange={onChange} />
-                    </Col>
-                    <Col xs={24} md={8}>
-                      <ParXY prefix={`${p}_vas_dint_ojo_i`} label={`Diám. Int. Ojo I [${unidad}]`} datos={datos} onChange={onChange} />
-                    </Col>
-                    <Col xs={24} md={8}>
-                      <ParXY
-                        prefix={`${p}_vas_dint_j`}
-                        label={`Diám. Int. ${(datos[`${p}_vas_elem_sujecion`] as string) || "J"} [${unidad}]`}
-                        datos={datos}
-                        onChange={onChange}
-                      />
-                    </Col>
-                  </Row>
-                  <Row gutter={8}>
-                    <Col xs={24} md={8}>
-                      <div>
-                    <Text strong style={{ fontSize: 12, display: "block" }}>Ancho de Ojo [{unidad}]</Text>
-                    <Row gutter={4}>
-                      <Col span={12}>
-                        <InputMedida name={`${p}_vas_ancho_ojo_1`} datos={datos} onChange={onChange} />
+              {datos[`${p}_vas_tipo_cancamo`] !== "Concavo" && (() => {
+                // Pin directo: ocultar Diám. Int. J y Ancho de Ojo (no aplican).
+                const esPin = datos[`${p}_vas_elem_sujecion`] === "Pin directo";
+                return (
+                  <>
+                    <Row gutter={8}>
+                      <Col xs={24} md={8}>
+                        <ParXY prefix={`${p}_vas_dext_ojo_h`} label={`Diám. Ext. Ojo H [${unidad}]`} datos={datos} onChange={onChange} />
                       </Col>
-                      <Col span={12}>
-                        <InputMedida name={`${p}_vas_ancho_ojo_2`} datos={datos} onChange={onChange} />
+                      <Col xs={24} md={8}>
+                        <ParXY prefix={`${p}_vas_dint_ojo_i`} label={`Diám. Int. Ojo I [${unidad}]`} datos={datos} onChange={onChange} />
                       </Col>
+                      {!esPin && (
+                        <Col xs={24} md={8}>
+                          <ParXY
+                            prefix={`${p}_vas_dint_j`}
+                            label={`Diám. Int. ${(datos[`${p}_vas_elem_sujecion`] as string) || "J"} [${unidad}]`}
+                            datos={datos}
+                            onChange={onChange}
+                          />
+                        </Col>
+                      )}
                     </Row>
-                  </div>
-                    </Col>
-                  </Row>
-                </>
-              )}
+                    {!esPin && (
+                      <Row gutter={8}>
+                        <Col xs={24} md={8}>
+                          <div>
+                            <Text strong style={{ fontSize: 12, display: "block" }}>Ancho de Ojo [{unidad}]</Text>
+                            <InputMedida name={`${p}_vas_ancho_ojo`} datos={datos} onChange={onChange} />
+                          </div>
+                        </Col>
+                      </Row>
+                    )}
+                  </>
+                );
+              })()}
               <Divider style={{ margin: "8px 0" }}>
                 <Text style={{ fontSize: 11 }}>Flexión y Espesor de Cromo</Text>
               </Divider>
-              <Row gutter={8}>
-                {(["b", "c", "d"] as const).map((s) => (
-                  <Col span={4} key={`fx-${s}`}>
-                    <Text strong style={{ fontSize: 11 }}>Flexión {s.toUpperCase()}</Text>
-                    <InputMedida name={`${p}_vas_flexion_${s}`} datos={datos} onChange={onChange} />
-                  </Col>
-                ))}
-                {(["b", "c", "d"] as const).map((s) => (
-                  <Col span={4} key={`ec-${s}`}>
-                    <Text strong style={{ fontSize: 11 }}>Esp. Cromo {s.toUpperCase()}</Text>
-                    <InputMedida name={`${p}_vas_esp_cromo_${s}`} datos={datos} onChange={onChange} />
-                  </Col>
-                ))}
-              </Row>
+              <TablaFlexionCromo prefix={`${p}_vas`} unidad={unidad} datos={datos} onChange={onChange} />
               <div style={{ marginTop: 12 }}>
                 <TablaChecks
                   prefix={`${p}_vas`}
                   items={[
-                    { key: "estado_cromo", label: "Estado del cromo" },
+                    { key: "estado_cromo", label: "Estado de superficie cromada" },
                     ...(muestraCancamoVastago ? [{ key: "chk_estado_cancamo", label: "Estado de cancamo" }] : []),
-                    { key: "ndt", label: "Pasa a NDT", tipo: "sn" as const },
+                    { key: "ndt", label: "Pasa NDT", tipo: "sn" as const },
                     { key: "sensor", label: "Sensor", tipo: "sn" as const },
                   ]}
                   datos={datos}
@@ -2182,7 +2306,7 @@ export default function EvaluacionFormulario({
               </div>
             </Col>
           </Row>
-          <HallazgosCatalogo modelo={modelo} filtro="vas_" prefix={`${p}_vas`} titulo="Resultado de evaluación - Vástago" datos={datos} onChange={onChange} />
+          <HallazgosCatalogo modelo={modelo} filtro="vas_" prefix={`${p}_vas`} titulo="Resultado de evaluación - Vástago" datos={datos} onChange={onChange} sujecion={(datos[`${p}_vas_elem_sujecion`] as string) || (datos[`${p}_elem_sujecion`] as string) || undefined} flexionRootPrefix={`${p}_vas`} />
           <ImagenesComponente prefix={`${p}_vas`} etiqueta="Vastago" datos={datos} onChange={onChange} />
           <RecomendacionesCatalogo modelo={modelo} componente="vastago" prefix={p} datos={datos} onChange={onChange} />
           <ResultadoComponente prefix={`${p}_vas`} label="Vastago" datos={datos} onChange={onChange} />
@@ -2232,7 +2356,7 @@ export default function EvaluacionFormulario({
                 <TablaChecks
                   prefix={`${p}_tapa`}
                   items={[
-                    { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                    { key: "ndt", label: "Pasa NDT", tipo: "sn" },
                     { key: "ext_roscado", label: "Exterior roscado", tipo: "sn" },
                   ]}
                   datos={datos}
@@ -2270,7 +2394,7 @@ export default function EvaluacionFormulario({
               <TablaChecks
                 prefix={`${p}_pis`}
                 items={[
-                  { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+                  { key: "ndt", label: "Pasa NDT", tipo: "sn" },
                   { key: "int_roscado", label: "Interior roscado", tipo: "sn" },
                 ]}
                 datos={datos}
