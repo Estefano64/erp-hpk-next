@@ -16,7 +16,7 @@ import "dayjs/locale/es";
 import { useRouter } from "next/navigation";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
-import { calcularFinEstimado } from "@/lib/planification-hours";
+import { calcularFin, normalizarAInicioHabil } from "@/lib/planification-hours";
 import { useTabSync } from "@/lib/useTabSync";
 import { useSession } from "next-auth/react";
 import { useEditLock } from "@/lib/useEditLock";
@@ -422,13 +422,24 @@ export default function ProgramacionSemanalPage() {
     const horasFaltantes = !Number.isFinite(durRaw) || durRaw <= 0;
     const dur = horasFaltantes ? 1 : durRaw;
     const qty = Math.max(1, Number(original.qty_personal ?? 1));
-    const fin = calcularFinEstimado(nuevoInicio.toDate(), dur * qty);
+
+    // ¿Cae en la banda de horas extra (≥ 18:00)? Lo decidimos ANTES de calcular
+    // el fin: las HE son tiempo de reloj continuo (no se normalizan a la jornada
+    // 8–18 ni desbordan al día siguiente).
+    const inicioHoraDec = nuevoInicio.hour() + nuevoInicio.minute() / 60;
+    const enBandaHE = inicioHoraDec >= 18;
+
+    // Para tareas normales, normalizamos el inicio igual que el servidor (almuerzo
+    // → 13:30, antes de las 8 → 8:00). Así el bloque queda donde realmente se
+    // guardará y no "salta" tras recargar. Las HE quedan donde se soltaron.
+    const inicioReal = enBandaHE ? nuevoInicio : dayjs(normalizarAInicioHabil(nuevoInicio.toDate()));
+    const fin = calcularFin(inicioReal.toDate(), dur * qty, enBandaHE);
 
     // Bloquear si choca con otra tarea del mismo recurso.
     const recursoDestino = nuevoRecurso !== undefined
       ? nuevoRecurso
       : (view === "equipo" ? original.maquina : original.tecnico);
-    const choque = tareaSuperpuesta(id, nuevoInicio.toDate().getTime(), fin.getTime(), recursoDestino);
+    const choque = tareaSuperpuesta(id, inicioReal.toDate().getTime(), fin.getTime(), recursoDestino);
     if (choque) {
       const t = choque.task;
       const cliente = t.orden_trabajo?.cliente?.nombre_comercial
@@ -440,16 +451,12 @@ export default function ProgramacionSemanalPage() {
     }
 
     // Si el bloque cae en la franja de horas extras (>= 18:00, que el grid
-    // muestra hasta las 20:00), lo marcamos como HE. Si no, el server lo
-    // "normaliza" empujándolo al día hábil siguiente (su jornada termina 18:00)
-    // y el bloque desaparece de la semana visible (queda programado fuera).
-    const inicioHoraDec = nuevoInicio.hour() + nuevoInicio.minute() / 60;
-    const enBandaHE = inicioHoraDec >= 18;
-
+    // muestra hasta las 20:00), lo marcamos como HE para que el server no
+    // recalcule su fin con la jornada normal (su jornada termina 18:00).
     const patch: Record<string, unknown> = {
-      fecha_inicio: nuevoInicio.toISOString(),
+      fecha_inicio: inicioReal.toISOString(),
       fecha_fin: fin.toISOString(),
-      semana_plan: semanaCodigo(nuevoInicio),
+      semana_plan: semanaCodigo(inicioReal),
     };
     if (horasFaltantes) patch.horas_estimadas = 1;
     if (enBandaHE) {
@@ -463,9 +470,9 @@ export default function ProgramacionSemanalPage() {
 
     // Optimista: actualizo inmediatamente la UI
     const updated: Partial<PlanRow> = {
-      fecha_inicio: nuevoInicio.toISOString(),
+      fecha_inicio: inicioReal.toISOString(),
       fecha_fin: fin.toISOString(),
-      semana_plan: semanaCodigo(nuevoInicio),
+      semana_plan: semanaCodigo(inicioReal),
     };
     if (horasFaltantes) updated.horas_estimadas = "1";
     if (enBandaHE) {
@@ -523,7 +530,9 @@ export default function ProgramacionSemanalPage() {
     // nuevasHoras representa duración total de la barra. Las horas_estimadas son por persona.
     const horasPorPersona = Math.max(0.25, nuevasHoras / qty);
     const inicio = original.fecha_inicio ? new Date(original.fecha_inicio) : null;
-    const finCalc = inicio ? calcularFinEstimado(inicio, horasPorPersona * qty) : null;
+    // Si la tarea es de horas extra, el fin es reloj continuo (no se recorta a
+    // la jornada 8–18 ni desborda al día siguiente).
+    const finCalc = inicio ? calcularFin(inicio, horasPorPersona * qty, !!original.horas_extras) : null;
 
     // Bloquear si la nueva duración haría chocar con otra tarea del mismo recurso.
     if (inicio && finCalc) {
@@ -630,8 +639,10 @@ export default function ProgramacionSemanalPage() {
       const durRaw = Number(t.horas_estimadas);
       const dur = Number.isFinite(durRaw) && durRaw > 0 ? durRaw : 1;
       const qty = Math.max(1, Number(t.qty_personal ?? 1));
-      const fin = calcularFinEstimado(ini.toDate(), dur * qty);
-      return { id, ini: ini.toDate().getTime(), fin: fin.getTime(), recurso };
+      const enBandaHE = (ini.hour() + ini.minute() / 60) >= 18;
+      const iniReal = enBandaHE ? ini : dayjs(normalizarAInicioHabil(ini.toDate()));
+      const fin = calcularFin(iniReal.toDate(), dur * qty, enBandaHE);
+      return { id, ini: iniReal.toDate().getTime(), fin: fin.getTime(), recurso };
     }
 
     const baseSlot = calcSlot(baseId, baseInicio, baseRecurso);
@@ -810,8 +821,10 @@ export default function ProgramacionSemanalPage() {
     if (!original) return false;
     const dur = Number(original.horas_estimadas ?? 1);
     const qty = Math.max(1, Number(original.qty_personal ?? 1));
-    const ini = drag.snappedDate.toDate().getTime();
-    const fin = calcularFinEstimado(drag.snappedDate.toDate(), dur * qty).getTime();
+    const enBandaHE = (drag.snappedDate.hour() + drag.snappedDate.minute() / 60) >= 18;
+    const inicioReal = enBandaHE ? drag.snappedDate : dayjs(normalizarAInicioHabil(drag.snappedDate.toDate()));
+    const ini = inicioReal.toDate().getTime();
+    const fin = calcularFin(inicioReal.toDate(), dur * qty, enBandaHE).getTime();
     const target = drag.targetRow;
     for (const t of rows) {
       if (t.id === drag.taskId) continue;
@@ -1431,8 +1444,11 @@ export default function ProgramacionSemanalPage() {
                       if (!t) return null;
                       const dur = Number(t.horas_estimadas ?? 1);
                       const qty = Math.max(1, Number(t.qty_personal ?? 1));
-                      const previewIni = drag.snappedDate;
-                      const previewFin = dayjs(calcularFinEstimado(previewIni.toDate(), dur * qty));
+                      // El preview debe mostrar dónde realmente caerá: HE = reloj
+                      // continuo; normal = normalizado a la jornada (sin almuerzo).
+                      const previewHE = (drag.snappedDate.hour() + drag.snappedDate.minute() / 60) >= 18;
+                      const previewIni = previewHE ? drag.snappedDate : dayjs(normalizarAInicioHabil(drag.snappedDate.toDate()));
+                      const previewFin = dayjs(calcularFin(previewIni.toDate(), dur * qty, previewHE));
                       const dIdx = previewIni.diff(lunes, "day");
                       if (dIdx < 0 || dIdx > 4) return null;
                       const startPx = dIdx * dayPx + (hourDecimal(previewIni) - JORNADA_INICIO) * hourPx;

@@ -100,6 +100,33 @@ export function calcularFinEstimado(inicio: Date, horasEfectivas: number): Date 
 }
 
 /**
+ * Fin estimado para trabajo en HORAS EXTRA (banda vespertina ≥ 18:00).
+ *
+ * A diferencia de `calcularFinEstimado`, las horas extra son tiempo de reloj
+ * CONTINUO: no descuentan almuerzo ni se cortan al fin de la jornada (18:00),
+ * porque justamente ocurren después. Por eso el fin es simplemente
+ * inicio + horas.
+ *
+ * Esto evita el bug en el que una tarea HE soltada a las 18:30 terminaba a la
+ * mañana del día siguiente (porque `calcularFinEstimado` "normalizaba" el
+ * inicio fuera de la jornada y lo empujaba al próximo día hábil).
+ */
+export function calcularFinHorasExtra(inicio: Date, horasTotales: number): Date {
+  if (!horasTotales || horasTotales <= 0) return new Date(inicio);
+  return new Date(inicio.getTime() + horasTotales * 3_600_000);
+}
+
+/**
+ * Fin estimado que respeta si la tarea es en horas extra o en jornada normal.
+ * Punto único de verdad usado por cliente y servidor.
+ */
+export function calcularFin(inicio: Date, horasTotales: number, esHorasExtra: boolean): Date {
+  return esHorasExtra
+    ? calcularFinHorasExtra(inicio, horasTotales)
+    : calcularFinEstimado(inicio, horasTotales);
+}
+
+/**
  * HH total = duración × qty_personal + horas_extras_qty
  */
 export function calcularHH(params: {
