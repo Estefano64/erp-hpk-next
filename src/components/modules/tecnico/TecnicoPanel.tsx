@@ -336,6 +336,19 @@ export default function TecnicoPanel() {
     rowExpandable: () => true,
   };
 
+  // Columna de día para la vista semanal (marca "Hoy"). Se antepone a las columnas.
+  const hoyStr = dayjs().format("YYYY-MM-DD");
+  const diaCol: ColumnsType<TareaPlan>[number] = {
+    title: "Día", key: "dia", width: 90, fixed: "left",
+    render: (_, r) => {
+      if (!r.fecha_inicio) return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
+      const d = dayjs(r.fecha_inicio);
+      const esHoy = d.format("YYYY-MM-DD") === hoyStr;
+      return <Tag color={esHoy ? "blue" : "default"} style={{ fontSize: 11, margin: 0 }}>{esHoy ? "Hoy" : d.format("ddd DD/MM")}</Tag>;
+    },
+  };
+  const columnasSemana: ColumnsType<TareaPlan> = [diaCol, ...columnas];
+
   if (!data) {
     return (
       <div>
@@ -461,39 +474,24 @@ export default function TecnicoPanel() {
       </Row>
 
       <Row gutter={[16, 16]}>
-        {/* Tareas de hoy */}
+        {/* Tareas de TODA la semana (hoy resaltado con el tag "Hoy") */}
         <Col xs={24} lg={16}>
-          <Card size="small" title={`Mis tareas de hoy (${data.tareasHoy.length})`}>
-            {data.tareasHoy.length === 0
-              ? <Empty description="No tenés tareas programadas para hoy" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          <Card size="small" title={`Mis tareas de la semana (${data.tareasSemana.length}) · hoy: ${data.tareasHoy.length}`}>
+            {data.tareasSemana.length === 0
+              ? <Empty description="No tenés tareas programadas esta semana" image={Empty.PRESENTED_IMAGE_SIMPLE} />
               : (
                 <Table<TareaPlan>
                   rowKey="id"
-                  columns={columnas}
-                  dataSource={data.tareasHoy}
+                  columns={columnasSemana}
+                  dataSource={data.tareasSemana}
                   size="small"
                   pagination={false}
-                  scroll={{ x: 920 }}
+                  scroll={{ x: 1010 }}
                   expandable={expandable}
                 />
               )
             }
           </Card>
-
-          {/* Tareas de la semana (resto) */}
-          {data.tareasSemana.length > data.tareasHoy.length && (
-            <Card size="small" title={`Resto de la semana (${data.tareasSemana.length - data.tareasHoy.length})`} style={{ marginTop: 16 }}>
-              <Table<TareaPlan>
-                rowKey="id"
-                columns={columnas.filter((c) => c.key !== "accion")}
-                dataSource={data.tareasSemana.filter((t) => !data.tareasHoy.some((h) => h.id === t.id))}
-                size="small"
-                pagination={false}
-                scroll={{ x: 720 }}
-                expandable={expandable}
-              />
-            </Card>
-          )}
         </Col>
 
         {/* Ranking público + histórico */}
