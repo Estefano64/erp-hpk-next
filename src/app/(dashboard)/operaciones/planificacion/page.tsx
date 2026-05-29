@@ -144,6 +144,7 @@ interface PlanRow {
     prioridad_atencion: { codigo: string; nombre: string } | null;
     cliente: { codigo: string; razon_social: string; nombre_comercial: string | null } | null;
     codigo_reparacion: { codigo: string; flota: { codigo: string; nombre: string } | null } | null;
+    cod_rep_flota: string | null;
   } | null;
 }
 
@@ -566,7 +567,7 @@ export default function PlanificacionPage() {
     .map((v) => ({ text: v, value: v }));
   const clienteValores = [...new Set(rows.map((r) => r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social).filter(Boolean) as string[])].sort()
     .map((v) => ({ text: v, value: v }));
-  const flotaValores = [...new Set(rows.map((r) => r.orden_trabajo?.codigo_reparacion?.flota?.codigo).filter(Boolean) as string[])].sort()
+  const flotaValores = [...new Set(rows.map((r) => r.orden_trabajo?.codigo_reparacion?.flota?.codigo ?? r.orden_trabajo?.cod_rep_flota).filter(Boolean) as string[])].sort()
     .map((v) => ({ text: v, value: v }));
   const otDescValores = [...new Set(rows.map((r) => r.orden_trabajo?.descripcion).filter(Boolean) as string[])].sort()
     .map((v) => ({ text: v, value: v }));
@@ -636,8 +637,8 @@ export default function PlanificacionPage() {
     {
       title: "Flota", key: "flota", width: 100,
       filters: flotaValores, filterSearch: true,
-      onFilter: (value, r) => r.orden_trabajo?.codigo_reparacion?.flota?.codigo === value,
-      render: (_, r) => r.orden_trabajo?.codigo_reparacion?.flota?.codigo ?? "-",
+      onFilter: (value, r) => (r.orden_trabajo?.codigo_reparacion?.flota?.codigo ?? r.orden_trabajo?.cod_rep_flota) === value,
+      render: (_, r) => r.orden_trabajo?.codigo_reparacion?.flota?.codigo ?? r.orden_trabajo?.cod_rep_flota ?? "-",
     },
     {
       title: "Descripción", key: "otDesc", width: 200, ellipsis: true,

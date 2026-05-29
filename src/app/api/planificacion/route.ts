@@ -56,6 +56,7 @@ export async function GET(req: NextRequest) {
               ot: true,
               np: true,
               descripcion: true,
+              cod_rep_flota: true,
               fecha_recepcion: true,
               fecha_requerimiento_cliente: true,
               taller_status_codigo: true,
