@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Typography, Card, Table, Tag, Space, Button, Input, Empty, Row, Col, Statistic, Segmented,
+  Upload, Popconfirm, App,
 } from "antd";
 import {
   ReloadOutlined, SearchOutlined, FileTextOutlined,
-  FileDoneOutlined, AuditOutlined,
+  FileDoneOutlined, AuditOutlined, UploadOutlined, DeleteOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
@@ -17,6 +18,7 @@ import {
   filtroPorColumna, useColumnasRedimensionables, STICKY_HEADER,
 } from "@/lib/tables";
 import { R2FileLink } from "@/components/R2FileLink";
+import { uploadToR2 } from "@/lib/r2-client";
 
 const { Title, Text } = Typography;
 
@@ -25,6 +27,9 @@ interface CompraRow {
   numero_po: string;
   nombre: string | null;
   proveedor_nombre: string | null;
+  ot_id: number | null;
+  ot_numero: number | string | null;
+  ot_descripcion: string | null;
   estado: string;
   total: number | string;
   moneda: string;
@@ -45,6 +50,7 @@ export type FiltroDocs = "todos" | "con_factura" | "sin_factura" | "con_guia" | 
 const TITULOS: Record<string, string> = {
   con_guia: "Despacho — Guías de remisión",
   con_factura: "Facturación — Facturas de OCs",
+  todos: "Guía y Factura de OC",
 };
 
 export default function ContabilidadView({
@@ -52,6 +58,7 @@ export default function ContabilidadView({
 }: {
   initialFiltro?: FiltroDocs;
 }) {
+  const { message } = App.useApp();
   const [rows, setRows] = useState<CompraRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -59,6 +66,7 @@ export default function ContabilidadView({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
   const { ocultas, setOcultas } = useColumnasOcultas("contabilidad-compras-cols-v1");
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -88,7 +96,9 @@ export default function ContabilidadView({
         (r.proveedor_nombre ?? "").toLowerCase().includes(q) ||
         (r.nro_factura ?? "").toLowerCase().includes(q) ||
         (r.nro_guia ?? "").toLowerCase().includes(q) ||
-        (r.nombre ?? "").toLowerCase().includes(q)
+        (r.nombre ?? "").toLowerCase().includes(q) ||
+        String(r.ot_numero ?? "").toLowerCase().includes(q) ||
+        (r.ot_descripcion ?? "").toLowerCase().includes(q)
       );
     });
   }, [rows, search, filtroDocs]);
@@ -100,24 +110,93 @@ export default function ContabilidadView({
     return { total: rows.length, conFactura, conGuia, sinFactura };
   }, [rows]);
 
+  // Subir guía/factura: presigned R2 → registrar en /api/compras/[id]/guia.
+  const subirArchivo = async (compraId: number, tipo: "guia" | "factura", file: File) => {
+    const slotId = `${compraId}-${tipo}`;
+    setUploadingId(slotId);
+    try {
+      const meta = await uploadToR2({
+        file,
+        uploadUrlEndpoint: `/api/compras/${compraId}/guia/upload-url?tipo=${tipo}`,
+      });
+      const res = await fetch(`/api/compras/${compraId}/guia?tipo=${tipo}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(meta),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Error al registrar archivo");
+      message.success(`${tipo === "guia" ? "Guía" : "Factura"} subida`);
+      fetchData();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : "Error al subir archivo");
+    } finally {
+      setUploadingId(null);
+    }
+  };
+
+  const eliminarArchivo = async (compraId: number, tipo: "guia" | "factura") => {
+    try {
+      const res = await fetch(`/api/compras/${compraId}/guia?tipo=${tipo}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Error al eliminar archivo");
+      message.success("Archivo eliminado");
+      fetchData();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : "Error al eliminar archivo");
+    }
+  };
+
   const archivoCell = (
     r2Key: string | null,
     nombre: string | null,
     label: string,
+    tipo: "guia" | "factura",
     resource: "compra-guia" | "compra-factura",
     compraId: number,
   ) => {
-    if (!r2Key) return <Tag color="default">Sin {label}</Tag>;
+    const slotId = `${compraId}-${tipo}`;
+    const uploading = uploadingId === slotId;
     return (
-      <R2FileLink
-        resource={resource}
-        resourceId={compraId}
-        r2Key={r2Key}
-        style={{ fontSize: 12 }}
-      >
-        <FileTextOutlined style={{ color: brand.cyan, marginRight: 4 }} />
-        {nombre || `Ver ${label}`}
-      </R2FileLink>
+      <Space wrap size={4} style={{ rowGap: 4 }}>
+        {r2Key ? (
+          <>
+            <R2FileLink
+              resource={resource}
+              resourceId={compraId}
+              r2Key={r2Key}
+              style={{ fontSize: 12 }}
+            >
+              <FileTextOutlined style={{ color: brand.cyan, marginRight: 4 }} />
+              {nombre || `Ver ${label}`}
+            </R2FileLink>
+            <Popconfirm
+              title={`¿Eliminar ${label}?`}
+              onConfirm={() => eliminarArchivo(compraId, tipo)}
+              okType="danger"
+              okText="Eliminar"
+              cancelText="Cancelar"
+            >
+              <Button size="small" type="text" danger icon={<DeleteOutlined />} title={`Eliminar ${label}`} />
+            </Popconfirm>
+          </>
+        ) : (
+          <Tag color="default" style={{ marginRight: 0 }}>Sin {label}</Tag>
+        )}
+        <Upload
+          showUploadList={false}
+          accept=".pdf,image/*"
+          beforeUpload={(file) => {
+            subirArchivo(compraId, tipo, file as File);
+            return false;
+          }}
+          disabled={uploading}
+        >
+          <Button size="small" icon={<UploadOutlined />} loading={uploading}>
+            {r2Key ? "Reemplazar" : "Subir"}
+          </Button>
+        </Upload>
+      </Space>
     );
   };
 
@@ -128,6 +207,23 @@ export default function ContabilidadView({
       sorter: (a, b) => a.numero_po.localeCompare(b.numero_po),
       ...filtroPorColumna(filtradas, "numero_po"),
       render: (v: string) => <Tag color={brand.navy}>{v}</Tag>,
+    },
+    {
+      key: "ot", title: "OT", width: 230, align: "left",
+      sorter: (a, b) => String(a.ot_numero ?? "").localeCompare(String(b.ot_numero ?? "")),
+      render: (_v, r) => {
+        if (!r.ot_numero) return <Text type="secondary" style={{ fontSize: 11 }}>Sin OT</Text>;
+        return (
+          <div style={{ lineHeight: 1.25 }}>
+            <Tag color={brand.cyan} style={{ marginRight: 0, fontWeight: 600 }}>{r.ot_numero}</Tag>
+            {r.ot_descripcion && (
+              <div style={{ fontSize: 11, color: "rgba(0,0,0,0.55)", marginTop: 2 }}>
+                {r.ot_descripcion}
+              </div>
+            )}
+          </div>
+        );
+      },
     },
     {
       key: "nombre", title: "Nombre OC", dataIndex: "nombre", width: 220, align: "left",
@@ -156,8 +252,8 @@ export default function ContabilidadView({
       render: (v: string | null) => v ?? <Text type="secondary">—</Text>,
     },
     {
-      key: "guia", title: "Archivo Guía", width: 200, align: "left",
-      render: (_v, r) => archivoCell(r.guia_key, r.guia_nombre, "guía", "compra-guia", r.id),
+      key: "guia", title: "Archivo Guía", width: 260, align: "left",
+      render: (_v, r) => archivoCell(r.guia_key, r.guia_nombre, "guía", "guia", "compra-guia", r.id),
     },
     {
       key: "nro_factura", title: "Nro Factura", dataIndex: "nro_factura", width: 130, align: "left",
@@ -165,8 +261,8 @@ export default function ContabilidadView({
       render: (v: string | null) => v ?? <Text type="secondary">—</Text>,
     },
     {
-      key: "factura", title: "Archivo Factura", width: 200, align: "left",
-      render: (_v, r) => archivoCell(r.factura_key, r.factura_nombre, "factura", "compra-factura", r.id),
+      key: "factura", title: "Archivo Factura", width: 260, align: "left",
+      render: (_v, r) => archivoCell(r.factura_key, r.factura_nombre, "factura", "factura", "compra-factura", r.id),
     },
     {
       key: "fecha_entrega_real", title: "F. Recepción", dataIndex: "fecha_entrega_real", width: 110, align: "center",
@@ -188,7 +284,8 @@ export default function ContabilidadView({
         <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>Refrescar</Button>
       </div>
       <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 12 }}>
-        Vista de solo lectura para contabilidad: revisá y descargá la guía de remisión y la factura de cada orden de compra.
+        Revisá la OC con su OT asociada. Desde cada fila podés <b>descargar</b>, <b>subir</b> o <b>reemplazar</b> la guía de remisión y la factura.
+        Recordá: la factura solo se puede subir después de cargar la guía.
       </Text>
 
       <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
@@ -201,7 +298,7 @@ export default function ContabilidadView({
       <Card size="small" style={{ marginBottom: 12 }} styles={{ body: { padding: 10 } }}>
         <Space wrap>
           <Input
-            placeholder="Buscar OC, proveedor, nro factura/guía…"
+            placeholder="Buscar OC, OT, proveedor, nro factura/guía…"
             prefix={<SearchOutlined />}
             allowClear
             value={search}
@@ -223,7 +320,7 @@ export default function ContabilidadView({
             columns={columns}
             ocultas={ocultas}
             setOcultas={setOcultas}
-            obligatorias={["numero_po", "guia", "factura"]}
+            obligatorias={["numero_po", "ot", "guia", "factura"]}
           />
         </Space>
       </Card>

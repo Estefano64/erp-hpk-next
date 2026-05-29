@@ -198,33 +198,43 @@ function InputMedida({
   );
 }
 
-// ── Tabla de medidas A1-A4 (X,Y) ──────────────────────────
-function TablaA1A4({
+// ── Tabla de medidas multi-punto (N puntos cada uno con X,Y) ───────
+// Generalización de la antigua TablaA1A4. Default 4 puntos con prefijo "a"
+// (compatible hacia atrás). Para Diámetro Vástago se usa con puntos=3 y
+// prefijo "b" según el Excel de evaluación ("3 puntos de medidas").
+function TablaPuntos({
   prefix,
   datos,
   onChange,
+  titulo = "Diametro Interior (A1-A4)",
+  puntos = 4,
+  letra = "A",
+  sufijo = "a",
 }: {
   prefix: string;
   datos: Record<string, unknown>;
   onChange: (d: Record<string, unknown>) => void;
+  titulo?: string;
+  puntos?: number;
+  letra?: string;
+  sufijo?: string;
 }) {
+  const span = Math.max(4, Math.floor(24 / puntos));
   return (
     <div style={{ marginBottom: 8 }}>
-      <Text strong style={{ fontSize: 12 }}>
-        Diametro Interior (A1-A4)
-      </Text>
+      <Text strong style={{ fontSize: 12 }}>{titulo}</Text>
       <Row gutter={[8, 8]} style={{ marginTop: 4 }}>
-        {[1, 2, 3, 4].map((i) => (
-          <Col span={6} key={i}>
-            <div style={{ textAlign: "center", fontWeight: 600, fontSize: 11 }}>A{i}</div>
+        {Array.from({ length: puntos }, (_, idx) => idx + 1).map((i) => (
+          <Col span={span} key={i}>
+            <div style={{ textAlign: "center", fontWeight: 600, fontSize: 11 }}>{letra}{i}</div>
             <Row gutter={4}>
               <Col span={12}>
                 <Text type="secondary" style={{ fontSize: 10 }}>X</Text>
-                <InputMedida name={`${prefix}_a${i}_x`} datos={datos} onChange={onChange} />
+                <InputMedida name={`${prefix}_${sufijo}${i}_x`} datos={datos} onChange={onChange} />
               </Col>
               <Col span={12}>
                 <Text type="secondary" style={{ fontSize: 10 }}>Y</Text>
-                <InputMedida name={`${prefix}_a${i}_y`} datos={datos} onChange={onChange} />
+                <InputMedida name={`${prefix}_${sufijo}${i}_y`} datos={datos} onChange={onChange} />
               </Col>
             </Row>
           </Col>
@@ -232,6 +242,16 @@ function TablaA1A4({
       </Row>
     </div>
   );
+}
+
+// Alias compatible con el helper original (4 puntos A1-A4) para no romper
+// callsites existentes.
+function TablaA1A4(props: {
+  prefix: string;
+  datos: Record<string, unknown>;
+  onChange: (d: Record<string, unknown>) => void;
+}) {
+  return <TablaPuntos {...props} titulo="Diametro Interior (A1-A4)" puntos={4} letra="A" sufijo="a" />;
 }
 
 // ── Tabla de medidas simples ───────────────────────────────
@@ -1204,6 +1224,25 @@ export default function EvaluacionFormulario({
       const tipoTapaSec = (datos[`${p}_tipo_tapa_sec`] as string) || "";
       return (
         <>
+          {/* Pregunta global de sujeción — aplica a CILINDRO + VÁSTAGO (Excel:
+              "PREGUNTAR SI LLEVA COJINETE, ROTULA O PIN DIRECTO"). */}
+          <Card
+            title={<span style={{ color: brand.navy }}>Tipo de sujeción del cilindro / vástago</span>}
+            style={{ marginBottom: 16, background: "#fafcff", border: `1px dashed ${brand.cyan}` }}
+            styles={{ body: { padding: 12 } }}
+          >
+            <RadioInline
+              name={`${p}_elem_sujecion`}
+              label="¿Lleva cojinete, rótula o pin directo? (aplica al cilindro y al vástago)"
+              opciones={["Cojinete", "Rótula", "Pin directo"]}
+              datos={datos}
+              onChange={onChange}
+            />
+            <Text type="secondary" style={{ fontSize: 11, display: "block", marginTop: 4 }}>
+              Esta elección determina las preguntas de Cojinete/Rótula/Pin que aparecen
+              en los resultados de evaluación del cilindro y el vástago.
+            </Text>
+          </Card>
           {/* Cilindro principal (botella) */}
           <SeccionNum num={3} titulo="Cilindro Principal (Botella)">
             <Row gutter={16}>
@@ -1304,7 +1343,6 @@ export default function EvaluacionFormulario({
                 <TablaMedidas
                   filas={[
                     { prefix: `${p}_vas_desp`, label: `Diametro Espiga (A) [${unidad}]`, tipo: "xy" },
-                    { prefix: `${p}_vas_dext`, label: `Diametro Vastago (B) [${unidad}]`, tipo: "xy" },
                     { prefix: `${p}_vas_dcoj`, label: `Diametro Cojinete (D) [${unidad}]`, tipo: "xy" },
                     { prefix: `${p}_vas_lcro`, label: `Longitud Cromo (E) [${unidad}]`, tipo: "single" },
                     { prefix: `${p}_vas_ltot`, label: `Longitud Total (F) [${unidad}]`, tipo: "single" },
@@ -1312,6 +1350,18 @@ export default function EvaluacionFormulario({
                   datos={datos}
                   onChange={onChange}
                 />
+                {/* Diámetro Vástago (B) — 3 puntos de medida según Excel de evaluación. */}
+                <div style={{ marginTop: 8 }}>
+                  <TablaPuntos
+                    prefix={`${p}_vas_dext`}
+                    datos={datos}
+                    onChange={onChange}
+                    titulo={`Diametro Vástago (B1-B3) [${unidad}]`}
+                    puntos={3}
+                    letra="B"
+                    sufijo="b"
+                  />
+                </div>
                 <Row gutter={8} style={{ marginTop: 8 }}>
                   <Col xs={24} md={8}>
                     <Text strong style={{ fontSize: 12 }}>Longitud de Espiga G [{unidad}]</Text>
@@ -1831,6 +1881,33 @@ export default function EvaluacionFormulario({
     // Cilindro (Botella)
     const esCilHidraulico = modelo === "cil_vastago_simple" || modelo === "cil_pivotado" || modelo === "cil_doble_vastago";
     const esPivotado = modelo === "cil_pivotado";
+
+    // Pregunta global de sujeción — aplica al CILINDRO + VÁSTAGO. El Excel
+    // pide "PREGUNTAR SI LLEVA COJINETE, ROTULA O PIN DIRECTO" como pregunta
+    // única para ambas secciones. Solo se muestra en cilindros hidráulicos
+    // (los acumuladores y suspensiones no tienen vástago con sujeción).
+    if (esCilHidraulico) {
+      secciones.push(
+        <Card
+          key="elem_sujecion_global"
+          title={<span style={{ color: brand.navy }}>Tipo de sujeción del cilindro / vástago</span>}
+          style={{ marginBottom: 16, background: "#fafcff", border: `1px dashed ${brand.cyan}` }}
+          styles={{ body: { padding: 12 } }}
+        >
+          <RadioInline
+            name={`${p}_elem_sujecion`}
+            label="¿Lleva cojinete, rótula o pin directo? (aplica al cilindro y al vástago)"
+            opciones={["Cojinete", "Rótula", "Pin directo"]}
+            datos={datos}
+            onChange={onChange}
+          />
+          <Text type="secondary" style={{ fontSize: 11, display: "block", marginTop: 4 }}>
+            Esta elección determina las preguntas de Cojinete/Rótula/Pin que aparecen
+            en los resultados de evaluación del cilindro y el vástago.
+          </Text>
+        </Card>,
+      );
+    }
     secciones.push(
       <SeccionNum key="cil" num={3} titulo="Cilindro (Botella)">
         <Row gutter={16}>
@@ -1983,7 +2060,6 @@ export default function EvaluacionFormulario({
               <TablaMedidas
                 filas={[
                   { prefix: `${p}_vas_desp`, label: `Diametro Espiga (A) [${unidad}]`, tipo: "xy" },
-                  { prefix: `${p}_vas_dext`, label: `Diametro Vastago (B) [${unidad}]`, tipo: "xy" },
                   { prefix: `${p}_vas_dcoj`, label: `Diametro Cojinete (D) [${unidad}]`, tipo: "xy" },
                   { prefix: `${p}_vas_lcro`, label: `Longitud Cromo (E) [${unidad}]`, tipo: "single" },
                   { prefix: `${p}_vas_ltot`, label: `Longitud Total (F) [${unidad}]`, tipo: "single" },
@@ -1991,6 +2067,18 @@ export default function EvaluacionFormulario({
                 datos={datos}
                 onChange={onChange}
               />
+              {/* Diámetro Vástago (B) — 3 puntos según Excel de evaluación. */}
+              <div style={{ marginTop: 8 }}>
+                <TablaPuntos
+                  prefix={`${p}_vas_dext`}
+                  datos={datos}
+                  onChange={onChange}
+                  titulo={`Diametro Vástago (B1-B3) [${unidad}]`}
+                  puntos={3}
+                  letra="B"
+                  sufijo="b"
+                />
+              </div>
               <Row gutter={8} style={{ marginTop: 8 }}>
                 <Col xs={24} md={8}>
                   <Text strong style={{ fontSize: 12 }}>Longitud de Espiga G [{unidad}]</Text>
