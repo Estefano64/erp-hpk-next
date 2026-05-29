@@ -23,7 +23,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
 import { EditableCell } from "@/components/EditableCell";
-import { filtroPorColumna, paginacionEstandar } from "@/lib/tables";
+import { filtroPorColumna, useColumnasRedimensionables, STICKY_HEADER, paginacionEstandar } from "@/lib/tables";
 
 const { Title, Text } = Typography;
 
@@ -125,7 +125,7 @@ export default function SuministrosPage() {
       },
     },
     {
-      key: "codigo", title: "Código", dataIndex: "codigo", width: 110, fixed: "left",
+      key: "codigo", title: "Código", dataIndex: "codigo", width: 110,
       render: (v: string) => <Text strong style={{ fontSize: 11, color: brand.navy }}>{v}</Text>,
     },
     { key: "descripcion", title: "Descripción", dataIndex: "descripcion", ellipsis: true, ...filtroPorColumna(filtrados, "descripcion") },
@@ -249,23 +249,52 @@ export default function SuministrosPage() {
         />
       ) : (
         <Card>
-          <Table<StockItem>
-            rowKey="material_id"
-            size="small"
+          <TablaSuministros
             columns={columns}
-            dataSource={filtrados}
+            data={filtrados}
             loading={loading}
-            pagination={paginacionEstandar({
-              current: page,
-              pageSize,
-              total: filtrados.length,
-              onChange: (p, s) => { setPage(p); setPageSize(s); },
-              label: "suministro(s)",
-            })}
-            scroll={{ x: 1200 }}
+            page={page}
+            pageSize={pageSize}
+            onPageChange={(p, s) => { setPage(p); setPageSize(s); }}
           />
         </Card>
       )}
     </div>
+  );
+}
+
+function TablaSuministros({
+  columns, data, loading, page, pageSize, onPageChange,
+}: {
+  columns: ColumnsType<StockItem>;
+  data: StockItem[];
+  loading: boolean;
+  page: number;
+  pageSize: number;
+  onPageChange: (p: number, s: number) => void;
+}) {
+  const { columnas, components, TableDragWrapper } = useColumnasRedimensionables<StockItem>(
+    columns, "suministros-v1",
+  );
+  return (
+    <TableDragWrapper>
+      <Table<StockItem>
+        rowKey="material_id"
+        size="small"
+        columns={columnas}
+        components={components}
+        dataSource={data}
+        loading={loading}
+        pagination={paginacionEstandar({
+          current: page,
+          pageSize,
+          total: data.length,
+          onChange: onPageChange,
+          label: "suministro(s)",
+        })}
+        scroll={{ x: 1200 }}
+        sticky={STICKY_HEADER}
+      />
+    </TableDragWrapper>
   );
 }

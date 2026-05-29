@@ -211,7 +211,6 @@ export default function EvaluacionesPage() {
       key: "ot",
       title: "OT",
       width: 130,
-      fixed: "left",
       render: (_, r) => (r.orden_trabajo?.ot ? <Tag color={brand.navy}>{r.orden_trabajo.ot}</Tag> : "-"),
     },
     {

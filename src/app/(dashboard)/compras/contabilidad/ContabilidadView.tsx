@@ -124,7 +124,7 @@ export default function ContabilidadView({
   const columns: ColumnsType<CompraRow> = [
     numeracionColumn<CompraRow>({ current: page, pageSize }),
     {
-      key: "numero_po", title: "Nro OC", dataIndex: "numero_po", width: 130, fixed: "left", align: "left",
+      key: "numero_po", title: "Nro OC", dataIndex: "numero_po", width: 130, align: "left",
       sorter: (a, b) => a.numero_po.localeCompare(b.numero_po),
       ...filtroPorColumna(filtradas, "numero_po"),
       render: (v: string) => <Tag color={brand.navy}>{v}</Tag>,

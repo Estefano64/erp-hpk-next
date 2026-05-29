@@ -185,7 +185,7 @@ export default function NoCatalogadosPage() {
   const columns: ColumnsType<MatRow> = [
     numeracionColumn<MatRow>({ current: page, pageSize }),
     {
-      key: "codigo", title: "Código", dataIndex: "codigo", width: 130, fixed: "left", align: "left",
+      key: "codigo", title: "Código", dataIndex: "codigo", width: 130, align: "left",
       sorter: (a, b) => a.codigo.localeCompare(b.codigo),
       ...filtroPorColumna(filtradas, "codigo"),
       render: (v: string) => <Text strong style={{ color: brand.navy }}>{v}</Text>,

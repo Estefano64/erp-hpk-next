@@ -17,6 +17,7 @@ import { paginacionEstandar } from "@/lib/tables";
 import { brand } from "@/lib/theme";
 import { formatDateOnly } from "@/lib/dates";
 import { uploadToR2 } from "@/lib/r2-client";
+import { useColumnasRedimensionables, STICKY_HEADER } from "@/lib/tables";
 
 const { Title, Text } = Typography;
 
@@ -144,7 +145,7 @@ export default function DespachoMinaPage() {
 
   const columns: ColumnsType<OTLista> = useMemo(() => [
     {
-      key: "ot", title: "OT", width: 110, fixed: "left",
+      key: "ot", title: "OT", width: 110,
       render: (_v, r) => (
         <Tooltip title="Abrir OT">
           <Tag color={brand.navy} style={{ cursor: "pointer", margin: 0 }} onClick={() => router.push(`/ordenes-trabajo/${r.id}`)}>
@@ -250,20 +251,13 @@ export default function DespachoMinaPage() {
         <Empty description="No hay OTs terminadas pendientes de despacho." />
       ) : (
         <Card>
-          <Table<OTLista>
-            rowKey="id"
-            size="small"
+          <TablaDespachosMina
             columns={columns}
-            dataSource={data}
+            data={data}
             loading={loading}
-            pagination={paginacionEstandar({
-              current: page,
-              pageSize,
-              total: data.length,
-              onChange: (p, s) => { setPage(p); setPageSize(s); },
-              label: "OT(s)",
-            })}
-            scroll={{ x: 1400 }}
+            page={page}
+            pageSize={pageSize}
+            onPageChange={(p, s) => { setPage(p); setPageSize(s); }}
           />
         </Card>
       )}
@@ -334,5 +328,41 @@ export default function DespachoMinaPage() {
         )}
       </Modal>
     </div>
+  );
+}
+
+function TablaDespachosMina({
+  columns, data, loading, page, pageSize, onPageChange,
+}: {
+  columns: ColumnsType<OTLista>;
+  data: OTLista[];
+  loading: boolean;
+  page: number;
+  pageSize: number;
+  onPageChange: (p: number, s: number) => void;
+}) {
+  const { columnas, components, TableDragWrapper } = useColumnasRedimensionables<OTLista>(
+    columns, "despachos-mina-v1",
+  );
+  return (
+    <TableDragWrapper>
+      <Table<OTLista>
+        rowKey="id"
+        size="small"
+        columns={columnas}
+        components={components}
+        dataSource={data}
+        loading={loading}
+        pagination={paginacionEstandar({
+          current: page,
+          pageSize,
+          total: data.length,
+          onChange: onPageChange,
+          label: "OT(s)",
+        })}
+        scroll={{ x: 1400 }}
+        sticky={STICKY_HEADER}
+      />
+    </TableDragWrapper>
   );
 }

@@ -33,8 +33,10 @@ export interface NumeracionOpts {
 
 // Columna "NRO" estandarizada para todas las tablas listables.
 // Mantiene la numeración correcta cuando la página o el tamaño cambian.
+// Por defecto NO es fixed-left: solo las columnas de Acciones son fijas.
+// Si por algún motivo se quiere fixearla, pasar `fixed: true` explícitamente.
 export function numeracionColumn<T>(opts: NumeracionOpts = {}): ColumnType<T> {
-  const { current = 1, pageSize = 20, width = 60, fixed = true } = opts;
+  const { current = 1, pageSize = 20, width = 60, fixed = false } = opts;
   return {
     title: "NRO",
     key: "__num",
@@ -269,11 +271,13 @@ export function filtroPorColumna<T>(
 ): {
   filters: { text: string; value: string }[];
   filterSearch: true;
+  filterMultiple: true;
   onFilter: (value: boolean | React.Key, record: T) => boolean;
 } {
   return {
     filters: valoresUnicos(data, campo),
     filterSearch: true,
+    filterMultiple: true,
     onFilter: (value, record) =>
       String((record as Record<string, unknown>)[campo as string] ?? "") === value,
   };
@@ -603,16 +607,24 @@ export function useColumnasRedimensionables<T>(
         anchos[k] ?? (typeof col.width === "number" ? col.width : DEFAULT_COL_WIDTH);
       // Auto-sorter si la columna no lo declara: usa el dataIndex para comparar.
       const sorterFinal = col.sorter ?? autoSorter((col as { dataIndex?: React.Key | React.Key[] }).dataIndex);
+      // Multi-select por default en todos los filtros de columna. Si la columna
+      // define `filters` y no eligió explícitamente `filterMultiple`, lo forzamos
+      // a `true` para que el dropdown rinda checkboxes en vez de radios.
+      const conMultiSelect = (col.filters && col.filterMultiple === undefined)
+        ? { filterMultiple: true as const }
+        : {};
       // Las columnas fixed mantienen ancho original (Resizable rompe el sticky)
       if (col.fixed) {
         return {
           ...col,
+          ...conMultiSelect,
           ...(col.sorter ? {} : { sorter: sorterFinal }),
           onHeaderCell: () => ({ columnKey: k, sortable: false }),
         } as ColumnType<T>;
       }
       return {
         ...col,
+        ...conMultiSelect,
         width: widthActual,
         ...(col.sorter ? {} : { sorter: sorterFinal }),
         onHeaderCell: (column: { width?: number }) => ({

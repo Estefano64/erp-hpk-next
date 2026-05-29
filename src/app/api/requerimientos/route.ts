@@ -88,6 +88,8 @@ export async function GET(req: NextRequest) {
           orden_trabajo: {
             select: {
               id: true, ot: true,
+              descripcion: true,
+              cod_rep_flota: true,
               cliente: { select: { codigo: true, razon_social: true, nombre_comercial: true } },
               codigo_reparacion: { select: { codigo: true, descripcion: true } },
             },
@@ -98,7 +100,7 @@ export async function GET(req: NextRequest) {
           orden_trabajo_interna: {
             select: { id: true, ot: true, descripcion: true },
           },
-          material: { select: { codigo: true, descripcion: true, unidad_medida_codigo: true, stock_actual: true, np: true } },
+          material: { select: { codigo: true, descripcion: true, unidad_medida_codigo: true, stock_actual: true, np: true, precio: true, moneda_codigo: true } },
           status_requerimiento: { select: { codigo: true, nombre: true } },
           status_cotizacion: { select: { codigo: true, nombre: true } },
           status_oc: { select: { codigo: true, nombre: true } },

@@ -11,7 +11,7 @@ import type { ColumnsType, ColumnGroupType, ColumnType } from "antd/es/table/int
 import { brand } from "@/lib/theme";
 import {
   useColumnasOcultas, ColumnasToggleButton, visibleColumns, STICKY_HEADER,
-  filtroPorColumna, paginacionEstandar,
+  filtroPorColumna, paginacionEstandar, useColumnasRedimensionables,
 } from "@/lib/tables";
 
 const { Title, Text } = Typography;
@@ -101,7 +101,7 @@ export default function HistoricoComprasPage() {
   // Columnas de identificación (fijas a la izquierda)
   const infoCols: ColumnsType<MatRow> = [
     {
-      key: "codigo", title: "Código", dataIndex: "codigo", width: 130, fixed: "left", align: "left",
+      key: "codigo", title: "Código", dataIndex: "codigo", width: 130, align: "left",
       sorter: (a, b) => (a.codigo || "").localeCompare(b.codigo || ""),
       ...filtroPorColumna(filtradas, "codigo"),
       render: (v: string | null) => <Text strong style={{ fontSize: 11, color: brand.navy }}>{v ?? "—"}</Text>,
@@ -260,24 +260,52 @@ export default function HistoricoComprasPage() {
       {filtradas.length === 0 && !loading ? (
         <Empty description="No hay materiales con precios registrados." />
       ) : (
-        <Table<MatRow>
-          rowKey="material_id"
-          size="small"
-          bordered
+        <TablaHistorico
           columns={[...visibleColumns(infoCols, ocultas), provGroup, ...ofertaCols] as ColumnsType<MatRow>}
-          dataSource={filtradas}
+          data={filtradas}
           loading={loading}
-          sticky={STICKY_HEADER}
-          scroll={{ x: "max-content", y: "calc(100vh - 360px)" }}
-          pagination={paginacionEstandar({
-            current: page,
-            pageSize,
-            total: filtradas.length,
-            onChange: (p, s) => { setPage(p); setPageSize(s); },
-            label: "repuestos",
-          })}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={(p, s) => { setPage(p); setPageSize(s); }}
         />
       )}
     </div>
+  );
+}
+
+function TablaHistorico({
+  columns, data, loading, page, pageSize, onPageChange,
+}: {
+  columns: ColumnsType<MatRow>;
+  data: MatRow[];
+  loading: boolean;
+  page: number;
+  pageSize: number;
+  onPageChange: (p: number, s: number) => void;
+}) {
+  const { columnas, components, TableDragWrapper } = useColumnasRedimensionables<MatRow>(
+    columns, "compras-historico-v1",
+  );
+  return (
+    <TableDragWrapper>
+      <Table<MatRow>
+        rowKey="material_id"
+        size="small"
+        bordered
+        columns={columnas}
+        components={components}
+        dataSource={data}
+        loading={loading}
+        sticky={STICKY_HEADER}
+        scroll={{ x: "max-content", y: "calc(100vh - 360px)" }}
+        pagination={paginacionEstandar({
+          current: page,
+          pageSize,
+          total: data.length,
+          onChange: onPageChange,
+          label: "repuestos",
+        })}
+      />
+    </TableDragWrapper>
   );
 }

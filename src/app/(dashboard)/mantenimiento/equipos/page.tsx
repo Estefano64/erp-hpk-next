@@ -296,7 +296,6 @@ export default function EquiposPage() {
       title: "Código",
       dataIndex: "codigo",
       width: 100,
-      fixed: "left",
       sorter: (a, b) => a.codigo.localeCompare(b.codigo),
       ...filtroPorColumna(data, "codigo"),
       render: (v: string) => <Tag color={brand.navy}>{v}</Tag>,

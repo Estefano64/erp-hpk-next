@@ -114,9 +114,10 @@ export default function OrdenesTrabajoInternasPage() {
   const [estrategias, setEstrategias] = useState<EstrategiaOption[]>([]);
   const [trabajadores, setTrabajadores] = useState<TrabajadorOpt[]>([]);
 
-  // El dropdown "Asignado a" en OTs internas muestra solo trabajadores de las
-  // áreas operativas relevantes para mantenimiento del taller, más Antonio
-  // (Antonio Zumaeta Mendoza) por nombre. Decisión del usuario (2026-05-27).
+  // El dropdown "Asignado a" en OTs internas muestra TODO el personal de
+  // Logística (incluyendo jefe/compras/almacén) + Mantenimiento + Limpieza
+  // + Software, más Antonio (Antonio Zumaeta Mendoza) por nombre.
+  // Decisión del usuario (2026-05-28).
   const AREAS_ASIGNABLES_OT_INTERNA = new Set([
     "LOGISTICA",
     "MANTENIMIENTO",
@@ -143,7 +144,9 @@ export default function OrdenesTrabajoInternasPage() {
         fetch("/api/catalogos?tabla=prioridadAtencion"),
         fetch("/api/catalogos?tabla=userStatus"),
         fetch("/api/catalogos?tabla=estrategia"),
-        fetch("/api/trabajadores?limit=200&soloOperarios=1"),
+        // No usamos soloOperarios=1 acá: necesitamos incluir JEFE DE LOGISTICA
+        // y COMPRAS (que sí pueden ser asignados de OTs internas).
+        fetch("/api/trabajadores?limit=200"),
       ]);
       if (tRes.ok) setTiposOTInterna((await tRes.json()).data ?? []);
       if (eRes.ok) setEquipos((await eRes.json()).data ?? []);
@@ -282,7 +285,7 @@ export default function OrdenesTrabajoInternasPage() {
   const baseColumns: ColumnsType<OTInternaRow> = useMemo(() => [
     numeracionColumn<OTInternaRow>({ current: page, pageSize }),
     {
-      key: "ot", title: "OT", dataIndex: "ot", width: 130, fixed: "left",
+      key: "ot", title: "OT", dataIndex: "ot", width: 130,
       render: (_: unknown, r: OTInternaRow) => (
         <Space size={4}>
           {r.ot

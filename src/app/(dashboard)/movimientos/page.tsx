@@ -621,7 +621,6 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
       title: "OC",
       dataIndex: "numero_po",
       width: 110,
-      fixed: "left",
       render: (v: string) => <Tag color={brand.navy}>{v}</Tag>,
       filters: [...new Set(filasAplanadas.map((r) => r.numero_po))].sort().map((v) => ({ text: v, value: v })),
       filterSearch: true,
