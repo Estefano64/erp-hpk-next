@@ -19,32 +19,50 @@ export async function GET(req: NextRequest) {
     const hasta = searchParams.get("hasta");
 
     const where: Record<string, unknown> = {};
+    // Acumulamos las condiciones que deben combinarse con AND (cada una puede
+    // ser a su vez un OR). Así evitamos pisar `where.OR` entre filtros distintos.
+    const and: Record<string, unknown>[] = [];
+
+    // Una tarea puede tener varios operarios/equipos en un único string separado
+    // por coma (p.ej. "Juan, Pedro" cuando qty_personal > 1). El filtro debe
+    // reconocer el valor buscado como UN token completo dentro de ese string,
+    // igual que programación semanal (que usa splitTecnicos). Antes hacía
+    // igualdad estricta y se "perdían" las tareas multi-recurso.
+    const tokenMatch = (field: "tecnico" | "maquina", val: string): Record<string, unknown> => {
+      const ors: Record<string, unknown>[] = [{ [field]: val }];
+      for (const sep of [", ", ","]) {
+        ors.push({ [field]: { startsWith: `${val}${sep}` } });
+        ors.push({ [field]: { endsWith: `${sep}${val}` } });
+        ors.push({ [field]: { contains: `${sep}${val}${sep}` } });
+      }
+      return { OR: ors };
+    };
+
     if (semana) where.semana_plan = semana;
     if (estado) where.estado = estado;
-    if (tecnico) where.tecnico = tecnico;
-    if (maquina) where.maquina = maquina;
+    if (tecnico) and.push(tokenMatch("tecnico", tecnico));
+    if (maquina) and.push(tokenMatch("maquina", maquina));
     if (otId) where.ot_id = Number(otId);
     // Filtro por OVERLAP: tareas cuyo intervalo [fecha_inicio, fecha_fin] toca el rango pedido.
     // Esto incluye tareas que arrancan antes de "desde" y siguen hasta "hasta", y vice versa.
-    if (desde || hasta) {
-      const conds: Record<string, unknown>[] = [];
-      if (hasta) conds.push({ fecha_inicio: { lte: new Date(hasta) } });
-      if (desde) conds.push({
-        OR: [
-          { fecha_fin: { gte: new Date(desde) } },
-          { AND: [{ fecha_fin: null }, { fecha_inicio: { gte: new Date(desde) } }] },
-        ],
-      });
-      if (conds.length) where.AND = conds;
-    }
+    if (hasta) and.push({ fecha_inicio: { lte: new Date(hasta) } });
+    if (desde) and.push({
+      OR: [
+        { fecha_fin: { gte: new Date(desde) } },
+        { AND: [{ fecha_fin: null }, { fecha_inicio: { gte: new Date(desde) } }] },
+      ],
+    });
     if (search) {
       const otNum = /^\d+$/.test(search) ? Number(search) : null;
-      where.OR = [
-        { descripcion: { contains: search, mode: "insensitive" } },
-        { operacion_codigo: { contains: search, mode: "insensitive" } },
-        ...(otNum != null ? [{ orden_trabajo: { ot: otNum } }] : []),
-      ];
+      and.push({
+        OR: [
+          { descripcion: { contains: search, mode: "insensitive" } },
+          { operacion_codigo: { contains: search, mode: "insensitive" } },
+          ...(otNum != null ? [{ orden_trabajo: { ot: otNum } }] : []),
+        ],
+      });
     }
+    if (and.length) where.AND = and;
 
     const [data, total] = await Promise.all([
       prisma.planificacionOT.findMany({
