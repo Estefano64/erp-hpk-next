@@ -684,6 +684,37 @@ export default function ProgramacionSemanalPage() {
     }
   }
 
+  // ── Marcar una tarea como EMERGENCIA (correctiva) ──
+  // Pone la tarea en estado correctivo y reacomoda las tareas del mismo día y
+  // operario que arranquen después: las empuja, y las que no entran van al pool.
+  async function marcarEmergencia(task: PlanRow) {
+    if (!editMode) {
+      messageApi.warning("Activá Modo Edición para marcar emergencias.");
+      return;
+    }
+    beginSave();
+    try {
+      const res = await fetch(`/api/planificacion/${task.id}/emergencia`, { method: "POST" });
+      const j = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(j?.error ?? "Error");
+      endSave();
+      const empN = j?.empujadas?.length ?? 0;
+      const poolN = j?.alPool?.length ?? 0;
+      messageApi.success(
+        `🚨 Emergencia marcada.` +
+        (empN ? ` ${empN} tarea(s) reprogramada(s).` : "") +
+        (poolN ? ` ${poolN} mandada(s) al pool.` : ""),
+      );
+      setSelectedTask(null);
+      notifySync();
+      fetchData();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Error al marcar emergencia";
+      endSave(msg);
+      messageApi.error(msg);
+    }
+  }
+
   // ── Multi-move: mover varias tareas a la vez con validación atómica ──
   //
   // Antes había un bug porque cada persistMove se disparaba en paralelo y
@@ -1850,6 +1881,19 @@ export default function ProgramacionSemanalPage() {
               onConfirm={() => selectedTask && persistRemoveFromWeek(selectedTask.id)}
             >
               <Button danger disabled={!editMode || !!selectedTask?.publicado}>Sacar de la semana</Button>
+            </Popconfirm>
+          ) : null,
+          selectedTask && selectedTask.estado !== "correctivo" ? (
+            <Popconfirm
+              key="emergencia"
+              title="Marcar como emergencia (correctiva)"
+              description="Se reprograman las tareas del mismo día y operario que arranquen después de esta; las que no entren en el día van al pool."
+              okText="Marcar 🚨"
+              cancelText="Cancelar"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => selectedTask && marcarEmergencia(selectedTask)}
+            >
+              <Button danger disabled={!editMode}>🚨 Emergencia</Button>
             </Popconfirm>
           ) : null,
           <Button key="plan" type="primary" onClick={() => router.push("/operaciones/planificacion")}>
