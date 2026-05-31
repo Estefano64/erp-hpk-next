@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Checkbox, DatePicker, Divider, Popover, Space, Typography } from "antd";
-import { CalendarOutlined, SettingOutlined } from "@ant-design/icons";
+import { CalendarOutlined, SettingOutlined, PushpinOutlined, PushpinFilled } from "@ant-design/icons";
+import { brand } from "@/lib/theme";
 import type { ColumnsType, ColumnType, TablePaginationConfig } from "antd/es/table/interface";
 import dayjs, { Dayjs } from "dayjs";
 import { Resizable, type ResizeCallbackData } from "react-resizable";
@@ -398,10 +399,14 @@ type SortableResizableTitleProps = React.HTMLAttributes<HTMLTableCellElement> & 
   onResizeStop?: (e: React.SyntheticEvent<Element>, data: ResizeCallbackData) => void;
   columnKey?: string;
   sortable?: boolean;
+  // Pin/unpin: solo se renderiza el ícono si `onTogglePin` está presente.
+  // `isPinned` controla qué ícono mostrar (filled vs outlined).
+  isPinned?: boolean;
+  onTogglePin?: () => void;
 };
 
 function SortableResizableTitle(props: SortableResizableTitleProps) {
-  const { onResize, onResizeStop, width, columnKey, sortable, style: styleProp, children, ...restProps } = props;
+  const { onResize, onResizeStop, width, columnKey, sortable, isPinned, onTogglePin, style: styleProp, children, ...restProps } = props;
   // Ancho local durante drag para feedback visual sin re-render del Table.
   const [liveWidth, setLiveWidth] = useState<number | null>(null);
   const effectiveWidth = liveWidth ?? width;
@@ -466,10 +471,35 @@ function SortableResizableTitle(props: SortableResizableTitleProps) {
     </span>
   ) : null;
 
+  // Pin icon: filled cyan si está fijada, outline tenue si no. Click-toggle.
+  // Solo se renderiza si onTogglePin está presente (las cols fixed-by-code no
+  // lo reciben → no pueden ser desfijadas accidentalmente).
+  const pinButton = onTogglePin ? (
+    <span
+      onClick={(e) => {
+        e.stopPropagation();
+        onTogglePin();
+      }}
+      className="col-pin-toggle"
+      title={isPinned ? "Desfijar columna" : "Fijar columna a la izquierda"}
+      style={{
+        marginLeft: 4,
+        cursor: "pointer",
+        fontSize: 11,
+        opacity: isPinned ? 1 : 0,
+        transition: "opacity 0.15s",
+        color: isPinned ? brand.cyan : "rgba(0,0,0,0.45)",
+      }}
+    >
+      {isPinned ? <PushpinFilled /> : <PushpinOutlined />}
+    </span>
+  ) : null;
+
   const innerContent = (
     <>
       {dragHandle}
       {children}
+      {pinButton}
     </>
   );
 
@@ -554,6 +584,59 @@ export function useColumnasRedimensionables<T>(
     try { localStorage.setItem(storageKey, JSON.stringify(anchos)); } catch { /* ignore */ }
   }, [anchos, hidratado, storageKey]);
 
+  // ── Pin/unpin de columnas (fijar a la izquierda) ────────────────────
+  // Estado: set de keys de columnas fijadas por el usuario. Se persiste en
+  // localStorage bajo `${storageKey}-pinned`. Las columnas declaradas con
+  // `fixed: "left"` en el código NO se ponen acá — siempre quedan fijas y
+  // no se les ofrece el toggle de desfijar.
+  const pinnedKey = storageKey ? `${storageKey}-pinned` : undefined;
+  const [pinned, setPinned] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!pinnedKey) return;
+    try {
+      const stored = localStorage.getItem(pinnedKey);
+      if (stored) setPinned(new Set(JSON.parse(stored)));
+    } catch { /* ignore */ }
+  }, [pinnedKey]);
+
+  useEffect(() => {
+    if (!pinnedKey) return;
+    try { localStorage.setItem(pinnedKey, JSON.stringify([...pinned])); } catch { /* ignore */ }
+  }, [pinned, pinnedKey]);
+
+  const togglePin = useCallback((key: string) => {
+    setPinned((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  // Marca qué columnas estaban declaradas como fixed por código (immutables).
+  const fixedPorCodigo = useMemo(() => {
+    const set = new Set<string>();
+    columns.forEach((c, idx) => {
+      const col = c as ColumnType<T>;
+      if (col.fixed) set.add(claveColumna(col, idx));
+    });
+    return set;
+  }, [columns, claveColumna]);
+
+  // Inyecta `fixed: "left"` a columnas que el user fijó.
+  const columnsConPin = useMemo<ColumnsType<T>>(() => {
+    if (pinned.size === 0) return columns;
+    return columns.map((c, idx) => {
+      const col = c as ColumnType<T>;
+      const k = claveColumna(col, idx);
+      if (pinned.has(k) && !col.fixed) {
+        return { ...col, fixed: "left" as const };
+      }
+      return col;
+    });
+  }, [columns, pinned, claveColumna]);
+
   // ── Orden (drag-to-reorder) ─────────────────────────────────────────
   const orderKey = storageKey ? `${storageKey}-order` : undefined;
   const [orden, setOrden] = useState<string[] | null>(null);
@@ -572,11 +655,13 @@ export function useColumnasRedimensionables<T>(
   }, [orden, orderKey]);
 
   // Aplicar orden personalizado a las columnas. Las columnas fixed mantienen su posición original.
+  // Se usa `columnsConPin` (que ya tiene `fixed:left` inyectado para las
+  // columnas pinneadas por el user) en lugar del `columns` raw.
   const columnasOrdenadas = useMemo<ColumnsType<T>>(() => {
-    if (!orden || orden.length === 0) return columns;
+    if (!orden || orden.length === 0) return columnsConPin;
     // Separar fixed (no reordenables) de las normales
-    const fixedCols = columns.filter((c) => (c as ColumnType<T>).fixed);
-    const movableCols = columns.filter((c) => !(c as ColumnType<T>).fixed);
+    const fixedCols = columnsConPin.filter((c) => (c as ColumnType<T>).fixed);
+    const movableCols = columnsConPin.filter((c) => !(c as ColumnType<T>).fixed);
     // Calcular claves estables UNA vez, manteniendo el índice original. Es
     // importante usar el índice de la columna en `movableCols` para que el
     // fallback `col-N` matchee tanto en `byKey` como en `originalIndex`.
@@ -615,7 +700,7 @@ export function useColumnasRedimensionables<T>(
     const left = fixedCols.filter((c) => (c as ColumnType<T>).fixed === "left");
     const right = fixedCols.filter((c) => (c as ColumnType<T>).fixed === "right");
     return [...left, ...orderedMovable, ...right];
-  }, [columns, orden, claveColumna]);
+  }, [columnsConPin, orden, claveColumna]);
 
   // Default cuando una columna no declara su `width`. Antes esas columnas
   // quedaban no-redimensionables porque SortableResizableTitle requiere width
@@ -710,6 +795,12 @@ export function useColumnasRedimensionables<T>(
       const conMultiSelect = ((col.filters || auto.filters) && col.filterMultiple === undefined)
         ? { filterMultiple: true as const }
         : {};
+      // Pin: solo se ofrece toggle al usuario para las cols que NO eran fixed
+      // por código (las hardcoded `fixed:left` quedan fijas para siempre).
+      const esFixPorUsuario = !fixedPorCodigo.has(k);
+      const pinProps = esFixPorUsuario
+        ? { isPinned: pinned.has(k), onTogglePin: () => togglePin(k) }
+        : {};
       // Las columnas fixed mantienen ancho original (Resizable rompe el sticky)
       if (col.fixed) {
         return {
@@ -717,7 +808,7 @@ export function useColumnasRedimensionables<T>(
           ...auto,
           ...conMultiSelect,
           ...(col.sorter ? {} : { sorter: sorterFinal }),
-          onHeaderCell: () => ({ columnKey: k, sortable: false }),
+          onHeaderCell: () => ({ columnKey: k, sortable: false, ...pinProps }),
         } as ColumnType<T>;
       }
       return {
@@ -730,6 +821,7 @@ export function useColumnasRedimensionables<T>(
           width: column.width,
           columnKey: k,
           sortable: true,
+          ...pinProps,
           // Commit del ancho solo al soltar (onResizeStop) — evita re-renders en cada pixel
           // que interrumpen el drag.
           onResizeStop: (_e: React.SyntheticEvent, data: ResizeCallbackData) => {
@@ -738,7 +830,7 @@ export function useColumnasRedimensionables<T>(
         }),
       } as ColumnType<T>;
     });
-  }, [columnasOrdenadas, anchos, claveColumna, dataParaFiltros]);
+  }, [columnasOrdenadas, anchos, claveColumna, dataParaFiltros, fixedPorCodigo, pinned, togglePin]);
 
   const components = useMemo(
     () => ({ header: { cell: SortableResizableTitle } }),
