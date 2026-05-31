@@ -110,6 +110,7 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
 
   const [estado, setEstado] = useState<string>("");
   const [fechaEntrega, setFechaEntrega] = useState<Dayjs | null>(null);
+  const [fechaEntregaEsp, setFechaEntregaEsp] = useState<Dayjs | null>(null);
   const [nroFactura, setNroFactura] = useState<string>("");
   const [nroGuia, setNroGuia] = useState<string>("");
   const [observaciones, setObservaciones] = useState<string>("");
@@ -135,6 +136,7 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
       setCompra(json.data);
       setEstado(json.data.estado);
       setFechaEntrega(json.data.fecha_entrega_real ? dayjs(json.data.fecha_entrega_real) : null);
+      setFechaEntregaEsp(json.data.fecha_entrega_esperada ? dayjs(json.data.fecha_entrega_esperada) : null);
       setNroFactura(json.data.nro_factura || "");
       setNroGuia(json.data.nro_guia || "");
       setObservaciones(json.data.observaciones || "");
@@ -160,6 +162,7 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
         body: JSON.stringify({
           estado,
           fecha_entrega_real: fechaEntrega ? fechaEntrega.format("YYYY-MM-DD") : null,
+          fecha_entrega_esperada: fechaEntregaEsp ? fechaEntregaEsp.format("YYYY-MM-DD") : null,
           nro_factura: nroFactura,
           nro_guia: nroGuia,
           observaciones,
@@ -465,7 +468,19 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
                 {formatDateOnly(compra.fecha_solicitud)}
               </Descriptions.Item>
               <Descriptions.Item label="F. Entrega Esperada">
-                {compra.fecha_entrega_esperada ? formatDateOnly(compra.fecha_entrega_esperada) : "-"}
+                {editing ? (
+                  <DatePicker
+                    value={fechaEntregaEsp}
+                    onChange={setFechaEntregaEsp}
+                    format="DD/MM/YYYY"
+                    style={{ width: "100%" }}
+                    allowClear
+                  />
+                ) : compra.fecha_entrega_esperada ? (
+                  formatDateOnly(compra.fecha_entrega_esperada)
+                ) : (
+                  "-"
+                )}
               </Descriptions.Item>
               <Descriptions.Item label="Moneda">{compra.moneda}</Descriptions.Item>
               <Descriptions.Item label="Estado">

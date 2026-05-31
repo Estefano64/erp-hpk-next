@@ -55,6 +55,13 @@ body {
 .ant-table-thead > tr > th:hover .col-drag-handle {
   opacity: 1 !important;
 }
+
+/* Pin toggle: si la columna NO está pinneada, el ícono aparece solo al
+   hacer hover sobre el header (igual que el drag handle). Si SÍ está
+   pinneada, el ícono ya viene con opacity:1 por inline style. */
+.ant-table-thead > tr > th:hover .col-pin-toggle {
+  opacity: 1 !important;
+}
 .ant-table-thead > tr > th {
   padding-left: 16px !important;
 }
