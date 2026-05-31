@@ -20,18 +20,32 @@ const MIN_CORRELATIVO_POR_ANIO: Record<string, number> = {
   "26": 3905, // primera OT nueva del 2026 será 390626; las anteriores se importarán después
 };
 
-async function generarNumeroOT(): Promise<number> {
+// Genera el siguiente número de OT con CONTADOR INDEPENDIENTE POR TIPO.
+//   - REP (Reparación): comparte contador con históricas (tipo_codigo NULL),
+//     porque las históricas importadas de BDU son todas reparaciones.
+//     Continúa la serie actual (ej. 392026 → 392126 → ...).
+//   - BIE (Bien): contador propio. Empieza en 1 si no hay Bienes previos
+//     en el año. Se muestra como V<num> via formatOtCodigo().
+//   - SER (Servicio): contador propio. Mismo esquema, prefijo S.
+//
+// El formato sigue siendo NNNNYY (correlativo * 100 + año-2-dígitos).
+// El "MIN reservado" (MIN_CORRELATIVO_POR_ANIO) solo aplica a REP/null.
+async function generarNumeroOT(tipoCodigo: string | null | undefined): Promise<number> {
   const year2 = new Date().getFullYear() % 100; // ej. 26
 
-  // Tras la migración de VARCHAR → INTEGER, `ot` es un número en formato
-  // NNNNYY. Para encontrar las OTs del año actual usamos rango numérico:
-  //   - mínimo del año: YY * 1 (ej. 26)         → OT "000026"
-  //   - máximo: 999999 + YY... mejor cota: el año encaja en `ot % 100`.
-  // Como Prisma no soporta modulo en where, traemos todas con ot < 1_000_000
-  // y filtramos en memoria por (ot % 100 === year2).
+  // Ámbito del contador según tipo:
+  //   BIE → solo OTs con tipo_codigo='BIE'
+  //   SER → solo OTs con tipo_codigo='SER'
+  //   REP o null/otro → tipo_codigo IN ('REP', NULL) (las históricas vienen sin tipo)
+  const tipoWhere = tipoCodigo === "BIE"
+    ? { tipo_codigo: "BIE" }
+    : tipoCodigo === "SER"
+      ? { tipo_codigo: "SER" }
+      : { OR: [{ tipo_codigo: "REP" }, { tipo_codigo: null }] };
+
   const candidatos = await prisma.ordenTrabajo.findMany({
     // Solo OTs activas: una OT desactivada libera su número (se puede reusar).
-    where: { ot: { not: null, lt: 1_000_000 }, activo: true },
+    where: { ot: { not: null, lt: 1_000_000 }, activo: true, ...tipoWhere },
     select: { ot: true },
   });
 
@@ -43,7 +57,12 @@ async function generarNumeroOT(): Promise<number> {
     if (n > maxN) maxN = n;
   }
 
-  const minN = MIN_CORRELATIVO_POR_ANIO[String(year2).padStart(2, "0")] ?? 0;
+  // El MIN reservado solo aplica al ámbito histórico (REP/null). BIE y SER
+  // empiezan naturalmente desde 1 dentro del año.
+  const aplicaMin = tipoCodigo !== "BIE" && tipoCodigo !== "SER";
+  const minN = aplicaMin
+    ? (MIN_CORRELATIVO_POR_ANIO[String(year2).padStart(2, "0")] ?? 0)
+    : 0;
   const next = Math.max(maxN, minN) + 1;
   // Devolvemos el código como número: NNNNYY = N * 100 + YY (sin padding).
   return next * 100 + year2;
@@ -233,7 +252,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "tipo_codigo es requerido (REP / BIE / SER)" }, { status: 400 });
     }
 
-    const ot = await generarNumeroOT();
+    // Generar número según el tipo seleccionado por el usuario.
+    // El form lo manda como required (REP/BIE/SER), pero por defensa
+    // tratamos undefined/null como ámbito REP.
+    const ot = await generarNumeroOT(body.tipo_codigo as string | null | undefined);
 
     // Si atención es "Contrato", buscar días del contrato por cliente + cod_rep
     let contratoDias: number | null = null;

@@ -47,6 +47,7 @@ import dayjs from "dayjs";
 import { formatDateOnly } from "@/lib/dates";
 import OTDetalleModal from "@/components/modules/ordenes-trabajo/OTDetalleModal";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
+import { formatOtCodigo } from "@/lib/ot-formato";
 
 const { Title } = Typography;
 
@@ -312,7 +313,9 @@ export default function OrdenesTrabajoPage() {
       width: 150,
       sorter: (a, b) => Number(a.ot ?? 0) - Number(b.ot ?? 0),
       ...filtroPorColumna(data, "ot"),
-      render: (v: string, r: OTRecord) => (
+      // Prefijo según tipo: V (Bien) / S (Servicio) / sin prefijo (Reparación).
+      // El número en BD sigue siendo entero; el prefijo es solo visual.
+      render: (_v: unknown, r: OTRecord) => (
         <Space size={4}>
           <Tooltip title="Abrir página de la OT (URL compartible)">
             <Tag
@@ -320,7 +323,7 @@ export default function OrdenesTrabajoPage() {
               style={{ cursor: "pointer" }}
               onClick={() => router.push(`/ordenes-trabajo/${r.id}`)}
             >
-              {v}
+              {formatOtCodigo(r.ot, r.tipo_ot?.codigo ?? r.tipo_codigo, "—")}
             </Tag>
           </Tooltip>
           {!r.activo && <Tag color="default">desactivada</Tag>}
@@ -716,7 +719,8 @@ export default function OrdenesTrabajoPage() {
             filename="OTs-Externas"
             sheetName="OTs Externas"
             columns={[
-              { label: "OT", value: (r) => r.ot ?? "" }, // number | "" — Excel maneja ambos
+              // Prefijo V/S según tipo (Bien/Servicio). Reparación queda como número puro.
+              { label: "OT", value: (r) => formatOtCodigo(r.ot, r.tipo_ot?.codigo ?? r.tipo_codigo, "") },
               { label: "Cliente", value: (r) => r.cliente?.nombre_comercial ?? r.cliente?.razon_social ?? "" },
               { label: "Cod. Rep", value: (r) => r.codigo_reparacion?.codigo ?? "" },
               { label: "Cod. Rep - Descripción", value: (r) => r.codigo_reparacion?.descripcion ?? "" },

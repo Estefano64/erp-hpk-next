@@ -41,6 +41,7 @@ import {
 import { brand } from "@/lib/theme";
 import dayjs from "dayjs";
 import { formatDateOnly } from "@/lib/dates";
+import { formatOtCodigo } from "@/lib/ot-formato";
 import OTAdjuntosTab from "./OTAdjuntosTab";
 import OTTareasTab from "./OTTareasTab";
 import OTHistorialTab from "./OTHistorialTab";
@@ -807,7 +808,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
           {!editing ? (
             <>
               <Row gutter={[16, 4]}>
-                <Col xs={12} md={6}><Field label="Nro OT" value={ot.ot} /></Col>
+                <Col xs={12} md={6}><Field label="Nro OT" value={formatOtCodigo(ot.ot, ot.tipo_codigo)} /></Col>
                 <Col xs={12} md={6}><Field label="Cliente" value={ot.cliente?.nombre_comercial ?? ot.cliente?.razon_social} /></Col>
                 <Col xs={12} md={6}><Field label="Descripción" value={ot.descripcion} /></Col>
                 <Col xs={12} md={6}><Field label="Estrategia" value={ot.estrategia ? "Sí" : "No"} /></Col>
@@ -828,7 +829,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
           ) : (
             <>
               <Row gutter={[16, 12]}>
-                <Col xs={12} md={6}><Field label="Nro OT" value={ot.ot} /></Col>
+                <Col xs={12} md={6}><Field label="Nro OT" value={formatOtCodigo(ot.ot, ot.tipo_codigo)} /></Col>
                 <Col xs={12} md={6}>
                   <FieldLabel>Tipo OT</FieldLabel>
                   <Select showSearch optionFilterProp="label" style={{ width: "100%" }} value={editData.tipo_codigo as string} onChange={(v) => setField("tipo_codigo", v)}
@@ -1243,7 +1244,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
       >
         <div>
           <div style={{ color: brand.white, fontSize: 18, fontWeight: 700, display: "flex", alignItems: "center", gap: 10 }}>
-            <span>Orden de Trabajo: {ot?.ot ?? "..."}</span>
+            <span>Orden de Trabajo: {ot ? formatOtCodigo(ot.ot, ot.tipo_codigo, "...") : "..."}</span>
             {dirty && (
               <span style={{
                 background: "#FAAD14", color: brand.white, fontSize: 10, fontWeight: 600,
