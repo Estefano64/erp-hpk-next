@@ -45,6 +45,7 @@ interface PlanRow {
   horas_extras_qty: number | null;
   trabajo_externo: boolean | null;
   publicado: boolean;
+  es_correctivo: boolean;
   orden_trabajo: {
     id: number;
     ot: string | null;
@@ -452,7 +453,7 @@ export default function ProgramacionSemanalPage() {
     if (!original) return;
     // Una emergencia (correctiva) puede caer encima de otras tareas: se permite
     // el choque y después se empuja al resto del día.
-    const esEmergencia = original.estado === "correctivo";
+    const esEmergencia = !!original.es_correctivo;
     // Si la tarea no tiene horas_estimadas (vino del pool sin fecha), defaulteamos a 1h
     const durRaw = Number(original.horas_estimadas);
     const horasFaltantes = !Number.isFinite(durRaw) || durRaw <= 0;
@@ -955,7 +956,7 @@ export default function ProgramacionSemanalPage() {
     if (!original) return false;
     // Las emergencias (correctivas) SÍ pueden caer encima de otras: al soltarlas
     // empujan a las demás. No marcamos conflicto para no bloquear el drop.
-    if (original.estado === "correctivo") return false;
+    if (original.es_correctivo) return false;
     const dur = Number(original.horas_estimadas ?? 1);
     const qty = Math.max(1, Number(original.qty_personal ?? 1));
     const enBandaHE = (drag.snappedDate.hour() + drag.snappedDate.minute() / 60) >= 18;
@@ -1179,6 +1180,7 @@ export default function ProgramacionSemanalPage() {
           }}
           data-color={color}
           data-estado={r.estado ?? ""}
+          data-emg={r.es_correctivo ? "1" : "0"}
           data-pub={r.publicado ? "1" : "0"}
           data-conflict={hasConflict ? "1" : "0"}
           data-externo={r.trabajo_externo ? "1" : "0"}
@@ -1198,7 +1200,7 @@ export default function ProgramacionSemanalPage() {
           {/* Franja de almuerzo dentro del bloque (si lo cruza) */}
           {renderLunchOverlayInBlock(visibleIni, visibleFin, startPx)}
           <div className="psg-task-title" style={{ paddingLeft: continuaDeAntes ? 14 : 0, paddingRight: continuaDespues ? 14 : 0 }}>
-            {r.estado === "correctivo" && "🚨 "}OT-{r.orden_trabajo?.ot ?? r.ot_id} {r.operacion_codigo}
+            {r.es_correctivo && "🚨 "}OT-{r.orden_trabajo?.ot ?? r.ot_id} {r.operacion_codigo}
             {hasConflict && <WarningFilled style={{ marginLeft: 4 }} />}
           </div>
           <div className="psg-task-sub" style={{ paddingLeft: continuaDeAntes ? 14 : 0, paddingRight: continuaDespues ? 14 : 0 }}>{r.descripcion}</div>
@@ -1266,11 +1268,12 @@ export default function ProgramacionSemanalPage() {
         className={`psg-pool-card${semanaCard ? " psg-pool-card-semana" : ""}`}
         data-color={estadoColor(t.estado)}
         data-estado={t.estado ?? ""}
+        data-emg={t.es_correctivo ? "1" : "0"}
         data-externo={t.trabajo_externo ? "1" : "0"}
         style={{ opacity: drag?.taskId === t.id ? 0.25 : 1 }}
       >
         <div style={{ fontWeight: 600, fontSize: 12 }}>
-          {t.estado === "correctivo" && "🚨 "}OT-{t.orden_trabajo?.ot ?? t.ot_id} · {flotaDe(t)}
+          {t.es_correctivo && "🚨 "}OT-{t.orden_trabajo?.ot ?? t.ot_id} · {flotaDe(t)}
         </div>
         <div style={{ fontSize: 11, opacity: 0.95, fontWeight: 500 }}>
           {t.orden_trabajo?.descripcion ?? "—"}
@@ -1904,7 +1907,7 @@ export default function ProgramacionSemanalPage() {
               <Button danger disabled={!editMode || !!selectedTask?.publicado}>Sacar de la semana</Button>
             </Popconfirm>
           ) : null,
-          selectedTask && selectedTask.estado !== "correctivo" ? (
+          selectedTask && !selectedTask.es_correctivo ? (
             <Popconfirm
               key="emergencia"
               title="Marcar como emergencia (correctiva)"
@@ -2106,8 +2109,9 @@ export default function ProgramacionSemanalPage() {
         .psg-task-block[data-estado="cancelado"] { background: #8c8c8c; opacity: 0.5; }
         /* En proceso distinto de Realizado (ambos eran "processing"/azul). */
         .psg-task-block[data-estado="en_proceso"] { background: #13C2C2; }
-        /* Correctiva = EMERGENCIA: rojo fuerte con halo para que resalte. */
-        .psg-task-block[data-estado="correctivo"] { background: #F5222D; opacity: 1; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #F5222D, 0 1px 4px rgba(245,34,45,.55); z-index: 3; }
+        /* Correctiva = EMERGENCIA: rojo fuerte con halo, sin importar el estado de
+           ejecución (en_proceso/pausado/etc. siguen resaltando como emergencia). */
+        .psg-task-block[data-emg="1"] { background: #F5222D; opacity: 1; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #F5222D, 0 1px 4px rgba(245,34,45,.55); z-index: 3; }
         /* Publicada = plan congelado: candado y borde claro. */
         .psg-task-block[data-pub="1"] { box-shadow: inset 0 0 0 2px rgba(255,255,255,0.65); }
         .psg-task-block[data-pub="1"]::after {
@@ -2350,7 +2354,7 @@ export default function ProgramacionSemanalPage() {
         .psg-pool-card[data-color="error"] { background: #F5222D; }
         .psg-pool-card[data-estado="cancelado"] { background: #8c8c8c; opacity: 0.55; }
         .psg-pool-card[data-estado="en_proceso"] { background: #13C2C2; }
-        .psg-pool-card[data-estado="correctivo"] { background: #F5222D; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #F5222D, 0 1px 4px rgba(245,34,45,.55); }
+        .psg-pool-card[data-emg="1"] { background: #F5222D; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #F5222D, 0 1px 4px rgba(245,34,45,.55); }
         .psg-pool-card-semana { box-shadow: inset 4px 0 0 ${brand.cyan}, 0 1px 2px rgba(0,0,0,0.1); }
       `}</style>
     </div>

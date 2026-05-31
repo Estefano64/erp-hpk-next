@@ -138,6 +138,7 @@ interface PlanRow {
   horas_extras: boolean | null;
   horas_extras_qty: string | null;
   trabajo_externo: boolean | null;
+  es_correctivo: boolean;
   orden_trabajo: {
     id: number;
     ot: string | null;
@@ -1188,12 +1189,12 @@ export default function PlanificacionPage() {
           <Select showSearch optionFilterProp="label"
             value={r.estado ?? "abierto"}
             onChange={(v) => updateField(r.id, { estado: v })}
-            options={estados.map((e) => ({ value: e.codigo, label: e.nombre }))}
+            options={estados.filter((e) => e.codigo !== "correctivo").map((e) => ({ value: e.codigo, label: e.nombre }))}
             size="small"
             style={{ width: "100%" }}
             disabled={r.estado === "realizado"}
           />
-          {r.estado !== "correctivo" && (
+          {!r.es_correctivo && (
             <Popconfirm
               title="Marcar como emergencia"
               description="Reprograma las tareas del mismo día y operario que arranquen después; las que no entren van al pool."
@@ -1206,6 +1207,11 @@ export default function PlanificacionPage() {
                 <Button danger size="small" disabled={!editMode || r.estado === "realizado"}>🚨</Button>
               </Tooltip>
             </Popconfirm>
+          )}
+          {r.es_correctivo && (
+            <Tooltip title="Emergencia (correctiva)">
+              <Button danger size="small" type="primary" style={{ cursor: "default" }}>🚨</Button>
+            </Tooltip>
           )}
         </Space.Compact>
       ),

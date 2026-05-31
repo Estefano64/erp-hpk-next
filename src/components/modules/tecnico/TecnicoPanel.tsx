@@ -54,6 +54,8 @@ interface TareaPlan {
   // Planificación publicada por el planner. Si es borrador, el técnico la ve
   // pero no la puede iniciar todavía.
   publicado?: boolean;
+  // Emergencia (correctiva): se resalta y se prioriza sobre las normales.
+  es_correctivo?: boolean;
 }
 interface SesionEnCurso {
   sesion_id: number;
@@ -115,7 +117,7 @@ function formatSegundos(s: number): string {
 }
 
 export default function TecnicoPanel() {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const [data, setData] = useState<MiTrabajo | null>(null);
   const [ranking, setRanking] = useState<RankingItem[]>([]);
   const [rankingPeriodo, setRankingPeriodo] = useState<"semana" | "mes">("semana");
@@ -157,11 +159,14 @@ export default function TecnicoPanel() {
       return { value: d.format("YYYY-MM-DD"), label: `${nm} ${d.format("DD")}` };
     }),
   ];
-  const tareasFiltradas = !data
-    ? []
-    : diaFiltro === "all"
+  const tareasFiltradas = (() => {
+    if (!data) return [];
+    const base = diaFiltro === "all"
       ? data.tareasSemana
       : data.tareasSemana.filter((t) => t.fecha_inicio && dayjs(t.fecha_inicio).format("YYYY-MM-DD") === diaFiltro);
+    // Las emergencias primero (sort estable; conserva el orden por fecha del API).
+    return [...base].sort((a, b) => Number(!!b.es_correctivo) - Number(!!a.es_correctivo));
+  })();
 
   const fetchRanking = useCallback(async (periodo: "semana" | "mes") => {
     const r = await fetch(`/api/ranking-tecnicos?periodo=${periodo}`);
@@ -184,7 +189,7 @@ export default function TecnicoPanel() {
   // Reset del tick cuando cambia la sesión.
   useEffect(() => { setSecondsTick(0); }, [data?.sesionEnCurso?.sesion_id]);
 
-  async function accion(taskId: number, accion: "iniciar" | "pausar" | "finalizar", observaciones?: string) {
+  async function accion(taskId: number, accion: "iniciar" | "pausar" | "finalizar", observaciones?: string): Promise<boolean> {
     setAccionLoading(taskId);
     try {
       const r = await fetch(`/api/planificacion/${taskId}/${accion}`, {
@@ -197,11 +202,35 @@ export default function TecnicoPanel() {
       const msg = accion === "iniciar" ? "Tarea iniciada" : accion === "pausar" ? "Tarea pausada" : "Tarea finalizada";
       message.success(msg);
       fetchData();
+      return true;
     } catch (e) {
       message.error(e instanceof Error ? e.message : `Error al ${accion}`);
+      return false;
     } finally {
       setAccionLoading(null);
     }
+  }
+
+  // Iniciar una tarea cuando el técnico ya tiene otra en curso: ofrece pausar la
+  // actual y arrancar esta (clave para atender una emergencia sin perder la que
+  // estaba haciendo, que queda pausada para retomar después).
+  async function iniciarConPausa(r: TareaPlan) {
+    const enCurso = data?.sesionEnCurso;
+    if (enCurso && enCurso.planificacion_ot_id !== r.id) {
+      modal.confirm({
+        title: "Pausar la tarea en curso e iniciar esta",
+        content: `Se pausa "${enCurso.descripcion}" y arranca "${r.descripcion}". Después podés retomar la pausada.`,
+        okText: "Pausar e iniciar",
+        cancelText: "Cancelar",
+        okButtonProps: { danger: true },
+        onOk: async () => {
+          const ok = await accion(enCurso.planificacion_ot_id, "pausar");
+          if (ok) await accion(r.id, "iniciar");
+        },
+      });
+      return;
+    }
+    accion(r.id, "iniciar");
   }
 
   // Modal para que el técnico deje observaciones al pausar/finalizar.
@@ -232,7 +261,10 @@ export default function TecnicoPanel() {
       title: "Tarea", width: 280,
       render: (_, r) => (
         <div>
-          <div style={{ fontSize: 12, fontWeight: 500 }}>{r.descripcion}</div>
+          <div style={{ fontSize: 12, fontWeight: 500 }}>
+            {r.es_correctivo && <Tag color="error" style={{ fontSize: 10, marginRight: 4 }}>🚨 EMERGENCIA</Tag>}
+            {r.descripcion}
+          </div>
           <div style={{ fontSize: 10, color: brand.textSecondary }}>
             {r.componente} · {r.operacion_codigo} {r.maquina ? `· ${r.maquina}` : ""}
           </div>
@@ -296,12 +328,13 @@ export default function TecnicoPanel() {
             </Space>
           );
         }
-        // sin_empezar → Iniciar · pausado → Retomar. Deshabilitado si el técnico
-        // ya tiene otra tarea en curso (solo puede trabajar una a la vez).
+        // sin_empezar → Iniciar · pausado → Retomar. Si el técnico ya tiene otra
+        // en curso, las normales se deshabilitan (una a la vez); las EMERGENCIAS
+        // se permiten y ofrecen "pausar la actual e iniciar esta".
         return (
-          <Button size="small" type="primary" icon={<PlayCircleOutlined />} loading={accionLoading === r.id}
-            onClick={() => accion(r.id, "iniciar")} disabled={!!data?.sesionEnCurso}>
-            {mi === "pausado" ? "Retomar" : "Iniciar"}
+          <Button size="small" type="primary" danger={r.es_correctivo} icon={<PlayCircleOutlined />} loading={accionLoading === r.id}
+            onClick={() => iniciarConPausa(r)} disabled={!!data?.sesionEnCurso && !r.es_correctivo}>
+            {r.es_correctivo ? "Atender 🚨" : mi === "pausado" ? "Retomar" : "Iniciar"}
           </Button>
         );
       },
