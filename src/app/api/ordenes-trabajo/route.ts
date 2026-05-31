@@ -116,9 +116,24 @@ export async function GET(req: NextRequest) {
       tipo_garantia: "tipo_garantia_codigo",
       tipo_ot: "tipo_codigo",
     };
+    // Mapeo nombre→código para tipo_ot. El header de columna y el Segmented
+    // mandan el NOMBRE ("Bien"/"Reparación"/"Servicio") pero la columna en
+    // la BD guarda el CÓDIGO ("BIE"/"REP"/"SER"). Sin esta traducción el
+    // filtro nunca matchea y la tabla aparece vacía.
+    const TIPO_OT_NOMBRE_A_CODIGO: Record<string, string> = {
+      "Bien": "BIE",
+      "Reparación": "REP",
+      "Servicio": "SER",
+    };
     for (const [param, col] of Object.entries(FK_CODIGO)) {
       const v = searchParams.get(param);
-      if (v) where[col] = v;
+      if (!v) continue;
+      if (param === "tipo_ot") {
+        // Acepta tanto código (BIE) como nombre (Bien); traduce a código.
+        where[col] = TIPO_OT_NOMBRE_A_CODIGO[v] ?? v;
+      } else {
+        where[col] = v;
+      }
     }
     if (clienteId) where.id_cliente = Number(clienteId);
 
