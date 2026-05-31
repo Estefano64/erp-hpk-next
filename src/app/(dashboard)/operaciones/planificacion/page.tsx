@@ -16,7 +16,10 @@ import {
   dentroDeRango,
   useColumnasRedimensionables,
   paginacionEstandar,
+  FILTRO_VACIO_VALUE,
+  FILTRO_VACIO_LABEL,
 } from "@/lib/tables";
+import type { Key } from "react";
 import dayjs, { Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
 import customParseFormat from "dayjs/plugin/customParseFormat";
@@ -605,6 +608,22 @@ export default function PlanificacionPage() {
   const estadoValores = [...new Set(rows.map((r) => r.estado).filter(Boolean) as string[])].sort()
     .map((v) => ({ text: v, value: v }));
 
+  // Helper: agrega opción "(vacío)" si hay filas con valor null/empty para
+  // ese accessor. Sirve para localizar rápido qué celdas faltan llenar.
+  // Se aplica a las columnas donde "vacío" tiene sentido (Operario, Equipo,
+  // Semana, Comentario, Componente, Flota, fechas).
+  function conVacio(valores: { text: string; value: string }[], read: (r: PlanRow) => unknown) {
+    const hayVacio = rows.some((r) => {
+      const v = read(r);
+      return v == null || v === "" || (Array.isArray(v) && v.length === 0);
+    });
+    return hayVacio ? [...valores, { text: FILTRO_VACIO_LABEL, value: FILTRO_VACIO_VALUE }] : valores;
+  }
+  function esVacioFiltro(value: Key | boolean, accesor: unknown): boolean {
+    if (value !== FILTRO_VACIO_VALUE) return false;
+    return accesor == null || accesor === "" || (Array.isArray(accesor) && accesor.length === 0);
+  }
+
   const columns: ColumnsType<PlanRow> = [
     numeracionColumn<PlanRow>(),
     {
@@ -635,8 +654,12 @@ export default function PlanificacionPage() {
     },
     {
       title: "Flota", key: "flota", width: 100,
-      filters: flotaValores, filterSearch: true,
-      onFilter: (value, r) => r.orden_trabajo?.codigo_reparacion?.flota?.codigo === value,
+      filters: conVacio(flotaValores, (r) => r.orden_trabajo?.codigo_reparacion?.flota?.codigo), filterSearch: true,
+      onFilter: (value, r) => {
+        const v = r.orden_trabajo?.codigo_reparacion?.flota?.codigo;
+        if (esVacioFiltro(value, v)) return true;
+        return v === value;
+      },
       render: (_, r) => r.orden_trabajo?.codigo_reparacion?.flota?.codigo ?? "-",
     },
     {
@@ -678,8 +701,11 @@ export default function PlanificacionPage() {
     {
       key: "componente",
       title: "Parte", dataIndex: "componente", width: 140, ellipsis: true,
-      filters: componenteValores, filterSearch: true,
-      onFilter: (value, r) => r.componente === value,
+      filters: conVacio(componenteValores, (r) => r.componente), filterSearch: true,
+      onFilter: (value, r) => {
+        if (esVacioFiltro(value, r.componente)) return true;
+        return r.componente === value;
+      },
       render: (v: string) => (
         <Tooltip title={v}>
           <Tag style={{
@@ -708,6 +734,17 @@ export default function PlanificacionPage() {
     },
     {
       key: "comentario", title: "Comentario", dataIndex: "comentario", width: 220, ellipsis: true,
+      // Filtro de "(vacío)" para que el user vea rápido qué filas no tienen
+      // comentario cargado. No mostramos valores reales (suelen ser textos
+      // largos y únicos) — solo el binario "tiene comentario / no tiene".
+      filters: rows.some((r) => !r.comentario)
+        ? [{ text: "Con comentario", value: "__hay__" }, { text: FILTRO_VACIO_LABEL, value: FILTRO_VACIO_VALUE }]
+        : [{ text: "Con comentario", value: "__hay__" }],
+      onFilter: (value, r) => {
+        if (value === FILTRO_VACIO_VALUE) return !r.comentario;
+        if (value === "__hay__") return !!r.comentario;
+        return false;
+      },
       render: (v: string | null, r: PlanRow) => (
         <Typography.Paragraph
           style={{ margin: 0, fontSize: 12 }}
@@ -726,8 +763,11 @@ export default function PlanificacionPage() {
     },
     {
       title: "Semana", key: "semana", width: 160,
-      filters: semanaValores, filterSearch: true,
-      onFilter: (value, r) => r.semana_plan === value,
+      filters: conVacio(semanaValores, (r) => r.semana_plan), filterSearch: true,
+      onFilter: (value, r) => {
+        if (esVacioFiltro(value, r.semana_plan)) return true;
+        return r.semana_plan === value;
+      },
       render: (_, r) => (
         <Select
           value={r.semana_plan ?? undefined}
@@ -744,8 +784,12 @@ export default function PlanificacionPage() {
     },
     {
       title: "Operario", key: "tecnico", width: 280,
-      filters: tecnicoValores, filterSearch: true,
-      onFilter: (value, r) => splitTecnicos(r.tecnico).includes(value as string),
+      filters: conVacio(tecnicoValores, (r) => splitTecnicos(r.tecnico)), filterSearch: true,
+      onFilter: (value, r) => {
+        const tecs = splitTecnicos(r.tecnico);
+        if (value === FILTRO_VACIO_VALUE) return tecs.length === 0;
+        return tecs.includes(value as string);
+      },
       render: (_, r) => {
         const qty = Math.max(1, Number(r.qty_personal ?? 1));
         const multi = qty > 1;
@@ -828,8 +872,12 @@ export default function PlanificacionPage() {
     },
     {
       title: "Equipo", key: "maquina", width: 280,
-      filters: maquinaValores, filterSearch: true,
-      onFilter: (value, r) => splitTecnicos(r.maquina).includes(value as string),
+      filters: conVacio(maquinaValores, (r) => splitTecnicos(r.maquina)), filterSearch: true,
+      onFilter: (value, r) => {
+        const maqs = splitTecnicos(r.maquina);
+        if (value === FILTRO_VACIO_VALUE) return maqs.length === 0;
+        return maqs.includes(value as string);
+      },
       render: (_, r) => {
         const esTercero = r.tecnico === "Tercero";
         const qty = Math.max(1, Number(r.qty_personal ?? 1));
