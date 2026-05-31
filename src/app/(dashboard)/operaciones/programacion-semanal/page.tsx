@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Typography, Button, Space, Tag, Card, Modal, Descriptions, Tooltip, message, Empty, DatePicker, Collapse, Segmented, Slider, Alert, Popover, Divider, Select, Popconfirm, Switch,
+  Typography, Button, Space, Tag, Card, Modal, Descriptions, Tooltip, message, Empty, DatePicker, Collapse, Segmented, Slider, Alert, Popover, Divider, Select, Popconfirm, Switch, Input,
 } from "antd";
 import {
   CalendarOutlined, LeftOutlined, RightOutlined, UserOutlined, ToolOutlined, AimOutlined,
   SettingOutlined, RollbackOutlined, UnorderedListOutlined, WarningFilled, ZoomInOutlined, ZoomOutOutlined,
   PrinterOutlined, BgColorsOutlined, FilterOutlined, ClearOutlined,
-  LoadingOutlined, CheckCircleFilled, CloseCircleFilled, EyeOutlined,
+  LoadingOutlined, CheckCircleFilled, CloseCircleFilled, EyeOutlined, SearchOutlined,
 } from "@ant-design/icons";
 import dayjs, { Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
@@ -154,6 +154,8 @@ export default function ProgramacionSemanalPage() {
   // Por defecto el filtro de arriba también aplica a los pendientes de abajo.
   // Con este switch (visible solo si hay filtro activo) se ignora abajo.
   const [verTodasPendientes, setVerTodasPendientes] = useState(false);
+  // Búsqueda libre del pool de pendientes (parte / cilindro / OT / descripción).
+  const [poolBusqueda, setPoolBusqueda] = useState("");
   const [rows, setRows] = useState<PlanRow[]>([]);
   const [allRows, setAllRows] = useState<PlanRow[]>([]); // para "sin semana asignada"
   // Estado de guardado visible: contador de requests en vuelo + último error.
@@ -300,17 +302,37 @@ export default function ProgramacionSemanalPage() {
     [rows, hayFiltro, pasaFiltroRecurso],
   );
 
-  // Pendientes (pools) mostrados: aplican el mismo filtro que arriba, salvo que
-  // el usuario active "Ver todas" para ignorarlo solo abajo.
+  // Búsqueda libre del pool: matchea parte (componente), cilindro (flota), OT,
+  // descripción y código de tarea. Le da al planner una forma rápida de encontrar
+  // qué programar sin depender solo del filtro por recurso.
+  const pasaBusquedaPool = useCallback((t: PlanRow): boolean => {
+    const q = poolBusqueda.trim().toLowerCase();
+    if (!q) return true;
+    const flota = t.orden_trabajo?.codigo_reparacion?.flota?.nombre
+      ?? t.orden_trabajo?.codigo_reparacion?.flota?.codigo
+      ?? t.orden_trabajo?.cod_rep_flota
+      ?? "";
+    return [
+      t.componente,
+      flota,
+      t.descripcion,
+      t.operacion_codigo,
+      String(t.orden_trabajo?.ot ?? t.ot_id),
+      t.orden_trabajo?.descripcion ?? "",
+    ].some((v) => (v ?? "").toString().toLowerCase().includes(q));
+  }, [poolBusqueda]);
+
+  // Pendientes (pools) mostrados: aplican el filtro por recurso (salvo "Ver todas")
+  // y la búsqueda libre del pool.
   const filtrarPendientes = hayFiltro && !verTodasPendientes;
-  const sinSemanaMostrar = useMemo(
-    () => (filtrarPendientes ? sinSemanaLista.filter(pasaFiltroRecurso) : sinSemanaLista),
-    [sinSemanaLista, filtrarPendientes, pasaFiltroRecurso],
-  );
-  const sinFechaMostrar = useMemo(
-    () => (filtrarPendientes ? sinFechaListaSemana.filter(pasaFiltroRecurso) : sinFechaListaSemana),
-    [sinFechaListaSemana, filtrarPendientes, pasaFiltroRecurso],
-  );
+  const sinSemanaMostrar = useMemo(() => {
+    const l = filtrarPendientes ? sinSemanaLista.filter(pasaFiltroRecurso) : sinSemanaLista;
+    return l.filter(pasaBusquedaPool);
+  }, [sinSemanaLista, filtrarPendientes, pasaFiltroRecurso, pasaBusquedaPool]);
+  const sinFechaMostrar = useMemo(() => {
+    const l = filtrarPendientes ? sinFechaListaSemana.filter(pasaFiltroRecurso) : sinFechaListaSemana;
+    return l.filter(pasaBusquedaPool);
+  }, [sinFechaListaSemana, filtrarPendientes, pasaFiltroRecurso, pasaBusquedaPool]);
 
   // ── Agrupación por recurso ──
   const recursos = useMemo(() => {
@@ -1716,6 +1738,24 @@ export default function ProgramacionSemanalPage() {
           )}
         </div>
       </Card>
+
+      {/* Buscador del pool de pendientes (parte / cilindro / OT / descripción). */}
+      <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <Input
+          allowClear
+          value={poolBusqueda}
+          onChange={(e) => setPoolBusqueda(e.target.value)}
+          placeholder="Buscar pendientes por parte, cilindro, OT o descripción…"
+          prefix={<SearchOutlined style={{ color: brand.textSecondary }} />}
+          style={{ maxWidth: 420 }}
+          size="small"
+        />
+        {poolBusqueda.trim() && (
+          <span style={{ fontSize: 12, color: brand.textSecondary }}>
+            {sinFechaMostrar.length + sinSemanaMostrar.length} pendiente(s) coinciden
+          </span>
+        )}
+      </div>
 
       {/* Switch: por defecto el filtro de arriba aplica a los pendientes; con
           esto se ignora solo abajo (p.ej. ver todo el backlog para asignarlo). */}
