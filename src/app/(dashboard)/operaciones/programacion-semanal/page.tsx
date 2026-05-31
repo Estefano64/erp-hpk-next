@@ -651,12 +651,26 @@ export default function ProgramacionSemanalPage() {
       messageApi.warning("Activá Modo Edición para publicar.");
       return;
     }
+    // IDs exactos del operario en la semana mostrada (con o sin hora). Matchear por
+    // IDs es determinista: evita que el match por semana_plan deje tareas afuera.
+    const enSemana = (r: PlanRow) =>
+      r.semana_plan === semanaActual ||
+      (!!r.fecha_inicio &&
+        dayjs(r.fecha_inicio).isoWeek() === lunes.isoWeek() &&
+        dayjs(r.fecha_inicio).isoWeekYear() === lunes.isoWeekYear());
+    const ids = allRows
+      .filter((r) => splitTecnicos(r.tecnico).includes(tecnico) && enSemana(r))
+      .map((r) => r.id);
+    if (ids.length === 0) {
+      messageApi.info("Ese operario no tiene tareas en esta semana.");
+      return;
+    }
     beginSave();
     try {
       const res = await fetch("/api/planificacion/publicar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ semana: semanaActual, tecnico, publicado }),
+        body: JSON.stringify({ semana: semanaActual, tecnico, publicado, ids }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Error");
       endSave();
@@ -1113,6 +1127,7 @@ export default function ProgramacionSemanalPage() {
           }}
           data-color={color}
           data-estado={r.estado ?? ""}
+          data-pub={r.publicado ? "1" : "0"}
           data-conflict={hasConflict ? "1" : "0"}
           data-externo={r.trabajo_externo ? "1" : "0"}
         >
@@ -2028,6 +2043,12 @@ export default function ProgramacionSemanalPage() {
         .psg-task-block[data-estado="en_proceso"] { background: #13C2C2; }
         /* Correctiva = EMERGENCIA: rojo fuerte con halo para que resalte. */
         .psg-task-block[data-estado="correctivo"] { background: #F5222D; opacity: 1; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #F5222D, 0 1px 4px rgba(245,34,45,.55); z-index: 3; }
+        /* Publicada = plan congelado: candado y borde claro. */
+        .psg-task-block[data-pub="1"] { box-shadow: inset 0 0 0 2px rgba(255,255,255,0.65); }
+        .psg-task-block[data-pub="1"]::after {
+          content: "🔒"; position: absolute; top: 2px; right: 4px;
+          font-size: 9px; opacity: 0.9; pointer-events: none; z-index: 2;
+        }
         .psg-task-block[data-conflict="1"] { outline: 2px solid #ff4d4f; }
 
         /* Trabajo derivado a tercero: stripes diagonales + borde dorado para distinguir. */
