@@ -40,7 +40,9 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
 
       const opsT = splitRecursos(T.tecnico);
       const dia = dayjs(T.fecha_inicio);
+      const diaIni = dia.startOf("day").toDate();
       const diaFin = dia.endOf("day").toDate();
+      const S = T.fecha_inicio; // inicio de la emergencia
 
       // Fin de la emergencia. Si es HE usa su fecha_fin; si no, lo calcula por jornada.
       const qtyT = Math.max(1, Number(T.qty_personal ?? 1));
@@ -48,20 +50,24 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
         ? T.fecha_fin
         : calcularFinEstimado(T.fecha_inicio, Number(T.horas_estimadas ?? 0) * qtyT);
 
-      // Candidatas: mismo día, arrancan en/después de la emergencia, activas.
+      // Candidatas: tareas del mismo día (cualquier hora), activas.
       const candidatas = await tx.planificacionOT.findMany({
         where: {
           id: { not: planId },
           tecnico: { not: null },
-          fecha_inicio: { gte: T.fecha_inicio, lte: diaFin },
+          fecha_inicio: { gte: diaIni, lte: diaFin },
           estado: { notIn: ["cancelado", "realizado", "correctivo"] },
         },
         orderBy: { fecha_inicio: "asc" },
       });
-      // Solo las que comparten al menos un operario con la emergencia.
-      const afectadas = candidatas.filter((c) =>
-        splitRecursos(c.tecnico).some((o) => opsT.includes(o)),
-      );
+      // Afectadas: comparten operario Y no terminan antes de que arranque la
+      // emergencia (es decir, arrancan después O se solapan con ella). Las que
+      // terminan antes de S quedan donde están.
+      const afectadas = candidatas.filter((c) => {
+        if (!splitRecursos(c.tecnico).some((o) => opsT.includes(o))) return false;
+        const termina = c.fecha_fin ?? c.fecha_inicio;
+        return (c.fecha_inicio && c.fecha_inicio >= S) || (termina != null && termina > S);
+      });
 
       const empujadas: number[] = [];
       const alPool: number[] = [];

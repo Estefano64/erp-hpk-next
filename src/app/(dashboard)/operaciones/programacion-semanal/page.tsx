@@ -450,6 +450,9 @@ export default function ProgramacionSemanalPage() {
     }
     const original = rows.find((r) => r.id === id) || allRows.find((r) => r.id === id);
     if (!original) return;
+    // Una emergencia (correctiva) puede caer encima de otras tareas: se permite
+    // el choque y después se empuja al resto del día.
+    const esEmergencia = original.estado === "correctivo";
     // Si la tarea no tiene horas_estimadas (vino del pool sin fecha), defaulteamos a 1h
     const durRaw = Number(original.horas_estimadas);
     const horasFaltantes = !Number.isFinite(durRaw) || durRaw <= 0;
@@ -472,7 +475,7 @@ export default function ProgramacionSemanalPage() {
     const recursoDestino = nuevoRecurso !== undefined
       ? nuevoRecurso
       : (view === "equipo" ? original.maquina : original.tecnico);
-    const choque = tareaSuperpuesta(id, inicioReal.toDate().getTime(), fin.getTime(), recursoDestino);
+    const choque = esEmergencia ? null : tareaSuperpuesta(id, inicioReal.toDate().getTime(), fin.getTime(), recursoDestino);
     if (choque) {
       const t = choque.task;
       const cliente = t.orden_trabajo?.cliente?.nombre_comercial
@@ -543,6 +546,21 @@ export default function ProgramacionSemanalPage() {
       if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Error");
       endSave();
       notifySync();
+      // Si es emergencia, ya quedó ubicada: ahora empujamos al resto del día.
+      if (esEmergencia) {
+        try {
+          const r2 = await fetch(`/api/planificacion/${id}/emergencia`, { method: "POST" });
+          const j2 = await r2.json().catch(() => null);
+          if (r2.ok) {
+            const empN = j2?.empujadas?.length ?? 0;
+            const poolN = j2?.alPool?.length ?? 0;
+            if (empN || poolN) {
+              messageApi.success(`🚨 ${empN} tarea(s) reprogramada(s)${poolN ? `, ${poolN} al pool` : ""}.`);
+            }
+          }
+        } catch { /* la ubicación ya se guardó; el reacomodo es best-effort */ }
+        fetchData();
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Error al reprogramar";
       endSave(msg);
@@ -935,6 +953,9 @@ export default function ProgramacionSemanalPage() {
     if (!drag || !drag.snappedDate || !drag.targetRow) return false;
     const original = rows.find((r) => r.id === drag.taskId) ?? allRows.find((r) => r.id === drag.taskId);
     if (!original) return false;
+    // Las emergencias (correctivas) SÍ pueden caer encima de otras: al soltarlas
+    // empujan a las demás. No marcamos conflicto para no bloquear el drop.
+    if (original.estado === "correctivo") return false;
     const dur = Number(original.horas_estimadas ?? 1);
     const qty = Math.max(1, Number(original.qty_personal ?? 1));
     const enBandaHE = (drag.snappedDate.hour() + drag.snappedDate.minute() / 60) >= 18;
