@@ -244,6 +244,31 @@ export default function PlanificacionPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
   const notifySync = useTabSync("planificacion", fetchData);
 
+  // Marca una tarea como EMERGENCIA (correctiva) y reacomoda el día del operario.
+  // Mismo flujo que el botón 🚨 de Programación Semanal.
+  const marcarEmergencia = useCallback(async (id: number) => {
+    if (!editMode) {
+      messageApi.warning("Activá Modo Edición para marcar emergencias.");
+      return;
+    }
+    try {
+      const res = await fetch(`/api/planificacion/${id}/emergencia`, { method: "POST" });
+      const j = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(j?.error ?? "Error");
+      const empN = j?.empujadas?.length ?? 0;
+      const poolN = j?.alPool?.length ?? 0;
+      messageApi.success(
+        "🚨 Emergencia marcada." +
+        (empN ? ` ${empN} reprogramada(s).` : "") +
+        (poolN ? ` ${poolN} al pool.` : ""),
+      );
+      notifySync();
+      fetchData();
+    } catch (e) {
+      messageApi.error(e instanceof Error ? e.message : "Error al marcar emergencia");
+    }
+  }, [editMode, messageApi, notifySync, fetchData]);
+
   useEffect(() => {
     (async () => {
       const [resT, resE, resS] = await Promise.all([
@@ -1155,18 +1180,34 @@ export default function PlanificacionPage() {
       },
     },
     {
-      title: "Estado", key: "estado", width: 130,
+      title: "Estado", key: "estado", width: 168,
       filters: estadoValores, filterSearch: true,
       onFilter: (value, r) => (r.estado ?? "abierto") === value,
       render: (_, r) => (
-        <Select showSearch optionFilterProp="label"
-          value={r.estado ?? "abierto"}
-          onChange={(v) => updateField(r.id, { estado: v })}
-          options={estados.map((e) => ({ value: e.codigo, label: e.nombre }))}
-          size="small"
-          style={{ width: "100%" }}
-          disabled={r.estado === "realizado"}
-        />
+        <Space.Compact style={{ width: "100%" }}>
+          <Select showSearch optionFilterProp="label"
+            value={r.estado ?? "abierto"}
+            onChange={(v) => updateField(r.id, { estado: v })}
+            options={estados.map((e) => ({ value: e.codigo, label: e.nombre }))}
+            size="small"
+            style={{ width: "100%" }}
+            disabled={r.estado === "realizado"}
+          />
+          {r.estado !== "correctivo" && (
+            <Popconfirm
+              title="Marcar como emergencia"
+              description="Reprograma las tareas del mismo día y operario que arranquen después; las que no entren van al pool."
+              okText="Marcar 🚨"
+              cancelText="Cancelar"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => marcarEmergencia(r.id)}
+            >
+              <Tooltip title="Marcar emergencia (correctiva)">
+                <Button danger size="small" disabled={!editMode || r.estado === "realizado"}>🚨</Button>
+              </Tooltip>
+            </Popconfirm>
+          )}
+        </Space.Compact>
       ),
     },
   ];
