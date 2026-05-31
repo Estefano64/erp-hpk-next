@@ -35,12 +35,12 @@ export async function POST(req: NextRequest) {
       where: { semana_plan: semana, tecnico: { not: null } },
       select: { id: true, tecnico: true },
     });
-    const ids = candidatas.filter((t) => splitRecursos(t.tecnico).includes(tecnico)).map((t) => t.id);
-    if (ids.length === 0) {
+    const idsFallback = candidatas.filter((t) => splitRecursos(t.tecnico).includes(tecnico)).map((t) => t.id);
+    if (idsFallback.length === 0) {
       return NextResponse.json({ count: 0, publicado });
     }
     const res = await prisma.planificacionOT.updateMany({
-      where: { id: { in: ids } },
+      where: { id: { in: idsFallback } },
       data: { publicado },
     });
     return NextResponse.json({ count: res.count, publicado });
