@@ -155,7 +155,7 @@ export function ImportarExcelModal({
     {
       key: "mapping", title: "Campo", dataIndex: "mapping", width: 280,
       render: (v: string | undefined, r: { idx: number }) => (
-        <Select
+        <Select showSearch optionFilterProp="label"
           style={{ width: "100%" }}
           placeholder="(ignorar)"
           allowClear

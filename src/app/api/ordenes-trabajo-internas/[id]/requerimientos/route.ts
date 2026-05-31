@@ -108,7 +108,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       } else {
         nroReq = await nextNroReqInterna(tx, otInternaId);
       }
-      const itemReq = await nextItemReqInterna(tx, otInternaId);
+      const itemReq = await nextItemReqInterna(tx, otInternaId, nroReq);
 
       const row = await tx.oTRepuesto.create({
         data: {

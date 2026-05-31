@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { sumarHorasReales } from "@/lib/plan-sesion";
+import { sumarHorasReales, rollupEstadoTarea } from "@/lib/plan-sesion";
+import { splitRecursos } from "@/lib/recursos";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 
     const plan = await prisma.planificacionOT.findUnique({
       where: { id: planId },
-      select: { id: true, estado: true, observaciones: true },
+      select: { id: true, estado: true, observaciones: true, tecnico: true },
     });
     if (!plan) return NextResponse.json({ error: "Tarea no encontrada" }, { status: 404 });
     if (plan.estado === "realizado") {
@@ -50,12 +51,16 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       });
     }
 
-    // Recalcular total de horas reales.
+    // Recalcular total de horas reales + estado rollup (multi-técnico).
     const todas = await prisma.planificacionOTSesion.findMany({
       where: { planificacion_ot_id: planId },
-      select: { inicio: true, fin: true },
+      select: { tecnico: true, inicio: true, fin: true, cierre: true },
     });
     const horas = sumarHorasReales(todas);
+    // La tarea solo queda "realizado" cuando TODOS los técnicos asignados
+    // terminaron; si falta alguno, no se cierra ni bloquea al resto.
+    const estadoTarea = rollupEstadoTarea(splitRecursos(plan.tecnico), todas);
+    const tareaCompleta = estadoTarea === "realizado";
 
     const observaciones = obs
       ? (plan.observaciones ? `${plan.observaciones}\n${obs}` : obs)
@@ -64,14 +69,14 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     await prisma.planificacionOT.update({
       where: { id: planId },
       data: {
-        estado: "realizado",
-        fecha_fin_real: now,
+        estado: estadoTarea,
+        fecha_fin_real: tareaCompleta ? now : null,
         horas_reales: horas,
         ...(observaciones !== undefined ? { observaciones } : {}),
       },
     });
 
-    return NextResponse.json({ ok: true, horas_reales: horas, fecha_fin_real: now.toISOString() });
+    return NextResponse.json({ ok: true, horas_reales: horas, tareaCompleta, estado: estadoTarea });
   } catch (error) {
     console.error("POST /api/planificacion/[id]/finalizar error:", error);
     return NextResponse.json({ error: "Error al finalizar" }, { status: 500 });

@@ -430,7 +430,7 @@ function DetalleTab({ ot, editing, form, catalogos }: {
         <Row gutter={16}>
           <Col xs={24} md={8}>
             <Form.Item name="tipo_ot_interna_codigo" label="Tipo" rules={[{ required: true }]}>
-              <Select options={catalogos.tipos.map((t) => ({ value: t.codigo, label: t.nombre }))} />
+              <Select showSearch optionFilterProp="label" options={catalogos.tipos.map((t) => ({ value: t.codigo, label: t.nombre }))} />
             </Form.Item>
           </Col>
           <Col xs={24} md={16}>
@@ -465,12 +465,12 @@ function DetalleTab({ ot, editing, form, catalogos }: {
           </Col>
           <Col xs={12} md={6}>
             <Form.Item name="planta_codigo" label="Planta">
-              <Select allowClear options={catalogos.plantas.map((p) => ({ value: p.codigo, label: p.nombre }))} />
+              <Select showSearch optionFilterProp="label" allowClear options={catalogos.plantas.map((p) => ({ value: p.codigo, label: p.nombre }))} />
             </Form.Item>
           </Col>
           <Col xs={12} md={6}>
             <Form.Item name="prioridad_atencion_codigo" label="Prioridad">
-              <Select allowClear options={catalogos.prioridades.map((p) => ({ value: p.codigo, label: p.nombre }))} />
+              <Select showSearch optionFilterProp="label" allowClear options={catalogos.prioridades.map((p) => ({ value: p.codigo, label: p.nombre }))} />
             </Form.Item>
           </Col>
           <Col xs={12} md={6}>
@@ -490,17 +490,17 @@ function DetalleTab({ ot, editing, form, catalogos }: {
           </Col>
           <Col xs={24} md={8}>
             <Form.Item name="ot_status_codigo" label="OT Status">
-              <Select options={catalogos.otStatuses.map((s) => ({ value: s.codigo, label: s.nombre }))} />
+              <Select showSearch optionFilterProp="label" options={catalogos.otStatuses.map((s) => ({ value: s.codigo, label: s.nombre }))} />
             </Form.Item>
           </Col>
           <Col xs={24} md={8}>
             <Form.Item name="user_status_codigo" label="User Status">
-              <Select allowClear options={catalogos.userStatuses.map((s) => ({ value: s.codigo, label: s.nombre }))} />
+              <Select showSearch optionFilterProp="label" allowClear options={catalogos.userStatuses.map((s) => ({ value: s.codigo, label: s.nombre }))} />
             </Form.Item>
           </Col>
           <Col xs={24} md={8}>
             <Form.Item name="recursos_status_codigo" label="Recursos Status">
-              <Select allowClear options={catalogos.recursosStatuses.map((s) => ({ value: s.codigo, label: s.nombre }))} />
+              <Select showSearch optionFilterProp="label" allowClear options={catalogos.recursosStatuses.map((s) => ({ value: s.codigo, label: s.nombre }))} />
             </Form.Item>
           </Col>
           <Col xs={12} md={6}>

@@ -1106,7 +1106,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
               {
                 title: "Tipo", key: "tipo", width: 80,
                 render: (_: unknown, r: DraftItem) => (
-                  <Select
+                  <Select showSearch optionFilterProp="label"
                     size="small" style={{ width: "100%" }}
                     value={r.tipo_codigo}
                     onChange={(v) => actualizarDraftItem(r.id, { tipo_codigo: v as "MAC" | "CAD" | "SER", material_codigo: undefined })}
@@ -1246,7 +1246,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
                         value={r.precio_unitario}
                         onChange={(v) => actualizarDraftItem(r.id, { precio_unitario: v == null ? undefined : Number(v) })}
                       />
-                      <Select
+                      <Select showSearch optionFilterProp="label"
                         size="small" style={{ width: 70 }}
                         value={r.moneda ?? "USD"}
                         onChange={(v) => actualizarDraftItem(r.id, { moneda: v })}
@@ -1407,7 +1407,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
               extra="Crear uno nuevo o agregar este item a uno existente (solo BORRADOR / SIN_APROBACION)."
               initialValue={null}
             >
-              <Select
+              <Select showSearch optionFilterProp="label"
                 placeholder="Crear nuevo requerimiento"
                 allowClear
                 options={[
@@ -1528,7 +1528,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
               </Col>
               <Col span={12}>
                 <Form.Item name="moneda" label="Moneda" initialValue="USD">
-                  <Select
+                  <Select showSearch optionFilterProp="label"
                     options={[
                       { value: "USD", label: "USD ($)" },
                       { value: "SOL", label: "SOL (S/)" },

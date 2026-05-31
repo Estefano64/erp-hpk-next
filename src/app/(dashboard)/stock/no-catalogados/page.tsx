@@ -346,7 +346,7 @@ export default function NoCatalogadosPage() {
       >
         <Form form={formMov} layout="vertical">
           <Form.Item name="tipo_movimiento" label="Tipo" rules={[{ required: true }]} initialValue="ENTRADA">
-            <Select options={[
+            <Select showSearch optionFilterProp="label" options={[
               { value: "ENTRADA", label: "ENTRADA (sumar al stock)" },
               { value: "SALIDA", label: "SALIDA (restar del stock)" },
               { value: "AJUSTE", label: "AJUSTE (fijar stock absoluto)" },

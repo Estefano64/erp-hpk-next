@@ -1314,7 +1314,7 @@ function RequerimientosDetalleInner() {
             />
           </Col>
           <Col xs={12} sm={6} md={4}>
-            <Select
+            <Select showSearch optionFilterProp="label"
               placeholder="Estado REQ"
               allowClear
               style={{ width: "100%" }}
@@ -1565,7 +1565,7 @@ function RequerimientosDetalleInner() {
             </Col>
             <Col xs={12} md={8}>
               <Form.Item label="Moneda" name="moneda">
-                <Select
+                <Select showSearch optionFilterProp="label"
                   options={[
                     { value: "USD", label: "USD" },
                     { value: "PEN", label: "PEN" },

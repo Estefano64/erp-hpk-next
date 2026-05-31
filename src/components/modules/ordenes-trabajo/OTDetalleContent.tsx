@@ -62,6 +62,12 @@ interface ClienteOption {
   razon_social: string;
 }
 
+interface FabricanteOption {
+  fabricante_id: number;
+  codigo: string;
+  nombre: string;
+}
+
 interface CodRepOption {
   cod_rep_id: number;
   codigo: string;
@@ -93,6 +99,7 @@ interface OTDetalle {
   np: string | null;
   cod_rep_flota: string | null;
   cod_rep_posicion: string | null;
+  id_fabricante: number | null;
   wo_cliente: string | null;
   po_cliente: string | null;
   po_item: string | null;
@@ -212,6 +219,10 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   const prioridadesRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=prioridadAtencion");
   const tipoGarantiasRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=tipoGarantia");
   const monedasRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=moneda");
+  const tiposOTRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=tipoOT");
+  const tiposCodRepRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=tipoCodRep");
+  const fabricantesRes = useCachedFetch<Wrapped<FabricanteOption>>("/api/catalogos?tabla=fabricante");
+  const posicionesRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=posicion");
 
   const otStatuses = otStatusesRes?.data ?? [];
   const recursosStatuses = recursosStatusesRes?.data ?? [];
@@ -223,6 +234,10 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   const prioridades = prioridadesRes?.data ?? [];
   const tipoGarantias = tipoGarantiasRes?.data ?? [];
   const monedas = monedasRes?.data ?? [];
+  const tiposOT = tiposOTRes?.data ?? [];
+  const tiposCodRep = tiposCodRepRes?.data ?? [];
+  const fabricantes = fabricantesRes?.data ?? [];
+  const posiciones = posicionesRes?.data ?? [];
 
   const fetchOT = useCallback(async () => {
     if (!otId) return;
@@ -295,6 +310,14 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
       id_cliente: ot.id_cliente,
       estrategia: ot.estrategia,
       id_cod_rep: ot.id_cod_rep,
+      tipo_codigo: ot.tipo_codigo,
+      np: ot.np,
+      descripcion: ot.descripcion,
+      tipo: ot.tipo,
+      id_fabricante: ot.id_fabricante,
+      cod_rep_flota: ot.cod_rep_flota,
+      cod_rep_posicion: ot.cod_rep_posicion,
+      fecha_requerimiento_cliente: ot.fecha_requerimiento_cliente,
       equipo_codigo: ot.equipo_codigo,
       ns: ot.ns,
       plaqueteo: ot.plaqueteo,
@@ -328,6 +351,31 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
 
   function setField(key: string, value: unknown) {
     setEditData((prev) => ({ ...prev, [key]: value }));
+  }
+
+  // Al elegir otro Código Reparable (con estrategia), derivamos en el acto los
+  // datos del cilindro para que se vean en vivo (igual que en "nueva"). El
+  // server vuelve a derivarlos al guardar, así que quedan consistentes.
+  function aplicarCodRepEdit(codRepId: number | undefined) {
+    if (!codRepId) {
+      setEditData((prev) => ({ ...prev, id_cod_rep: null }));
+      return;
+    }
+    const cr = codReps.find((c) => c.cod_rep_id === codRepId);
+    setEditData((prev) => ({
+      ...prev,
+      id_cod_rep: codRepId,
+      ...(cr
+        ? {
+            tipo: cr.tipo?.nombre ?? null,
+            np: cr.np ?? null,
+            descripcion: cr.descripcion,
+            id_fabricante: cr.fabricante?.fabricante_id ?? null,
+            cod_rep_flota: cr.flota?.nombre ?? null,
+            cod_rep_posicion: cr.posicion?.nombre ?? null,
+          }
+        : {}),
+    }));
   }
 
   /* ── Guardar estados + comentarios ── */
@@ -560,7 +608,9 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   // físicos a reparar: no aplican datos de recepción, PCR/horas, ni Tipo
   // Reparación / Atención / Base Metálica / Taller Status. Servicio además
   // fuerza Estrategia=No (sin cod_rep asociado).
-  const tipoOTCodigo = ot?.tipo_codigo ?? null;
+  // En edición seguimos el Tipo OT del form (editData) para que bloquear/
+  // habilitar campos reaccione en vivo; fuera de edición, el valor guardado.
+  const tipoOTCodigo = (editing ? (editData.tipo_codigo as string | null) : ot?.tipo_codigo) ?? null;
   const bloqueoBien = tipoOTCodigo === "BIE" || tipoOTCodigo === "SER";
   const bloqueoServicio = tipoOTCodigo === "SER";
 
@@ -681,7 +731,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
           <Row gutter={[16, 12]}>
             <Col xs={12} md={6}>
               <FieldLabel>Estado OT</FieldLabel>
-              <Select
+              <Select showSearch optionFilterProp="label"
                 style={{ width: "100%" }}
                 value={otStatus || undefined}
                 onChange={setOtStatus}
@@ -690,7 +740,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
             </Col>
             <Col xs={12} md={6}>
               <FieldLabel>Estado Recursos</FieldLabel>
-              <Select
+              <Select showSearch optionFilterProp="label"
                 style={{ width: "100%" }}
                 value={recursosStatus || undefined}
                 onChange={setRecursosStatus}
@@ -699,7 +749,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
             </Col>
             <Col xs={12} md={6}>
               <FieldLabel>Estado Taller</FieldLabel>
-              <Select
+              <Select showSearch optionFilterProp="label"
                 style={{ width: "100%" }}
                 value={tallerStatus || undefined}
                 onChange={setTallerStatus}
@@ -781,6 +831,11 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
               <Row gutter={[16, 12]}>
                 <Col xs={12} md={6}><Field label="Nro OT" value={formatOtCodigo(ot.ot, ot.tipo_codigo)} /></Col>
                 <Col xs={12} md={6}>
+                  <FieldLabel>Tipo OT</FieldLabel>
+                  <Select showSearch optionFilterProp="label" style={{ width: "100%" }} value={editData.tipo_codigo as string} onChange={(v) => setField("tipo_codigo", v)}
+                    options={tiposOT.map((t) => ({ value: t.codigo, label: t.nombre }))} />
+                </Col>
+                <Col xs={12} md={6}>
                   <FieldLabel>Cliente</FieldLabel>
                   <Select showSearch optionFilterProp="label" style={{ width: "100%" }} value={editData.id_cliente as number} onChange={(v) => setField("id_cliente", v)}
                     options={clientes.map((c) => ({ value: c.cliente_id, label: `${c.codigo} - ${c.nombre_comercial ?? c.razon_social}` }))} />
@@ -801,11 +856,65 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                     allowClear
                     placeholder={bloqueoServicio ? "No aplica para Servicio" : undefined}
                     value={editData.id_cod_rep as number}
-                    onChange={(v) => setField("id_cod_rep", v)}
-                    options={codReps.map((cr) => ({ value: cr.cod_rep_id, label: `${cr.codigo} - ${cr.descripcion}` }))}
+                    onChange={(v) => aplicarCodRepEdit(v)}
+                    options={codReps.map((cr) => ({
+                      value: cr.cod_rep_id,
+                      label: `${cr.codigo} - ${cr.descripcion}${cr.np ? ` · N/P ${cr.np}` : ""}${cr.flota?.nombre ? ` · ${cr.flota.nombre}` : ""}`,
+                    }))}
                   />
                 </Col>
               </Row>
+              {/* Datos del cilindro. CON estrategia vienen del Código Reparable
+                  → solo lectura (no se editan a mano). SIN estrategia → editables.
+                  N/S y Equipo NO dependen del cod_rep (son del cilindro físico),
+                  así que se editan siempre, más abajo. */}
+              {!editData.estrategia ? (
+                <>
+                  <Row gutter={[16, 12]} style={{ marginTop: 8 }}>
+                    <Col xs={12} md={6}>
+                      <FieldLabel>N/P</FieldLabel>
+                      <Input value={(editData.np as string) ?? ""} onChange={(e) => setField("np", e.target.value)} />
+                    </Col>
+                    <Col xs={24} md={18}>
+                      <FieldLabel>Descripción</FieldLabel>
+                      <Input value={(editData.descripcion as string) ?? ""} onChange={(e) => setField("descripcion", e.target.value)} />
+                    </Col>
+                  </Row>
+                  <Row gutter={[16, 12]} style={{ marginTop: 8 }}>
+                    <Col xs={12} md={6}>
+                      <FieldLabel>Tipo</FieldLabel>
+                      <Select showSearch optionFilterProp="label" allowClear style={{ width: "100%" }}
+                        value={editData.tipo as string} onChange={(v) => setField("tipo", v ?? null)}
+                        options={tiposCodRep.map((t) => ({ value: t.codigo, label: t.nombre }))} />
+                    </Col>
+                    <Col xs={12} md={6}>
+                      <FieldLabel>Fabricante</FieldLabel>
+                      <Select showSearch optionFilterProp="label" allowClear style={{ width: "100%" }}
+                        value={editData.id_fabricante as number} onChange={(v) => setField("id_fabricante", v ?? null)}
+                        options={fabricantes.map((f) => ({ value: f.fabricante_id, label: f.nombre }))} />
+                    </Col>
+                    <Col xs={12} md={6}>
+                      <FieldLabel>Flota</FieldLabel>
+                      <Input value={(editData.cod_rep_flota as string) ?? ""} onChange={(e) => setField("cod_rep_flota", e.target.value)} />
+                    </Col>
+                    <Col xs={12} md={6}>
+                      <FieldLabel>Posición</FieldLabel>
+                      <Select showSearch optionFilterProp="label" allowClear style={{ width: "100%" }}
+                        value={editData.cod_rep_posicion as string} onChange={(v) => setField("cod_rep_posicion", v ?? null)}
+                        options={posiciones.map((p) => ({ value: p.codigo, label: p.nombre }))} />
+                    </Col>
+                  </Row>
+                </>
+              ) : (
+                <Row gutter={[16, 4]} style={{ marginTop: 12 }}>
+                  <Col xs={12} md={6}><Field label="N/P" value={(editData.np as string) ?? ot.np} /></Col>
+                  <Col xs={12} md={6}><Field label="Tipo" value={(editData.tipo as string) ?? ot.tipo} /></Col>
+                  <Col xs={24} md={12}><Field label="Descripción" value={(editData.descripcion as string) ?? ot.descripcion} /></Col>
+                  <Col xs={12} md={6}><Field label="Fabricante" value={fabricantes.find((f) => f.fabricante_id === editData.id_fabricante)?.nombre ?? ot.fabricante?.nombre} /></Col>
+                  <Col xs={12} md={6}><Field label="Flota" value={(editData.cod_rep_flota as string) ?? ot.cod_rep_flota} /></Col>
+                  <Col xs={12} md={6}><Field label="Posición" value={(editData.cod_rep_posicion as string) ?? ot.cod_rep_posicion} /></Col>
+                </Row>
+              )}
               <Row gutter={[16, 12]} style={{ marginTop: 8 }}>
                 <Col xs={12} md={6}>
                   <FieldLabel>Equipo</FieldLabel>
@@ -898,6 +1007,14 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                     onChange={(d) => setField("fecha_recepcion", d ? d.format("YYYY-MM-DD") : null)}
                   />
                 </Col>
+                <Col xs={12} md={6}>
+                  <FieldLabel>Fecha Requerimiento Cliente</FieldLabel>
+                  <DatePicker
+                    style={{ width: "100%" }} format="DD/MM/YYYY"
+                    value={editData.fecha_requerimiento_cliente ? dayjs(String(editData.fecha_requerimiento_cliente).slice(0, 10)) : null}
+                    onChange={(d) => setField("fecha_requerimiento_cliente", d ? d.format("YYYY-MM-DD") : null)}
+                  />
+                </Col>
               </Row>
             </>
           )}
@@ -979,7 +1096,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
             <Row gutter={[16, 12]}>
               <Col xs={12} md={6}>
                 <FieldLabel>Atención Reparación</FieldLabel>
-                <Select
+                <Select showSearch optionFilterProp="label"
                   style={{ width: "100%" }}
                   disabled={bloqueoBien}
                   value={editData.atencion_reparacion_codigo as string}
@@ -989,7 +1106,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
               </Col>
               <Col xs={12} md={6}>
                 <FieldLabel>Tipo Reparación</FieldLabel>
-                <Select
+                <Select showSearch optionFilterProp="label"
                   style={{ width: "100%" }}
                   disabled={bloqueoBien}
                   value={editData.tipo_reparacion_codigo as string}
@@ -999,7 +1116,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
               </Col>
               <Col xs={12} md={6}>
                 <FieldLabel>Prioridad de Atención</FieldLabel>
-                <Select style={{ width: "100%" }} value={editData.prioridad_atencion_codigo as string}
+                <Select showSearch optionFilterProp="label" style={{ width: "100%" }} value={editData.prioridad_atencion_codigo as string}
                   onChange={(v) => setField("prioridad_atencion_codigo", v)}
                   options={prioridades.map((p) => ({ value: p.codigo, label: `${p.codigo} - ${p.nombre}` }))} />
               </Col>
@@ -1013,7 +1130,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
               </Col>
               <Col xs={12} md={6}>
                 <FieldLabel>Tipo Garantía</FieldLabel>
-                <Select style={{ width: "100%" }} disabled={isGarantia}
+                <Select showSearch optionFilterProp="label" style={{ width: "100%" }} disabled={isGarantia}
                   value={editData.tipo_garantia_codigo as string}
                   onChange={(v) => setField("tipo_garantia_codigo", v)}
                   options={tipoGarantias.map((t) => ({ value: t.codigo, label: t.nombre }))} />
@@ -1043,7 +1160,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                     }}
                     parser={(v) => Number((v ?? "").replace(/[^\d.]/g, "")) as 0}
                   />
-                  <Select
+                  <Select showSearch optionFilterProp="label"
                     placeholder="Moneda"
                     value={editData.moneda_cotizacion_codigo as string}
                     onChange={(v) => setField("moneda_cotizacion_codigo", v)}

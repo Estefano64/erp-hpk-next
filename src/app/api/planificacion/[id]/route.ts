@@ -174,6 +174,15 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         data,
         include: { capturas: true, operacion_cod_rep: true },
       });
+
+      // Al cancelar (o finalizar) una tarea, cerrar cualquier sesión abierta para
+      // que no quede el cronómetro "Trabajando ahora" colgado en el dashboard.
+      if (estadoFinal === "cancelado" || estadoFinal === "realizado") {
+        await tx.planificacionOTSesion.updateMany({
+          where: { planificacion_ot_id: planId, fin: null },
+          data: { fin: new Date(), cierre: estadoFinal === "cancelado" ? "cancelado" : "finalizado" },
+        });
+      }
       return updated;
     });
 

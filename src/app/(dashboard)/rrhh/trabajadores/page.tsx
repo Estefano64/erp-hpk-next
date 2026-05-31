@@ -506,7 +506,7 @@ export default function TrabajadoresPage() {
             style={{ width: 280 }}
             allowClear
           />
-          <Select
+          <Select showSearch optionFilterProp="label"
             placeholder="Área"
             value={filtroArea}
             onChange={setFiltroArea}
@@ -746,7 +746,7 @@ export default function TrabajadoresPage() {
                   <Input.Password placeholder={cuentaUsuario ? "Sin cambios" : "Mínimo 6 caracteres"} autoComplete="new-password" />
                 </Form.Item>
                 <Form.Item name="activo" label="Estado de la cuenta">
-                  <Select options={[{ value: true, label: "Activa" }, { value: false, label: "Inactiva" }]} />
+                  <Select showSearch optionFilterProp="label" options={[{ value: true, label: "Activa" }, { value: false, label: "Inactiva" }]} />
                 </Form.Item>
               </Form>
             )}

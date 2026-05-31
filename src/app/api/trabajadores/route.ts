@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { normalizarNombreRecurso } from "@/lib/recursos";
 
 // Los selectores de operario / evaluador / supervisor filtran ahora por el ROL
 // del Usuario vinculado al Trabajador (no por su puesto). Esto significa que:
@@ -66,7 +67,8 @@ export async function GET(req: NextRequest) {
 }
 
 const CreateSchema = z.object({
-  nombre: z.string().trim().min(1).max(200),
+  // Sin coma: rompería el separador de multi-recurso "|" (ver @/lib/recursos).
+  nombre: z.string().trim().min(1).max(200).transform(normalizarNombreRecurso),
   dni: z.string().trim().optional().nullable(),
   area: z.string().trim().min(1).max(50),
   puesto: z.string().trim().min(1).max(100),

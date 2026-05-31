@@ -177,7 +177,7 @@ export default function MisTareasPage() {
           />
           <Select
             placeholder="Estado"
-            allowClear
+            allowClear showSearch optionFilterProp="label"
             value={estado}
             onChange={(v) => { setPage(1); setEstado(v); }}
             options={ESTADO_OPCIONES}

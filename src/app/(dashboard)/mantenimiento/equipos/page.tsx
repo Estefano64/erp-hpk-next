@@ -573,7 +573,7 @@ export default function EquiposPage() {
             />
           </Col>
           <Col xs={12} sm={6} md={3}>
-            <Select
+            <Select showSearch optionFilterProp="label"
               placeholder="Tipo"
               allowClear
               style={{ width: "100%" }}
@@ -583,7 +583,7 @@ export default function EquiposPage() {
             />
           </Col>
           <Col xs={12} sm={6} md={3}>
-            <Select
+            <Select showSearch optionFilterProp="label"
               placeholder="Área"
               allowClear
               style={{ width: "100%" }}
@@ -593,7 +593,7 @@ export default function EquiposPage() {
             />
           </Col>
           <Col xs={12} sm={6} md={3}>
-            <Select
+            <Select showSearch optionFilterProp="label"
               placeholder="Estado"
               allowClear
               style={{ width: "100%" }}
@@ -603,7 +603,7 @@ export default function EquiposPage() {
             />
           </Col>
           <Col xs={12} sm={6} md={3}>
-            <Select
+            <Select showSearch optionFilterProp="label"
               placeholder="Criticidad"
               allowClear
               style={{ width: "100%" }}
@@ -684,28 +684,28 @@ export default function EquiposPage() {
 
             <Col span={6}>
               <Form.Item name="status_codigo" label="Estado" rules={[{ required: true, message: "Requerido" }]} initialValue="OPE">
-                <Select options={statuses.map((s) => ({ value: s.codigo, label: `${s.codigo} - ${s.nombre}` }))} />
+                <Select showSearch optionFilterProp="label" options={statuses.map((s) => ({ value: s.codigo, label: `${s.codigo} - ${s.nombre}` }))} />
               </Form.Item>
             </Col>
             <Col span={6}>
               <Form.Item name="tipo_codigo" label="Tipo" rules={[{ required: true, message: "Requerido" }]}>
-                <Select options={tipos.map((t) => ({ value: t.codigo, label: `${t.codigo} - ${t.nombre}` }))} />
+                <Select showSearch optionFilterProp="label" options={tipos.map((t) => ({ value: t.codigo, label: `${t.codigo} - ${t.nombre}` }))} />
               </Form.Item>
             </Col>
             <Col span={6}>
               <Form.Item name="area_codigo" label="Área" rules={[{ required: true, message: "Requerido" }]}>
-                <Select options={areas.map((a) => ({ value: a.codigo, label: `${a.codigo} - ${a.nombre}` }))} />
+                <Select showSearch optionFilterProp="label" options={areas.map((a) => ({ value: a.codigo, label: `${a.codigo} - ${a.nombre}` }))} />
               </Form.Item>
             </Col>
             <Col span={6}>
               <Form.Item name="sub_area_codigo" label="Sub Área">
-                <Select allowClear options={subAreas.map((s) => ({ value: s.codigo, label: `${s.codigo} - ${s.nombre}` }))} />
+                <Select showSearch optionFilterProp="label" allowClear options={subAreas.map((s) => ({ value: s.codigo, label: `${s.codigo} - ${s.nombre}` }))} />
               </Form.Item>
             </Col>
 
             <Col span={6}>
               <Form.Item name="planta_codigo" label="Planta" rules={[{ required: true, message: "Requerido" }]}>
-                <Select options={plantas.map((p) => ({ value: p.codigo, label: `${p.codigo} - ${p.nombre}` }))} />
+                <Select showSearch optionFilterProp="label" options={plantas.map((p) => ({ value: p.codigo, label: `${p.codigo} - ${p.nombre}` }))} />
               </Form.Item>
             </Col>
             <Col span={6}>
@@ -737,12 +737,12 @@ export default function EquiposPage() {
             </Col>
             <Col span={6}>
               <Form.Item name="unidad_medida_codigo" label="Und. Medida">
-                <Select allowClear options={unidades.map((u) => ({ value: u.codigo, label: `${u.codigo} - ${u.nombre}` }))} />
+                <Select showSearch optionFilterProp="label" allowClear options={unidades.map((u) => ({ value: u.codigo, label: `${u.codigo} - ${u.nombre}` }))} />
               </Form.Item>
             </Col>
             <Col span={6}>
               <Form.Item name="criticidad_codigo" label="Criticidad">
-                <Select allowClear options={criticidades.map((c) => ({ value: c.codigo, label: `${c.codigo} - ${c.nombre}` }))} />
+                <Select showSearch optionFilterProp="label" allowClear options={criticidades.map((c) => ({ value: c.codigo, label: `${c.codigo} - ${c.nombre}` }))} />
               </Form.Item>
             </Col>
 
@@ -763,7 +763,7 @@ export default function EquiposPage() {
             </Col>
             <Col span={6}>
               <Form.Item name="moneda_codigo" label="Moneda" initialValue="USD">
-                <Select allowClear options={monedas.map((m) => ({ value: m.codigo, label: `${m.codigo} - ${m.nombre}` }))} />
+                <Select showSearch optionFilterProp="label" allowClear options={monedas.map((m) => ({ value: m.codigo, label: `${m.codigo} - ${m.nombre}` }))} />
               </Form.Item>
             </Col>
 

@@ -470,7 +470,7 @@ export default function OrdenesTrabajoInternasPage() {
             />
           </Col>
           <Col xs={12} md={5}>
-            <Select
+            <Select showSearch optionFilterProp="label"
               placeholder="Tipo (Correctiva / Preventiva)"
               allowClear
               value={filterTipo}
@@ -563,7 +563,7 @@ export default function OrdenesTrabajoInternasPage() {
                 label="Tipo de OT"
                 rules={[{ required: true, message: "Requerido" }]}
               >
-                <Select
+                <Select showSearch optionFilterProp="label"
                   placeholder="Correctiva / Preventiva"
                   options={tiposOTInterna.map((t) => ({ value: t.codigo, label: t.nombre }))}
                 />
@@ -609,7 +609,7 @@ export default function OrdenesTrabajoInternasPage() {
             </Col>
             <Col xs={12} md={6}>
               <Form.Item name="planta_codigo" label="Planta">
-                <Select
+                <Select showSearch optionFilterProp="label"
                   allowClear
                   placeholder="Opcional"
                   options={plantas.map((p) => ({ value: p.codigo, label: p.nombre }))}
@@ -618,7 +618,7 @@ export default function OrdenesTrabajoInternasPage() {
             </Col>
             <Col xs={12} md={6}>
               <Form.Item name="prioridad_atencion_codigo" label="Prioridad">
-                <Select
+                <Select showSearch optionFilterProp="label"
                   allowClear
                   placeholder="Opcional"
                   options={prioridades.map((p) => ({ value: p.codigo, label: p.nombre }))}
@@ -639,7 +639,7 @@ export default function OrdenesTrabajoInternasPage() {
             )}
             <Col xs={12} md={6}>
               <Form.Item name="user_status_codigo" label="User Status">
-                <Select
+                <Select showSearch optionFilterProp="label"
                   allowClear
                   placeholder="Opcional"
                   options={userStatuses.map((u) => ({ value: u.codigo, label: u.nombre }))}

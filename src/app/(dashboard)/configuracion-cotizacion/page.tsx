@@ -118,7 +118,7 @@ export default function ConfiguracionCotizacionPage() {
                 rules={[{ required: true, message: "Requerido" }]}
                 extra="Se usa cuando una cotización no especifica moneda"
               >
-                <Select
+                <Select showSearch optionFilterProp="label"
                   options={[
                     { value: "USD", label: "Dólar (USD)" },
                     { value: "SOL", label: "Sol peruano (SOL)" },

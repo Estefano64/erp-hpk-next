@@ -25,6 +25,7 @@ import isoWeek from "dayjs/plugin/isoWeek";
 import customParseFormat from "dayjs/plugin/customParseFormat";
 import { brand } from "@/lib/theme";
 import { calcularFinEstimado, calcularHH } from "@/lib/planification-hours";
+import { splitRecursos, joinRecursos } from "@/lib/recursos";
 import { useTabSync } from "@/lib/useTabSync";
 import { useSession } from "next-auth/react";
 import { useEditLock } from "@/lib/useEditLock";
@@ -88,13 +89,13 @@ const DEFAULT_PICKER_TIME = dayjs("00:00", "HH:mm");
 // Helpers para el campo tecnico (multi-operario en una tarea con qty_personal > 1).
 // Storage: string separado por coma+espacio (ej. "Juan Pérez, María López"). Compatibilidad:
 // tareas con 1 solo operario quedan como antes; las que tengan varios usan la misma columna.
+// Separador de multi-recurso = "|" (NO coma): los nombres traen coma
+// ("APELLIDO, NOMBRE"). Lógica centralizada en @/lib/recursos.
 function splitTecnicos(s: string | null | undefined): string[] {
-  if (!s) return [];
-  return s.split(",").map((x) => x.trim()).filter(Boolean);
+  return splitRecursos(s);
 }
 function joinTecnicos(arr: string[]): string | null {
-  const clean = arr.map((x) => x.trim()).filter(Boolean);
-  return clean.length === 0 ? null : clean.join(", ");
+  return joinRecursos(arr);
 }
 
 /**
@@ -147,6 +148,7 @@ interface PlanRow {
     prioridad_atencion: { codigo: string; nombre: string } | null;
     cliente: { codigo: string; razon_social: string; nombre_comercial: string | null } | null;
     codigo_reparacion: { codigo: string; flota: { codigo: string; nombre: string } | null } | null;
+    cod_rep_flota: string | null;
   } | null;
 }
 
@@ -421,11 +423,25 @@ export default function PlanificacionPage() {
       return;
     }
     if (selectedKeys.length === 0) return;
+
+    // Si se eligió un operario real (no Tercero) y NO se eligió una máquina
+    // explícita en el bulk, autocompletamos la máquina del operario (su
+    // equipo_codigo) — igual que el editor por fila. Solo se aplica a filas que
+    // todavía no tengan máquina, para no pisar asignaciones manuales.
+    const autoMaquina = (bulkTecnico && bulkTecnico !== "Tercero" && bulkMaquina === undefined)
+      ? (trabajadores.find((t) => t.nombre === bulkTecnico)?.equipo_codigo ?? null)
+      : null;
+
     // No bulk-editar tareas realizadas (servidor las rechaza, mejor avisar antes)
     const realizadas = selectedKeys.filter((id) => rows.find((r) => r.id === id)?.estado === "realizado");
     const editables = selectedKeys.filter((id) => !realizadas.includes(id));
     for (const id of editables) {
-      updateField(id, { ...patch });
+      const filaPatch = { ...patch };
+      if (autoMaquina) {
+        const r = rows.find((x) => x.id === id);
+        if (r && !r.maquina) filaPatch.maquina = autoMaquina;
+      }
+      updateField(id, filaPatch);
     }
     if (realizadas.length > 0) {
       messageApi.warning(`${realizadas.length} tarea(s) "realizado" se omitieron.`);
@@ -435,7 +451,7 @@ export default function PlanificacionPage() {
     setBulkMaquina(undefined);
     setBulkSemana(undefined);
     setSelectedKeys([]);
-  }, [bulkTecnico, bulkMaquina, bulkSemana, selectedKeys, rows, updateField, messageApi, autoSave]);
+  }, [bulkTecnico, bulkMaquina, bulkSemana, selectedKeys, rows, trabajadores, updateField, messageApi, autoSave]);
 
   // Auto-calcular fecha_fin cuando cambian inicio / duración / qty.
   // Si HE está marcado, el Fin Estimado lo maneja el usuario manualmente (no se sobrescribe).
@@ -569,7 +585,7 @@ export default function PlanificacionPage() {
     .map((v) => ({ text: v, value: v }));
   const clienteValores = [...new Set(rows.map((r) => r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social).filter(Boolean) as string[])].sort()
     .map((v) => ({ text: v, value: v }));
-  const flotaValores = [...new Set(rows.map((r) => r.orden_trabajo?.codigo_reparacion?.flota?.codigo).filter(Boolean) as string[])].sort()
+  const flotaValores = [...new Set(rows.map((r) => r.orden_trabajo?.codigo_reparacion?.flota?.codigo ?? r.orden_trabajo?.cod_rep_flota).filter(Boolean) as string[])].sort()
     .map((v) => ({ text: v, value: v }));
   const otDescValores = [...new Set(rows.map((r) => r.orden_trabajo?.descripcion).filter(Boolean) as string[])].sort()
     .map((v) => ({ text: v, value: v }));
@@ -654,13 +670,17 @@ export default function PlanificacionPage() {
     },
     {
       title: "Flota", key: "flota", width: 100,
-      filters: conVacio(flotaValores, (r) => r.orden_trabajo?.codigo_reparacion?.flota?.codigo), filterSearch: true,
+      // Combinamos:
+      //  - Fallback a cod_rep_flota (texto libre) cuando codigo_reparacion?.flota
+      //    está vacío (OTs importadas con id_cod_rep=NULL). Fix de main dc12b5a.
+      //  - Filtro "(vacío)" para identificar filas sin flota. Fix de Cloudflare cbdf177.
+      filters: conVacio(flotaValores, (r) => r.orden_trabajo?.codigo_reparacion?.flota?.codigo ?? r.orden_trabajo?.cod_rep_flota), filterSearch: true,
       onFilter: (value, r) => {
-        const v = r.orden_trabajo?.codigo_reparacion?.flota?.codigo;
+        const v = r.orden_trabajo?.codigo_reparacion?.flota?.codigo ?? r.orden_trabajo?.cod_rep_flota;
         if (esVacioFiltro(value, v)) return true;
         return v === value;
       },
-      render: (_, r) => r.orden_trabajo?.codigo_reparacion?.flota?.codigo ?? "-",
+      render: (_, r) => r.orden_trabajo?.codigo_reparacion?.flota?.codigo ?? r.orden_trabajo?.cod_rep_flota ?? "-",
     },
     {
       title: "Descripción", key: "otDesc", width: 200, ellipsis: true,
@@ -887,7 +907,7 @@ export default function PlanificacionPage() {
         if (esTercero) {
           return (
             <Tooltip title="Tarea terciarizada: no aplica equipo del taller.">
-              <Select size="small" disabled placeholder="— (Tercero)" style={{ width: "100%" }} />
+              <Select showSearch optionFilterProp="label" size="small" disabled placeholder="— (Tercero)" style={{ width: "100%" }} />
             </Tooltip>
           );
         }
@@ -1139,7 +1159,7 @@ export default function PlanificacionPage() {
       filters: estadoValores, filterSearch: true,
       onFilter: (value, r) => (r.estado ?? "abierto") === value,
       render: (_, r) => (
-        <Select
+        <Select showSearch optionFilterProp="label"
           value={r.estado ?? "abierto"}
           onChange={(v) => updateField(r.id, { estado: v })}
           options={estados.map((e) => ({ value: e.codigo, label: e.nombre }))}
@@ -1292,7 +1312,7 @@ export default function PlanificacionPage() {
             />
           </Col>
           <Col xs={12} md={3}>
-            <Select placeholder="Estado" allowClear style={{ width: "100%" }}
+            <Select showSearch optionFilterProp="label" placeholder="Estado" allowClear style={{ width: "100%" }}
               value={filterEstado}
               onChange={setFilterEstado}
               options={estados.map((e) => ({ value: e.codigo, label: e.nombre }))}

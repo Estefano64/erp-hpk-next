@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { splitRecursos } from "@/lib/recursos";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -37,8 +38,8 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
     if (!plan) return NextResponse.json({ error: "Tarea no encontrada" }, { status: 404 });
 
     // El técnico solo puede arrancar tareas que tenga asignadas (su nombre en
-    // el campo `tecnico`, que puede tener múltiples separados por coma).
-    const asignados = (plan.tecnico ?? "").split(",").map((s) => s.trim());
+    // el campo `tecnico`, que puede tener múltiples separados por "|").
+    const asignados = splitRecursos(plan.tecnico);
     if (!asignados.includes(tecnicoNombre) && !me.roles.includes("admin")) {
       return NextResponse.json({ error: "Esta tarea no está asignada a vos" }, { status: 403 });
     }

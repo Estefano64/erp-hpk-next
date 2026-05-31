@@ -29,6 +29,7 @@ import {
   SettingOutlined,
   ArrowUpOutlined,
   ArrowDownOutlined,
+  InfoCircleOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType, ColumnGroupType, ColumnType } from "antd/es/table/interface";
 import dayjs from "dayjs";
@@ -438,7 +439,7 @@ export default function ProgramacionDashboardPage() {
         key: `op-${comp.codigo}-${op.codigo}`,
         title: (
           <Tooltip title={`${op.nombre}${op.clasificacion ? ` (${op.clasificacion})` : ""}`}>
-            <div style={{ fontSize: 10, lineHeight: 1.1, writingMode: "vertical-rl", transform: "rotate(180deg)", padding: "6px 0", whiteSpace: "nowrap" }}>
+            <div style={{ fontSize: 10, lineHeight: 1.1, writingMode: "vertical-rl", transform: "rotate(180deg)", padding: "3px 0", whiteSpace: "nowrap" }}>
               {op.nombre}
             </div>
           </Tooltip>
@@ -506,32 +507,28 @@ export default function ProgramacionDashboardPage() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-        <Title level={4} style={{ margin: 0, color: brand.navy }}>
-          <AppstoreOutlined style={{ marginRight: 8 }} />
-          Dashboard de Planificación
-        </Title>
-        <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>
-          Refrescar
-        </Button>
-      </div>
-      <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 12 }}>
-        Matriz de OTs activas × operaciones del catálogo. Cada celda muestra el estado actual de esa operación en la OT.
-      </Text>
-
-      <Card size="small" style={{ marginBottom: 12 }} styles={{ body: { padding: 10 } }}>
+      {/* Encabezado compacto: título + filtros + acciones en una sola fila para
+          no comerle espacio vertical a la matriz. */}
+      <Card size="small" style={{ marginBottom: 8 }} styles={{ body: { padding: 10 } }}>
         <Space wrap>
+          <Title level={5} style={{ margin: 0, color: brand.navy, marginRight: 4 }}>
+            <AppstoreOutlined style={{ marginRight: 6 }} />
+            Dashboard de Planificación
+          </Title>
+          <Tooltip title="Matriz de OTs activas × operaciones del catálogo. Cada celda muestra el estado actual de esa operación en la OT.">
+            <InfoCircleOutlined style={{ color: brand.textSecondary, marginRight: 4 }} />
+          </Tooltip>
           <Input
             placeholder="Buscar OT, descripción, cliente, equipo…"
             prefix={<SearchOutlined />}
             allowClear
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            style={{ width: 320 }}
+            style={{ width: 300 }}
           />
           <Select
             placeholder="Filtrar componente"
-            allowClear
+            allowClear showSearch optionFilterProp="label"
             value={filtroComponente ?? undefined}
             onChange={(v) => setFiltroComponente(v ?? null)}
             options={componentes.map((c) => ({ value: c.codigo, label: c.nombre }))}
@@ -576,6 +573,9 @@ export default function ProgramacionDashboardPage() {
           >
             <Button icon={<BgColorsOutlined />}>Leyenda</Button>
           </Tooltip>
+          <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>
+            Refrescar
+          </Button>
         </Space>
       </Card>
 
@@ -906,7 +906,7 @@ function TablaProgramacion({
         loading={loading}
         bordered
         sticky={STICKY_HEADER}
-        scroll={{ x: "max-content", y: "calc(100vh - 320px)" }}
+        scroll={{ x: "max-content", y: "calc(100vh - 210px)" }}
         pagination={paginacionEstandar({
           current: page,
           pageSize,

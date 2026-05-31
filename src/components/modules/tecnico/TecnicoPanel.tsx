@@ -7,10 +7,14 @@ import {
 import {
   PlayCircleOutlined, PauseCircleOutlined, CheckCircleOutlined, TrophyOutlined,
   ClockCircleOutlined, ReloadOutlined, FireOutlined, LineChartOutlined,
+  LeftOutlined, RightOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import dayjs from "dayjs";
+import dayjs, { type Dayjs } from "dayjs";
+import isoWeek from "dayjs/plugin/isoWeek";
 import { brand } from "@/lib/theme";
+
+dayjs.extend(isoWeek);
 
 const { Title, Text } = Typography;
 
@@ -44,6 +48,12 @@ interface TareaPlan {
   comentario: string | null;      // comentario del planner → técnico
   observaciones: string | null;   // observaciones de ejecución del técnico
   orden_trabajo: OTLite | null;
+  // Estado del técnico logueado en esta tarea (derivado de sus sesiones).
+  // Independiente del estado global de la tarea (que es multi-técnico).
+  miEstado?: "sin_empezar" | "en_proceso" | "pausado" | "realizado";
+  // Planificación publicada por el planner. Si es borrador, el técnico la ve
+  // pero no la puede iniciar todavía.
+  publicado?: boolean;
 }
 interface SesionEnCurso {
   sesion_id: number;
@@ -87,6 +97,16 @@ function eficienciaColor(pct: number | null): string {
   if (pct >= 80) return "#faad14";
   return "#cf1322";
 }
+// Nombres de trabajador vienen como "APELLIDO APELLIDO NOMBRE NOMBRE" (sin coma).
+// Para el saludo mostramos "Primer nombre Primer apellido" (ej. "Jose Huamani").
+function saludoNombre(full: string): string {
+  const cap = (w: string) => (w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w);
+  const w = (full ?? "").trim().split(/\s+/).filter(Boolean);
+  if (w.length === 0) return "";
+  const primerApellido = w[0];
+  const primerNombre = w.length >= 3 ? w[2] : (w[1] ?? w[0]);
+  return `${cap(primerNombre)} ${cap(primerApellido)}`.trim();
+}
 function formatSegundos(s: number): string {
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
@@ -103,11 +123,14 @@ export default function TecnicoPanel() {
   const [accionLoading, setAccionLoading] = useState<number | null>(null);
   // Cronómetro local que avanza desde transcurrido_seg
   const [secondsTick, setSecondsTick] = useState(0);
+  // Semana que se está viendo (navegable con flechas) y filtro por día.
+  const [semanaRef, setSemanaRef] = useState<Dayjs>(() => dayjs());
+  const [diaFiltro, setDiaFiltro] = useState<string>("all");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch("/api/mi-trabajo");
+      const r = await fetch(`/api/mi-trabajo?semana=${semanaRef.format("YYYY-MM-DD")}`);
       if (r.ok) {
         const j = await r.json();
         setData(j);
@@ -115,7 +138,30 @@ export default function TecnicoPanel() {
     } finally {
       setLoading(false);
     }
+  }, [semanaRef]);
+
+  const irSemana = useCallback((delta: number) => {
+    setDiaFiltro("all");
+    setSemanaRef((s) => (delta === 0 ? dayjs() : s.add(delta, "week")));
   }, []);
+
+  // Navegación de semana + filtro por día para la tabla de "Mis tareas".
+  const lunesRef = semanaRef.startOf("isoWeek");
+  const viernesRef = lunesRef.add(4, "day");
+  const hoyDj = dayjs();
+  const esSemanaActual = semanaRef.isoWeek() === hoyDj.isoWeek() && semanaRef.isoWeekYear() === hoyDj.isoWeekYear();
+  const diaOpts = [
+    { value: "all", label: "Semana" },
+    ...["Lun", "Mar", "Mié", "Jue", "Vie"].map((nm, i) => {
+      const d = lunesRef.add(i, "day");
+      return { value: d.format("YYYY-MM-DD"), label: `${nm} ${d.format("DD")}` };
+    }),
+  ];
+  const tareasFiltradas = !data
+    ? []
+    : diaFiltro === "all"
+      ? data.tareasSemana
+      : data.tareasSemana.filter((t) => t.fecha_inicio && dayjs(t.fecha_inicio).format("YYYY-MM-DD") === diaFiltro);
 
   const fetchRanking = useCallback(async (periodo: "semana" | "mes") => {
     const r = await fetch(`/api/ranking-tecnicos?periodo=${periodo}`);
@@ -226,64 +272,37 @@ export default function TecnicoPanel() {
     {
       title: "Acción", width: 200, align: "center", fixed: "right",
       render: (_, r) => {
-        const enProceso = r.estado === "en_proceso";
-        const realizado = r.estado === "realizado";
-        const cancelado = r.estado === "cancelado";
+        // Acciones según el estado PERSONAL del técnico (miEstado), no el global
+        // de la tarea: así dos técnicos en la misma tarea actúan por separado.
+        const mi = r.miEstado ?? "sin_empezar";
         const tieneSesion = data?.sesionEnCurso?.planificacion_ot_id === r.id;
-        if (realizado) return <Tag color="success" icon={<CheckCircleOutlined />}>Finalizada</Tag>;
-        if (cancelado) return <Tag color="default">Cancelada</Tag>;
+        if (r.estado === "cancelado") return <Tag color="default">Cancelada</Tag>;
+        if (mi === "realizado") return <Tag color="success" icon={<CheckCircleOutlined />}>Terminada</Tag>;
+        // Borrador (el planner no publicó): visible pero aún no ejecutable.
+        if (r.publicado === false && mi === "sin_empezar" && !tieneSesion) {
+          return <Tooltip title="El planner todavía no confirmó (publicó) esta tarea."><Tag color="warning">Borrador</Tag></Tooltip>;
+        }
+        if (mi === "en_proceso" || tieneSesion) {
+          return (
+            <Space size={4}>
+              <Tooltip title="Pausar — la tarea queda lista para retomarse después">
+                <Button size="small" icon={<PauseCircleOutlined />} loading={accionLoading === r.id}
+                  onClick={() => abrirObs(r.id, "pausar")}>Pausar</Button>
+              </Tooltip>
+              <Tooltip title="Finalizar — registra tu fin y horas reales">
+                <Button size="small" type="primary" icon={<CheckCircleOutlined />} loading={accionLoading === r.id}
+                  onClick={() => abrirObs(r.id, "finalizar")}>Terminar</Button>
+              </Tooltip>
+            </Space>
+          );
+        }
+        // sin_empezar → Iniciar · pausado → Retomar. Deshabilitado si el técnico
+        // ya tiene otra tarea en curso (solo puede trabajar una a la vez).
         return (
-          <Space size={4}>
-            {!enProceso && !tieneSesion && (
-              <Button
-                size="small"
-                type="primary"
-                icon={<PlayCircleOutlined />}
-                loading={accionLoading === r.id}
-                onClick={() => accion(r.id, "iniciar")}
-                disabled={!!data?.sesionEnCurso}
-              >
-                Iniciar
-              </Button>
-            )}
-            {(enProceso || tieneSesion) && (
-              <>
-                <Tooltip title="Pausar — la tarea queda lista para retomarse después">
-                  <Button
-                    size="small"
-                    icon={<PauseCircleOutlined />}
-                    loading={accionLoading === r.id}
-                    onClick={() => abrirObs(r.id, "pausar")}
-                  >
-                    Pausar
-                  </Button>
-                </Tooltip>
-                <Tooltip title="Finalizar — registra fin y horas reales totales">
-                  <Button
-                    size="small"
-                    type="primary"
-                    icon={<CheckCircleOutlined />}
-                    loading={accionLoading === r.id}
-                    onClick={() => abrirObs(r.id, "finalizar")}
-                  >
-                    Terminar
-                  </Button>
-                </Tooltip>
-              </>
-            )}
-            {r.estado === "pausado" && !tieneSesion && (
-              <Button
-                size="small"
-                type="primary"
-                icon={<PlayCircleOutlined />}
-                loading={accionLoading === r.id}
-                onClick={() => accion(r.id, "iniciar")}
-                disabled={!!data?.sesionEnCurso}
-              >
-                Retomar
-              </Button>
-            )}
-          </Space>
+          <Button size="small" type="primary" icon={<PlayCircleOutlined />} loading={accionLoading === r.id}
+            onClick={() => accion(r.id, "iniciar")} disabled={!!data?.sesionEnCurso}>
+            {mi === "pausado" ? "Retomar" : "Iniciar"}
+          </Button>
         );
       },
     },
@@ -312,6 +331,9 @@ export default function TecnicoPanel() {
         <Row gutter={[12, 8]}>
           {dato("OT", o?.ot ?? `#${r.ot_id}`)}
           {dato("Duración est.", r.horas_estimadas != null ? `${Number(r.horas_estimadas)} h` : null)}
+          {dato("Inicio real", r.fecha_inicio_real ? dayjs(r.fecha_inicio_real).format("DD/MM/YY HH:mm") : null)}
+          {dato("Fin real", r.fecha_fin_real ? dayjs(r.fecha_fin_real).format("DD/MM/YY HH:mm") : null)}
+          {dato("Horas reales", r.horas_reales != null ? `${Number(r.horas_reales)} h` : null)}
           {dato("Prioridad", prio ? <Tag color={prioColor[prio.codigo] ?? "default"} style={{ margin: 0 }}>{prio.nombre}</Tag> : null)}
           {dato("Fecha de entrega", o?.fecha_entrega ? dayjs(o.fecha_entrega).format("DD/MM/YYYY") : null)}
           {dato("Tipo", o?.tipo)}
@@ -364,7 +386,7 @@ export default function TecnicoPanel() {
     <div>
       <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
         <Col>
-          <Title level={3} style={{ margin: 0 }}>Hola, {data.me.nombre.split(",")[0].split(" ")[0]} 👋</Title>
+          <Title level={3} style={{ margin: 0 }}>Hola, {saludoNombre(data.me.nombre)} 👋</Title>
           <Text type="secondary" style={{ fontSize: 13 }}>{data.me.area} · {data.me.puesto}</Text>
         </Col>
         <Col>
@@ -476,20 +498,44 @@ export default function TecnicoPanel() {
       <Row gutter={[16, 16]}>
         {/* Tareas de TODA la semana (hoy resaltado con el tag "Hoy") */}
         <Col xs={24} lg={16}>
-          <Card size="small" title={`Mis tareas de la semana (${data.tareasSemana.length}) · hoy: ${data.tareasHoy.length}`}>
+          <Card
+            size="small"
+            title={
+              <Space wrap size={4}>
+                <Button size="small" type="text" icon={<LeftOutlined />} onClick={() => irSemana(-1)} aria-label="Semana anterior" />
+                <span style={{ fontWeight: 600 }}>{lunesRef.format("DD/MM")} – {viernesRef.format("DD/MM")}</span>
+                <Button size="small" type="text" icon={<RightOutlined />} onClick={() => irSemana(1)} aria-label="Semana siguiente" />
+                <Button size="small" onClick={() => irSemana(0)} disabled={esSemanaActual}>Hoy</Button>
+                <Tag color={esSemanaActual ? "blue" : "default"}>
+                  {data.tareasSemana.length} {data.tareasSemana.length === 1 ? "tarea" : "tareas"}
+                  {esSemanaActual && data.tareasHoy.length ? ` · hoy ${data.tareasHoy.length}` : ""}
+                </Tag>
+              </Space>
+            }
+            extra={
+              <Segmented
+                size="small"
+                value={diaFiltro}
+                onChange={(v) => setDiaFiltro(v as string)}
+                options={diaOpts}
+              />
+            }
+          >
             {data.tareasSemana.length === 0
               ? <Empty description="No tenés tareas programadas esta semana" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-              : (
-                <Table<TareaPlan>
-                  rowKey="id"
-                  columns={columnasSemana}
-                  dataSource={data.tareasSemana}
-                  size="small"
-                  pagination={false}
-                  scroll={{ x: 1010 }}
-                  expandable={expandable}
-                />
-              )
+              : tareasFiltradas.length === 0
+                ? <Empty description="Sin tareas para el día seleccionado" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                : (
+                  <Table<TareaPlan>
+                    rowKey="id"
+                    columns={columnasSemana}
+                    dataSource={tareasFiltradas}
+                    size="small"
+                    pagination={false}
+                    scroll={{ x: 1010 }}
+                    expandable={expandable}
+                  />
+                )
             }
           </Card>
         </Col>

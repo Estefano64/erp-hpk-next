@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { normalizarNombreRecurso } from "@/lib/recursos";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 const UpdateSchema = z.object({
-  nombre: z.string().trim().min(1).max(200).optional(),
+  // Sin coma: rompería el separador de multi-recurso "|" (ver @/lib/recursos).
+  nombre: z.string().trim().min(1).max(200).transform(normalizarNombreRecurso).optional(),
   dni: z.string().trim().optional().nullable(),
   area: z.string().trim().min(1).max(50).optional(),
   puesto: z.string().trim().min(1).max(100).optional(),

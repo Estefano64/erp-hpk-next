@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { sumarHorasReales } from "@/lib/plan-sesion";
+import { sumarHorasReales, rollupEstadoTarea } from "@/lib/plan-sesion";
+import { splitRecursos } from "@/lib/recursos";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -41,23 +42,25 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       data: { fin: now, cierre: "pausa" },
     });
 
-    // Recalcular horas reales acumuladas para esta tarea.
+    // Recalcular horas reales + estado rollup. Si otro técnico sigue activo, la
+    // tarea no queda "pausado" global (refleja el estado real del conjunto).
     const todas = await prisma.planificacionOTSesion.findMany({
       where: { planificacion_ot_id: planId },
-      select: { inicio: true, fin: true },
+      select: { tecnico: true, inicio: true, fin: true, cierre: true },
     });
     const horas = sumarHorasReales(todas);
+    const plan = await prisma.planificacionOT.findUnique({ where: { id: planId }, select: { tecnico: true, observaciones: true } });
+    const estadoTarea = rollupEstadoTarea(splitRecursos(plan?.tecnico), todas);
 
     // Observaciones del técnico (acumulativas): se anexan a las existentes.
     let observaciones: string | undefined;
     if (obs) {
-      const cur = await prisma.planificacionOT.findUnique({ where: { id: planId }, select: { observaciones: true } });
-      observaciones = cur?.observaciones ? `${cur.observaciones}\n${obs}` : obs;
+      observaciones = plan?.observaciones ? `${plan.observaciones}\n${obs}` : obs;
     }
 
     await prisma.planificacionOT.update({
       where: { id: planId },
-      data: { estado: "pausado", horas_reales: horas, ...(observaciones !== undefined ? { observaciones } : {}) },
+      data: { estado: estadoTarea, horas_reales: horas, ...(observaciones !== undefined ? { observaciones } : {}) },
     });
 
     return NextResponse.json({ ok: true, horas_reales: horas, fin: now.toISOString() });

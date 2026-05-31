@@ -1373,6 +1373,8 @@ model PlanificacionOT {
   horas_extras         Boolean?                 @default(false)
   horas_extras_qty     Decimal?                 @db.Decimal(5, 1)
   trabajo_externo      Boolean?                 @default(false)
+  // Planificación "publicada" por el planner (deja de ser borrador para el técnico).
+  publicado            Boolean                  @default(false)
   version              Int                      @default(1)
   created_at           DateTime                 @default(now())
   updated_at           DateTime                 @updatedAt

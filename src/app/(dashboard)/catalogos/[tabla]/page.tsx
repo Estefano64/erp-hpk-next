@@ -434,7 +434,7 @@ function renderField(f: FieldDef, fkOpts: { value: string; label: string }[]) {
       input = <Input type="color" style={{ width: 80 }} />;
       break;
     case "select":
-      input = <Select options={f.options ?? []} allowClear />;
+      input = <Select showSearch optionFilterProp="label" options={f.options ?? []} allowClear />;
       break;
     case "select-fk":
       input = <Select showSearch optionFilterProp="label" options={fkOpts} allowClear />;

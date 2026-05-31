@@ -93,7 +93,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       } else {
         nroReq = await nextNroReqInterna(tx, otInternaId);
       }
-      let itemReqStart = await nextItemReqInterna(tx, otInternaId);
+      let itemReqStart = await nextItemReqInterna(tx, otInternaId, nroReq);
 
       const created = [];
       for (const it of parsed.data.items) {

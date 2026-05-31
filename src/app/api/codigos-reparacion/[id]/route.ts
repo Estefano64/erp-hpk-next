@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isAdmin } from "@/lib/audit";
+import { ensureFlotaCodigo } from "@/lib/flota";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -20,13 +21,17 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
     const body = await req.json();
+    const flotaCodigo = await ensureFlotaCodigo(body.flota_codigo);
+    if (!flotaCodigo) {
+      return NextResponse.json({ error: "La flota es requerida" }, { status: 400 });
+    }
     const updated = await prisma.codigoReparacion.update({
       where: { cod_rep_id: Number(id) },
       data: {
         descripcion: body.descripcion,
         tipo_codigo: body.tipo_codigo,
         categoria_codigo: body.categoria_codigo,
-        flota_codigo: body.flota_codigo,
+        flota_codigo: flotaCodigo,
         fabricante_codigo: body.fabricante_codigo || null,
         np: body.np || null,
         posicion_codigo: body.posicion_codigo || null,
