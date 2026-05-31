@@ -1375,6 +1375,9 @@ model PlanificacionOT {
   trabajo_externo      Boolean?                 @default(false)
   // Planificación "publicada" por el planner (deja de ser borrador para el técnico).
   publicado            Boolean                  @default(false)
+  // Marca de EMERGENCIA / correctiva. Independiente del `estado` de ejecución:
+  // una tarea puede ser correctiva y a la vez estar en_proceso/pausado/realizado.
+  es_correctivo        Boolean                  @default(false)
   version              Int                      @default(1)
   created_at           DateTime                 @default(now())
   updated_at           DateTime                 @updatedAt

@@ -30,8 +30,9 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
       const T = await tx.planificacionOT.findUnique({ where: { id: planId } });
       if (!T) throw Object.assign(new Error("No encontrado"), { code: "NOT_FOUND" });
 
-      // Siempre marcar como correctiva.
-      await tx.planificacionOT.update({ where: { id: planId }, data: { estado: "correctivo" } });
+      // Marcar como correctiva SIN tocar el estado de ejecución (son conceptos
+      // independientes: una correctiva puede estar en_proceso/pausado/realizado).
+      await tx.planificacionOT.update({ where: { id: planId }, data: { es_correctivo: true } });
 
       // Sin fecha o sin operario no hay nada que reacomodar (queda en el pool roja).
       if (!T.fecha_inicio || !T.tecnico) {
@@ -50,13 +51,14 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
         ? T.fecha_fin
         : calcularFinEstimado(T.fecha_inicio, Number(T.horas_estimadas ?? 0) * qtyT);
 
-      // Candidatas: tareas del mismo día (cualquier hora), activas.
+      // Candidatas: tareas del mismo día (cualquier hora), activas y NO emergencias.
       const candidatas = await tx.planificacionOT.findMany({
         where: {
           id: { not: planId },
           tecnico: { not: null },
+          es_correctivo: false,
           fecha_inicio: { gte: diaIni, lte: diaFin },
-          estado: { notIn: ["cancelado", "realizado", "correctivo"] },
+          estado: { notIn: ["cancelado", "realizado"] },
         },
         orderBy: { fecha_inicio: "asc" },
       });
@@ -69,11 +71,25 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
         return (c.fecha_inicio && c.fecha_inicio >= S) || (termina != null && termina > S);
       });
 
+      // SOLO se reprograma lo que NO empezó: si una tarea ya tiene sesiones
+      // (en proceso / pausada / con tramos reales), su plan es historia y no se
+      // mueve. Las sesiones son la verdad; el técnico la pausa/reanuda aparte.
+      const idsAfect = afectadas.map((a) => a.id);
+      const conSesion = idsAfect.length
+        ? new Set(
+            (await tx.planificacionOTSesion.findMany({
+              where: { planificacion_ot_id: { in: idsAfect } },
+              select: { planificacion_ot_id: true },
+            })).map((s) => s.planificacion_ot_id),
+          )
+        : new Set<number>();
+      const aReprogramar = afectadas.filter((a) => !conSesion.has(a.id));
+
       const empujadas: number[] = [];
       const alPool: number[] = [];
       let cursor: Date = finT;
 
-      for (const c of afectadas) {
+      for (const c of aReprogramar) {
         const inicioHabil = normalizarAInicioHabil(cursor);
         // Si el nuevo inicio cae en otro día (no entró en la jornada de hoy) → pool.
         if (!dayjs(inicioHabil).isSame(dia, "day")) {
