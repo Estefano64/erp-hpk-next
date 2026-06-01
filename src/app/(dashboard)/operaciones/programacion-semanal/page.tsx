@@ -21,6 +21,7 @@ import { splitRecursos } from "@/lib/recursos";
 import { useTabSync } from "@/lib/useTabSync";
 import { useSession } from "next-auth/react";
 import { useEditLock } from "@/lib/useEditLock";
+import { rolesDesdeUser } from "@/lib/permisos";
 import TareaAdjuntosLista from "@/components/TareaAdjuntosLista";
 
 dayjs.extend(isoWeek);
@@ -157,6 +158,11 @@ export default function ProgramacionSemanalPage() {
   const router = useRouter();
   const { data: session } = useSession();
   const currentUser = (session?.user?.name ?? session?.user?.email) ?? null;
+  // Reabrir una tarea finalizada es una acción extraordinaria: solo planner/admin.
+  const esPlanner = useMemo(() => {
+    const roles = rolesDesdeUser(session?.user as { roles?: string[] } | undefined);
+    return roles.includes("planner") || roles.includes("admin");
+  }, [session]);
   const lock = useEditLock("programacion-semanal", 1, currentUser);
   const [editMode, setEditMode] = useState(false);
   const [lunes, setLunes] = useState<Dayjs>(() => dayjs().startOf("isoWeek"));
@@ -712,6 +718,31 @@ export default function ProgramacionSemanalPage() {
       fetchData();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Error al sacar tarea";
+      endSave(msg);
+      messageApi.error(msg);
+    }
+  }
+
+  // ── Reabrir una tarea finalizada por error (acción extraordinaria, planner/admin) ──
+  // Revierte el "finalizar" del técnico: la tarea vuelve a "pausado" (el técnico
+  // podrá retomarla). El backend da vuelta las sesiones "finalizado" → "pausa".
+  async function reabrirTarea(id: number) {
+    if (!editMode) {
+      messageApi.warning("Activá Modo Edición para reabrir tareas.");
+      return;
+    }
+    beginSave();
+    try {
+      const res = await fetch(`/api/planificacion/${id}/reabrir`, { method: "POST" });
+      const j = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(j?.error ?? "Error");
+      messageApi.success("Tarea reabierta: quedó en Pausado. El técnico puede retomarla.");
+      endSave();
+      setSelectedTask(null);
+      notifySync();
+      fetchData();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Error al reabrir";
       endSave(msg);
       messageApi.error(msg);
     }
@@ -2001,6 +2032,18 @@ export default function ProgramacionSemanalPage() {
               onConfirm={() => selectedTask && marcarEmergencia(selectedTask)}
             >
               <Button danger disabled={!editMode}>🚨 Emergencia</Button>
+            </Popconfirm>
+          ) : null,
+          selectedTask?.estado === "realizado" && esPlanner ? (
+            <Popconfirm
+              key="reabrir"
+              title="Reabrir tarea finalizada"
+              description="Acción extraordinaria: la tarea vuelve a 'Pausado' y el técnico podrá retomarla. Se conserva el tiempo trabajado y queda registrado en el historial."
+              okText="Reabrir"
+              cancelText="Cancelar"
+              onConfirm={() => selectedTask && reabrirTarea(selectedTask.id)}
+            >
+              <Button disabled={!editMode}>Reabrir tarea</Button>
             </Popconfirm>
           ) : null,
           <Button key="plan" type="primary" onClick={() => router.push("/operaciones/planificacion")}>
