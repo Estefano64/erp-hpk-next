@@ -226,8 +226,12 @@ export default function ProgramacionSemanalPage() {
       fetch(`/api/planificacion?${params1}`),
       fetch(`/api/planificacion?limit=500`),
     ]);
-    if (resWeek.ok) setRows((await resWeek.json()).data ?? []);
-    if (resAll.ok) setAllRows((await resAll.json()).data ?? []);
+    // Una tarea cancelada no ocupa lugar: la sacamos de la grilla y del pool para
+    // que su espacio quede libre y se pueda programar otra tarea encima (y para
+    // que no dispare falsos choques en la detección de superposición).
+    const sinCanceladas = (arr: PlanRow[]) => arr.filter((r) => r.estado !== "cancelado");
+    if (resWeek.ok) setRows(sinCanceladas((await resWeek.json()).data ?? []));
+    if (resAll.ok) setAllRows(sinCanceladas((await resAll.json()).data ?? []));
   }, [lunes, viernes]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
