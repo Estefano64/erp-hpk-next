@@ -43,19 +43,25 @@ interface StockItem {
   moneda: string | null;
   fabricante: string | null;
   categoria: string | null;
+  categoria_nombre: string | null;
   clasificacion: string | null;
   alerta: "OK" | "BAJO" | "SIN" | "EXCESO";
 }
 
-// Lista de codigos / palabras que identifican a un suministro consumible.
-const FILTRO_CATEGORIA = ["SUM", "SUMI", "SUMINISTRO", "CONS", "CONSUMIBLE"];
-const FILTRO_PALABRAS = ["trapo", "pintura", "perno", "disolvente", "lija", "tornillo", "tuerca", "wd-40", "thinner", "lubricante"];
+// SOLO los materiales catalogados cuya categoría sea exactamente
+// "Suministros" o "Consumibles" (por nombre, case-insensitive). Antes el
+// filtro también matcheaba palabras en la descripción ("trapo", "lija", etc.)
+// pero eso producía falsos positivos — el user pidió SOLO por categoría.
+const NOMBRES_CATEGORIA_PERMITIDOS = ["suministros", "consumibles"];
+// Códigos cortos legacy que también valen (por si la BD tiene la categoría
+// con código antiguo pero nombre nuevo, o viceversa).
+const CODIGOS_CATEGORIA_PERMITIDOS = ["SUM", "SUMI", "CONS", "CONSUMIBLE"];
 
 function esSuministro(item: StockItem): boolean {
-  const cat = (item.categoria ?? "").toUpperCase();
-  if (FILTRO_CATEGORIA.includes(cat)) return true;
-  const desc = (item.descripcion ?? "").toLowerCase();
-  return FILTRO_PALABRAS.some((p) => desc.includes(p));
+  const nombre = (item.categoria_nombre ?? "").trim().toLowerCase();
+  if (NOMBRES_CATEGORIA_PERMITIDOS.includes(nombre)) return true;
+  const codigo = (item.categoria ?? "").trim().toUpperCase();
+  return CODIGOS_CATEGORIA_PERMITIDOS.includes(codigo);
 }
 
 export default function SuministrosPage() {
@@ -205,8 +211,9 @@ function TabCatalogo() {
         title="Consumibles que se entregan a una OT (trapos, pintura, pernos, disolventes, etc.)"
         description={
           <div style={{ fontSize: 12 }}>
-            Esta vista muestra materiales identificados como suministros por categoría
-            (<b>{FILTRO_CATEGORIA.join(", ")}</b>) o por palabras clave en la descripción.
+            Esta vista muestra solo los materiales catalogados cuya categoría sea
+            <b> Suministros</b> o <b>Consumibles</b>. Si un material no aparece, revisá
+            su categoría en /materiales o /catalogos.
             Para entregar suministros a un trabajador / OT, usá la pestaña <b>Entregar suministros</b>.
           </div>
         }

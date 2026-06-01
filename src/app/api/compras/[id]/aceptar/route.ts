@@ -24,6 +24,10 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!Number.isFinite(compraId)) {
       return NextResponse.json({ error: "ID inválido" }, { status: 400 });
     }
+    // Comentario opcional al aceptar una OC. Si viene texto se persiste en
+    // el historial; si no, la acción se registra sin comentario.
+    const body = await req.json().catch(() => ({}));
+    const comentario = typeof body?.comentario === "string" ? body.comentario.trim() : "";
 
     const result = await prisma.$transaction(async (tx) => {
       const compra = await tx.compra.findUnique({
@@ -78,8 +82,10 @@ export async function POST(req: NextRequest, { params }: Params) {
         select: { orden_trabajo_interna_id: true },
         distinct: ["orden_trabajo_interna_id"],
       });
-      const descripcionHist = `OC ${compra.numero_po} aceptada por ${usuario}`;
-      const datosAdicionalesHist = JSON.stringify({ po_id: compraId, numero_po: compra.numero_po, accion: "ACEPTAR_OC" });
+      const descripcionHist = comentario
+        ? `OC ${compra.numero_po} aceptada por ${usuario} — ${comentario}`
+        : `OC ${compra.numero_po} aceptada por ${usuario}`;
+      const datosAdicionalesHist = JSON.stringify({ po_id: compraId, numero_po: compra.numero_po, accion: "ACEPTAR_OC", comentario: comentario || null });
       for (const { ot_id } of otsExternasAfectadas) {
         if (ot_id == null) continue;
         await tx.oTHistorial.create({

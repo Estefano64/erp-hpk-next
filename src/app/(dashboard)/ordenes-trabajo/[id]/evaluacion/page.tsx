@@ -396,7 +396,8 @@ export default function EvaluacionPage() {
   const ejecutarAccionRevision = async () => {
     if (!modalAccion || !evaluacion) return;
     try {
-      const values = accionForm.getFieldsValue();
+      // validateFields lanza si el comentario está vacío (rules required).
+      const values = await accionForm.validateFields();
       setProcesandoAccion(true);
       const res = await fetch(`/api/evaluaciones/${evaluacion.id}/revision`, {
         method: "POST",
@@ -404,7 +405,7 @@ export default function EvaluacionPage() {
         body: JSON.stringify({
           accion: modalAccion,
           usuario: values.usuario || "Usuario",
-          comentarios: values.comentarios || null,
+          comentarios: (values.comentarios ?? "").trim(),
         }),
       });
       const json = await res.json();
@@ -912,21 +913,20 @@ export default function EvaluacionPage() {
           >
             <Input placeholder="Ej. Juan Pérez" disabled />
           </Form.Item>
-          {modalAccion !== "reabrir" && (
-            <Form.Item
-              label={
-                modalAccion === "solicitar"
-                  ? "Comentarios para el revisor (opcional)"
-                  : modalAccion === "rechazar"
-                  ? "Motivo del rechazo"
-                  : "Comentarios (opcional)"
-              }
-              name="comentarios"
-              rules={modalAccion === "rechazar" ? [{ required: true, message: "Indica el motivo del rechazo" }] : []}
-            >
-              <Input.TextArea rows={3} placeholder="Observaciones..." />
-            </Form.Item>
-          )}
+          <Form.Item
+            label={
+              <span>
+                {modalAccion === "solicitar" ? "Comentarios para el revisor"
+                  : modalAccion === "rechazar" ? "Motivo del rechazo"
+                  : modalAccion === "reabrir" ? "Motivo de la reapertura"
+                  : "Comentarios"}{" "}
+                <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+              </span>
+            }
+            name="comentarios"
+          >
+            <Input.TextArea rows={3} placeholder="Observaciones..." maxLength={500} showCount />
+          </Form.Item>
           {modalAccion === "solicitar" && (
             <Text type="secondary" style={{ fontSize: 12 }}>
               Al enviar a revisión, la evaluación quedará bloqueada hasta que el revisor la apruebe o rechace.

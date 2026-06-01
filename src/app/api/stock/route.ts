@@ -36,6 +36,9 @@ export async function GET(req: NextRequest) {
         fabricante_codigo: true,
         categoria_codigo: true,
         clasificacion_codigo: true,
+        // El nombre de la categoría se usa en /suministros para filtrar por
+        // "Suministros" / "Consumibles" sin depender de los códigos cortos.
+        categoria: { select: { nombre: true } },
       },
       orderBy: { codigo: "asc" },
     });
@@ -99,6 +102,7 @@ export async function GET(req: NextRequest) {
       moneda: string | null;
       fabricante: string | null;
       categoria: string | null;
+      categoria_nombre: string | null;
       clasificacion: string | null;
       valor_total: number;
       alerta: "OK" | "BAJO" | "SIN" | "EXCESO";
@@ -146,6 +150,7 @@ export async function GET(req: NextRequest) {
         moneda: m.moneda_codigo,
         fabricante: m.fabricante_codigo,
         categoria: m.categoria_codigo,
+        categoria_nombre: m.categoria?.nombre ?? null,
         clasificacion: m.clasificacion_codigo,
         valor_total: m.precio ? Number(m.precio) * stock : 0,
         alerta,

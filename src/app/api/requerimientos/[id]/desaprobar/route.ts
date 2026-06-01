@@ -16,7 +16,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
     const body = await req.json().catch(() => ({}));
-    const motivo = typeof body.motivo === "string" ? body.motivo.trim() : null;
+    // Motivo opcional. Si viene se anexa a observaciones y al historial.
+    const motivo = typeof body.motivo === "string" ? (body.motivo.trim() || null) : null;
     const usuario = (await getAuditUser(req)) ?? "sistema";
 
     const current = await prisma.oTRepuesto.findUnique({

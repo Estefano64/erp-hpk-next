@@ -32,8 +32,8 @@ export async function POST(req: NextRequest) {
   const ids = Array.isArray(body.ids)
     ? (body.ids as unknown[]).filter((x): x is number => typeof x === "number" && Number.isFinite(x) && x > 0)
     : null;
-  // Comentario / recomendación opcional del aprobador. Se guarda en cada
-  // item del lote (mismo texto) y se appendea al historial.
+  // Comentario / recomendación OPCIONAL del aprobador. Si viene, se guarda
+  // en cada item del lote (mismo texto) y se appendea al historial.
   const comentario = typeof body.comentario === "string"
     ? (body.comentario.trim().slice(0, 500) || null)
     : null;

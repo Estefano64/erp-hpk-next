@@ -25,10 +25,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const { id } = await ctx.params;
     const usuario = (await getAuditUser(req)) ?? "sistema";
 
-    // Body opcional con precio estimado + comentario del aprobador.
+    // Body con precio estimado (opcional) + comentario opcional del aprobador.
     let precioEstimado: number | null = null;
     let monedaEstimado: string | null = null;
-    let comentario: string | null = null;
+    let comentario = "";
     try {
       const body = (await req.json()) as { precio_estimado?: unknown; moneda?: unknown; comentario?: unknown };
       if (typeof body?.precio_estimado === "number" && Number.isFinite(body.precio_estimado) && body.precio_estimado >= 0) {
@@ -38,11 +38,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         monedaEstimado = body.moneda.trim().slice(0, 10);
       }
       if (typeof body?.comentario === "string") {
-        const c = body.comentario.trim();
-        if (c.length > 0) comentario = c.slice(0, 500);
+        comentario = body.comentario.trim().slice(0, 500);
       }
     } catch {
-      // Body opcional — silenciar parse error y continuar sin precio.
+      // Body inválido / vacío: seguimos con comentario vacío.
     }
 
     const current = await prisma.oTRepuesto.findUnique({
@@ -72,7 +71,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           // Solo actualiza precio/moneda si vinieron en el body.
           ...(precioEstimado != null ? { precio_unitario: precioEstimado } : {}),
           ...(monedaEstimado ? { moneda: monedaEstimado } : {}),
-          comentario_aprobacion: comentario,
+          comentario_aprobacion: comentario || null,
         },
       });
       // Historial polimórfico (OT externa o interna).

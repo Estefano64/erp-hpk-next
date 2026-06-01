@@ -311,7 +311,7 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
           <tr><th>Parámetro</th><th>B</th><th>C</th><th>D</th></tr>
         </thead><tbody>
           <tr><td class="label">Flexión</td><td class="editable">${esc(tflxB) || "—"}</td><td class="editable">${esc(tflxC) || "—"}</td><td class="editable">${esc(tflxD) || "—"}</td></tr>
-          <tr><td class="label">Esp. Cromo</td><td class="editable">${esc(tecB) || "—"}</td><td class="editable">${esc(tecC) || "—"}</td><td class="editable">${esc(tecD) || "—"}</td></tr>
+          <tr><td class="label">Esp. Cromo [mil]</td><td class="editable">${esc(tecB) || "—"}</td><td class="editable">${esc(tecC) || "—"}</td><td class="editable">${esc(tecD) || "—"}</td></tr>
         </tbody></table>
       `;
     }
@@ -378,7 +378,7 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
             <tr><th>Parámetro</th><th>1</th><th>2</th><th>3</th></tr>
           </thead><tbody>
             <tr><td class="label">Flexión</td><td class="editable">${esc(cflx1) || "—"}</td><td class="editable">${esc(cflx2) || "—"}</td><td class="editable">${esc(cflx3) || "—"}</td></tr>
-            <tr><td class="label">Esp. Cromo</td><td class="editable">${esc(cec1) || "—"}</td><td class="editable">${esc(cec2) || "—"}</td><td class="editable">${esc(cec3) || "—"}</td></tr>
+            <tr><td class="label">Esp. Cromo [mil]</td><td class="editable">${esc(cec1) || "—"}</td><td class="editable">${esc(cec2) || "—"}</td><td class="editable">${esc(cec3) || "—"}</td></tr>
           </tbody></table>
         `;
       }
@@ -726,7 +726,7 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
             <tr><th>Parámetro</th><th>B</th><th>C</th><th>D</th></tr>
           </thead><tbody>
             <tr><td class="label">Flexión</td><td class="editable">${esc(flxB) || "—"}</td><td class="editable">${esc(flxC) || "—"}</td><td class="editable">${esc(flxD) || "—"}</td></tr>
-            <tr><td class="label">Esp. Cromo</td><td class="editable">${esc(ecB) || "—"}</td><td class="editable">${esc(ecC) || "—"}</td><td class="editable">${esc(ecD) || "—"}</td></tr>
+            <tr><td class="label">Esp. Cromo [mil]</td><td class="editable">${esc(ecB) || "—"}</td><td class="editable">${esc(ecC) || "—"}</td><td class="editable">${esc(ecD) || "—"}</td></tr>
           </tbody></table>
         `;
       }

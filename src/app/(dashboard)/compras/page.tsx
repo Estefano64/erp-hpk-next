@@ -57,7 +57,7 @@ import dayjs from "dayjs";
 import CompraDetalleModal from "@/components/modules/compras/CompraDetalleModal";
 
 import { formatDateOnly } from "@/lib/dates";
-const { Title } = Typography;
+const { Title, Text } = Typography;
 
 interface Compra {
   id: number;
@@ -96,7 +96,7 @@ const estadoColor: Record<string, string> = {
 
 export default function ComprasPage() {
   const router = useRouter();
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
 
   const [data, setData] = useState<Compra[]>([]);
   const [loading, setLoading] = useState(false);
@@ -136,28 +136,89 @@ export default function ComprasPage() {
     fetchData();
   }, [fetchData]);
 
-  async function handleDelete(id: number) {
-    try {
-      const res = await fetch(`/api/compras/${id}`, { method: "DELETE" });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Error al eliminar");
-      message.success("Compra eliminada");
-      fetchData();
-    } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : "Error");
-    }
+  function handleDelete(id: number) {
+    let motivo = "";
+    modal.confirm({
+      title: "Eliminar compra",
+      content: (
+        <div style={{ marginTop: 8 }}>
+          <Text style={{ fontSize: 12 }}>
+            Motivo <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+          </Text>
+          <Input.TextArea
+            rows={3}
+            maxLength={500}
+            showCount
+            placeholder="Ej. cancelación del cliente, error de proveedor"
+            onChange={(e) => { motivo = e.target.value; }}
+            style={{ marginTop: 8 }}
+          />
+        </div>
+      ),
+      okText: "Eliminar",
+      okButtonProps: { danger: true },
+      cancelText: "Cancelar",
+      width: 460,
+      onOk: async () => {
+        const txt = motivo.trim();
+        try {
+          const res = await fetch(`/api/compras/${id}`, {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ motivo: txt || null }),
+          });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || "Error al eliminar");
+          message.success("Compra eliminada");
+          fetchData();
+        } catch (err: unknown) {
+          message.error(err instanceof Error ? err.message : "Error");
+          throw err;
+        }
+      },
+    });
   }
 
-  async function handleAceptar(id: number) {
-    try {
-      const res = await fetch(`/api/compras/${id}/aceptar`, { method: "POST" });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Error al aceptar OC");
-      message.success("OC aceptada");
-      fetchData();
-    } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : "Error");
-    }
+  function handleAceptar(id: number) {
+    let comentario = "";
+    modal.confirm({
+      title: "Aceptar OC",
+      content: (
+        <div style={{ marginTop: 8 }}>
+          <Text style={{ fontSize: 12 }}>
+            Comentario <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+          </Text>
+          <Input.TextArea
+            rows={3}
+            maxLength={500}
+            showCount
+            placeholder="Ej. aprobada después de revisar precios"
+            onChange={(e) => { comentario = e.target.value; }}
+            style={{ marginTop: 8 }}
+          />
+        </div>
+      ),
+      okText: "Aceptar OC",
+      cancelText: "Cancelar",
+      width: 460,
+      onOk: async () => {
+        const txt = comentario.trim();
+        try {
+          const res = await fetch(`/api/compras/${id}/aceptar`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ comentario: txt || null }),
+          });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || "Error al aceptar OC");
+          message.success("OC aceptada");
+          fetchData();
+        } catch (err: unknown) {
+          message.error(err instanceof Error ? err.message : "Error");
+          throw err;
+        }
+      },
+    });
   }
 
   // KPIs

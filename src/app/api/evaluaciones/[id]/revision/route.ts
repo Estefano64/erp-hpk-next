@@ -14,6 +14,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!accion || !usuario) {
       return NextResponse.json({ error: "Falta accion o usuario" }, { status: 400 });
     }
+    // Comentario opcional. Si viene se guarda en `comentarios_revision`.
+    const comentarioTrim = typeof comentarios === "string" ? comentarios.trim() : "";
 
     const evalActual = await prisma.evaluacionTecnica.findUnique({ where: { id: Number(id) } });
     if (!evalActual) {
@@ -34,6 +36,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         data.estado = "PENDIENTE_APROBACION";
         data.solicitado_revision_por = usuario;
         data.fecha_solicitud_revision = now;
+        data.comentarios_revision = comentarioTrim || null;
         break;
 
       case "aprobar":
@@ -46,7 +49,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         data.estado = "APROBADA";
         data.revisado_por = usuario;
         data.fecha_revision = now;
-        if (comentarios) data.comentarios_revision = comentarios;
+        data.comentarios_revision = comentarioTrim || null;
         break;
 
       case "rechazar":
@@ -59,7 +62,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         data.estado = "RECHAZADA";
         data.revisado_por = usuario;
         data.fecha_revision = now;
-        if (comentarios) data.comentarios_revision = comentarios;
+        data.comentarios_revision = comentarioTrim || null;
         break;
 
       case "reabrir":
@@ -71,6 +74,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           );
         }
         data.estado = "BORRADOR";
+        data.comentarios_revision = comentarioTrim || null;
         break;
 
       default:
