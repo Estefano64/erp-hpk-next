@@ -1188,10 +1188,12 @@ export default function PlanificacionPage() {
               if (!(qtyActual > 0)) patch.horas_extras_qty = "1";
               updateField(r.id, patch);
             } else {
-              // Al desmarcar: HE=false + limpiar Qty HE + recalcular Fin.
-              const patch = recalcularFin({ ...r, horas_extras: false }, { horas_extras: false });
-              (patch as Record<string, unknown>).horas_extras_qty = null;
-              updateField(r.id, patch as Record<string, unknown>);
+              // Al desmarcar HE: la tarea ya no vive en la banda vespertina, así que
+              // vuelve al POOL (sin fecha) para reprogramarla en jornada 8–18. Si en
+              // cambio recalculáramos el fin en su lugar, sobre un carril lleno
+              // chocaría y el anti-solape no dejaría desmarcar.
+              messageApi.info("Quitada de horas extra: volvió al pool para reprogramarla en jornada.");
+              updateField(r.id, { horas_extras: false, horas_extras_qty: null, fecha_inicio: null, fecha_fin: null });
             }
           }}
         />
