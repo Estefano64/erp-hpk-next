@@ -527,17 +527,17 @@ export default function ProgramacionSemanalPage() {
     const dur = horasFaltantes ? 1 : durRaw;
     const qty = Math.max(1, Number(original.qty_personal ?? 1));
 
-    // ¿Cae en la banda de horas extra (≥ 18:00)? Lo decidimos ANTES de calcular
-    // el fin: las HE son tiempo de reloj continuo (no se normalizan a la jornada
-    // 8–18 ni desbordan al día siguiente).
+    // HORAS EXTRA: solo se cargan desde Planificación. En Programación Semanal el
+    // drag NUNCA crea HE — solo se programa en jornada 8–18. Si la tarea YA era HE
+    // (marcada en Planificación), se preserva su flag y su posición de reloj
+    // continuo; si no, se normaliza a jornada (un drop ≥18:00 cae al sgte día 8:00).
+    const esHE = !!original.horas_extras;
     const inicioHoraDec = nuevoInicio.hour() + nuevoInicio.minute() / 60;
-    const enBandaHE = inicioHoraDec >= 18;
-
-    // Para tareas normales, normalizamos el inicio igual que el servidor (almuerzo
-    // → 13:30, antes de las 8 → 8:00). Así el bloque queda donde realmente se
-    // guardará y no "salta" tras recargar. Las HE quedan donde se soltaron.
-    const inicioReal = enBandaHE ? nuevoInicio : dayjs(normalizarAInicioHabil(nuevoInicio.toDate()));
-    const fin = calcularFin(inicioReal.toDate(), dur * qty, enBandaHE);
+    if (!esHE && inicioHoraDec >= 18) {
+      messageApi.info("Las horas extra se cargan desde Planificación. La tarea se ubicó en jornada (8–18).");
+    }
+    const inicioReal = esHE ? nuevoInicio : dayjs(normalizarAInicioHabil(nuevoInicio.toDate()));
+    const fin = calcularFin(inicioReal.toDate(), dur * qty, esHE);
 
     // Bloquear si choca con otra tarea del mismo recurso.
     const recursoDestino = nuevoRecurso !== undefined
@@ -549,19 +549,14 @@ export default function ProgramacionSemanalPage() {
     const choque = esEmergencia ? null : tareaSuperpuesta(id, inicioReal.toDate().getTime(), fin.getTime(), recursoDestino);
     const empujando = !!choque && !esEmergencia;
 
-    // Si el bloque cae en la franja de horas extras (>= 18:00, que el grid
-    // muestra hasta las 20:00), lo marcamos como HE para que el server no
-    // recalcule su fin con la jornada normal (su jornada termina 18:00).
+    // No tocamos horas_extras desde acá: si la tarea ya era HE, el server conserva
+    // su flag (y no recalcula el fin); si no, queda como tarea normal de jornada.
     const patch: Record<string, unknown> = {
       fecha_inicio: inicioReal.toISOString(),
       fecha_fin: fin.toISOString(),
       semana_plan: semanaCodigo(inicioReal),
     };
     if (horasFaltantes) patch.horas_estimadas = 1;
-    if (enBandaHE) {
-      patch.horas_extras = true;
-      patch.horas_extras_qty = Math.max(0.5, dur * qty);
-    }
     if (nuevoRecurso !== undefined) {
       if (view === "equipo") patch.maquina = nuevoRecurso;
       else patch.tecnico = nuevoRecurso;
@@ -575,10 +570,6 @@ export default function ProgramacionSemanalPage() {
       semana_plan: semanaCodigo(inicioReal),
     };
     if (horasFaltantes) updated.horas_estimadas = "1";
-    if (enBandaHE) {
-      updated.horas_extras = true;
-      updated.horas_extras_qty = Math.max(0.5, dur * qty);
-    }
     if (nuevoRecurso !== undefined) {
       if (view === "equipo") updated.maquina = nuevoRecurso;
       else updated.tecnico = nuevoRecurso;
@@ -812,7 +803,7 @@ export default function ProgramacionSemanalPage() {
       messageApi.warning("Activá Modo Edición para mover tareas.");
       return;
     }
-    interface Slot { id: number; ini: number; fin: number; recurso: string }
+    interface Slot { id: number; ini: number; fin: number; recurso: string; he: boolean }
     const idsGrupo = new Set<number>([baseId, ...offsets.map((o) => o.id)]);
     const slots: Slot[] = [];
 
@@ -822,10 +813,12 @@ export default function ProgramacionSemanalPage() {
       const durRaw = Number(t.horas_estimadas);
       const dur = Number.isFinite(durRaw) && durRaw > 0 ? durRaw : 1;
       const qty = Math.max(1, Number(t.qty_personal ?? 1));
-      const enBandaHE = (ini.hour() + ini.minute() / 60) >= 18;
-      const iniReal = enBandaHE ? ini : dayjs(normalizarAInicioHabil(ini.toDate()));
-      const fin = calcularFin(iniReal.toDate(), dur * qty, enBandaHE);
-      return { id, ini: iniReal.toDate().getTime(), fin: fin.getTime(), recurso };
+      // HE NO se crea desde acá: se preserva el flag existente (creado en
+      // Planificación). Tarea normal → se normaliza a jornada 8–18.
+      const esHE = !!t.horas_extras;
+      const iniReal = esHE ? ini : dayjs(normalizarAInicioHabil(ini.toDate()));
+      const fin = calcularFin(iniReal.toDate(), dur * qty, esHE);
+      return { id, ini: iniReal.toDate().getTime(), fin: fin.getTime(), recurso, he: esHE };
     }
 
     const baseSlot = calcSlot(baseId, baseInicio, baseRecurso);
@@ -877,10 +870,8 @@ export default function ProgramacionSemanalPage() {
     beginSave();
     const reqs: Promise<unknown>[] = [];
     for (const s of slots) {
-      // Franja HE (>= 18:00): marcar como horas_extras para que el server no la
-      // normalice al día siguiente y el bloque no desaparezca de la semana.
-      const sIni = dayjs(s.ini);
-      const sHE = (sIni.hour() + sIni.minute() / 60) >= 18;
+      // Solo preservamos HE si la tarea YA era HE (creada en Planificación); el
+      // multi-move nunca crea HE.
       reqs.push(
         fetch(`/api/planificacion/${s.id}`, {
           method: "PUT",
@@ -890,7 +881,7 @@ export default function ProgramacionSemanalPage() {
             fecha_fin: new Date(s.fin).toISOString(),
             semana_plan: semanaCodigo(dayjs(s.ini)),
             ...(view === "equipo" ? { maquina: s.recurso } : { tecnico: s.recurso }),
-            ...(sHE ? { horas_extras: true, horas_extras_qty: Math.max(0.5, (s.fin - s.ini) / 3600000) } : {}),
+            ...(s.he ? { horas_extras: true, horas_extras_qty: Math.max(0.5, (s.fin - s.ini) / 3600000) } : {}),
             // El grupo ya se validó en el cliente; evitamos falsos positivos del
             // anti-solape de servidor por las posiciones viejas en PUTs paralelos.
             omitirAntisolape: true,
