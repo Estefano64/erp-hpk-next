@@ -175,8 +175,9 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       const finalTec = (data.tecnico !== undefined ? data.tecnico : current.tecnico) as string | null;
       const finalMaq = (data.maquina !== undefined ? data.maquina : current.maquina) as string | null;
       if (reprograma && finalIni && finalFin && !current.es_correctivo && !input.forzarEdicion && !input.omitirAntisolape) {
-        const recursosT = [...splitRecursos(finalTec), ...splitRecursos(finalMaq)];
-        if (recursosT.length) {
+        const misTec = splitRecursos(finalTec);
+        const misMaq = splitRecursos(finalMaq);
+        if (misTec.length || misMaq.length) {
           const otras = await tx.planificacionOT.findMany({
             where: {
               id: { not: planId },
@@ -187,13 +188,25 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
             },
             select: { tecnico: true, maquina: true, descripcion: true, orden_trabajo: { select: { ot: true } } },
           });
-          const choque = otras.find((o) => {
-            const recO = [...splitRecursos(o.tecnico), ...splitRecursos(o.maquina)];
-            return recursosT.some((rt) => recO.includes(rt));
-          });
+          // Distinguimos si el choque es por OPERARIO o por MÁQUINA (la máquina de
+          // soldar es un recurso compartido: dos operarios no pueden usarla a la
+          // vez). Reportamos el recurso exacto + con quién para que se entienda.
+          let choque: typeof otras[number] | null = null;
+          let tipo: "máquina" | "operario" | null = null;
+          let recursoComun = "";
+          for (const o of otras) {
+            const maqComun = misMaq.find((m) => splitRecursos(o.maquina).includes(m));
+            if (maqComun) { choque = o; tipo = "máquina"; recursoComun = maqComun; break; }
+            const tecComun = misTec.find((t) => splitRecursos(o.tecnico).includes(t));
+            if (tecComun) { choque = o; tipo = "operario"; recursoComun = tecComun; break; }
+          }
           if (choque) {
+            const detalleOT = `OT ${choque.orden_trabajo?.ot ?? "?"} — ${choque.descripcion ?? ""}`;
+            const quien = tipo === "máquina"
+              ? `la máquina ${recursoComun} ya está ocupada por ${choque.tecnico ?? "otro operario"}`
+              : `el operario ${recursoComun} ya tiene otra tarea`;
             throw Object.assign(
-              new Error(`No se puede ubicar acá: se superpone con otra tarea del mismo recurso (OT ${choque.orden_trabajo?.ot ?? "?"} — ${choque.descripcion ?? ""}).`),
+              new Error(`No se puede ubicar acá: ${quien} en ese horario (${detalleOT}).`),
               { code: "OVERLAP" },
             );
           }
