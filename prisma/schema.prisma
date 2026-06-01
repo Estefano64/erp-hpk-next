@@ -607,6 +607,14 @@ model Material {
   caja                  String?                @db.VarChar(50)
   stock_actual          Decimal?               @default(0) @db.Decimal(10, 2)
   ubicacion             String?                @db.VarChar(50)
+  // Costo promedio ponderado (PPP): se recalcula en cada ENTRADA contra OC
+  // como (stock_actual × costo_promedio + cantidad_recibida × precio_oc) /
+  // (stock_actual + cantidad_recibida). Es lo que se usa al hacer una SALIDA
+  // (consumir-de-almacen) para registrar el costo en el MovimientoInventario
+  // y, vía ese movimiento, acumular costos en la OT. Si las monedas de las
+  // OCs entrantes difieren, se conserva la moneda del último ingreso.
+  costo_promedio        Decimal?               @db.Decimal(15, 4)
+  costo_promedio_moneda String?                @db.VarChar(10)
   activo                Boolean?               @default(true)
   created_at            DateTime?              @default(now())
   updated_at            DateTime?              @default(now()) @updatedAt
@@ -990,10 +998,19 @@ model OrdenTrabajo {
 // "10. Ots internas.xlsx". Fase D2.1: schema + migración (sin API ni UI).
 model OrdenTrabajoInterna {
   id                        Int                @id @default(autoincrement())
-  ot                        String?            @unique @db.VarChar(50)
+  // Código de la OT interna. Formato visual: "OI" + corr(4) + yy(2)
+  // (ej. OI000126 = correlativo 1, año 2026). En BD se almacena como Int en
+  // formato NNNNYY (igual que la OT externa) — la `formatOtInternaCodigo`
+  // construye el código visible. Per-año, per-tipo (interna) — el correlativo
+  // arranca en 1 cada año nuevo.
+  ot                        Int?
+  // Año (2 dígitos) derivado de `ot` (ot % 100). Denormalizado para filtrar
+  // por año sin módulo en el where.
+  anio                      Int?
   // Soft-delete (desactivar): false = anulada. Se oculta de los listados; los
-  // datos se conservan y es reversible. (`ot` es @unique, así que el número no
-  // se reutiliza mientras la OT anulada exista — distinto de las externas.)
+  // datos se conservan y es reversible. El correlativo ignora las inactivas,
+  // por lo que el número de una OT desactivada queda libre para reasignar
+  // (mismo comportamiento que las externas tras la migración a Int).
   activo                    Boolean            @default(true)
   planta_codigo             String?            @db.VarChar(10)
   equipo_codigo             String?            @db.VarChar(50)
@@ -1041,6 +1058,7 @@ model OrdenTrabajoInterna {
   @@index([equipo_codigo])
   @@index([tipo_ot_interna_codigo])
   @@index([ot_status_codigo])
+  @@index([anio])
   @@map("orden_trabajo_interna")
 }
 
@@ -1108,6 +1126,16 @@ model Compra {
   moneda_codigo          String?         @db.VarChar(10)
   nro_factura            String?         @db.VarChar(100)
   nro_guia               String?         @db.VarChar(100)
+  // Tipo de pago acordado con el proveedor.
+  //   CONTADO        → pago al recibir / sin plazo
+  //   CREDITO        → pago a N días (ver dias_credito para el plazo)
+  //   TRANSFERENCIA  → transferencia bancaria
+  // Si se quiere agregar otra opción, alcanza con sumarla en la UI: el campo
+  // es VARCHAR (no enum) así que no requiere migración.
+  tipo_pago              String?         @db.VarChar(30)
+  // Plazo en días cuando `tipo_pago = CREDITO`. Para CONTADO y TRANSFERENCIA
+  // se guarda null o 0.
+  dias_credito           Int?
   // Adjunto de guía de remisión en R2.
   guia_key               String?         @db.VarChar(500)
   guia_nombre            String?         @db.VarChar(300)
@@ -1308,6 +1336,11 @@ model OTRepuesto {
   fecha_envio_aprobacion      DateTime?            @db.Date
   usuario_aprueba             String?              @db.VarChar(100)
   fecha_aprobacion            DateTime?            @db.Date
+  // Comentario / recomendación que dejó el aprobador. Opcional. Se setea
+  // en el momento de aprobar (single o lote). Si después se anula y se
+  // vuelve a aprobar, este campo se reescribe con el nuevo comentario.
+  // 500 caracteres alcanzan para notas breves sin ahogar la UI ni el log.
+  comentario_aprobacion       String?              @db.VarChar(500)
   createdAt                   DateTime             @default(now())
   updatedAt                   DateTime             @updatedAt
   material                    Material?            @relation(fields: [material_id], references: [material_id], onDelete: Restrict)

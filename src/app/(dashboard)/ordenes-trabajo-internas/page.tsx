@@ -26,6 +26,7 @@ import {
   filtroPorColumna,
 } from "@/lib/tables";
 import { areasTallerGrouped, areaTallerLabel } from "@/lib/areas-taller";
+import { formatOtInternaCodigo } from "@/lib/ot-formato";
 
 const { Title, Text } = Typography;
 
@@ -35,7 +36,9 @@ interface EstrategiaOption { estrategia_id: number; codigo: string; descripcion:
 
 interface OTInternaRow {
   id: number;
-  ot: string | null;
+  // ot ahora es INTEGER (NNNNYY) tras la migración; el display OIXXXXYY se
+  // construye con formatOtInternaCodigo.
+  ot: number | string | null;
   activo: boolean;
   descripcion: string | null;
   planta_codigo: string | null;
@@ -258,7 +261,7 @@ export default function OrdenesTrabajoInternasPage() {
   // Eliminar en cascada (irreversible). Solo admin. Confirmación reforzada.
   function confirmarEliminar(r: OTInternaRow) {
     modal.confirm({
-      title: `Eliminar OT interna ${r.ot ?? `#${r.id}`} definitivamente`,
+      title: `Eliminar OT interna ${formatOtInternaCodigo(r.ot, `#${r.id}`)} definitivamente`,
       okText: "Eliminar todo",
       okButtonProps: { danger: true },
       cancelText: "Cancelar",
@@ -288,8 +291,8 @@ export default function OrdenesTrabajoInternasPage() {
       key: "ot", title: "OT", dataIndex: "ot", width: 130,
       render: (_: unknown, r: OTInternaRow) => (
         <Space size={4}>
-          {r.ot
-            ? <Tag style={{ background: brand.navy, color: brand.white, border: "none", fontFamily: "monospace" }}>{r.ot}</Tag>
+          {r.ot != null
+            ? <Tag style={{ background: brand.navy, color: brand.white, border: "none", fontFamily: "monospace" }}>{formatOtInternaCodigo(r.ot)}</Tag>
             : "-"}
           {!r.activo && <Tag color="default">desactivada</Tag>}
         </Space>
@@ -545,7 +548,7 @@ export default function OrdenesTrabajoInternasPage() {
       </TableDragWrapper>
 
       <Modal
-        title={editing ? `Editar ${editing.ot ?? ""}` : "Nueva OT Interna"}
+        title={editing ? `Editar ${formatOtInternaCodigo(editing.ot, "")}` : "Nueva OT Interna"}
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
         onOk={handleSubmit}

@@ -39,8 +39,10 @@ export async function GET(req: NextRequest) {
             select: {
               id: true, nro_req: true, item_req: true, descripcion: true,
               cantidad: true, precio_unitario: true,
+              comentario_aprobacion: true,
               material: { select: { codigo: true, descripcion: true } },
               orden_trabajo: { select: { id: true, ot: true } },
+              adjuntos: { select: { id: true, nombre_archivo: true, r2_key: true, tamano: true } },
             },
           },
           detalles: {

@@ -15,6 +15,11 @@ const Schema = z.object({
   ubicacion_codigo: z.string().optional().nullable(),
   almacen_id: z.string().optional().nullable(),
   usuario: z.string().trim().optional().nullable(),
+  // Tipo de pago. Códigos sugeridos: CONTADO, CREDITO, ADELANTO,
+  // CHEQUE_FECHADO, TRANSFERENCIA. Texto libre si el front quiere otra cosa.
+  tipo_pago: z.string().trim().max(30).optional().nullable(),
+  // Plazo en días (solo CREDITO/CHEQUE_FECHADO). null/0 para CONTADO.
+  dias_credito: z.coerce.number().int().min(0).max(365).optional().nullable(),
 });
 
 const IGV_PCT = new Prisma.Decimal("0.18");
@@ -168,6 +173,10 @@ export async function POST(req: NextRequest) {
               impuesto,
               total,
               moneda_codigo,
+              // Para CONTADO forzamos dias_credito a 0 aunque el cliente
+              // mande otra cosa — evita disonancias en reportes.
+              tipo_pago: d.tipo_pago || null,
+              dias_credito: d.tipo_pago === "CONTADO" ? 0 : (d.dias_credito ?? null),
               observaciones: d.observaciones || `OC generada desde ${repuestos.length} requerimiento(s)`,
               usuario_solicita: usuario,
             },

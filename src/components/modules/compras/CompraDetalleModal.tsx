@@ -18,6 +18,8 @@ import {
   Input,
   DatePicker,
   Popconfirm,
+  Popover,
+  Tooltip,
   Upload,
   App,
 } from "antd";
@@ -62,6 +64,8 @@ interface CompraDetalle {
   moneda: string;
   nro_factura: string | null;
   nro_guia: string | null;
+  tipo_pago: string | null;
+  dias_credito: number | null;
   guia_key: string | null;
   guia_nombre: string | null;
   factura_key: string | null;
@@ -89,6 +93,10 @@ interface CompraDetalle {
     estado: string;
     material: { codigo: string; descripcion: string } | null;
     orden_trabajo: { id: number; ot: string } | null;
+    comentario_aprobacion?: string | null;
+    // Adjuntos del req original — para que el aprobador de OC los pueda
+    // descargar antes de aceptar/recibir la mercadería.
+    adjuntos?: { id: number; nombre_archivo: string; r2_key: string; tamano: number }[];
   }>;
 }
 
@@ -114,6 +122,8 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
   const [nroFactura, setNroFactura] = useState<string>("");
   const [nroGuia, setNroGuia] = useState<string>("");
   const [observaciones, setObservaciones] = useState<string>("");
+  const [tipoPago, setTipoPago] = useState<string | null>(null);
+  const [diasCredito, setDiasCredito] = useState<number | null>(null);
   const [aceptando, setAceptando] = useState(false);
   const { ocultas: itemsOcultas, setOcultas: setItemsOcultas } = useColumnasOcultas("compra-detalle-items-cols-v1");
 
@@ -140,6 +150,8 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
       setNroFactura(json.data.nro_factura || "");
       setNroGuia(json.data.nro_guia || "");
       setObservaciones(json.data.observaciones || "");
+      setTipoPago(json.data.tipo_pago ?? null);
+      setDiasCredito(json.data.dias_credito ?? null);
     } catch {
       message.error("Error al cargar la OC");
     } finally {
@@ -166,6 +178,10 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
           nro_factura: nroFactura,
           nro_guia: nroGuia,
           observaciones,
+          tipo_pago: tipoPago,
+          // El server normaliza dias_credito a 0 para CONTADO; mandamos lo que
+          // tenemos y dejamos que la API decida.
+          dias_credito: diasCredito,
         }),
       });
       const json = await res.json();
@@ -325,6 +341,52 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
       width: 100,
       ...filtroPorColumna(items, "estado"),
       render: (v: string) => <Tag>{v}</Tag>,
+    },
+    {
+      key: "adjuntos",
+      title: "Adjuntos",
+      width: 110,
+      align: "center",
+      render: (_, r) => {
+        const adj = r.adjuntos ?? [];
+        if (adj.length === 0) return <Text type="secondary">—</Text>;
+        // Popover con la lista de adjuntos del req — el aprobador clickea
+        // y descarga cada uno antes de recibir/aceptar la OC.
+        return (
+          <Popover
+            placement="left"
+            title={`Adjuntos del REQ ${r.nro_req ?? r.id}`}
+            content={
+              <div style={{ maxWidth: 320, display: "flex", flexDirection: "column", gap: 4 }}>
+                {adj.map((a) => (
+                  <div key={a.id} style={{ fontSize: 12 }}>
+                    <R2FileLink resource="req-adjunto" resourceId={a.id} r2Key={a.r2_key}>
+                      📎 {a.nombre_archivo} ({(a.tamano / 1024).toFixed(1)} KB)
+                    </R2FileLink>
+                  </div>
+                ))}
+              </div>
+            }
+          >
+            <Tag color="blue" style={{ cursor: "pointer", margin: 0 }}>📎 {adj.length}</Tag>
+          </Popover>
+        );
+      },
+    },
+    {
+      key: "comentario_aprobacion",
+      title: "Comentario aprob.",
+      width: 180,
+      ellipsis: true,
+      render: (_, r) => {
+        const c = r.comentario_aprobacion;
+        if (!c) return <Text type="secondary">—</Text>;
+        return (
+          <Tooltip title={<div style={{ maxWidth: 320, whiteSpace: "pre-wrap" }}>{c}</div>}>
+            <span style={{ fontSize: 11, fontStyle: "italic", color: brand.textSecondary }}>{c}</span>
+          </Tooltip>
+        );
+      },
     },
   ];
 
@@ -522,6 +584,52 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
                   <Input value={nroGuia} onChange={(e) => setNroGuia(e.target.value)} />
                 ) : (
                   compra.nro_guia ?? "-"
+                )}
+              </Descriptions.Item>
+              <Descriptions.Item label="Tipo de Pago">
+                {editing ? (
+                  <Select
+                    value={tipoPago ?? undefined}
+                    onChange={(v) => {
+                      setTipoPago(v ?? null);
+                      // Cuando se cambia a CONTADO forzamos días a null en UI.
+                      if (v === "CONTADO") setDiasCredito(null);
+                    }}
+                    allowClear
+                    style={{ width: "100%" }}
+                    placeholder="Elegir"
+                    options={[
+                      { value: "CONTADO", label: "Contado" },
+                      { value: "CREDITO", label: "Crédito" },
+                      { value: "TRANSFERENCIA", label: "Transferencia" },
+                    ]}
+                  />
+                ) : (
+                  compra.tipo_pago
+                    ? `${compra.tipo_pago}${compra.dias_credito && compra.dias_credito > 0 ? ` · ${compra.dias_credito}d` : ""}`
+                    : "-"
+                )}
+              </Descriptions.Item>
+              <Descriptions.Item label="Días de Crédito">
+                {editing ? (
+                  <Select
+                    value={diasCredito ?? undefined}
+                    onChange={(v) => setDiasCredito(v ?? null)}
+                    disabled={tipoPago !== "CREDITO"}
+                    allowClear
+                    style={{ width: "100%" }}
+                    placeholder="—"
+                    options={[
+                      { value: 15, label: "15 días" },
+                      { value: 30, label: "30 días" },
+                      { value: 45, label: "45 días" },
+                      { value: 60, label: "60 días" },
+                      { value: 90, label: "90 días" },
+                      { value: 120, label: "120 días" },
+                    ]}
+                  />
+                ) : (
+                  compra.dias_credito && compra.dias_credito > 0 ? `${compra.dias_credito} días` : "-"
                 )}
               </Descriptions.Item>
               <Descriptions.Item label="Archivo Guía de Remisión" span={editing ? 1 : 1}>

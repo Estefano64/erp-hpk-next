@@ -47,9 +47,13 @@ export async function POST(req: NextRequest, { params }: Params) {
         }
 
         // Calcular el siguiente item_req dentro de la transacción para serializar
-        // con otras divisiones concurrentes sobre el mismo nro_req.
+        // con otras divisiones concurrentes sobre el mismo nro_req. La query
+        // filtra por la OT del original (externa o interna) para no mezclar
+        // requerimientos de distintas OTs que casualmente comparten nro_req.
         const sameReq = await tx.oTRepuesto.findFirst({
-          where: { ot_id: original.ot_id, nro_req: original.nro_req },
+          where: original.ot_id != null
+            ? { ot_id: original.ot_id, nro_req: original.nro_req }
+            : { orden_trabajo_interna_id: original.orden_trabajo_interna_id, nro_req: original.nro_req },
           orderBy: { item_req: "desc" },
           select: { item_req: true },
         });
@@ -63,6 +67,9 @@ export async function POST(req: NextRequest, { params }: Params) {
 
         const baseClone = {
           ot_id: original.ot_id,
+          // Heredar también el vínculo a OT interna cuando aplica — antes
+          // se quedaba null y los hijos se desvinculaban de la OT interna.
+          orden_trabajo_interna_id: original.orden_trabajo_interna_id,
           material_id: original.material_id,
           material_codigo: original.material_codigo,
           nro_req: original.nro_req,

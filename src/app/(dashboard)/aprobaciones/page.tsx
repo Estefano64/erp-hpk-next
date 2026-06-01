@@ -34,8 +34,12 @@ interface OCItem {
   descripcion: string | null;
   cantidad: number | string;
   precio_unitario: number | string | null;
+  comentario_aprobacion?: string | null;
   material: { codigo: string; descripcion: string } | null;
   orden_trabajo: { id: number; ot: string | null } | null;
+  // Adjuntos cargados al crear el requerimiento — el aprobador de OC los
+  // ve antes de aceptar para revisar cotizaciones/specs/fotos.
+  adjuntos?: { id: number; nombre_archivo: string; r2_key: string; tamano: number }[];
 }
 interface OCDetalle {
   id: number;
@@ -131,6 +135,7 @@ export default function AceptacionesPage() {
   const [aprobarModalReq, setAprobarModalReq] = useState<ReqPendiente | null>(null);
   const [aprobarPrecio, setAprobarPrecio] = useState<number | null>(null);
   const [aprobarMoneda, setAprobarMoneda] = useState<string>("USD");
+  const [aprobarComentario, setAprobarComentario] = useState<string>("");
   const [aprobarSaving, setAprobarSaving] = useState(false);
 
   // Tab activo
@@ -187,7 +192,7 @@ export default function AceptacionesPage() {
   async function aprobarReq(
     id: number,
     ref: string,
-    body?: { precio_estimado?: number; moneda?: string },
+    body?: { precio_estimado?: number; moneda?: string; comentario?: string },
   ) {
     try {
       const res = await fetch(`/api/requerimientos/${id}/aprobar`, {
@@ -213,6 +218,7 @@ export default function AceptacionesPage() {
       : (r.material?.precio != null ? Number(r.material.precio) : null);
     setAprobarPrecio(precioActual);
     setAprobarMoneda(r.moneda ?? r.material?.moneda_codigo ?? "USD");
+    setAprobarComentario("");
   }
 
   async function handleConfirmAprobar() {
@@ -220,10 +226,16 @@ export default function AceptacionesPage() {
     setAprobarSaving(true);
     try {
       const ref = `${aprobarModalReq.nro_req ?? "—"}/${aprobarModalReq.item_req ?? "—"}`;
-      const body = aprobarPrecio != null && aprobarPrecio >= 0
-        ? { precio_estimado: aprobarPrecio, moneda: aprobarMoneda }
-        : undefined;
-      await aprobarReq(aprobarModalReq.id, ref, body);
+      // Construimos el body con lo que tenga valor — todo es opcional al
+      // server, pero solo mandamos las claves que el usuario completó.
+      const body: { precio_estimado?: number; moneda?: string; comentario?: string } = {};
+      if (aprobarPrecio != null && aprobarPrecio >= 0) {
+        body.precio_estimado = aprobarPrecio;
+        body.moneda = aprobarMoneda;
+      }
+      const com = aprobarComentario.trim();
+      if (com.length > 0) body.comentario = com;
+      await aprobarReq(aprobarModalReq.id, ref, Object.keys(body).length > 0 ? body : undefined);
       setAprobarModalReq(null);
     } finally {
       setAprobarSaving(false);
@@ -265,35 +277,64 @@ export default function AceptacionesPage() {
   }
   async function bulkAprobarRQ() {
     if (selReqs.length === 0) return;
-    let ok = 0, errs = 0;
-    for (const id of selReqs) {
-      const res = await fetch(`/api/requerimientos/${id}/aprobar`, { method: "POST" });
-      if (res.ok) ok++; else errs++;
-    }
-    if (ok > 0) message.success(`${ok} requerimiento(s) aprobado(s).`);
-    if (errs > 0) message.warning(`${errs} con error.`);
-    setSelReqs([]); fetchData();
+    // Pedimos comentario opcional ANTES de disparar la cascada de aprobar.
+    // El mismo comentario va a TODOS los items del lote (los aprobaciones
+    // posteriores pueden tocar el comentario uno por uno si hace falta).
+    let comentario = "";
+    modal.confirm({
+      title: `Aprobar ${selReqs.length} requerimiento(s)`,
+      content: (
+        <div style={{ marginTop: 8 }}>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            Comentario / recomendación (opcional). Se aplica a todos los items del lote.
+          </Text>
+          <Input.TextArea
+            rows={3}
+            maxLength={500}
+            showCount
+            placeholder="Ej: aprobar pero revisar fechas con cliente"
+            onChange={(e) => { comentario = e.target.value; }}
+            style={{ marginTop: 8 }}
+          />
+        </div>
+      ),
+      okText: "Aprobar todos",
+      cancelText: "Cancelar",
+      width: 480,
+      onOk: async () => {
+        const body = comentario.trim().length > 0 ? { comentario: comentario.trim() } : undefined;
+        let ok = 0, errs = 0;
+        for (const id of selReqs) {
+          const res = await fetch(`/api/requerimientos/${id}/aprobar`, {
+            method: "POST",
+            headers: body ? { "Content-Type": "application/json" } : {},
+            body: body ? JSON.stringify(body) : undefined,
+          });
+          if (res.ok) ok++; else errs++;
+        }
+        if (ok > 0) message.success(`${ok} requerimiento(s) aprobado(s).`);
+        if (errs > 0) message.warning(`${errs} con error.`);
+        setSelReqs([]);
+        fetchData();
+      },
+    });
   }
 
   // ── Popover preview de items de OC ──────────────────────────────────
   function popoverOC(o: OCPendiente) {
-    const items = o.ot_repuestos.length > 0
-      ? o.ot_repuestos.map((it) => ({
-          ref: `${it.nro_req ?? "—"}/${it.item_req ?? "—"}`,
-          cod: it.material?.codigo ?? "—",
-          desc: it.material?.descripcion ?? it.descripcion ?? "—",
-          cant: Number(it.cantidad),
-          pu: it.precio_unitario != null ? Number(it.precio_unitario) : null,
-        }))
-      : o.detalles.map((d) => ({
-          ref: "—",
-          cod: d.material?.codigo ?? "—",
-          desc: d.material?.descripcion ?? "—",
-          cant: Number(d.cantidad),
-          pu: Number(d.precio_unitario),
-        }));
+    // Trabajamos con los OCItem completos (no proyectamos) para tener acceso
+    // a `adjuntos` y `id` del req original al renderizar.
+    const usaOCRepuestos = o.ot_repuestos.length > 0;
+    // Adjuntos agregados de TODOS los items del req — al aprobar OC el usuario
+    // quiere verlos arriba sin abrir cada item. Cada uno conserva su id de req
+    // para descargar vía R2FileLink.
+    const adjuntosAgregados = usaOCRepuestos
+      ? o.ot_repuestos.flatMap((it) =>
+          (it.adjuntos ?? []).map((a) => ({ ...a, refReq: `${it.nro_req ?? "—"}/${it.item_req ?? "—"}` })),
+        )
+      : [];
     return (
-      <div style={{ maxWidth: 520, fontSize: 12 }}>
+      <div style={{ maxWidth: 540, fontSize: 12 }}>
         <div style={{ fontWeight: 600, color: brand.navy, marginBottom: 6 }}>
           {o.numero_po} — {o.proveedor?.razon_social ?? "Sin proveedor"}
         </div>
@@ -305,18 +346,60 @@ export default function AceptacionesPage() {
           <Col span={24}><span style={{ color: "#888" }}>Total:</span> <b style={{ color: brand.navy }}>{o.moneda_codigo ?? "USD"} {Number(o.total).toFixed(2)}</b></Col>
         </Row>
         <Divider style={{ margin: "6px 0" }} />
-        <div style={{ fontWeight: 600, marginBottom: 4 }}>Items ({items.length}):</div>
-        <div style={{ maxHeight: 260, overflowY: "auto" }}>
-          {items.map((it, i) => (
-            <div key={i} style={{ display: "flex", gap: 6, padding: "2px 0", borderBottom: "1px dashed #eee", fontSize: 11 }}>
-              <Tag style={{ fontSize: 10, margin: 0 }}>{it.ref}</Tag>
-              <span style={{ color: "#888", minWidth: 70 }}>{it.cod}</span>
-              <span style={{ flex: 1 }}>{it.desc}</span>
-              <span style={{ minWidth: 60, textAlign: "right" }}>{it.cant}</span>
-              {it.pu != null && <span style={{ minWidth: 70, textAlign: "right", color: brand.navy }}>{it.pu.toFixed(2)}</span>}
-            </div>
-          ))}
+        <div style={{ fontWeight: 600, marginBottom: 4 }}>
+          Items ({usaOCRepuestos ? o.ot_repuestos.length : o.detalles.length}):
         </div>
+        <div style={{ maxHeight: 260, overflowY: "auto" }}>
+          {usaOCRepuestos
+            ? o.ot_repuestos.map((it) => {
+                const ref = `${it.nro_req ?? "—"}/${it.item_req ?? "—"}`;
+                const cod = it.material?.codigo ?? "—";
+                const desc = it.material?.descripcion ?? it.descripcion ?? "—";
+                const cant = Number(it.cantidad);
+                const pu = it.precio_unitario != null ? Number(it.precio_unitario) : null;
+                return (
+                  <div key={it.id} style={{ padding: "2px 0", borderBottom: "1px dashed #eee", fontSize: 11 }}>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <Tag style={{ fontSize: 10, margin: 0 }}>{ref}</Tag>
+                      <span style={{ color: "#888", minWidth: 70 }}>{cod}</span>
+                      <span style={{ flex: 1 }}>{desc}</span>
+                      <span style={{ minWidth: 60, textAlign: "right" }}>{cant}</span>
+                      {pu != null && <span style={{ minWidth: 70, textAlign: "right", color: brand.navy }}>{pu.toFixed(2)}</span>}
+                    </div>
+                    {it.comentario_aprobacion && (
+                      <div style={{ marginLeft: 4, marginTop: 2, color: brand.cyan, fontStyle: "italic", fontSize: 10 }}>
+                        💬 {it.comentario_aprobacion}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            : o.detalles.map((d) => (
+                <div key={d.id} style={{ display: "flex", gap: 6, padding: "2px 0", borderBottom: "1px dashed #eee", fontSize: 11 }}>
+                  <Tag style={{ fontSize: 10, margin: 0 }}>—</Tag>
+                  <span style={{ color: "#888", minWidth: 70 }}>{d.material?.codigo ?? "—"}</span>
+                  <span style={{ flex: 1 }}>{d.material?.descripcion ?? "—"}</span>
+                  <span style={{ minWidth: 60, textAlign: "right" }}>{Number(d.cantidad)}</span>
+                  <span style={{ minWidth: 70, textAlign: "right", color: brand.navy }}>{Number(d.precio_unitario).toFixed(2)}</span>
+                </div>
+              ))}
+        </div>
+        {adjuntosAgregados.length > 0 && (
+          <>
+            <Divider style={{ margin: "6px 0" }} />
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>Adjuntos ({adjuntosAgregados.length}):</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              {adjuntosAgregados.map((a) => (
+                <div key={a.id} style={{ fontSize: 11 }}>
+                  <Tag style={{ fontSize: 9, margin: 0, marginRight: 4 }}>{a.refReq}</Tag>
+                  <R2FileLink resource="req-adjunto" resourceId={a.id} r2Key={a.r2_key}>
+                    📎 {a.nombre_archivo} ({(a.tamano / 1024).toFixed(1)} KB)
+                  </R2FileLink>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
         {o.observaciones && (
           <>
             <Divider style={{ margin: "6px 0" }} />
@@ -409,9 +492,24 @@ export default function AceptacionesPage() {
         : <Text type="secondary">—</Text>,
     },
     {
-      key: "items", title: "Items", width: 70, align: "center",
+      key: "items", title: "Items", width: 90, align: "center",
       sorter: (a, b) => a.ot_repuestos.length - b.ot_repuestos.length,
-      render: (_, o) => <Tag>{o.ot_repuestos.length || o.detalles.length}</Tag>,
+      render: (_, o) => {
+        const adjCount = o.ot_repuestos.reduce(
+          (acc, it) => acc + (it.adjuntos?.length ?? 0),
+          0,
+        );
+        return (
+          <Space size={4}>
+            <Tag>{o.ot_repuestos.length || o.detalles.length}</Tag>
+            {adjCount > 0 && (
+              <Tooltip title={`${adjCount} adjunto(s) cargado(s) en los requerimientos — visibles en el popover de la OC`}>
+                <Tag color="blue" style={{ margin: 0, fontSize: 10 }}>📎 {adjCount}</Tag>
+              </Tooltip>
+            )}
+          </Space>
+        );
+      },
     },
     {
       key: "total", title: "Total", width: 130, align: "right",
@@ -1081,6 +1179,23 @@ export default function AceptacionesPage() {
               </Space>
               <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>
                 Si lo dejás vacío, se aprueba sin tocar el precio actual del item.
+              </div>
+            </div>
+            <div>
+              <Text strong style={{ display: "block", marginBottom: 4 }}>
+                Comentario / recomendación{" "}
+                <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+              </Text>
+              <Input.TextArea
+                rows={3}
+                maxLength={500}
+                showCount
+                placeholder="Ej: priorizar compra antes del 15, validar marca con técnico, etc."
+                value={aprobarComentario}
+                onChange={(e) => setAprobarComentario(e.target.value)}
+              />
+              <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>
+                Queda visible en la tabla de Requerimientos.
               </div>
             </div>
           </div>

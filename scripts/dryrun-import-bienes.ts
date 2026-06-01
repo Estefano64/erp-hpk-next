@@ -12,6 +12,9 @@ const EXCEL_PATH = path.resolve(__dirname, "../../6.1_Ots_VENTAS_INFORMACION.xls
 const RW = "postgresql://postgres:vthphXsotIJPSGPdpZkkLRSDVxVuBHVG@yamabiko.proxy.rlwy.net:42613/railway";
 const prisma = new PrismaClient({ datasources: { db: { url: RW } } });
 
+const APPLY = process.argv.includes("--apply");
+const USUARIO_CREA = "import-bienes-2026-05-31";
+
 // Typos conocidos a auto-corregir antes del lookup.
 const TYPO_CLIENTE: Record<string, string> = {
   QUELLAEVECO: "QUELLAVECO",
@@ -100,10 +103,13 @@ async function main() {
   for (const f of fabricantes) {
     if (f.nombre) fabByName.set(N(f.nombre), f.fabricante_id);
   }
-  const atRepCodes = new Set(atRep.map((a) => N(a.codigo)));
+  // Maps: clave normalizada → código REAL de la BD (preserva mayúsculas).
+  // Necesario porque el Excel viene en mayúsculas ("CONTRATO") pero la BD
+  // tiene "Contrato" — y la FK exige el código exacto.
+  const atRepCodes = new Map<string, string>(atRep.map((a) => [N(a.codigo), a.codigo]));
   const otStatusCodes = new Map<string, string>(otStatus.map((s) => [N(s.codigo), s.codigo]));
   const recStatusCodes = new Map<string, string>(recStatus.map((s) => [N(s.codigo), s.codigo]));
-  const prioCodes = new Set(prio.map((p) => N(p.codigo)));
+  const prioCodes = new Map<string, string>(prio.map((p) => [N(p.codigo), p.codigo]));
 
   // 3. Parsear cada fila.
   const filas: Fila[] = [];
@@ -254,7 +260,7 @@ async function main() {
     const otStat = otStatusCodes.get(N(f.ot_status)) ?? null;
     const recStat = recStatusCodes.get(N(f.recursos_status)) ?? null;
     const atRepCode = f.atencion === "X" || f.atencion === "" ? null
-      : (atRepCodes.has(N(f.atencion)) ? f.atencion : null);
+      : (atRepCodes.get(N(f.atencion)) ?? null);
 
     const displayCodigo = formatOtCodigo(f.ot, "BIE");
     const matchExcel = displayCodigo === f.codigoExcel ? " ✓ (idéntico al Excel)" : "";
@@ -271,9 +277,93 @@ async function main() {
     console.log(`   fecha_req_cliente=${f.fecha_req_cliente?.toISOString().slice(0, 10) ?? "NULL"}`);
   }
 
+  if (!APPLY) {
+    console.log(`\n${"=".repeat(70)}`);
+    console.log(`🟡 DRY-RUN. Nada se escribió en la BD.`);
+    console.log(`   Para aplicar: npx tsx scripts/dryrun-import-bienes.ts --apply`);
+    console.log(`${"=".repeat(70)}`);
+    return;
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // APPLY: insertar las 138 OTs en la BD.
+  // ════════════════════════════════════════════════════════════════
   console.log(`\n${"=".repeat(70)}`);
-  console.log(`🟡 DRY-RUN. Nada se escribió en la BD.`);
-  console.log(`${"=".repeat(70)}`);
+  console.log(`🔴 APPLY: insertando ${filas.length} OTs en Railway...`);
+  console.log(`${"=".repeat(70)}\n`);
+
+  // Construir los registros a insertar.
+  const inserts = filas
+    .filter((f) => f.ot != null) // Por defensa: solo las que parsearon OK.
+    .map((f) => {
+      const cId = clienteByName.get(f.clienteNormalizado) ?? null;
+      const fId = fabByName.get(f.fabricanteNormalizado) ?? null;
+      const otStat = otStatusCodes.get(N(f.ot_status)) ?? null;
+      const recStat = recStatusCodes.get(N(f.recursos_status)) ?? null;
+      const atRepCode = f.atencion === "X" || f.atencion === ""
+        ? null
+        : (atRepCodes.get(N(f.atencion)) ?? null);
+      const prioCode = f.prioridad ? (prioCodes.get(N(f.prioridad)) ?? null) : null;
+
+      return {
+        ot: f.ot!,
+        anio: f.anio!,
+        tipo_codigo: "BIE",
+        estrategia: f.estrategia,
+        id_cliente: cId,
+        id_fabricante: fId,
+        np: f.np || null,
+        descripcion: f.descripcion || null,
+        cod_rep_flota: null,
+        cod_rep_posicion: null,
+        equipo_codigo: f.equipo || null,
+        ns: f.ns || null,
+        plaqueteo: f.plaqueteo || null,
+        wo_cliente: f.wo_cliente || null,
+        po_cliente: f.po_cliente || null,
+        id_viajero: f.id_viajero || null,
+        guia_remision: f.guia_remision || null,
+        empresa_entrega: f.empresa_entrega || null,
+        fecha_recepcion: f.fecha_recepcion,
+        pcr: f.pcr,
+        horas: f.horas,
+        atencion_reparacion_codigo: atRepCode,
+        prioridad_atencion_codigo: prioCode,
+        comentarios: f.comentarios || null,
+        fecha_requerimiento_cliente: f.fecha_req_cliente,
+        ot_status_codigo: otStat,
+        recursos_status_codigo: recStat,
+        // tipo (texto libre derivado de cod_rep) lo dejamos null porque no hay cod_rep.
+        // taller_status_codigo, garantia, tipo_reparacion, tipo_garantia, base_metalica: null.
+        usuario_crea: USUARIO_CREA,
+        activo: true,
+      };
+    });
+
+  console.log(`Registros a insertar: ${inserts.length}`);
+
+  // Insert en transacción única para atomicidad. Si algo falla, rollback total.
+  const result = await prisma.$transaction(async (tx) => {
+    let count = 0;
+    for (const data of inserts) {
+      await tx.ordenTrabajo.create({ data });
+      count++;
+      if (count % 25 === 0) console.log(`   ${count}/${inserts.length}...`);
+    }
+    return count;
+  }, { timeout: 120_000 });
+
+  console.log(`\n✅ Insertadas ${result} OTs de Bienes.`);
+
+  // Verificación post-insert.
+  const totalBie = await prisma.ordenTrabajo.count({ where: { tipo_codigo: "BIE", usuario_crea: USUARIO_CREA } });
+  console.log(`📊 Total OTs BIE creadas por '${USUARIO_CREA}': ${totalBie}`);
+  const porAnioBd = await prisma.$queryRawUnsafe<Array<{ anio: number; c: number }>>(
+    `SELECT anio, COUNT(*)::int as c FROM orden_trabajo WHERE tipo_codigo='BIE' AND usuario_crea=$1 GROUP BY anio ORDER BY anio`,
+    USUARIO_CREA,
+  );
+  console.log(`📊 Por año en la BD:`);
+  porAnioBd.forEach((r) => console.log(`   20${String(r.anio).padStart(2, "0")}: ${r.c}`));
 }
 
 main().catch(console.error).finally(() => prisma.$disconnect());

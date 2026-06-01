@@ -5,7 +5,7 @@ import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { deleteObject } from "@/lib/r2-helpers";
-import { R2Keys, otCodigoFor } from "@/lib/r2";
+import { R2Keys, otCodigoFor, otInternaCodigoFor } from "@/lib/r2";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -71,8 +71,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     };
 
     // Path R2 depende de si el req pertenece a OT externa o interna.
+    // Interna usa el código formateado OIXXXXYY como segmento R2 (consistente
+    // con el folder de adjuntos directos de la OT interna).
     const expectedPrefix = item.orden_trabajo_interna
-      ? R2Keys.otInternaRequerimientoAdjunto(otCodigoFor(item.orden_trabajo_interna), itemId) + "/"
+      ? R2Keys.otInternaRequerimientoAdjunto(otInternaCodigoFor(item.orden_trabajo_interna), itemId) + "/"
       : item.orden_trabajo
         ? R2Keys.requerimientoAdjunto(otCodigoFor(item.orden_trabajo), itemId) + "/"
         : null;

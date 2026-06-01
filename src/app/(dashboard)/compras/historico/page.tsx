@@ -424,7 +424,7 @@ export default function HistoricoComprasPage() {
       </Row>
 
       <Card size="small" style={{ marginBottom: 12 }} styles={{ body: { padding: 10 } }}>
-        <Space direction="vertical" size={8} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
           {/* Fila 1: búsqueda + columnas + leyenda */}
           <Space wrap>
             <Input

@@ -21,7 +21,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 
     const current = await prisma.oTRepuesto.findUnique({
       where: { id: Number(id) },
-      select: { status_requerimiento_codigo: true, po_id: true, ot_id: true, nro_req: true, observaciones: true },
+      select: { status_requerimiento_codigo: true, po_id: true, ot_id: true, orden_trabajo_interna_id: true, nro_req: true, observaciones: true },
     });
     if (!current) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
     if (current.status_requerimiento_codigo !== "SIN_APROBACION") {
@@ -47,7 +47,11 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       });
       await tx.oTHistorial.create({
         data: {
+          // Si el req es de OT interna, ot_id viene null y se guarda en
+          // orden_trabajo_interna_id — antes faltaba este campo y el evento
+          // quedaba sin parent FK.
           ot_id: current.ot_id,
+          orden_trabajo_interna_id: current.orden_trabajo_interna_id,
           tipo_operacion: "Otro",
           descripcion: `Requerimiento ${current.nro_req ?? id} desaprobado${motivo ? ` — ${motivo}` : ""}`,
           usuario,

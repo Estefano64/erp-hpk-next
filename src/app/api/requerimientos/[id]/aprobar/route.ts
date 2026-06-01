@@ -25,16 +25,21 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const { id } = await ctx.params;
     const usuario = (await getAuditUser(req)) ?? "sistema";
 
-    // Body opcional con precio estimado.
+    // Body opcional con precio estimado + comentario del aprobador.
     let precioEstimado: number | null = null;
     let monedaEstimado: string | null = null;
+    let comentario: string | null = null;
     try {
-      const body = (await req.json()) as { precio_estimado?: unknown; moneda?: unknown };
+      const body = (await req.json()) as { precio_estimado?: unknown; moneda?: unknown; comentario?: unknown };
       if (typeof body?.precio_estimado === "number" && Number.isFinite(body.precio_estimado) && body.precio_estimado >= 0) {
         precioEstimado = body.precio_estimado;
       }
       if (typeof body?.moneda === "string" && body.moneda.trim().length > 0) {
         monedaEstimado = body.moneda.trim().slice(0, 10);
+      }
+      if (typeof body?.comentario === "string") {
+        const c = body.comentario.trim();
+        if (c.length > 0) comentario = c.slice(0, 500);
       }
     } catch {
       // Body opcional — silenciar parse error y continuar sin precio.
@@ -67,17 +72,19 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           // Solo actualiza precio/moneda si vinieron en el body.
           ...(precioEstimado != null ? { precio_unitario: precioEstimado } : {}),
           ...(monedaEstimado ? { moneda: monedaEstimado } : {}),
+          comentario_aprobacion: comentario,
         },
       });
       // Historial polimórfico (OT externa o interna).
+      const baseDesc = precioEstimado != null
+        ? `Requerimiento ${current.nro_req ?? id} aprobado (precio estimado: ${monedaEstimado ?? "USD"} ${precioEstimado.toFixed(2)})`
+        : `Requerimiento ${current.nro_req ?? id} aprobado`;
       await tx.oTHistorial.create({
         data: {
           ot_id: current.ot_id,
           orden_trabajo_interna_id: current.orden_trabajo_interna_id,
           tipo_operacion: "Otro",
-          descripcion: precioEstimado != null
-            ? `Requerimiento ${current.nro_req ?? id} aprobado (precio estimado: ${monedaEstimado ?? "USD"} ${precioEstimado.toFixed(2)})`
-            : `Requerimiento ${current.nro_req ?? id} aprobado`,
+          descripcion: comentario ? `${baseDesc} — ${comentario}` : baseDesc,
           usuario,
         },
       });

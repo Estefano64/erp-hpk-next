@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { recalcularCostoPromedio } from "@/lib/inventario";
 
 const ItemSchema = z.object({
   material_id: z.coerce.number().int().positive(),
@@ -69,6 +70,37 @@ export async function POST(req: NextRequest) {
         detallesPorMaterial.set(det.material_id, arr);
       }
 
+      // Cache de detalles con precio + moneda por material — necesario para
+      // recalcular costo promedio ponderado. Tomamos el primer detalle del
+      // material (asumiendo precio uniforme por material en una OC). Si hay
+      // mezcla de precios para el mismo material en la misma OC, usamos el
+      // promedio ponderado de esos detalles como precio de entrada.
+      const detallesCompletos = await tx.compraDetalle.findMany({
+        where: { compra_id: d.po_id },
+        select: { material_id: true, cantidad: true, precio_unitario: true },
+      });
+      const precioPorMaterial = new Map<number, Prisma.Decimal>();
+      const cantTotalPorMat = new Map<number, Prisma.Decimal>();
+      const valorTotalPorMat = new Map<number, Prisma.Decimal>();
+      for (const det of detallesCompletos) {
+        const cant = new Prisma.Decimal(det.cantidad);
+        const prec = new Prisma.Decimal(det.precio_unitario ?? 0);
+        cantTotalPorMat.set(
+          det.material_id,
+          (cantTotalPorMat.get(det.material_id) ?? new Prisma.Decimal(0)).plus(cant),
+        );
+        valorTotalPorMat.set(
+          det.material_id,
+          (valorTotalPorMat.get(det.material_id) ?? new Prisma.Decimal(0)).plus(cant.mul(prec)),
+        );
+      }
+      for (const [matId, cantTotal] of cantTotalPorMat) {
+        const valorTotal = valorTotalPorMat.get(matId) ?? new Prisma.Decimal(0);
+        if (cantTotal.gt(0)) {
+          precioPorMaterial.set(matId, valorTotal.div(cantTotal));
+        }
+      }
+
       const movimientosCreados: { material_id: number; cantidad: number }[] = [];
 
       for (const item of d.items) {
@@ -122,11 +154,24 @@ export async function POST(req: NextRequest) {
           (d.nro_guia ? ` — Guía: ${d.nro_guia}` : "") +
           (d.nro_factura ? ` — Factura: ${d.nro_factura}` : "");
 
+        // Leemos el snapshot del stock + costo previo ANTES del increment para
+        // alimentar el cálculo de PPP. Si dos ingresos del mismo material caen
+        // en la misma transacción, el segundo verá el costo recalculado del
+        // primero porque ya estamos dentro de tx.
+        const matPrevio = await tx.material.findUnique({
+          where: { material_id: item.material_id },
+          select: { stock_actual: true, costo_promedio: true },
+        });
+
         await tx.movimientoInventario.create({
           data: {
             material_id: item.material_id,
             tipo_movimiento: "ENTRADA",
             cantidad: item.cantidad,
+            // Snapshot del precio de la OC para esta entrada (vale tanto para
+            // auditoría como para el cálculo de costos de la OT más adelante).
+            precio_unitario: precioPorMaterial.get(item.material_id) ?? null,
+            moneda: compra.moneda_codigo ?? null,
             documento_referencia: docRef,
             observacion: item.observacion || obsBase,
             usuario: d.usuario,
@@ -136,6 +181,15 @@ export async function POST(req: NextRequest) {
         await tx.material.update({
           where: { material_id: item.material_id },
           data: { stock_actual: { increment: item.cantidad } },
+        });
+
+        // Recalcular PPP con el stock previo y el precio de esta entrada.
+        await recalcularCostoPromedio(tx, item.material_id, {
+          stockPrevio: matPrevio?.stock_actual ?? 0,
+          costoPrevio: matPrevio?.costo_promedio ?? null,
+          cantidadEntrada: item.cantidad,
+          precioEntrada: precioPorMaterial.get(item.material_id) ?? null,
+          monedaEntrada: compra.moneda_codigo ?? null,
         });
 
         movimientosCreados.push({ material_id: item.material_id, cantidad: item.cantidad });
@@ -175,47 +229,65 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // Actualizar las OTs afectadas por esta PO: ubicación física + estado de recursos.
+      // Actualizar las OTs afectadas por esta PO: ubicación física + estado
+      // de recursos. La OC puede agrupar items de OT externas + internas;
+      // procesamos ambas dimensiones.
       const repuestosPO = await tx.oTRepuesto.findMany({
         where: { po_id: d.po_id },
-        select: { ot_id: true },
+        select: { ot_id: true, orden_trabajo_interna_id: true },
       });
-      // Filtramos null porque ahora ot_id es opcional (items de OT interna).
-      // El bloque siguiente solo actualiza OTs externas — las internas no tienen
-      // status `recursos_status_codigo` ni `ubicacion_codigo`.
       const otIds = [
         ...new Set(repuestosPO.map((r) => r.ot_id).filter((x): x is number => x != null)),
+      ];
+      const otInternaIds = [
+        ...new Set(
+          repuestosPO
+            .map((r) => r.orden_trabajo_interna_id)
+            .filter((x): x is number => x != null),
+        ),
       ];
       const ubicacionValida = d.ubicacion_codigo
         ? await tx.ubicacion.findUnique({ where: { codigo: d.ubicacion_codigo }, select: { codigo: true } })
         : null;
 
-      for (const otId of otIds) {
-        // Estado de recursos según el estado de TODAS las POs vinculadas a la OT.
-        // - Todas las POs ENTREGADO (recibidas completas) → "Recursos completos"
-        // - Alguna recibida pero queda alguna por completar → "Recursos en recepción"
-        const reqsOT = await tx.oTRepuesto.findMany({
-          where: { ot_id: otId, po_id: { not: null } },
+      // Calcula el código de recursos status según las OCs vinculadas a una OT.
+      async function calcularRecursosStatus(where: Record<string, unknown>): Promise<string> {
+        const reqs = await tx.oTRepuesto.findMany({
+          where: { ...where, po_id: { not: null } },
           select: { po_id: true },
         });
-        const poIds = [...new Set(reqsOT.map((r) => r.po_id).filter((x): x is number => x != null))];
-        let recursosCodigo = "Recursos en recepción";
-        if (poIds.length > 0) {
-          const comprasOT = await tx.compra.findMany({
-            where: { id: { in: poIds } },
-            select: { status_oc_codigo: true },
-          });
-          const todasEntregadas = comprasOT.every(
-            (c) => c.status_oc_codigo === "ENTREGADO" || c.status_oc_codigo === "COMPLETO",
-          );
-          recursosCodigo = todasEntregadas ? "Recursos completos" : "Recursos en recepción";
-        }
+        const poIds = [...new Set(reqs.map((r) => r.po_id).filter((x): x is number => x != null))];
+        if (poIds.length === 0) return "Recursos en recepción";
+        const comprasOT = await tx.compra.findMany({
+          where: { id: { in: poIds } },
+          select: { status_oc_codigo: true },
+        });
+        const todasEntregadas = comprasOT.every(
+          (c) => c.status_oc_codigo === "ENTREGADO" || c.status_oc_codigo === "COMPLETO",
+        );
+        return todasEntregadas ? "Recursos completos" : "Recursos en recepción";
+      }
+
+      for (const otId of otIds) {
+        const recursosCodigo = await calcularRecursosStatus({ ot_id: otId });
         await tx.ordenTrabajo.update({
           where: { id: otId },
           data: {
             recursos_status_codigo: recursosCodigo,
             ...(ubicacionValida ? { ubicacion_codigo: ubicacionValida.codigo } : {}),
           },
+        });
+      }
+
+      // OT internas: solo tienen `recursos_status_codigo` (no ubicacion_codigo
+      // todavía — el modelo no lo declara). Aplicamos la misma regla.
+      for (const otInternaId of otInternaIds) {
+        const recursosCodigo = await calcularRecursosStatus({
+          orden_trabajo_interna_id: otInternaId,
+        });
+        await tx.ordenTrabajoInterna.update({
+          where: { id: otInternaId },
+          data: { recursos_status_codigo: recursosCodigo },
         });
       }
 

@@ -562,7 +562,7 @@ export default function TecnicoPanel() {
               </Text>
             </Col>
             <Col xs={24} sm={12} md="auto">
-              <Space direction={isMobile ? "horizontal" : "vertical"} style={{ width: "100%" }}>
+              <Space orientation={isMobile ? "horizontal" : "vertical"} style={{ width: "100%" }}>
                 <Button
                   size="large"
                   icon={<PauseCircleOutlined />}

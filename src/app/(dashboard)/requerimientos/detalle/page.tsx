@@ -58,6 +58,7 @@ import { useResponsive, modalWidth } from "@/lib/responsive";
 import dayjs, { Dayjs } from "dayjs";
 
 import { formatDateOnly } from "@/lib/dates";
+import { formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
 import { R2FileLink } from "@/components/R2FileLink";
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -92,13 +93,16 @@ interface RequerimientoApi {
     id: number;
     // En BD, OrdenTrabajo.ot es Int? (no string). Lo declaramos union por defensa.
     ot: number | string | null;
+    // Necesario para formatOtCodigo (V/S/REP prefix).
+    tipo_codigo: string | null;
     descripcion: string | null;
     cod_rep_flota: string | null;
     cliente: { codigo: string; razon_social: string; nombre_comercial: string | null } | null;
   } | null;
   // Para items pertenecientes a una OT INTERNA, viene en este campo.
-  // OrdenTrabajoInterna.ot es string (ej: "OT-INT-0002").
-  orden_trabajo_interna?: { id: number; ot: string | null; descripcion: string | null } | null;
+  // OrdenTrabajoInterna.ot es INTEGER (NNNNYY) tras migración — el display
+  // (OIXXXXYY) lo construye formatOtInternaCodigo en la UI.
+  orden_trabajo_interna?: { id: number; ot: number | string | null; descripcion: string | null } | null;
   material: { codigo: string; descripcion: string; unidad_medida_codigo: string | null; stock_actual?: string | number | null; np?: string | null; precio?: string | number | null; moneda_codigo?: string | null } | null;
   proveedor: { id: number; razon_social: string } | null;
   compra: { id: number; numero_po: string } | null;
@@ -160,16 +164,19 @@ function normalize(r: RequerimientoApi): Requerimiento {
   // Soportamos los dos casos (OT externa y OT interna) acá para que la tabla
   // muestre el número en lugar de un guion.
   const esInterna = r.orden_trabajo == null && r.orden_trabajo_interna != null;
-  const otRaw = esInterna
-    ? r.orden_trabajo_interna?.ot ?? null
-    : r.orden_trabajo?.ot ?? null;
   const descripcionOt = esInterna
     ? r.orden_trabajo_interna?.descripcion ?? null
     : r.orden_trabajo?.descripcion ?? null;
+  // numero_ot se formatea según tipo: REP raw, BIE→V######, SER→S######, INT→OI######.
+  const numeroOt = esInterna
+    ? formatOtInternaCodigo(r.orden_trabajo_interna?.ot ?? null, "")
+    : (r.orden_trabajo?.ot != null
+        ? formatOtCodigo(r.orden_trabajo.ot, r.orden_trabajo.tipo_codigo, "")
+        : "");
   return {
     id: r.id,
     ot_id: r.ot_id,
-    numero_ot: otRaw != null ? String(otRaw) : null,
+    numero_ot: numeroOt || null,
     descripcion_ot: descripcionOt,
     flota: r.orden_trabajo?.cod_rep_flota ?? null,
     material_id: r.material_id,

@@ -2,71 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { parseDateOnly } from "@/lib/dates";
-
-// Genera el siguiente código de OT en formato NNNNYY:
-//   - los últimos 2 dígitos son el año (ej. "26" para 2026)
-//   - los 4 anteriores son el correlativo del año (ej. "0001")
-// Ejemplo: la primera OT del 2026 es "000126".
-//
-// OTs antiguas con formato "OT-YYYY-NNNN" se ignoran al calcular el correlativo
-// (solo cuentan las que matchean exactamente \d{4}YY).
-//
-// MIN_CORRELATIVO_POR_ANIO: punto de partida del correlativo cuando todavía
-// no hay OTs nuevas registradas. Permite reservar números porque las OTs
-// antiguas se importarán después con código mayor al "min". Una vez importadas
-// (o cuando se cree una OT con número mayor), `maxN > minN` y este min queda
-// como histórico — se puede borrar la entrada del año cuando ya no aplique.
-const MIN_CORRELATIVO_POR_ANIO: Record<string, number> = {
-  "26": 3905, // primera OT nueva del 2026 será 390626; las anteriores se importarán después
-};
-
-// Genera el siguiente número de OT con CONTADOR INDEPENDIENTE POR TIPO.
-//   - REP (Reparación): comparte contador con históricas (tipo_codigo NULL),
-//     porque las históricas importadas de BDU son todas reparaciones.
-//     Continúa la serie actual (ej. 392026 → 392126 → ...).
-//   - BIE (Bien): contador propio. Empieza en 1 si no hay Bienes previos
-//     en el año. Se muestra como V<num> via formatOtCodigo().
-//   - SER (Servicio): contador propio. Mismo esquema, prefijo S.
-//
-// El formato sigue siendo NNNNYY (correlativo * 100 + año-2-dígitos).
-// El "MIN reservado" (MIN_CORRELATIVO_POR_ANIO) solo aplica a REP/null.
-async function generarNumeroOT(tipoCodigo: string | null | undefined): Promise<number> {
-  const year2 = new Date().getFullYear() % 100; // ej. 26
-
-  // Ámbito del contador según tipo:
-  //   BIE → solo OTs con tipo_codigo='BIE'
-  //   SER → solo OTs con tipo_codigo='SER'
-  //   REP o null/otro → tipo_codigo IN ('REP', NULL) (las históricas vienen sin tipo)
-  const tipoWhere = tipoCodigo === "BIE"
-    ? { tipo_codigo: "BIE" }
-    : tipoCodigo === "SER"
-      ? { tipo_codigo: "SER" }
-      : { OR: [{ tipo_codigo: "REP" }, { tipo_codigo: null }] };
-
-  const candidatos = await prisma.ordenTrabajo.findMany({
-    // Solo OTs activas: una OT desactivada libera su número (se puede reusar).
-    where: { ot: { not: null, lt: 1_000_000 }, activo: true, ...tipoWhere },
-    select: { ot: true },
-  });
-
-  let maxN = 0;
-  for (const { ot } of candidatos) {
-    if (ot == null) continue;
-    if (ot % 100 !== year2) continue;
-    const n = Math.floor(ot / 100);
-    if (n > maxN) maxN = n;
-  }
-
-  // El MIN reservado solo aplica al ámbito histórico (REP/null). BIE y SER
-  // empiezan naturalmente desde 1 dentro del año.
-  const aplicaMin = tipoCodigo !== "BIE" && tipoCodigo !== "SER";
-  const minN = aplicaMin
-    ? (MIN_CORRELATIVO_POR_ANIO[String(year2).padStart(2, "0")] ?? 0)
-    : 0;
-  const next = Math.max(maxN, minN) + 1;
-  // Devolvemos el código como número: NNNNYY = N * 100 + YY (sin padding).
-  return next * 100 + year2;
-}
+import { nextNumeroOTExterna } from "@/lib/ot-numero";
+import { parseOtCodigoSearch } from "@/lib/ot-formato";
 
 // GET — lista con filtros y paginación
 export async function GET(req: NextRequest) {
@@ -94,9 +31,10 @@ export async function GET(req: NextRequest) {
     const where: any = {};
 
     if (search) {
-      // `ot` ahora es INTEGER en DB. Si la búsqueda es un número, hacemos
-      // exact match contra `ot`. Si no, no se busca por ot.
-      const otNum = /^\d+$/.test(search) ? Number(search) : null;
+      // `ot` es INTEGER en BD. Aceptamos tanto el número raw ("390126") como
+      // el código formateado que el usuario ve en pantalla ("V000126",
+      // "S000126") — parseOtCodigoSearch convierte ambos al raw NNNNYY.
+      const otNum = parseOtCodigoSearch(search);
       where.OR = [
         ...(otNum != null ? [{ ot: otNum }] : []),
         { equipo_codigo: { contains: search, mode: "insensitive" } },
@@ -267,11 +205,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "tipo_codigo es requerido (REP / BIE / SER)" }, { status: 400 });
     }
 
-    // Generar número según el tipo seleccionado por el usuario.
-    // El form lo manda como required (REP/BIE/SER), pero por defensa
-    // tratamos undefined/null como ámbito REP.
-    const ot = await generarNumeroOT(body.tipo_codigo as string | null | undefined);
-
     // Si atención es "Contrato", buscar días del contrato por cliente + cod_rep
     let contratoDias: number | null = null;
     let fechaRequerimiento: Date | null = null;
@@ -358,59 +291,69 @@ export async function POST(req: NextRequest) {
 
     const usuarioCrea = (await getAuditUser(req)) ?? "sistema";
 
-    const created = await prisma.ordenTrabajo.create({
-      data: {
-        ot,
-        anio: ot % 100, // año derivado del número de OT (para filtrar por año)
-        id_cliente: body.id_cliente || null,
-        estrategia: body.estrategia ?? false,
-        id_cod_rep: body.id_cod_rep || null,
-        tipo,
-        tipo_codigo: body.tipo_codigo,
-        np,
-        descripcion,
-        id_fabricante: idFabricante,
-        cod_rep_flota: codRepFlota,
-        cod_rep_posicion: codRepPosicion,
-        equipo_codigo: body.equipo_codigo || null,
-        ns: body.ns || null,
-        plaqueteo: body.plaqueteo || null,
-        wo_cliente: body.wo_cliente || null,
-        po_cliente: body.po_cliente || null,
-        po_item: body.po_item || null,
-        id_viajero: body.id_viajero || null,
-        guia_remision: body.guia_remision || null,
-        empresa_entrega: body.empresa_entrega || null,
-        fecha_recepcion: parseDateOnly(body.fecha_recepcion),
-        pcr: body.pcr ?? null,
-        horas: body.horas ?? null,
-        porcentaje_pcr: porcentajePcr,
-        garantia_codigo: body.garantia_codigo || null,
-        atencion_reparacion_codigo: body.atencion_reparacion_codigo || null,
-        tipo_reparacion_codigo: body.tipo_reparacion_codigo || null,
-        tipo_garantia_codigo: tipoGarantiaCodigo,
-        prioridad_atencion_codigo: body.prioridad_atencion_codigo || null,
-        contrato_dias: contratoDias,
-        base_metalica_codigo: body.base_metalica_codigo || null,
-        comentarios: body.comentarios || null,
-        monto_cotizacion: body.monto_cotizacion != null && body.monto_cotizacion !== "" ? body.monto_cotizacion : null,
-        moneda_cotizacion_codigo: body.moneda_cotizacion_codigo || null,
-        fecha_requerimiento_cliente: fechaRequerimiento,
-        // Status por defecto al crear
-        ot_status_codigo: "Abierta",
-        recursos_status_codigo: "En revision procesos",
-        taller_status_codigo: "Pdt Evaluación",
-        // Auditoría de creación
-        usuario_crea: usuarioCrea,
-      },
-      include: {
-        cliente: true,
-        codigo_reparacion: true,
-        fabricante: true,
-        ot_status: true,
-        recursos_status: true,
-        taller_status: true,
-      },
+    // Campos que SOLO aplican a Reparaciones (atención/garantía/PCR). Se
+    // nulifican si el tipo es BIE/SER aunque el body los traiga — los forms
+    // de Bien/Servicio no los muestran pero un cliente malicioso podría
+    // enviarlos. Mantiene consistencia y evita reportes confusos.
+    const esBienOServicio = body.tipo_codigo === "BIE" || body.tipo_codigo === "SER";
+
+    // Generación + create en la misma transacción, con advisory lock dentro
+    // de nextNumeroOTExterna para serializar generaciones concurrentes del
+    // mismo tipo+año.
+    const created = await prisma.$transaction(async (tx) => {
+      const ot = await nextNumeroOTExterna(tx, body.tipo_codigo as string | null | undefined);
+      return tx.ordenTrabajo.create({
+        data: {
+          ot,
+          anio: ot % 100,
+          id_cliente: body.id_cliente || null,
+          estrategia: body.estrategia ?? false,
+          id_cod_rep: body.id_cod_rep || null,
+          tipo,
+          tipo_codigo: body.tipo_codigo,
+          np,
+          descripcion,
+          id_fabricante: idFabricante,
+          cod_rep_flota: codRepFlota,
+          cod_rep_posicion: codRepPosicion,
+          equipo_codigo: body.equipo_codigo || null,
+          ns: body.ns || null,
+          plaqueteo: body.plaqueteo || null,
+          wo_cliente: body.wo_cliente || null,
+          po_cliente: body.po_cliente || null,
+          po_item: body.po_item || null,
+          id_viajero: body.id_viajero || null,
+          guia_remision: body.guia_remision || null,
+          empresa_entrega: body.empresa_entrega || null,
+          fecha_recepcion: esBienOServicio ? null : parseDateOnly(body.fecha_recepcion),
+          pcr: esBienOServicio ? null : (body.pcr ?? null),
+          horas: esBienOServicio ? null : (body.horas ?? null),
+          porcentaje_pcr: esBienOServicio ? null : porcentajePcr,
+          garantia_codigo: esBienOServicio ? null : (body.garantia_codigo || null),
+          atencion_reparacion_codigo: esBienOServicio ? null : (body.atencion_reparacion_codigo || null),
+          tipo_reparacion_codigo: esBienOServicio ? null : (body.tipo_reparacion_codigo || null),
+          tipo_garantia_codigo: esBienOServicio ? null : tipoGarantiaCodigo,
+          prioridad_atencion_codigo: body.prioridad_atencion_codigo || null,
+          contrato_dias: esBienOServicio ? null : contratoDias,
+          base_metalica_codigo: body.base_metalica_codigo || null,
+          comentarios: body.comentarios || null,
+          monto_cotizacion: body.monto_cotizacion != null && body.monto_cotizacion !== "" ? body.monto_cotizacion : null,
+          moneda_cotizacion_codigo: body.moneda_cotizacion_codigo || null,
+          fecha_requerimiento_cliente: esBienOServicio ? null : fechaRequerimiento,
+          ot_status_codigo: "Abierta",
+          recursos_status_codigo: "En revision procesos",
+          taller_status_codigo: "Pdt Evaluación",
+          usuario_crea: usuarioCrea,
+        },
+        include: {
+          cliente: true,
+          codigo_reparacion: true,
+          fabricante: true,
+          ot_status: true,
+          recursos_status: true,
+          taller_status: true,
+        },
+      });
     });
 
     const usuario = usuarioCrea;

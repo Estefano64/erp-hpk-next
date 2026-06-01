@@ -71,6 +71,24 @@ export async function PUT(req: NextRequest, { params }: Params) {
     // Si cambia el número de OT, mantener el año derivado en sync.
     if (body.ot != null && body.ot !== "") body.anio = Number(body.ot) % 100;
 
+    // Si el tipo cambia a BIE/SER, los campos exclusivos de Reparación dejan
+    // de aplicar y se nulifican. Antes quedaban con el valor heredado de
+    // cuando era REP (atención=Contrato, PCR, garantía, etc.) y corrompían
+    // los reportes. Solo se aplica si el body trae tipo_codigo nuevo.
+    if (body.tipo_codigo === "BIE" || body.tipo_codigo === "SER") {
+      body.fecha_recepcion = null;
+      body.pcr = null;
+      body.horas = null;
+      body.porcentaje_pcr = null;
+      body.garantia_codigo = null;
+      body.atencion_reparacion_codigo = null;
+      body.tipo_reparacion_codigo = null;
+      body.tipo_garantia_codigo = null;
+      body.contrato_dias = null;
+      body.fecha_requerimiento_cliente = null;
+      body.fecha_reprogramada = null;
+    }
+
     const usuario = (await getAuditUser(req)) ?? "sistema";
 
     const result = await prisma.$transaction(async (tx) => {

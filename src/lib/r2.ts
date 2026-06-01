@@ -88,12 +88,33 @@ function sanitize(segment: string): string {
 }
 
 // Devuelve el código legible de una OT (su campo `ot`) o un fallback `OT-{id}`
-// cuando el código está vacío. Acepta `ot` como number (externa, tras la
-// migración a INTEGER) o string (interna).
+// cuando el código está vacío. Para EXTERNAS — externamente la clave R2 usa el
+// número raw (NNNNYY); el código formateado V/S es para mostrar al usuario y
+// no aporta nada a R2 (donde lo único que importa es matchear upload con
+// validate). El número solo es único entre el universo de externas (un BIE y
+// un REP del mismo año comparten correlativo pero NO comparten esta key
+// porque cada caller pasa su propia OT).
 export function otCodigoFor(ot: { id: number; ot: number | string | null }): string {
   if (ot.ot == null) return `OT-${ot.id}`;
   const codigo = String(ot.ot).trim();
   return codigo.length > 0 ? codigo : `OT-${ot.id}`;
+}
+
+// Versión para OT INTERNAS — devuelve el código formateado "OIXXXXYY" como
+// segmento R2. Importante para que las keys legacy creadas con el formato
+// VARCHAR ("OT-INT-NNNN") no convivan con las nuevas (NNNNYY raw) — todas
+// las nuevas quedan bajo "OI..." y el browser de R2 las distingue de un
+// vistazo. Si `ot` es null cae al fallback `OT-{id}`.
+export function otInternaCodigoFor(ot: { id: number; ot: number | string | null }): string {
+  if (ot.ot == null) return `OT-${ot.id}`;
+  const otNum = typeof ot.ot === "number" ? ot.ot : Number(ot.ot);
+  if (!Number.isFinite(otNum)) {
+    const codigo = String(ot.ot).trim();
+    return codigo.length > 0 ? codigo : `OT-${ot.id}`;
+  }
+  const yy = otNum % 100;
+  const corr = Math.floor(otNum / 100);
+  return `OI${corr.toString().padStart(4, "0")}${yy.toString().padStart(2, "0")}`;
 }
 
 // Expiraciones fijas. NO recibir override del caller — los presets están pensados
