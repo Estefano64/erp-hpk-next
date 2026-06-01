@@ -123,8 +123,11 @@ export async function GET(_req: NextRequest, { params }: Params) {
         ? `<img class="img-firma" src="${esc(rutaImg)}" alt="Firma" /><div class="nombre">${esc(nombre)}</div>`
         : `<div class="nombre">${esc(nombre)}</div>`;
 
-    // Formar filas de items (minimo 8 filas para que luzca formal como la plantilla)
-    const MIN_ROWS = 8;
+    // Filas mínimas dinámicas — antes era fijo en 8 lo que agregaba muchas
+    // filas vacías cuando la OC tenía pocos items, empujando el documento a
+    // 2 páginas. Ahora ajustamos al número de items con mínimo 5 (para que
+    // la tabla mantenga estética sin perder compactidad).
+    const MIN_ROWS = Math.max(5, items.length);
     const itemsRows: string[] = [];
     items.forEach((r: Item, idx: number) => {
       const descripcion = r.material?.descripcion ?? r.descripcion ?? r.texto ?? "";
@@ -164,7 +167,9 @@ export async function GET(_req: NextRequest, { params }: Params) {
 <meta charset="utf-8">
 <title>${esc(tituloDocumento)}</title>
 <style>
-  @page { size: A4 portrait; margin: 1.2cm 1cm; }
+  /* Márgenes pequeños — maximizan el área útil para que toda la OC entre en
+     1 página A4 aún con header/footer del navegador activos. */
+  @page { size: A4 portrait; margin: 0.7cm 0.8cm; }
   @media print { .no-print { display: none !important; } }
 
   body { font-family: Calibri, Arial, sans-serif; font-size: 9pt; color: #000; margin: 0; }
@@ -172,7 +177,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
   .no-print button { background:#1890ff; color:#fff; border:none; padding:8px 20px; font-size:13px; cursor:pointer; border-radius:4px; }
   .no-print button:hover { background:#096dd9; }
 
-  .container { max-width: 21cm; margin: 0 auto; padding: 10px; }
+  .container { max-width: 21cm; margin: 0 auto; padding: 4px; }
 
   /* Cabecera */
   .header-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
@@ -191,7 +196,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
   /* Titulo */
   h1.titulo {
     background: #1C2B5B; color: #fff; text-align: center;
-    padding: 6px; margin: 8px 0; font-size: 12pt; letter-spacing: 2pt;
+    padding: 4px; margin: 4px 0; font-size: 11pt; letter-spacing: 2pt;
   }
 
   /* Datos proveedor */
@@ -201,12 +206,12 @@ export async function GET(_req: NextRequest, { params }: Params) {
   .prov-table td.val { width: 38%; }
 
   /* Tabla items */
-  .items-table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+  .items-table { width: 100%; border-collapse: collapse; margin: 4px 0; }
   .items-table th {
-    background: #1C2B5B; color: #fff; padding: 4px; font-size: 8pt;
+    background: #1C2B5B; color: #fff; padding: 3px; font-size: 7.5pt;
     border: 1pt solid #333; text-align: center; font-weight: 600;
   }
-  .items-table td { border: 1pt solid #333; padding: 4px; font-size: 8.5pt; vertical-align: top; min-height: 20px; }
+  .items-table td { border: 1pt solid #333; padding: 2px 4px; font-size: 8pt; vertical-align: top; }
   .items-table td.center { text-align: center; }
   .items-table td.right { text-align: right; }
   .items-table td.desc { text-align: left; }
@@ -218,41 +223,33 @@ export async function GET(_req: NextRequest, { params }: Params) {
   .totales-table td.val { text-align: right; width: 60%; }
   .totales-table tr.total-row td { background: #1C2B5B; color: #fff; font-weight: bold; font-size: 10pt; }
 
-  /* Firmas */
-  .firmas { margin-top: 18px; width: 100%; border-collapse: collapse; }
-  .firmas td { border: 1pt solid #333; padding: 8px; font-size: 8pt; text-align: center; width: 33%; vertical-align: bottom; height: 110px; }
-  .firmas .rol { font-weight: bold; color: #1C2B5B; margin-bottom: 4px; }
-  .firmas .img-firma { max-height: 60px; max-width: 90%; object-fit: contain; display: block; margin: 0 auto 4px; }
-  .firmas .nombre { margin-top: 4px; }
+  /* Firmas — alturas reducidas para que toda la OC entre en 1 página. */
+  .firmas { margin-top: 8px; width: 100%; border-collapse: collapse; }
+  .firmas td { border: 1pt solid #333; padding: 4px; font-size: 8pt; text-align: center; width: 33%; vertical-align: bottom; height: 70px; }
+  .firmas .rol { font-weight: bold; color: #1C2B5B; margin-bottom: 2px; font-size: 7.5pt; }
+  .firmas .img-firma { max-height: 40px; max-width: 90%; object-fit: contain; display: block; margin: 0 auto 2px; }
+  .firmas .nombre { margin-top: 2px; }
 
   /* Factura */
-  .factura-box { margin-top: 12px; border: 1pt solid #333; padding: 8px; font-size: 8pt; background: #fafafa; }
-  .factura-box .titulo { font-weight: bold; color: #1C2B5B; margin-bottom: 3px; }
+  .factura-box { margin-top: 6px; border: 1pt solid #333; padding: 4px 6px; font-size: 7.5pt; background: #fafafa; line-height: 1.3; }
+  .factura-box .titulo { font-weight: bold; color: #1C2B5B; margin-bottom: 2px; }
 
-  /* Notas */
-  .notas { margin-top: 14px; font-size: 7.5pt; color: #333; line-height: 1.5; }
-  .notas .titulo { font-weight: bold; margin-bottom: 4px; color: #1C2B5B; font-size: 8.5pt; }
-  .notas ol { margin: 0; padding-left: 18px; }
+  /* Notas — fuente y line-height más chicos para no inflar la última página. */
+  .notas { margin-top: 6px; font-size: 6.5pt; color: #333; line-height: 1.3; }
+  .notas .titulo { font-weight: bold; margin-bottom: 2px; color: #1C2B5B; font-size: 7.5pt; }
+  .notas ol { margin: 0; padding-left: 14px; }
+  .notas li { margin-bottom: 1px; }
 
-  /* Pie */
+  /* Pie único con Elaborado por + Aprobado por (información clave) y formato. */
   .pie {
-    margin-top: 14px; padding-top: 4px;
-    font-size: 7pt; color: #666;
+    margin-top: 6px; padding-top: 3px;
+    font-size: 7pt; color: #333;
     border-top: 1pt solid #ddd;
     display: flex; justify-content: space-between; align-items: center; gap: 8px;
   }
   .pie .usuario { text-align: left; font-weight: 600; color: #1C2B5B; }
+  .pie .aprobador { text-align: center; font-weight: 600; color: #1C2B5B; }
   .pie .formato { text-align: right; }
-
-  /* Pie fijo que aparece en cada página al imprimir */
-  .pie-fijo {
-    position: fixed; bottom: 0.3cm; left: 1cm; right: 1cm;
-    font-size: 6.5pt; color: #666;
-    border-top: 1pt solid #ddd; padding-top: 3px;
-    display: flex; justify-content: space-between;
-  }
-  .pie-fijo .usuario { font-weight: 600; color: #1C2B5B; }
-  @media screen { .pie-fijo { display: none; } }
 </style>
 </head>
 <body>
@@ -262,8 +259,10 @@ export async function GET(_req: NextRequest, { params }: Params) {
   <span style="margin-left:10px;font-size:11px;color:#666">
     (Usa "Guardar como PDF" en el diálogo de impresión)
   </span>
-  <div style="margin-top:6px;font-size:11px;color:#cf1322">
-    💡 En "Más configuraciones" del diálogo, <b>desmarca "Encabezados y pies"</b> para ocultar la URL del navegador (localhost/...).
+  <div style="margin-top:6px;font-size:12px;color:#cf1322;font-weight:600">
+    ⚠️ IMPORTANTE: en el diálogo de impresión abrí <b>"Más configuraciones"</b> y
+    <b>DESMARCÁ "Encabezados y pies de página"</b>. Sin eso, el navegador agrega
+    la URL arriba y la fecha abajo — y el documento se va a 2 páginas.
   </div>
 </div>
 
@@ -417,15 +416,10 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
   <div class="pie">
     <span class="usuario">Elaborado por: ${esc(compra.usuario_solicita ?? "—")}</span>
+    <span class="aprobador">Aprobado por: ${esc(compra.usuario_aprueba ?? "—")}</span>
     <span class="formato">FORMATO OC - Versión: 01</span>
   </div>
 
-</div>
-
-<!-- Pie fijo que se repite en cada página impresa -->
-<div class="pie-fijo">
-  <span class="usuario">Elaborado por: ${esc(compra.usuario_solicita ?? "—")}</span>
-  <span>OC ${esc(compra.numero_po)} · HP&amp;K INVERSIONES S.A.C.</span>
 </div>
 
 <script>
