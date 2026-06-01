@@ -205,10 +205,12 @@ export default function PlanificacionPage() {
   const [equipos, setEquipos] = useState<EquipoOpt[]>([]);
   const [estados, setEstados] = useState<StatusTareaOpt[]>([]);
   const [otOpts, setOtOpts] = useState<{ value: number; label: string }[]>([]);
-  // Modal "Nueva tarea"
+  const [componentes, setComponentes] = useState<{ codigo: string; nombre: string }[]>([]);
+  const [operaciones, setOperaciones] = useState<{ codigo: string; nombre: string; componente_codigo: string | null; clasificacion: string }[]>([]);
+  // Modal "Nueva tarea" (mismo flujo Parte→Tipo→Tarea que el form de Tareas de la OT)
   const [nuevaOpen, setNuevaOpen] = useState(false);
   const [nuevaSaving, setNuevaSaving] = useState(false);
-  const [nueva, setNueva] = useState<{ ot_id: number | null; parte: string; trabajo: string; qty: number; horas: number | null; tecnico: string | null; maquina: string | null }>({ ot_id: null, parte: "General", trabajo: "", qty: 1, horas: null, tecnico: null, maquina: null });
+  const [nueva, setNueva] = useState<{ ot_id: number | null; parte: string | null; tipo: "Estandar" | "NoEstandar"; operacionCodigo: string | null; qty: number; horas: number | null; tecnico: string | null; maquina: string | null; comentario: string }>({ ot_id: null, parte: null, tipo: "Estandar", operacionCodigo: null, qty: 1, horas: null, tecnico: null, maquina: null, comentario: "" });
   // Modal de historial de ejecución
   const [histOpen, setHistOpen] = useState(false);
   const [histLoading, setHistLoading] = useState(false);
@@ -297,11 +299,14 @@ export default function PlanificacionPage() {
 
   useEffect(() => {
     (async () => {
-      const [resT, resE, resS, resO] = await Promise.all([
+      const anioActual = new Date().getFullYear() % 100; // ej. 26 → solo OTs del año
+      const [resT, resE, resS, resO, resC, resOp] = await Promise.all([
         fetch("/api/trabajadores?limit=200&soloOperarios=1"),
         fetch("/api/equipos?limit=200&tipo=MAQ"),
         fetch("/api/catalogos?tabla=statusTarea"),
-        fetch("/api/ordenes-trabajo?limit=1000"),
+        fetch(`/api/ordenes-trabajo?limit=1000&anios=${anioActual}`),
+        fetch("/api/catalogos?tabla=componente"),
+        fetch("/api/catalogos?tabla=operacionReparacion"),
       ]);
       if (resO.ok) {
         const j = await resO.json();
@@ -309,6 +314,8 @@ export default function PlanificacionPage() {
           .filter((o: { id?: number; ot?: number }) => o.id != null && o.ot != null)
           .map((o: { id: number; ot: number }) => ({ value: o.id, label: String(o.ot) })));
       }
+      if (resC.ok) setComponentes((await resC.json()).data ?? []);
+      if (resOp.ok) setOperaciones((await resOp.json()).data ?? []);
       if (resT.ok) {
         const j = await resT.json();
         setTrabajadores(j.data ?? []);
@@ -326,7 +333,8 @@ export default function PlanificacionPage() {
 
   // Crear una tarea desde el modal "Nueva tarea" (con o sin OT).
   const guardarNueva = useCallback(async () => {
-    if (!nueva.trabajo.trim()) { messageApi.warning("Poné una descripción del trabajo."); return; }
+    if (!nueva.parte) { messageApi.warning("Elegí la Parte."); return; }
+    if (!nueva.operacionCodigo) { messageApi.warning("Elegí la Tarea."); return; }
     setNuevaSaving(true);
     try {
       const res = await fetch("/api/planificacion", {
@@ -334,12 +342,14 @@ export default function PlanificacionPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ot_id: nueva.ot_id ?? undefined,
-          componente_codigo: nueva.parte.trim() || "General",
-          trabajo: nueva.trabajo.trim(),
+          componente_codigo: nueva.parte,
+          operacion_reparacion_codigo: nueva.operacionCodigo,
+          tipo_reparacion: nueva.tipo,
           qty: nueva.qty,
           horas_estimadas: nueva.horas ?? undefined,
           tecnico: nueva.tecnico ?? undefined,
           maquina: nueva.maquina ?? undefined,
+          comentario: nueva.comentario.trim() || undefined,
         }),
       });
       if (res.ok) {
@@ -1372,7 +1382,7 @@ export default function PlanificacionPage() {
             {editMode ? "Salir de edición" : "Modo edición"}
           </Button>
           {editMode && (
-            <Button type="dashed" icon={<PlusOutlined />} onClick={() => { setNueva({ ot_id: null, parte: "General", trabajo: "", qty: 1, horas: null, tecnico: null, maquina: null }); setNuevaOpen(true); }}>
+            <Button type="dashed" icon={<PlusOutlined />} onClick={() => { setNueva({ ot_id: null, parte: null, tipo: "Estandar", operacionCodigo: null, qty: 1, horas: null, tecnico: null, maquina: null, comentario: "" }); setNuevaOpen(true); }}>
               Nueva tarea
             </Button>
           )}
@@ -1696,13 +1706,40 @@ export default function PlanificacionPage() {
               optionFilterProp="label"
             />
           </div>
+          <Row gutter={12}>
+            <Col span={14}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>Parte *</Typography.Text>
+              <Select
+                showSearch style={{ width: "100%" }} placeholder="Seleccione…"
+                value={nueva.parte ?? undefined}
+                onChange={(v) => setNueva((n) => ({ ...n, parte: v as string, operacionCodigo: null }))}
+                options={componentes.map((c) => ({ value: c.codigo, label: c.nombre }))}
+                optionFilterProp="label"
+              />
+            </Col>
+            <Col span={10}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>Tipo *</Typography.Text>
+              <Select
+                style={{ width: "100%" }}
+                value={nueva.tipo}
+                onChange={(v) => setNueva((n) => ({ ...n, tipo: v as "Estandar" | "NoEstandar", operacionCodigo: null }))}
+                options={[{ value: "Estandar", label: "Estándar" }, { value: "NoEstandar", label: "No estándar" }]}
+              />
+            </Col>
+          </Row>
           <div>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>Parte / componente</Typography.Text>
-            <Input value={nueva.parte} onChange={(e) => setNueva((n) => ({ ...n, parte: e.target.value }))} placeholder="Ej: Cilindro, Vástago, General" />
-          </div>
-          <div>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>Trabajo / descripción *</Typography.Text>
-            <Input value={nueva.trabajo} onChange={(e) => setNueva((n) => ({ ...n, trabajo: e.target.value }))} placeholder="Ej: Apoyo armado, Bruñido…" />
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>Tarea *</Typography.Text>
+            <Select
+              showSearch style={{ width: "100%" }}
+              placeholder={nueva.parte ? "Seleccione…" : "Seleccione parte primero…"}
+              disabled={!nueva.parte}
+              value={nueva.operacionCodigo ?? undefined}
+              onChange={(v) => setNueva((n) => ({ ...n, operacionCodigo: v as string }))}
+              options={operaciones
+                .filter((o) => o.componente_codigo === nueva.parte && o.clasificacion === (nueva.tipo === "NoEstandar" ? "NO_STD" : "STD"))
+                .map((o) => ({ value: o.codigo, label: o.nombre }))}
+              optionFilterProp="label"
+            />
           </div>
           <Row gutter={12}>
             <Col span={12}>
@@ -1735,6 +1772,10 @@ export default function PlanificacionPage() {
               options={equipos.map((e) => ({ value: e.codigo, label: `${e.codigo} — ${e.descripcion ?? ""}` }))}
               optionFilterProp="label"
             />
+          </div>
+          <div>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>Comentario para el técnico (opcional)</Typography.Text>
+            <Input.TextArea rows={2} value={nueva.comentario} onChange={(e) => setNueva((n) => ({ ...n, comentario: e.target.value }))} maxLength={500} />
           </div>
           <Typography.Text type="secondary" style={{ fontSize: 11 }}>
             Se crea sin fecha; arrastrala en Programación Semanal para fijarle día y hora.
