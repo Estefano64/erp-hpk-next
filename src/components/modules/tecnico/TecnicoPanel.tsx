@@ -314,7 +314,11 @@ export default function TecnicoPanel() {
           {clienteDe(r.orden_trabajo) && (
             <div style={{ fontSize: 10, color: brand.textSecondary }}>🏢 {clienteDe(r.orden_trabajo)}</div>
           )}
-          {r.comentario && <Tag color="cyan" style={{ fontSize: 10, marginTop: 2 }}>💬 Comentario</Tag>}
+          {r.comentario && (
+            <Tooltip title={<span style={{ whiteSpace: "pre-wrap" }}>{r.comentario}</span>}>
+              <Tag color="cyan" style={{ fontSize: 10, marginTop: 2, cursor: "help", whiteSpace: "normal", maxWidth: 240 }}>💬 {r.comentario}</Tag>
+            </Tooltip>
+          )}
         </div>
       ),
     },
