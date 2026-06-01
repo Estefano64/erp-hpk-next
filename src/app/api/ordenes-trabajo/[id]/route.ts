@@ -71,22 +71,32 @@ export async function PUT(req: NextRequest, { params }: Params) {
     // Si cambia el número de OT, mantener el año derivado en sync.
     if (body.ot != null && body.ot !== "") body.anio = Number(body.ot) % 100;
 
-    // Si el tipo cambia a BIE/SER, los campos exclusivos de Reparación dejan
-    // de aplicar y se nulifican. Antes quedaban con el valor heredado de
-    // cuando era REP (atención=Contrato, PCR, garantía, etc.) y corrompían
-    // los reportes. Solo se aplica si el body trae tipo_codigo nuevo.
+    // Si el tipo cambia, nulificamos los campos que no aplican al nuevo tipo
+    // para no arrastrar valores fantasma del flujo anterior. BIE conserva
+    // Atención Reparación y Fecha Requerimiento Cliente — solo SER las pierde.
     if (body.tipo_codigo === "BIE" || body.tipo_codigo === "SER") {
       body.fecha_recepcion = null;
       body.pcr = null;
       body.horas = null;
       body.porcentaje_pcr = null;
       body.garantia_codigo = null;
-      body.atencion_reparacion_codigo = null;
       body.tipo_reparacion_codigo = null;
       body.tipo_garantia_codigo = null;
       body.contrato_dias = null;
-      body.fecha_requerimiento_cliente = null;
       body.fecha_reprogramada = null;
+      body.plaqueteo = null;
+      body.wo_cliente = null;
+      body.po_item = null;
+      body.id_viajero = null;
+      body.guia_remision = null;
+      body.empresa_entrega = null;
+      body.base_metalica_codigo = null;
+    }
+    if (body.tipo_codigo === "SER") {
+      // SER no tiene cliente final con condiciones — sin atención ni fecha
+      // requerimiento.
+      body.atencion_reparacion_codigo = null;
+      body.fecha_requerimiento_cliente = null;
     }
 
     const usuario = (await getAuditUser(req)) ?? "sistema";

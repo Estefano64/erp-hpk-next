@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rutaFirmaDe } from "@/lib/firmas";
+import { formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
+import { areaTallerLabel } from "@/lib/areas-taller";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -15,11 +17,14 @@ export async function GET(_req: NextRequest, { params }: Params) {
         proveedor: true,
         ubicacion: true,
         moneda: true,
-        orden_trabajo: { select: { ot: true } },
+        orden_trabajo: { select: { ot: true, tipo_codigo: true } },
         ot_repuestos: {
           include: {
             material: { select: { codigo: true, descripcion: true, np: true, unidad_medida_codigo: true } },
-            orden_trabajo: { select: { ot: true } },
+            orden_trabajo: { select: { ot: true, tipo_codigo: true } },
+            // Para OCs derivadas de OT interna — el header de la plantilla
+            // debe mostrar el código OIXXXXYY y el área del taller.
+            orden_trabajo_interna: { select: { ot: true, area_taller: true } },
           },
         },
       },
@@ -48,11 +53,29 @@ export async function GET(_req: NextRequest, { params }: Params) {
     const total = Number(compra.total || 0);
     const moneda = compra.moneda?.codigo || compra.moneda_codigo || "USD";
     const monedaLabel = moneda === "USD" ? "DOLARES" : moneda === "SOL" || moneda === "PEN" ? "SOLES" : moneda;
-    const otReferencias = [...new Set(items.map((r: Item) => r.orden_trabajo?.ot).filter(Boolean))].join(", ");
+    // Códigos de OT formateados (V/S/REP para externas, OI para internas).
+    // Junta sin duplicados — una OC puede mezclar items de varias OTs.
+    const otCodigosFormateados = [
+      ...new Set(
+        items.flatMap((r: Item) => {
+          const codes: string[] = [];
+          if (r.orden_trabajo?.ot != null) {
+            const c = formatOtCodigo(r.orden_trabajo.ot, r.orden_trabajo.tipo_codigo, "");
+            if (c) codes.push(c);
+          }
+          if (r.orden_trabajo_interna?.ot != null) {
+            const c = formatOtInternaCodigo(r.orden_trabajo_interna.ot, "");
+            if (c) codes.push(c);
+          }
+          return codes;
+        }),
+      ),
+    ];
+    const otReferencias = otCodigosFormateados.join(", ");
     // Nombre del documento al guardar como PDF: "{NumeroOC}-{OT}-{PROVEEDOR}"
     // Sanitizar para que sea un nombre de archivo válido (sin /, \, :, espacios consecutivos).
     const ocFile = compra.numero_po.replace(/[^A-Za-z0-9\-_]/g, "");
-    const otFile = [...new Set(items.map((r: Item) => r.orden_trabajo?.ot).filter(Boolean))]
+    const otFile = otCodigosFormateados
       .join("_")
       .replace(/[^A-Za-z0-9\-_]/g, "");
     const provFile = (compra.proveedor?.nombre_comercial ?? compra.proveedor?.razon_social ?? "")
@@ -62,6 +85,33 @@ export async function GET(_req: NextRequest, { params }: Params) {
       .replace(/[^A-Z0-9\-_]/g, "")
       .slice(0, 40);
     const tituloDocumento = [ocFile, otFile || "SinOT", provFile || "SinProv"].join("-");
+
+    // Campo "REQ" del header de la plantilla:
+    //   - Si la OC tiene items de OT interna → mostrar el ÁREA del taller
+    //     (ej. "1.3.4. Infraestructura"). Si hay varias áreas distintas se
+    //     listan separadas por coma.
+    //   - Si solo tiene items de OT externa → "OPERACIONES" (legacy).
+    const areasTallerSet = new Set<string>();
+    for (const it of items as Item[]) {
+      const area = it.orden_trabajo_interna?.area_taller;
+      if (area) areasTallerSet.add(area);
+    }
+    const reqHeaderLabel = areasTallerSet.size > 0
+      ? [...areasTallerSet].map((a) => areaTallerLabel(a)).join(", ")
+      : "OPERACIONES";
+
+    // Forma de pago: usa los campos de la OC si están seteados. Sino "CREDITO"
+    // por compat con OCs anteriores al campo tipo_pago.
+    let formaPagoLabel = "CREDITO";
+    if (compra.tipo_pago) {
+      const tp = compra.tipo_pago;
+      if (tp === "CONTADO") formaPagoLabel = "CONTADO";
+      else if (tp === "CREDITO") formaPagoLabel = compra.dias_credito && compra.dias_credito > 0
+        ? `CRÉDITO ${compra.dias_credito} DÍAS`
+        : "CRÉDITO";
+      else if (tp === "TRANSFERENCIA") formaPagoLabel = "TRANSFERENCIA";
+      else formaPagoLabel = tp;
+    }
 
     // Firmas: si el nombre del usuario coincide con un archivo en public/firmas/
     // (mapeo en src/lib/firmas.ts), se renderiza la imagen sobre el nombre.
@@ -240,7 +290,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
           <tr><td class="lbl">ORDEN DE COMPRA N°:</td><td><b>${esc(compra.numero_po)}</b></td></tr>
           <tr><td class="lbl">Proyecto:</td><td>AREQUIPA</td></tr>
           <tr><td class="lbl">OT:</td><td>${esc(otReferencias || "-")}</td></tr>
-          <tr><td class="lbl">REQ:</td><td>OPERACIONES</td></tr>
+          <tr><td class="lbl">${areasTallerSet.size > 0 ? "Área:" : "REQ:"}</td><td>${esc(reqHeaderLabel)}</td></tr>
         </table>
       </td>
     </tr>
@@ -279,7 +329,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
       <td class="lbl">E-mail:</td>
       <td class="val">${esc(compra.proveedor?.email ?? "-")}</td>
       <td class="lbl">Forma de pago:</td>
-      <td class="val">CREDITO</td>
+      <td class="val">${esc(formaPagoLabel)}</td>
     </tr>
     <tr>
       <td class="lbl">Lugar entrega:</td>
