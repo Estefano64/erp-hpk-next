@@ -13,6 +13,7 @@ import type { ColumnsType } from "antd/es/table";
 import dayjs, { type Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
 import { brand } from "@/lib/theme";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 
 dayjs.extend(isoWeek);
 
@@ -118,6 +119,7 @@ function formatSegundos(s: number): string {
 
 export default function TecnicoPanel() {
   const { message, modal } = App.useApp();
+  const { screens, isMobile } = useResponsive(); // isMobile = < 768px
   const [data, setData] = useState<MiTrabajo | null>(null);
   const [ranking, setRanking] = useState<RankingItem[]>([]);
   const [rankingPeriodo, setRankingPeriodo] = useState<"semana" | "mes">("semana");
@@ -282,23 +284,32 @@ export default function TecnicoPanel() {
       ),
     },
     {
-      title: "Hora", width: 110, align: "center",
-      render: (_, r) => r.fecha_inicio
-        ? <Text style={{ fontSize: 11 }}>{dayjs(r.fecha_inicio).format("HH:mm")} — {r.fecha_fin ? dayjs(r.fecha_fin).format("HH:mm") : "—"}</Text>
-        : <Text type="secondary" style={{ fontSize: 11 }}>—</Text>,
+      title: "Hora", width: 120, align: "center",
+      render: (_, r) => {
+        if (!r.fecha_inicio) return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
+        const ini = dayjs(r.fecha_inicio);
+        const fin = r.fecha_fin ? dayjs(r.fecha_fin) : null;
+        const cruzaDia = fin ? fin.startOf("day").diff(ini.startOf("day"), "day") : 0;
+        return (
+          <Text style={{ fontSize: 11 }}>
+            {ini.format("HH:mm")} — {fin ? fin.format("HH:mm") : "—"}
+            {cruzaDia > 0 && <Text type="warning" style={{ fontSize: 9 }}> (+{cruzaDia}d)</Text>}
+          </Text>
+        );
+      },
     },
     {
-      title: "Estado", width: 100, align: "center",
+      // Estado PERSONAL del técnico (miEstado), coherente con la columna Acción.
+      // Una tarea sin fecha (p.ej. desplazada por una emergencia) se ve como
+      // "Sin programar", no como "Programado".
+      title: "Estado", width: 110, align: "center",
       render: (_, r) => {
-        const map: Record<string, { color: string; label: string }> = {
-          abierto: { color: "default", label: "Abierto" },
-          programado: { color: "blue", label: "Programado" },
-          en_proceso: { color: "processing", label: "En proceso" },
-          pausado: { color: "warning", label: "Pausado" },
-          realizado: { color: "success", label: "Realizado" },
-        };
-        const v = map[r.estado ?? ""] ?? { color: "default", label: r.estado ?? "—" };
-        return <Tag color={v.color} style={{ fontSize: 10, margin: 0 }}>{v.label}</Tag>;
+        const mi = r.miEstado ?? "sin_empezar";
+        if (mi === "en_proceso") return <Tag color="processing" style={{ fontSize: 10, margin: 0 }}>En proceso</Tag>;
+        if (mi === "pausado") return <Tag color="warning" style={{ fontSize: 10, margin: 0 }}>Pausado</Tag>;
+        if (mi === "realizado") return <Tag color="success" style={{ fontSize: 10, margin: 0 }}>Realizado</Tag>;
+        if (!r.fecha_inicio) return <Tag color="default" style={{ fontSize: 10, margin: 0 }}>Sin programar</Tag>;
+        return <Tag color="blue" style={{ fontSize: 10, margin: 0 }}>Programado</Tag>;
       },
     },
     {
@@ -429,9 +440,9 @@ export default function TecnicoPanel() {
 
       {/* Sesión activa */}
       {data.sesionEnCurso && (
-        <Card style={{ marginBottom: 16, borderColor: brand.cyan, background: "#E6FFFB" }}>
-          <Row gutter={16} align="middle">
-            <Col flex="auto">
+        <Card style={{ marginBottom: 16, borderColor: brand.cyan, background: "#E6FFFB" }} styles={{ body: { padding: isMobile ? 12 : 24 } }}>
+          <Row gutter={[16, 16]} align="middle" wrap>
+            <Col xs={24} md="auto" flex={screens.md ? "auto" : undefined}>
               <Space align="center">
                 <FireOutlined style={{ fontSize: 28, color: "#fa541c" }} />
                 <div>
@@ -445,20 +456,20 @@ export default function TecnicoPanel() {
                 </div>
               </Space>
             </Col>
-            <Col>
+            <Col xs={24} sm={12} md="auto">
               <Statistic
                 title="Tiempo en esta sesión"
                 value={formatSegundos(sesionActivaSegundos)}
                 prefix={<ClockCircleOutlined style={{ color: brand.cyan }} />}
-                valueStyle={{ color: brand.cyan, fontFamily: "monospace", fontSize: 28 }}
+                valueStyle={{ color: brand.cyan, fontFamily: "monospace", fontSize: isMobile ? 22 : 28 }}
               />
               <Text type="secondary" style={{ fontSize: 11 }}>
                 Acumulado previo: {data.sesionEnCurso.horas_reales_previas.toFixed(2)}h /
                 estimado {data.sesionEnCurso.horas_estimadas.toFixed(1)}h
               </Text>
             </Col>
-            <Col>
-              <Space direction="vertical">
+            <Col xs={24} sm={12} md="auto">
+              <Space direction={isMobile ? "horizontal" : "vertical"} style={{ width: "100%" }}>
                 <Button
                   size="large"
                   icon={<PauseCircleOutlined />}
@@ -647,6 +658,7 @@ export default function TecnicoPanel() {
       {/* Observaciones del técnico al pausar / finalizar (opcional). */}
       <Modal
         open={!!obsModal}
+        width={modalWidth(screens, 480)}
         title={obsModal?.accion === "finalizar" ? "Finalizar tarea" : "Pausar tarea"}
         okText={obsModal?.accion === "finalizar" ? "Finalizar" : "Pausar"}
         cancelText="Cancelar"
