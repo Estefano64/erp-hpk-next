@@ -102,8 +102,10 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       // ── Construir patch base ──
       const data: Record<string, unknown> = {};
       const dateFields = new Set(["fecha_inicio", "fecha_fin", "fecha_inicio_real", "fecha_fin_real"]);
+      // Flags de control: NO son columnas de la BD, no deben ir al update de Prisma.
+      const flagsControl = new Set(["forzarEdicion", "omitirAntisolape", "empujar"]);
       for (const k of Object.keys(input) as Array<keyof typeof input>) {
-        if (k === "forzarEdicion") continue;
+        if (flagsControl.has(k as string)) continue;
         const v = input[k];
         if (v === undefined) continue;
         if (dateFields.has(k as string)) data[k] = toDate(v as string | null);
