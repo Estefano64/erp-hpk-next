@@ -322,9 +322,14 @@ export default function TecnicoPanel() {
         if (r.estado === "cancelado") return <Tag color="default">Cancelada</Tag>;
         if (mi === "realizado") return <Tag color="success" icon={<CheckCircleOutlined />}>Terminada</Tag>;
         // Borrador (el planner no publicó): visible pero aún no ejecutable.
-        // EXCEPCIÓN: una emergencia siempre se puede atender, publicada o no.
-        if (r.publicado === false && !r.es_correctivo && mi === "sin_empezar" && !tieneSesion) {
+        if (r.publicado === false && mi === "sin_empezar" && !tieneSesion) {
           return <Tooltip title="El planner todavía no confirmó (publicó) esta tarea."><Tag color="warning">Borrador</Tag></Tooltip>;
+        }
+        // Sin programar (sin fecha, p.ej. desplazada por una emergencia): no se
+        // puede iniciar hasta que el planner le ponga fecha. (Si ya está pausada
+        // sí se puede retomar, porque tiene progreso real.)
+        if (mi === "sin_empezar" && !r.fecha_inicio && !tieneSesion) {
+          return <Tooltip title="Sin fecha: esperá a que el planner la reprograme."><Tag color="default">Sin programar</Tag></Tooltip>;
         }
         if (mi === "en_proceso" || tieneSesion) {
           return (

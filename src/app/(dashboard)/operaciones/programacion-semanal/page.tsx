@@ -140,6 +140,12 @@ function semanaCodigo(d: Dayjs): string {
   return `${d.isoWeekYear()}W${String(d.isoWeek()).padStart(2, "0")}`;
 }
 
+// Una tarea ya "empezada" por el técnico (en proceso / pausada / realizada) no se
+// reprograma: su horario pasó a ser ejecución real.
+function haEmpezado(estado: string | null | undefined): boolean {
+  return ["en_proceso", "pausado", "realizado"].includes(estado ?? "");
+}
+
 export default function ProgramacionSemanalPage() {
   const router = useRouter();
   const { data: session } = useSession();
@@ -473,6 +479,11 @@ export default function ProgramacionSemanalPage() {
     }
     const original = rows.find((r) => r.id === id) || allRows.find((r) => r.id === id);
     if (!original) return;
+    // Tarea ya iniciada por el técnico: no se reprograma (su horario es real).
+    if (haEmpezado(original.estado)) {
+      messageApi.info("El técnico ya inició esta tarea: no se puede mover.");
+      return;
+    }
     // Una emergencia (correctiva) puede caer encima de otras tareas: se permite
     // el choque y después se empuja al resto del día.
     const esEmergencia = !!original.es_correctivo;
@@ -908,6 +919,12 @@ export default function ProgramacionSemanalPage() {
       messageApi.info("Tarea publicada. Reabrí la semana del operario para moverla.");
       return;
     }
+    // Tarea ya iniciada por el técnico (en proceso / pausada / realizada): su
+    // horario ya es ejecución real, no se reprograma.
+    if (haEmpezado(tDrag?.estado)) {
+      messageApi.info("El técnico ya inició esta tarea: no se puede mover.");
+      return;
+    }
     const target = e.currentTarget as HTMLElement;
     const rect = target.getBoundingClientRect();
     // Si la tarea está en el set de seleccionadas y hay más de 1, prepara multi-drag
@@ -920,6 +937,7 @@ export default function ProgramacionSemanalPage() {
           if (id === taskId) continue;
           const t = rows.find((r) => r.id === id) ?? allRows.find((r) => r.id === id);
           if (!t || !t.fecha_inicio) continue;
+          if (haEmpezado(t.estado)) continue; // no arrastrar tareas ya iniciadas
           const offsetMin = Math.round((new Date(t.fecha_inicio).getTime() - baseIni) / 60000);
           multiOffsets.push({
             id,
@@ -1229,7 +1247,7 @@ export default function ProgramacionSemanalPage() {
           {/* Resize handle: solo en vista Operarios (Equipos es solo lectura),
               si la tarea NO continúa a la próxima semana y NO está publicada
               (publicada = plan congelado). */}
-          {!continuaDespues && view !== "equipo" && !r.publicado && (
+          {!continuaDespues && view !== "equipo" && !r.publicado && !haEmpezado(r.estado) && (
             <div
               className="psg-resize-handle"
               onMouseDown={(e) => {
@@ -1944,7 +1962,7 @@ export default function ProgramacionSemanalPage() {
               okButtonProps={{ danger: true }}
               onConfirm={() => selectedTask && persistRemoveFromWeek(selectedTask.id)}
             >
-              <Button danger disabled={!editMode || !!selectedTask?.publicado}>Sacar de la semana</Button>
+              <Button danger disabled={!editMode || !!selectedTask?.publicado || haEmpezado(selectedTask?.estado)}>Sacar de la semana</Button>
             </Popconfirm>
           ) : null,
           selectedTask && !selectedTask.es_correctivo ? (

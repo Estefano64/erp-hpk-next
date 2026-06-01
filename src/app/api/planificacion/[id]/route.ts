@@ -99,6 +99,19 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         else data[k] = v;
       }
 
+      // ── Tarea ya iniciada por el técnico: no se reprograma ──
+      // Si está en proceso o pausada (tiene ejecución real), bloqueamos cambios de
+      // fecha/semana desde cualquier vía (planner). El técnico maneja su avance por
+      // los endpoints iniciar/pausar/finalizar. `forzarEdicion` lo permite (revertir).
+      const iniciada = current.estado === "en_proceso" || current.estado === "pausado";
+      const reprograma = "fecha_inicio" in data || "fecha_fin" in data || "semana_plan" in data;
+      if (iniciada && reprograma && !input.forzarEdicion) {
+        throw Object.assign(
+          new Error("La tarea ya fue iniciada por el técnico; no se puede reprogramar."),
+          { code: "INICIADA_LOCKED" },
+        );
+      }
+
       // ── 4) Auto-sync fecha_inicio ↔ semana_plan ──
       const fechaInicioCambia = "fecha_inicio" in data;
       const semanaCambia = "semana_plan" in data;
@@ -191,6 +204,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     const err = error as { code?: string; message?: string };
     if (err?.code === "NOT_FOUND") return NextResponse.json({ error: "No encontrado" }, { status: 404 });
     if (err?.code === "REALIZADO_LOCKED") return NextResponse.json({ error: err.message }, { status: 423 });
+    if (err?.code === "INICIADA_LOCKED") return NextResponse.json({ error: err.message }, { status: 423 });
     if (err?.code === "HE_INVALID") return NextResponse.json({ error: err.message }, { status: 400 });
     if ((err as { code?: string })?.code === "P2025") return NextResponse.json({ error: "No encontrado" }, { status: 404 });
     console.error("PUT /api/planificacion/[id] error:", error);
