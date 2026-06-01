@@ -1695,17 +1695,6 @@ export default function PlanificacionPage() {
         width={520}
       >
         <Space direction="vertical" style={{ width: "100%" }} size={12}>
-          <div>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>OT (opcional — vacío = tarea de apoyo sin OT)</Typography.Text>
-            <Select
-              showSearch allowClear style={{ width: "100%" }}
-              placeholder="Sin OT"
-              value={nueva.ot_id ?? undefined}
-              onChange={(v) => setNueva((n) => ({ ...n, ot_id: (v as number | undefined) ?? null }))}
-              options={otOptsMerged}
-              optionFilterProp="label"
-            />
-          </div>
           <Row gutter={12}>
             <Col span={14}>
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>Parte *</Typography.Text>
@@ -1741,16 +1730,6 @@ export default function PlanificacionPage() {
               optionFilterProp="label"
             />
           </div>
-          <Row gutter={12}>
-            <Col span={12}>
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>Qty personal</Typography.Text>
-              <InputNumber min={1} style={{ width: "100%" }} value={nueva.qty} onChange={(v) => setNueva((n) => ({ ...n, qty: Number(v) || 1 }))} />
-            </Col>
-            <Col span={12}>
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>Horas estimadas</Typography.Text>
-              <InputNumber min={0} step={0.5} style={{ width: "100%" }} value={nueva.horas ?? undefined} onChange={(v) => setNueva((n) => ({ ...n, horas: v == null ? null : Number(v) }))} />
-            </Col>
-          </Row>
           <div>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>Operario</Typography.Text>
             <Select

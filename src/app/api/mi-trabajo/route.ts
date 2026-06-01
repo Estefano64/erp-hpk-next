@@ -217,8 +217,8 @@ export async function GET(req: Request) {
     // ── Histórico últimas 4 semanas (por técnico) ──────────────────
     const historico: Array<{ semana: string; estimadas: number; reales: number; eficienciaPct: number | null }> = [];
     for (let i = 3; i >= 0; i--) {
-      const ini = dayjs().subtract(i, "week").startOf("isoWeek").toDate();
-      const fin = dayjs().subtract(i, "week").endOf("isoWeek").toDate();
+      const ini = dayjs().tz(TZ).subtract(i, "week").startOf("isoWeek").toDate();
+      const fin = dayjs().tz(TZ).subtract(i, "week").endOf("isoWeek").toDate();
       const tareas = await prisma.planificacionOT.findMany({
         where: { AND: [whereTecnico, { fecha_inicio: { gte: ini, lte: fin } }] },
         select: { id: true, horas_estimadas: true },

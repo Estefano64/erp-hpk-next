@@ -2,11 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import dayjs from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
+import utc from "dayjs/plugin/utc";
+import timezone from "dayjs/plugin/timezone";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { splitRecursos } from "@/lib/recursos";
 
 dayjs.extend(isoWeek);
+dayjs.extend(utc);
+dayjs.extend(timezone);
+const TZ = "America/Lima";
 
 // GET /api/ranking-tecnicos — ranking PÚBLICO de técnicos por eficiencia y
 // productividad. El rol técnico decidió que es público (competitivo).
@@ -22,11 +27,11 @@ export async function GET(req: NextRequest) {
     const periodo = searchParams.get("periodo") === "mes" ? "mes" : "semana";
 
     const ini = periodo === "mes"
-      ? dayjs().startOf("month").toDate()
-      : dayjs().startOf("isoWeek").toDate();
+      ? dayjs().tz(TZ).startOf("month").toDate()
+      : dayjs().tz(TZ).startOf("isoWeek").toDate();
     const fin = periodo === "mes"
-      ? dayjs().endOf("month").toDate()
-      : dayjs().endOf("isoWeek").toDate();
+      ? dayjs().tz(TZ).endOf("month").toDate()
+      : dayjs().tz(TZ).endOf("isoWeek").toDate();
 
     // Solo cuentan tareas REALIZADAS en el período.
     const realizadas = await prisma.planificacionOT.findMany({
