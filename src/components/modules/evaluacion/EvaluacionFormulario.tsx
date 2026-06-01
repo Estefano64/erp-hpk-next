@@ -155,8 +155,13 @@ function InputMedida({
   const v = useValor(datos, onChange);
   const { medida, unidad } = useContext(MedidasModeloContext);
   const modelo = useMemo(() => modeloForField(name, medida), [name, medida]);
+  // La medida modelo se muestra con la misma precisión que los inputs:
+  //   - Pulgadas (in): 3 decimales (#.###).
+  //   - Milímetros (mm): 2 decimales (#.##).
+  // Antes condicionaba por valor (>= 100 → 2 decimales) lo que redondeaba
+  // medidas exactas en pulgadas grandes (ej. 150.123 in → 150.12 in).
   const modeloTexto = modelo != null
-    ? `${modelo >= 100 ? modelo.toFixed(2) : modelo.toFixed(3)} ${unidad}`
+    ? `${modelo.toFixed(unidad === "in" ? 3 : 2)} ${unidad}`
     : null;
   return (
     <div>

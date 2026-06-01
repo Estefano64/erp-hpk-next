@@ -140,3 +140,16 @@ body {
   max-width: 100%;
 }
 
+/* Columnas de acciones: si un <Space> horizontal contiene botones (Button),
+   permitir que floten a la siguiente línea cuando no caben en horizontal
+   (ej. cuando el usuario hace zoom out o la columna es estrecha). Sin esto
+   los últimos botones quedaban recortados por el `overflow: hidden` de la
+   celda y el usuario solo veía los primeros. Usa :has() — soportado en
+   Chrome 105+, Edge 105+, Safari 15.4+, Firefox 121+. */
+.ant-table-tbody > tr > td .ant-space-horizontal:has(.ant-btn),
+.ant-table-tbody > tr > td .ant-space-horizontal:has(.ant-popconfirm),
+.ant-table-tbody > tr > td .ant-flex:has(> .ant-btn) {
+  flex-wrap: wrap !important;
+  row-gap: 4px !important;
+}
+
