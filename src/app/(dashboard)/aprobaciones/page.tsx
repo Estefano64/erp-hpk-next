@@ -5,13 +5,15 @@ import { useRouter } from "next/navigation";
 import {
   Typography, Card, Tabs, Table, Tag, Space, Button, Input, Select, Row, Col,
   Statistic, Popconfirm, Empty, Tooltip, Popover, Divider, Badge, App,
-  Alert, Segmented, Modal,
+  Alert, Segmented, Modal, Upload,
 } from "antd";
+import type { UploadFile } from "antd";
 import {
   CheckOutlined, CloseOutlined, ReloadOutlined, EyeOutlined, FileProtectOutlined,
   ShoppingCartOutlined, InboxOutlined, InfoCircleOutlined, HistoryOutlined,
-  ClockCircleOutlined, CheckCircleOutlined,
+  ClockCircleOutlined, CheckCircleOutlined, PaperClipOutlined, DeleteOutlined,
 } from "@ant-design/icons";
+import { uploadToR2 } from "@/lib/r2-client";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { brand } from "@/lib/theme";
@@ -136,6 +138,9 @@ export default function AceptacionesPage() {
   const [aprobarPrecio, setAprobarPrecio] = useState<number | null>(null);
   const [aprobarMoneda, setAprobarMoneda] = useState<string>("USD");
   const [aprobarComentario, setAprobarComentario] = useState<string>("");
+  // Archivos a adjuntar al req durante la aprobación (capturas, cotizaciones,
+  // notas escaneadas). Se suben a R2 DESPUÉS de que el req se apruebe OK.
+  const [aprobarArchivos, setAprobarArchivos] = useState<UploadFile[]>([]);
   const [aprobarSaving, setAprobarSaving] = useState(false);
 
   // Tab activo
@@ -219,12 +224,14 @@ export default function AceptacionesPage() {
     setAprobarPrecio(precioActual);
     setAprobarMoneda(r.moneda ?? r.material?.moneda_codigo ?? "USD");
     setAprobarComentario("");
+    setAprobarArchivos([]);
   }
 
   async function handleConfirmAprobar() {
     if (!aprobarModalReq) return;
     setAprobarSaving(true);
     try {
+      const reqId = aprobarModalReq.id;
       const ref = `${aprobarModalReq.nro_req ?? "—"}/${aprobarModalReq.item_req ?? "—"}`;
       // Construimos el body con lo que tenga valor — todo es opcional al
       // server, pero solo mandamos las claves que el usuario completó.
@@ -235,7 +242,40 @@ export default function AceptacionesPage() {
       }
       const com = aprobarComentario.trim();
       if (com.length > 0) body.comentario = com;
-      await aprobarReq(aprobarModalReq.id, ref, Object.keys(body).length > 0 ? body : undefined);
+      await aprobarReq(reqId, ref, Object.keys(body).length > 0 ? body : undefined);
+
+      // Después de aprobar OK, subir cualquier archivo adjunto vía R2 +
+      // registrar en /api/requerimientos/{id}/adjuntos. Si una subida falla
+      // no anulamos la aprobación; solo notificamos para que el usuario
+      // pueda reintentar desde el detalle.
+      // RcFile (de antd Upload) extiende File — convertimos al type base
+      // para uploadToR2. El cast es seguro porque RcFile es File en runtime.
+      const files: File[] = aprobarArchivos
+        .map((f) => f.originFileObj as File | undefined)
+        .filter((f): f is File => f != null);
+      if (files.length > 0) {
+        let ok = 0;
+        let fail = 0;
+        for (const file of files) {
+          try {
+            const meta = await uploadToR2({
+              file,
+              uploadUrlEndpoint: `/api/requerimientos/${reqId}/adjuntos/upload-url`,
+            });
+            const r = await fetch(`/api/requerimientos/${reqId}/adjuntos`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(meta),
+            });
+            if (r.ok) ok++; else fail++;
+          } catch {
+            fail++;
+          }
+        }
+        if (ok > 0) message.success(`${ok} adjunto(s) cargado(s).`);
+        if (fail > 0) message.warning(`${fail} adjunto(s) fallaron — reintentá desde el detalle del req.`);
+      }
+
       setAprobarModalReq(null);
     } finally {
       setAprobarSaving(false);
@@ -1196,6 +1236,47 @@ export default function AceptacionesPage() {
               />
               <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>
                 Queda visible en la tabla de Requerimientos.
+              </div>
+            </div>
+
+            {/* Adjuntos ya cargados al crear el req (read-only). */}
+            {aprobarModalReq.adjuntos && aprobarModalReq.adjuntos.length > 0 && (
+              <div>
+                <Text strong style={{ display: "block", marginBottom: 4 }}>
+                  Adjuntos del requerimiento ({aprobarModalReq.adjuntos.length})
+                </Text>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  {aprobarModalReq.adjuntos.map((a) => (
+                    <div key={a.id} style={{ fontSize: 12 }}>
+                      <R2FileLink resource="req-adjunto" resourceId={a.id} r2Key={a.r2_key}>
+                        📎 {a.nombre_archivo} ({(a.tamano / 1024).toFixed(1)} KB)
+                      </R2FileLink>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Nuevos adjuntos a sumar durante la aprobación. Se suben a R2
+                y registran en BD DESPUÉS del aprobar OK (no antes — si el
+                aprobar falla, no querés archivos huérfanos en R2). */}
+            <div>
+              <Text strong style={{ display: "block", marginBottom: 4 }}>
+                <PaperClipOutlined /> Adjuntar capturas / archivos{" "}
+                <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+              </Text>
+              <Upload
+                fileList={aprobarArchivos}
+                onChange={({ fileList }) => setAprobarArchivos(fileList)}
+                beforeUpload={() => false} // evita upload automático — lo hacemos a mano después de aprobar
+                multiple
+                accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
+              >
+                <Button icon={<PaperClipOutlined />} size="small">Seleccionar archivos</Button>
+              </Upload>
+              <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>
+                Imágenes, PDFs o documentos. Se cargan en Cloudflare como adjuntos del requerimiento
+                — visibles después en la tabla y al aceptar la OC.
               </div>
             </div>
           </div>
