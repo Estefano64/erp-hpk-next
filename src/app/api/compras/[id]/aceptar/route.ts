@@ -32,7 +32,10 @@ export async function POST(req: NextRequest, { params }: Params) {
           id: true,
           numero_po: true,
           status_oc_codigo: true,
-          _count: { select: { detalles: true } },
+          // Una OC puede tener items en CompraDetalle (creación manual) o en
+          // OTRepuesto vía po_id (creación desde requerimientos aprobados).
+          // Cualquiera de las dos cuenta como "tiene items".
+          _count: { select: { detalles: true, ot_repuestos: true } },
         },
       });
       if (!compra) {
@@ -44,9 +47,8 @@ export async function POST(req: NextRequest, { params }: Params) {
           { status: 400 },
         );
       }
-      // Una OC sin detalles no se puede recibir — bloquearla acá evita que
-      // quede en PROCESO esperando una recepción que nunca va a llegar.
-      if (compra._count.detalles === 0) {
+      // Una OC sin detalles ni reqs vinculados no se puede recibir.
+      if (compra._count.detalles === 0 && compra._count.ot_repuestos === 0) {
         throw Object.assign(
           new Error("La OC no tiene items. Agregá al menos uno antes de aceptarla."),
           { status: 400 },
