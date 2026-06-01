@@ -233,21 +233,56 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
     }
   };
 
-  const aceptarOC = async () => {
+  const aceptarOC = () => {
     if (!compra) return;
-    try {
-      setAceptando(true);
-      const res = await fetch(`/api/compras/${compra.id}/aceptar`, { method: "POST" });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Error al aceptar OC");
-      message.success("OC aceptada");
-      cargar();
-      onUpdated?.();
-    } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : "Error al aceptar OC");
-    } finally {
-      setAceptando(false);
-    }
+    // Comentario opcional. Igual mostramos el modal para que el aprobador
+    // pueda dejar nota si quiere.
+    let comentario = "";
+    Modal.confirm({
+      title: `Aceptar la OC ${compra.numero_po}`,
+      content: (
+        <div style={{ marginTop: 8 }}>
+          <Text style={{ fontSize: 12 }}>
+            Comentario <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+          </Text>
+          <Text type="secondary" style={{ fontSize: 11, display: "block" }}>
+            La OC pasará a "En Proceso" y se registrará tu usuario como aprobador.
+          </Text>
+          <Input.TextArea
+            rows={3}
+            maxLength={500}
+            showCount
+            placeholder="Ej: aceptada después de confirmar precios con proveedor"
+            onChange={(e) => { comentario = e.target.value; }}
+            style={{ marginTop: 8 }}
+          />
+        </div>
+      ),
+      okText: "Aceptar OC",
+      cancelText: "Cancelar",
+      width: 460,
+      onOk: async () => {
+        const txt = comentario.trim();
+        try {
+          setAceptando(true);
+          const res = await fetch(`/api/compras/${compra.id}/aceptar`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ comentario: txt || null }),
+          });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || "Error al aceptar OC");
+          message.success("OC aceptada");
+          cargar();
+          onUpdated?.();
+        } catch (err: unknown) {
+          message.error(err instanceof Error ? err.message : "Error al aceptar OC");
+          throw err;
+        } finally {
+          setAceptando(false);
+        }
+      },
+    });
   };
 
   const items = compra?.ot_repuestos ?? [];
@@ -428,22 +463,15 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
         </div>
         <Space>
           {isAdmin && compra?.estado === "Pendiente" && !editing && (
-            <Popconfirm
-              title={`¿Aceptar la OC ${compra.numero_po}?`}
-              description="La OC pasará a En Proceso y se registrará tu usuario como aprobador."
-              onConfirm={aceptarOC}
-              okText="Aceptar"
-              cancelText="Cancelar"
+            <Button
+              icon={<CheckOutlined />}
+              loading={aceptando}
+              size="small"
+              onClick={aceptarOC}
+              style={{ background: "#52c41a", border: "none", color: brand.white }}
             >
-              <Button
-                icon={<CheckOutlined />}
-                loading={aceptando}
-                size="small"
-                style={{ background: "#52c41a", border: "none", color: brand.white }}
-              >
-                Aceptar OC
-              </Button>
-            </Popconfirm>
+              Aceptar OC
+            </Button>
           )}
           {!editing ? (
             <Button

@@ -31,7 +31,8 @@ export async function POST(req: NextRequest) {
   const ids = Array.isArray(body.ids)
     ? (body.ids as unknown[]).filter((x): x is number => typeof x === "number" && Number.isFinite(x) && x > 0)
     : null;
-  const motivo = typeof body.motivo === "string" ? body.motivo.trim() || null : null;
+  // Motivo opcional al desaprobar el lote.
+  const motivo = typeof body.motivo === "string" ? (body.motivo.trim() || null) : null;
 
   if (!nroReq && (!ids || ids.length === 0)) {
     return NextResponse.json({ error: "Se requiere nro_req o ids[]" }, { status: 400 });

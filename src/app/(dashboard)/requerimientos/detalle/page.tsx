@@ -619,81 +619,93 @@ function RequerimientosDetalleInner() {
     }
   };
 
-  const aprobarItem = async (r: Requerimiento) => {
-    try {
-      const res = await fetch(`/api/requerimientos/${r.id}/aprobar`, { method: "POST" });
-      const json = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(json?.error || "Error al aprobar");
-      message.success(`${r.nro_req ?? "Item"} aprobado`);
-      await fetchData();
-    } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : "Error");
-    }
-  };
-
-  const desaprobarItem = (r: Requerimiento) => {
-    let motivo = "";
+  // Helper genérico: pide texto OPCIONAL en un modal y ejecuta la acción.
+  // Reduce duplicación entre aprobar / desaprobar / anular. El user puede
+  // dejar el campo vacío y la acción se ejecuta igual.
+  function pedirMotivoYEjecutar(opts: {
+    titulo: string;
+    okText: string;
+    danger?: boolean;
+    campoLabel: string;
+    placeholder: string;
+    bodyKey: "comentario" | "motivo";
+    url: string;
+    successMsg: string;
+  }) {
+    let texto = "";
     Modal.confirm({
-      title: `Desaprobar ${r.nro_req ?? "requerimiento"}`,
+      title: opts.titulo,
       content: (
-        <Input.TextArea
-          rows={3}
-          placeholder="Motivo (opcional)"
-          onChange={(e) => { motivo = e.target.value; }}
-        />
+        <div style={{ marginTop: 8 }}>
+          <Text style={{ fontSize: 12 }}>
+            {opts.campoLabel}{" "}
+            <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+          </Text>
+          <Input.TextArea
+            rows={3}
+            placeholder={opts.placeholder}
+            onChange={(e) => { texto = e.target.value; }}
+            style={{ marginTop: 8 }}
+            maxLength={500}
+            showCount
+          />
+        </div>
       ),
-      okText: "Desaprobar",
-      okButtonProps: { danger: true },
+      okText: opts.okText,
+      okButtonProps: opts.danger ? { danger: true } : undefined,
       cancelText: "Cancelar",
+      width: 460,
       onOk: async () => {
+        const txt = texto.trim();
         try {
-          const res = await fetch(`/api/requerimientos/${r.id}/desaprobar`, {
+          const res = await fetch(opts.url, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ motivo: motivo || null }),
+            body: JSON.stringify({ [opts.bodyKey]: txt || null }),
           });
           const json = await res.json().catch(() => null);
-          if (!res.ok) throw new Error(json?.error || "Error al desaprobar");
-          message.success(`${r.nro_req ?? "Item"} desaprobado`);
+          if (!res.ok) throw new Error(json?.error || "Error");
+          message.success(opts.successMsg);
           await fetchData();
         } catch (err: unknown) {
           message.error(err instanceof Error ? err.message : "Error");
+          throw err;
         }
       },
     });
-  };
+  }
 
-  const anularItem = (r: Requerimiento) => {
-    let motivo = "";
-    Modal.confirm({
-      title: `Anular ${r.nro_req ?? "requerimiento"}`,
-      content: (
-        <Input.TextArea
-          rows={3}
-          placeholder="Motivo (opcional)"
-          onChange={(e) => { motivo = e.target.value; }}
-        />
-      ),
-      okText: "Anular",
-      okButtonProps: { danger: true },
-      cancelText: "Cancelar",
-      onOk: async () => {
-        try {
-          const res = await fetch(`/api/requerimientos/${r.id}/anular`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ motivo: motivo || null }),
-          });
-          const json = await res.json().catch(() => null);
-          if (!res.ok) throw new Error(json?.error || "Error al anular");
-          message.success(`${r.nro_req ?? "Item"} anulado`);
-          await fetchData();
-        } catch (err: unknown) {
-          message.error(err instanceof Error ? err.message : "Error");
-        }
-      },
-    });
-  };
+  const aprobarItem = (r: Requerimiento) => pedirMotivoYEjecutar({
+    titulo: `Aprobar ${r.nro_req ?? "requerimiento"}`,
+    okText: "Aprobar",
+    campoLabel: "Comentario / recomendación",
+    placeholder: "Ej. priorizar compra antes del 15",
+    bodyKey: "comentario",
+    url: `/api/requerimientos/${r.id}/aprobar`,
+    successMsg: `${r.nro_req ?? "Item"} aprobado`,
+  });
+
+  const desaprobarItem = (r: Requerimiento) => pedirMotivoYEjecutar({
+    titulo: `Desaprobar ${r.nro_req ?? "requerimiento"}`,
+    okText: "Desaprobar",
+    danger: true,
+    campoLabel: "Motivo",
+    placeholder: "Ej. falta cotización del proveedor",
+    bodyKey: "motivo",
+    url: `/api/requerimientos/${r.id}/desaprobar`,
+    successMsg: `${r.nro_req ?? "Item"} desaprobado`,
+  });
+
+  const anularItem = (r: Requerimiento) => pedirMotivoYEjecutar({
+    titulo: `Anular ${r.nro_req ?? "requerimiento"}`,
+    okText: "Anular",
+    danger: true,
+    campoLabel: "Motivo",
+    placeholder: "Ej. ya no aplica, cambio de scope",
+    bodyKey: "motivo",
+    url: `/api/requerimientos/${r.id}/anular`,
+    successMsg: `${r.nro_req ?? "Item"} anulado`,
+  });
 
   const sugerenciaDividir = (cantidad: number): number[][] => {
     // Ej para 4: [[1,1,1,1], [1,3], [2,2]]
@@ -1147,15 +1159,13 @@ function RequerimientosDetalleInner() {
               </Tooltip>
             )}
             {puedeAprobar && (
-              <Tooltip title="Aprobar">
-                <Popconfirm
-                  title="Aprobar requerimiento"
-                  okText="Aprobar"
-                  cancelText="Cancelar"
-                  onConfirm={() => aprobarItem(r)}
-                >
-                  <Button size="small" type="primary" icon={<CheckOutlined />} />
-                </Popconfirm>
+              <Tooltip title="Aprobar (podés dejar un comentario opcional)">
+                <Button
+                  size="small"
+                  type="primary"
+                  icon={<CheckOutlined />}
+                  onClick={() => aprobarItem(r)}
+                />
               </Tooltip>
             )}
             {puedeDesaprobar && (

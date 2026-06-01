@@ -183,9 +183,41 @@ export default function AceptacionesPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   // ── Acciones individuales ────────────────────────────────────────────
-  async function aceptarOC(id: number, numero_po: string) {
+  function aceptarOC(id: number, numero_po: string) {
+    // Comentario OPCIONAL. Igual mostramos el modal para que el aprobador
+    // pueda dejar nota si quiere.
+    let comentario = "";
+    modal.confirm({
+      title: `Aceptar OC ${numero_po}`,
+      content: (
+        <div style={{ marginTop: 8 }}>
+          <Text style={{ fontSize: 12 }}>
+            Comentario <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+          </Text>
+          <Input.TextArea
+            rows={3}
+            maxLength={500}
+            showCount
+            placeholder="Ej: aprobada con descuento negociado vía email"
+            onChange={(e) => { comentario = e.target.value; }}
+            style={{ marginTop: 8 }}
+          />
+        </div>
+      ),
+      okText: "Aceptar OC",
+      cancelText: "Cancelar",
+      width: 480,
+      onOk: () => doAceptarOC(id, numero_po, comentario),
+    });
+  }
+  async function doAceptarOC(id: number, numero_po: string, comentario: string) {
     try {
-      const res = await fetch(`/api/compras/${id}/aceptar`, { method: "POST" });
+      const txt = comentario.trim();
+      const res = await fetch(`/api/compras/${id}/aceptar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comentario: txt || null }),
+      });
       const j = await res.json().catch(() => null);
       if (!res.ok) throw new Error(j?.error ?? "Error al aceptar OC");
       message.success(`OC ${numero_po} aceptada.`);
@@ -285,12 +317,27 @@ export default function AceptacionesPage() {
     let motivo = "";
     modal.confirm({
       title: `Desaprobar requerimiento ${r.nro_req ?? r.id}`,
-      content: <Input.TextArea rows={3} placeholder="Motivo (opcional)" onChange={(e) => { motivo = e.target.value; }} />,
+      content: (
+        <div style={{ marginTop: 8 }}>
+          <Text style={{ fontSize: 12 }}>
+            Motivo <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+          </Text>
+          <Input.TextArea
+            rows={3}
+            placeholder="Ej: falta cotización del proveedor"
+            onChange={(e) => { motivo = e.target.value; }}
+            style={{ marginTop: 8 }}
+            maxLength={500}
+            showCount
+          />
+        </div>
+      ),
       okText: "Desaprobar", okButtonProps: { danger: true },
       onOk: async () => {
+        const txt = motivo.trim();
         const res = await fetch(`/api/requerimientos/${r.id}/desaprobar`, {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ motivo: motivo || null }),
+          body: JSON.stringify({ motivo: txt || null }),
         });
         if (!res.ok) {
           const err = await res.json().catch(() => null);
@@ -304,16 +351,48 @@ export default function AceptacionesPage() {
   }
 
   // ── Acciones bulk ───────────────────────────────────────────────────
-  async function bulkAceptarOC() {
+  function bulkAceptarOC() {
     if (selOcs.length === 0) return;
-    let ok = 0, errs = 0;
-    for (const id of selOcs) {
-      const res = await fetch(`/api/compras/${id}/aceptar`, { method: "POST" });
-      if (res.ok) ok++; else errs++;
-    }
-    if (ok > 0) message.success(`${ok} OC(s) aceptada(s).`);
-    if (errs > 0) message.warning(`${errs} con error.`);
-    setSelOcs([]); fetchData();
+    let comentario = "";
+    modal.confirm({
+      title: `Aceptar ${selOcs.length} OC(s)`,
+      content: (
+        <div style={{ marginTop: 8 }}>
+          <Text style={{ fontSize: 12 }}>
+            Comentario <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+          </Text>
+          <Text type="secondary" style={{ fontSize: 11, display: "block" }}>
+            Si lo dejás, se aplica a todas las OCs del lote.
+          </Text>
+          <Input.TextArea
+            rows={3}
+            maxLength={500}
+            showCount
+            placeholder="Ej: aprobadas tras revisión semanal"
+            onChange={(e) => { comentario = e.target.value; }}
+            style={{ marginTop: 8 }}
+          />
+        </div>
+      ),
+      okText: "Aceptar todas",
+      cancelText: "Cancelar",
+      width: 480,
+      onOk: async () => {
+        const txt = comentario.trim();
+        let ok = 0, errs = 0;
+        for (const id of selOcs) {
+          const res = await fetch(`/api/compras/${id}/aceptar`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ comentario: txt || null }),
+          });
+          if (res.ok) ok++; else errs++;
+        }
+        if (ok > 0) message.success(`${ok} OC(s) aceptada(s).`);
+        if (errs > 0) message.warning(`${errs} con error.`);
+        setSelOcs([]); fetchData();
+      },
+    });
   }
   async function bulkAprobarRQ() {
     if (selReqs.length === 0) return;
@@ -325,8 +404,12 @@ export default function AceptacionesPage() {
       title: `Aprobar ${selReqs.length} requerimiento(s)`,
       content: (
         <div style={{ marginTop: 8 }}>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            Comentario / recomendación (opcional). Se aplica a todos los items del lote.
+          <Text style={{ fontSize: 12 }}>
+            Comentario / recomendación{" "}
+            <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+          </Text>
+          <Text type="secondary" style={{ fontSize: 11, display: "block" }}>
+            Si lo dejás, se aplica a todos los items del lote.
           </Text>
           <Input.TextArea
             rows={3}
@@ -342,7 +425,8 @@ export default function AceptacionesPage() {
       cancelText: "Cancelar",
       width: 480,
       onOk: async () => {
-        const body = comentario.trim().length > 0 ? { comentario: comentario.trim() } : undefined;
+        const txt = comentario.trim();
+        const body = txt ? { comentario: txt } : undefined;
         let ok = 0, errs = 0;
         for (const id of selReqs) {
           const res = await fetch(`/api/requerimientos/${id}/aprobar`, {
@@ -1235,7 +1319,7 @@ export default function AceptacionesPage() {
                 onChange={(e) => setAprobarComentario(e.target.value)}
               />
               <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>
-                Queda visible en la tabla de Requerimientos.
+                Si lo dejás, queda visible en la tabla de Requerimientos.
               </div>
             </div>
 

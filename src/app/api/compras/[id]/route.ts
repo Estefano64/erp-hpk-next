@@ -185,20 +185,48 @@ export async function PUT(req: NextRequest, { params }: Params) {
 }
 
 // DELETE — solo si está en estado Pendiente (PEND_OC)
-export async function DELETE(_req: NextRequest, { params }: Params) {
+// `motivo` opcional en el body; si viene se loguea en el historial.
+export async function DELETE(req: NextRequest, { params }: Params) {
   try {
     const { id } = await params;
+    const body = await req.json().catch(() => ({}));
+    const motivo = typeof body?.motivo === "string" ? body.motivo.trim() : "";
     const compra = await prisma.compra.findUnique({ where: { id: Number(id) } });
     if (!compra) return NextResponse.json({ error: "Compra no encontrada" }, { status: 404 });
     if (compra.status_oc_codigo !== "PEND_OC") {
       return NextResponse.json({ error: "Solo se pueden eliminar compras en estado Pendiente" }, { status: 400 });
     }
+    const usuario = (await getAuditUser(req)) ?? "sistema";
 
     // Desvincular requerimientos asociados
     await prisma.oTRepuesto.updateMany({
       where: { po_id: Number(id) },
       data: { po_id: null, nro_oc: null, status_oc_codigo: null },
     });
+
+    // Registramos el motivo en el historial de cada OT vinculada ANTES de
+    // borrar la compra (después no quedan referencias). Como la OC podría
+    // estar vinculada a OT externas e internas, loggeamos para cada una.
+    const reqsVinculados = await prisma.oTRepuesto.findMany({
+      where: { po_id: Number(id) },
+      select: { ot_id: true, orden_trabajo_interna_id: true },
+      distinct: ["ot_id", "orden_trabajo_interna_id"],
+    });
+    const otsExternasUnicas = [...new Set(reqsVinculados.map((r) => r.ot_id).filter((x): x is number => x != null))];
+    const otsInternasUnicas = [...new Set(reqsVinculados.map((r) => r.orden_trabajo_interna_id).filter((x): x is number => x != null))];
+    const descripcionHist = motivo
+      ? `OC ${compra.numero_po} eliminada por ${usuario} — ${motivo}`
+      : `OC ${compra.numero_po} eliminada por ${usuario}`;
+    for (const otId of otsExternasUnicas) {
+      await prisma.oTHistorial.create({
+        data: { ot_id: otId, tipo_operacion: "Otro", descripcion: descripcionHist, usuario },
+      });
+    }
+    for (const otInternaId of otsInternasUnicas) {
+      await prisma.oTHistorial.create({
+        data: { orden_trabajo_interna_id: otInternaId, tipo_operacion: "Otro", descripcion: descripcionHist, usuario },
+      });
+    }
 
     await prisma.compra.delete({ where: { id: Number(id) } });
     return NextResponse.json({ message: "Compra eliminada" });

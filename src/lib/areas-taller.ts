@@ -13,52 +13,55 @@ export interface AreaTallerOpt {
   parent?: string; // value del padre, ej. "1.3"
 }
 
-// Áreas (nivel 2) y sub-áreas (nivel 3). El nivel 1 ("1. TALLER HPK AQP") es
-// la raíz implícita — no aparece como opción del select.
+// Áreas (nivel 2) y sub-áreas (nivel 3). El nivel 1 ("TALLER HPK AQP") es la
+// raíz implícita — no aparece como opción del select. Los labels se guardan
+// en MAYÚSCULAS y los códigos numéricos (1.1, 1.3.4…) se mantienen solo en
+// `value` para indexar internamente — la UI nunca los muestra.
 export const AREAS_TALLER: AreaTallerOpt[] = [
   // 1.1 Administración
-  { value: "1.1",   label: "Administración" },
-  { value: "1.1.1", label: "Ventas",         parent: "1.1" },
+  { value: "1.1",   label: "ADMINISTRACIÓN" },
+  { value: "1.1.1", label: "VENTAS",         parent: "1.1" },
   { value: "1.1.2", label: "SOMA",           parent: "1.1" },
-  { value: "1.1.3", label: "Contabilidad",   parent: "1.1" },
+  { value: "1.1.3", label: "CONTABILIDAD",   parent: "1.1" },
 
   // 1.2 Logística
-  { value: "1.2",   label: "Logística" },
-  { value: "1.2.1", label: "Almacén de Suministros", parent: "1.2" },
-  { value: "1.2.2", label: "Almacén de Repuestos",   parent: "1.2" },
+  { value: "1.2",   label: "LOGÍSTICA" },
+  { value: "1.2.1", label: "ALMACÉN DE SUMINISTROS", parent: "1.2" },
+  { value: "1.2.2", label: "ALMACÉN DE REPUESTOS",   parent: "1.2" },
 
   // 1.3 Mantenimiento
-  { value: "1.3",   label: "Mantenimiento" },
-  { value: "1.3.1", label: "Herramientas",   parent: "1.3" },
-  { value: "1.3.2", label: "Equipos",        parent: "1.3" },
-  { value: "1.3.3", label: "Vehículos",      parent: "1.3" },
-  { value: "1.3.4", label: "Infraestructura",parent: "1.3" },
+  { value: "1.3",   label: "MANTENIMIENTO" },
+  { value: "1.3.1", label: "HERRAMIENTAS",   parent: "1.3" },
+  { value: "1.3.2", label: "EQUIPOS",        parent: "1.3" },
+  { value: "1.3.3", label: "VEHÍCULOS",      parent: "1.3" },
+  { value: "1.3.4", label: "INFRAESTRUCTURA",parent: "1.3" },
 
   // 1.4 Operación
-  { value: "1.4",   label: "Operación" },
-  { value: "1.4.1", label: "Evaluación", parent: "1.4" },
-  { value: "1.4.2", label: "Bruñido",    parent: "1.4" },
-  { value: "1.4.3", label: "Soldadura",  parent: "1.4" },
-  { value: "1.4.4", label: "Maquinado",  parent: "1.4" },
-  { value: "1.4.5", label: "Pintura",    parent: "1.4" },
-  { value: "1.4.6", label: "Cromado",    parent: "1.4" },
+  { value: "1.4",   label: "OPERACIÓN" },
+  { value: "1.4.1", label: "EVALUACIÓN", parent: "1.4" },
+  { value: "1.4.2", label: "BRUÑIDO",    parent: "1.4" },
+  { value: "1.4.3", label: "SOLDADURA",  parent: "1.4" },
+  { value: "1.4.4", label: "MAQUINADO",  parent: "1.4" },
+  { value: "1.4.5", label: "PINTURA",    parent: "1.4" },
+  { value: "1.4.6", label: "CROMADO",    parent: "1.4" },
 
   // 1.5 Gerencia (sin sub-áreas)
-  { value: "1.5",   label: "Gerencia" },
+  { value: "1.5",   label: "GERENCIA" },
 ];
 
-// Devuelve el label legible (con prefijo numérico) para un código guardado.
-// Ej: areaTallerLabel("1.3.4") → "1.3.4. Infraestructura".
+// Devuelve el label legible (sin prefijo numérico, en mayúsculas) para un
+// código guardado. Ej: areaTallerLabel("1.3.4") → "INFRAESTRUCTURA".
 // Si el código no está en el catálogo, devuelve el código tal cual.
 export function areaTallerLabel(value: string | null | undefined): string {
   if (!value) return "—";
   const found = AREAS_TALLER.find((a) => a.value === value);
-  return found ? `${found.value}. ${found.label}` : value;
+  return found ? found.label : value;
 }
 
 // Devuelve opciones agrupadas para usar con <Select>. Los grupos son las áreas
-// padre (1.1, 1.2, ...) y dentro van las sub-áreas. Las áreas padre TAMBIÉN
-// aparecen como opción seleccionable (primera dentro de su grupo).
+// padre y dentro van las sub-áreas. Las áreas padre TAMBIÉN aparecen como
+// opción seleccionable (primera dentro de su grupo, marcada como "área
+// completa" para distinguirla de las sub-áreas).
 export function areasTallerGrouped(): {
   label: string;
   options: { value: string; label: string }[];
@@ -67,10 +70,10 @@ export function areasTallerGrouped(): {
   return padres.map((p) => {
     const hijos = AREAS_TALLER.filter((a) => a.parent === p.value);
     return {
-      label: `${p.value}. ${p.label}`,
+      label: p.label,
       options: [
-        { value: p.value, label: `${p.value}. ${p.label} (área completa)` },
-        ...hijos.map((h) => ({ value: h.value, label: `${h.value}. ${h.label}` })),
+        { value: p.value, label: `${p.label} (área completa)` },
+        ...hijos.map((h) => ({ value: h.value, label: h.label })),
       ],
     };
   });

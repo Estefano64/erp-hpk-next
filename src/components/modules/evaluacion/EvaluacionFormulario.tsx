@@ -203,6 +203,73 @@ function InputMedida({
   );
 }
 
+// Variante de InputMedida para "espesor de cromo" — siempre en MIL (milésimas
+// de pulgada, 1 mil = 0.001 in = 0.0254 mm), independiente del sistema de
+// medición de la OT. El espesor de cromado en HP&K se mide siempre en mil
+// porque los valores típicos van de 0.5 a 20 mil; expresarlo en pulgadas
+// (0.0005 in) o mm (0.0127 mm) lleva a errores de lectura.
+function InputMedidaMil({
+  name,
+  placeholder,
+  datos,
+  onChange,
+}: {
+  name: string;
+  placeholder?: string;
+  datos: Record<string, unknown>;
+  onChange: (d: Record<string, unknown>) => void;
+}) {
+  const v = useValor(datos, onChange);
+  const { medida, unidad } = useContext(MedidasModeloContext);
+  const modelo = useMemo(() => modeloForField(name, medida), [name, medida]);
+  // El catálogo guarda la medida modelo en in o mm — la convertimos a mil
+  // para mostrarla con la misma unidad que el input. Conversiones:
+  //   1 in = 1000 mil    →  mil = in * 1000
+  //   1 mm = 1/0.0254 mil ≈ 39.3701 mil
+  const modeloMil = modelo != null
+    ? (unidad === "in" ? modelo * 1000 : modelo / 0.0254)
+    : null;
+  const modeloTexto = modeloMil != null ? `${modeloMil.toFixed(2)} mil` : null;
+  return (
+    <div>
+      {modeloTexto && (
+        <div
+          title="Medida modelo (convertida a milésimas de pulgada)"
+          style={{
+            height: 24,
+            lineHeight: "22px",
+            border: `1px solid ${brand.cyan}`,
+            background: "#f0f9ff",
+            color: brand.navy,
+            borderRadius: 4,
+            padding: "0 6px",
+            fontSize: 11,
+            fontWeight: 600,
+            textAlign: "center",
+            marginBottom: 2,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {modeloTexto}
+        </div>
+      )}
+      <InputNumber
+        size="small"
+        value={v.get(name) as number | undefined}
+        onChange={(val) => v.set(name, val)}
+        placeholder={placeholder || "mil"}
+        // Mil acepta 2 decimales (5.25 mil, etc.). Step 0.1 mil.
+        step={0.1}
+        precision={2}
+        style={{ width: "100%" }}
+        controls={false}
+      />
+    </div>
+  );
+}
+
 // ── Tabla de medidas multi-punto (N puntos cada uno con X,Y) ───────
 // Generalización de la antigua TablaA1A4. Default 4 puntos con prefijo "a"
 // (compatible hacia atrás). Para Diámetro Vástago se usa con puntos=3 y
@@ -299,10 +366,10 @@ function TablaFlexionCromo({
           ))}
         </tr>
         <tr>
-          <td style={{ ...cell, padding: "4px 8px" }}>Espesor de Cromo [{unidad}]</td>
+          <td style={{ ...cell, padding: "4px 8px" }}>Espesor de Cromo [mil]</td>
           {puntos.map((s) => (
             <td key={s} style={cell}>
-              <InputMedida name={`${prefix}_esp_cromo_${s}`} datos={datos} onChange={onChange} />
+              <InputMedidaMil name={`${prefix}_esp_cromo_${s}`} datos={datos} onChange={onChange} />
             </td>
           ))}
         </tr>
@@ -1226,8 +1293,8 @@ function EtapasTelescopico({
               ))}
               {([1, 2, 3] as const).map((n) => (
                 <Col span={4} key={`ec${n}`}>
-                  <Text strong style={{ fontSize: 11 }}>Esp. Cromo {n}</Text>
-                  <InputMedida name={`${prefix}_etapa${i}_cuerpo_esp_cromo_${n}`} datos={datos} onChange={onChange} />
+                  <Text strong style={{ fontSize: 11 }}>Esp. Cromo {n} [mil]</Text>
+                  <InputMedidaMil name={`${prefix}_etapa${i}_cuerpo_esp_cromo_${n}`} datos={datos} onChange={onChange} />
                 </Col>
               ))}
             </Row>
