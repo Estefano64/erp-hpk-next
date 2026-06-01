@@ -460,13 +460,17 @@ export default function ProgramacionSemanalPage() {
     recursoTarget: string | null | undefined,
   ): { task: PlanRow; oculta: boolean } | null {
     if (!recursoTarget) return null;
+    // recursoTarget puede ser multi ("A | B"): lo separamos y chequeamos
+    // intersección con los recursos de cada tarea (antes se usaba includes() con
+    // el string completo y un multi-personal NO detectaba el choque).
+    const recursosTarget = splitTecnicos(recursoTarget);
     const filtradasIds = new Set(rowsFiltradas.map((r) => r.id));
     for (const t of rows) {
       if (t.id === taskId) continue;
       // Soporta tareas con recurso multi (comma-separated por multi-personal).
       const recursoRaw = view === "equipo" ? t.maquina : t.tecnico;
       const recursos = splitTecnicos(recursoRaw);
-      if (!recursos.includes(recursoTarget)) continue;
+      if (!recursosTarget.some((rt) => recursos.includes(rt))) continue;
       if (!t.fecha_inicio || !t.fecha_fin) continue;
       const oIni = new Date(t.fecha_inicio).getTime();
       const oFin = new Date(t.fecha_fin).getTime();
@@ -871,6 +875,9 @@ export default function ProgramacionSemanalPage() {
             semana_plan: semanaCodigo(dayjs(s.ini)),
             ...(view === "equipo" ? { maquina: s.recurso } : { tecnico: s.recurso }),
             ...(sHE ? { horas_extras: true, horas_extras_qty: Math.max(0.5, (s.fin - s.ini) / 3600000) } : {}),
+            // El grupo ya se validó en el cliente; evitamos falsos positivos del
+            // anti-solape de servidor por las posiciones viejas en PUTs paralelos.
+            omitirAntisolape: true,
           }),
         }),
       );

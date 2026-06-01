@@ -4,6 +4,7 @@ import dayjs from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
 import { prisma } from "@/lib/prisma";
 import { calcularFinEstimado, normalizarAInicioHabil } from "@/lib/planification-hours";
+import { splitRecursos } from "@/lib/recursos";
 
 dayjs.extend(isoWeek);
 
@@ -29,6 +30,9 @@ const UpdateSchema = z.object({
   orden: z.coerce.number().int().min(0).optional(),
   // Si true, ignora el check de estado=realizado (uso interno: revertir)
   forzarEdicion: z.boolean().optional(),
+  // Si true, salta el anti-solape de servidor (el multi-move ya valida el grupo
+  // entero en el cliente; sus PUTs paralelos verían posiciones viejas si no).
+  omitirAntisolape: z.boolean().optional(),
 });
 
 function toDate(s: string | null | undefined): Date | null {
@@ -159,6 +163,40 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         }
       }
 
+      // ── Anti-solape (defensa de servidor) ──
+      // Una tarea NORMAL no puede quedar encima de otra del mismo recurso. Cubre
+      // cualquier vía (Gantt, Planificación, OT) y casos que el chequeo cliente no
+      // detecta (multi-personal). Solo al reprogramar (cambia fecha/semana); las
+      // emergencias quedan exentas (se ubican encima a propósito y empujan al resto).
+      const finalFin = data.fecha_fin !== undefined ? (data.fecha_fin as Date | null) : current.fecha_fin;
+      const finalTec = (data.tecnico !== undefined ? data.tecnico : current.tecnico) as string | null;
+      const finalMaq = (data.maquina !== undefined ? data.maquina : current.maquina) as string | null;
+      if (reprograma && finalIni && finalFin && !current.es_correctivo && !input.forzarEdicion && !input.omitirAntisolape) {
+        const recursosT = [...splitRecursos(finalTec), ...splitRecursos(finalMaq)];
+        if (recursosT.length) {
+          const otras = await tx.planificacionOT.findMany({
+            where: {
+              id: { not: planId },
+              es_correctivo: false,
+              estado: { not: "cancelado" },
+              fecha_inicio: { lt: finalFin },
+              fecha_fin: { gt: finalIni },
+            },
+            select: { tecnico: true, maquina: true, descripcion: true, orden_trabajo: { select: { ot: true } } },
+          });
+          const choque = otras.find((o) => {
+            const recO = [...splitRecursos(o.tecnico), ...splitRecursos(o.maquina)];
+            return recursosT.some((rt) => recO.includes(rt));
+          });
+          if (choque) {
+            throw Object.assign(
+              new Error(`No se puede ubicar acá: se superpone con otra tarea del mismo recurso (OT ${choque.orden_trabajo?.ot ?? "?"} — ${choque.descripcion ?? ""}).`),
+              { code: "OVERLAP" },
+            );
+          }
+        }
+      }
+
       // ── 7) Auto-transiciones de estado ──
       const estadoActual = current.estado ?? "abierto";
       const estadoEnviado = input.estado;
@@ -205,6 +243,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     if (err?.code === "NOT_FOUND") return NextResponse.json({ error: "No encontrado" }, { status: 404 });
     if (err?.code === "REALIZADO_LOCKED") return NextResponse.json({ error: err.message }, { status: 423 });
     if (err?.code === "INICIADA_LOCKED") return NextResponse.json({ error: err.message }, { status: 423 });
+    if (err?.code === "OVERLAP") return NextResponse.json({ error: err.message }, { status: 409 });
     if (err?.code === "HE_INVALID") return NextResponse.json({ error: err.message }, { status: 400 });
     if ((err as { code?: string })?.code === "P2025") return NextResponse.json({ error: "No encontrado" }, { status: 404 });
     console.error("PUT /api/planificacion/[id] error:", error);
