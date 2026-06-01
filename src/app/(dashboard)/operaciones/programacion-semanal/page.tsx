@@ -543,16 +543,11 @@ export default function ProgramacionSemanalPage() {
     const recursoDestino = nuevoRecurso !== undefined
       ? nuevoRecurso
       : (view === "equipo" ? original.maquina : original.tecnico);
+    // Choque de OPERARIO: en vez de bloquear, "empujamos" a las siguientes del
+    // operario (el server hace la cascada; no toca terminadas / en proceso). El
+    // choque de MÁQUINA lo sigue frenando el server (recurso compartido).
     const choque = esEmergencia ? null : tareaSuperpuesta(id, inicioReal.toDate().getTime(), fin.getTime(), recursoDestino);
-    if (choque) {
-      const t = choque.task;
-      const cliente = t.orden_trabajo?.cliente?.nombre_comercial
-        ?? t.orden_trabajo?.cliente?.razon_social
-        ?? `OT ${t.orden_trabajo?.ot ?? "#?"}`;
-      const prefijoOculta = choque.oculta ? "[Tarea oculta por el filtro actual] " : "";
-      messageApi.error(`${prefijoOculta}No se puede mover acá: choca con ${cliente} — ${t.descripcion ?? t.operacion_codigo}`);
-      return;
-    }
+    const empujando = !!choque && !esEmergencia;
 
     // Si el bloque cae en la franja de horas extras (>= 18:00, que el grid
     // muestra hasta las 20:00), lo marcamos como HE para que el server no
@@ -571,6 +566,7 @@ export default function ProgramacionSemanalPage() {
       if (view === "equipo") patch.maquina = nuevoRecurso;
       else patch.tecnico = nuevoRecurso;
     }
+    if (empujando) patch.empujar = true;
 
     // Optimista: actualizo inmediatamente la UI
     const updated: Partial<PlanRow> = {
@@ -611,12 +607,20 @@ export default function ProgramacionSemanalPage() {
         fetchData();
         return;
       }
-      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Error");
+      const j = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(j?.error ?? "Error");
       endSave();
       notifySync();
-      // Si es emergencia, el servidor ya reacomodó el día del operario en el mismo
-      // PUT (cascade). Refrescamos para ver las tareas empujadas.
-      if (esEmergencia) fetchData();
+      // Emergencia o "empujar": el servidor reacomodó el día del operario en el
+      // mismo PUT (cascade). Refrescamos para ver las tareas empujadas.
+      if (esEmergencia || empujando) fetchData();
+      if (empujando) {
+        const e = j?.push?.empujadas?.length ?? 0;
+        const p = j?.push?.alPool?.length ?? 0;
+        messageApi.success(
+          `Tarea ubicada.${e ? ` ${e} empujada(s).` : ""}${p ? ` ${p} al pool.` : ""}`,
+        );
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Error al reprogramar";
       endSave(msg);
@@ -1012,35 +1016,12 @@ export default function ProgramacionSemanalPage() {
     return { row: foundRow, date: null };
   }, [lunes, hourPx]);
 
-  // Detector de conflicto durante drag (en vivo). Maneja recursos multi-personal
-  // (e.g., maquina = "TR-01,TR-02") usando splitTecnicos en lugar de igualdad
-  // de string. Antes ese caso pasaba como "no choca" aunque sí solapaba.
-  const dragConflict = useMemo(() => {
-    if (!drag || !drag.snappedDate || !drag.targetRow) return false;
-    const original = rows.find((r) => r.id === drag.taskId) ?? allRows.find((r) => r.id === drag.taskId);
-    if (!original) return false;
-    // Las emergencias (correctivas) SÍ pueden caer encima de otras: al soltarlas
-    // empujan a las demás. No marcamos conflicto para no bloquear el drop.
-    if (original.es_correctivo) return false;
-    const dur = Number(original.horas_estimadas ?? 1);
-    const qty = Math.max(1, Number(original.qty_personal ?? 1));
-    const enBandaHE = (drag.snappedDate.hour() + drag.snappedDate.minute() / 60) >= 18;
-    const inicioReal = enBandaHE ? drag.snappedDate : dayjs(normalizarAInicioHabil(drag.snappedDate.toDate()));
-    const ini = inicioReal.toDate().getTime();
-    const fin = calcularFin(inicioReal.toDate(), dur * qty, enBandaHE).getTime();
-    const target = drag.targetRow;
-    for (const t of rows) {
-      if (t.id === drag.taskId) continue;
-      const recursoRaw = view === "equipo" ? t.maquina : t.tecnico;
-      const recursos = splitTecnicos(recursoRaw);
-      if (!recursos.includes(target)) continue;
-      if (!t.fecha_inicio || !t.fecha_fin) continue;
-      const oIni = new Date(t.fecha_inicio).getTime();
-      const oFin = new Date(t.fecha_fin).getTime();
-      if (ini < oFin && fin > oIni) return true;
-    }
-    return false;
-  }, [drag, rows, allRows, view]);
+  // Antes el drag marcaba en rojo (conflicto) cuando se soltaba sobre otra tarea
+  // del mismo operario. Ahora ese caso NO bloquea: al soltar se empuja a las
+  // siguientes (ver persistMove → empujar). Los choques de MÁQUINA (recurso
+  // compartido) los valida el servidor al guardar. Por eso ya no marcamos
+  // conflicto en vivo durante el drag.
+  const dragConflict = false;
 
   // Listeners globales para mover/soltar + atajos teclado + auto-scroll
   useEffect(() => {

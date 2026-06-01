@@ -5,7 +5,7 @@ import isoWeek from "dayjs/plugin/isoWeek";
 import { prisma } from "@/lib/prisma";
 import { calcularFinEstimado, normalizarAInicioHabil } from "@/lib/planification-hours";
 import { splitRecursos } from "@/lib/recursos";
-import { cascadeEmergencia } from "@/lib/emergencia-cascade";
+import { cascadeEmergencia, cascadeReprogramar } from "@/lib/emergencia-cascade";
 
 dayjs.extend(isoWeek);
 
@@ -36,6 +36,10 @@ const UpdateSchema = z.object({
   // Si true, salta el anti-solape de servidor (el multi-move ya valida el grupo
   // entero en el cliente; sus PUTs paralelos verían posiciones viejas si no).
   omitirAntisolape: z.boolean().optional(),
+  // Si true: "empujar al soltar". En vez de bloquear por choque de OPERARIO,
+  // ubica la tarea y empuja a las siguientes del operario (no toca terminadas /
+  // en proceso). El choque de MÁQUINA sí sigue bloqueando (recurso compartido).
+  empujar: z.boolean().optional(),
 });
 
 function toDate(s: string | null | undefined): Date | null {
@@ -197,6 +201,9 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
           for (const o of otras) {
             const maqComun = misMaq.find((m) => splitRecursos(o.maquina).includes(m));
             if (maqComun) { choque = o; tipo = "máquina"; recursoComun = maqComun; break; }
+            // Con "empujar", los choques de OPERARIO no bloquean (se resuelven
+            // empujando a las siguientes); solo la máquina (recurso compartido) frena.
+            if (input.empujar) continue;
             const tecComun = misTec.find((t) => splitRecursos(o.tecnico).includes(t));
             if (tecComun) { choque = o; tipo = "operario"; recursoComun = tecComun; break; }
           }
@@ -246,8 +253,13 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       // (nuevo) operario — desde CUALQUIER vía (Gantt, Planificación, OT), no solo
       // el botón 🚨. Así la reprogramación no "deja de funcionar" al reasignarla.
       const tecnicoCambia = "tecnico" in data || "maquina" in data;
+      let push: { empujadas: number[]; alPool: number[] } | null = null;
       if (updated.es_correctivo && (reprograma || tecnicoCambia)) {
         await cascadeEmergencia(tx, planId);
+      } else if (input.empujar && reprograma) {
+        // "Empujar al soltar": ubicada la tarea, empujamos a las siguientes del
+        // operario (sin marcar correctiva, sin tocar terminadas/en proceso).
+        push = await cascadeReprogramar(tx, planId, { marcarCorrectivo: false });
       }
 
       // Al cancelar (o finalizar) una tarea, cerrar cualquier sesión abierta para
@@ -258,10 +270,10 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
           data: { fin: new Date(), cierre: estadoFinal === "cancelado" ? "cancelado" : "finalizado" },
         });
       }
-      return updated;
+      return { updated, push };
     });
 
-    return NextResponse.json({ data: result });
+    return NextResponse.json({ data: result.updated, push: result.push });
   } catch (error: unknown) {
     const err = error as { code?: string; message?: string };
     if (err?.code === "NOT_FOUND") return NextResponse.json({ error: "No encontrado" }, { status: 404 });

@@ -12,19 +12,28 @@ function semanaCodigo(d: Date): string {
 }
 
 // Reacomodo por EMERGENCIA (correctiva): marca la tarea como correctiva y empuja
-// las tareas del MISMO día y operario(s) que arrancan en/después de ella (o se
-// solapan). Las que no entran en el día van al pool. SOLO mueve lo que NO empezó
-// (sin sesiones). Punto único de verdad: lo usan el endpoint /emergencia y el PUT
-// (al mover/reasignar una emergencia desde cualquier vista).
+// las del mismo día/operario. Wrapper sobre cascadeReprogramar.
 export async function cascadeEmergencia(
   tx: Prisma.TransactionClient,
   planId: number,
 ): Promise<{ empujadas: number[]; alPool: number[] }> {
+  return cascadeReprogramar(tx, planId, { marcarCorrectivo: true });
+}
+
+// Reacomodo: empuja las tareas del MISMO día y operario(s) que arrancan en/después
+// de la tarea `planId` (o se solapan). Las que no entran en el día van al pool.
+// SOLO mueve lo que NO empezó (sin sesiones) ni está terminado. Lo usan:
+//   - emergencia (marcarCorrectivo: true)
+//   - "empujar al soltar" en el drag normal (marcarCorrectivo: false)
+export async function cascadeReprogramar(
+  tx: Prisma.TransactionClient,
+  planId: number,
+  opts: { marcarCorrectivo: boolean },
+): Promise<{ empujadas: number[]; alPool: number[] }> {
   const T = await tx.planificacionOT.findUnique({ where: { id: planId } });
   if (!T) return { empujadas: [], alPool: [] };
 
-  // Marca correctiva (idempotente) sin tocar el estado de ejecución.
-  if (!T.es_correctivo) {
+  if (opts.marcarCorrectivo && !T.es_correctivo) {
     await tx.planificacionOT.update({ where: { id: planId }, data: { es_correctivo: true } });
   }
 
