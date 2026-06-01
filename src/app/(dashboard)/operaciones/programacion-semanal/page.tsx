@@ -146,6 +146,12 @@ function haEmpezado(estado: string | null | undefined): boolean {
   return ["en_proceso", "pausado", "realizado"].includes(estado ?? "");
 }
 
+// Día abreviado en español (sin cambiar el locale global de dayjs).
+const DIAS_ES = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+function diaEs(d: Dayjs, conHora = false): string {
+  return `${DIAS_ES[d.day()]} ${d.format(conHora ? "DD/MM HH:mm" : "DD/MM")}`;
+}
+
 export default function ProgramacionSemanalPage() {
   const router = useRouter();
   const { data: session } = useSession();
@@ -1227,13 +1233,13 @@ export default function ProgramacionSemanalPage() {
         >
           {/* Indicador de continuación desde semana anterior */}
           {continuaDeAntes && (
-            <div className="psg-task-cont-marker psg-task-cont-marker-left" title={`Empezó el ${ini.format("ddd DD/MM HH:mm")}`}>
+            <div className="psg-task-cont-marker psg-task-cont-marker-left" title={`Empezó el ${diaEs(ini, true)}`}>
               <LeftOutlined style={{ fontSize: 10 }} />
             </div>
           )}
           {/* Indicador de continuación a semana siguiente */}
           {continuaDespues && (
-            <div className="psg-task-cont-marker psg-task-cont-marker-right" title={`Termina el ${fin.format("ddd DD/MM HH:mm")}`}>
+            <div className="psg-task-cont-marker psg-task-cont-marker-right" title={`Termina el ${diaEs(fin, true)}`}>
               <RightOutlined style={{ fontSize: 10 }} />
             </div>
           )}
@@ -1607,7 +1613,7 @@ export default function ProgramacionSemanalPage() {
           onMouseDown={startPan}
         >
           {lineaHoy != null && (
-            <div className="psg-now-line" style={{ left: 220 + lineaHoy }} title={`Ahora: ${(ahoraTick ?? dayjs()).format("ddd DD/MM HH:mm")}`}>
+            <div className="psg-now-line" style={{ left: 220 + lineaHoy }} title={`Ahora: ${diaEs(ahoraTick ?? dayjs(), true)}`}>
               <div className="psg-now-dot" />
             </div>
           )}
@@ -1617,7 +1623,7 @@ export default function ProgramacionSemanalPage() {
             <div className="psg-timeline-header">
               {days.map((d, i) => (
                 <div key={i} className="psg-day-header" style={{ width: dayPx, minWidth: dayPx }}>
-                  <div className="psg-day-label">{d.format("ddd DD/MM")}</div>
+                  <div className="psg-day-label">{diaEs(d)}</div>
                   <div className="psg-hour-row" style={{ position: "relative" }}>
                     {Array.from({ length: HORAS_DIA }, (_, h) => {
                       const hour = JORNADA_INICIO + h;
@@ -1884,7 +1890,7 @@ export default function ProgramacionSemanalPage() {
                 zIndex: 1001,
               }}
             >
-              <div><strong>{drag.snappedDate.format("ddd DD/MM")}</strong></div>
+              <div><strong>{diaEs(drag.snappedDate)}</strong></div>
               <div>{drag.snappedDate.format("HH:mm")}</div>
               <div style={{ fontSize: 10, opacity: 0.85 }}>→ {drag.targetRow}</div>
               {dragConflict && <div style={{ fontSize: 10, marginTop: 4, fontWeight: 700 }}>⚠ Conflicto</div>}
@@ -1930,7 +1936,7 @@ export default function ProgramacionSemanalPage() {
           }}
           options={[
             { value: "semana", label: "Semana completa" },
-            ...days.map((d, i) => ({ value: `dia${i}`, label: d.format("ddd DD/MM") })),
+            ...days.map((d, i) => ({ value: `dia${i}`, label: diaEs(d) })),
           ]}
         />
         <Alert

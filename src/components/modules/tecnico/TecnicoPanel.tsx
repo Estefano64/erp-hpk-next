@@ -110,6 +110,11 @@ function saludoNombre(full: string): string {
   const primerNombre = w.length >= 3 ? w[2] : (w[1] ?? w[0]);
   return `${cap(primerNombre)} ${cap(primerApellido)}`.trim();
 }
+// Día abreviado en español (evita cambiar el locale global de dayjs).
+const DIAS_ES = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+function diaEs(d: Dayjs): string {
+  return `${DIAS_ES[d.day()]} ${d.format("DD/MM")}`;
+}
 function formatSegundos(s: number): string {
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
@@ -416,7 +421,7 @@ export default function TecnicoPanel() {
       if (!r.fecha_inicio) return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
       const d = dayjs(r.fecha_inicio);
       const esHoy = d.format("YYYY-MM-DD") === hoyStr;
-      return <Tag color={esHoy ? "blue" : "default"} style={{ fontSize: 11, margin: 0 }}>{esHoy ? "Hoy" : d.format("ddd DD/MM")}</Tag>;
+      return <Tag color={esHoy ? "blue" : "default"} style={{ fontSize: 11, margin: 0 }}>{esHoy ? "Hoy" : diaEs(d)}</Tag>;
     },
   };
   const columnasSemana: ColumnsType<TareaPlan> = [diaCol, ...columnas];
