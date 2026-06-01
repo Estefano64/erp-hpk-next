@@ -425,7 +425,7 @@ export default function TecnicoPanel() {
               </Text>
             </Col>
             <Col>
-              <Space direction="vertical">
+              <Space orientation="vertical">
                 <Button
                   size="large"
                   icon={<PauseCircleOutlined />}

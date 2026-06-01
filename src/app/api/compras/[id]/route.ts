@@ -74,6 +74,8 @@ export async function GET(_req: NextRequest, { params }: Params) {
       proveedor_nombre: r.proveedor?.nombre_comercial ?? r.proveedor?.razon_social ?? null,
       nro_factura: r.nro_factura,
       nro_guia: r.nro_guia,
+      tipo_pago: r.tipo_pago,
+      dias_credito: r.dias_credito,
       guia_key: r.guia_key,
       guia_nombre: r.guia_nombre,
       guia_fecha_subida: r.guia_fecha_subida,
@@ -133,8 +135,16 @@ export async function PUT(req: NextRequest, { params }: Params) {
     for (const k of ["fecha_entrega_esperada", "fecha_entrega_real"]) {
       if (body[k] !== undefined) data[k] = parseDateOnly(body[k]);
     }
-    for (const k of ["nro_factura", "nro_guia", "observaciones", "usuario_aprueba"]) {
+    for (const k of ["nro_factura", "nro_guia", "observaciones", "usuario_aprueba", "tipo_pago"]) {
       if (body[k] !== undefined) data[k] = body[k];
+    }
+    // dias_credito: normalizamos para que CONTADO siempre sea 0/null y no
+    // arrastre un plazo viejo si se cambió desde CREDITO.
+    if (body.tipo_pago === "CONTADO") {
+      data.dias_credito = 0;
+    } else if (body.dias_credito !== undefined) {
+      const n = Number(body.dias_credito);
+      data.dias_credito = Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
     }
     // Descuento / otros (header-level): si vienen, recalcular total = subtotal - descuento + impuesto + otros
     let recalcularTotal = false;

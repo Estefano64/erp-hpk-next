@@ -28,7 +28,12 @@ export async function POST(req: NextRequest, { params }: Params) {
     const result = await prisma.$transaction(async (tx) => {
       const compra = await tx.compra.findUnique({
         where: { id: compraId },
-        select: { id: true, numero_po: true, status_oc_codigo: true },
+        select: {
+          id: true,
+          numero_po: true,
+          status_oc_codigo: true,
+          _count: { select: { detalles: true } },
+        },
       });
       if (!compra) {
         throw Object.assign(new Error("Compra no encontrada"), { status: 404 });
@@ -36,6 +41,14 @@ export async function POST(req: NextRequest, { params }: Params) {
       if (compra.status_oc_codigo !== "PEND_OC") {
         throw Object.assign(
           new Error(`Solo se pueden aceptar OC en estado Pendiente (actual: ${compra.status_oc_codigo ?? "—"}).`),
+          { status: 400 },
+        );
+      }
+      // Una OC sin detalles no se puede recibir — bloquearla acá evita que
+      // quede en PROCESO esperando una recepción que nunca va a llegar.
+      if (compra._count.detalles === 0) {
+        throw Object.assign(
+          new Error("La OC no tiene items. Agregá al menos uno antes de aceptarla."),
           { status: 400 },
         );
       }
@@ -51,20 +64,41 @@ export async function POST(req: NextRequest, { params }: Params) {
         data: { status_oc_codigo: "PROCESO" },
       });
 
-      // Historial por cada OT vinculada
-      const otsAfectadas = await tx.oTRepuesto.findMany({
-        where: { po_id: compraId },
+      // Historial por cada OT vinculada. La OC puede haber agrupado items de
+      // OT externas + OT internas; ambas dimensiones se loggean por separado.
+      const otsExternasAfectadas = await tx.oTRepuesto.findMany({
+        where: { po_id: compraId, ot_id: { not: null } },
         select: { ot_id: true },
         distinct: ["ot_id"],
       });
-      for (const { ot_id } of otsAfectadas) {
+      const otsInternasAfectadas = await tx.oTRepuesto.findMany({
+        where: { po_id: compraId, orden_trabajo_interna_id: { not: null } },
+        select: { orden_trabajo_interna_id: true },
+        distinct: ["orden_trabajo_interna_id"],
+      });
+      const descripcionHist = `OC ${compra.numero_po} aceptada por ${usuario}`;
+      const datosAdicionalesHist = JSON.stringify({ po_id: compraId, numero_po: compra.numero_po, accion: "ACEPTAR_OC" });
+      for (const { ot_id } of otsExternasAfectadas) {
+        if (ot_id == null) continue;
         await tx.oTHistorial.create({
           data: {
             ot_id,
             tipo_operacion: "Otro",
-            descripcion: `OC ${compra.numero_po} aceptada por ${usuario}`,
+            descripcion: descripcionHist,
             usuario,
-            datos_adicionales: JSON.stringify({ po_id: compraId, numero_po: compra.numero_po, accion: "ACEPTAR_OC" }),
+            datos_adicionales: datosAdicionalesHist,
+          },
+        });
+      }
+      for (const { orden_trabajo_interna_id } of otsInternasAfectadas) {
+        if (orden_trabajo_interna_id == null) continue;
+        await tx.oTHistorial.create({
+          data: {
+            orden_trabajo_interna_id,
+            tipo_operacion: "Otro",
+            descripcion: descripcionHist,
+            usuario,
+            datos_adicionales: datosAdicionalesHist,
           },
         });
       }

@@ -47,11 +47,16 @@ export async function POST(req: NextRequest) {
           status_requerimiento_codigo: "SIN_APROBACION",
           ...(nroReq ? { nro_req: nroReq } : { id: { in: ids! } }),
         },
-        select: { id: true, ot_id: true, nro_req: true },
+        select: { id: true, ot_id: true, orden_trabajo_interna_id: true, nro_req: true },
       });
 
       if (candidatos.length === 0) {
-        return { aprobados: 0, ot_ids: [] as number[], ref: nroReq ?? `${ids?.length ?? 0} items` };
+        return {
+          aprobados: 0,
+          ot_ids: [] as number[],
+          ot_internas_ids: [] as number[],
+          ref: nroReq ?? `${ids?.length ?? 0} items`,
+        };
       }
 
       const idsParaAprobar = candidatos.map((c) => c.id);
@@ -66,20 +71,37 @@ export async function POST(req: NextRequest) {
       });
 
       // Historial: una entrada por OT afectada (no por item — sería ruidoso).
-      const otsUnicas = [...new Set(candidatos.map((c) => c.ot_id))];
+      // Las OT internas iban silenciosamente sin historial antes — ahora se
+      // loggean por separado para que la auditoría sea completa.
+      const otsExternasUnicas = [
+        ...new Set(candidatos.filter((c) => c.ot_id != null).map((c) => c.ot_id as number)),
+      ];
+      const otsInternasUnicas = [
+        ...new Set(
+          candidatos
+            .filter((c) => c.orden_trabajo_interna_id != null)
+            .map((c) => c.orden_trabajo_interna_id as number),
+        ),
+      ];
       const refTexto = nroReq ?? `${candidatos.length} item(s)`;
-      for (const ot_id of otsUnicas) {
+      const descripcionHist = `Requerimiento ${refTexto} aprobado (${candidatos.length} item${candidatos.length === 1 ? "" : "s"})`;
+      for (const ot_id of otsExternasUnicas) {
         await tx.oTHistorial.create({
-          data: {
-            ot_id,
-            tipo_operacion: "Otro",
-            descripcion: `Requerimiento ${refTexto} aprobado (${candidatos.length} item${candidatos.length === 1 ? "" : "s"})`,
-            usuario,
-          },
+          data: { ot_id, tipo_operacion: "Otro", descripcion: descripcionHist, usuario },
+        });
+      }
+      for (const orden_trabajo_interna_id of otsInternasUnicas) {
+        await tx.oTHistorial.create({
+          data: { orden_trabajo_interna_id, tipo_operacion: "Otro", descripcion: descripcionHist, usuario },
         });
       }
 
-      return { aprobados: candidatos.length, ot_ids: otsUnicas, ref: refTexto };
+      return {
+        aprobados: candidatos.length,
+        ot_ids: otsExternasUnicas,
+        ot_internas_ids: otsInternasUnicas,
+        ref: refTexto,
+      };
     });
 
     return NextResponse.json({ data: result });

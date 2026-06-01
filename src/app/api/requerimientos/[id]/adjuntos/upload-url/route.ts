@@ -7,7 +7,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { generateUploadUrl } from "@/lib/r2-helpers";
-import { R2Keys, otCodigoFor } from "@/lib/r2";
+import { R2Keys, otCodigoFor, otInternaCodigoFor } from "@/lib/r2";
 import { assertOTAccess, readJsonBody, validateUploadBody } from "@/lib/r2-server";
 
 type Params = { params: Promise<{ id: string }> };
@@ -44,7 +44,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const token = await getToken({ req });
     if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     folderPrefix = R2Keys.otInternaRequerimientoAdjunto(
-      otCodigoFor(item.orden_trabajo_interna),
+      otInternaCodigoFor(item.orden_trabajo_interna),
       reqId,
     );
   } else {

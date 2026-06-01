@@ -1,8 +1,13 @@
 import { Prisma } from "@prisma/client";
+import { formatOtCodigo, formatOtInternaCodigo } from "./ot-formato";
 
 // ─── Generación de nro_req ─────────────────────────────────────────────────
 // El nro_req identifica a un requerimiento (grupo de items). Formato:
-//   {códigoOT}-{N}  ej. "390626-1", "390626-2", ...
+//   {códigoOT}-{N}
+//   - REP : "3926-1"      (sin prefijo, el número raw)
+//   - BIE : "V000126-1"   (prefijo V + 4+2 padding)
+//   - SER : "S000126-1"   (prefijo S + 4+2 padding)
+//   - INT : "OI000126-1"  (prefijo OI + 4+2 padding)
 //
 // El correlativo N es por OT (no global). Items dentro del mismo nro_req
 // comparten ese código y se diferencian por `item_req` (1, 2, 3...).
@@ -18,6 +23,13 @@ async function lockNroReq(tx: Prisma.TransactionClient, otCodigo: string): Promi
   );
 }
 
+async function lockItemReq(tx: Prisma.TransactionClient, nroReq: string): Promise<void> {
+  await tx.$executeRawUnsafe(
+    `SELECT pg_advisory_xact_lock(hashtext($1))`,
+    `item_req:${nroReq}`,
+  );
+}
+
 function nextCorrelativo(candidatos: { nro_req: string | null }[], prefix: string): number {
   let max = 0;
   for (const c of candidatos) {
@@ -29,6 +41,7 @@ function nextCorrelativo(candidatos: { nro_req: string | null }[], prefix: strin
 
 /**
  * Próximo nro_req para una OT externa. Devuelve "{códigoOT}-{N}".
+ * El código se formatea según tipo_codigo: REP raw, BIE→V######, SER→S######.
  * Si la OT no tiene `ot` (código legible), usa "OT-{id}" como fallback.
  */
 export async function nextNroReqExterna(
@@ -37,11 +50,12 @@ export async function nextNroReqExterna(
 ): Promise<string> {
   const ot = await tx.ordenTrabajo.findUnique({
     where: { id: otId },
-    select: { id: true, ot: true },
+    select: { id: true, ot: true, tipo_codigo: true },
   });
   if (!ot) throw new Error(`OT ${otId} no existe`);
-  // `ot.ot` ahora es number (INTEGER tras migración). Convertir a string.
-  const otCodigo = ot.ot != null ? String(ot.ot) : `OT-${ot.id}`;
+  const otCodigo = ot.ot != null
+    ? formatOtCodigo(ot.ot, ot.tipo_codigo, `OT-${ot.id}`)
+    : `OT-${ot.id}`;
   const prefix = `${otCodigo}-`;
 
   await lockNroReq(tx, otCodigo);
@@ -55,7 +69,7 @@ export async function nextNroReqExterna(
 }
 
 /**
- * Próximo nro_req para una OT interna. Mismo patrón que la externa.
+ * Próximo nro_req para una OT interna. Mismo patrón con prefijo OI.
  */
 export async function nextNroReqInterna(
   tx: Prisma.TransactionClient,
@@ -66,7 +80,9 @@ export async function nextNroReqInterna(
     select: { id: true, ot: true },
   });
   if (!ot) throw new Error(`OT interna ${otInternaId} no existe`);
-  const otCodigo = (ot.ot ?? "").trim() || `OTI-${ot.id}`;
+  const otCodigo = ot.ot != null
+    ? formatOtInternaCodigo(ot.ot, `OTI-${ot.id}`)
+    : `OTI-${ot.id}`;
   const prefix = `${otCodigo}-`;
 
   await lockNroReq(tx, otCodigo);
@@ -81,10 +97,11 @@ export async function nextNroReqInterna(
 
 /**
  * Próximo `item_req` DENTRO de un requerimiento (1, 2, 3, ...). La numeración
- * es por `nro_req`, no por OT: cada requerimiento arranca en 1. (Antes contaba
- * por OT entera, así que el 2º requerimiento seguía la numeración del 1º.)
+ * es por `nro_req`, no por OT: cada requerimiento arranca en 1. Lock por
+ * nro_req para que dos appends concurrentes no compartan item_req.
  */
 export async function nextItemReq(tx: Prisma.TransactionClient, otId: number, nroReq: string): Promise<number> {
+  await lockItemReq(tx, nroReq);
   const max = await tx.oTRepuesto.aggregate({
     where: { ot_id: otId, nro_req: nroReq },
     _max: { item_req: true },
@@ -101,6 +118,7 @@ export async function nextItemReqInterna(
   otInternaId: number,
   nroReq: string,
 ): Promise<number> {
+  await lockItemReq(tx, nroReq);
   const max = await tx.oTRepuesto.aggregate({
     where: { orden_trabajo_interna_id: otInternaId, nro_req: nroReq },
     _max: { item_req: true },

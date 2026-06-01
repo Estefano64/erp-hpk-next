@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { deleteObject } from "@/lib/r2-helpers";
-import { R2Keys, otCodigoFor } from "@/lib/r2";
+import { R2Keys, otInternaCodigoFor } from "@/lib/r2";
 import { getAuditUser } from "@/lib/audit";
 
 type Params = { params: Promise<{ id: string }> };
@@ -81,7 +81,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
     // Defensa en profundidad: el path firmado debe vivir bajo el namespace
     // de ESTA OT interna.
-    const expectedPrefix = R2Keys.otInternaAdjunto(otCodigoFor(ot)) + "/";
+    const expectedPrefix = R2Keys.otInternaAdjunto(otInternaCodigoFor(ot)) + "/";
     if (!key.startsWith(expectedPrefix)) {
       return NextResponse.json({ error: "key fuera del namespace de la OT" }, { status: 400 });
     }

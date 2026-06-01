@@ -1,21 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
-
-// Genera el siguiente código OT-INT-0001 (numeración global, sin año).
-// Decidido con el usuario en Fase D2.
-async function generarNumeroOTInterna(): Promise<string> {
-  const prefix = "OT-INT-";
-
-  const last = await prisma.ordenTrabajoInterna.findFirst({
-    where: { ot: { startsWith: prefix } },
-    orderBy: { id: "desc" },
-    select: { ot: true },
-  });
-
-  const lastNum = last?.ot ? parseInt(last.ot.replace(prefix, ""), 10) : 0;
-  return `${prefix}${String(lastNum + 1).padStart(4, "0")}`;
-}
+import { nextNumeroOTInterna } from "@/lib/ot-numero";
+import { parseOtCodigoSearch } from "@/lib/ot-formato";
 
 // GET — lista con filtros y paginación.
 export async function GET(req: NextRequest) {
@@ -32,8 +19,11 @@ export async function GET(req: NextRequest) {
     const where: any = {};
 
     if (search) {
+      // `ot` es INTEGER en BD. Aceptamos tanto el número raw como el código
+      // visible "OI000126" — parseOtCodigoSearch convierte ambos al raw.
+      const otNum = parseOtCodigoSearch(search);
       where.OR = [
-        { ot: { contains: search, mode: "insensitive" } },
+        ...(otNum != null ? [{ ot: otNum }] : []),
         { equipo_codigo: { contains: search, mode: "insensitive" } },
         { descripcion: { contains: search, mode: "insensitive" } },
       ];
@@ -92,7 +82,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "descripcion es requerida" }, { status: 400 });
     }
 
-    const ot = await generarNumeroOTInterna();
     const usuarioCrea = (await getAuditUser(req)) ?? "sistema";
 
     // Defaults para que la OT arranque con el primer estado de cada catálogo
@@ -100,34 +89,41 @@ export async function POST(req: NextRequest) {
     //   ot_status:       "Abierta"                  (siempre primera)
     //   recursos_status: "En revision procesos"     (primera fila del catálogo)
     //   user_status:     "PLANIFICADO"              (primera fila del catálogo)
-    const created = await prisma.ordenTrabajoInterna.create({
-      data: {
-        ot,
-        planta_codigo: body.planta_codigo || null,
-        equipo_codigo: body.equipo_codigo || null,
-        area_taller: body.area_taller || null,
-        tipo_ot_interna_codigo: body.tipo_ot_interna_codigo,
-        descripcion: body.descripcion.trim(),
-        prioridad_atencion_codigo: body.prioridad_atencion_codigo || null,
-        usuario_crea: usuarioCrea,
-        fecha_inicio_plan: body.fecha_inicio_plan ? new Date(body.fecha_inicio_plan) : null,
-        fecha_fin_plan: body.fecha_fin_plan ? new Date(body.fecha_fin_plan) : null,
-        semana_revision: body.semana_revision || null,
-        estrategia_id: body.estrategia_id ? Number(body.estrategia_id) : null,
-        task_list: body.task_list || null,
-        user_status_codigo: body.user_status_codigo || "PLANIFICADO",
-        ot_status_codigo: body.ot_status_codigo || "Abierta",
-        recursos_status_codigo: body.recursos_status_codigo || "En revision procesos",
-        asignado_a: body.asignado_a || null,
-        comentarios: body.comentarios || null,
-      },
-      include: {
-        equipo: { select: { codigo: true, descripcion: true } },
-        tipo_ot_interna: true,
-        ot_status: true,
-        user_status: true,
-        recursos_status: true,
-      },
+    //
+    // Generación + create en la misma transacción con advisory lock (en
+    // nextNumeroOTInterna) para serializar generaciones concurrentes.
+    const created = await prisma.$transaction(async (tx) => {
+      const ot = await nextNumeroOTInterna(tx);
+      return tx.ordenTrabajoInterna.create({
+        data: {
+          ot,
+          anio: ot % 100,
+          planta_codigo: body.planta_codigo || null,
+          equipo_codigo: body.equipo_codigo || null,
+          area_taller: body.area_taller || null,
+          tipo_ot_interna_codigo: body.tipo_ot_interna_codigo,
+          descripcion: body.descripcion.trim(),
+          prioridad_atencion_codigo: body.prioridad_atencion_codigo || null,
+          usuario_crea: usuarioCrea,
+          fecha_inicio_plan: body.fecha_inicio_plan ? new Date(body.fecha_inicio_plan) : null,
+          fecha_fin_plan: body.fecha_fin_plan ? new Date(body.fecha_fin_plan) : null,
+          semana_revision: body.semana_revision || null,
+          estrategia_id: body.estrategia_id ? Number(body.estrategia_id) : null,
+          task_list: body.task_list || null,
+          user_status_codigo: body.user_status_codigo || "PLANIFICADO",
+          ot_status_codigo: body.ot_status_codigo || "Abierta",
+          recursos_status_codigo: body.recursos_status_codigo || "En revision procesos",
+          asignado_a: body.asignado_a || null,
+          comentarios: body.comentarios || null,
+        },
+        include: {
+          equipo: { select: { codigo: true, descripcion: true } },
+          tipo_ot_interna: true,
+          ot_status: true,
+          user_status: true,
+          recursos_status: true,
+        },
+      });
     });
 
     return NextResponse.json({ data: created }, { status: 201 });

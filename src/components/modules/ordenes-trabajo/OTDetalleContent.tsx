@@ -46,6 +46,7 @@ import OTAdjuntosTab from "./OTAdjuntosTab";
 import OTTareasTab from "./OTTareasTab";
 import OTHistorialTab from "./OTHistorialTab";
 import OTRequerimientosTab from "./OTRequerimientosTab";
+import OTCostosTab from "./OTCostosTab";
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -1220,7 +1221,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
     { key: "resumen", label: "Resumen", icon: <InfoCircleOutlined />, children: resumenContent },
     { key: "tareas", label: "Tareas", icon: <UnorderedListOutlined />, children: ot ? <OTTareasTab otId={ot.id} codRepCodigo={ot.codigo_reparacion?.codigo ?? null} /> : null },
     { key: "requerimientos", label: "Requerimientos", icon: <InboxOutlined />, children: ot ? <OTRequerimientosTab otId={ot.id} codRepCodigo={ot.codigo_reparacion?.codigo ?? null} otFechaRecepcion={ot.fecha_recepcion} onUpdated={() => fetchOT()} /> : null },
-    { key: "costos", label: "Costos", icon: <DollarOutlined />, children: placeholderTab("Costos") },
+    { key: "costos", label: "Costos", icon: <DollarOutlined />, children: ot ? <OTCostosTab otId={ot.id} /> : null },
     { key: "adjuntos", label: "Adjuntos", icon: <PaperClipOutlined />, children: ot ? <OTAdjuntosTab otId={ot.id} /> : null },
     { key: "historial", label: "Historial", icon: <HistoryOutlined />, children: ot ? <OTHistorialTab otId={ot.id} /> : null },
   ];

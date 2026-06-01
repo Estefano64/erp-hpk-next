@@ -163,9 +163,17 @@ export async function DELETE(req: NextRequest, { params }: Params) {
 
     try {
       await deleteObject(keyActual);
-    } catch (error) {
-      console.error("DELETE compra: fallo R2", error);
-      return NextResponse.json({ error: "No se pudo eliminar el archivo de R2" }, { status: 500 });
+    } catch (error: unknown) {
+      // R2 a veces devuelve 404 si el objeto ya no existe (limpieza manual,
+      // borrado anterior, etc.). Conceptualmente el archivo ya está borrado:
+      // dejamos seguir y limpiamos la metadata en BD igual.
+      const httpStatus = (error as { $metadata?: { httpStatusCode?: number } } | undefined)
+        ?.$metadata?.httpStatusCode;
+      if (httpStatus !== 404) {
+        console.error("DELETE compra: fallo R2", error);
+        return NextResponse.json({ error: "No se pudo eliminar el archivo de R2" }, { status: 500 });
+      }
+      console.warn(`DELETE compra: R2 reportó 404 para key ${keyActual} — se procede`);
     }
 
     const dataUpdate =

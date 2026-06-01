@@ -62,6 +62,8 @@ interface CompraDetalle {
   moneda: string;
   nro_factura: string | null;
   nro_guia: string | null;
+  tipo_pago: string | null;
+  dias_credito: number | null;
   guia_key: string | null;
   guia_nombre: string | null;
   factura_key: string | null;
@@ -114,6 +116,8 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
   const [nroFactura, setNroFactura] = useState<string>("");
   const [nroGuia, setNroGuia] = useState<string>("");
   const [observaciones, setObservaciones] = useState<string>("");
+  const [tipoPago, setTipoPago] = useState<string | null>(null);
+  const [diasCredito, setDiasCredito] = useState<number | null>(null);
   const [aceptando, setAceptando] = useState(false);
   const { ocultas: itemsOcultas, setOcultas: setItemsOcultas } = useColumnasOcultas("compra-detalle-items-cols-v1");
 
@@ -140,6 +144,8 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
       setNroFactura(json.data.nro_factura || "");
       setNroGuia(json.data.nro_guia || "");
       setObservaciones(json.data.observaciones || "");
+      setTipoPago(json.data.tipo_pago ?? null);
+      setDiasCredito(json.data.dias_credito ?? null);
     } catch {
       message.error("Error al cargar la OC");
     } finally {
@@ -166,6 +172,10 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
           nro_factura: nroFactura,
           nro_guia: nroGuia,
           observaciones,
+          tipo_pago: tipoPago,
+          // El server normaliza dias_credito a 0 para CONTADO; mandamos lo que
+          // tenemos y dejamos que la API decida.
+          dias_credito: diasCredito,
         }),
       });
       const json = await res.json();
@@ -522,6 +532,52 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
                   <Input value={nroGuia} onChange={(e) => setNroGuia(e.target.value)} />
                 ) : (
                   compra.nro_guia ?? "-"
+                )}
+              </Descriptions.Item>
+              <Descriptions.Item label="Tipo de Pago">
+                {editing ? (
+                  <Select
+                    value={tipoPago ?? undefined}
+                    onChange={(v) => {
+                      setTipoPago(v ?? null);
+                      // Cuando se cambia a CONTADO forzamos días a null en UI.
+                      if (v === "CONTADO") setDiasCredito(null);
+                    }}
+                    allowClear
+                    style={{ width: "100%" }}
+                    placeholder="Elegir"
+                    options={[
+                      { value: "CONTADO", label: "Contado" },
+                      { value: "CREDITO", label: "Crédito" },
+                      { value: "TRANSFERENCIA", label: "Transferencia" },
+                    ]}
+                  />
+                ) : (
+                  compra.tipo_pago
+                    ? `${compra.tipo_pago}${compra.dias_credito && compra.dias_credito > 0 ? ` · ${compra.dias_credito}d` : ""}`
+                    : "-"
+                )}
+              </Descriptions.Item>
+              <Descriptions.Item label="Días de Crédito">
+                {editing ? (
+                  <Select
+                    value={diasCredito ?? undefined}
+                    onChange={(v) => setDiasCredito(v ?? null)}
+                    disabled={tipoPago !== "CREDITO"}
+                    allowClear
+                    style={{ width: "100%" }}
+                    placeholder="—"
+                    options={[
+                      { value: 15, label: "15 días" },
+                      { value: 30, label: "30 días" },
+                      { value: 45, label: "45 días" },
+                      { value: 60, label: "60 días" },
+                      { value: 90, label: "90 días" },
+                      { value: 120, label: "120 días" },
+                    ]}
+                  />
+                ) : (
+                  compra.dias_credito && compra.dias_credito > 0 ? `${compra.dias_credito} días` : "-"
                 )}
               </Descriptions.Item>
               <Descriptions.Item label="Archivo Guía de Remisión" span={editing ? 1 : 1}>

@@ -15,9 +15,11 @@ import {
 import dayjs, { type Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
 import { areasTallerGrouped, areaTallerLabel } from "@/lib/areas-taller";
+import { formatOtInternaCodigo } from "@/lib/ot-formato";
 import OTInternaAdjuntosTab from "@/components/modules/ordenes-trabajo-internas/OTInternaAdjuntosTab";
 import OTInternaRequerimientosTab from "@/components/modules/ordenes-trabajo-internas/OTInternaRequerimientosTab";
 import OTInternaHistorialTab from "@/components/modules/ordenes-trabajo-internas/OTInternaHistorialTab";
+import OTCostosTab from "@/components/modules/ordenes-trabajo/OTCostosTab";
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -29,7 +31,9 @@ interface TrabajadorOpt { nombre: string; area: string; puesto: string }
 
 interface OTInternaDetalle {
   id: number;
-  ot: string | null;
+  // ot ahora es INTEGER (NNNNYY); el display OIXXXXYY lo construye
+  // formatOtInternaCodigo.
+  ot: number | string | null;
   descripcion: string | null;
   planta_codigo: string | null;
   equipo_codigo: string | null;
@@ -275,7 +279,7 @@ export default function OTInternaDetallePage() {
             <Space size={10}>
               <ToolOutlined style={{ fontSize: 22 }} />
               <Title level={3} style={{ color: brand.white, margin: 0 }}>
-                {ot.ot ?? `#${ot.id}`}
+                {formatOtInternaCodigo(ot.ot, `#${ot.id}`)}
               </Title>
               {tipoTag && <Tag color={tipoColor} style={{ fontSize: 12 }}>{ot.tipo_ot_interna?.nombre}</Tag>}
               {ot.ot_status && <Tag color={ot.ot_status.codigo === "Abierta" ? "processing" : "default"}>{ot.ot_status.nombre}</Tag>}
@@ -355,6 +359,11 @@ export default function OTInternaDetallePage() {
             key: "requerimientos",
             label: "Requerimientos",
             children: <OTInternaRequerimientosTab otInternaId={otId} />,
+          },
+          {
+            key: "costos",
+            label: "Costos",
+            children: <OTCostosTab otId={otId} kind="interna" />,
           },
           {
             key: "adjuntos",

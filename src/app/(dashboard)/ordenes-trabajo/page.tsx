@@ -671,6 +671,9 @@ export default function OrdenesTrabajoPage() {
     if (c.sorter) { c.sorter = true; c.sortOrder = sorter.field === key ? sorter.order : null; }
     // limpiar config de filtro client-side
     delete c.onFilter; delete c.filterSearch; delete c.filters; delete c.filterDropdown; delete c.filterIcon; delete c.filterMultiple;
+    // antd exige que TODAS las columnas tengan o NO tengan filteredValue.
+    // Las columnas filtrables lo sobreescriben abajo; el resto queda en null.
+    c.filteredValue = null;
     if (FIXED_FILTERS[key]) {
       c.filters = FIXED_FILTERS[key]; c.filterMultiple = false; c.filteredValue = columnFilters[key] ?? null;
     } else if (ENUM_FACET_KEYS.has(key)) {

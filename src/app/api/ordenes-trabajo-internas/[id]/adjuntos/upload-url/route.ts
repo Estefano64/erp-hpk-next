@@ -3,7 +3,7 @@
 // decide el path — lo arma el backend con R2Keys.otInternaAdjunto.
 import { NextResponse, type NextRequest } from "next/server";
 import { generateUploadUrl } from "@/lib/r2-helpers";
-import { R2Keys, otCodigoFor } from "@/lib/r2";
+import { R2Keys, otInternaCodigoFor } from "@/lib/r2";
 import { assertOTInternaAccess, readJsonBody, validateUploadBody } from "@/lib/r2-server";
 
 type Params = { params: Promise<{ id: string }> };
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (!upload.ok) return upload.response;
 
   try {
-    const folderPrefix = R2Keys.otInternaAdjunto(otCodigoFor(access.ot));
+    const folderPrefix = R2Keys.otInternaAdjunto(otInternaCodigoFor(access.ot));
     const result = await generateUploadUrl({
       folderPrefix,
       fileName: upload.value.fileName,

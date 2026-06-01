@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { parseOtCodigoSearch } from "@/lib/ot-formato";
 
 // GET /api/requerimientos — listado cross-OT con filtros, para módulo global de Logística.
 //
@@ -28,9 +29,20 @@ export async function GET(req: NextRequest) {
 
     const ot = sp.get("ot")?.trim();
     if (ot) {
-      // `ot` ahora es INTEGER. Si la búsqueda es un número entero, exact match.
-      const otNum = /^\d+$/.test(ot) ? Number(ot) : null;
-      if (otNum != null) where.orden_trabajo = { ot: otNum };
+      // Acepta "390126" (raw) o "V000126" / "S000126" / "OI000126" (formato
+      // visible). Si matchea una OT externa la buscamos ahí; si no, podría
+      // ser una interna — probamos en ambas vías con OR.
+      const otNum = parseOtCodigoSearch(ot);
+      if (otNum != null) {
+        const otOR = [
+          { orden_trabajo: { ot: otNum } },
+          { orden_trabajo_interna: { ot: otNum } },
+        ];
+        // Si ya había un OR (por `search`) hay que combinar; acá `ot` viene
+        // como query param dedicado y antes era único filtro — preservamos
+        // ese comportamiento estricto.
+        where.OR = otOR as unknown as typeof where.OR;
+      }
     }
 
     const statusReq = sp.get("status_req")?.trim();
@@ -87,7 +99,7 @@ export async function GET(req: NextRequest) {
         include: {
           orden_trabajo: {
             select: {
-              id: true, ot: true,
+              id: true, ot: true, tipo_codigo: true,
               descripcion: true,
               cod_rep_flota: true,
               cliente: { select: { codigo: true, razon_social: true, nombre_comercial: true } },
@@ -96,7 +108,7 @@ export async function GET(req: NextRequest) {
           },
           // Para items que pertenecen a una OT interna (orden_trabajo es null),
           // traemos los datos de la OT interna así el frontend puede renderear
-          // OT-INT-XXXX en lugar de mostrar la fila vacía o desaparecida.
+          // el código OIXXXXYY en lugar de mostrar la fila vacía.
           orden_trabajo_interna: {
             select: { id: true, ot: true, descripcion: true },
           },

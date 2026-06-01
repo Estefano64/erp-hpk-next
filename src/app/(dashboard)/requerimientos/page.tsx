@@ -23,6 +23,7 @@ import { useResponsive, modalWidth } from "@/lib/responsive";
 dayjs.extend(isoWeek);
 import { useCachedFetch } from "@/lib/useCachedFetch";
 import { formatDateOnly, formatDateOnlyShort } from "@/lib/dates";
+import { formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
 import { R2FileLink } from "@/components/R2FileLink";
 import {
   numeracionColumn,
@@ -71,7 +72,9 @@ interface RequerimientoRow {
   es_adicional: boolean | null;
   orden_trabajo: {
     id: number;
-    ot: string | null;
+    // OrdenTrabajo.ot es INTEGER en BD (NNNNYY); union por defensa.
+    ot: number | string | null;
+    tipo_codigo: string | null;
     descripcion: string | null;
     cod_rep_flota: string | null;
     cliente: { codigo: string; razon_social: string; nombre_comercial: string | null } | null;
@@ -79,9 +82,11 @@ interface RequerimientoRow {
   } | null;
   // Para items que pertenecen a una OT interna (la API ahora devuelve esta
   // relación). Si orden_trabajo es null, se usa este como fallback.
+  // OrdenTrabajoInterna.ot es INTEGER (NNNNYY) — se renderea con
+  // formatOtInternaCodigo (OIXXXXYY).
   orden_trabajo_interna?: {
     id: number;
-    ot: string | null;
+    ot: number | string | null;
     descripcion: string | null;
   } | null;
   material: { codigo: string; descripcion: string; unidad_medida_codigo: string | null; stock_actual: string | number | null; precio: string | number | null; moneda_codigo: string | null } | null;
@@ -764,28 +769,38 @@ export default function RequerimientosPage() {
     numeracionColumn<GrupoReq>({ current: page, pageSize }),
     {
       title: "OT", key: "ot", width: 110, align: "center",
-      ...filtroProyectado(gruposFiltrados, (g) => g.orden_trabajo?.ot ?? g.items[0]?.orden_trabajo_interna?.ot ?? null),
+      ...filtroProyectado(gruposFiltrados, (g) => {
+        if (g.orden_trabajo?.ot != null) {
+          return formatOtCodigo(g.orden_trabajo.ot, g.orden_trabajo.tipo_codigo, "");
+        }
+        return formatOtInternaCodigo(g.items[0]?.orden_trabajo_interna?.ot, "");
+      }),
       sorter: (a, b) => {
-        // OT externa ahora es number, interna sigue siendo string.
-        const va = String(a.orden_trabajo?.ot ?? a.items[0]?.orden_trabajo_interna?.ot ?? "");
-        const vb = String(b.orden_trabajo?.ot ?? b.items[0]?.orden_trabajo_interna?.ot ?? "");
+        const va = a.orden_trabajo?.ot != null
+          ? formatOtCodigo(a.orden_trabajo.ot, a.orden_trabajo.tipo_codigo, "")
+          : formatOtInternaCodigo(a.items[0]?.orden_trabajo_interna?.ot, "");
+        const vb = b.orden_trabajo?.ot != null
+          ? formatOtCodigo(b.orden_trabajo.ot, b.orden_trabajo.tipo_codigo, "")
+          : formatOtInternaCodigo(b.items[0]?.orden_trabajo_interna?.ot, "");
         return va.localeCompare(vb);
       },
       render: (_, g) => {
-        // OT externa.
-        if (g.orden_trabajo?.ot) {
+        // OT externa: formato según tipo (REP raw, BIE→V######, SER→S######).
+        if (g.orden_trabajo?.ot != null) {
+          const label = formatOtCodigo(g.orden_trabajo.ot, g.orden_trabajo.tipo_codigo);
           return (
             <a onClick={() => router.push(`/ordenes-trabajo/${g.ot_id}`)} style={{ fontSize: 11 }}>
-              <Tag color={brand.navy} style={{ margin: 0 }}>{g.orden_trabajo.ot}</Tag>
+              <Tag color={brand.navy} style={{ margin: 0 }}>{label}</Tag>
             </a>
           );
         }
-        // OT interna (cuando la externa es null).
+        // OT interna (cuando la externa es null) — OIXXXXYY.
         const oti = g.items[0]?.orden_trabajo_interna;
-        if (oti?.ot) {
+        if (oti?.ot != null) {
+          const label = formatOtInternaCodigo(oti.ot);
           return (
             <a onClick={() => router.push(`/ordenes-trabajo-internas/${oti.id}`)} style={{ fontSize: 11 }}>
-              <Tag color={brand.cyan} style={{ margin: 0 }}>{oti.ot}</Tag>
+              <Tag color={brand.cyan} style={{ margin: 0 }}>{label}</Tag>
             </a>
           );
         }

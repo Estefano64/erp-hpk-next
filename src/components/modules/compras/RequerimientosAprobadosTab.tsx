@@ -71,6 +71,8 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
     fecha_entrega_esperada?: dayjs.Dayjs | null;
     observaciones?: string;
     nombre?: string;
+    tipo_pago?: string;
+    dias_credito?: number;
   }>();
   // Precios editados dentro del modal de OC (id → precio). Se persisten al
   // confirmar "Generar OC" llamando al PATCH de precio por cada item modificado.
@@ -161,7 +163,7 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
     }
     setPreciosModal(precios);
     ocForm.resetFields();
-    ocForm.setFieldsValue({ proveedor_id: provId ?? undefined, moneda });
+    ocForm.setFieldsValue({ proveedor_id: provId ?? undefined, moneda, tipo_pago: "CONTADO" });
     setOcOpen(true);
   }
 
@@ -214,6 +216,10 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
           ubicacion_codigo: values.ubicacion_codigo ?? null,
           moneda: values.moneda,
           observaciones: values.observaciones ?? null,
+          tipo_pago: values.tipo_pago ?? null,
+          // Para CONTADO siempre mandamos 0. Para CREDITO usamos el valor o
+          // null si el usuario lo dejó vacío (el server tolera ambos).
+          dias_credito: values.tipo_pago === "CONTADO" ? 0 : (values.dias_credito ?? null),
         }),
       });
       if (!res.ok) {
@@ -572,6 +578,52 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
             <Col span={8}>
               <Form.Item name="moneda" label="Moneda" rules={[{ required: true }]}>
                 <Select showSearch optionFilterProp="label" options={[{ value: "USD", label: "USD" }, { value: "SOL", label: "SOL" }]} />
+              </Form.Item>
+            </Col>
+          </Row>
+          {/* ── Forma de pago ─────────────────────────────────────────── */}
+          <Row gutter={12}>
+            <Col span={16}>
+              <Form.Item name="tipo_pago" label="Tipo de pago" rules={[{ required: true, message: "Elegí un tipo de pago" }]}>
+                <Select
+                  options={[
+                    { value: "CONTADO", label: "Contado (sin plazo)" },
+                    { value: "CREDITO", label: "Crédito a N días" },
+                    { value: "TRANSFERENCIA", label: "Transferencia" },
+                  ]}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item
+                noStyle
+                shouldUpdate={(prev, cur) => prev.tipo_pago !== cur.tipo_pago}
+              >
+                {({ getFieldValue }) => {
+                  const tipo = getFieldValue("tipo_pago");
+                  const requiereDias = tipo === "CREDITO";
+                  return (
+                    <Form.Item
+                      name="dias_credito"
+                      label="Días"
+                      rules={requiereDias ? [{ required: true, message: "Indicá los días" }] : []}
+                    >
+                      <Select
+                        disabled={!requiereDias}
+                        placeholder={requiereDias ? "Plazo" : "—"}
+                        allowClear
+                        options={[
+                          { value: 15, label: "15 días" },
+                          { value: 30, label: "30 días" },
+                          { value: 45, label: "45 días" },
+                          { value: 60, label: "60 días" },
+                          { value: 90, label: "90 días" },
+                          { value: 120, label: "120 días" },
+                        ]}
+                      />
+                    </Form.Item>
+                  );
+                }}
               </Form.Item>
             </Col>
           </Row>

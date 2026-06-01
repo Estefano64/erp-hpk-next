@@ -131,10 +131,13 @@ export async function POST(req: NextRequest, { params }: Params) {
       }
       await tx.oTRepuesto.update({ where: { id: rep.id }, data: updateData });
 
-      // 4) Registrar en historial de la OT.
+      // 4) Registrar en historial de la OT (externa o interna).
+      //    Antes solo seteaba ot_id → si el req era de una OT interna el
+      //    historial quedaba huérfano (ot_id NULL, sin orden_trabajo_interna_id).
       await tx.oTHistorial.create({
         data: {
           ot_id: rep.ot_id,
+          orden_trabajo_interna_id: rep.orden_trabajo_interna_id,
           tipo_operacion: "CONSUMO_ALMACEN",
           descripcion: `Consumo de almacén — material ${material.codigo} cant ${cantidad} (REQ ${rep.nro_req ?? rep.id} / item ${rep.item_req ?? "-"})`,
           usuario,

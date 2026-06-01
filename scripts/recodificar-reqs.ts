@@ -73,7 +73,8 @@ async function main() {
       parentKey = `ext:${it.ot_id}`;
       otCodigo = codigo;
     } else if (it.orden_trabajo_interna_id != null) {
-      const codigo = it.orden_trabajo_interna?.ot?.trim();
+      // ot interna ahora es number tras la migración a Int.
+      const codigo = it.orden_trabajo_interna?.ot != null ? String(it.orden_trabajo_interna.ot) : null;
       if (!codigo) {
         saltadosSinOTCodigo++;
         continue;
