@@ -29,6 +29,7 @@ import {
   CheckCircleOutlined,
   CarOutlined,
   FolderOpenOutlined,
+  SolutionOutlined,
 } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
 import { uploadToR2, getDownloadUrl, openR2File } from "@/lib/r2-client";
@@ -69,6 +70,12 @@ const ETAPAS = [
     label: "Cotización",
     icon: <FileTextOutlined />,
     description: "Cotización al cliente, propuestas comerciales y documentos relacionados",
+  },
+  {
+    key: "po_cliente",
+    label: "PO Cliente",
+    icon: <SolutionOutlined />,
+    description: "Orden de compra (PO) emitida por el cliente — al subir el archivo la OT pasa a estado \"Con PO\"",
   },
   {
     key: "termino",
