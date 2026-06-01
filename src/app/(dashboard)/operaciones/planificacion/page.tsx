@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Typography, Card, Table, Tag, Input, Select, Space, Button, DatePicker, InputNumber, Checkbox, message, Row, Col, Alert, Switch, Popconfirm, Tooltip, Modal,
+  Typography, Card, Table, Tag, Input, Select, Space, Button, DatePicker, InputNumber, Checkbox, message, Row, Col, Alert, Switch, Popconfirm, Tooltip, Modal, Timeline, Empty,
 } from "antd";
-import { SearchOutlined, ReloadOutlined, CalendarOutlined, InfoCircleOutlined, SaveOutlined, UndoOutlined, ThunderboltOutlined, PlusOutlined, DeleteOutlined } from "@ant-design/icons";
+import { SearchOutlined, ReloadOutlined, CalendarOutlined, InfoCircleOutlined, SaveOutlined, UndoOutlined, ThunderboltOutlined, PlusOutlined, DeleteOutlined, HistoryOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import {
   numeracionColumn,
@@ -209,6 +209,11 @@ export default function PlanificacionPage() {
   const [nuevaOpen, setNuevaOpen] = useState(false);
   const [nuevaSaving, setNuevaSaving] = useState(false);
   const [nueva, setNueva] = useState<{ ot_id: number | null; parte: string; trabajo: string; qty: number; horas: number | null; tecnico: string | null; maquina: string | null }>({ ot_id: null, parte: "General", trabajo: "", qty: 1, horas: null, tecnico: null, maquina: null });
+  // Modal de historial de ejecución
+  const [histOpen, setHistOpen] = useState(false);
+  const [histLoading, setHistLoading] = useState(false);
+  const [histData, setHistData] = useState<{ es_correctivo?: boolean; observaciones?: string | null; sesiones?: { id: number; tecnico: string; inicio: string; fin: string | null; cierre: string | null; comentario: string | null }[] } | null>(null);
+  const [histTarea, setHistTarea] = useState<PlanRow | null>(null);
   const [savingId, setSavingId] = useState<number | null>(null);
   const [autoSave, setAutoSave] = useState(true);
   // Cambios pendientes acumulados en modo batch: id → patch combinado (los originales para revert)
@@ -350,6 +355,17 @@ export default function PlanificacionPage() {
       setNuevaSaving(false);
     }
   }, [nueva, messageApi, notifySync, fetchData]);
+
+  // Abrir el historial de ejecución de una tarea.
+  const abrirHistorial = useCallback(async (r: PlanRow) => {
+    setHistTarea(r); setHistData(null); setHistOpen(true); setHistLoading(true);
+    try {
+      const res = await fetch(`/api/planificacion/${r.id}/historial`);
+      if (res.ok) setHistData(await res.json());
+    } finally {
+      setHistLoading(false);
+    }
+  }, []);
 
   // Borrar una tarea desde Planificación.
   const borrarTarea = useCallback(async (id: number) => {
@@ -882,13 +898,13 @@ export default function PlanificacionPage() {
       ),
     },
     {
-      // Lo que escribe el TÉCNICO al pausar/terminar (solo lectura para el planner).
-      key: "observaciones", title: "Obs. técnico", dataIndex: "observaciones", width: 200, ellipsis: true,
-      filters: [{ text: "Con observación", value: "__hay__" }, { text: FILTRO_VACIO_LABEL, value: FILTRO_VACIO_VALUE }],
-      onFilter: (value, r) => value === FILTRO_VACIO_VALUE ? !r.observaciones : value === "__hay__" ? !!r.observaciones : false,
-      render: (v: string | null) => v
-        ? <Tooltip title={<span style={{ whiteSpace: "pre-wrap" }}>{v}</span>}><span style={{ fontSize: 12 }}>📝 {v}</span></Tooltip>
-        : <Typography.Text type="secondary" style={{ fontSize: 11 }}>—</Typography.Text>,
+      // Historial de ejecución: pausas/fin con el comentario que dejó el técnico.
+      key: "historial", title: "Historial", width: 80, align: "center",
+      render: (_, r) => (
+        <Tooltip title="Ver historial (inicios, pausas, fin y comentarios del técnico)">
+          <Button size="small" type="text" icon={<HistoryOutlined />} onClick={() => abrirHistorial(r)} />
+        </Tooltip>
+      ),
     },
     {
       title: "Semana", key: "semana", width: 160,
@@ -1724,6 +1740,54 @@ export default function PlanificacionPage() {
             Se crea sin fecha; arrastrala en Programación Semanal para fijarle día y hora.
           </Typography.Text>
         </Space>
+      </Modal>
+
+      <Modal
+        title={<><HistoryOutlined /> Historial — {histTarea?.orden_trabajo?.ot ? `OT-${histTarea.orden_trabajo.ot}` : "Sin OT"} · {histTarea?.descripcion}</>}
+        open={histOpen}
+        onCancel={() => setHistOpen(false)}
+        footer={[<Button key="c" onClick={() => setHistOpen(false)}>Cerrar</Button>]}
+        width={560}
+      >
+        {histLoading ? (
+          <div style={{ textAlign: "center", padding: 24 }}><Typography.Text type="secondary">Cargando…</Typography.Text></div>
+        ) : !histData || (histData.sesiones?.length ?? 0) === 0 ? (
+          <Empty description="Sin ejecución todavía (el técnico no inició esta tarea)." image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        ) : (
+          <>
+            {histData.es_correctivo && <Tag color="error" style={{ marginBottom: 12 }}>🚨 Emergencia (correctiva)</Tag>}
+            <Timeline
+              items={(histData.sesiones ?? []).flatMap((s) => {
+                const fmt = (d: string) => dayjs(d).format("DD/MM HH:mm");
+                const out: { color: string; children: React.ReactNode }[] = [
+                  { color: "blue", children: <span>Inició <b>{fmt(s.inicio)}</b> · {s.tecnico}</span> },
+                ];
+                if (s.fin) {
+                  const label = s.cierre === "finalizado" ? "Terminó" : s.cierre === "cancelado" ? "Canceló" : "Pausó";
+                  const color = s.cierre === "finalizado" ? "green" : s.cierre === "cancelado" ? "red" : "orange";
+                  out.push({
+                    color,
+                    children: (
+                      <span>
+                        {label} <b>{fmt(s.fin)}</b>
+                        {s.comentario ? <> — <i>“{s.comentario}”</i></> : ""}
+                      </span>
+                    ),
+                  });
+                } else {
+                  out.push({ color: "gray", children: <i>En curso…</i> });
+                }
+                return out;
+              })}
+            />
+            {histData.observaciones && (
+              <div style={{ marginTop: 8, fontSize: 12, color: brand.textSecondary }}>
+                <Typography.Text type="secondary" style={{ fontSize: 11 }}>Observaciones acumuladas:</Typography.Text>
+                <div style={{ whiteSpace: "pre-wrap" }}>{histData.observaciones}</div>
+              </div>
+            )}
+          </>
+        )}
       </Modal>
     </div>
   );

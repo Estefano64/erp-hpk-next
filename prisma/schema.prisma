@@ -1437,6 +1437,8 @@ model PlanificacionOTSesion {
   fin                 DateTime?       @db.Timestamp(6)
   // motivo de cierre: "pausa" | "finalizado" | "cancelado". null = sesión abierta.
   cierre              String?         @db.VarChar(20)
+  // comentario que dejó el técnico al cerrar ESTA sesión (pausa/fin). Para el historial.
+  comentario          String?         @db.VarChar(1000)
   created_at          DateTime        @default(now())
   planificacion_ot    PlanificacionOT @relation(fields: [planificacion_ot_id], references: [id], onDelete: Cascade)
 
