@@ -270,7 +270,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       } else if (input.empujar && reprograma) {
         // "Empujar al soltar": ubicada la tarea, empujamos a las siguientes del
         // operario (sin marcar correctiva, sin tocar terminadas/en proceso).
-        push = await cascadeReprogramar(tx, planId, { marcarCorrectivo: false });
+        push = await cascadeReprogramar(tx, planId, { marcarCorrectivo: false, cruzarDias: true });
       }
 
       // Al cancelar (o finalizar) una tarea, cerrar cualquier sesión abierta para

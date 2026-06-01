@@ -28,7 +28,11 @@ export async function cascadeEmergencia(
 export async function cascadeReprogramar(
   tx: Prisma.TransactionClient,
   planId: number,
-  opts: { marcarCorrectivo: boolean },
+  // cruzarDias: si una tarea empujada no entra en el día, en vez de mandarla al
+  // pool se sigue ubicando en el siguiente día hábil (encadena hacia adelante).
+  // Lo usa el "empujar al soltar". La emergencia deja cruzarDias=false (overflow
+  // al pool, su comportamiento histórico).
+  opts: { marcarCorrectivo: boolean; cruzarDias?: boolean },
 ): Promise<{ empujadas: number[]; alPool: number[] }> {
   const T = await tx.planificacionOT.findUnique({ where: { id: planId } });
   if (!T) return { empujadas: [], alPool: [] };
@@ -55,7 +59,9 @@ export async function cascadeReprogramar(
       id: { not: planId },
       tecnico: { not: null },
       es_correctivo: false,
-      fecha_inicio: { gte: diaIni, lte: diaFin },
+      // cruzarDias: tomamos también las de días siguientes para re-encadenarlas
+      // (así "empujar" desplaza toda la cola del operario, no solo el día).
+      fecha_inicio: opts.cruzarDias ? { gte: diaIni } : { gte: diaIni, lte: diaFin },
       estado: { notIn: ["cancelado", "realizado"] },
     },
     orderBy: { fecha_inicio: "asc" },
@@ -84,7 +90,9 @@ export async function cascadeReprogramar(
 
   for (const c of aReprogramar) {
     const inicioHabil = normalizarAInicioHabil(cursor);
-    if (!dayjs(inicioHabil).isSame(dia, "day")) {
+    // Sin cruzarDias (emergencia): lo que no entra en el día va al pool.
+    // Con cruzarDias (empujar): se sigue ubicando en el siguiente día hábil.
+    if (!opts.cruzarDias && !dayjs(inicioHabil).isSame(dia, "day")) {
       await tx.planificacionOT.update({ where: { id: c.id }, data: { fecha_inicio: null, fecha_fin: null } });
       alPool.push(c.id);
       continue;
