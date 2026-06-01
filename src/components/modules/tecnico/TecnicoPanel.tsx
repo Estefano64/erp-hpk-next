@@ -7,7 +7,7 @@ import {
 import {
   PlayCircleOutlined, PauseCircleOutlined, CheckCircleOutlined, TrophyOutlined,
   ClockCircleOutlined, ReloadOutlined, FireOutlined, LineChartOutlined,
-  LeftOutlined, RightOutlined,
+  LeftOutlined, RightOutlined, DownOutlined, UpOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { type Dayjs } from "dayjs";
@@ -140,6 +140,16 @@ export default function TecnicoPanel() {
   // Semana que se está viendo (navegable con flechas) y filtro por día.
   const [semanaRef, setSemanaRef] = useState<Dayjs>(() => dayjs());
   const [diaFiltro, setDiaFiltro] = useState<string>("all");
+  // En celular no hay fila expandible: cada tarjeta puede mostrar/ocultar el
+  // mismo detalle (renderDetalle) con un botón. Guardamos los ids abiertos.
+  const [detalleMobile, setDetalleMobile] = useState<Set<number>>(() => new Set());
+  const toggleDetalleMobile = useCallback((id: number) => {
+    setDetalleMobile((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -479,6 +489,21 @@ export default function TecnicoPanel() {
           </div>
         )}
         <div style={{ marginTop: 8 }}>{renderAccion(r, true)}</div>
+        <Button
+          type="link"
+          size="small"
+          block
+          icon={detalleMobile.has(r.id) ? <UpOutlined /> : <DownOutlined />}
+          onClick={() => toggleDetalleMobile(r.id)}
+          style={{ marginTop: 4 }}
+        >
+          {detalleMobile.has(r.id) ? "Ocultar detalle" : "Ver detalle"}
+        </Button>
+        {detalleMobile.has(r.id) && (
+          <div style={{ marginTop: 4, borderTop: `1px solid ${brand.border}`, paddingTop: 8 }}>
+            {renderDetalle(r)}
+          </div>
+        )}
       </Card>
     );
   }
