@@ -14,6 +14,7 @@ export type R2Resource =
   | "ot-adjunto"
   | "ot-interna-adjunto"
   | "req-adjunto"
+  | "plan-adjunto"
   | "compra-guia"
   | "compra-factura"
   | "evaluacion-informe"
@@ -23,6 +24,7 @@ const VALID_RESOURCES: ReadonlySet<R2Resource> = new Set([
   "ot-adjunto",
   "ot-interna-adjunto",
   "req-adjunto",
+  "plan-adjunto",
   "compra-guia",
   "compra-factura",
   "evaluacion-informe",
@@ -72,6 +74,13 @@ export async function authorizeR2Access(params: {
     }
     case "req-adjunto": {
       const row = await prisma.oTRepuestoAdjunto.findFirst({
+        where: { id: resourceId, r2_key: key },
+        select: { id: true },
+      });
+      return row ? { ok: true } : notFound();
+    }
+    case "plan-adjunto": {
+      const row = await prisma.planificacionOTAdjunto.findFirst({
         where: { id: resourceId, r2_key: key },
         select: { id: true },
       });

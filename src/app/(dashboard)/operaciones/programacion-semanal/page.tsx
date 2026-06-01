@@ -21,6 +21,7 @@ import { splitRecursos } from "@/lib/recursos";
 import { useTabSync } from "@/lib/useTabSync";
 import { useSession } from "next-auth/react";
 import { useEditLock } from "@/lib/useEditLock";
+import TareaAdjuntosLista from "@/components/TareaAdjuntosLista";
 
 dayjs.extend(isoWeek);
 dayjs.locale("es");
@@ -2009,6 +2010,7 @@ export default function ProgramacionSemanalPage() {
         width={modalWidth(screens, 680)}
       >
         {selectedTask && (
+          <>
           <Descriptions column={1} size="small">
             <Descriptions.Item label="OT">{selectedTask.orden_trabajo?.ot ?? `#${selectedTask.ot_id}`}</Descriptions.Item>
             <Descriptions.Item label="Cliente">{selectedTask.orden_trabajo?.cliente?.nombre_comercial ?? selectedTask.orden_trabajo?.cliente?.razon_social ?? "-"}</Descriptions.Item>
@@ -2038,6 +2040,10 @@ export default function ProgramacionSemanalPage() {
               </Descriptions.Item>
             )}
           </Descriptions>
+          <div style={{ marginTop: 8 }}>
+            <TareaAdjuntosLista taskId={selectedTask.id} />
+          </div>
+          </>
         )}
       </Modal>
 
