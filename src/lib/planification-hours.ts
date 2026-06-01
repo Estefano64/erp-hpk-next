@@ -100,6 +100,32 @@ export function calcularFinEstimado(inicio: Date, horasEfectivas: number): Date 
 }
 
 /**
+ * Horas HÁBILES (jornada 08:00–18:00 menos almuerzo, sólo L–V) entre dos
+ * instantes. Inverso aproximado de `calcularFinEstimado`. Útil para prorratear
+ * la carga de una tarea que cruza el fin de semana entre sus dos semanas.
+ */
+export function horasHabilesEntre(inicio: Date, fin: Date): number {
+  if (fin.getTime() <= inicio.getTime()) return 0;
+  const finMs = fin.getTime();
+  let cursor = normalizarAInicioHabil(inicio);
+  let minutos = 0;
+  let guard = 0;
+  while (cursor.getTime() < finMs && guard++ < 10000) {
+    const cMin = cursor.getHours() * 60 + cursor.getMinutes();
+    // Fin del slot actual: almuerzo (12:30) en la mañana, o 18:00 en la tarde.
+    const finSlotMin = cMin < (ALMUERZO_INICIO_HORA * 60 + ALMUERZO_INICIO_MIN)
+      ? ALMUERZO_INICIO_HORA * 60 + ALMUERZO_INICIO_MIN
+      : JORNADA_FIN_HORA * 60;
+    const slotEnd = new Date(cursor);
+    slotEnd.setHours(Math.floor(finSlotMin / 60), finSlotMin % 60, 0, 0);
+    const segEnd = Math.min(slotEnd.getTime(), finMs);
+    if (segEnd > cursor.getTime()) minutos += (segEnd - cursor.getTime()) / 60000;
+    cursor = normalizarAInicioHabil(new Date(segEnd));
+  }
+  return Math.round((minutos / 60) * 100) / 100;
+}
+
+/**
  * Fin estimado para trabajo en HORAS EXTRA (banda vespertina ≥ 18:00).
  *
  * A diferencia de `calcularFinEstimado`, las horas extra son tiempo de reloj

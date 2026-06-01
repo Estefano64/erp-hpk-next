@@ -47,6 +47,7 @@ interface TareaPlan {
   estado: string | null;
   tecnico: string | null;
   maquina: string | null;
+  maquina_nombre?: string | null;  // nombre del equipo (resuelto del código)
   comentario: string | null;      // comentario del planner → técnico
   observaciones: string | null;   // observaciones de ejecución del técnico
   orden_trabajo: OTLite | null;
@@ -308,7 +309,7 @@ export default function TecnicoPanel() {
             {r.descripcion}
           </div>
           <div style={{ fontSize: 10, color: brand.textSecondary }}>
-            {r.componente} · {r.operacion_codigo} {r.maquina ? `· ${r.maquina}` : ""}
+            {[r.componente, r.operacion_codigo, r.maquina_nombre ?? r.maquina].filter(Boolean).join(" · ")}
           </div>
           {clienteDe(r.orden_trabajo) && (
             <div style={{ fontSize: 10, color: brand.textSecondary }}>🏢 {clienteDe(r.orden_trabajo)}</div>
@@ -454,7 +455,7 @@ export default function TecnicoPanel() {
         {r.es_correctivo && <Tag color="error" style={{ marginBottom: 4 }}>🚨 EMERGENCIA</Tag>}
         <div style={{ fontSize: 13, fontWeight: 500 }}>{r.descripcion}</div>
         <div style={{ fontSize: 11, color: brand.textSecondary }}>
-          {r.componente} · {r.operacion_codigo}{r.maquina ? ` · ${r.maquina}` : ""}
+          {[r.componente, r.operacion_codigo, r.maquina_nombre ?? r.maquina].filter(Boolean).join(" · ")}
         </div>
         {r.comentario && (
           <div style={{ fontSize: 11, marginTop: 4, padding: 6, background: brand.bgPage, borderRadius: 4, borderLeft: `3px solid ${brand.cyan}` }}>
@@ -608,25 +609,32 @@ export default function TecnicoPanel() {
           <Card
             size="small"
             title={
-              <Space wrap size={4}>
-                <Button size="small" type="text" icon={<LeftOutlined />} onClick={() => irSemana(-1)} aria-label="Semana anterior" />
-                <span style={{ fontWeight: 600 }}>{lunesRef.format("DD/MM")} – {viernesRef.format("DD/MM")}</span>
-                <Button size="small" type="text" icon={<RightOutlined />} onClick={() => irSemana(1)} aria-label="Semana siguiente" />
-                <Button size="small" onClick={() => irSemana(0)} disabled={esSemanaActual}>Hoy</Button>
-                <Tag color={esSemanaActual ? "blue" : "default"}>
-                  {data.tareasSemana.length} {data.tareasSemana.length === 1 ? "tarea" : "tareas"}
-                  {esSemanaActual && data.tareasHoy.length ? ` · hoy ${data.tareasHoy.length}` : ""}
-                </Tag>
-              </Space>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: isMobile ? "4px 0" : 0 }}>
+                <Space wrap size={4}>
+                  <Button size="small" type="text" icon={<LeftOutlined />} onClick={() => irSemana(-1)} aria-label="Semana anterior" />
+                  <span style={{ fontWeight: 600 }}>{lunesRef.format("DD/MM")} – {viernesRef.format("DD/MM")}</span>
+                  <Button size="small" type="text" icon={<RightOutlined />} onClick={() => irSemana(1)} aria-label="Semana siguiente" />
+                  <Button size="small" onClick={() => irSemana(0)} disabled={esSemanaActual}>Hoy</Button>
+                  <Tag color={esSemanaActual ? "blue" : "default"}>
+                    {data.tareasSemana.length} {data.tareasSemana.length === 1 ? "tarea" : "tareas"}
+                    {esSemanaActual && data.tareasHoy.length ? ` · hoy ${data.tareasHoy.length}` : ""}
+                  </Tag>
+                </Space>
+                {isMobile && (
+                  <div style={{ overflowX: "auto", maxWidth: "100%", WebkitOverflowScrolling: "touch" }}>
+                    <Segmented size="small" value={diaFiltro} onChange={(v) => setDiaFiltro(v as string)} options={diaOpts} />
+                  </div>
+                )}
+              </div>
             }
-            extra={
+            extra={isMobile ? undefined : (
               <Segmented
                 size="small"
                 value={diaFiltro}
                 onChange={(v) => setDiaFiltro(v as string)}
                 options={diaOpts}
               />
-            }
+            )}
           >
             {data.tareasSemana.length === 0
               ? <Empty description="No tenés tareas programadas esta semana" image={Empty.PRESENTED_IMAGE_SIMPLE} />

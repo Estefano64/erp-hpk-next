@@ -141,8 +141,22 @@ export async function GET(req: Request) {
     for (const id of idsLista) {
       miEstadoPorTarea.set(id, estadoTecnico(misSesiones.filter((s) => s.planificacion_ot_id === id)));
     }
-    const conMiEstado = <T extends { id: number }>(arr: T[]) =>
-      arr.map((t) => ({ ...t, miEstado: miEstadoPorTarea.get(t.id) ?? "sin_empezar" as EstadoTecnico }));
+
+    // Mapa código de equipo → nombre, para mostrar el NOMBRE de la máquina (no el
+    // código) en el dashboard del técnico.
+    const equiposCat = await prisma.equipo.findMany({ select: { codigo: true, descripcion: true } });
+    const nombreEquipo = new Map(equiposCat.map((e) => [e.codigo, e.descripcion ?? e.codigo]));
+    const maquinaNombre = (maq: string | null | undefined): string | null => {
+      if (!maq) return null;
+      return maq.split("|").map((c) => nombreEquipo.get(c.trim()) ?? c.trim()).filter(Boolean).join(" | ");
+    };
+
+    const conMiEstado = <T extends { id: number; maquina?: string | null }>(arr: T[]) =>
+      arr.map((t) => ({
+        ...t,
+        miEstado: miEstadoPorTarea.get(t.id) ?? "sin_empezar" as EstadoTecnico,
+        maquina_nombre: maquinaNombre(t.maquina),
+      }));
 
     // Horas reales del técnico logueado en un conjunto de tareas (sus sesiones).
     async function horasRealesTecnico(taskIds: number[]): Promise<number> {

@@ -16,7 +16,7 @@ import "dayjs/locale/es";
 import { useRouter } from "next/navigation";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
-import { calcularFin, normalizarAInicioHabil } from "@/lib/planification-hours";
+import { calcularFin, normalizarAInicioHabil, horasHabilesEntre } from "@/lib/planification-hours";
 import { splitRecursos } from "@/lib/recursos";
 import { useTabSync } from "@/lib/useTabSync";
 import { useSession } from "next-auth/react";
@@ -385,21 +385,33 @@ export default function ProgramacionSemanalPage() {
   const CAPACIDAD_SEMANA = 45; // 9h/día * 5 días
   const cargaPorRecurso = useMemo(() => {
     const map = new Map<string, number>();
+    // Ventana de la semana (Lun 00:00 → Dom 23:59). Una tarea que cruza el fin
+    // de semana (empieza viernes, sigue el lunes) reparte sus horas: las del
+    // viernes cuentan en esta semana y las del lunes en la siguiente.
+    const semIni = lunes.startOf("isoWeek").toDate();
+    const semFin = lunes.endOf("isoWeek").toDate();
     for (const r of rowsFiltradas) {
-      // Las horas se cuentan en la semana donde la tarea ARRANCA. Una tarea que
-      // se desborda desde la semana anterior (empieza viernes, sigue el lunes)
-      // aparece acá por el filtro de solape, pero sus horas ya cuentan en su
-      // semana de inicio — no las re-sumamos en esta.
       if (!r.fecha_inicio) continue;
-      const fi = dayjs(r.fecha_inicio);
-      if (fi.isoWeek() !== lunes.isoWeek() || fi.isoWeekYear() !== lunes.isoWeekYear()) continue;
       const dur = Number(r.horas_estimadas ?? 0);
       const qty = Math.max(1, Number(r.qty_personal ?? 1));
       const hhTotal = dur * qty;
+      let hhEnSemana: number;
+      if (r.horas_extras) {
+        // HE = horas continuas fuera de jornada; se cuentan enteras en su semana
+        // de inicio (no se prorratean por jornada hábil).
+        const fi = dayjs(r.fecha_inicio);
+        hhEnSemana = (fi.isoWeek() === lunes.isoWeek() && fi.isoWeekYear() === lunes.isoWeekYear()) ? hhTotal : 0;
+      } else {
+        const ini = new Date(r.fecha_inicio);
+        const fin = r.fecha_fin ? new Date(r.fecha_fin) : new Date(ini.getTime() + hhTotal * 3600000);
+        const clampIni = ini < semIni ? semIni : ini;
+        const clampFin = fin > semFin ? semFin : fin;
+        hhEnSemana = horasHabilesEntre(clampIni, clampFin);
+      }
+      if (hhEnSemana <= 0) continue;
       const keys = view === "equipo" ? splitTecnicos(r.maquina) : splitTecnicos(r.tecnico);
       if (keys.length === 0) continue;
-      // Carga prorateada entre todos los recursos asignados (operarios o máquinas)
-      const cuota = hhTotal / keys.length;
+      const cuota = hhEnSemana / keys.length;
       for (const k of keys) map.set(k, (map.get(k) ?? 0) + cuota);
     }
     return map;
