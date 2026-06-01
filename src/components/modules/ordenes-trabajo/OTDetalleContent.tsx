@@ -433,9 +433,11 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
       }
     }
 
-    if (payload.garantia_codigo === "Si") {
-      payload.tipo_garantia_codigo = "Por definir";
-    }
+    // Tipo de garantía coherente con el check (igual que en "nueva OT"): con
+    // garantía se conserva lo elegido; sin garantía queda "NA".
+    payload.tipo_garantia_codigo = payload.garantia_codigo === "Si"
+      ? (payload.tipo_garantia_codigo || null)
+      : "NA";
 
     const pcr = Number(payload.pcr);
     const horas = Number(payload.horas);
@@ -1126,12 +1128,15 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                 <Checkbox checked={editData.garantia_codigo === "Si"}
                   onChange={(e) => {
                     setField("garantia_codigo", e.target.checked ? "Si" : "No");
-                    if (e.target.checked) setField("tipo_garantia_codigo", "Por definir");
+                    // Como en "nueva OT": al marcar, se habilita el desplegable (sin
+                    // valor, para elegir); al desmarcar, el tipo queda como "NA".
+                    setField("tipo_garantia_codigo", e.target.checked ? null : "NA");
                   }}>Sí</Checkbox>
               </Col>
               <Col xs={12} md={6}>
                 <FieldLabel>Tipo Garantía</FieldLabel>
-                <Select showSearch optionFilterProp="label" style={{ width: "100%" }} disabled={isGarantia}
+                <Select showSearch optionFilterProp="label" style={{ width: "100%" }} disabled={!isGarantia}
+                  placeholder={isGarantia ? "Seleccionar" : "NA"}
                   value={editData.tipo_garantia_codigo as string}
                   onChange={(v) => setField("tipo_garantia_codigo", v)}
                   options={tipoGarantias.map((t) => ({ value: t.codigo, label: t.nombre }))} />
