@@ -285,6 +285,31 @@ function RequerimientosDetalleInner() {
   const [partesDividir, setPartesDividir] = useState<number[]>([]);
   const [dividiendo, setDividiendo] = useState(false);
 
+  // Modal de Consumir de Almacén — requiere elegir zona + posición física.
+  const [modalConsumir, setModalConsumir] = useState<Requerimiento | null>(null);
+  const [consumirZonaId, setConsumirZonaId] = useState<number | null>(null);
+  const [consumirPosicionId, setConsumirPosicionId] = useState<number | null>(null);
+  const [consumirCantidad, setConsumirCantidad] = useState<number | null>(null);
+  const [consumirObs, setConsumirObs] = useState("");
+  const [consumiendo, setConsumiendo] = useState(false);
+  interface AlmacenZonaOpt {
+    id: number;
+    codigo: string;
+    nombre: string;
+    posiciones: { id: number; codigo: string; nombre: string | null }[];
+  }
+  const [zonas, setZonas] = useState<AlmacenZonaOpt[]>([]);
+  useEffect(() => {
+    fetch("/api/almacen-zonas")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (Array.isArray(d?.data)) setZonas(d.data); })
+      .catch(() => { /* noop */ });
+  }, []);
+  const posicionesDeZona = useMemo(() => {
+    if (consumirZonaId == null) return [];
+    return zonas.find((z) => z.id === consumirZonaId)?.posiciones ?? [];
+  }, [consumirZonaId, zonas]);
+
   // Roles (para mostrar acciones admin/aprobador de aprobar/desaprobar/anular)
   const [roles, setRoles] = useState<string[]>([]);
   const isAdmin = roles.includes("admin");
@@ -545,20 +570,39 @@ function RequerimientosDetalleInner() {
   };
 
   // ── Consumir de almacén ──
-  // Marca el requerimiento como satisfecho desde stock interno: crea SALIDA y descuenta stock.
-  const consumirDeAlmacen = async (r: Requerimiento) => {
+  // Abre un modal para que el operario elija la zona + posición física del
+  // almacén donde se ubica el material. La SALIDA y el cambio de estado del
+  // req (a CONSUMIDO_ALMACEN) se ejecutan en la confirmación del modal.
+  const abrirModalConsumir = (r: Requerimiento) => {
+    setModalConsumir(r);
+    setConsumirZonaId(null);
+    setConsumirPosicionId(null);
+    setConsumirCantidad(r.cantidad);
+    setConsumirObs("");
+  };
+  const confirmarConsumirDeAlmacen = async () => {
+    if (!modalConsumir || consumirZonaId == null) return;
+    setConsumiendo(true);
     try {
-      const res = await fetch(`/api/requerimientos/${r.id}/consumir-de-almacen`, {
+      const res = await fetch(`/api/requerimientos/${modalConsumir.id}/consumir-de-almacen`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({
+          almacen_zona_id: consumirZonaId,
+          almacen_posicion_id: consumirPosicionId ?? undefined,
+          cantidad: consumirCantidad ?? undefined,
+          observacion: consumirObs.trim() || undefined,
+        }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Error al consumir de almacén");
       message.success(json.message || "Consumido de almacén");
+      setModalConsumir(null);
       await fetchData();
     } catch (err: unknown) {
       message.error(err instanceof Error ? err.message : "Error al consumir de almacén");
+    } finally {
+      setConsumiendo(false);
     }
   };
 
@@ -1133,25 +1177,13 @@ function RequerimientosDetalleInner() {
                 />
               </Tooltip>
             )}
-            <Tooltip title={puedeConsumir ? "Consumir esta cantidad del stock interno (genera SALIDA)" : motivoDeshab}>
-              <Popconfirm
-                title="Consumir de almacén"
-                description={
-                  <div style={{ maxWidth: 280 }}>
-                    Se creará un movimiento <b>SALIDA</b> de <b>{r.cantidad}</b> unidad(es) y el item quedará marcado como entregado desde stock interno.
-                  </div>
-                }
-                okText="Consumir"
-                cancelText="Cancelar"
+            <Tooltip title={puedeConsumir ? "Consumir esta cantidad del stock interno (elige zona + posición)" : motivoDeshab}>
+              <Button
+                size="small"
+                icon={<InboxOutlined />}
                 disabled={!puedeConsumir}
-                onConfirm={() => consumirDeAlmacen(r)}
-              >
-                <Button
-                  size="small"
-                  icon={<InboxOutlined />}
-                  disabled={!puedeConsumir}
-                />
-              </Popconfirm>
+                onClick={() => abrirModalConsumir(r)}
+              />
             </Tooltip>
           </Space>
         );
@@ -1716,6 +1748,111 @@ function RequerimientosDetalleInner() {
                 Dividir en {partesDividir.length} partes
               </Button>
             </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Modal Consumir de Almacén ─────────────────────────────────── */}
+      <Modal
+        title={
+          <Space>
+            <InboxOutlined style={{ color: brand.cyan }} />
+            Consumir de Almacén — {modalConsumir?.material_codigo || "Item"}
+          </Space>
+        }
+        open={!!modalConsumir}
+        onCancel={() => setModalConsumir(null)}
+        onOk={confirmarConsumirDeAlmacen}
+        confirmLoading={consumiendo}
+        okText="Consumir"
+        okButtonProps={{ disabled: consumirZonaId == null }}
+        cancelText="Cancelar"
+        width={modalWidth(screens, 560)}
+        destroyOnHidden
+      >
+        {modalConsumir && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ fontSize: 13, color: brand.textSecondary }}>
+              <div>
+                <b>{modalConsumir.material_codigo}</b> · {modalConsumir.material_nombre ?? modalConsumir.descripcion ?? ""}
+              </div>
+              <div style={{ marginTop: 4 }}>
+                Pedido: <b>{modalConsumir.cantidad} {modalConsumir.unidad_medida ?? ""}</b>
+                {modalConsumir.numero_ot && (
+                  <> · OT: <Tag color={brand.navy}>{modalConsumir.numero_ot}</Tag></>
+                )}
+              </div>
+            </div>
+
+            <Row gutter={12}>
+              <Col span={12}>
+                <Text strong style={{ display: "block", marginBottom: 4 }}>
+                  Zona del almacén <Text type="danger">*</Text>
+                </Text>
+                <Select
+                  value={consumirZonaId ?? undefined}
+                  onChange={(v) => { setConsumirZonaId(v); setConsumirPosicionId(null); }}
+                  placeholder="Elegir zona"
+                  style={{ width: "100%" }}
+                  options={zonas.map((z) => ({ value: z.id, label: `${z.codigo} — ${z.nombre}` }))}
+                />
+              </Col>
+              <Col span={12}>
+                <Text strong style={{ display: "block", marginBottom: 4 }}>
+                  Posición <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+                </Text>
+                <Select
+                  value={consumirPosicionId ?? undefined}
+                  onChange={(v) => setConsumirPosicionId(v ?? null)}
+                  placeholder={consumirZonaId == null ? "Elegí zona primero" : "Ej. A1"}
+                  disabled={consumirZonaId == null}
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  style={{ width: "100%" }}
+                  options={posicionesDeZona.map((p) => ({
+                    value: p.id,
+                    label: p.nombre ? `${p.codigo} — ${p.nombre}` : p.codigo,
+                  }))}
+                />
+              </Col>
+            </Row>
+
+            <Row gutter={12}>
+              <Col span={12}>
+                <Text strong style={{ display: "block", marginBottom: 4 }}>
+                  Cantidad a consumir
+                </Text>
+                <InputNumber
+                  style={{ width: "100%" }}
+                  min={0.01}
+                  max={modalConsumir.cantidad}
+                  value={consumirCantidad ?? undefined}
+                  onChange={(v) => setConsumirCantidad(typeof v === "number" ? v : null)}
+                  placeholder={String(modalConsumir.cantidad)}
+                />
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  Si dejás vacío usa la cantidad pedida ({modalConsumir.cantidad}).
+                </Text>
+              </Col>
+              <Col span={12}>
+                <Text strong style={{ display: "block", marginBottom: 4 }}>
+                  Observación <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+                </Text>
+                <Input
+                  value={consumirObs}
+                  onChange={(e) => setConsumirObs(e.target.value)}
+                  placeholder="Ej. entregado a técnico Juan"
+                  maxLength={300}
+                />
+              </Col>
+            </Row>
+
+            <Alert
+              type="info"
+              showIcon
+              message="El requerimiento pasará a estado CONSUMIDO_ALMACEN y ya no podrá volver a sacarse de stock."
+            />
           </div>
         )}
       </Modal>

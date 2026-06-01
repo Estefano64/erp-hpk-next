@@ -69,6 +69,9 @@ interface RequerimientoRow {
   // Comentario / recomendación del aprobador, opcional. Visible como columna
   // en la tabla (truncada + tooltip) y en el popover de "aprobado por".
   comentario_aprobacion?: string | null;
+  // Ubicación física en el almacén HP&K (zona + celda).
+  almacen_zona?: { codigo: string; nombre: string } | null;
+  almacen_posicion?: { codigo: string } | null;
   proveedor: { id: number; razon_social: string } | null;
   compra: { id: number; numero_po: string } | null;
   po_id: number | null;
@@ -1230,6 +1233,21 @@ export default function RequerimientosPage() {
           )}
         </Flex>
       ),
+    },
+    {
+      title: "Ubicación", key: "ubic_almacen", width: 110, align: "center",
+      render: (_, r) => {
+        if (!r.almacen_zona) return <Text type="secondary">—</Text>;
+        const zona = r.almacen_zona.codigo;
+        const pos = r.almacen_posicion?.codigo;
+        return (
+          <Tooltip title={`${r.almacen_zona.codigo} — ${r.almacen_zona.nombre}${pos ? ` · celda ${pos}` : ""}`}>
+            <Tag color="geekblue" style={{ margin: 0, fontSize: 10 }}>
+              {zona}{pos ? `/${pos}` : ""}
+            </Tag>
+          </Tooltip>
+        );
+      },
     },
     {
       title: "F. Requerida", key: "freq", width: 100,

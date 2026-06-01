@@ -495,6 +495,27 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
   const [ubicacionRec, setUbicacionRec] = useState<string | undefined>();
   const [ubicaciones, setUbicaciones] = useState<{ codigo: string; nombre: string }[]>([]);
   const [submitting, setSubmitting] = useState(false);
+
+  // Almacén físico HP&K — zona + posición POR ITEM. Cargados al abrir el modal
+  // desde /api/compras/{id}/recepcion-preview. Pre-fill: ubicación actual del
+  // req, o sugerida en base a otros reqs de la misma OT, o vacío.
+  interface AlmacenZona {
+    id: number; codigo: string; nombre: string;
+    posiciones: { id: number; codigo: string; nombre: string | null }[];
+  }
+  interface PreviewItem {
+    repuesto_id: number;
+    material_id: number;
+    ot_codigo: string;
+    cantidad_pendiente: number;
+    ubicacion_actual: { zona_id: number; posicion_id: number | null } | null;
+    ubicacion_sugerida: { zona_id: number; posicion_id: number | null } | null;
+  }
+  const [zonasAlmacen, setZonasAlmacen] = useState<AlmacenZona[]>([]);
+  const [previewItems, setPreviewItems] = useState<PreviewItem[]>([]);
+  // material_id → { zona_id, posicion_id }. Aplica a TODOS los reqs de la OC
+  // que tienen ese material — el endpoint hace updateMany por (po_id, material_id).
+  const [ubicByMaterial, setUbicByMaterial] = useState<Record<number, { zona_id: number | null; posicion_id: number | null }>>({});
   const [search, setSearch] = useState("");
   const [filtroProv, setFiltroProv] = useState<string | undefined>();
   const [filtroEstado, setFiltroEstado] = useState<string | undefined>();
@@ -522,6 +543,12 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
     fetch("/api/almacenes")
       .then((r) => r.ok ? r.json() : { data: [] })
       .then((j) => setUbicaciones((j.data ?? []).map((u: { codigo: string; nombre: string }) => ({ codigo: u.codigo, nombre: u.nombre }))))
+      .catch(() => { /* ignore */ });
+    // Catálogo de zonas físicas HP&K (HERR_SUM / OTS / STOCK) con sus
+    // posiciones (A1, A2...). Se carga una vez y se reutiliza por modal.
+    fetch("/api/almacen-zonas")
+      .then((r) => r.ok ? r.json() : { data: [] })
+      .then((j) => setZonasAlmacen(j.data ?? []))
       .catch(() => { /* ignore */ });
   }, []);
 
@@ -564,7 +591,7 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
   const proveedoresUnicos = [...new Set(pos.map((p) => p.proveedor_nombre).filter(Boolean) as string[])];
   const estadosUnicos = [...new Set(pos.map((p) => p.estado))];
 
-  const abrirRecibir = (po_id: number) => {
+  const abrirRecibir = async (po_id: number) => {
     const po = pos.find((p) => p.id === po_id);
     if (!po) return;
     setPoSeleccionada(po);
@@ -575,16 +602,47 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
     setNroFactura("");
     setComentariosRec("");
     setUbicacionRec(undefined);
+    setPreviewItems([]);
+    setUbicByMaterial({});
+    // Cargamos preview con la sugerencia de ubicación por req (basada en otras
+    // ubicaciones de la misma OT). Lo usamos para pre-llenar zona+posición por
+    // material en la tabla del modal.
+    try {
+      const res = await fetch(`/api/compras/${po_id}/recepcion-preview`);
+      const json = await res.json();
+      if (res.ok && Array.isArray(json.data)) {
+        const items = json.data as PreviewItem[];
+        setPreviewItems(items);
+        const seed: Record<number, { zona_id: number | null; posicion_id: number | null }> = {};
+        for (const it of items) {
+          const u = it.ubicacion_actual ?? it.ubicacion_sugerida;
+          if (!seed[it.material_id]) {
+            seed[it.material_id] = {
+              zona_id: u?.zona_id ?? null,
+              posicion_id: u?.posicion_id ?? null,
+            };
+          }
+        }
+        setUbicByMaterial(seed);
+      }
+    } catch {
+      /* si falla el preview seguimos sin sugerencia */
+    }
   };
 
   const confirmarIngreso = async () => {
     if (!poSeleccionada) return;
     const items = poSeleccionada.items
       .filter((i) => cantidadesRecibidas[i.id] > 0)
-      .map((i) => ({
-        material_id: i.material_id,
-        cantidad: cantidadesRecibidas[i.id],
-      }));
+      .map((i) => {
+        const u = ubicByMaterial[i.material_id];
+        return {
+          material_id: i.material_id,
+          cantidad: cantidadesRecibidas[i.id],
+          almacen_zona_id: u?.zona_id ?? null,
+          almacen_posicion_id: u?.posicion_id ?? null,
+        };
+      });
 
     if (items.length === 0) {
       message.warning("Ingresa al menos una cantidad");
@@ -592,6 +650,13 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
     }
     if (!ubicacionRec) {
       message.warning("Indicá la ubicación física donde se guardó el material recibido.");
+      return;
+    }
+    // Cada material recibido debe tener zona del almacén HP&K asignada
+    // (HERR_SUM / OTS / STOCK) — la posición es opcional.
+    const sinZona = items.filter((it) => !it.almacen_zona_id);
+    if (sinZona.length > 0) {
+      message.warning(`Faltan zonas de almacén en ${sinZona.length} item(s). Elegí la zona en cada fila.`);
       return;
     }
 
@@ -1106,13 +1171,19 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
               pagination={false}
               size="small"
               dataSource={poSeleccionada.items}
+              scroll={{ x: 1000 }}
               columns={[
                 { title: "Código", dataIndex: "codigo", width: 100 },
                 { title: "Descripción", dataIndex: "descripcion", ellipsis: true },
-                { title: "Cant. Pedida", dataIndex: "cantidad", width: 100, align: "right" },
+                { title: "OT", width: 100, render: (_, r) => {
+                    const prev = previewItems.find((p) => p.material_id === r.material_id);
+                    return prev?.ot_codigo ? <Tag color={brand.navy}>{prev.ot_codigo}</Tag> : <Text type="secondary">—</Text>;
+                  },
+                },
+                { title: "Pedida", dataIndex: "cantidad", width: 75, align: "right" },
                 {
-                  title: "Cant. Recibida",
-                  width: 130,
+                  title: "Recibida",
+                  width: 110,
                   align: "right",
                   render: (_, r) => (
                     <InputNumber
@@ -1125,6 +1196,55 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                   ),
                 },
                 { title: "UM", dataIndex: "unidad_medida", width: 55, align: "center" },
+                {
+                  title: <span>Zona almacén <span style={{ color: "#cf1322" }}>*</span></span>,
+                  width: 160,
+                  render: (_, r) => {
+                    const u = ubicByMaterial[r.material_id];
+                    const esSugerida = u?.zona_id != null && previewItems.find((p) => p.material_id === r.material_id)?.ubicacion_sugerida?.zona_id === u.zona_id;
+                    return (
+                      <Select
+                        value={u?.zona_id ?? undefined}
+                        onChange={(v) => setUbicByMaterial({
+                          ...ubicByMaterial,
+                          [r.material_id]: { zona_id: v ?? null, posicion_id: null },
+                        })}
+                        placeholder="Zona"
+                        size="small"
+                        style={{ width: "100%" }}
+                        status={!u?.zona_id ? "warning" : undefined}
+                        options={zonasAlmacen.map((z) => ({ value: z.id, label: z.codigo }))}
+                        suffixIcon={esSugerida ? <Tooltip title="Sugerida por otra ubicación de la misma OT"><Text type="success" style={{ fontSize: 10 }}>✓</Text></Tooltip> : undefined}
+                      />
+                    );
+                  },
+                },
+                {
+                  title: "Posición",
+                  width: 130,
+                  render: (_, r) => {
+                    const u = ubicByMaterial[r.material_id];
+                    const zona = zonasAlmacen.find((z) => z.id === u?.zona_id);
+                    const posiciones = zona?.posiciones ?? [];
+                    return (
+                      <Select
+                        value={u?.posicion_id ?? undefined}
+                        onChange={(v) => setUbicByMaterial({
+                          ...ubicByMaterial,
+                          [r.material_id]: { zona_id: u?.zona_id ?? null, posicion_id: v ?? null },
+                        })}
+                        placeholder={u?.zona_id == null ? "—" : "Ej. A1"}
+                        disabled={u?.zona_id == null}
+                        allowClear
+                        showSearch
+                        optionFilterProp="label"
+                        size="small"
+                        style={{ width: "100%" }}
+                        options={posiciones.map((p) => ({ value: p.id, label: p.codigo }))}
+                      />
+                    );
+                  },
+                },
               ]}
             />
           </>

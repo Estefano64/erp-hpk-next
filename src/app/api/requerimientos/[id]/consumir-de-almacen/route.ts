@@ -10,6 +10,11 @@ const Schema = z.object({
   cantidad: z.coerce.number().positive().optional(),
   usuario: z.string().trim().optional().nullable(),
   observacion: z.string().trim().optional().nullable(),
+  // Zona y posición físicas donde se ubica el material al sacarlo de almacén.
+  // OBLIGATORIAS por decisión del usuario — sin esto el req no se puede
+  // marcar como consumido (asegura trazabilidad).
+  almacen_zona_id: z.coerce.number().int().positive(),
+  almacen_posicion_id: z.coerce.number().int().positive().optional().nullable(),
 });
 
 // POST /api/requerimientos/[id]/consumir-de-almacen
@@ -110,14 +115,18 @@ export async function POST(req: NextRequest, { params }: Params) {
         data: { stock_actual: { decrement: cantidad } },
       });
 
-      // 3) Marcar el requerimiento. Si fue completo, status final = ENTREGADO. Si fue parcial,
-      //    decrementar la cantidad pedida y dejar el resto como pendiente para otro flujo.
+      // 3) Marcar el requerimiento. Si fue completo, status final = CONSUMIDO_ALMACEN
+      //    (estado nuevo, distinto de ENTREGADO que se reserva para entregas vía OC).
+      //    Si fue parcial, decrementar la cantidad y dejar el resto pendiente.
+      //    En AMBOS casos se persiste la zona/posición física del consumo.
       let nuevoEstado: string;
       const updateData: Prisma.OTRepuestoUncheckedUpdateInput = {
         cantidad_recibida: { increment: cantidad },
+        almacen_zona_id: parsed.data.almacen_zona_id,
+        almacen_posicion_id: parsed.data.almacen_posicion_id ?? null,
       };
       if (cantidad.equals(cantPedida)) {
-        nuevoEstado = "ENTREGADO";
+        nuevoEstado = "CONSUMIDO_ALMACEN";
         updateData.status_oc_codigo = nuevoEstado;
         updateData.fecha_entrega_real = new Date();
         const obsPrev = rep.observaciones ? `${rep.observaciones}\n` : "";

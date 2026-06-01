@@ -4,10 +4,17 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { recalcularCostoPromedio } from "@/lib/inventario";
 
+// Para recepción por req individual (recomendado): el caller pasa el id del
+// OTRepuesto a recibir + la zona/posición del almacén físico donde se guarda.
+// Si no se pasa repuesto_id, mantiene la lógica histórica (distribución por
+// material entre detalles).
 const ItemSchema = z.object({
   material_id: z.coerce.number().int().positive(),
   cantidad: z.coerce.number().positive(),
   observacion: z.string().trim().optional().nullable(),
+  repuesto_id: z.coerce.number().int().positive().optional().nullable(),
+  almacen_zona_id: z.coerce.number().int().positive().optional().nullable(),
+  almacen_posicion_id: z.coerce.number().int().positive().optional().nullable(),
 });
 
 const Schema = z.object({
@@ -191,6 +198,28 @@ export async function POST(req: NextRequest) {
           precioEntrada: precioPorMaterial.get(item.material_id) ?? null,
           monedaEntrada: compra.moneda_codigo ?? null,
         });
+
+        // Persistir ubicación física en el req específico (si se pasó
+        // repuesto_id) o en todos los reqs del material de esta OC (si no).
+        // Se aplica solo cuando el caller envía zona_id — sino el req queda
+        // sin ubicación y se completa después al consumir.
+        if (item.almacen_zona_id) {
+          const ubicData = {
+            almacen_zona_id: item.almacen_zona_id,
+            almacen_posicion_id: item.almacen_posicion_id ?? null,
+          };
+          if (item.repuesto_id) {
+            await tx.oTRepuesto.update({
+              where: { id: item.repuesto_id },
+              data: ubicData,
+            });
+          } else {
+            await tx.oTRepuesto.updateMany({
+              where: { po_id: d.po_id, material_id: item.material_id },
+              data: ubicData,
+            });
+          }
+        }
 
         movimientosCreados.push({ material_id: item.material_id, cantidad: item.cantidad });
       }
