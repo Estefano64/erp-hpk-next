@@ -1265,7 +1265,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
             )}
           </div>
           <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, marginTop: 2 }}>
-            Cilindro: {ot?.codigo_reparacion ? `${ot.codigo_reparacion.codigo} - ${ot.codigo_reparacion.descripcion}` : "-"}
+            Cilindro: {ot?.codigo_reparacion?.descripcion ?? "-"}
             &nbsp;|&nbsp; N/P: {ot?.np ?? "-"}
             &nbsp;|&nbsp; Flota: {ot?.cod_rep_flota ?? "-"}
             &nbsp;|&nbsp; Cliente: {ot?.cliente?.nombre_comercial ?? ot?.cliente?.razon_social ?? "-"}
