@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Typography, Card, Table, Tag, Input, Select, Space, Button, DatePicker, InputNumber, Checkbox, message, Row, Col, Alert, Switch, Popconfirm, Tooltip,
+  Typography, Card, Table, Tag, Input, Select, Space, Button, DatePicker, InputNumber, Checkbox, message, Row, Col, Alert, Switch, Popconfirm, Tooltip, Modal,
 } from "antd";
-import { SearchOutlined, ReloadOutlined, CalendarOutlined, InfoCircleOutlined, SaveOutlined, UndoOutlined, ThunderboltOutlined, PlusOutlined } from "@ant-design/icons";
+import { SearchOutlined, ReloadOutlined, CalendarOutlined, InfoCircleOutlined, SaveOutlined, UndoOutlined, ThunderboltOutlined, PlusOutlined, DeleteOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import {
   numeracionColumn,
@@ -116,11 +116,12 @@ function parseFechaSmart(raw: string): Dayjs | null {
 
 interface PlanRow {
   id: number;
-  ot_id: number;
+  ot_id: number | null;
   componente: string;
   operacion_codigo: string;
   descripcion: string;
   comentario: string | null;
+  observaciones: string | null;  // notas que deja el técnico al pausar/terminar
   tipo_reparacion: string | null;
   orden: number;
   horas_estimadas: string | null;
@@ -204,6 +205,10 @@ export default function PlanificacionPage() {
   const [equipos, setEquipos] = useState<EquipoOpt[]>([]);
   const [estados, setEstados] = useState<StatusTareaOpt[]>([]);
   const [otOpts, setOtOpts] = useState<{ value: number; label: string }[]>([]);
+  // Modal "Nueva tarea"
+  const [nuevaOpen, setNuevaOpen] = useState(false);
+  const [nuevaSaving, setNuevaSaving] = useState(false);
+  const [nueva, setNueva] = useState<{ ot_id: number | null; parte: string; trabajo: string; qty: number; horas: number | null; tecnico: string | null; maquina: string | null }>({ ot_id: null, parte: "General", trabajo: "", qty: 1, horas: null, tecnico: null, maquina: null });
   const [savingId, setSavingId] = useState<number | null>(null);
   const [autoSave, setAutoSave] = useState(true);
   // Cambios pendientes acumulados en modo batch: id → patch combinado (los originales para revert)
@@ -225,6 +230,20 @@ export default function PlanificacionPage() {
   const CAPACIDAD_SEMANA = 45;
 
   const semanaOpts = useMemo(() => buildSemanasOptions(), []);
+
+  // Opciones de OT para el selector: la lista traída + las OTs de las filas
+  // actuales (así la OT de cada tarea siempre tiene su número, aunque no esté en
+  // la lista paginada). Antes mostraba el id interno cuando no la encontraba.
+  const otOptsMerged = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const o of otOpts) map.set(o.value, o.label);
+    for (const r of rows) {
+      if (r.orden_trabajo?.id != null && r.orden_trabajo?.ot != null) {
+        map.set(r.orden_trabajo.id, String(r.orden_trabajo.ot));
+      }
+    }
+    return [...map].map(([value, label]) => ({ value, label }));
+  }, [otOpts, rows]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -300,21 +319,49 @@ export default function PlanificacionPage() {
     })();
   }, []);
 
-  // Crear una tarea SIN OT (apoyo/general). Solo desde acá (Planificación).
-  const crearTareaSinOT = useCallback(async () => {
-    if (!editMode) { messageApi.warning("Activá Modo Edición para crear tareas."); return; }
-    const res = await fetch("/api/planificacion", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ trabajo: "Tarea de apoyo", componente_codigo: "General" }),
-    });
+  // Crear una tarea desde el modal "Nueva tarea" (con o sin OT).
+  const guardarNueva = useCallback(async () => {
+    if (!nueva.trabajo.trim()) { messageApi.warning("Poné una descripción del trabajo."); return; }
+    setNuevaSaving(true);
+    try {
+      const res = await fetch("/api/planificacion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ot_id: nueva.ot_id ?? undefined,
+          componente_codigo: nueva.parte.trim() || "General",
+          trabajo: nueva.trabajo.trim(),
+          qty: nueva.qty,
+          horas_estimadas: nueva.horas ?? undefined,
+          tecnico: nueva.tecnico ?? undefined,
+          maquina: nueva.maquina ?? undefined,
+        }),
+      });
+      if (res.ok) {
+        messageApi.success("Tarea creada. Asignale fecha arrastrándola en Programación Semanal.");
+        setNuevaOpen(false);
+        notifySync();
+        fetchData();
+      } else {
+        const e = await res.json().catch(() => null);
+        messageApi.error(e?.error ?? "Error al crear la tarea");
+      }
+    } finally {
+      setNuevaSaving(false);
+    }
+  }, [nueva, messageApi, notifySync, fetchData]);
+
+  // Borrar una tarea desde Planificación.
+  const borrarTarea = useCallback(async (id: number) => {
+    if (!editMode) { messageApi.warning("Activá Modo Edición para borrar."); return; }
+    const res = await fetch(`/api/planificacion/${id}`, { method: "DELETE" });
     if (res.ok) {
-      messageApi.success("Tarea sin OT creada. Completá operario, fecha y duración.");
+      messageApi.success("Tarea borrada.");
       notifySync();
       fetchData();
     } else {
       const e = await res.json().catch(() => null);
-      messageApi.error(e?.error ?? "Error al crear la tarea");
+      messageApi.error(e?.error ?? "Error al borrar");
     }
   }, [editMode, messageApi, notifySync, fetchData]);
 
@@ -705,7 +752,7 @@ export default function PlanificacionPage() {
           placeholder="Sin OT"
           value={r.ot_id ?? undefined}
           onChange={(v) => updateField(r.id, { ot_id: (v as number | undefined) ?? null })}
-          options={otOpts}
+          options={otOptsMerged}
           optionFilterProp="label"
           disabled={r.estado === "realizado"}
         />
@@ -833,6 +880,15 @@ export default function PlanificacionPage() {
           {v || <Typography.Text type="secondary" style={{ fontSize: 11 }}>—</Typography.Text>}
         </Typography.Paragraph>
       ),
+    },
+    {
+      // Lo que escribe el TÉCNICO al pausar/terminar (solo lectura para el planner).
+      key: "observaciones", title: "Obs. técnico", dataIndex: "observaciones", width: 200, ellipsis: true,
+      filters: [{ text: "Con observación", value: "__hay__" }, { text: FILTRO_VACIO_LABEL, value: FILTRO_VACIO_VALUE }],
+      onFilter: (value, r) => value === FILTRO_VACIO_VALUE ? !r.observaciones : value === "__hay__" ? !!r.observaciones : false,
+      render: (v: string | null) => v
+        ? <Tooltip title={<span style={{ whiteSpace: "pre-wrap" }}>{v}</span>}><span style={{ fontSize: 12 }}>📝 {v}</span></Tooltip>
+        : <Typography.Text type="secondary" style={{ fontSize: 11 }}>—</Typography.Text>,
     },
     {
       title: "Semana", key: "semana", width: 160,
@@ -1243,6 +1299,21 @@ export default function PlanificacionPage() {
         </Space.Compact>
       ),
     },
+    {
+      title: "", key: "borrar", width: 46, fixed: "right", align: "center",
+      render: (_, r) => (
+        <Popconfirm
+          title="Borrar tarea"
+          description="Se elimina esta tarea de planificación. No se puede deshacer."
+          okText="Borrar" cancelText="Cancelar" okButtonProps={{ danger: true }}
+          onConfirm={() => borrarTarea(r.id)}
+        >
+          <Tooltip title="Borrar tarea">
+            <Button danger size="small" type="text" icon={<DeleteOutlined />} disabled={!editMode} />
+          </Tooltip>
+        </Popconfirm>
+      ),
+    },
   ];
 
   // Opciones para los filtros del header. ANTES se calculaban desde `rows`, lo
@@ -1285,8 +1356,8 @@ export default function PlanificacionPage() {
             {editMode ? "Salir de edición" : "Modo edición"}
           </Button>
           {editMode && (
-            <Button icon={<PlusOutlined />} onClick={crearTareaSinOT}>
-              Nueva tarea sin OT
+            <Button type="dashed" icon={<PlusOutlined />} onClick={() => { setNueva({ ot_id: null, parte: "General", trabajo: "", qty: 1, horas: null, tecnico: null, maquina: null }); setNuevaOpen(true); }}>
+              Nueva tarea
             </Button>
           )}
           <span style={{ fontSize: 12, color: brand.textSecondary }}>
@@ -1586,6 +1657,74 @@ export default function PlanificacionPage() {
           background-color: #ffffff !important;
         }
       `}</style>
+
+      <Modal
+        title="Nueva tarea"
+        open={nuevaOpen}
+        onCancel={() => setNuevaOpen(false)}
+        onOk={guardarNueva}
+        okText="Crear"
+        cancelText="Cancelar"
+        confirmLoading={nuevaSaving}
+        width={520}
+      >
+        <Space direction="vertical" style={{ width: "100%" }} size={12}>
+          <div>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>OT (opcional — vacío = tarea de apoyo sin OT)</Typography.Text>
+            <Select
+              showSearch allowClear style={{ width: "100%" }}
+              placeholder="Sin OT"
+              value={nueva.ot_id ?? undefined}
+              onChange={(v) => setNueva((n) => ({ ...n, ot_id: (v as number | undefined) ?? null }))}
+              options={otOptsMerged}
+              optionFilterProp="label"
+            />
+          </div>
+          <div>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>Parte / componente</Typography.Text>
+            <Input value={nueva.parte} onChange={(e) => setNueva((n) => ({ ...n, parte: e.target.value }))} placeholder="Ej: Cilindro, Vástago, General" />
+          </div>
+          <div>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>Trabajo / descripción *</Typography.Text>
+            <Input value={nueva.trabajo} onChange={(e) => setNueva((n) => ({ ...n, trabajo: e.target.value }))} placeholder="Ej: Apoyo armado, Bruñido…" />
+          </div>
+          <Row gutter={12}>
+            <Col span={12}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>Qty personal</Typography.Text>
+              <InputNumber min={1} style={{ width: "100%" }} value={nueva.qty} onChange={(v) => setNueva((n) => ({ ...n, qty: Number(v) || 1 }))} />
+            </Col>
+            <Col span={12}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>Horas estimadas</Typography.Text>
+              <InputNumber min={0} step={0.5} style={{ width: "100%" }} value={nueva.horas ?? undefined} onChange={(v) => setNueva((n) => ({ ...n, horas: v == null ? null : Number(v) }))} />
+            </Col>
+          </Row>
+          <div>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>Operario</Typography.Text>
+            <Select
+              showSearch allowClear style={{ width: "100%" }}
+              placeholder="Sin asignar"
+              value={nueva.tecnico ?? undefined}
+              onChange={(v) => setNueva((n) => ({ ...n, tecnico: (v as string | undefined) ?? null }))}
+              options={trabajadores.map((t) => ({ value: t.nombre, label: t.nombre }))}
+              optionFilterProp="label"
+            />
+          </div>
+          <div>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>Máquina / equipo</Typography.Text>
+            <Select
+              showSearch allowClear style={{ width: "100%" }}
+              placeholder="Sin asignar"
+              value={nueva.maquina ?? undefined}
+              onChange={(v) => setNueva((n) => ({ ...n, maquina: (v as string | undefined) ?? null }))}
+              options={equipos.map((e) => ({ value: e.codigo, label: `${e.codigo} — ${e.descripcion ?? ""}` }))}
+              optionFilterProp="label"
+            />
+          </div>
+          <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+            Se crea sin fecha; arrastrala en Programación Semanal para fijarle día y hora.
+          </Typography.Text>
+        </Space>
+      </Modal>
     </div>
   );
 }
