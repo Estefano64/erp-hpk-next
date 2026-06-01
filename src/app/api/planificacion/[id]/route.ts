@@ -199,11 +199,20 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
           let tipo: "máquina" | "operario" | null = null;
           let recursoComun = "";
           for (const o of otras) {
+            const comparteOperario = misTec.some((t) => splitRecursos(o.tecnico).includes(t));
+            if (input.empujar) {
+              // Con "empujar": las tareas del MISMO operario se reacomodan en la
+              // cascada, así que no bloquean (ni por operario ni por su máquina —
+              // que dejará de solapar al moverse). Solo frena un choque de máquina
+              // con OTRO operario, cuyas tareas no podemos mover.
+              if (comparteOperario) continue;
+              const maqComun = misMaq.find((m) => splitRecursos(o.maquina).includes(m));
+              if (maqComun) { choque = o; tipo = "máquina"; recursoComun = maqComun; break; }
+              continue;
+            }
+            // Sin "empujar": bloquea por máquina o por operario (recurso compartido).
             const maqComun = misMaq.find((m) => splitRecursos(o.maquina).includes(m));
             if (maqComun) { choque = o; tipo = "máquina"; recursoComun = maqComun; break; }
-            // Con "empujar", los choques de OPERARIO no bloquean (se resuelven
-            // empujando a las siguientes); solo la máquina (recurso compartido) frena.
-            if (input.empujar) continue;
             const tecComun = misTec.find((t) => splitRecursos(o.tecnico).includes(t));
             if (tecComun) { choque = o; tipo = "operario"; recursoComun = tecComun; break; }
           }
