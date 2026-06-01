@@ -590,21 +590,9 @@ export default function ProgramacionSemanalPage() {
       if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Error");
       endSave();
       notifySync();
-      // Si es emergencia, ya quedó ubicada: ahora empujamos al resto del día.
-      if (esEmergencia) {
-        try {
-          const r2 = await fetch(`/api/planificacion/${id}/emergencia`, { method: "POST" });
-          const j2 = await r2.json().catch(() => null);
-          if (r2.ok) {
-            const empN = j2?.empujadas?.length ?? 0;
-            const poolN = j2?.alPool?.length ?? 0;
-            if (empN || poolN) {
-              messageApi.success(`🚨 ${empN} tarea(s) reprogramada(s)${poolN ? `, ${poolN} al pool` : ""}.`);
-            }
-          }
-        } catch { /* la ubicación ya se guardó; el reacomodo es best-effort */ }
-        fetchData();
-      }
+      // Si es emergencia, el servidor ya reacomodó el día del operario en el mismo
+      // PUT (cascade). Refrescamos para ver las tareas empujadas.
+      if (esEmergencia) fetchData();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Error al reprogramar";
       endSave(msg);

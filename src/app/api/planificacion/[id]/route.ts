@@ -5,6 +5,7 @@ import isoWeek from "dayjs/plugin/isoWeek";
 import { prisma } from "@/lib/prisma";
 import { calcularFinEstimado, normalizarAInicioHabil } from "@/lib/planification-hours";
 import { splitRecursos } from "@/lib/recursos";
+import { cascadeEmergencia } from "@/lib/emergencia-cascade";
 
 dayjs.extend(isoWeek);
 
@@ -225,6 +226,14 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         data,
         include: { capturas: true, operacion_cod_rep: true },
       });
+
+      // Si es una EMERGENCIA y cambió de fecha o de técnico, reacomodar el día del
+      // (nuevo) operario — desde CUALQUIER vía (Gantt, Planificación, OT), no solo
+      // el botón 🚨. Así la reprogramación no "deja de funcionar" al reasignarla.
+      const tecnicoCambia = "tecnico" in data || "maquina" in data;
+      if (updated.es_correctivo && (reprograma || tecnicoCambia)) {
+        await cascadeEmergencia(tx, planId);
+      }
 
       // Al cancelar (o finalizar) una tarea, cerrar cualquier sesión abierta para
       // que no quede el cronómetro "Trabajando ahora" colgado en el dashboard.
