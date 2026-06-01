@@ -114,6 +114,18 @@ export async function GET(req: NextRequest) {
     if (evalEstado === "__none__") where.evaluaciones_tecnicas = { none: {} };
     else if (evalEstado) where.evaluaciones_tecnicas = { some: { estado: evalEstado } };
 
+    // Estado PO Cliente — se deriva de la presencia de un adjunto con
+    // etapa_codigo='po_cliente'. Acepta CSV pero los valores son exclusivos
+    // (PDT_PO o CON_PO); si vienen ambos no se filtra.
+    const estadoPoRaw = searchParams.get("estado_po");
+    if (estadoPoRaw) {
+      const vals = new Set(estadoPoRaw.split(",").map((s) => s.trim()).filter(Boolean));
+      if (vals.size === 1) {
+        if (vals.has("PDT_PO")) where.adjuntos = { none: { etapa_codigo: "po_cliente" } };
+        else if (vals.has("CON_PO")) where.adjuntos = { some: { etapa_codigo: "po_cliente" } };
+      }
+    }
+
     // Filtros de texto libre (contains, insensitive). Llegan como txt_<campo>.
     const TEXT_FIELDS = [
       "equipo_codigo", "descripcion", "tipo", "np", "cod_rep_flota", "cod_rep_posicion",
@@ -191,6 +203,13 @@ export async function GET(req: NextRequest) {
           // usa en el listado). La relación es 1-N pero en la práctica solo hay
           // una por OT; tomamos el último id por las dudas.
           evaluaciones_tecnicas: { select: { estado: true }, orderBy: { id: "desc" }, take: 1 },
+          // Para derivar la columna "Estado PO": presencia de cualquier adjunto
+          // con etapa_codigo='po_cliente'. Traemos solo 1 id como flag.
+          adjuntos: {
+            where: { etapa_codigo: "po_cliente" },
+            select: { id: true },
+            take: 1,
+          },
         },
         orderBy,
         skip: (page - 1) * limit,

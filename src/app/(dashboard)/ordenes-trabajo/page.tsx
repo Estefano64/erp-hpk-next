@@ -101,6 +101,9 @@ interface OTRecord {
   // Estado de la hoja de evaluación técnica (último registro). null = sin
   // evaluación todavía.
   evaluaciones_tecnicas?: { estado: string }[];
+  // Adjuntos de la etapa "po_cliente" — viene como array con 0 o 1 id desde
+  // la API. Sirve solo como flag para derivar la columna "Estado PO".
+  adjuntos?: { id: number }[];
 }
 
 // Campos extra que la API devuelve y van al Excel pero no se renderizan en la
@@ -173,6 +176,10 @@ const FIXED_FILTERS: Record<string, { text: string; value: string }[]> = {
   evaluacion_estado: [
     { text: "Sin evaluación", value: "__none__" },
     ...Object.keys(EVAL_META).map((k) => ({ text: EVAL_META[k].label, value: k })),
+  ],
+  estado_po: [
+    { text: "Pdt de PO", value: "PDT_PO" },
+    { text: "Con PO",    value: "CON_PO" },
   ],
 };
 
@@ -470,6 +477,19 @@ export default function OrdenesTrabajoPage() {
       filterSearch: true,
       onFilter: (value, r) => r.taller_status?.nombre === value,
       render: (_: unknown, r: OTRecord) => r.taller_status?.nombre ?? "-",
+    },
+    {
+      key: "estado_po",
+      title: "Estado PO",
+      width: 110,
+      align: "center",
+      // El filtro real (FIXED_FILTERS["estado_po"]) lo inyecta serverColumns —
+      // acá ponemos un array vacío para que la columna sea filtrable.
+      filters: [],
+      render: (_: unknown, r: OTRecord) => {
+        const conPo = (r.adjuntos?.length ?? 0) > 0;
+        return <Tag color={conPo ? "green" : "orange"}>{conPo ? "Con PO" : "Pdt de PO"}</Tag>;
+      },
     },
     // ── Columnas opcionales (ocultas por default) ──
     {
