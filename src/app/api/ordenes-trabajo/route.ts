@@ -432,6 +432,7 @@ export async function POST(req: NextRequest) {
         });
         if (tareas.length > 0) {
           const { nextNroReqExterna, pickDescripcionFromTarea, pickCantidadFromTarea } = await import("@/lib/requerimientos");
+          type MatLookup = import("@/lib/requerimientos").MaterialLookup;
           await prisma.$transaction(async (tx) => {
             const nroReq = await nextNroReqExterna(tx, created.id);
 
@@ -441,10 +442,16 @@ export async function POST(req: NextRequest) {
             const materiales = codigosMat.length > 0
               ? await tx.material.findMany({
                   where: { codigo: { in: codigosMat } },
-                  select: { material_id: true, codigo: true, descripcion: true, unidad_medida_codigo: true, fabricante_codigo: true },
+                  select: { material_id: true, codigo: true, descripcion: true, np: true, unidad_medida_codigo: true, fabricante_codigo: true, fabricante: { select: { nombre: true } } },
                 })
               : [];
-            const matByCodigo = new Map(materiales.map((m) => [m.codigo, m]));
+            const matByCodigo = new Map<string, MatLookup>(
+              materiales.map((m) => [m.codigo, {
+                codigo: m.codigo, descripcion: m.descripcion, np: m.np,
+                fabricante_codigo: m.fabricante_codigo, fabricante_nombre: m.fabricante?.nombre ?? null,
+                unidad_medida_codigo: m.unidad_medida_codigo, material_id: m.material_id,
+              }]),
+            );
 
             // Pre-cargar Servicios para los SER con servicio_codigo asignado.
             const codigosSvc = [...new Set(tareas.filter((t) => t.servicio_codigo).map((t) => t.servicio_codigo!))];

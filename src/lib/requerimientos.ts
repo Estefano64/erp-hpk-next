@@ -161,7 +161,25 @@ export interface MaterialLookup {
   descripcion: string;
   unidad_medida_codigo?: string | null;
   fabricante_codigo?: string | null;
+  // N/P y nombre del fabricante del material. Sirven para completar la
+  // descripción del requerimiento (ver componerDescripcionMaterial).
+  np?: string | null;
+  fabricante_nombre?: string | null;
   material_id?: number;
+}
+
+// Compone la descripción de un material para mostrarla en el requerimiento.
+// Los materiales importados de Excel ya traen "BASE, N/P, FABRICANTE" dentro de
+// `descripcion`; los creados desde la app traen la descripción limpia y el N/P /
+// fabricante en campos aparte. Agregamos N/P y fabricante SOLO si todavía no
+// aparecen en el texto (evita duplicarlos en los importados).
+export function componerDescripcionMaterial(m: MaterialLookup): string {
+  let out = (m.descripcion ?? "").trim();
+  const extras = [m.np?.trim(), m.fabricante_nombre?.trim()].filter((x): x is string => !!x);
+  for (const e of extras) {
+    if (!out.toLowerCase().includes(e.toLowerCase())) out += `, ${e}`;
+  }
+  return out;
 }
 
 export interface ServicioLookup {
@@ -186,7 +204,7 @@ export function pickDescripcionFromTarea(
 ): string {
   if (t.tipo_codigo === "MAC" && t.material_codigo) {
     const m = matByCodigo.get(t.material_codigo);
-    if (m?.descripcion) return m.descripcion;
+    if (m?.descripcion) return componerDescripcionMaterial(m);
   }
   if (t.tipo_codigo === "SER") {
     if (t.servicio_codigo) {

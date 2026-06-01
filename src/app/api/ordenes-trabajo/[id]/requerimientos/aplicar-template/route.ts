@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
-import { nextNroReqExterna, pickDescripcionFromTarea, pickCantidadFromTarea } from "@/lib/requerimientos";
+import { nextNroReqExterna, pickDescripcionFromTarea, pickCantidadFromTarea, type MaterialLookup } from "@/lib/requerimientos";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -77,10 +77,16 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       const materiales = codigosUnicos.length
         ? await tx.material.findMany({
             where: { codigo: { in: codigosUnicos } },
-            select: { material_id: true, codigo: true, descripcion: true, fabricante_codigo: true, unidad_medida_codigo: true },
+            select: { material_id: true, codigo: true, descripcion: true, np: true, fabricante_codigo: true, unidad_medida_codigo: true, fabricante: { select: { nombre: true } } },
           })
         : [];
-      const matByCodigo = new Map(materiales.map((m) => [m.codigo, m]));
+      const matByCodigo = new Map<string, MaterialLookup>(
+        materiales.map((m) => [m.codigo, {
+          codigo: m.codigo, descripcion: m.descripcion, np: m.np,
+          fabricante_codigo: m.fabricante_codigo, fabricante_nombre: m.fabricante?.nombre ?? null,
+          unidad_medida_codigo: m.unidad_medida_codigo, material_id: m.material_id,
+        }]),
+      );
 
       // Pre-cargar servicios (para SER, usar nombre/descripcion del servicio si está enlazado)
       const serviciosUnicos = [...new Set(tareas.filter((t) => t.servicio_codigo).map((t) => t.servicio_codigo!))];
