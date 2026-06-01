@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   Typography, Card, Button, Space, Table, Input, InputNumber, DatePicker, Alert,
-  Popconfirm, message, Tag, Row, Col, Statistic, Spin, Empty, Switch, Tooltip,
+  Popconfirm, message, Tag, Row, Col, Statistic, Spin, Empty, Switch, Tooltip, Select,
 } from "antd";
 import {
   SaveOutlined, PlusOutlined, DeleteOutlined, RollbackOutlined,
@@ -48,6 +48,8 @@ interface CompraData {
   fecha_entrega_esperada: string | null;
   descuento: number | string | null;
   otros: number | string | null;
+  tipo_pago: string | null;
+  dias_credito: number | null;
   ot_repuestos: Array<{
     id: number;
     material_id: number | null;
@@ -81,6 +83,10 @@ export default function EditarOCPage() {
   const [originalDescuento, setOriginalDescuento] = useState<number>(0);
   const [originalOtros, setOriginalOtros] = useState<number>(0);
   const [numeroReq, setNumeroReq] = useState<string>("");
+  const [tipoPago, setTipoPago] = useState<string | null>(null);
+  const [diasCredito, setDiasCredito] = useState<number | null>(null);
+  const [originalTipoPago, setOriginalTipoPago] = useState<string | null>(null);
+  const [originalDiasCredito, setOriginalDiasCredito] = useState<number | null>(null);
   const [originalNumeroReq, setOriginalNumeroReq] = useState<string>("");
   // Toggle de captura: si está ON, los precios que el usuario ingresa en la
   // tabla incluyen IGV. Al guardar se dividen por 1.18 para que en la BD
@@ -122,6 +128,10 @@ export default function EditarOCPage() {
       const ref = c.numero_req ?? "";
       setNumeroReq(ref);
       setOriginalNumeroReq(ref);
+      setTipoPago(c.tipo_pago ?? null);
+      setDiasCredito(c.dias_credito ?? null);
+      setOriginalTipoPago(c.tipo_pago ?? null);
+      setOriginalDiasCredito(c.dias_credito ?? null);
     } catch (e) {
       messageApi.error(e instanceof Error ? e.message : "Error");
     } finally {
@@ -166,12 +176,14 @@ export default function EditarOCPage() {
 
   const visibleRows = useMemo(() => rows.filter((r) => !r._deleted), [rows]);
   const hayCambios = useMemo(() =>
+    tipoPago !== originalTipoPago ||
+    diasCredito !== originalDiasCredito ||
     JSON.stringify(visibleRows) !== originalRowsHash
     || rows.some((r) => r._deleted && r.id != null)
     || descuento !== originalDescuento
     || otros !== originalOtros
     || numeroReq !== originalNumeroReq,
-  [visibleRows, originalRowsHash, rows, descuento, originalDescuento, otros, originalOtros, numeroReq, originalNumeroReq]);
+  [visibleRows, originalRowsHash, rows, descuento, originalDescuento, otros, originalOtros, numeroReq, originalNumeroReq, tipoPago, originalTipoPago, diasCredito, originalDiasCredito]);
 
   useUnsavedChangesWarning(hayCambios, "Hay cambios sin guardar en la OC.", `compra-editar-${params?.id ?? "?"}`);
 
@@ -216,6 +228,8 @@ export default function EditarOCPage() {
         descuento,
         otros,
         numero_req: numeroReq.trim() || null,
+        tipo_pago: tipoPago,
+        dias_credito: tipoPago === "CONTADO" ? 0 : (diasCredito ?? null),
       };
       const res = await fetch(`/api/compras/${compraId}/items`, {
         method: "PATCH",
@@ -413,6 +427,51 @@ export default function EditarOCPage() {
                   : "Modo estándar: el IGV se suma al final"}
               </Text>
             </Space>
+          </Col>
+        </Row>
+        {/* Fila 2: forma de pago. Misma lógica que el modal de detalle:
+            Días solo aplica cuando tipo_pago = CREDITO. */}
+        <Row gutter={12} align="middle" style={{ marginTop: 10 }}>
+          <Col xs={24} md={8}>
+            <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 2 }}>
+              Tipo de pago
+            </div>
+            <Select
+              value={tipoPago ?? undefined}
+              onChange={(v) => {
+                setTipoPago(v ?? null);
+                if (v === "CONTADO") setDiasCredito(null);
+              }}
+              allowClear
+              placeholder="Elegí (opcional)"
+              style={{ width: "100%" }}
+              options={[
+                { value: "CONTADO", label: "Contado" },
+                { value: "CREDITO", label: "Crédito" },
+                { value: "TRANSFERENCIA", label: "Transferencia" },
+              ]}
+            />
+          </Col>
+          <Col xs={24} md={8}>
+            <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 2 }}>
+              Días de crédito
+            </div>
+            <Select
+              value={diasCredito ?? undefined}
+              onChange={(v) => setDiasCredito(v ?? null)}
+              disabled={tipoPago !== "CREDITO"}
+              allowClear
+              placeholder={tipoPago === "CREDITO" ? "Elegí plazo" : "—"}
+              style={{ width: "100%" }}
+              options={[
+                { value: 15, label: "15 días" },
+                { value: 30, label: "30 días" },
+                { value: 45, label: "45 días" },
+                { value: 60, label: "60 días" },
+                { value: 90, label: "90 días" },
+                { value: 120, label: "120 días" },
+              ]}
+            />
           </Col>
         </Row>
       </Card>

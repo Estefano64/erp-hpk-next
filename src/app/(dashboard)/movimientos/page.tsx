@@ -544,7 +544,7 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
       .then((r) => r.ok ? r.json() : { data: [] })
       .then((j) => setUbicaciones((j.data ?? []).map((u: { codigo: string; nombre: string }) => ({ codigo: u.codigo, nombre: u.nombre }))))
       .catch(() => { /* ignore */ });
-    // Catálogo de zonas físicas HP&K (HERR_SUM / OTS / STOCK) con sus
+    // Catálogo de zonas físicas HP&K (HER / SUM / REP / STO) con sus
     // posiciones (A1, A2...). Se carga una vez y se reutiliza por modal.
     fetch("/api/almacen-zonas")
       .then((r) => r.ok ? r.json() : { data: [] })
@@ -653,7 +653,7 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
       return;
     }
     // Cada material recibido debe tener zona del almacén HP&K asignada
-    // (HERR_SUM / OTS / STOCK) — la posición es opcional.
+    // (HER / SUM / REP / STO) — la posición es opcional.
     const sinZona = items.filter((it) => !it.almacen_zona_id);
     if (sinZona.length > 0) {
       message.warning(`Faltan zonas de almacén en ${sinZona.length} item(s). Elegí la zona en cada fila.`);

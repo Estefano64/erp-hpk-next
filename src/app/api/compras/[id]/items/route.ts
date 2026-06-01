@@ -27,6 +27,8 @@ const Schema = z.object({
   descuento: z.coerce.number().min(0).optional(),
   otros: z.coerce.number().min(0).optional(),
   numero_req: z.string().trim().max(50).nullable().optional(),
+  tipo_pago: z.string().trim().max(30).nullable().optional(),
+  dias_credito: z.coerce.number().int().min(0).max(365).nullable().optional(),
 });
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -45,7 +47,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Validación", detail: parsed.error.flatten() }, { status: 400 });
     }
-    const { items, deleteIds, descuento, otros, numero_req } = parsed.data;
+    const { items, deleteIds, descuento, otros, numero_req, tipo_pago, dias_credito } = parsed.data;
 
     const result = await prisma.$transaction(async (tx) => {
       const compra = await tx.compra.findUnique({
@@ -154,6 +156,10 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
           otros: otrosDec,
           total,
           ...(numero_req !== undefined ? { numero_req: numero_req || null } : {}),
+          ...(tipo_pago !== undefined ? { tipo_pago: tipo_pago || null } : {}),
+          ...(dias_credito !== undefined
+            ? { dias_credito: tipo_pago === "CONTADO" ? 0 : (dias_credito ?? null) }
+            : {}),
         },
       });
 
