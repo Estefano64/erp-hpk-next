@@ -435,6 +435,8 @@ export default function PlanificacionPage() {
         setRows((prev) => prev.map((r) => r.id === id ? { ...r, ...patch } : r));
       }
       notifySync();
+      // Si el cambio empujó a otras tareas (cascada), refrescar para verlas movidas.
+      if (patch.empujar) fetchData();
     } catch (e) {
       messageApi.error(e instanceof Error ? e.message : "Error al guardar");
       // Refrescar desde la BD para que el optimistic update no quede desincronizado.
@@ -1163,7 +1165,10 @@ export default function PlanificacionPage() {
           style={{ width: "100%" }}
           onChange={(v) => {
             const patch = recalcularFin(r, { horas_estimadas: v == null ? null : String(v) });
-            updateField(r.id, patch as Record<string, unknown>);
+            // Cambiar la duración recalcula el fin y empuja a las siguientes del
+            // operario (se permite incluso en tareas en proceso/pausadas; mover sí
+            // queda bloqueado en el server).
+            updateField(r.id, { ...(patch as Record<string, unknown>), empujar: true });
           }}
         />
       ),

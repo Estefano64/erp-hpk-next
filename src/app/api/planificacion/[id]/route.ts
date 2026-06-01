@@ -118,9 +118,13 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       // los endpoints iniciar/pausar/finalizar. `forzarEdicion` lo permite (revertir).
       const iniciada = current.estado === "en_proceso" || current.estado === "pausado";
       const reprograma = "fecha_inicio" in data || "fecha_fin" in data || "semana_plan" in data;
-      if (iniciada && reprograma && !input.forzarEdicion) {
+      // Tarea ya iniciada: se permite AJUSTAR LA DURACIÓN estimada (recalcula el
+      // fin), pero NO moverla — cambiar su inicio/semana se bloquea, porque su
+      // arranque ya es ejecución real. `forzarEdicion` lo permite (revertir).
+      const mueveInicio = "fecha_inicio" in data || "semana_plan" in data;
+      if (iniciada && mueveInicio && !input.forzarEdicion) {
         throw Object.assign(
-          new Error("La tarea ya fue iniciada por el técnico; no se puede reprogramar."),
+          new Error("La tarea ya fue iniciada por el técnico; no se puede mover (sí ajustar la duración)."),
           { code: "INICIADA_LOCKED" },
         );
       }
