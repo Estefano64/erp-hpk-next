@@ -1348,7 +1348,9 @@ model OTRepuestoAdjunto {
 
 model PlanificacionOT {
   id                   Int                      @id @default(autoincrement())
-  ot_id                Int
+  // Puede ser null: tareas de APOYO/generales que no pertenecen a una OT.
+  // Solo se crean desde Planificación. Si es null, los datos de OT viajan en blanco.
+  ot_id                Int?
   operacion_cod_rep_id Int?
   componente           String                   @db.VarChar(30)
   operacion_codigo     String                   @db.VarChar(20)
@@ -1381,7 +1383,7 @@ model PlanificacionOT {
   version              Int                      @default(1)
   created_at           DateTime                 @default(now())
   updated_at           DateTime                 @updatedAt
-  orden_trabajo        OrdenTrabajo             @relation(fields: [ot_id], references: [id], onDelete: Cascade)
+  orden_trabajo        OrdenTrabajo?            @relation(fields: [ot_id], references: [id], onDelete: Cascade)
   operacion_cod_rep    OperacionCodRep?         @relation(fields: [operacion_cod_rep_id], references: [operacion_cod_rep_id])
   status_tarea         StatusTarea?             @relation(fields: [estado], references: [codigo])
   capturas             PlanificacionOTCaptura[]

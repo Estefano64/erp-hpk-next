@@ -1260,7 +1260,7 @@ export default function ProgramacionSemanalPage() {
           {/* Franja de almuerzo dentro del bloque (si lo cruza) */}
           {renderLunchOverlayInBlock(visibleIni, visibleFin, startPx)}
           <div className="psg-task-title" style={{ paddingLeft: continuaDeAntes ? 14 : 0, paddingRight: continuaDespues ? 14 : 0 }}>
-            {r.es_correctivo && "🚨 "}OT-{r.orden_trabajo?.ot ?? r.ot_id} {r.operacion_codigo}
+            {r.es_correctivo && "🚨 "}{r.orden_trabajo?.ot ? `OT-${r.orden_trabajo.ot}` : "S/OT"} {r.operacion_codigo}
             {hasConflict && <WarningFilled style={{ marginLeft: 4 }} />}
           </div>
           <div className="psg-task-sub" style={{ paddingLeft: continuaDeAntes ? 14 : 0, paddingRight: continuaDespues ? 14 : 0 }}>{r.descripcion}</div>
@@ -1333,7 +1333,7 @@ export default function ProgramacionSemanalPage() {
         style={{ opacity: drag?.taskId === t.id ? 0.25 : 1 }}
       >
         <div style={{ fontWeight: 600, fontSize: 12 }}>
-          {t.es_correctivo && "🚨 "}OT-{t.orden_trabajo?.ot ?? t.ot_id} · {flotaDe(t)}
+          {t.es_correctivo && "🚨 "}{t.orden_trabajo?.ot ? `OT-${t.orden_trabajo.ot}` : "S/OT"} · {flotaDe(t)}
         </div>
         <div style={{ fontSize: 11, opacity: 0.95, fontWeight: 500 }}>
           {t.orden_trabajo?.descripcion ?? "—"}

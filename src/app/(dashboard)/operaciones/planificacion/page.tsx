@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Typography, Card, Table, Tag, Input, Select, Space, Button, DatePicker, InputNumber, Checkbox, message, Row, Col, Alert, Switch, Popconfirm, Tooltip,
 } from "antd";
-import { SearchOutlined, ReloadOutlined, CalendarOutlined, InfoCircleOutlined, SaveOutlined, UndoOutlined, ThunderboltOutlined } from "@ant-design/icons";
+import { SearchOutlined, ReloadOutlined, CalendarOutlined, InfoCircleOutlined, SaveOutlined, UndoOutlined, ThunderboltOutlined, PlusOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import {
   numeracionColumn,
@@ -203,6 +203,7 @@ export default function PlanificacionPage() {
   const [trabajadores, setTrabajadores] = useState<TrabajadorOpt[]>([]);
   const [equipos, setEquipos] = useState<EquipoOpt[]>([]);
   const [estados, setEstados] = useState<StatusTareaOpt[]>([]);
+  const [otOpts, setOtOpts] = useState<{ value: number; label: string }[]>([]);
   const [savingId, setSavingId] = useState<number | null>(null);
   const [autoSave, setAutoSave] = useState(true);
   // Cambios pendientes acumulados en modo batch: id → patch combinado (los originales para revert)
@@ -272,11 +273,18 @@ export default function PlanificacionPage() {
 
   useEffect(() => {
     (async () => {
-      const [resT, resE, resS] = await Promise.all([
+      const [resT, resE, resS, resO] = await Promise.all([
         fetch("/api/trabajadores?limit=200&soloOperarios=1"),
         fetch("/api/equipos?limit=200&tipo=MAQ"),
         fetch("/api/catalogos?tabla=statusTarea"),
+        fetch("/api/ordenes-trabajo?limit=1000"),
       ]);
+      if (resO.ok) {
+        const j = await resO.json();
+        setOtOpts((j.data ?? [])
+          .filter((o: { id?: number; ot?: number }) => o.id != null && o.ot != null)
+          .map((o: { id: number; ot: number }) => ({ value: o.id, label: String(o.ot) })));
+      }
       if (resT.ok) {
         const j = await resT.json();
         setTrabajadores(j.data ?? []);
@@ -291,6 +299,24 @@ export default function PlanificacionPage() {
       }
     })();
   }, []);
+
+  // Crear una tarea SIN OT (apoyo/general). Solo desde acá (Planificación).
+  const crearTareaSinOT = useCallback(async () => {
+    if (!editMode) { messageApi.warning("Activá Modo Edición para crear tareas."); return; }
+    const res = await fetch("/api/planificacion", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ trabajo: "Tarea de apoyo", componente_codigo: "General" }),
+    });
+    if (res.ok) {
+      messageApi.success("Tarea sin OT creada. Completá operario, fecha y duración.");
+      notifySync();
+      fetchData();
+    } else {
+      const e = await res.json().catch(() => null);
+      messageApi.error(e?.error ?? "Error al crear la tarea");
+    }
+  }, [editMode, messageApi, notifySync, fetchData]);
 
   const persistPatch = useCallback(async (id: number, patch: Record<string, unknown>) => {
     setSavingId(id);
@@ -672,21 +698,22 @@ export default function PlanificacionPage() {
       title: "OT", key: "ot", width: 130, ellipsis: true,
       filters: otValores, filterSearch: true,
       onFilter: (value, r) => r.orden_trabajo?.ot === value,
-      render: (_, r) => r.orden_trabajo?.ot
-        ? (
-          <Tag style={{
-            background: brand.navy,
-            color: brand.white,
-            border: "none",
-            maxWidth: "100%",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}>
-            {r.orden_trabajo.ot}
-          </Tag>
-        )
-        : <Tag>#{r.ot_id}</Tag>,
+      render: (_, r) => editMode ? (
+        // En edición: selector de OT (buscable) + opción "Sin OT" (limpiar).
+        <Select
+          showSearch allowClear size="small" style={{ width: "100%" }}
+          placeholder="Sin OT"
+          value={r.ot_id ?? undefined}
+          onChange={(v) => updateField(r.id, { ot_id: (v as number | undefined) ?? null })}
+          options={otOpts}
+          optionFilterProp="label"
+          disabled={r.estado === "realizado"}
+        />
+      ) : (
+        r.orden_trabajo?.ot
+          ? <Tag style={{ background: brand.navy, color: brand.white, border: "none", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.orden_trabajo.ot}</Tag>
+          : <Tag>Sin OT</Tag>
+      ),
     },
     {
       title: "Cliente", key: "cliente", width: 140, ellipsis: true,
@@ -1257,6 +1284,11 @@ export default function PlanificacionPage() {
           >
             {editMode ? "Salir de edición" : "Modo edición"}
           </Button>
+          {editMode && (
+            <Button icon={<PlusOutlined />} onClick={crearTareaSinOT}>
+              Nueva tarea sin OT
+            </Button>
+          )}
           <span style={{ fontSize: 12, color: brand.textSecondary }}>
             <ThunderboltOutlined style={{ marginRight: 4 }} />
             Autoguardar

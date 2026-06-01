@@ -12,6 +12,8 @@ dayjs.extend(isoWeek);
 type Ctx = { params: Promise<{ id: string }> };
 
 const UpdateSchema = z.object({
+  // Asignar/limpiar la OT de una tarea (null = tarea sin OT). Desde Planificación.
+  ot_id: z.coerce.number().int().positive().nullable().optional(),
   estado: z.enum(["abierto", "programado", "realizado", "correctivo", "cancelado"]).optional(),
   tecnico: z.string().trim().optional().nullable(),
   maquina: z.string().trim().optional().nullable(),
