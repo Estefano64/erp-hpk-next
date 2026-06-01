@@ -185,6 +185,46 @@ model Ubicacion {
   @@map("ubicacion")
 }
 
+// ── Almacén físico HP&K — Zonas y Posiciones ─────────────────────────
+// Hoy el almacén está dividido en 3 zonas (Herramientas/Suministros, OTs,
+// Stock). Cada zona tiene celdas tipo A1, A2, B1... donde se ubican los
+// repuestos físicamente. Sirve para:
+//   - Trazabilidad al consumir de almacén (a dónde se entregó el material).
+//   - Auto-ubicar nuevos items de OC en la misma celda que otros reqs ya
+//     ubicados de la misma OT.
+model AlmacenZona {
+  id          Int                @id @default(autoincrement())
+  codigo      String             @unique @db.VarChar(20)
+  nombre      String             @db.VarChar(100)
+  descripcion String?            @db.VarChar(300)
+  orden       Int                @default(0)
+  activo      Boolean            @default(true)
+  created_at  DateTime           @default(now())
+  updated_at  DateTime           @updatedAt
+  posiciones  AlmacenPosicion[]
+  repuestos   OTRepuesto[]
+
+  @@map("almacen_zona")
+}
+
+model AlmacenPosicion {
+  id          Int          @id @default(autoincrement())
+  zona_id     Int
+  codigo      String       @db.VarChar(20)
+  nombre      String?      @db.VarChar(100)
+  activo      Boolean      @default(true)
+  created_at  DateTime     @default(now())
+  updated_at  DateTime     @updatedAt
+  zona        AlmacenZona  @relation(fields: [zona_id], references: [id], onDelete: Cascade)
+  repuestos   OTRepuesto[]
+
+  // El mismo código (ej. "A1") puede repetirse en distintas zonas — es
+  // único solo dentro de su zona.
+  @@unique([zona_id, codigo])
+  @@index([zona_id])
+  @@map("almacen_posicion")
+}
+
 model MaterialNoCatalogado {
   id               Int                       @id @default(autoincrement())
   codigo           String                    @unique @db.VarChar(50)
@@ -1330,6 +1370,11 @@ model OTRepuesto {
   evaluador                   String?              @db.VarChar(100)
   es_adicional                Boolean?             @default(false)
   ubicacion                   String?              @db.VarChar(50)
+  // Almacén físico HP&K donde se guardó / entregó el item. Se setea cuando
+  // se consume de almacén o cuando se recibe contra OC. Permite trazabilidad
+  // y auto-asignación de ubicación a nuevos items de la misma OT.
+  almacen_zona_id             Int?
+  almacen_posicion_id         Int?
   observaciones               String?
   usuario_solicita            String               @db.VarChar(100)
   usuario_envia               String?              @db.VarChar(100)
@@ -1352,6 +1397,8 @@ model OTRepuesto {
   status_cotizacion           StatusCotizacion?    @relation(fields: [status_cotizacion_codigo], references: [codigo])
   status_oc                   StatusOC?            @relation(fields: [status_oc_codigo], references: [codigo])
   adjuntos                    OTRepuestoAdjunto[]
+  almacen_zona                AlmacenZona?         @relation(fields: [almacen_zona_id], references: [id])
+  almacen_posicion            AlmacenPosicion?     @relation(fields: [almacen_posicion_id], references: [id])
 
   @@index([ot_id])
   @@index([orden_trabajo_interna_id])
@@ -1360,6 +1407,8 @@ model OTRepuesto {
   @@index([status_oc_codigo])
   @@index([po_id])
   @@index([nro_oc])
+  @@index([almacen_zona_id])
+  @@index([almacen_posicion_id])
   @@map("ot_repuestos")
 }
 

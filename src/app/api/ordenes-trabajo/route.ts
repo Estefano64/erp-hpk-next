@@ -63,15 +63,18 @@ export async function GET(req: NextRequest) {
       "Reparación": "REP",
       "Servicio": "SER",
     };
+    // Acepta valores múltiples como CSV (ej: "Pdt Evaluación,Pdt proceso").
+    // Si viene uno solo, query directa; varios → IN (...).
     for (const [param, col] of Object.entries(FK_CODIGO)) {
       const v = searchParams.get(param);
       if (!v) continue;
-      if (param === "tipo_ot") {
-        // Acepta tanto código (BIE) como nombre (Bien); traduce a código.
-        where[col] = TIPO_OT_NOMBRE_A_CODIGO[v] ?? v;
-      } else {
-        where[col] = v;
-      }
+      const raw = v.split(",").map((s) => s.trim()).filter(Boolean);
+      if (raw.length === 0) continue;
+      // Para tipo_ot traducimos cada valor (acepta nombre o código).
+      const vals = param === "tipo_ot"
+        ? raw.map((x) => TIPO_OT_NOMBRE_A_CODIGO[x] ?? x)
+        : raw;
+      where[col] = vals.length === 1 ? vals[0] : { in: vals };
     }
     if (clienteId) where.id_cliente = Number(clienteId);
 
@@ -84,11 +87,19 @@ export async function GET(req: NextRequest) {
       if (years.length) where.anio = { in: years };
     }
 
-    // Filtros por relación (value = el valor mostrado).
-    const codRep = searchParams.get("codigo_reparacion");
-    if (codRep) where.codigo_reparacion = { is: { codigo: codRep } };
-    const fab = searchParams.get("fabricante");
-    if (fab) where.fabricante = { is: { nombre: fab } };
+    // Filtros por relación. Aceptan CSV — múltiples valores → `in: [...]`.
+    const codRepRaw = searchParams.get("codigo_reparacion");
+    if (codRepRaw) {
+      const arr = codRepRaw.split(",").map((s) => s.trim()).filter(Boolean);
+      if (arr.length === 1) where.codigo_reparacion = { is: { codigo: arr[0] } };
+      else if (arr.length > 1) where.codigo_reparacion = { is: { codigo: { in: arr } } };
+    }
+    const fabRaw = searchParams.get("fabricante");
+    if (fabRaw) {
+      const arr = fabRaw.split(",").map((s) => s.trim()).filter(Boolean);
+      if (arr.length === 1) where.fabricante = { is: { nombre: arr[0] } };
+      else if (arr.length > 1) where.fabricante = { is: { nombre: { in: arr } } };
+    }
 
     // Si / No: presencia de garantía / base metálica.
     const garantia = searchParams.get("garantia");

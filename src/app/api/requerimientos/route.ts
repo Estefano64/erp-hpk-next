@@ -113,6 +113,10 @@ export async function GET(req: NextRequest) {
             select: { id: true, ot: true, descripcion: true },
           },
           material: { select: { codigo: true, descripcion: true, unidad_medida_codigo: true, stock_actual: true, np: true, precio: true, moneda_codigo: true } },
+          // Ubicación física en el almacén HP&K: zona (HERR_SUM/OTS/STOCK) +
+          // celda (A1, B2...). Visible como columna en /requerimientos.
+          almacen_zona: { select: { codigo: true, nombre: true } },
+          almacen_posicion: { select: { codigo: true } },
           status_requerimiento: { select: { codigo: true, nombre: true } },
           status_cotizacion: { select: { codigo: true, nombre: true } },
           status_oc: { select: { codigo: true, nombre: true } },

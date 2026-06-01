@@ -224,9 +224,19 @@ export default function OrdenesTrabajoPage() {
     const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
     if (search) params.set("search", search);
     for (const [key, vals] of Object.entries(columnFilters)) {
-      const v = Array.isArray(vals) ? vals[0] : vals;
-      if (v == null || v === "") continue;
-      params.set(TEXT_KEYS.has(key) ? `txt_${key}` : key, String(v));
+      // TEXT_KEYS son inputs de búsqueda (un solo valor); el resto son enum
+      // multi-select. Para multi-select mandamos los valores como CSV — el
+      // backend hace `value.split(",")` y arma un `where: { in: [...] }`.
+      if (TEXT_KEYS.has(key)) {
+        const v = Array.isArray(vals) ? vals[0] : vals;
+        if (v == null || v === "") continue;
+        params.set(`txt_${key}`, String(v));
+        continue;
+      }
+      if (!Array.isArray(vals) || vals.length === 0) continue;
+      const csv = vals.filter((x) => x != null && x !== "").map(String).join(",");
+      if (!csv) continue;
+      params.set(key, csv);
     }
     if (sorter.field && sorter.order) {
       params.set("sortField", sorter.field);
@@ -675,9 +685,9 @@ export default function OrdenesTrabajoPage() {
     // Las columnas filtrables lo sobreescriben abajo; el resto queda en null.
     c.filteredValue = null;
     if (FIXED_FILTERS[key]) {
-      c.filters = FIXED_FILTERS[key]; c.filterMultiple = false; c.filteredValue = columnFilters[key] ?? null;
+      c.filters = FIXED_FILTERS[key]; c.filterMultiple = true; c.filteredValue = columnFilters[key] ?? null;
     } else if (ENUM_FACET_KEYS.has(key)) {
-      c.filters = facets[key] ?? []; c.filterSearch = true; c.filterMultiple = false; c.filteredValue = columnFilters[key] ?? null;
+      c.filters = facets[key] ?? []; c.filterSearch = true; c.filterMultiple = true; c.filteredValue = columnFilters[key] ?? null;
     } else if (TEXT_KEYS.has(key)) {
       c.filteredValue = columnFilters[key] ?? null;
       c.filterIcon = (filtered: boolean) => <SearchOutlined style={{ color: filtered ? brand.navy : undefined }} />;
