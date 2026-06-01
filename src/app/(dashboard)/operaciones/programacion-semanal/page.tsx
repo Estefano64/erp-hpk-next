@@ -805,42 +805,42 @@ export default function ProgramacionSemanalPage() {
     }
     interface Slot { id: number; ini: number; fin: number; recurso: string; he: boolean }
     const idsGrupo = new Set<number>([baseId, ...offsets.map((o) => o.id)]);
+
+    // Encadenado por recurso: en vez de mover el grupo "rígido" (mismo delta, que
+    // se rompe al cruzar el almuerzo/jornada y hace chocar las tareas entre sí),
+    // ubicamos las tareas de cada recurso en orden; si una se montaría sobre la
+    // anterior (porque el almuerzo estira su fin), la corremos justo después. Así
+    // "mover juntos" siempre funciona y se ajusta solo. Las HE quedan en su lugar.
+    const items = [
+      { id: baseId, offsetMin: 0, recurso: baseRecurso },
+      ...offsets.map((o) => ({ id: o.id, offsetMin: o.offsetMin, recurso: o.recurso ?? baseRecurso })),
+    ];
+    const porRecurso = new Map<string, typeof items>();
+    for (const it of items) {
+      if (!porRecurso.has(it.recurso)) porRecurso.set(it.recurso, []);
+      porRecurso.get(it.recurso)!.push(it);
+    }
     const slots: Slot[] = [];
-
-    function calcSlot(id: number, ini: Dayjs, recurso: string): Slot | null {
-      const t = rows.find((r) => r.id === id) ?? allRows.find((r) => r.id === id);
-      if (!t) return null;
-      const durRaw = Number(t.horas_estimadas);
-      const dur = Number.isFinite(durRaw) && durRaw > 0 ? durRaw : 1;
-      const qty = Math.max(1, Number(t.qty_personal ?? 1));
-      // HE NO se crea desde acá: se preserva el flag existente (creado en
-      // Planificación). Tarea normal → se normaliza a jornada 8–18.
-      const esHE = !!t.horas_extras;
-      const iniReal = esHE ? ini : dayjs(normalizarAInicioHabil(ini.toDate()));
-      const fin = calcularFin(iniReal.toDate(), dur * qty, esHE);
-      return { id, ini: iniReal.toDate().getTime(), fin: fin.getTime(), recurso, he: esHE };
-    }
-
-    const baseSlot = calcSlot(baseId, baseInicio, baseRecurso);
-    if (baseSlot) slots.push(baseSlot);
-    for (const o of offsets) {
-      const ini = baseInicio.add(o.offsetMin, "minute");
-      const slot = calcSlot(o.id, ini, o.recurso ?? baseRecurso);
-      if (slot) slots.push(slot);
-    }
-
-    // (1) Choque interno: tareas del grupo entre sí, mismo recurso, intervalos solapan.
-    for (let i = 0; i < slots.length; i++) {
-      for (let j = i + 1; j < slots.length; j++) {
-        const a = slots[i]; const b = slots[j];
-        const recA = splitTecnicos(a.recurso);
-        const recB = splitTecnicos(b.recurso);
-        const compartenRecurso = recA.some((r) => recB.includes(r));
-        if (!compartenRecurso) continue;
-        if (a.ini < b.fin && b.ini < a.fin) {
-          messageApi.error(`Las tareas seleccionadas se superponen entre sí — no se puede mover el grupo así.`);
-          return;
+    for (const lista of porRecurso.values()) {
+      lista.sort((a, b) => a.offsetMin - b.offsetMin);
+      let cursorMs: number | null = null;
+      for (const it of lista) {
+        const t = rows.find((r) => r.id === it.id) ?? allRows.find((r) => r.id === it.id);
+        if (!t) continue;
+        const durRaw = Number(t.horas_estimadas);
+        const dur = Number.isFinite(durRaw) && durRaw > 0 ? durRaw : 1;
+        const qty = Math.max(1, Number(t.qty_personal ?? 1));
+        const esHE = !!t.horas_extras; // el multi-move nunca crea HE; solo preserva.
+        let iniDj = baseInicio.add(it.offsetMin, "minute");
+        if (!esHE) {
+          // No arrancar antes del fin de la tarea previa del mismo recurso (evita
+          // solape interno) y normalizar a jornada (cruza al sgte día si hace falta).
+          if (cursorMs != null && iniDj.toDate().getTime() < cursorMs) iniDj = dayjs(cursorMs);
+          iniDj = dayjs(normalizarAInicioHabil(iniDj.toDate()));
         }
+        const fin = calcularFin(iniDj.toDate(), dur * qty, esHE);
+        slots.push({ id: it.id, ini: iniDj.toDate().getTime(), fin: fin.getTime(), recurso: it.recurso, he: esHE });
+        cursorMs = fin.getTime();
       }
     }
 
