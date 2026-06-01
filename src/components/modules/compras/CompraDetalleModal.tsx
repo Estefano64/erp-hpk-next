@@ -18,6 +18,8 @@ import {
   Input,
   DatePicker,
   Popconfirm,
+  Popover,
+  Tooltip,
   Upload,
   App,
 } from "antd";
@@ -91,6 +93,10 @@ interface CompraDetalle {
     estado: string;
     material: { codigo: string; descripcion: string } | null;
     orden_trabajo: { id: number; ot: string } | null;
+    comentario_aprobacion?: string | null;
+    // Adjuntos del req original — para que el aprobador de OC los pueda
+    // descargar antes de aceptar/recibir la mercadería.
+    adjuntos?: { id: number; nombre_archivo: string; r2_key: string; tamano: number }[];
   }>;
 }
 
@@ -335,6 +341,52 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
       width: 100,
       ...filtroPorColumna(items, "estado"),
       render: (v: string) => <Tag>{v}</Tag>,
+    },
+    {
+      key: "adjuntos",
+      title: "Adjuntos",
+      width: 110,
+      align: "center",
+      render: (_, r) => {
+        const adj = r.adjuntos ?? [];
+        if (adj.length === 0) return <Text type="secondary">—</Text>;
+        // Popover con la lista de adjuntos del req — el aprobador clickea
+        // y descarga cada uno antes de recibir/aceptar la OC.
+        return (
+          <Popover
+            placement="left"
+            title={`Adjuntos del REQ ${r.nro_req ?? r.id}`}
+            content={
+              <div style={{ maxWidth: 320, display: "flex", flexDirection: "column", gap: 4 }}>
+                {adj.map((a) => (
+                  <div key={a.id} style={{ fontSize: 12 }}>
+                    <R2FileLink resource="req-adjunto" resourceId={a.id} r2Key={a.r2_key}>
+                      📎 {a.nombre_archivo} ({(a.tamano / 1024).toFixed(1)} KB)
+                    </R2FileLink>
+                  </div>
+                ))}
+              </div>
+            }
+          >
+            <Tag color="blue" style={{ cursor: "pointer", margin: 0 }}>📎 {adj.length}</Tag>
+          </Popover>
+        );
+      },
+    },
+    {
+      key: "comentario_aprobacion",
+      title: "Comentario aprob.",
+      width: 180,
+      ellipsis: true,
+      render: (_, r) => {
+        const c = r.comentario_aprobacion;
+        if (!c) return <Text type="secondary">—</Text>;
+        return (
+          <Tooltip title={<div style={{ maxWidth: 320, whiteSpace: "pre-wrap" }}>{c}</div>}>
+            <span style={{ fontSize: 11, fontStyle: "italic", color: brand.textSecondary }}>{c}</span>
+          </Tooltip>
+        );
+      },
     },
   ];
 

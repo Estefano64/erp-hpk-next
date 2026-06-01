@@ -47,7 +47,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     if (abierta) {
       await prisma.planificacionOTSesion.update({
         where: { id: abierta.id },
-        data: { fin: now, cierre: "finalizado" },
+        data: { fin: now, cierre: "finalizado", comentario: obs || null },
       });
     }
 

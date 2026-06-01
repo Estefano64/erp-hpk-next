@@ -106,8 +106,9 @@ export async function GET(req: NextRequest) {
 }
 
 const CreateSchema = z.object({
-  ot_id: z.number().int().positive(),
-  componente_codigo: z.string().trim().min(1),
+  // null = tarea de APOYO/general sin OT (se crea desde Planificación).
+  ot_id: z.number().int().positive().nullable().optional(),
+  componente_codigo: z.string().trim().optional(),
   operacion_reparacion_codigo: z.string().trim().optional().nullable(),
   trabajo: z.string().trim().optional(),
   qty: z.coerce.number().int().min(1).default(1),
@@ -150,7 +151,7 @@ export async function POST(req: NextRequest) {
     let orden = d.orden;
     if (orden == null) {
       const maxAgg = await prisma.planificacionOT.aggregate({
-        where: { ot_id: d.ot_id },
+        where: { ot_id: d.ot_id ?? null },
         _max: { orden: true },
       });
       orden = (maxAgg._max.orden ?? 0) + 1;
@@ -158,8 +159,8 @@ export async function POST(req: NextRequest) {
 
     const created = await prisma.planificacionOT.create({
       data: {
-        ot_id: d.ot_id,
-        componente: d.componente_codigo,
+        ot_id: d.ot_id ?? null,
+        componente: d.componente_codigo || "General",
         operacion_codigo: operacionCodigo,
         descripcion: trabajo,
         tipo_reparacion: d.tipo_reparacion ?? null,

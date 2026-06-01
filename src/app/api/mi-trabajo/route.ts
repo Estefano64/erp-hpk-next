@@ -92,6 +92,7 @@ export async function GET(req: Request) {
           cod_rep_posicion: true,
           fecha_entrega: true,
           fabricante: { select: { nombre: true } },
+          cliente: { select: { razon_social: true, nombre_comercial: true } },
           codigo_reparacion: { select: { codigo: true, descripcion: true, flota: { select: { codigo: true, nombre: true } } } },
           prioridad_atencion: { select: { codigo: true, nombre: true, nivel: true } },
         },
@@ -140,8 +141,22 @@ export async function GET(req: Request) {
     for (const id of idsLista) {
       miEstadoPorTarea.set(id, estadoTecnico(misSesiones.filter((s) => s.planificacion_ot_id === id)));
     }
-    const conMiEstado = <T extends { id: number }>(arr: T[]) =>
-      arr.map((t) => ({ ...t, miEstado: miEstadoPorTarea.get(t.id) ?? "sin_empezar" as EstadoTecnico }));
+
+    // Mapa código de equipo → nombre, para mostrar el NOMBRE de la máquina (no el
+    // código) en el dashboard del técnico.
+    const equiposCat = await prisma.equipo.findMany({ select: { codigo: true, descripcion: true } });
+    const nombreEquipo = new Map(equiposCat.map((e) => [e.codigo, e.descripcion ?? e.codigo]));
+    const maquinaNombre = (maq: string | null | undefined): string | null => {
+      if (!maq) return null;
+      return maq.split("|").map((c) => nombreEquipo.get(c.trim()) ?? c.trim()).filter(Boolean).join(" | ");
+    };
+
+    const conMiEstado = <T extends { id: number; maquina?: string | null }>(arr: T[]) =>
+      arr.map((t) => ({
+        ...t,
+        miEstado: miEstadoPorTarea.get(t.id) ?? "sin_empezar" as EstadoTecnico,
+        maquina_nombre: maquinaNombre(t.maquina),
+      }));
 
     // Horas reales del técnico logueado en un conjunto de tareas (sus sesiones).
     async function horasRealesTecnico(taskIds: number[]): Promise<number> {
@@ -153,29 +168,10 @@ export async function GET(req: Request) {
       return sumarHorasReales(ss);
     }
 
-    // ── Rendimiento ────────────────────────────────────────────────
-    // "Programado": tareas cuya fecha_inicio cae en el rango.
-    // "Realizado": tareas con fecha_fin_real en el rango y estado=realizado.
-    const tareasRealizadasSem = await prisma.planificacionOT.findMany({
-      where: {
-        AND: [
-          whereTecnico,
-          { estado: "realizado" },
-          { fecha_fin_real: { gte: semIni, lte: semFin } },
-        ],
-      },
-      select: { id: true, horas_estimadas: true, horas_reales: true },
-    });
-    const tareasRealizadasMes = await prisma.planificacionOT.findMany({
-      where: {
-        AND: [
-          whereTecnico,
-          { estado: "realizado" },
-          { fecha_fin_real: { gte: mesIni, lte: mesFin } },
-        ],
-      },
-      select: { id: true, horas_estimadas: true, horas_reales: true },
-    });
+    // ── Rendimiento (POR TÉCNICO, consistente con el resto del dashboard) ──
+    // "Realizado" = el técnico terminó SU parte (miEstado=realizado, derivado de
+    // sus sesiones), NO el estado global (que es multi-técnico). "Programado" =
+    // total de tareas que tiene en el período. Así realizadas ⊆ total y cierra.
 
     // `realHoras` son las horas reales DEL TÉCNICO (sus sesiones), no la suma de
     // todos los que trabajaron la tarea. Antes se comparaba horas_estimadas (por
@@ -193,31 +189,53 @@ export async function GET(req: Request) {
       };
     }
 
-    const realSem = await horasRealesTecnico(tareasRealizadasSem.map((t) => t.id));
-    const rendimientoSemana = calcRendimiento(tareasRealizadasSem, tareasSemana.length, realSem);
-    const totalMes = await prisma.planificacionOT.count({
-      where: { AND: [whereTecnico, { fecha_inicio: { gte: mesIni, lte: mesFin } }] },
-    });
-    const realMes = await horasRealesTecnico(tareasRealizadasMes.map((t) => t.id));
-    const rendimientoMes = calcRendimiento(tareasRealizadasMes, totalMes, realMes);
+    // Semana: reusa tareasSemana + su miEstado ya calculado (por técnico).
+    const realizadasSemList = tareasSemana.filter((t) => miEstadoPorTarea.get(t.id) === "realizado");
+    const realSem = await horasRealesTecnico(realizadasSemList.map((t) => t.id));
+    const rendimientoSemana = calcRendimiento(realizadasSemList, tareasSemana.length, realSem);
 
-    // ── Histórico últimas 4 semanas ───────────────────────────────
+    // Mes: tareas del técnico con fecha_inicio en el mes + su estado por sesiones.
+    const tareasMes = await prisma.planificacionOT.findMany({
+      where: { AND: [whereTecnico, { fecha_inicio: { gte: mesIni, lte: mesFin } }] },
+      select: { id: true, horas_estimadas: true },
+    });
+    const mesIds = tareasMes.map((t) => t.id);
+    const sesMes = mesIds.length
+      ? await prisma.planificacionOTSesion.findMany({
+          where: { tecnico, planificacion_ot_id: { in: mesIds } },
+          select: { planificacion_ot_id: true, tecnico: true, inicio: true, fin: true, cierre: true },
+        })
+      : [];
+    const realizadasMesList = tareasMes.filter(
+      (t) => estadoTecnico(sesMes.filter((s) => s.planificacion_ot_id === t.id)) === "realizado",
+    );
+    const realMes = sumarHorasReales(
+      sesMes.filter((s) => realizadasMesList.some((t) => t.id === s.planificacion_ot_id)),
+    );
+    const rendimientoMes = calcRendimiento(realizadasMesList, tareasMes.length, realMes);
+
+    // ── Histórico últimas 4 semanas (por técnico) ──────────────────
     const historico: Array<{ semana: string; estimadas: number; reales: number; eficienciaPct: number | null }> = [];
     for (let i = 3; i >= 0; i--) {
-      const ini = dayjs().subtract(i, "week").startOf("isoWeek").toDate();
-      const fin = dayjs().subtract(i, "week").endOf("isoWeek").toDate();
+      const ini = dayjs().tz(TZ).subtract(i, "week").startOf("isoWeek").toDate();
+      const fin = dayjs().tz(TZ).subtract(i, "week").endOf("isoWeek").toDate();
       const tareas = await prisma.planificacionOT.findMany({
-        where: {
-          AND: [
-            whereTecnico,
-            { estado: "realizado" },
-            { fecha_fin_real: { gte: ini, lte: fin } },
-          ],
-        },
-        select: { horas_estimadas: true, horas_reales: true },
+        where: { AND: [whereTecnico, { fecha_inicio: { gte: ini, lte: fin } }] },
+        select: { id: true, horas_estimadas: true },
       });
-      let est = 0, real = 0;
-      for (const t of tareas) { est += Number(t.horas_estimadas ?? 0); real += Number(t.horas_reales ?? 0); }
+      const ids = tareas.map((t) => t.id);
+      const ses = ids.length
+        ? await prisma.planificacionOTSesion.findMany({
+            where: { tecnico, planificacion_ot_id: { in: ids } },
+            select: { planificacion_ot_id: true, tecnico: true, inicio: true, fin: true, cierre: true },
+          })
+        : [];
+      const hechas = tareas.filter(
+        (t) => estadoTecnico(ses.filter((s) => s.planificacion_ot_id === t.id)) === "realizado",
+      );
+      let est = 0;
+      for (const t of hechas) est += Number(t.horas_estimadas ?? 0);
+      const real = sumarHorasReales(ses.filter((s) => hechas.some((t) => t.id === s.planificacion_ot_id)));
       historico.push({
         semana: dayjs(ini).format("DD/MM"),
         estimadas: Math.round(est * 10) / 10,

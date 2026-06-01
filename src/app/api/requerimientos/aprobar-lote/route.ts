@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
-  let body: { nro_req?: unknown; ids?: unknown };
+  let body: { nro_req?: unknown; ids?: unknown; comentario?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -31,6 +31,11 @@ export async function POST(req: NextRequest) {
   const nroReq = typeof body.nro_req === "string" && body.nro_req.length > 0 ? body.nro_req : null;
   const ids = Array.isArray(body.ids)
     ? (body.ids as unknown[]).filter((x): x is number => typeof x === "number" && Number.isFinite(x) && x > 0)
+    : null;
+  // Comentario / recomendación opcional del aprobador. Se guarda en cada
+  // item del lote (mismo texto) y se appendea al historial.
+  const comentario = typeof body.comentario === "string"
+    ? (body.comentario.trim().slice(0, 500) || null)
     : null;
 
   if (!nroReq && (!ids || ids.length === 0)) {
@@ -67,6 +72,10 @@ export async function POST(req: NextRequest) {
           usuario_aprueba: usuario,
           fecha_aprobacion: new Date(),
           status_cotizacion_codigo: "PEND_COT", // arranca flujo de cotización
+          // El mismo comentario aplica a todos los items del lote. Si no
+          // vino, se mantiene null (no se borra uno previo accidentalmente
+          // porque solo aprobamos items en estado SIN_APROBACION).
+          comentario_aprobacion: comentario,
         },
       });
 
@@ -84,7 +93,8 @@ export async function POST(req: NextRequest) {
         ),
       ];
       const refTexto = nroReq ?? `${candidatos.length} item(s)`;
-      const descripcionHist = `Requerimiento ${refTexto} aprobado (${candidatos.length} item${candidatos.length === 1 ? "" : "s"})`;
+      const baseHist = `Requerimiento ${refTexto} aprobado (${candidatos.length} item${candidatos.length === 1 ? "" : "s"})`;
+      const descripcionHist = comentario ? `${baseHist} — ${comentario}` : baseHist;
       for (const ot_id of otsExternasUnicas) {
         await tx.oTHistorial.create({
           data: { ot_id, tipo_operacion: "Otro", descripcion: descripcionHist, usuario },

@@ -1336,6 +1336,11 @@ model OTRepuesto {
   fecha_envio_aprobacion      DateTime?            @db.Date
   usuario_aprueba             String?              @db.VarChar(100)
   fecha_aprobacion            DateTime?            @db.Date
+  // Comentario / recomendación que dejó el aprobador. Opcional. Se setea
+  // en el momento de aprobar (single o lote). Si después se anula y se
+  // vuelve a aprobar, este campo se reescribe con el nuevo comentario.
+  // 500 caracteres alcanzan para notas breves sin ahogar la UI ni el log.
+  comentario_aprobacion       String?              @db.VarChar(500)
   createdAt                   DateTime             @default(now())
   updatedAt                   DateTime             @updatedAt
   material                    Material?            @relation(fields: [material_id], references: [material_id], onDelete: Restrict)
@@ -1376,7 +1381,9 @@ model OTRepuestoAdjunto {
 
 model PlanificacionOT {
   id                   Int                      @id @default(autoincrement())
-  ot_id                Int
+  // Puede ser null: tareas de APOYO/generales que no pertenecen a una OT.
+  // Solo se crean desde Planificación. Si es null, los datos de OT viajan en blanco.
+  ot_id                Int?
   operacion_cod_rep_id Int?
   componente           String                   @db.VarChar(30)
   operacion_codigo     String                   @db.VarChar(20)
@@ -1403,10 +1410,13 @@ model PlanificacionOT {
   trabajo_externo      Boolean?                 @default(false)
   // Planificación "publicada" por el planner (deja de ser borrador para el técnico).
   publicado            Boolean                  @default(false)
+  // Marca de EMERGENCIA / correctiva. Independiente del `estado` de ejecución:
+  // una tarea puede ser correctiva y a la vez estar en_proceso/pausado/realizado.
+  es_correctivo        Boolean                  @default(false)
   version              Int                      @default(1)
   created_at           DateTime                 @default(now())
   updated_at           DateTime                 @updatedAt
-  orden_trabajo        OrdenTrabajo             @relation(fields: [ot_id], references: [id], onDelete: Cascade)
+  orden_trabajo        OrdenTrabajo?            @relation(fields: [ot_id], references: [id], onDelete: Cascade)
   operacion_cod_rep    OperacionCodRep?         @relation(fields: [operacion_cod_rep_id], references: [operacion_cod_rep_id])
   status_tarea         StatusTarea?             @relation(fields: [estado], references: [codigo])
   capturas             PlanificacionOTCaptura[]
@@ -1460,6 +1470,8 @@ model PlanificacionOTSesion {
   fin                 DateTime?       @db.Timestamp(6)
   // motivo de cierre: "pausa" | "finalizado" | "cancelado". null = sesión abierta.
   cierre              String?         @db.VarChar(20)
+  // comentario que dejó el técnico al cerrar ESTA sesión (pausa/fin). Para el historial.
+  comentario          String?         @db.VarChar(1000)
   created_at          DateTime        @default(now())
   planificacion_ot    PlanificacionOT @relation(fields: [planificacion_ot_id], references: [id], onDelete: Cascade)
 

@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Typography, Card, Table, Tag, Input, Select, Space, Button, DatePicker, InputNumber, Checkbox, message, Row, Col, Alert, Switch, Popconfirm, Tooltip,
+  Typography, Card, Table, Tag, Input, Select, Space, Button, DatePicker, InputNumber, Checkbox, message, Row, Col, Alert, Switch, Popconfirm, Tooltip, Modal, Timeline, Empty,
 } from "antd";
-import { SearchOutlined, ReloadOutlined, CalendarOutlined, InfoCircleOutlined, SaveOutlined, UndoOutlined, ThunderboltOutlined } from "@ant-design/icons";
+import { SearchOutlined, ReloadOutlined, CalendarOutlined, InfoCircleOutlined, SaveOutlined, UndoOutlined, ThunderboltOutlined, PlusOutlined, DeleteOutlined, HistoryOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import {
   numeracionColumn,
@@ -116,11 +116,12 @@ function parseFechaSmart(raw: string): Dayjs | null {
 
 interface PlanRow {
   id: number;
-  ot_id: number;
+  ot_id: number | null;
   componente: string;
   operacion_codigo: string;
   descripcion: string;
   comentario: string | null;
+  observaciones: string | null;  // notas que deja el técnico al pausar/terminar
   tipo_reparacion: string | null;
   orden: number;
   horas_estimadas: string | null;
@@ -138,6 +139,7 @@ interface PlanRow {
   horas_extras: boolean | null;
   horas_extras_qty: string | null;
   trabajo_externo: boolean | null;
+  es_correctivo: boolean;
   orden_trabajo: {
     id: number;
     ot: string | null;
@@ -202,6 +204,18 @@ export default function PlanificacionPage() {
   const [trabajadores, setTrabajadores] = useState<TrabajadorOpt[]>([]);
   const [equipos, setEquipos] = useState<EquipoOpt[]>([]);
   const [estados, setEstados] = useState<StatusTareaOpt[]>([]);
+  const [otOpts, setOtOpts] = useState<{ value: number; label: string }[]>([]);
+  const [componentes, setComponentes] = useState<{ codigo: string; nombre: string }[]>([]);
+  const [operaciones, setOperaciones] = useState<{ codigo: string; nombre: string; componente_codigo: string | null; clasificacion: string }[]>([]);
+  // Modal "Nueva tarea" (mismo flujo Parte→Tipo→Tarea que el form de Tareas de la OT)
+  const [nuevaOpen, setNuevaOpen] = useState(false);
+  const [nuevaSaving, setNuevaSaving] = useState(false);
+  const [nueva, setNueva] = useState<{ ot_id: number | null; parte: string | null; tipo: "Estandar" | "NoEstandar"; operacionCodigo: string | null; qty: number; horas: number | null; tecnico: string | null; maquina: string | null; comentario: string }>({ ot_id: null, parte: null, tipo: "Estandar", operacionCodigo: null, qty: 1, horas: null, tecnico: null, maquina: null, comentario: "" });
+  // Modal de historial de ejecución
+  const [histOpen, setHistOpen] = useState(false);
+  const [histLoading, setHistLoading] = useState(false);
+  const [histData, setHistData] = useState<{ es_correctivo?: boolean; observaciones?: string | null; sesiones?: { id: number; tecnico: string; inicio: string; fin: string | null; cierre: string | null; comentario: string | null }[] } | null>(null);
+  const [histTarea, setHistTarea] = useState<PlanRow | null>(null);
   const [savingId, setSavingId] = useState<number | null>(null);
   const [autoSave, setAutoSave] = useState(true);
   // Cambios pendientes acumulados en modo batch: id → patch combinado (los originales para revert)
@@ -224,6 +238,20 @@ export default function PlanificacionPage() {
 
   const semanaOpts = useMemo(() => buildSemanasOptions(), []);
 
+  // Opciones de OT para el selector: la lista traída + las OTs de las filas
+  // actuales (así la OT de cada tarea siempre tiene su número, aunque no esté en
+  // la lista paginada). Antes mostraba el id interno cuando no la encontraba.
+  const otOptsMerged = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const o of otOpts) map.set(o.value, o.label);
+    for (const r of rows) {
+      if (r.orden_trabajo?.id != null && r.orden_trabajo?.ot != null) {
+        map.set(r.orden_trabajo.id, String(r.orden_trabajo.ot));
+      }
+    }
+    return [...map].map(([value, label]) => ({ value, label }));
+  }, [otOpts, rows]);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams({ limit: "500" });
@@ -244,13 +272,50 @@ export default function PlanificacionPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
   const notifySync = useTabSync("planificacion", fetchData);
 
+  // Marca una tarea como EMERGENCIA (correctiva) y reacomoda el día del operario.
+  // Mismo flujo que el botón 🚨 de Programación Semanal.
+  const marcarEmergencia = useCallback(async (id: number) => {
+    if (!editMode) {
+      messageApi.warning("Activá Modo Edición para marcar emergencias.");
+      return;
+    }
+    try {
+      const res = await fetch(`/api/planificacion/${id}/emergencia`, { method: "POST" });
+      const j = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(j?.error ?? "Error");
+      const empN = j?.empujadas?.length ?? 0;
+      const poolN = j?.alPool?.length ?? 0;
+      messageApi.success(
+        "🚨 Emergencia marcada." +
+        (empN ? ` ${empN} reprogramada(s).` : "") +
+        (poolN ? ` ${poolN} al pool.` : ""),
+      );
+      notifySync();
+      fetchData();
+    } catch (e) {
+      messageApi.error(e instanceof Error ? e.message : "Error al marcar emergencia");
+    }
+  }, [editMode, messageApi, notifySync, fetchData]);
+
   useEffect(() => {
     (async () => {
-      const [resT, resE, resS] = await Promise.all([
+      const anioActual = new Date().getFullYear() % 100; // ej. 26 → solo OTs del año
+      const [resT, resE, resS, resO, resC, resOp] = await Promise.all([
         fetch("/api/trabajadores?limit=200&soloOperarios=1"),
         fetch("/api/equipos?limit=200&tipo=MAQ"),
         fetch("/api/catalogos?tabla=statusTarea"),
+        fetch(`/api/ordenes-trabajo?limit=1000&anios=${anioActual}`),
+        fetch("/api/catalogos?tabla=componente"),
+        fetch("/api/catalogos?tabla=operacionReparacion"),
       ]);
+      if (resO.ok) {
+        const j = await resO.json();
+        setOtOpts((j.data ?? [])
+          .filter((o: { id?: number; ot?: number }) => o.id != null && o.ot != null)
+          .map((o: { id: number; ot: number }) => ({ value: o.id, label: String(o.ot) })));
+      }
+      if (resC.ok) setComponentes((await resC.json()).data ?? []);
+      if (resOp.ok) setOperaciones((await resOp.json()).data ?? []);
       if (resT.ok) {
         const j = await resT.json();
         setTrabajadores(j.data ?? []);
@@ -265,6 +330,66 @@ export default function PlanificacionPage() {
       }
     })();
   }, []);
+
+  // Crear una tarea desde el modal "Nueva tarea" (con o sin OT).
+  const guardarNueva = useCallback(async () => {
+    if (!nueva.parte) { messageApi.warning("Elegí la Parte."); return; }
+    if (!nueva.operacionCodigo) { messageApi.warning("Elegí la Tarea."); return; }
+    setNuevaSaving(true);
+    try {
+      const res = await fetch("/api/planificacion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ot_id: nueva.ot_id ?? undefined,
+          componente_codigo: nueva.parte,
+          operacion_reparacion_codigo: nueva.operacionCodigo,
+          tipo_reparacion: nueva.tipo,
+          qty: nueva.qty,
+          horas_estimadas: nueva.horas ?? undefined,
+          tecnico: nueva.tecnico ?? undefined,
+          maquina: nueva.maquina ?? undefined,
+          comentario: nueva.comentario.trim() || undefined,
+        }),
+      });
+      if (res.ok) {
+        messageApi.success("Tarea creada. Asignale fecha arrastrándola en Programación Semanal.");
+        setNuevaOpen(false);
+        notifySync();
+        fetchData();
+      } else {
+        const e = await res.json().catch(() => null);
+        messageApi.error(e?.error ?? "Error al crear la tarea");
+      }
+    } finally {
+      setNuevaSaving(false);
+    }
+  }, [nueva, messageApi, notifySync, fetchData]);
+
+  // Abrir el historial de ejecución de una tarea.
+  const abrirHistorial = useCallback(async (r: PlanRow) => {
+    setHistTarea(r); setHistData(null); setHistOpen(true); setHistLoading(true);
+    try {
+      const res = await fetch(`/api/planificacion/${r.id}/historial`);
+      if (res.ok) setHistData(await res.json());
+    } finally {
+      setHistLoading(false);
+    }
+  }, []);
+
+  // Borrar una tarea desde Planificación.
+  const borrarTarea = useCallback(async (id: number) => {
+    if (!editMode) { messageApi.warning("Activá Modo Edición para borrar."); return; }
+    const res = await fetch(`/api/planificacion/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      messageApi.success("Tarea borrada.");
+      notifySync();
+      fetchData();
+    } else {
+      const e = await res.json().catch(() => null);
+      messageApi.error(e?.error ?? "Error al borrar");
+    }
+  }, [editMode, messageApi, notifySync, fetchData]);
 
   const persistPatch = useCallback(async (id: number, patch: Record<string, unknown>) => {
     setSavingId(id);
@@ -646,21 +771,22 @@ export default function PlanificacionPage() {
       title: "OT", key: "ot", width: 130, ellipsis: true,
       filters: otValores, filterSearch: true,
       onFilter: (value, r) => r.orden_trabajo?.ot === value,
-      render: (_, r) => r.orden_trabajo?.ot
-        ? (
-          <Tag style={{
-            background: brand.navy,
-            color: brand.white,
-            border: "none",
-            maxWidth: "100%",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}>
-            {r.orden_trabajo.ot}
-          </Tag>
-        )
-        : <Tag>#{r.ot_id}</Tag>,
+      render: (_, r) => editMode ? (
+        // En edición: selector de OT (buscable) + opción "Sin OT" (limpiar).
+        <Select
+          showSearch allowClear size="small" style={{ width: "100%" }}
+          placeholder="Sin OT"
+          value={r.ot_id ?? undefined}
+          onChange={(v) => updateField(r.id, { ot_id: (v as number | undefined) ?? null })}
+          options={otOptsMerged}
+          optionFilterProp="label"
+          disabled={r.estado === "realizado"}
+        />
+      ) : (
+        r.orden_trabajo?.ot
+          ? <Tag style={{ background: brand.navy, color: brand.white, border: "none", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.orden_trabajo.ot}</Tag>
+          : <Tag>Sin OT</Tag>
+      ),
     },
     {
       title: "Cliente", key: "cliente", width: 140, ellipsis: true,
@@ -779,6 +905,15 @@ export default function PlanificacionPage() {
         >
           {v || <Typography.Text type="secondary" style={{ fontSize: 11 }}>—</Typography.Text>}
         </Typography.Paragraph>
+      ),
+    },
+    {
+      // Historial de ejecución: pausas/fin con el comentario que dejó el técnico.
+      key: "historial", title: "Historial", width: 80, align: "center",
+      render: (_, r) => (
+        <Tooltip title="Ver historial (inicios, pausas, fin y comentarios del técnico)">
+          <Button size="small" type="text" icon={<HistoryOutlined />} onClick={() => abrirHistorial(r)} />
+        </Tooltip>
       ),
     },
     {
@@ -1155,18 +1290,54 @@ export default function PlanificacionPage() {
       },
     },
     {
-      title: "Estado", key: "estado", width: 130,
+      title: "Estado", key: "estado", width: 168,
       filters: estadoValores, filterSearch: true,
       onFilter: (value, r) => (r.estado ?? "abierto") === value,
       render: (_, r) => (
-        <Select showSearch optionFilterProp="label"
-          value={r.estado ?? "abierto"}
-          onChange={(v) => updateField(r.id, { estado: v })}
-          options={estados.map((e) => ({ value: e.codigo, label: e.nombre }))}
-          size="small"
-          style={{ width: "100%" }}
-          disabled={r.estado === "realizado"}
-        />
+        <Space.Compact style={{ width: "100%" }}>
+          <Select showSearch optionFilterProp="label"
+            value={r.estado ?? "abierto"}
+            onChange={(v) => updateField(r.id, { estado: v })}
+            options={estados.filter((e) => e.codigo !== "correctivo").map((e) => ({ value: e.codigo, label: e.nombre }))}
+            size="small"
+            style={{ width: "100%" }}
+            disabled={r.estado === "realizado"}
+          />
+          {!r.es_correctivo && (
+            <Popconfirm
+              title="Marcar como emergencia"
+              description="Reprograma las tareas del mismo día y operario que arranquen después; las que no entren van al pool."
+              okText="Marcar 🚨"
+              cancelText="Cancelar"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => marcarEmergencia(r.id)}
+            >
+              <Tooltip title="Marcar emergencia (correctiva)">
+                <Button danger size="small" disabled={!editMode || r.estado === "realizado"}>🚨</Button>
+              </Tooltip>
+            </Popconfirm>
+          )}
+          {r.es_correctivo && (
+            <Tooltip title="Emergencia (correctiva)">
+              <Button danger size="small" type="primary" style={{ cursor: "default" }}>🚨</Button>
+            </Tooltip>
+          )}
+        </Space.Compact>
+      ),
+    },
+    {
+      title: "", key: "borrar", width: 46, fixed: "right", align: "center",
+      render: (_, r) => (
+        <Popconfirm
+          title="Borrar tarea"
+          description="Se elimina esta tarea de planificación. No se puede deshacer."
+          okText="Borrar" cancelText="Cancelar" okButtonProps={{ danger: true }}
+          onConfirm={() => borrarTarea(r.id)}
+        >
+          <Tooltip title="Borrar tarea">
+            <Button danger size="small" type="text" icon={<DeleteOutlined />} disabled={!editMode} />
+          </Tooltip>
+        </Popconfirm>
       ),
     },
   ];
@@ -1210,6 +1381,11 @@ export default function PlanificacionPage() {
           >
             {editMode ? "Salir de edición" : "Modo edición"}
           </Button>
+          {editMode && (
+            <Button type="dashed" icon={<PlusOutlined />} onClick={() => { setNueva({ ot_id: null, parte: null, tipo: "Estandar", operacionCodigo: null, qty: 1, horas: null, tecnico: null, maquina: null, comentario: "" }); setNuevaOpen(true); }}>
+              Nueva tarea
+            </Button>
+          )}
           <span style={{ fontSize: 12, color: brand.textSecondary }}>
             <ThunderboltOutlined style={{ marginRight: 4 }} />
             Autoguardar
@@ -1507,6 +1683,132 @@ export default function PlanificacionPage() {
           background-color: #ffffff !important;
         }
       `}</style>
+
+      <Modal
+        title="Nueva tarea"
+        open={nuevaOpen}
+        onCancel={() => setNuevaOpen(false)}
+        onOk={guardarNueva}
+        okText="Crear"
+        cancelText="Cancelar"
+        confirmLoading={nuevaSaving}
+        width={520}
+      >
+        <Space direction="vertical" style={{ width: "100%" }} size={12}>
+          <Row gutter={12}>
+            <Col span={14}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>Parte *</Typography.Text>
+              <Select
+                showSearch style={{ width: "100%" }} placeholder="Seleccione…"
+                value={nueva.parte ?? undefined}
+                onChange={(v) => setNueva((n) => ({ ...n, parte: v as string, operacionCodigo: null }))}
+                options={componentes.map((c) => ({ value: c.codigo, label: c.nombre }))}
+                optionFilterProp="label"
+              />
+            </Col>
+            <Col span={10}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>Tipo *</Typography.Text>
+              <Select
+                style={{ width: "100%" }}
+                value={nueva.tipo}
+                onChange={(v) => setNueva((n) => ({ ...n, tipo: v as "Estandar" | "NoEstandar", operacionCodigo: null }))}
+                options={[{ value: "Estandar", label: "Estándar" }, { value: "NoEstandar", label: "No estándar" }]}
+              />
+            </Col>
+          </Row>
+          <div>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>Tarea *</Typography.Text>
+            <Select
+              showSearch style={{ width: "100%" }}
+              placeholder={nueva.parte ? "Seleccione…" : "Seleccione parte primero…"}
+              disabled={!nueva.parte}
+              value={nueva.operacionCodigo ?? undefined}
+              onChange={(v) => setNueva((n) => ({ ...n, operacionCodigo: v as string }))}
+              options={operaciones
+                .filter((o) => o.componente_codigo === nueva.parte && o.clasificacion === (nueva.tipo === "NoEstandar" ? "NO_STD" : "STD"))
+                .map((o) => ({ value: o.codigo, label: o.nombre }))}
+              optionFilterProp="label"
+            />
+          </div>
+          <div>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>Operario</Typography.Text>
+            <Select
+              showSearch allowClear style={{ width: "100%" }}
+              placeholder="Sin asignar"
+              value={nueva.tecnico ?? undefined}
+              onChange={(v) => setNueva((n) => ({ ...n, tecnico: (v as string | undefined) ?? null }))}
+              options={trabajadores.map((t) => ({ value: t.nombre, label: t.nombre }))}
+              optionFilterProp="label"
+            />
+          </div>
+          <div>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>Máquina / equipo</Typography.Text>
+            <Select
+              showSearch allowClear style={{ width: "100%" }}
+              placeholder="Sin asignar"
+              value={nueva.maquina ?? undefined}
+              onChange={(v) => setNueva((n) => ({ ...n, maquina: (v as string | undefined) ?? null }))}
+              options={equipos.map((e) => ({ value: e.codigo, label: `${e.codigo} — ${e.descripcion ?? ""}` }))}
+              optionFilterProp="label"
+            />
+          </div>
+          <div>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>Comentario para el técnico (opcional)</Typography.Text>
+            <Input.TextArea rows={2} value={nueva.comentario} onChange={(e) => setNueva((n) => ({ ...n, comentario: e.target.value }))} maxLength={500} />
+          </div>
+          <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+            Se crea sin fecha; arrastrala en Programación Semanal para fijarle día y hora.
+          </Typography.Text>
+        </Space>
+      </Modal>
+
+      <Modal
+        title={<><HistoryOutlined /> Historial — {histTarea?.orden_trabajo?.ot ? `OT-${histTarea.orden_trabajo.ot}` : "Sin OT"} · {histTarea?.descripcion}</>}
+        open={histOpen}
+        onCancel={() => setHistOpen(false)}
+        footer={[<Button key="c" onClick={() => setHistOpen(false)}>Cerrar</Button>]}
+        width={560}
+      >
+        {histLoading ? (
+          <div style={{ textAlign: "center", padding: 24 }}><Typography.Text type="secondary">Cargando…</Typography.Text></div>
+        ) : !histData || (histData.sesiones?.length ?? 0) === 0 ? (
+          <Empty description="Sin ejecución todavía (el técnico no inició esta tarea)." image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        ) : (
+          <>
+            {histData.es_correctivo && <Tag color="error" style={{ marginBottom: 12 }}>🚨 Emergencia (correctiva)</Tag>}
+            <Timeline
+              items={(histData.sesiones ?? []).flatMap((s) => {
+                const fmt = (d: string) => dayjs(d).format("DD/MM HH:mm");
+                const out: { color: string; children: React.ReactNode }[] = [
+                  { color: "blue", children: <span>Inició <b>{fmt(s.inicio)}</b> · {s.tecnico}</span> },
+                ];
+                if (s.fin) {
+                  const label = s.cierre === "finalizado" ? "Terminó" : s.cierre === "cancelado" ? "Canceló" : "Pausó";
+                  const color = s.cierre === "finalizado" ? "green" : s.cierre === "cancelado" ? "red" : "orange";
+                  out.push({
+                    color,
+                    children: (
+                      <span>
+                        {label} <b>{fmt(s.fin)}</b>
+                        {s.comentario ? <> — <i>“{s.comentario}”</i></> : ""}
+                      </span>
+                    ),
+                  });
+                } else {
+                  out.push({ color: "gray", children: <i>En curso…</i> });
+                }
+                return out;
+              })}
+            />
+            {histData.observaciones && (
+              <div style={{ marginTop: 8, fontSize: 12, color: brand.textSecondary }}>
+                <Typography.Text type="secondary" style={{ fontSize: 11 }}>Observaciones acumuladas:</Typography.Text>
+                <div style={{ whiteSpace: "pre-wrap" }}>{histData.observaciones}</div>
+              </div>
+            )}
+          </>
+        )}
+      </Modal>
     </div>
   );
 }

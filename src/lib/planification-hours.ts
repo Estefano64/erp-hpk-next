@@ -3,13 +3,24 @@
  *
  * Reglas:
  *  - Lunes a Viernes solamente (sábado y domingo no cuentan)
- *  - Jornada: 08:00 – 18:00
+ *  - Jornada: 08:00 – 18:00 (hora de Perú)
  *  - Descanso almuerzo: 12:30 – 13:30 (no cuenta como tiempo laborable)
  *  - Horas extras NO se cuentan acá (se suman aparte al HH total)
  *
- * Dado un inicio y una duración efectiva en horas, devuelve el fin estimado
- * "moviendo el reloj" a través de la agenda hábil.
+ * IMPORTANTE (timezone): la jornada está definida en hora de PERÚ. Estas funciones
+ * se ejecutan tanto en el cliente (Perú) como en el SERVIDOR (Railway en UTC). Si
+ * usáramos getHours()/setHours() del Date nativo, en el servidor 08:00 Perú
+ * (=13:00 UTC) se interpretaría dentro del almuerzo y se empujaría mal. Por eso
+ * toda la aritmética horaria se hace en America/Lima vía dayjs.
  */
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc";
+import timezone from "dayjs/plugin/timezone";
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
+const TZ = "America/Lima";
 
 const JORNADA_INICIO_HORA = 8;
 const JORNADA_FIN_HORA = 18;
@@ -18,98 +29,92 @@ const ALMUERZO_INICIO_MIN = 30;
 const ALMUERZO_FIN_HORA = 13;
 const ALMUERZO_FIN_MIN = 30;
 
-const HORAS_MANANA = (12 * 60 + 30 - (JORNADA_INICIO_HORA * 60)) / 60; // 4.5
-const HORAS_TARDE = (JORNADA_FIN_HORA * 60 - (13 * 60 + 30)) / 60;     // 4.5
-const HORAS_DIA = HORAS_MANANA + HORAS_TARDE;                            // 9
+const JORNADA_INICIO_MIN = JORNADA_INICIO_HORA * 60;          // 480
+const JORNADA_FIN_MIN = JORNADA_FIN_HORA * 60;                // 1080
+const ALM_INI = ALMUERZO_INICIO_HORA * 60 + ALMUERZO_INICIO_MIN; // 750
+const ALM_FIN = ALMUERZO_FIN_HORA * 60 + ALMUERZO_FIN_MIN;       // 810
 
-function esFinDeSemana(d: Date): boolean {
-  const dow = d.getDay();
+type Dj = dayjs.Dayjs;
+
+function esFinDeSemana(d: Dj): boolean {
+  const dow = d.day();
   return dow === 0 || dow === 6;
 }
 
-function siguienteDiaHabilAlInicio(d: Date): Date {
-  const next = new Date(d);
-  while (true) {
-    next.setDate(next.getDate() + 1);
-    next.setHours(JORNADA_INICIO_HORA, 0, 0, 0);
-    if (!esFinDeSemana(next)) return next;
-  }
+function siguienteDiaHabilAlInicio(d: Dj): Dj {
+  let next = d.add(1, "day").hour(JORNADA_INICIO_HORA).minute(0).second(0).millisecond(0);
+  while (esFinDeSemana(next)) next = next.add(1, "day");
+  return next;
 }
 
 /**
- * Mueve un Date al próximo "slot hábil" si cae fuera.
+ * Mueve un instante al próximo "slot hábil" si cae fuera (todo en hora de Perú).
  *  - Antes de 8am → 8am del mismo día (si es hábil) o siguiente día hábil
  *  - Durante el almuerzo (12:30-13:30) → 13:30
  *  - Después de 18:00 → 8am del siguiente día hábil
  *  - Fin de semana → lunes 8am
  */
 export function normalizarAInicioHabil(fecha: Date): Date {
-  const d = new Date(fecha);
-  if (esFinDeSemana(d)) return siguienteDiaHabilAlInicio(d);
-  const totalMin = d.getHours() * 60 + d.getMinutes();
-  const JORNADA_INICIO_MIN = JORNADA_INICIO_HORA * 60;
-  const JORNADA_FIN_MIN = JORNADA_FIN_HORA * 60;
-  const ALM_INI = ALMUERZO_INICIO_HORA * 60 + ALMUERZO_INICIO_MIN;
-  const ALM_FIN = ALMUERZO_FIN_HORA * 60 + ALMUERZO_FIN_MIN;
-
-  if (totalMin < JORNADA_INICIO_MIN) {
-    d.setHours(JORNADA_INICIO_HORA, 0, 0, 0);
-    return d;
-  }
-  if (totalMin >= JORNADA_FIN_MIN) {
-    return siguienteDiaHabilAlInicio(d);
-  }
-  if (totalMin >= ALM_INI && totalMin < ALM_FIN) {
-    d.setHours(ALMUERZO_FIN_HORA, ALMUERZO_FIN_MIN, 0, 0);
-    return d;
-  }
-  return d;
+  const d = dayjs(fecha).tz(TZ);
+  if (esFinDeSemana(d)) return siguienteDiaHabilAlInicio(d).toDate();
+  const totalMin = d.hour() * 60 + d.minute();
+  if (totalMin < JORNADA_INICIO_MIN) return d.hour(JORNADA_INICIO_HORA).minute(0).second(0).millisecond(0).toDate();
+  if (totalMin >= JORNADA_FIN_MIN) return siguienteDiaHabilAlInicio(d).toDate();
+  if (totalMin >= ALM_INI && totalMin < ALM_FIN) return d.hour(ALMUERZO_FIN_HORA).minute(ALMUERZO_FIN_MIN).second(0).millisecond(0).toDate();
+  return d.toDate();
 }
 
 /**
  * Calcula fin estimado dado un inicio y cantidad de horas efectivas.
- * Mantiene el reloj dentro de las ventanas hábiles.
+ * Mantiene el reloj dentro de las ventanas hábiles (hora de Perú).
  */
 export function calcularFinEstimado(inicio: Date, horasEfectivas: number): Date {
   if (!horasEfectivas || horasEfectivas <= 0) return new Date(inicio);
-  let cursor = normalizarAInicioHabil(inicio);
+  let cursor = dayjs(normalizarAInicioHabil(inicio)).tz(TZ);
   let restantes = horasEfectivas * 60; // en minutos
-
-  while (restantes > 0) {
-    const cursorMin = cursor.getHours() * 60 + cursor.getMinutes();
-    // Determinar fin del slot actual
-    let finSlotMin: number;
-    if (cursorMin < ALMUERZO_INICIO_HORA * 60 + ALMUERZO_INICIO_MIN) {
-      finSlotMin = ALMUERZO_INICIO_HORA * 60 + ALMUERZO_INICIO_MIN;
-    } else {
-      finSlotMin = JORNADA_FIN_HORA * 60;
-    }
-    const slotMin = finSlotMin - cursorMin;
+  let guard = 0;
+  while (restantes > 0 && guard++ < 10000) {
+    const cMin = cursor.hour() * 60 + cursor.minute();
+    const finSlotMin = cMin < ALM_INI ? ALM_INI : JORNADA_FIN_MIN;
+    const slotMin = finSlotMin - cMin;
     if (slotMin <= 0) {
-      cursor = normalizarAInicioHabil(cursor);
+      cursor = dayjs(normalizarAInicioHabil(cursor.toDate())).tz(TZ);
       continue;
     }
     const consumir = Math.min(slotMin, restantes);
-    cursor = new Date(cursor.getTime() + consumir * 60_000);
+    cursor = cursor.add(consumir, "minute");
     restantes -= consumir;
-    if (restantes <= 0) return cursor;
-    // Saltamos al próximo slot
-    cursor = normalizarAInicioHabil(cursor);
+    if (restantes <= 0) return cursor.toDate();
+    cursor = dayjs(normalizarAInicioHabil(cursor.toDate())).tz(TZ);
   }
-  return cursor;
+  return cursor.toDate();
 }
 
 /**
- * Fin estimado para trabajo en HORAS EXTRA (banda vespertina ≥ 18:00).
- *
- * A diferencia de `calcularFinEstimado`, las horas extra son tiempo de reloj
- * CONTINUO: no descuentan almuerzo ni se cortan al fin de la jornada (18:00),
- * porque justamente ocurren después. Por eso el fin es simplemente
- * inicio + horas.
- *
- * Esto evita el bug en el que una tarea HE soltada a las 18:30 terminaba a la
- * mañana del día siguiente (porque `calcularFinEstimado` "normalizaba" el
- * inicio fuera de la jornada y lo empujaba al próximo día hábil).
+ * Horas HÁBILES (jornada menos almuerzo, sólo L–V, hora de Perú) entre dos
+ * instantes. Útil para prorratear la carga de una tarea que cruza el fin de
+ * semana entre sus dos semanas.
+ */
+export function horasHabilesEntre(inicio: Date, fin: Date): number {
+  if (fin.getTime() <= inicio.getTime()) return 0;
+  const finMs = fin.getTime();
+  let cursor = dayjs(normalizarAInicioHabil(inicio)).tz(TZ);
+  let minutos = 0;
+  let guard = 0;
+  while (cursor.toDate().getTime() < finMs && guard++ < 10000) {
+    const cMin = cursor.hour() * 60 + cursor.minute();
+    const finSlotMin = cMin < ALM_INI ? ALM_INI : JORNADA_FIN_MIN;
+    const slotEnd = cursor.hour(Math.floor(finSlotMin / 60)).minute(finSlotMin % 60).second(0).millisecond(0);
+    const segEnd = Math.min(slotEnd.toDate().getTime(), finMs);
+    if (segEnd > cursor.toDate().getTime()) minutos += (segEnd - cursor.toDate().getTime()) / 60000;
+    cursor = dayjs(normalizarAInicioHabil(new Date(segEnd))).tz(TZ);
+  }
+  return Math.round((minutos / 60) * 100) / 100;
+}
+
+/**
+ * Fin estimado para trabajo en HORAS EXTRA (banda vespertina ≥ 18:00). Tiempo de
+ * reloj CONTINUO: no descuenta almuerzo ni jornada (es tz-agnóstico).
  */
 export function calcularFinHorasExtra(inicio: Date, horasTotales: number): Date {
   if (!horasTotales || horasTotales <= 0) return new Date(inicio);

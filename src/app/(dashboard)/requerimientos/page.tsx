@@ -66,6 +66,9 @@ interface RequerimientoRow {
   status_oc: { codigo: string; nombre: string } | null;
   usuario_aprueba: string | null;
   fecha_aprobacion: string | null;
+  // Comentario / recomendación del aprobador, opcional. Visible como columna
+  // en la tabla (truncada + tooltip) y en el popover de "aprobado por".
+  comentario_aprobacion?: string | null;
   proveedor: { id: number; razon_social: string } | null;
   compra: { id: number; numero_po: string } | null;
   po_id: number | null;
@@ -1168,15 +1171,23 @@ export default function RequerimientosPage() {
             {r.status_requerimiento.nombre}
           </Tag>
         );
-        // Para APROBADO: tooltip con quién aprobó y fecha.
-        if (r.status_requerimiento.codigo === "APROBADO" && (r.usuario_aprueba || r.fecha_aprobacion)) {
+        // Para APROBADO: tooltip con quién aprobó, fecha y comentario.
+        if (
+          r.status_requerimiento.codigo === "APROBADO"
+          && (r.usuario_aprueba || r.fecha_aprobacion || r.comentario_aprobacion)
+        ) {
           return (
             <Tooltip
               title={
-                <div style={{ fontSize: 12, lineHeight: 1.4 }}>
+                <div style={{ fontSize: 12, lineHeight: 1.4, maxWidth: 280 }}>
                   <div><b>Aprobado por:</b> {r.usuario_aprueba ?? "—"}</div>
                   {r.fecha_aprobacion && (
                     <div><b>Fecha:</b> {formatDateOnly(r.fecha_aprobacion)}</div>
+                  )}
+                  {r.comentario_aprobacion && (
+                    <div style={{ marginTop: 4, paddingTop: 4, borderTop: "1px solid rgba(255,255,255,0.2)" }}>
+                      <b>Comentario:</b> {r.comentario_aprobacion}
+                    </div>
                   )}
                 </div>
               }
@@ -1186,6 +1197,21 @@ export default function RequerimientosPage() {
           );
         }
         return tag;
+      },
+    },
+    {
+      title: "Comentario aprob.",
+      key: "comentario_aprobacion",
+      width: 180,
+      ellipsis: true,
+      render: (_, r) => {
+        const c = r.comentario_aprobacion;
+        if (!c) return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
+        return (
+          <Tooltip title={<div style={{ maxWidth: 320, whiteSpace: "pre-wrap" }}>{c}</div>}>
+            <span style={{ fontSize: 11, fontStyle: "italic", color: brand.textSecondary }}>{c}</span>
+          </Tooltip>
+        );
       },
     },
     {

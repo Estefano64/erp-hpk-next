@@ -7,12 +7,13 @@ import {
 import {
   PlayCircleOutlined, PauseCircleOutlined, CheckCircleOutlined, TrophyOutlined,
   ClockCircleOutlined, ReloadOutlined, FireOutlined, LineChartOutlined,
-  LeftOutlined, RightOutlined,
+  LeftOutlined, RightOutlined, DownOutlined, UpOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { type Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
 import { brand } from "@/lib/theme";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 
 dayjs.extend(isoWeek);
 
@@ -27,6 +28,7 @@ interface OTLite {
   cod_rep_posicion: string | null;
   fecha_entrega: string | null;
   fabricante: { nombre: string } | null;
+  cliente: { razon_social: string; nombre_comercial: string | null } | null;
   codigo_reparacion: { codigo: string; descripcion: string; flota: { codigo: string; nombre: string } | null } | null;
   prioridad_atencion: { codigo: string; nombre: string; nivel: number | null } | null;
 }
@@ -45,6 +47,7 @@ interface TareaPlan {
   estado: string | null;
   tecnico: string | null;
   maquina: string | null;
+  maquina_nombre?: string | null;  // nombre del equipo (resuelto del código)
   comentario: string | null;      // comentario del planner → técnico
   observaciones: string | null;   // observaciones de ejecución del técnico
   orden_trabajo: OTLite | null;
@@ -54,6 +57,8 @@ interface TareaPlan {
   // Planificación publicada por el planner. Si es borrador, el técnico la ve
   // pero no la puede iniciar todavía.
   publicado?: boolean;
+  // Emergencia (correctiva): se resalta y se prioriza sobre las normales.
+  es_correctivo?: boolean;
 }
 interface SesionEnCurso {
   sesion_id: number;
@@ -107,6 +112,14 @@ function saludoNombre(full: string): string {
   const primerNombre = w.length >= 3 ? w[2] : (w[1] ?? w[0]);
   return `${cap(primerNombre)} ${cap(primerApellido)}`.trim();
 }
+// Día abreviado en español (evita cambiar el locale global de dayjs).
+const DIAS_ES = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+function diaEs(d: Dayjs): string {
+  return `${DIAS_ES[d.day()]} ${d.format("DD/MM")}`;
+}
+function clienteDe(o: OTLite | null | undefined): string {
+  return o?.cliente?.nombre_comercial ?? o?.cliente?.razon_social ?? "";
+}
 function formatSegundos(s: number): string {
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
@@ -115,7 +128,8 @@ function formatSegundos(s: number): string {
 }
 
 export default function TecnicoPanel() {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
+  const { screens, isMobile } = useResponsive(); // isMobile = < 768px
   const [data, setData] = useState<MiTrabajo | null>(null);
   const [ranking, setRanking] = useState<RankingItem[]>([]);
   const [rankingPeriodo, setRankingPeriodo] = useState<"semana" | "mes">("semana");
@@ -126,6 +140,16 @@ export default function TecnicoPanel() {
   // Semana que se está viendo (navegable con flechas) y filtro por día.
   const [semanaRef, setSemanaRef] = useState<Dayjs>(() => dayjs());
   const [diaFiltro, setDiaFiltro] = useState<string>("all");
+  // En celular no hay fila expandible: cada tarjeta puede mostrar/ocultar el
+  // mismo detalle (renderDetalle) con un botón. Guardamos los ids abiertos.
+  const [detalleMobile, setDetalleMobile] = useState<Set<number>>(() => new Set());
+  const toggleDetalleMobile = useCallback((id: number) => {
+    setDetalleMobile((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -157,11 +181,14 @@ export default function TecnicoPanel() {
       return { value: d.format("YYYY-MM-DD"), label: `${nm} ${d.format("DD")}` };
     }),
   ];
-  const tareasFiltradas = !data
-    ? []
-    : diaFiltro === "all"
+  const tareasFiltradas = (() => {
+    if (!data) return [];
+    const base = diaFiltro === "all"
       ? data.tareasSemana
       : data.tareasSemana.filter((t) => t.fecha_inicio && dayjs(t.fecha_inicio).format("YYYY-MM-DD") === diaFiltro);
+    // Las emergencias primero (sort estable; conserva el orden por fecha del API).
+    return [...base].sort((a, b) => Number(!!b.es_correctivo) - Number(!!a.es_correctivo));
+  })();
 
   const fetchRanking = useCallback(async (periodo: "semana" | "mes") => {
     const r = await fetch(`/api/ranking-tecnicos?periodo=${periodo}`);
@@ -184,7 +211,7 @@ export default function TecnicoPanel() {
   // Reset del tick cuando cambia la sesión.
   useEffect(() => { setSecondsTick(0); }, [data?.sesionEnCurso?.sesion_id]);
 
-  async function accion(taskId: number, accion: "iniciar" | "pausar" | "finalizar", observaciones?: string) {
+  async function accion(taskId: number, accion: "iniciar" | "pausar" | "finalizar", observaciones?: string): Promise<boolean> {
     setAccionLoading(taskId);
     try {
       const r = await fetch(`/api/planificacion/${taskId}/${accion}`, {
@@ -197,11 +224,35 @@ export default function TecnicoPanel() {
       const msg = accion === "iniciar" ? "Tarea iniciada" : accion === "pausar" ? "Tarea pausada" : "Tarea finalizada";
       message.success(msg);
       fetchData();
+      return true;
     } catch (e) {
       message.error(e instanceof Error ? e.message : `Error al ${accion}`);
+      return false;
     } finally {
       setAccionLoading(null);
     }
+  }
+
+  // Iniciar una tarea cuando el técnico ya tiene otra en curso: ofrece pausar la
+  // actual y arrancar esta (clave para atender una emergencia sin perder la que
+  // estaba haciendo, que queda pausada para retomar después).
+  async function iniciarConPausa(r: TareaPlan) {
+    const enCurso = data?.sesionEnCurso;
+    if (enCurso && enCurso.planificacion_ot_id !== r.id) {
+      modal.confirm({
+        title: "Pausar la tarea en curso e iniciar esta",
+        content: `Se pausa "${enCurso.descripcion}" y arranca "${r.descripcion}". Después podés retomar la pausada.`,
+        okText: "Pausar e iniciar",
+        cancelText: "Cancelar",
+        okButtonProps: { danger: true },
+        onOk: async () => {
+          const ok = await accion(enCurso.planificacion_ot_id, "pausar");
+          if (ok) await accion(r.id, "iniciar");
+        },
+      });
+      return;
+    }
+    accion(r.id, "iniciar");
   }
 
   // Modal para que el técnico deje observaciones al pausar/finalizar.
@@ -223,6 +274,37 @@ export default function TecnicoPanel() {
     return data.sesionEnCurso.transcurrido_seg + secondsTick;
   }, [data?.sesionEnCurso, secondsTick]);
 
+  // Botones/estado de acción del técnico para una tarea (se reusa en la tabla de
+  // escritorio y en las tarjetas de celular).
+  function renderAccion(r: TareaPlan, block = false) {
+    const mi = r.miEstado ?? "sin_empezar";
+    const tieneSesion = data?.sesionEnCurso?.planificacion_ot_id === r.id;
+    if (r.estado === "cancelado") return <Tag color="default">Cancelada</Tag>;
+    if (mi === "realizado") return <Tag color="success" icon={<CheckCircleOutlined />}>Terminada</Tag>;
+    if (r.publicado === false && mi === "sin_empezar" && !tieneSesion) {
+      return <Tooltip title="El planner todavía no confirmó (publicó) esta tarea."><Tag color="warning">Borrador</Tag></Tooltip>;
+    }
+    if (mi === "sin_empezar" && !r.fecha_inicio && !tieneSesion) {
+      return <Tooltip title="Sin fecha: esperá a que el planner la reprograme."><Tag color="default">Sin programar</Tag></Tooltip>;
+    }
+    if (mi === "en_proceso" || tieneSesion) {
+      return (
+        <Space size={4} style={block ? { width: "100%" } : undefined}>
+          <Button size="small" block={block} icon={<PauseCircleOutlined />} loading={accionLoading === r.id}
+            onClick={() => abrirObs(r.id, "pausar")}>Pausar</Button>
+          <Button size="small" block={block} type="primary" icon={<CheckCircleOutlined />} loading={accionLoading === r.id}
+            onClick={() => abrirObs(r.id, "finalizar")}>Terminar</Button>
+        </Space>
+      );
+    }
+    return (
+      <Button size="small" block={block} type="primary" danger={r.es_correctivo} icon={<PlayCircleOutlined />} loading={accionLoading === r.id}
+        onClick={() => iniciarConPausa(r)} disabled={!!data?.sesionEnCurso && !r.es_correctivo}>
+        {r.es_correctivo ? "Atender 🚨" : mi === "pausado" ? "Retomar" : "Iniciar"}
+      </Button>
+    );
+  }
+
   const columnas: ColumnsType<TareaPlan> = [
     {
       title: "OT", dataIndex: ["orden_trabajo", "ot"], width: 90,
@@ -232,11 +314,21 @@ export default function TecnicoPanel() {
       title: "Tarea", width: 280,
       render: (_, r) => (
         <div>
-          <div style={{ fontSize: 12, fontWeight: 500 }}>{r.descripcion}</div>
-          <div style={{ fontSize: 10, color: brand.textSecondary }}>
-            {r.componente} · {r.operacion_codigo} {r.maquina ? `· ${r.maquina}` : ""}
+          <div style={{ fontSize: 12, fontWeight: 500 }}>
+            {r.es_correctivo && <Tag color="error" style={{ fontSize: 10, marginRight: 4 }}>🚨 EMERGENCIA</Tag>}
+            {r.descripcion}
           </div>
-          {r.comentario && <Tag color="cyan" style={{ fontSize: 10, marginTop: 2 }}>💬 Comentario</Tag>}
+          <div style={{ fontSize: 10, color: brand.textSecondary }}>
+            {[r.componente, r.operacion_codigo, r.maquina_nombre ?? r.maquina].filter(Boolean).join(" · ")}
+          </div>
+          {clienteDe(r.orden_trabajo) && (
+            <div style={{ fontSize: 10, color: brand.textSecondary }}>🏢 {clienteDe(r.orden_trabajo)}</div>
+          )}
+          {r.comentario && (
+            <Tooltip title={<span style={{ whiteSpace: "pre-wrap" }}>{r.comentario}</span>}>
+              <Tag color="cyan" style={{ fontSize: 10, marginTop: 2, cursor: "help", whiteSpace: "normal", maxWidth: 240 }}>💬 {r.comentario}</Tag>
+            </Tooltip>
+          )}
         </div>
       ),
     },
@@ -250,61 +342,37 @@ export default function TecnicoPanel() {
       ),
     },
     {
-      title: "Hora", width: 110, align: "center",
-      render: (_, r) => r.fecha_inicio
-        ? <Text style={{ fontSize: 11 }}>{dayjs(r.fecha_inicio).format("HH:mm")} — {r.fecha_fin ? dayjs(r.fecha_fin).format("HH:mm") : "—"}</Text>
-        : <Text type="secondary" style={{ fontSize: 11 }}>—</Text>,
+      title: "Hora", width: 120, align: "center",
+      render: (_, r) => {
+        if (!r.fecha_inicio) return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
+        const ini = dayjs(r.fecha_inicio);
+        const fin = r.fecha_fin ? dayjs(r.fecha_fin) : null;
+        const cruzaDia = fin ? fin.startOf("day").diff(ini.startOf("day"), "day") : 0;
+        return (
+          <Text style={{ fontSize: 11 }}>
+            {ini.format("HH:mm")} — {fin ? fin.format("HH:mm") : "—"}
+            {cruzaDia > 0 && <Text type="warning" style={{ fontSize: 9 }}> (+{cruzaDia}d)</Text>}
+          </Text>
+        );
+      },
     },
     {
-      title: "Estado", width: 100, align: "center",
+      // Estado PERSONAL del técnico (miEstado), coherente con la columna Acción.
+      // Una tarea sin fecha (p.ej. desplazada por una emergencia) se ve como
+      // "Sin programar", no como "Programado".
+      title: "Estado", width: 110, align: "center",
       render: (_, r) => {
-        const map: Record<string, { color: string; label: string }> = {
-          abierto: { color: "default", label: "Abierto" },
-          programado: { color: "blue", label: "Programado" },
-          en_proceso: { color: "processing", label: "En proceso" },
-          pausado: { color: "warning", label: "Pausado" },
-          realizado: { color: "success", label: "Realizado" },
-        };
-        const v = map[r.estado ?? ""] ?? { color: "default", label: r.estado ?? "—" };
-        return <Tag color={v.color} style={{ fontSize: 10, margin: 0 }}>{v.label}</Tag>;
+        const mi = r.miEstado ?? "sin_empezar";
+        if (mi === "en_proceso") return <Tag color="processing" style={{ fontSize: 10, margin: 0 }}>En proceso</Tag>;
+        if (mi === "pausado") return <Tag color="warning" style={{ fontSize: 10, margin: 0 }}>Pausado</Tag>;
+        if (mi === "realizado") return <Tag color="success" style={{ fontSize: 10, margin: 0 }}>Realizado</Tag>;
+        if (!r.fecha_inicio) return <Tag color="default" style={{ fontSize: 10, margin: 0 }}>Sin programar</Tag>;
+        return <Tag color="blue" style={{ fontSize: 10, margin: 0 }}>Programado</Tag>;
       },
     },
     {
       title: "Acción", width: 200, align: "center", fixed: "right",
-      render: (_, r) => {
-        // Acciones según el estado PERSONAL del técnico (miEstado), no el global
-        // de la tarea: así dos técnicos en la misma tarea actúan por separado.
-        const mi = r.miEstado ?? "sin_empezar";
-        const tieneSesion = data?.sesionEnCurso?.planificacion_ot_id === r.id;
-        if (r.estado === "cancelado") return <Tag color="default">Cancelada</Tag>;
-        if (mi === "realizado") return <Tag color="success" icon={<CheckCircleOutlined />}>Terminada</Tag>;
-        // Borrador (el planner no publicó): visible pero aún no ejecutable.
-        if (r.publicado === false && mi === "sin_empezar" && !tieneSesion) {
-          return <Tooltip title="El planner todavía no confirmó (publicó) esta tarea."><Tag color="warning">Borrador</Tag></Tooltip>;
-        }
-        if (mi === "en_proceso" || tieneSesion) {
-          return (
-            <Space size={4}>
-              <Tooltip title="Pausar — la tarea queda lista para retomarse después">
-                <Button size="small" icon={<PauseCircleOutlined />} loading={accionLoading === r.id}
-                  onClick={() => abrirObs(r.id, "pausar")}>Pausar</Button>
-              </Tooltip>
-              <Tooltip title="Finalizar — registra tu fin y horas reales">
-                <Button size="small" type="primary" icon={<CheckCircleOutlined />} loading={accionLoading === r.id}
-                  onClick={() => abrirObs(r.id, "finalizar")}>Terminar</Button>
-              </Tooltip>
-            </Space>
-          );
-        }
-        // sin_empezar → Iniciar · pausado → Retomar. Deshabilitado si el técnico
-        // ya tiene otra tarea en curso (solo puede trabajar una a la vez).
-        return (
-          <Button size="small" type="primary" icon={<PlayCircleOutlined />} loading={accionLoading === r.id}
-            onClick={() => accion(r.id, "iniciar")} disabled={!!data?.sesionEnCurso}>
-            {mi === "pausado" ? "Retomar" : "Iniciar"}
-          </Button>
-        );
-      },
+      render: (_, r) => renderAccion(r),
     },
   ];
 
@@ -330,6 +398,7 @@ export default function TecnicoPanel() {
         )}
         <Row gutter={[12, 8]}>
           {dato("OT", o?.ot ?? `#${r.ot_id}`)}
+          {dato("Cliente", clienteDe(o) || null)}
           {dato("Duración est.", r.horas_estimadas != null ? `${Number(r.horas_estimadas)} h` : null)}
           {dato("Inicio real", r.fecha_inicio_real ? dayjs(r.fecha_inicio_real).format("DD/MM/YY HH:mm") : null)}
           {dato("Fin real", r.fecha_fin_real ? dayjs(r.fecha_fin_real).format("DD/MM/YY HH:mm") : null)}
@@ -366,10 +435,78 @@ export default function TecnicoPanel() {
       if (!r.fecha_inicio) return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
       const d = dayjs(r.fecha_inicio);
       const esHoy = d.format("YYYY-MM-DD") === hoyStr;
-      return <Tag color={esHoy ? "blue" : "default"} style={{ fontSize: 11, margin: 0 }}>{esHoy ? "Hoy" : d.format("ddd DD/MM")}</Tag>;
+      return <Tag color={esHoy ? "blue" : "default"} style={{ fontSize: 11, margin: 0 }}>{esHoy ? "Hoy" : diaEs(d)}</Tag>;
     },
   };
   const columnasSemana: ColumnsType<TareaPlan> = [diaCol, ...columnas];
+
+  // Tarjeta compacta de tarea para celular (en vez de la tabla ancha).
+  function renderTareaMobile(r: TareaPlan) {
+    const o = r.orden_trabajo;
+    const flota = o?.codigo_reparacion?.flota?.codigo ?? "—";
+    const ini = r.fecha_inicio ? dayjs(r.fecha_inicio) : null;
+    const fin = r.fecha_fin ? dayjs(r.fecha_fin) : null;
+    const esHoy = ini ? ini.format("YYYY-MM-DD") === hoyStr : false;
+    const cruzaDia = ini && fin ? fin.startOf("day").diff(ini.startOf("day"), "day") : 0;
+    const mi = r.miEstado ?? "sin_empezar";
+    const estadoTag = mi === "en_proceso" ? <Tag color="processing" style={{ margin: 0 }}>En proceso</Tag>
+      : mi === "pausado" ? <Tag color="warning" style={{ margin: 0 }}>Pausado</Tag>
+      : mi === "realizado" ? <Tag color="success" style={{ margin: 0 }}>Realizado</Tag>
+      : !r.fecha_inicio ? <Tag style={{ margin: 0 }}>Sin programar</Tag>
+      : <Tag color="blue" style={{ margin: 0 }}>Programado</Tag>;
+    return (
+      <Card
+        key={r.id}
+        size="small"
+        style={{ marginBottom: 8, borderLeft: r.es_correctivo ? `4px solid ${brand.error}` : undefined }}
+        styles={{ body: { padding: 12 } }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 2 }}>
+          <Text strong style={{ fontSize: 13 }}>OT-{o?.ot ?? r.ot_id} · {flota}</Text>
+          <Tag color={esHoy ? "blue" : "default"} style={{ margin: 0 }}>{ini ? (esHoy ? "Hoy" : diaEs(ini)) : "—"}</Tag>
+        </div>
+        {clienteDe(o) && <div style={{ fontSize: 11, color: brand.textSecondary, marginBottom: 2 }}>🏢 {clienteDe(o)}</div>}
+        {r.es_correctivo && <Tag color="error" style={{ marginBottom: 4 }}>🚨 EMERGENCIA</Tag>}
+        <div style={{ fontSize: 13, fontWeight: 500 }}>{r.descripcion}</div>
+        <div style={{ fontSize: 11, color: brand.textSecondary }}>
+          {[r.componente, r.operacion_codigo, r.maquina_nombre ?? r.maquina].filter(Boolean).join(" · ")}
+        </div>
+        {r.comentario && (
+          <div style={{ fontSize: 11, marginTop: 4, padding: 6, background: brand.bgPage, borderRadius: 4, borderLeft: `3px solid ${brand.cyan}` }}>
+            💬 {r.comentario}
+          </div>
+        )}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginTop: 6 }}>
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            {ini ? `${ini.format("HH:mm")} — ${fin ? fin.format("HH:mm") : "—"}${cruzaDia > 0 ? ` (+${cruzaDia}d)` : ""}` : "Sin fecha"}
+          </Text>
+          {estadoTag}
+        </div>
+        {(r.fecha_inicio_real || r.fecha_fin_real) && (
+          <div style={{ fontSize: 11, color: brand.textSecondary, marginTop: 4 }}>
+            {r.fecha_inicio_real && <>Inicio real {dayjs(r.fecha_inicio_real).format("DD/MM HH:mm")} </>}
+            {r.fecha_fin_real && <>· Fin real {dayjs(r.fecha_fin_real).format("DD/MM HH:mm")}</>}
+          </div>
+        )}
+        <div style={{ marginTop: 8 }}>{renderAccion(r, true)}</div>
+        <Button
+          type="link"
+          size="small"
+          block
+          icon={detalleMobile.has(r.id) ? <UpOutlined /> : <DownOutlined />}
+          onClick={() => toggleDetalleMobile(r.id)}
+          style={{ marginTop: 4 }}
+        >
+          {detalleMobile.has(r.id) ? "Ocultar detalle" : "Ver detalle"}
+        </Button>
+        {detalleMobile.has(r.id) && (
+          <div style={{ marginTop: 4, borderTop: `1px solid ${brand.border}`, paddingTop: 8 }}>
+            {renderDetalle(r)}
+          </div>
+        )}
+      </Card>
+    );
+  }
 
   if (!data) {
     return (
@@ -396,9 +533,9 @@ export default function TecnicoPanel() {
 
       {/* Sesión activa */}
       {data.sesionEnCurso && (
-        <Card style={{ marginBottom: 16, borderColor: brand.cyan, background: "#E6FFFB" }}>
-          <Row gutter={16} align="middle">
-            <Col flex="auto">
+        <Card style={{ marginBottom: 16, borderColor: brand.cyan, background: "#E6FFFB" }} styles={{ body: { padding: isMobile ? 12 : 24 } }}>
+          <Row gutter={[16, 16]} align="middle" wrap>
+            <Col xs={24} md="auto" flex={screens.md ? "auto" : undefined}>
               <Space align="center">
                 <FireOutlined style={{ fontSize: 28, color: "#fa541c" }} />
                 <div>
@@ -412,20 +549,20 @@ export default function TecnicoPanel() {
                 </div>
               </Space>
             </Col>
-            <Col>
+            <Col xs={24} sm={12} md="auto">
               <Statistic
                 title="Tiempo en esta sesión"
                 value={formatSegundos(sesionActivaSegundos)}
                 prefix={<ClockCircleOutlined style={{ color: brand.cyan }} />}
-                valueStyle={{ color: brand.cyan, fontFamily: "monospace", fontSize: 28 }}
+                valueStyle={{ color: brand.cyan, fontFamily: "monospace", fontSize: isMobile ? 22 : 28 }}
               />
               <Text type="secondary" style={{ fontSize: 11 }}>
                 Acumulado previo: {data.sesionEnCurso.horas_reales_previas.toFixed(2)}h /
                 estimado {data.sesionEnCurso.horas_estimadas.toFixed(1)}h
               </Text>
             </Col>
-            <Col>
-              <Space orientation="vertical">
+            <Col xs={24} sm={12} md="auto">
+              <Space orientation={isMobile ? "horizontal" : "vertical"} style={{ width: "100%" }}>
                 <Button
                   size="large"
                   icon={<PauseCircleOutlined />}
@@ -501,41 +638,50 @@ export default function TecnicoPanel() {
           <Card
             size="small"
             title={
-              <Space wrap size={4}>
-                <Button size="small" type="text" icon={<LeftOutlined />} onClick={() => irSemana(-1)} aria-label="Semana anterior" />
-                <span style={{ fontWeight: 600 }}>{lunesRef.format("DD/MM")} – {viernesRef.format("DD/MM")}</span>
-                <Button size="small" type="text" icon={<RightOutlined />} onClick={() => irSemana(1)} aria-label="Semana siguiente" />
-                <Button size="small" onClick={() => irSemana(0)} disabled={esSemanaActual}>Hoy</Button>
-                <Tag color={esSemanaActual ? "blue" : "default"}>
-                  {data.tareasSemana.length} {data.tareasSemana.length === 1 ? "tarea" : "tareas"}
-                  {esSemanaActual && data.tareasHoy.length ? ` · hoy ${data.tareasHoy.length}` : ""}
-                </Tag>
-              </Space>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: isMobile ? "4px 0" : 0 }}>
+                <Space wrap size={4}>
+                  <Button size="small" type="text" icon={<LeftOutlined />} onClick={() => irSemana(-1)} aria-label="Semana anterior" />
+                  <span style={{ fontWeight: 600 }}>{lunesRef.format("DD/MM")} – {viernesRef.format("DD/MM")}</span>
+                  <Button size="small" type="text" icon={<RightOutlined />} onClick={() => irSemana(1)} aria-label="Semana siguiente" />
+                  <Button size="small" onClick={() => irSemana(0)} disabled={esSemanaActual}>Hoy</Button>
+                  <Tag color={esSemanaActual ? "blue" : "default"}>
+                    {data.tareasSemana.length} {data.tareasSemana.length === 1 ? "tarea" : "tareas"}
+                    {esSemanaActual && data.tareasHoy.length ? ` · hoy ${data.tareasHoy.length}` : ""}
+                  </Tag>
+                </Space>
+                {isMobile && (
+                  <div style={{ overflowX: "auto", maxWidth: "100%", WebkitOverflowScrolling: "touch" }}>
+                    <Segmented size="small" value={diaFiltro} onChange={(v) => setDiaFiltro(v as string)} options={diaOpts} />
+                  </div>
+                )}
+              </div>
             }
-            extra={
+            extra={isMobile ? undefined : (
               <Segmented
                 size="small"
                 value={diaFiltro}
                 onChange={(v) => setDiaFiltro(v as string)}
                 options={diaOpts}
               />
-            }
+            )}
           >
             {data.tareasSemana.length === 0
               ? <Empty description="No tenés tareas programadas esta semana" image={Empty.PRESENTED_IMAGE_SIMPLE} />
               : tareasFiltradas.length === 0
                 ? <Empty description="Sin tareas para el día seleccionado" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-                : (
-                  <Table<TareaPlan>
-                    rowKey="id"
-                    columns={columnasSemana}
-                    dataSource={tareasFiltradas}
-                    size="small"
-                    pagination={false}
-                    scroll={{ x: 1010 }}
-                    expandable={expandable}
-                  />
-                )
+                : isMobile
+                  ? <div>{tareasFiltradas.map((r) => renderTareaMobile(r))}</div>
+                  : (
+                    <Table<TareaPlan>
+                      rowKey="id"
+                      columns={columnasSemana}
+                      dataSource={tareasFiltradas}
+                      size="small"
+                      pagination={false}
+                      scroll={{ x: 1010 }}
+                      expandable={expandable}
+                    />
+                  )
             }
           </Card>
         </Col>
@@ -614,6 +760,7 @@ export default function TecnicoPanel() {
       {/* Observaciones del técnico al pausar / finalizar (opcional). */}
       <Modal
         open={!!obsModal}
+        width={modalWidth(screens, 480)}
         title={obsModal?.accion === "finalizar" ? "Finalizar tarea" : "Pausar tarea"}
         okText={obsModal?.accion === "finalizar" ? "Finalizar" : "Pausar"}
         cancelText="Cancelar"

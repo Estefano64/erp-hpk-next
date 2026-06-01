@@ -39,7 +39,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const now = new Date();
     await prisma.planificacionOTSesion.update({
       where: { id: abierta.id },
-      data: { fin: now, cierre: "pausa" },
+      data: { fin: now, cierre: "pausa", comentario: obs || null },
     });
 
     // Recalcular horas reales + estado rollup. Si otro técnico sigue activo, la

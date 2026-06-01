@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Typography, Button, Space, Tag, Card, Modal, Descriptions, Tooltip, message, Empty, DatePicker, Collapse, Segmented, Slider, Alert, Popover, Divider, Select, Popconfirm, Switch,
+  Typography, Button, Space, Tag, Card, Modal, Descriptions, Tooltip, message, Empty, DatePicker, Collapse, Segmented, Slider, Alert, Popover, Divider, Select, Popconfirm, Switch, Input,
 } from "antd";
 import {
   CalendarOutlined, LeftOutlined, RightOutlined, UserOutlined, ToolOutlined, AimOutlined,
   SettingOutlined, RollbackOutlined, UnorderedListOutlined, WarningFilled, ZoomInOutlined, ZoomOutOutlined,
   PrinterOutlined, BgColorsOutlined, FilterOutlined, ClearOutlined,
-  LoadingOutlined, CheckCircleFilled, CloseCircleFilled, EyeOutlined,
+  LoadingOutlined, CheckCircleFilled, CloseCircleFilled, EyeOutlined, SearchOutlined,
 } from "@ant-design/icons";
 import dayjs, { Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
@@ -16,7 +16,7 @@ import "dayjs/locale/es";
 import { useRouter } from "next/navigation";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
-import { calcularFin, normalizarAInicioHabil } from "@/lib/planification-hours";
+import { calcularFin, normalizarAInicioHabil, horasHabilesEntre } from "@/lib/planification-hours";
 import { splitRecursos } from "@/lib/recursos";
 import { useTabSync } from "@/lib/useTabSync";
 import { useSession } from "next-auth/react";
@@ -45,6 +45,7 @@ interface PlanRow {
   horas_extras_qty: number | null;
   trabajo_externo: boolean | null;
   publicado: boolean;
+  es_correctivo: boolean;
   orden_trabajo: {
     id: number;
     ot: string | null;
@@ -139,6 +140,18 @@ function semanaCodigo(d: Dayjs): string {
   return `${d.isoWeekYear()}W${String(d.isoWeek()).padStart(2, "0")}`;
 }
 
+// Una tarea ya "empezada" por el técnico (en proceso / pausada / realizada) no se
+// reprograma: su horario pasó a ser ejecución real.
+function haEmpezado(estado: string | null | undefined): boolean {
+  return ["en_proceso", "pausado", "realizado"].includes(estado ?? "");
+}
+
+// Día abreviado en español (sin cambiar el locale global de dayjs).
+const DIAS_ES = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+function diaEs(d: Dayjs, conHora = false): string {
+  return `${DIAS_ES[d.day()]} ${d.format(conHora ? "DD/MM HH:mm" : "DD/MM")}`;
+}
+
 export default function ProgramacionSemanalPage() {
   const router = useRouter();
   const { data: session } = useSession();
@@ -153,6 +166,8 @@ export default function ProgramacionSemanalPage() {
   // Por defecto el filtro de arriba también aplica a los pendientes de abajo.
   // Con este switch (visible solo si hay filtro activo) se ignora abajo.
   const [verTodasPendientes, setVerTodasPendientes] = useState(false);
+  // Búsqueda libre del pool de pendientes (parte / cilindro / OT / descripción).
+  const [poolBusqueda, setPoolBusqueda] = useState("");
   const [rows, setRows] = useState<PlanRow[]>([]);
   const [allRows, setAllRows] = useState<PlanRow[]>([]); // para "sin semana asignada"
   // Estado de guardado visible: contador de requests en vuelo + último error.
@@ -299,17 +314,37 @@ export default function ProgramacionSemanalPage() {
     [rows, hayFiltro, pasaFiltroRecurso],
   );
 
-  // Pendientes (pools) mostrados: aplican el mismo filtro que arriba, salvo que
-  // el usuario active "Ver todas" para ignorarlo solo abajo.
+  // Búsqueda libre del pool: matchea parte (componente), cilindro (flota), OT,
+  // descripción y código de tarea. Le da al planner una forma rápida de encontrar
+  // qué programar sin depender solo del filtro por recurso.
+  const pasaBusquedaPool = useCallback((t: PlanRow): boolean => {
+    const q = poolBusqueda.trim().toLowerCase();
+    if (!q) return true;
+    const flota = t.orden_trabajo?.codigo_reparacion?.flota?.nombre
+      ?? t.orden_trabajo?.codigo_reparacion?.flota?.codigo
+      ?? t.orden_trabajo?.cod_rep_flota
+      ?? "";
+    return [
+      t.componente,
+      flota,
+      t.descripcion,
+      t.operacion_codigo,
+      String(t.orden_trabajo?.ot ?? t.ot_id),
+      t.orden_trabajo?.descripcion ?? "",
+    ].some((v) => (v ?? "").toString().toLowerCase().includes(q));
+  }, [poolBusqueda]);
+
+  // Pendientes (pools) mostrados: aplican el filtro por recurso (salvo "Ver todas")
+  // y la búsqueda libre del pool.
   const filtrarPendientes = hayFiltro && !verTodasPendientes;
-  const sinSemanaMostrar = useMemo(
-    () => (filtrarPendientes ? sinSemanaLista.filter(pasaFiltroRecurso) : sinSemanaLista),
-    [sinSemanaLista, filtrarPendientes, pasaFiltroRecurso],
-  );
-  const sinFechaMostrar = useMemo(
-    () => (filtrarPendientes ? sinFechaListaSemana.filter(pasaFiltroRecurso) : sinFechaListaSemana),
-    [sinFechaListaSemana, filtrarPendientes, pasaFiltroRecurso],
-  );
+  const sinSemanaMostrar = useMemo(() => {
+    const l = filtrarPendientes ? sinSemanaLista.filter(pasaFiltroRecurso) : sinSemanaLista;
+    return l.filter(pasaBusquedaPool);
+  }, [sinSemanaLista, filtrarPendientes, pasaFiltroRecurso, pasaBusquedaPool]);
+  const sinFechaMostrar = useMemo(() => {
+    const l = filtrarPendientes ? sinFechaListaSemana.filter(pasaFiltroRecurso) : sinFechaListaSemana;
+    return l.filter(pasaBusquedaPool);
+  }, [sinFechaListaSemana, filtrarPendientes, pasaFiltroRecurso, pasaBusquedaPool]);
 
   // ── Agrupación por recurso ──
   const recursos = useMemo(() => {
@@ -350,18 +385,37 @@ export default function ProgramacionSemanalPage() {
   const CAPACIDAD_SEMANA = 45; // 9h/día * 5 días
   const cargaPorRecurso = useMemo(() => {
     const map = new Map<string, number>();
+    // Ventana de la semana (Lun 00:00 → Dom 23:59). Una tarea que cruza el fin
+    // de semana (empieza viernes, sigue el lunes) reparte sus horas: las del
+    // viernes cuentan en esta semana y las del lunes en la siguiente.
+    const semIni = lunes.startOf("isoWeek").toDate();
+    const semFin = lunes.endOf("isoWeek").toDate();
     for (const r of rowsFiltradas) {
+      if (!r.fecha_inicio) continue;
       const dur = Number(r.horas_estimadas ?? 0);
       const qty = Math.max(1, Number(r.qty_personal ?? 1));
       const hhTotal = dur * qty;
+      let hhEnSemana: number;
+      if (r.horas_extras) {
+        // HE = horas continuas fuera de jornada; se cuentan enteras en su semana
+        // de inicio (no se prorratean por jornada hábil).
+        const fi = dayjs(r.fecha_inicio);
+        hhEnSemana = (fi.isoWeek() === lunes.isoWeek() && fi.isoWeekYear() === lunes.isoWeekYear()) ? hhTotal : 0;
+      } else {
+        const ini = new Date(r.fecha_inicio);
+        const fin = r.fecha_fin ? new Date(r.fecha_fin) : new Date(ini.getTime() + hhTotal * 3600000);
+        const clampIni = ini < semIni ? semIni : ini;
+        const clampFin = fin > semFin ? semFin : fin;
+        hhEnSemana = horasHabilesEntre(clampIni, clampFin);
+      }
+      if (hhEnSemana <= 0) continue;
       const keys = view === "equipo" ? splitTecnicos(r.maquina) : splitTecnicos(r.tecnico);
       if (keys.length === 0) continue;
-      // Carga prorateada entre todos los recursos asignados (operarios o máquinas)
-      const cuota = hhTotal / keys.length;
+      const cuota = hhEnSemana / keys.length;
       for (const k of keys) map.set(k, (map.get(k) ?? 0) + cuota);
     }
     return map;
-  }, [rowsFiltradas, view]);
+  }, [rowsFiltradas, view, lunes]);
 
   // "Ahora" calculado SOLO en el cliente (con la hora local del navegador). Si
   // se usaba dayjs() directo, el render del servidor (Railway en UTC) ponía la
@@ -425,13 +479,17 @@ export default function ProgramacionSemanalPage() {
     recursoTarget: string | null | undefined,
   ): { task: PlanRow; oculta: boolean } | null {
     if (!recursoTarget) return null;
+    // recursoTarget puede ser multi ("A | B"): lo separamos y chequeamos
+    // intersección con los recursos de cada tarea (antes se usaba includes() con
+    // el string completo y un multi-personal NO detectaba el choque).
+    const recursosTarget = splitTecnicos(recursoTarget);
     const filtradasIds = new Set(rowsFiltradas.map((r) => r.id));
     for (const t of rows) {
       if (t.id === taskId) continue;
       // Soporta tareas con recurso multi (comma-separated por multi-personal).
       const recursoRaw = view === "equipo" ? t.maquina : t.tecnico;
       const recursos = splitTecnicos(recursoRaw);
-      if (!recursos.includes(recursoTarget)) continue;
+      if (!recursosTarget.some((rt) => recursos.includes(rt))) continue;
       if (!t.fecha_inicio || !t.fecha_fin) continue;
       const oIni = new Date(t.fecha_inicio).getTime();
       const oFin = new Date(t.fecha_fin).getTime();
@@ -450,6 +508,14 @@ export default function ProgramacionSemanalPage() {
     }
     const original = rows.find((r) => r.id === id) || allRows.find((r) => r.id === id);
     if (!original) return;
+    // Tarea ya iniciada por el técnico: no se reprograma (su horario es real).
+    if (haEmpezado(original.estado)) {
+      messageApi.info("El técnico ya inició esta tarea: no se puede mover.");
+      return;
+    }
+    // Una emergencia (correctiva) puede caer encima de otras tareas: se permite
+    // el choque y después se empuja al resto del día.
+    const esEmergencia = !!original.es_correctivo;
     // Si la tarea no tiene horas_estimadas (vino del pool sin fecha), defaulteamos a 1h
     const durRaw = Number(original.horas_estimadas);
     const horasFaltantes = !Number.isFinite(durRaw) || durRaw <= 0;
@@ -472,7 +538,7 @@ export default function ProgramacionSemanalPage() {
     const recursoDestino = nuevoRecurso !== undefined
       ? nuevoRecurso
       : (view === "equipo" ? original.maquina : original.tecnico);
-    const choque = tareaSuperpuesta(id, inicioReal.toDate().getTime(), fin.getTime(), recursoDestino);
+    const choque = esEmergencia ? null : tareaSuperpuesta(id, inicioReal.toDate().getTime(), fin.getTime(), recursoDestino);
     if (choque) {
       const t = choque.task;
       const cliente = t.orden_trabajo?.cliente?.nombre_comercial
@@ -543,6 +609,9 @@ export default function ProgramacionSemanalPage() {
       if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Error");
       endSave();
       notifySync();
+      // Si es emergencia, el servidor ya reacomodó el día del operario en el mismo
+      // PUT (cascade). Refrescamos para ver las tareas empujadas.
+      if (esEmergencia) fetchData();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Error al reprogramar";
       endSave(msg);
@@ -651,12 +720,26 @@ export default function ProgramacionSemanalPage() {
       messageApi.warning("Activá Modo Edición para publicar.");
       return;
     }
+    // IDs exactos del operario en la semana mostrada (con o sin hora). Matchear por
+    // IDs es determinista: evita que el match por semana_plan deje tareas afuera.
+    const enSemana = (r: PlanRow) =>
+      r.semana_plan === semanaActual ||
+      (!!r.fecha_inicio &&
+        dayjs(r.fecha_inicio).isoWeek() === lunes.isoWeek() &&
+        dayjs(r.fecha_inicio).isoWeekYear() === lunes.isoWeekYear());
+    const ids = allRows
+      .filter((r) => splitTecnicos(r.tecnico).includes(tecnico) && enSemana(r))
+      .map((r) => r.id);
+    if (ids.length === 0) {
+      messageApi.info("Ese operario no tiene tareas en esta semana.");
+      return;
+    }
     beginSave();
     try {
       const res = await fetch("/api/planificacion/publicar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ semana: semanaActual, tecnico, publicado }),
+        body: JSON.stringify({ semana: semanaActual, tecnico, publicado, ids }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Error");
       endSave();
@@ -665,6 +748,37 @@ export default function ProgramacionSemanalPage() {
       fetchData();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Error al publicar";
+      endSave(msg);
+      messageApi.error(msg);
+    }
+  }
+
+  // ── Marcar una tarea como EMERGENCIA (correctiva) ──
+  // Pone la tarea en estado correctivo y reacomoda las tareas del mismo día y
+  // operario que arranquen después: las empuja, y las que no entran van al pool.
+  async function marcarEmergencia(task: PlanRow) {
+    if (!editMode) {
+      messageApi.warning("Activá Modo Edición para marcar emergencias.");
+      return;
+    }
+    beginSave();
+    try {
+      const res = await fetch(`/api/planificacion/${task.id}/emergencia`, { method: "POST" });
+      const j = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(j?.error ?? "Error");
+      endSave();
+      const empN = j?.empujadas?.length ?? 0;
+      const poolN = j?.alPool?.length ?? 0;
+      messageApi.success(
+        `🚨 Emergencia marcada.` +
+        (empN ? ` ${empN} tarea(s) reprogramada(s).` : "") +
+        (poolN ? ` ${poolN} mandada(s) al pool.` : ""),
+      );
+      setSelectedTask(null);
+      notifySync();
+      fetchData();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Error al marcar emergencia";
       endSave(msg);
       messageApi.error(msg);
     }
@@ -768,6 +882,9 @@ export default function ProgramacionSemanalPage() {
             semana_plan: semanaCodigo(dayjs(s.ini)),
             ...(view === "equipo" ? { maquina: s.recurso } : { tecnico: s.recurso }),
             ...(sHE ? { horas_extras: true, horas_extras_qty: Math.max(0.5, (s.fin - s.ini) / 3600000) } : {}),
+            // El grupo ya se validó en el cliente; evitamos falsos positivos del
+            // anti-solape de servidor por las posiciones viejas en PUTs paralelos.
+            omitirAntisolape: true,
           }),
         }),
       );
@@ -822,6 +939,12 @@ export default function ProgramacionSemanalPage() {
       messageApi.info("Tarea publicada. Reabrí la semana del operario para moverla.");
       return;
     }
+    // Tarea ya iniciada por el técnico (en proceso / pausada / realizada): su
+    // horario ya es ejecución real, no se reprograma.
+    if (haEmpezado(tDrag?.estado)) {
+      messageApi.info("El técnico ya inició esta tarea: no se puede mover.");
+      return;
+    }
     const target = e.currentTarget as HTMLElement;
     const rect = target.getBoundingClientRect();
     // Si la tarea está en el set de seleccionadas y hay más de 1, prepara multi-drag
@@ -834,6 +957,7 @@ export default function ProgramacionSemanalPage() {
           if (id === taskId) continue;
           const t = rows.find((r) => r.id === id) ?? allRows.find((r) => r.id === id);
           if (!t || !t.fecha_inicio) continue;
+          if (haEmpezado(t.estado)) continue; // no arrastrar tareas ya iniciadas
           const offsetMin = Math.round((new Date(t.fecha_inicio).getTime() - baseIni) / 60000);
           multiOffsets.push({
             id,
@@ -890,6 +1014,9 @@ export default function ProgramacionSemanalPage() {
     if (!drag || !drag.snappedDate || !drag.targetRow) return false;
     const original = rows.find((r) => r.id === drag.taskId) ?? allRows.find((r) => r.id === drag.taskId);
     if (!original) return false;
+    // Las emergencias (correctivas) SÍ pueden caer encima de otras: al soltarlas
+    // empujan a las demás. No marcamos conflicto para no bloquear el drop.
+    if (original.es_correctivo) return false;
     const dur = Number(original.horas_estimadas ?? 1);
     const qty = Math.max(1, Number(original.qty_personal ?? 1));
     const enBandaHE = (drag.snappedDate.hour() + drag.snappedDate.minute() / 60) >= 18;
@@ -1112,32 +1239,35 @@ export default function ProgramacionSemanalPage() {
             cursor: continuaDeAntes ? "pointer" : undefined,
           }}
           data-color={color}
+          data-estado={r.estado ?? ""}
+          data-emg={r.es_correctivo ? "1" : "0"}
+          data-pub={r.publicado ? "1" : "0"}
           data-conflict={hasConflict ? "1" : "0"}
           data-externo={r.trabajo_externo ? "1" : "0"}
         >
           {/* Indicador de continuación desde semana anterior */}
           {continuaDeAntes && (
-            <div className="psg-task-cont-marker psg-task-cont-marker-left" title={`Empezó el ${ini.format("ddd DD/MM HH:mm")}`}>
+            <div className="psg-task-cont-marker psg-task-cont-marker-left" title={`Empezó el ${diaEs(ini, true)}`}>
               <LeftOutlined style={{ fontSize: 10 }} />
             </div>
           )}
           {/* Indicador de continuación a semana siguiente */}
           {continuaDespues && (
-            <div className="psg-task-cont-marker psg-task-cont-marker-right" title={`Termina el ${fin.format("ddd DD/MM HH:mm")}`}>
+            <div className="psg-task-cont-marker psg-task-cont-marker-right" title={`Termina el ${diaEs(fin, true)}`}>
               <RightOutlined style={{ fontSize: 10 }} />
             </div>
           )}
           {/* Franja de almuerzo dentro del bloque (si lo cruza) */}
           {renderLunchOverlayInBlock(visibleIni, visibleFin, startPx)}
           <div className="psg-task-title" style={{ paddingLeft: continuaDeAntes ? 14 : 0, paddingRight: continuaDespues ? 14 : 0 }}>
-            OT-{r.orden_trabajo?.ot ?? r.ot_id} {r.operacion_codigo}
+            {r.es_correctivo && "🚨 "}{r.orden_trabajo?.ot ? `OT-${r.orden_trabajo.ot}` : "S/OT"} {r.operacion_codigo}
             {hasConflict && <WarningFilled style={{ marginLeft: 4 }} />}
           </div>
           <div className="psg-task-sub" style={{ paddingLeft: continuaDeAntes ? 14 : 0, paddingRight: continuaDespues ? 14 : 0 }}>{r.descripcion}</div>
           {/* Resize handle: solo en vista Operarios (Equipos es solo lectura),
               si la tarea NO continúa a la próxima semana y NO está publicada
               (publicada = plan congelado). */}
-          {!continuaDespues && view !== "equipo" && !r.publicado && (
+          {!continuaDespues && view !== "equipo" && !r.publicado && !haEmpezado(r.estado) && (
             <div
               className="psg-resize-handle"
               onMouseDown={(e) => {
@@ -1197,11 +1327,13 @@ export default function ProgramacionSemanalPage() {
         onClick={() => { if (!drag) setSelectedTask(t); }}
         className={`psg-pool-card${semanaCard ? " psg-pool-card-semana" : ""}`}
         data-color={estadoColor(t.estado)}
+        data-estado={t.estado ?? ""}
+        data-emg={t.es_correctivo ? "1" : "0"}
         data-externo={t.trabajo_externo ? "1" : "0"}
         style={{ opacity: drag?.taskId === t.id ? 0.25 : 1 }}
       >
         <div style={{ fontWeight: 600, fontSize: 12 }}>
-          OT-{t.orden_trabajo?.ot ?? t.ot_id} · {flotaDe(t)}
+          {t.es_correctivo && "🚨 "}{t.orden_trabajo?.ot ? `OT-${t.orden_trabajo.ot}` : "S/OT"} · {flotaDe(t)}
         </div>
         <div style={{ fontSize: 11, opacity: 0.95, fontWeight: 500 }}>
           {t.orden_trabajo?.descripcion ?? "—"}
@@ -1495,7 +1627,7 @@ export default function ProgramacionSemanalPage() {
           onMouseDown={startPan}
         >
           {lineaHoy != null && (
-            <div className="psg-now-line" style={{ left: 220 + lineaHoy }} title={`Ahora: ${(ahoraTick ?? dayjs()).format("ddd DD/MM HH:mm")}`}>
+            <div className="psg-now-line" style={{ left: 220 + lineaHoy }} title={`Ahora: ${diaEs(ahoraTick ?? dayjs(), true)}`}>
               <div className="psg-now-dot" />
             </div>
           )}
@@ -1505,7 +1637,7 @@ export default function ProgramacionSemanalPage() {
             <div className="psg-timeline-header">
               {days.map((d, i) => (
                 <div key={i} className="psg-day-header" style={{ width: dayPx, minWidth: dayPx }}>
-                  <div className="psg-day-label">{d.format("ddd DD/MM")}</div>
+                  <div className="psg-day-label">{diaEs(d)}</div>
                   <div className="psg-hour-row" style={{ position: "relative" }}>
                     {Array.from({ length: HORAS_DIA }, (_, h) => {
                       const hour = JORNADA_INICIO + h;
@@ -1645,6 +1777,24 @@ export default function ProgramacionSemanalPage() {
         </div>
       </Card>
 
+      {/* Buscador del pool de pendientes (parte / cilindro / OT / descripción). */}
+      <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <Input
+          allowClear
+          value={poolBusqueda}
+          onChange={(e) => setPoolBusqueda(e.target.value)}
+          placeholder="Buscar pendientes por parte, cilindro, OT o descripción…"
+          prefix={<SearchOutlined style={{ color: brand.textSecondary }} />}
+          style={{ maxWidth: 420 }}
+          size="small"
+        />
+        {poolBusqueda.trim() && (
+          <span style={{ fontSize: 12, color: brand.textSecondary }}>
+            {sinFechaMostrar.length + sinSemanaMostrar.length} pendiente(s) coinciden
+          </span>
+        )}
+      </div>
+
       {/* Switch: por defecto el filtro de arriba aplica a los pendientes; con
           esto se ignora solo abajo (p.ej. ver todo el backlog para asignarlo). */}
       {hayFiltro && (
@@ -1754,7 +1904,7 @@ export default function ProgramacionSemanalPage() {
                 zIndex: 1001,
               }}
             >
-              <div><strong>{drag.snappedDate.format("ddd DD/MM")}</strong></div>
+              <div><strong>{diaEs(drag.snappedDate)}</strong></div>
               <div>{drag.snappedDate.format("HH:mm")}</div>
               <div style={{ fontSize: 10, opacity: 0.85 }}>→ {drag.targetRow}</div>
               {dragConflict && <div style={{ fontSize: 10, marginTop: 4, fontWeight: 700 }}>⚠ Conflicto</div>}
@@ -1800,7 +1950,7 @@ export default function ProgramacionSemanalPage() {
           }}
           options={[
             { value: "semana", label: "Semana completa" },
-            ...days.map((d, i) => ({ value: `dia${i}`, label: d.format("ddd DD/MM") })),
+            ...days.map((d, i) => ({ value: `dia${i}`, label: diaEs(d) })),
           ]}
         />
         <Alert
@@ -1832,7 +1982,20 @@ export default function ProgramacionSemanalPage() {
               okButtonProps={{ danger: true }}
               onConfirm={() => selectedTask && persistRemoveFromWeek(selectedTask.id)}
             >
-              <Button danger disabled={!editMode || !!selectedTask?.publicado}>Sacar de la semana</Button>
+              <Button danger disabled={!editMode || !!selectedTask?.publicado || haEmpezado(selectedTask?.estado)}>Sacar de la semana</Button>
+            </Popconfirm>
+          ) : null,
+          selectedTask && !selectedTask.es_correctivo ? (
+            <Popconfirm
+              key="emergencia"
+              title="Marcar como emergencia (correctiva)"
+              description="Se reprograman las tareas del mismo día y operario que arranquen después de esta; las que no entren en el día van al pool."
+              okText="Marcar 🚨"
+              cancelText="Cancelar"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => selectedTask && marcarEmergencia(selectedTask)}
+            >
+              <Button danger disabled={!editMode}>🚨 Emergencia</Button>
             </Popconfirm>
           ) : null,
           <Button key="plan" type="primary" onClick={() => router.push("/operaciones/planificacion")}>
@@ -2019,7 +2182,20 @@ export default function ProgramacionSemanalPage() {
         .psg-task-block[data-color="processing"] { background: #1677FF; }
         .psg-task-block[data-color="success"] { background: #52C41A; }
         .psg-task-block[data-color="volcano"] { background: #B855E5; }
-        .psg-task-block[data-color="error"] { background: #F5222D; opacity: 0.7; }
+        .psg-task-block[data-color="error"] { background: #F5222D; }
+        /* Cancelada (color "default"): apagada, no se confunde con activas. */
+        .psg-task-block[data-estado="cancelado"] { background: #8c8c8c; opacity: 0.5; }
+        /* En proceso distinto de Realizado (ambos eran "processing"/azul). */
+        .psg-task-block[data-estado="en_proceso"] { background: #13C2C2; }
+        /* Correctiva = EMERGENCIA: rojo fuerte con halo, sin importar el estado de
+           ejecución (en_proceso/pausado/etc. siguen resaltando como emergencia). */
+        .psg-task-block[data-emg="1"] { background: #F5222D; opacity: 1; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #F5222D, 0 1px 4px rgba(245,34,45,.55); z-index: 3; }
+        /* Publicada = plan congelado: candado y borde claro. */
+        .psg-task-block[data-pub="1"] { box-shadow: inset 0 0 0 2px rgba(255,255,255,0.65); }
+        .psg-task-block[data-pub="1"]::after {
+          content: "🔒"; position: absolute; top: 2px; right: 4px;
+          font-size: 9px; opacity: 0.9; pointer-events: none; z-index: 2;
+        }
         .psg-task-block[data-conflict="1"] { outline: 2px solid #ff4d4f; }
 
         /* Trabajo derivado a tercero: stripes diagonales + borde dorado para distinguir. */
@@ -2254,6 +2430,9 @@ export default function ProgramacionSemanalPage() {
         .psg-pool-card[data-color="success"] { background: #52C41A; }
         .psg-pool-card[data-color="volcano"] { background: #B855E5; }
         .psg-pool-card[data-color="error"] { background: #F5222D; }
+        .psg-pool-card[data-estado="cancelado"] { background: #8c8c8c; opacity: 0.55; }
+        .psg-pool-card[data-estado="en_proceso"] { background: #13C2C2; }
+        .psg-pool-card[data-emg="1"] { background: #F5222D; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #F5222D, 0 1px 4px rgba(245,34,45,.55); }
         .psg-pool-card-semana { box-shadow: inset 4px 0 0 ${brand.cyan}, 0 1px 2px rgba(0,0,0,0.1); }
       `}</style>
     </div>

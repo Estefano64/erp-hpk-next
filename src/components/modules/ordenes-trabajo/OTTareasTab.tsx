@@ -46,6 +46,7 @@ interface PlanRow {
   tecnico: string | null;
   maquina: string | null;
   estado: string | null;
+  es_correctivo?: boolean;
   comentario: string | null;
   observaciones: string | null;
   version: number;
@@ -338,7 +339,10 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
       return false;
     }
     if (res.status === 423) {
-      messageApi.error("Tarea cerrada (realizado). No se puede editar.");
+      // 423 = bloqueada: realizado O ya iniciada por el técnico. Usamos el
+      // mensaje específico del servidor para que se entienda el motivo.
+      const err = await res.json().catch(() => null);
+      messageApi.error(err?.error ?? "La tarea no se puede editar en su estado actual.");
       return false;
     }
     if (!res.ok) {
@@ -422,7 +426,12 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
         const code = (r.operacion_codigo ?? "").trim();
         const desc = (v ?? "").trim();
         const isFallback = !code || code === "EVAL" || code === "CUSTOM" || code.toLowerCase() === desc.toLowerCase();
-        return <div style={{ fontWeight: 500 }}>{isFallback ? desc : `${code} - ${desc}`}</div>;
+        return (
+          <div style={{ fontWeight: 500 }}>
+            {r.es_correctivo && <Tag color="error" style={{ fontSize: 10, marginRight: 4 }}>🚨 EMERGENCIA</Tag>}
+            {isFallback ? desc : `${code} - ${desc}`}
+          </div>
+        );
       },
     },
     {
