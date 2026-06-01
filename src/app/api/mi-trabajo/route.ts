@@ -92,6 +92,7 @@ export async function GET(req: Request) {
           cod_rep_posicion: true,
           fecha_entrega: true,
           fabricante: { select: { nombre: true } },
+          cliente: { select: { razon_social: true, nombre_comercial: true } },
           codigo_reparacion: { select: { codigo: true, descripcion: true, flota: { select: { codigo: true, nombre: true } } } },
           prioridad_atencion: { select: { codigo: true, nombre: true, nivel: true } },
         },

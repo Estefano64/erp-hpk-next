@@ -386,6 +386,13 @@ export default function ProgramacionSemanalPage() {
   const cargaPorRecurso = useMemo(() => {
     const map = new Map<string, number>();
     for (const r of rowsFiltradas) {
+      // Las horas se cuentan en la semana donde la tarea ARRANCA. Una tarea que
+      // se desborda desde la semana anterior (empieza viernes, sigue el lunes)
+      // aparece acá por el filtro de solape, pero sus horas ya cuentan en su
+      // semana de inicio — no las re-sumamos en esta.
+      if (!r.fecha_inicio) continue;
+      const fi = dayjs(r.fecha_inicio);
+      if (fi.isoWeek() !== lunes.isoWeek() || fi.isoWeekYear() !== lunes.isoWeekYear()) continue;
       const dur = Number(r.horas_estimadas ?? 0);
       const qty = Math.max(1, Number(r.qty_personal ?? 1));
       const hhTotal = dur * qty;
@@ -396,7 +403,7 @@ export default function ProgramacionSemanalPage() {
       for (const k of keys) map.set(k, (map.get(k) ?? 0) + cuota);
     }
     return map;
-  }, [rowsFiltradas, view]);
+  }, [rowsFiltradas, view, lunes]);
 
   // "Ahora" calculado SOLO en el cliente (con la hora local del navegador). Si
   // se usaba dayjs() directo, el render del servidor (Railway en UTC) ponía la

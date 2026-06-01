@@ -28,6 +28,7 @@ interface OTLite {
   cod_rep_posicion: string | null;
   fecha_entrega: string | null;
   fabricante: { nombre: string } | null;
+  cliente: { razon_social: string; nombre_comercial: string | null } | null;
   codigo_reparacion: { codigo: string; descripcion: string; flota: { codigo: string; nombre: string } | null } | null;
   prioridad_atencion: { codigo: string; nombre: string; nivel: number | null } | null;
 }
@@ -114,6 +115,9 @@ function saludoNombre(full: string): string {
 const DIAS_ES = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 function diaEs(d: Dayjs): string {
   return `${DIAS_ES[d.day()]} ${d.format("DD/MM")}`;
+}
+function clienteDe(o: OTLite | null | undefined): string {
+  return o?.cliente?.nombre_comercial ?? o?.cliente?.razon_social ?? "";
 }
 function formatSegundos(s: number): string {
   const h = Math.floor(s / 3600);
@@ -306,6 +310,9 @@ export default function TecnicoPanel() {
           <div style={{ fontSize: 10, color: brand.textSecondary }}>
             {r.componente} · {r.operacion_codigo} {r.maquina ? `· ${r.maquina}` : ""}
           </div>
+          {clienteDe(r.orden_trabajo) && (
+            <div style={{ fontSize: 10, color: brand.textSecondary }}>🏢 {clienteDe(r.orden_trabajo)}</div>
+          )}
           {r.comentario && <Tag color="cyan" style={{ fontSize: 10, marginTop: 2 }}>💬 Comentario</Tag>}
         </div>
       ),
@@ -376,6 +383,7 @@ export default function TecnicoPanel() {
         )}
         <Row gutter={[12, 8]}>
           {dato("OT", o?.ot ?? `#${r.ot_id}`)}
+          {dato("Cliente", clienteDe(o) || null)}
           {dato("Duración est.", r.horas_estimadas != null ? `${Number(r.horas_estimadas)} h` : null)}
           {dato("Inicio real", r.fecha_inicio_real ? dayjs(r.fecha_inicio_real).format("DD/MM/YY HH:mm") : null)}
           {dato("Fin real", r.fecha_fin_real ? dayjs(r.fecha_fin_real).format("DD/MM/YY HH:mm") : null)}
@@ -442,6 +450,7 @@ export default function TecnicoPanel() {
           <Text strong style={{ fontSize: 13 }}>OT-{o?.ot ?? r.ot_id} · {flota}</Text>
           <Tag color={esHoy ? "blue" : "default"} style={{ margin: 0 }}>{ini ? (esHoy ? "Hoy" : diaEs(ini)) : "—"}</Tag>
         </div>
+        {clienteDe(o) && <div style={{ fontSize: 11, color: brand.textSecondary, marginBottom: 2 }}>🏢 {clienteDe(o)}</div>}
         {r.es_correctivo && <Tag color="error" style={{ marginBottom: 4 }}>🚨 EMERGENCIA</Tag>}
         <div style={{ fontSize: 13, fontWeight: 500 }}>{r.descripcion}</div>
         <div style={{ fontSize: 11, color: brand.textSecondary }}>
