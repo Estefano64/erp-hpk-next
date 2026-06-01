@@ -29,6 +29,22 @@ export default withAuth(
   },
   {
     pages: { signIn: "/login" },
+    callbacks: {
+      // Custom `authorized` para que las APIs devuelvan 401 JSON cuando no hay
+      // sesión, en lugar de redirigir al GET de /login. Sin esto, un PUT/POST
+      // sin sesión seguía el redirect y le pegaba a /login con el método
+      // original, obteniendo un 405 "Method Not Allowed" en texto plano que
+      // rompe el res.json() del cliente con "Unexpected token 'M'".
+      //
+      // Devolver `false` aquí dispara el redirect default a /login (solo para
+      // páginas). Para /api/* devolvemos true SIEMPRE y dejamos que cada
+      // endpoint valide su propia sesión con getToken() — los endpoints
+      // privados ya hacen eso y responden 401 JSON correctamente.
+      authorized: ({ req, token }) => {
+        if (req.nextUrl.pathname.startsWith("/api/")) return true;
+        return token != null;
+      },
+    },
   },
 );
 

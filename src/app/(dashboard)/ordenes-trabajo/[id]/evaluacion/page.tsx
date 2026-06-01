@@ -315,6 +315,20 @@ export default function EvaluacionPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+      // Si la respuesta NO es JSON (típicamente cuando hay un 405 / 401 /
+      // redirect a /login que devuelve HTML), evitamos el `res.json()` que
+      // tira "Unexpected token 'M'" y mostramos un mensaje claro.
+      const contentType = res.headers.get("content-type") ?? "";
+      if (!contentType.includes("application/json")) {
+        const texto = await res.text().catch(() => "");
+        if (res.status === 401 || res.status === 403) {
+          throw new Error("Sesión expirada o sin permisos. Iniciá sesión nuevamente.");
+        }
+        if (res.status === 405) {
+          throw new Error("El servidor rechazó el método (405). Probablemente la app no terminó de deployar — recargá la página en unos segundos.");
+        }
+        throw new Error(`Error ${res.status}: ${texto.slice(0, 200) || "respuesta inesperada del servidor"}`);
+      }
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Error al guardar");
       setEvaluacion(json.data);
