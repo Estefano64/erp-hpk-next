@@ -297,6 +297,26 @@ export default function PlanificacionPage() {
     }
   }, [editMode, messageApi, notifySync, fetchData]);
 
+  // Reabrir una tarea que un técnico finalizó por error (acción extraordinaria,
+  // solo planner/admin — el endpoint lo valida). Da vuelta las sesiones
+  // "finalizado" → "pausa": la tarea vuelve a "pausado", conservando el tiempo.
+  const reabrirTarea = useCallback(async (id: number) => {
+    if (!editMode) {
+      messageApi.warning("Activá Modo Edición para reabrir tareas.");
+      return;
+    }
+    try {
+      const res = await fetch(`/api/planificacion/${id}/reabrir`, { method: "POST" });
+      const j = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(j?.error ?? "Error");
+      messageApi.success("Tarea reabierta: quedó en Pausado. El técnico puede retomarla.");
+      notifySync();
+      fetchData();
+    } catch (e) {
+      messageApi.error(e instanceof Error ? e.message : "Error al reabrir");
+    }
+  }, [editMode, messageApi, notifySync, fetchData]);
+
   useEffect(() => {
     (async () => {
       const anioActual = new Date().getFullYear() % 100; // ej. 26 → solo OTs del año
@@ -1321,6 +1341,19 @@ export default function PlanificacionPage() {
             <Tooltip title="Emergencia (correctiva)">
               <Button danger size="small" type="primary" style={{ cursor: "default" }}>🚨</Button>
             </Tooltip>
+          )}
+          {r.estado === "realizado" && (
+            <Popconfirm
+              title="Reabrir tarea finalizada"
+              description="Acción extraordinaria: la tarea vuelve a 'Pausado' y el técnico podrá retomarla. Se conserva el tiempo trabajado y queda registrado en el historial."
+              okText="Reabrir"
+              cancelText="Cancelar"
+              onConfirm={() => reabrirTarea(r.id)}
+            >
+              <Tooltip title="Reabrir tarea finalizada">
+                <Button size="small" icon={<UndoOutlined />} disabled={!editMode} />
+              </Tooltip>
+            </Popconfirm>
           )}
         </Space.Compact>
       ),
