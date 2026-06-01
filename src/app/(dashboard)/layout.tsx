@@ -23,6 +23,7 @@ import {
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { brand } from "@/lib/theme";
+import { useResponsive } from "@/lib/responsive";
 import IdleLogout from "@/components/IdleLogout";
 import BfcacheGuard from "@/components/BfcacheGuard";
 import { confirmLeave } from "@/lib/unsaved-changes";
@@ -200,6 +201,11 @@ export default function DashboardLayout({
   const [openKeys, setOpenKeys] = useState<string[]>([]);
   const pathname = usePathname();
   const router = useRouter();
+  const { isMobile } = useResponsive();
+
+  // En celular el sidebar es un cajón superpuesto (no empuja el contenido):
+  // arranca colapsado y el contenido va a ancho completo.
+  useEffect(() => { setCollapsed(isMobile); }, [isMobile]);
   const [userName, setUserName] = useState<string | null>(null);
   const [roles, setRoles] = useState<string[]>([]);
 
@@ -275,13 +281,20 @@ export default function DashboardLayout({
     <Layout style={{ minHeight: "100vh" }}>
       <IdleLogout />
       <BfcacheGuard />
+      {/* Backdrop en celular: al tocar fuera, cierra el cajón. */}
+      {isMobile && !collapsed && (
+        <div
+          onClick={() => setCollapsed(true)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 99 }}
+        />
+      )}
       <Sider
         collapsible
         collapsed={collapsed}
         onCollapse={setCollapsed}
         trigger={null}
         width={240}
-        collapsedWidth={64}
+        collapsedWidth={isMobile ? 0 : 64}
         style={{
           borderRight: `1px solid ${brand.border}`,
           position: "fixed",
@@ -321,15 +334,20 @@ export default function DashboardLayout({
           openKeys={openKeys}
           onOpenChange={(keys) => setOpenKeys(keys)}
           items={menuItems}
-          onClick={({ key }) => { if (confirmLeave()) router.push(key); }}
+          onClick={({ key }) => {
+            if (confirmLeave()) {
+              router.push(key);
+              if (isMobile) setCollapsed(true); // cerrar el cajón al navegar
+            }
+          }}
           style={{ borderRight: 0, marginTop: 4 }}
         />
       </Sider>
 
-      <Layout style={{ marginLeft: collapsed ? 64 : 240, transition: "margin-left 0.2s" }}>
+      <Layout style={{ marginLeft: isMobile ? 0 : (collapsed ? 64 : 240), transition: "margin-left 0.2s" }}>
         <Header
           style={{
-            padding: "0 24px",
+            padding: isMobile ? "0 12px" : "0 24px",
             background: brand.white,
             display: "flex",
             alignItems: "center",
@@ -391,7 +409,7 @@ export default function DashboardLayout({
           </Dropdown>
         </Header>
 
-        <Content style={{ margin: 20, minHeight: "calc(100vh - 96px)" }}>
+        <Content style={{ margin: isMobile ? "12px 8px" : 20, minHeight: "calc(100vh - 96px)" }}>
           {children}
         </Content>
       </Layout>
