@@ -236,11 +236,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Fecha de requerimiento del cliente obligatoria para OTs de reparación
-    // (no aplica a Bien/Servicio). En "Contrato" se calcula sola arriba; en el
-    // resto debe venir del form. Guard de servidor que respalda la validación UI.
-    const esReparacion = body.tipo_codigo !== "BIE" && body.tipo_codigo !== "SER";
-    if (esReparacion && !fechaRequerimiento) {
+    // Fecha de requerimiento del cliente obligatoria para REP y BIE (SER no
+    // la usa). En "Contrato" se calcula sola arriba; en el resto debe venir
+    // del form. Guard de servidor que respalda la validación UI.
+    const esServicio = body.tipo_codigo === "SER";
+    if (!esServicio && !fechaRequerimiento) {
       return NextResponse.json(
         { error: "La fecha de requerimiento del cliente es obligatoria." },
         { status: 400 },
@@ -291,10 +291,12 @@ export async function POST(req: NextRequest) {
 
     const usuarioCrea = (await getAuditUser(req)) ?? "sistema";
 
-    // Campos que SOLO aplican a Reparaciones (atención/garantía/PCR). Se
-    // nulifican si el tipo es BIE/SER aunque el body los traiga — los forms
-    // de Bien/Servicio no los muestran pero un cliente malicioso podría
-    // enviarlos. Mantiene consistencia y evita reportes confusos.
+    // Campos que SOLO aplican a Reparaciones (PCR/garantía/plaqueteo/etc.).
+    // Para BIE el cliente igual ve algunos del flujo de Reparación (Atención
+    // Reparación, Prioridad, Fecha Requerimiento, Comentarios). Para SER se
+    // nulifica todo el bloque de "trámite con cliente" porque no aplica.
+    // Las nulificaciones acá actúan como guard de servidor por si el body
+    // trae basura — los forms no las muestran pero un cliente malicioso podría.
     const esBienOServicio = body.tipo_codigo === "BIE" || body.tipo_codigo === "SER";
 
     // Generación + create en la misma transacción, con advisory lock dentro
@@ -318,28 +320,31 @@ export async function POST(req: NextRequest) {
           cod_rep_posicion: codRepPosicion,
           equipo_codigo: body.equipo_codigo || null,
           ns: body.ns || null,
-          plaqueteo: body.plaqueteo || null,
-          wo_cliente: body.wo_cliente || null,
+          // Plaqueteo / WO / PO Item / ID Viajero / Guía / Empresa: solo REP.
+          plaqueteo: esBienOServicio ? null : (body.plaqueteo || null),
+          wo_cliente: esBienOServicio ? null : (body.wo_cliente || null),
           po_cliente: body.po_cliente || null,
-          po_item: body.po_item || null,
-          id_viajero: body.id_viajero || null,
-          guia_remision: body.guia_remision || null,
-          empresa_entrega: body.empresa_entrega || null,
+          po_item: esBienOServicio ? null : (body.po_item || null),
+          id_viajero: esBienOServicio ? null : (body.id_viajero || null),
+          guia_remision: esBienOServicio ? null : (body.guia_remision || null),
+          empresa_entrega: esBienOServicio ? null : (body.empresa_entrega || null),
           fecha_recepcion: esBienOServicio ? null : parseDateOnly(body.fecha_recepcion),
           pcr: esBienOServicio ? null : (body.pcr ?? null),
           horas: esBienOServicio ? null : (body.horas ?? null),
           porcentaje_pcr: esBienOServicio ? null : porcentajePcr,
           garantia_codigo: esBienOServicio ? null : (body.garantia_codigo || null),
-          atencion_reparacion_codigo: esBienOServicio ? null : (body.atencion_reparacion_codigo || null),
+          // Atención Reparación: REP + BIE; nulo solo en SER.
+          atencion_reparacion_codigo: esServicio ? null : (body.atencion_reparacion_codigo || null),
           tipo_reparacion_codigo: esBienOServicio ? null : (body.tipo_reparacion_codigo || null),
           tipo_garantia_codigo: esBienOServicio ? null : tipoGarantiaCodigo,
           prioridad_atencion_codigo: body.prioridad_atencion_codigo || null,
           contrato_dias: esBienOServicio ? null : contratoDias,
-          base_metalica_codigo: body.base_metalica_codigo || null,
+          base_metalica_codigo: esBienOServicio ? null : (body.base_metalica_codigo || null),
           comentarios: body.comentarios || null,
           monto_cotizacion: body.monto_cotizacion != null && body.monto_cotizacion !== "" ? body.monto_cotizacion : null,
           moneda_cotizacion_codigo: body.moneda_cotizacion_codigo || null,
-          fecha_requerimiento_cliente: esBienOServicio ? null : fechaRequerimiento,
+          // Fecha Requerimiento Cliente: REP + BIE; null solo en SER.
+          fecha_requerimiento_cliente: esServicio ? null : fechaRequerimiento,
           ot_status_codigo: "Abierta",
           recursos_status_codigo: "En revision procesos",
           taller_status_codigo: "Pdt Evaluación",

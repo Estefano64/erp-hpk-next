@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
+import { formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
 
 // ── Mapeos de status entre POs2 (UI) y current (DB) ─────────────
 const codeToLabel: Record<string, string> = {
@@ -79,24 +80,58 @@ export async function GET(req: NextRequest) {
       include: {
         proveedor: { select: { id: true, razon_social: true, ruc: true } },
         ubicacion: { select: { codigo: true, nombre: true } },
-        orden_trabajo: { select: { id: true, ot: true, descripcion: true } },
+        orden_trabajo: { select: { id: true, ot: true, tipo_codigo: true, descripcion: true } },
         detalles: {
           include: { material: { select: { codigo: true, descripcion: true } } },
         },
         _count: { select: { ot_repuestos: true } },
-        ot_repuestos: { select: { fecha_solicitud: true, createdAt: true }, orderBy: { fecha_solicitud: "asc" }, take: 1 },
+        // Traer los repuestos con sus OT vinculadas (externa o interna) para
+        // derivar `ot_numero` aún cuando la OC sea de una OT interna (que no
+        // setea `compra.ot_id`). Limitamos a 100 items para no inflar el
+        // payload — más que suficiente para casos reales y suficiente para
+        // listar las OTs únicas distintas en el header.
+        ot_repuestos: {
+          select: {
+            fecha_solicitud: true,
+            createdAt: true,
+            orden_trabajo: { select: { ot: true, tipo_codigo: true } },
+            orden_trabajo_interna: { select: { ot: true } },
+          },
+          orderBy: { fecha_solicitud: "asc" },
+          take: 100,
+        },
       },
       orderBy: { fecha_solicitud: "desc" },
     });
 
     type R = typeof records[number];
-    const data = records.map((r: R) => ({
+    const data = records.map((r: R) => {
+      // Códigos de OT que aparecen en los items de esta OC (externas + internas),
+      // sin duplicados. Si la OC no tiene compra.ot_id pero los items vienen
+      // de una OT interna, ahora muestra "OI000126" en lugar de "—".
+      const otCodes = new Set<string>();
+      if (r.orden_trabajo?.ot != null) {
+        const c = formatOtCodigo(r.orden_trabajo.ot, r.orden_trabajo.tipo_codigo, "");
+        if (c) otCodes.add(c);
+      }
+      for (const it of r.ot_repuestos) {
+        if (it.orden_trabajo?.ot != null) {
+          const c = formatOtCodigo(it.orden_trabajo.ot, it.orden_trabajo.tipo_codigo, "");
+          if (c) otCodes.add(c);
+        }
+        if (it.orden_trabajo_interna?.ot != null) {
+          const c = formatOtInternaCodigo(it.orden_trabajo_interna.ot, "");
+          if (c) otCodes.add(c);
+        }
+      }
+      const otNumero = otCodes.size > 0 ? [...otCodes].join(", ") : null;
+      return {
       id: r.id,
       numero_po: r.numero_po,
       nombre: r.nombre ?? null,
       numero_req: r.numero_req,
       ot_id: r.ot_id,
-      ot_numero: r.orden_trabajo?.ot ?? null,
+      ot_numero: otNumero,
       ot_descripcion: r.orden_trabajo?.descripcion ?? null,
       proveedor_id: r.proveedor_id,
       proveedor_nombre: r.proveedor?.razon_social ?? null,
@@ -127,7 +162,8 @@ export async function GET(req: NextRequest) {
       // Fecha en que se creó la OC y la del requerimiento más antiguo vinculado.
       fecha_oc_creacion: r.createdAt,
       fecha_req_creacion: r.ot_repuestos[0]?.fecha_solicitud ?? r.ot_repuestos[0]?.createdAt ?? null,
-    }));
+      };
+    });
 
     return NextResponse.json({ data });
   } catch (error) {
