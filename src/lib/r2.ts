@@ -41,7 +41,14 @@ export function getR2Bucket(): string {
 //   hpyk-erp-files/
 //   └── ordenes-trabajo/
 //       └── <otCodigo>/
-//           ├── adjuntos/                  → OtAdjunto
+//           ├── adjuntos/
+//           │   ├── recepcion/             → OtAdjunto etapa=recepcion
+//           │   ├── evaluacion/            → OtAdjunto etapa=evaluacion
+//           │   ├── cotizacion/            → OtAdjunto etapa=cotizacion
+//           │   ├── po_cliente/            → OtAdjunto etapa=po_cliente
+//           │   ├── termino/               → OtAdjunto etapa=termino
+//           │   ├── despacho/              → OtAdjunto etapa=despacho
+//           │   └── facturacion/           → OtAdjunto etapa=facturacion
 //           ├── evaluaciones/              → EvaluacionTecnica.informe_key
 //           ├── requerimientos/<reqId>/    → OTRepuestoAdjunto
 //           └── compras/
@@ -57,8 +64,16 @@ export function getR2Bucket(): string {
 // IMPORTANTE: estas funciones devuelven el "folder prefix" (sin filename).
 // El filename se agrega al firmar la URL (timestamp+uuid+nombre-sanitizado).
 // El cliente nunca arma estos paths — son responsabilidad del backend.
+//
+// Nota sobre `otAdjunto(otCodigo, etapa?)`: si se pasa `etapa` el path incluye
+// la subcarpeta (estructura nueva 2026-06). Si se omite devuelve el path
+// histórico sin etapa — usado solo como prefix base para validar adjuntos
+// legacy que se subieron antes de la reorganización por carpetas.
 export const R2Keys = {
-  otAdjunto: (otCodigo: string) => `ordenes-trabajo/${sanitize(otCodigo)}/adjuntos`,
+  otAdjunto: (otCodigo: string, etapa?: string) =>
+    etapa
+      ? `ordenes-trabajo/${sanitize(otCodigo)}/adjuntos/${sanitize(etapa)}`
+      : `ordenes-trabajo/${sanitize(otCodigo)}/adjuntos`,
   otEvaluacion: (otCodigo: string) => `ordenes-trabajo/${sanitize(otCodigo)}/evaluaciones`,
   requerimientoAdjunto: (otCodigo: string, reqId: number) =>
     `ordenes-trabajo/${sanitize(otCodigo)}/requerimientos/${reqId}`,
@@ -78,7 +93,12 @@ export const R2Keys = {
   // Capturas de tickets (bugs/mejoras del ERP). No vinculados a OT.
   ticket: () => `tickets`,
   // Adjuntos de OT Interna — mismo patrón que OT Externa pero en otro namespace.
-  otInternaAdjunto: (otCodigo: string) => `ot-internas/${sanitize(otCodigo)}/adjuntos`,
+  // `etapa` solo se usa para internas si en el futuro se agregan etapas; hoy
+  // todas las internas usan "general" y la subcarpeta sigue siendo opcional.
+  otInternaAdjunto: (otCodigo: string, etapa?: string) =>
+    etapa
+      ? `ot-internas/${sanitize(otCodigo)}/adjuntos/${sanitize(etapa)}`
+      : `ot-internas/${sanitize(otCodigo)}/adjuntos`,
   // Requerimientos de OT Interna (espejo de requerimientoAdjunto para externas).
   otInternaRequerimientoAdjunto: (otInternaCodigo: string, reqId: number) =>
     `ot-internas/${sanitize(otInternaCodigo)}/requerimientos/${reqId}`,

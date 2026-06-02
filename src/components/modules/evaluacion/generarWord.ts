@@ -115,9 +115,18 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
   };
   const renderChecksTable = (prefix: string, items: CheckItem[], titulo?: string): string => {
     if (!items.length) return "";
+    // En el Word solo deben aparecer los items que el usuario MARCÓ. Filtramos
+    // primero — si ningún item del grupo tiene valor seleccionado, no
+    // renderizamos la tabla (ni el título) para no inflar el documento con
+    // secciones vacías.
+    const itemsMarcados = items.filter((it) => {
+      const valor = v(`${prefix}_${it.key}`);
+      return typeof valor === "string" && valor.length > 0;
+    });
+    if (!itemsMarcados.length) return "";
     // Agrupar items consecutivos por tipo (mismo criterio que el form).
     const grupos: { tipo?: CheckItem["tipo"]; items: CheckItem[] }[] = [];
-    for (const it of items) {
+    for (const it of itemsMarcados) {
       const ultimo = grupos[grupos.length - 1];
       if (ultimo && ultimo.tipo === it.tipo) ultimo.items.push(it);
       else grupos.push({ tipo: it.tipo, items: [it] });
@@ -479,6 +488,57 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
     if (tapaPost) {
       seccionesHTML += `<div class="campo-texto"><b>Detalle adicional - Tapa posterior</b><div class="textarea-box">${esc(tapaPost)}</div></div>`;
     }
+
+    // ─── Tapa (main) ───
+    // El telescópico ALSO renderiza una sección de Tapa "principal" además de
+    // las secundarias (T1, T2). Tiene su propio TablaChecks en el form.
+    seccionesHTML += renderSeccionComponente(
+      numSec++,
+      "Tapa",
+      imgTapa,
+      "Tapa",
+      [
+        renderMedida(`${p}_tapa_dext`, "Diámetro Exterior (A)", "single"),
+        renderMedida(`${p}_tapa_dint`, "Diámetro Interior (B)", "single"),
+        renderMedida(`${p}_tapa_dsell`, "Diámetro Sellado (C)", "single"),
+        renderMedida(`${p}_tapa_ltot`, "Longitud Total (D)", "single"),
+      ].join(""),
+      `${p}_tapa`,
+      []
+    );
+    seccionesHTML += renderChecksTable(
+      `${p}_tapa`,
+      [
+        { key: "ndt", label: "Pasa NDT", tipo: "sn" },
+        { key: "ext_roscado", label: "Exterior roscado", tipo: "sn" },
+        { key: "sup_roscada", label: "Estado de superficie Roscada" },
+      ],
+      "Checks - Tapa"
+    );
+
+    // ─── Émbolo (último del telescópico) ───
+    seccionesHTML += renderSeccionComponente(
+      numSec++,
+      "Émbolo",
+      imgPiston,
+      "Émbolo (A, B, D)",
+      [
+        renderMedida(`${p}_emb_dext`, "Diámetro Exterior (A)", "single"),
+        renderMedida(`${p}_emb_dint`, "Diámetro Interior (B)", "single"),
+        renderMedida(`${p}_emb_ltot`, "Longitud Total (D)", "single"),
+      ].join(""),
+      `${p}_emb`,
+      []
+    );
+    seccionesHTML += renderChecksTable(
+      `${p}_emb`,
+      [
+        { key: "ndt", label: "Pasa NDT", tipo: "sn" },
+        { key: "int_roscado", label: "Interior roscado", tipo: "sn" },
+        { key: "sup_roscada", label: "Estado de superficie Roscada" },
+      ],
+      "Checks - Émbolo"
+    );
 
     saltarEstandar = true;
   }
@@ -872,6 +932,17 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
       (items as string[]).map((texto, idx) => ({ key: `${p}_pis_g${gi}_${idx}`, texto }))
     );
     seccionesHTML += renderSeccionComponente(numSec++, modeloEvaluacion === "acum_embolo" ? "Embolo" : "Piston", imgPiston, "Piston (A, B, C)", medidasPis, `${p}_pis`, hallazgosPis);
+    // Checks del Pistón / Émbolo — todos los modelos estándar los tienen.
+    // El form usa `${p}_pis` también para el émbolo del acumulador, por eso
+    // estos labels son genéricos ("interior roscado" aplica a ambos).
+    seccionesHTML += renderChecksTable(
+      `${p}_pis`,
+      [
+        { key: "ndt", label: "Pasa NDT", tipo: "sn" },
+        { key: "int_roscado", label: "Interior roscado", tipo: "sn" },
+      ],
+      `Checks - ${modeloEvaluacion === "acum_embolo" ? "Émbolo" : "Pistón"}`
+    );
   }
 
   // ── HTML completo ──

@@ -80,9 +80,12 @@ export async function POST(req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "tamano inválido" }, { status: 400 });
     }
     // Defensa en profundidad: el path firmado debe vivir bajo el namespace
-    // de ESTA OT interna.
-    const expectedPrefix = R2Keys.otInternaAdjunto(otInternaCodigoFor(ot)) + "/";
-    if (!key.startsWith(expectedPrefix)) {
+    // de ESTA OT interna. Aceptamos tanto el path nuevo (con subcarpeta
+    // "general/") como el legacy (sin subcarpeta) para no romper keys subidas
+    // antes de la reorganización.
+    const expectedPrefixConEtapa = R2Keys.otInternaAdjunto(otInternaCodigoFor(ot), ETAPA_INTERNA) + "/";
+    const expectedPrefixLegacy   = R2Keys.otInternaAdjunto(otInternaCodigoFor(ot)) + "/";
+    if (!key.startsWith(expectedPrefixConEtapa) && !key.startsWith(expectedPrefixLegacy)) {
       return NextResponse.json({ error: "key fuera del namespace de la OT" }, { status: 400 });
     }
 

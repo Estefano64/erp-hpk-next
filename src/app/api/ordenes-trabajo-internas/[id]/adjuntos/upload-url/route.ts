@@ -22,7 +22,10 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (!upload.ok) return upload.response;
 
   try {
-    const folderPrefix = R2Keys.otInternaAdjunto(otInternaCodigoFor(access.ot));
+    // OT internas hoy solo tienen una etapa ("general"). Igual la pasamos al
+    // R2Keys para que la subcarpeta exista y la estructura sea consistente
+    // con OT externas (si en el futuro se agregan etapas, este código ya está).
+    const folderPrefix = R2Keys.otInternaAdjunto(otInternaCodigoFor(access.ot), "general");
     const result = await generateUploadUrl({
       folderPrefix,
       fileName: upload.value.fileName,
