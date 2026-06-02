@@ -1191,6 +1191,10 @@ model Compra {
   observaciones          String?
   usuario_solicita       String          @db.VarChar(100)
   usuario_aprueba        String?         @db.VarChar(100)
+  // Comentario / recomendación que dejó el aprobador al aceptar la OC. Opcional.
+  // Se persiste en el momento de aceptar (espejo del que va a OTHistorial)
+  // para poder mostrarlo en la UI sin parsear el JSON del historial.
+  comentario_aprobacion  String?         @db.VarChar(500)
   createdAt              DateTime        @default(now())
   updatedAt              DateTime        @updatedAt
   ubicacion              Ubicacion?      @relation(fields: [ubicacion_codigo], references: [codigo])
