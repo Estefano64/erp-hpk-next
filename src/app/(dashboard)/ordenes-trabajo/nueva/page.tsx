@@ -98,6 +98,9 @@ export default function NuevaOTPage() {
   const esServicio = tipoOTCodigo === "SER";
   const bloqueoBien = esBien || esServicio;
   const bloqueoServicio = esServicio;
+  // Reparación = ni Bien ni Servicio. En REP, todos los campos de Identificación
+  // y de Documentos y Logística son obligatorios al crear.
+  const esRep = !bloqueoBien;
 
   // Campos calculados
   const [porcentajePcr, setPorcentajePcr] = useState<number | null>(null);
@@ -317,9 +320,9 @@ export default function NuevaOTPage() {
         monto_cotizacion: values.monto_cotizacion ?? null,
         moneda_cotizacion_codigo: values.moneda_cotizacion_codigo || null,
         comentarios: values.comentarios || null,
-        // Fecha Requerimiento Cliente: aplica a REP y BIE (no SER). Para
-        // Contrato se calcula sola (manda null) y el backend la deriva.
-        fecha_requerimiento_cliente: !esServicio && atencionCodigo !== "Contrato" && values.fecha_requerimiento_cliente
+        // Fecha Requerimiento Cliente: aplica a REP, BIE y SER. Para Contrato se
+        // calcula sola (manda null) y el backend la deriva.
+        fecha_requerimiento_cliente: atencionCodigo !== "Contrato" && values.fecha_requerimiento_cliente
           ? values.fecha_requerimiento_cliente.format("YYYY-MM-DD")
           : null,
       };
@@ -409,6 +412,7 @@ export default function NuevaOTPage() {
               <Form.Item
                 name="id_cod_rep"
                 label="Código Reparable"
+                rules={[{ required: esRep && estrategia, message: "Requerido" }]}
                 extra={
                   tieneContrato ? (
                     <Text style={{ color: brand.success, fontSize: 12 }}>
@@ -472,7 +476,7 @@ export default function NuevaOTPage() {
                 </Form.Item>
               </Col>
               <Col xs={12} md={8}>
-                <Form.Item name="np" label="N/P">
+                <Form.Item name="np" label="N/P" rules={[{ required: esRep, message: "Requerido" }]}>
                   <Input placeholder="Ej. 219-2540" />
                 </Form.Item>
               </Col>
@@ -482,7 +486,7 @@ export default function NuevaOTPage() {
                 </Form.Item>
               </Col>
               <Col xs={12} md={8}>
-                <Form.Item name="id_fabricante" label="Fabricante">
+                <Form.Item name="id_fabricante" label="Fabricante" rules={[{ required: esRep, message: "Requerido" }]}>
                   <Select
                     placeholder="Seleccionar"
                     allowClear showSearch optionFilterProp="label"
@@ -491,12 +495,12 @@ export default function NuevaOTPage() {
                 </Form.Item>
               </Col>
               <Col xs={12} md={8}>
-                <Form.Item name="cod_rep_flota" label="Flota">
+                <Form.Item name="cod_rep_flota" label="Flota" rules={[{ required: esRep, message: "Requerido" }]}>
                   <Input placeholder="Ej. 980E" />
                 </Form.Item>
               </Col>
               <Col xs={12} md={8}>
-                <Form.Item name="cod_rep_posicion" label="Posición">
+                <Form.Item name="cod_rep_posicion" label="Posición" rules={[{ required: esRep, message: "Requerido" }]}>
                   <Select
                     placeholder="Seleccionar"
                     allowClear showSearch optionFilterProp="label"
@@ -541,19 +545,19 @@ export default function NuevaOTPage() {
           <Row gutter={16}>
             {!bloqueoBien && (
               <Col xs={12} md={6}>
-                <Form.Item name="wo_cliente" label="WO Cliente">
+                <Form.Item name="wo_cliente" label="WO Cliente" rules={[{ required: esRep, message: "Requerido" }]}>
                   <Input />
                 </Form.Item>
               </Col>
             )}
             <Col xs={12} md={6}>
-              <Form.Item name="po_cliente" label="PO Cliente">
+              <Form.Item name="po_cliente" label="PO Cliente" rules={[{ required: esRep, message: "Requerido" }]}>
                 <Input />
               </Form.Item>
             </Col>
             {!bloqueoBien && (
               <Col xs={12} md={6}>
-                <Form.Item name="po_item" label="PO Item">
+                <Form.Item name="po_item" label="PO Item" rules={[{ required: esRep, message: "Requerido" }]}>
                   <Input />
                 </Form.Item>
               </Col>
@@ -561,17 +565,17 @@ export default function NuevaOTPage() {
             {!bloqueoBien && (
               <>
                 <Col xs={12} md={6}>
-                  <Form.Item name="id_viajero" label="ID Viajero">
+                  <Form.Item name="id_viajero" label="ID Viajero" rules={[{ required: esRep, message: "Requerido" }]}>
                     <Input />
                   </Form.Item>
                 </Col>
                 <Col xs={12} md={6}>
-                  <Form.Item name="guia_remision" label="Guía Remisión (llegada)">
+                  <Form.Item name="guia_remision" label="Guía Remisión (llegada)" rules={[{ required: esRep, message: "Requerido" }]}>
                     <Input />
                   </Form.Item>
                 </Col>
                 <Col xs={12} md={8}>
-                  <Form.Item name="empresa_entrega" label="Empresa que entrega">
+                  <Form.Item name="empresa_entrega" label="Empresa que entrega" rules={[{ required: esRep, message: "Requerido" }]}>
                     <Input />
                   </Form.Item>
                 </Col>
@@ -718,10 +722,10 @@ export default function NuevaOTPage() {
             )}
           </Row>
 
-          {/* Fecha Requerimiento Cliente: REP y BIE; SER no la usa. */}
-          {!esServicio && <Divider style={{ margin: "8px 0 16px" }} />}
+          {/* Fecha Requerimiento Cliente: obligatoria en REP, BIE y SER. */}
+          <Divider style={{ margin: "8px 0 16px" }} />
 
-          <Row gutter={16} style={{ display: esServicio ? "none" : undefined }}>
+          <Row gutter={16}>
             {atencionCodigo === "Contrato" ? (
               <>
                 <Col xs={12} md={6}>
@@ -745,10 +749,10 @@ export default function NuevaOTPage() {
                     label="Fecha Requerimiento Cliente"
                     dependencies={["fecha_recepcion"]}
                     rules={[
-                      // Obligatoria salvo Servicio (no aplica) o Contrato
-                      // (se calcula sola desde los días del contrato). En BIE
-                      // SÍ es requerida — el cliente la define manualmente.
-                      { required: !esServicio, message: "Requerido" },
+                      // Obligatoria en REP, BIE y SER. (Cuando la Atención es
+                      // "Contrato" no se muestra este input: la fecha se calcula
+                      // sola desde los días del contrato, así que no aplica acá.)
+                      { required: true, message: "Requerido" },
                       ({ getFieldValue }) => ({
                         validator(_, value) {
                           const recepcion = getFieldValue("fecha_recepcion");
