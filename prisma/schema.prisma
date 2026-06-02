@@ -945,6 +945,8 @@ model OrdenTrabajo {
   wo_cliente                  String?             @db.VarChar(100)
   po_cliente                  String?             @db.VarChar(100)
   po_item                     String?             @db.VarChar(100)
+  // Cantidad de unidades/servicios. Aplica a Bien y Servicio (NULL en Reparación).
+  cantidad                    Int?
   id_viajero                  String?             @db.VarChar(100)
   guia_remision               String?             @db.VarChar(100)
   empresa_entrega             String?             @db.VarChar(200)

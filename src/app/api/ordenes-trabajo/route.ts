@@ -379,6 +379,8 @@ export async function POST(req: NextRequest) {
           comentarios: body.comentarios || null,
           monto_cotizacion: body.monto_cotizacion != null && body.monto_cotizacion !== "" ? body.monto_cotizacion : null,
           moneda_cotizacion_codigo: body.moneda_cotizacion_codigo || null,
+          // Cantidad: solo Bien y Servicio.
+          cantidad: esBienOServicio && body.cantidad != null ? Number(body.cantidad) : null,
           // Fecha Requerimiento Cliente: los tres tipos.
           fecha_requerimiento_cliente: fechaRequerimiento,
           ot_status_codigo: "Abierta",

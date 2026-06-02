@@ -315,6 +315,8 @@ export default function NuevaOTPage() {
         prioridad_atencion_codigo: values.prioridad_atencion_codigo || null,
         monto_cotizacion: values.monto_cotizacion ?? null,
         moneda_cotizacion_codigo: values.moneda_cotizacion_codigo || null,
+        // Cantidad: solo Bien y Servicio.
+        cantidad: bloqueoBien ? (values.cantidad ?? null) : null,
         comentarios: values.comentarios || null,
         // Fecha Requerimiento Cliente: aplica a REP, BIE y SER. Solo en REP con
         // Atención=Contrato se calcula sola (manda null y el backend la deriva);
@@ -710,6 +712,14 @@ export default function NuevaOTPage() {
               <Col xs={12} md={4}>
                 <Form.Item label="Base Metálica" name="base_metalica" valuePropName="checked">
                   <Checkbox>Si</Checkbox>
+                </Form.Item>
+              </Col>
+            )}
+            {/* Cantidad: solo Bien y Servicio (obligatorio). */}
+            {bloqueoBien && (
+              <Col xs={12} md={4}>
+                <Form.Item name="cantidad" label="Cantidad" rules={[{ required: true, message: "Requerido" }]}>
+                  <InputNumber style={{ width: "100%" }} min={1} step={1} placeholder="1" />
                 </Form.Item>
               </Col>
             )}

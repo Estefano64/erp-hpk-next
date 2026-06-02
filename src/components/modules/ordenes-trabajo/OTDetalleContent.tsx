@@ -104,6 +104,7 @@ interface OTDetalle {
   wo_cliente: string | null;
   po_cliente: string | null;
   po_item: string | null;
+  cantidad: number | null;
   id_viajero: string | null;
   guia_remision: string | null;
   empresa_entrega: string | null;
@@ -325,6 +326,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
       wo_cliente: ot.wo_cliente,
       po_cliente: ot.po_cliente,
       po_item: ot.po_item,
+      cantidad: ot.cantidad,
       id_viajero: ot.id_viajero,
       guia_remision: ot.guia_remision,
       empresa_entrega: ot.empresa_entrega,
@@ -1094,6 +1096,9 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                   }
                 />
               </Col>
+              {bloqueoBien && (
+                <Col xs={12} md={3}><Field label="Cantidad" value={ot.cantidad} /></Col>
+              )}
             </Row>
           ) : (
             <Row gutter={[16, 12]}>
@@ -1175,6 +1180,14 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                   />
                 </Space.Compact>
               </Col>
+              {bloqueoBien && (
+                <Col xs={8} md={3}>
+                  <FieldLabel>Cantidad</FieldLabel>
+                  <InputNumber min={1} step={1} style={{ width: "100%" }}
+                    value={editData.cantidad as number ?? undefined}
+                    onChange={(v) => setField("cantidad", v)} />
+                </Col>
+              )}
             </Row>
           )}
         </Card>
