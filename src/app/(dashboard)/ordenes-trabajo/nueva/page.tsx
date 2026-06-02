@@ -157,15 +157,21 @@ export default function NuevaOTPage() {
         base_metalica: false,
         plaqueteo: undefined,
         wo_cliente: undefined,
-        po_item: undefined,
+        // po_item NO se limpia acá: BIE lo usa. Se limpia solo en SER (abajo).
       });
       setPorcentajePcr(null);
     }
+    if (esBien) {
+      // Bien no usa Datos del Equipo (Equipo / N/S).
+      form.setFieldsValue({ equipo_codigo: undefined, ns: undefined });
+    }
     if (esServicio) {
-      // SER no usa Atención reparación ni fecha de requerimiento del cliente.
+      // SER no usa Atención, fecha de requerimiento (se vuelve a habilitar al
+      // tipear), ni PO Item.
       form.setFieldsValue({
         atencion_reparacion_codigo: undefined,
         fecha_requerimiento_cliente: undefined,
+        po_item: undefined,
       });
       setAtencionCodigo("");
       setDiasCalculados(null);
@@ -306,11 +312,11 @@ export default function NuevaOTPage() {
         fecha_recepcion: bloqueoBien ? null : (values.fecha_recepcion ? values.fecha_recepcion.format("YYYY-MM-DD") : null),
         pcr: bloqueoBien ? null : (values.pcr ?? null),
         horas: bloqueoBien ? null : (values.horas ?? null),
-        // Garantía / Tipo Garantía / Tipo Reparación / Base Metálica: solo
-        // Reparación. En BIE/SER se anulan.
-        garantia_codigo: bloqueoBien ? null : (garantia ? "Si" : "No"),
+        // Garantía / Tipo Garantía: REP y BIE (SER no). Tipo Reparación y Base
+        // Metálica: solo Reparación.
+        garantia_codigo: esServicio ? null : (garantia ? "Si" : "No"),
         tipo_reparacion_codigo: bloqueoBien ? null : (values.tipo_reparacion_codigo || null),
-        tipo_garantia_codigo: bloqueoBien ? null : (garantia ? (values.tipo_garantia_codigo || null) : "NA"),
+        tipo_garantia_codigo: esServicio ? null : (garantia ? (values.tipo_garantia_codigo || null) : "NA"),
         base_metalica_codigo: bloqueoBien ? null : (values.base_metalica ? "Si" : "No"),
         // Atención Reparación: aplica a REP y BIE (no SER). Lo conservamos
         // cuando es BIE — el flujo de Bien también puede ser "Presupuesto",
@@ -412,7 +418,7 @@ export default function NuevaOTPage() {
               <Form.Item
                 name="id_cod_rep"
                 label="Código Reparable"
-                rules={[{ required: esRep && estrategia, message: "Requerido" }]}
+                rules={[{ required: !esServicio && estrategia, message: "Requerido" }]}
                 extra={
                   tieneContrato ? (
                     <Text style={{ color: brand.success, fontSize: 12 }}>
@@ -476,7 +482,7 @@ export default function NuevaOTPage() {
                 </Form.Item>
               </Col>
               <Col xs={12} md={8}>
-                <Form.Item name="np" label="N/P" rules={[{ required: esRep, message: "Requerido" }]}>
+                <Form.Item name="np" label="N/P" rules={[{ required: !esServicio, message: "Requerido" }]}>
                   <Input placeholder="Ej. 219-2540" />
                 </Form.Item>
               </Col>
@@ -486,7 +492,7 @@ export default function NuevaOTPage() {
                 </Form.Item>
               </Col>
               <Col xs={12} md={8}>
-                <Form.Item name="id_fabricante" label="Fabricante" rules={[{ required: esRep, message: "Requerido" }]}>
+                <Form.Item name="id_fabricante" label="Fabricante" rules={[{ required: !esServicio, message: "Requerido" }]}>
                   <Select
                     placeholder="Seleccionar"
                     allowClear showSearch optionFilterProp="label"
@@ -495,12 +501,12 @@ export default function NuevaOTPage() {
                 </Form.Item>
               </Col>
               <Col xs={12} md={8}>
-                <Form.Item name="cod_rep_flota" label="Flota" rules={[{ required: esRep, message: "Requerido" }]}>
+                <Form.Item name="cod_rep_flota" label="Flota" rules={[{ required: !esServicio, message: "Requerido" }]}>
                   <Input placeholder="Ej. 980E" />
                 </Form.Item>
               </Col>
               <Col xs={12} md={8}>
-                <Form.Item name="cod_rep_posicion" label="Posición" rules={[{ required: esRep, message: "Requerido" }]}>
+                <Form.Item name="cod_rep_posicion" label="Posición" rules={[{ required: !esServicio, message: "Requerido" }]}>
                   <Select
                     placeholder="Seleccionar"
                     allowClear showSearch optionFilterProp="label"
@@ -517,7 +523,8 @@ export default function NuevaOTPage() {
           )}
         </Card>
 
-        {/* ── SECCIÓN: Datos del equipo ── */}
+        {/* ── SECCIÓN: Datos del equipo (no aplica a Bien) ── */}
+        {!esBien && (
         <Card title="Datos del Equipo" style={{ marginBottom: 16 }} styles={{ body: { paddingBottom: 0 } }}>
           <Row gutter={16}>
             <Col xs={12} md={6}>
@@ -539,6 +546,7 @@ export default function NuevaOTPage() {
             )}
           </Row>
         </Card>
+        )}
 
         {/* ── SECCIÓN: Documentos del cliente ── */}
         <Card title="Documentos y Logística" style={{ marginBottom: 16 }} styles={{ body: { paddingBottom: 0 } }}>
@@ -551,13 +559,13 @@ export default function NuevaOTPage() {
               </Col>
             )}
             <Col xs={12} md={6}>
-              <Form.Item name="po_cliente" label="PO Cliente" rules={[{ required: esRep, message: "Requerido" }]}>
+              <Form.Item name="po_cliente" label="PO Cliente" rules={[{ required: !esServicio, message: "Requerido" }]}>
                 <Input />
               </Form.Item>
             </Col>
-            {!bloqueoBien && (
+            {!esServicio && (
               <Col xs={12} md={6}>
-                <Form.Item name="po_item" label="PO Item" rules={[{ required: esRep, message: "Requerido" }]}>
+                <Form.Item name="po_item" label="PO Item" rules={[{ required: !esServicio, message: "Requerido" }]}>
                   <Input />
                 </Form.Item>
               </Col>
@@ -629,8 +637,8 @@ export default function NuevaOTPage() {
           styles={{ body: { paddingBottom: 0 } }}
         >
           <Row gutter={16}>
-            {/* Garantía toggle: solo Reparación. */}
-            {!bloqueoBien && (
+            {/* Garantía toggle: Reparación y Bien (no Servicio). */}
+            {!esServicio && (
               <Col xs={12} md={4}>
                 <Form.Item label="Garantía">
                   <Checkbox
@@ -672,37 +680,38 @@ export default function NuevaOTPage() {
                 </Form.Item>
               </Col>
             )}
-            {/* Tipo Reparación + Tipo Garantía: solo Reparación. */}
+            {/* Tipo Reparación: solo Reparación. */}
             {!bloqueoBien && (
-              <>
-                <Col xs={12} md={6}>
-                  <Form.Item
-                    name="tipo_reparacion_codigo"
-                    label="Tipo Reparación"
-                    rules={[{ required: true, message: "Requerido" }]}
-                  >
-                    <Select showSearch optionFilterProp="label"
-                      placeholder="Seleccionar"
-                      options={tipoReparaciones.map((t) => ({ value: t.codigo, label: t.nombre }))}
-                    />
-                  </Form.Item>
-                </Col>
-                <Col xs={12} md={6}>
-                  <Form.Item
-                    name="tipo_garantia_codigo"
-                    label="Tipo Garantía"
-                    rules={garantia ? [{ required: true, message: "Seleccioná un tipo" }] : []}
-                  >
-                    <Select showSearch optionFilterProp="label"
-                      placeholder={garantia ? "Seleccionar" : "NA"}
-                      disabled={!garantia}
-                      options={tipoGarantias
-                        .filter((t) => t.codigo !== "NA")
-                        .map((t) => ({ value: t.codigo, label: t.nombre }))}
-                    />
-                  </Form.Item>
-                </Col>
-              </>
+              <Col xs={12} md={6}>
+                <Form.Item
+                  name="tipo_reparacion_codigo"
+                  label="Tipo Reparación"
+                  rules={[{ required: true, message: "Requerido" }]}
+                >
+                  <Select showSearch optionFilterProp="label"
+                    placeholder="Seleccionar"
+                    options={tipoReparaciones.map((t) => ({ value: t.codigo, label: t.nombre }))}
+                  />
+                </Form.Item>
+              </Col>
+            )}
+            {/* Tipo Garantía: Reparación y Bien (no Servicio). */}
+            {!esServicio && (
+              <Col xs={12} md={6}>
+                <Form.Item
+                  name="tipo_garantia_codigo"
+                  label="Tipo Garantía"
+                  rules={garantia ? [{ required: true, message: "Seleccioná un tipo" }] : []}
+                >
+                  <Select showSearch optionFilterProp="label"
+                    placeholder={garantia ? "Seleccionar" : "NA"}
+                    disabled={!garantia}
+                    options={tipoGarantias
+                      .filter((t) => t.codigo !== "NA")
+                      .map((t) => ({ value: t.codigo, label: t.nombre }))}
+                  />
+                </Form.Item>
+              </Col>
             )}
             <Col xs={12} md={6}>
               <Form.Item name="prioridad_atencion_codigo" label="Prioridad de Atención" rules={[{ required: true, message: "Requerido" }]}>
@@ -720,6 +729,34 @@ export default function NuevaOTPage() {
                 </Form.Item>
               </Col>
             )}
+            {/* Monto de cotización (monto + moneda): aplica a REP, BIE y SER. */}
+            <Col xs={24} md={8}>
+              <Form.Item label="Monto de cotización">
+                <Space.Compact style={{ display: "flex" }}>
+                  <Form.Item name="monto_cotizacion" noStyle>
+                    <InputNumber
+                      placeholder="0.00"
+                      min={0}
+                      step={100}
+                      style={{ flex: 1 }}
+                      formatter={(v) => {
+                        if (v == null) return "";
+                        const n = Number(v);
+                        return Number.isNaN(n) ? "" : n.toLocaleString("es-PE", { minimumFractionDigits: 2 });
+                      }}
+                      parser={(v) => Number((v ?? "").replace(/[^\d.]/g, "")) as 0}
+                    />
+                  </Form.Item>
+                  <Form.Item name="moneda_cotizacion_codigo" noStyle>
+                    <Select showSearch optionFilterProp="label"
+                      placeholder="Moneda"
+                      style={{ width: 110 }}
+                      options={monedas.map((m) => ({ value: m.codigo, label: m.codigo }))}
+                    />
+                  </Form.Item>
+                </Space.Compact>
+              </Form.Item>
+            </Col>
           </Row>
 
           {/* Fecha Requerimiento Cliente: obligatoria en REP, BIE y SER. */}
