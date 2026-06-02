@@ -98,35 +98,56 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
     return `<tr><td class="label">${esc(label)}</td><td class="editable" colspan="2">${esc(v(prefix)) || "—"}</td></tr>`;
   };
 
-  // Helper: tabla de checks (Bueno/Malo/N-A o SI/NO/N-A)
-  // Cada item -> una fila en la tabla. Se muestra el valor marcado (o "—" si no hay).
-  type CheckItem = { key: string; label: string; tipo?: "bm" | "sn" };
+  // Helper: tabla de checks (Bueno/Malo/N-A, SI/NO/N-A o Completo/Incompleto/N-A).
+  // Cada item -> una fila en la tabla. Se muestra el valor marcado (X en la
+  // columna correspondiente).
+  //
+  // IMPORTANTE: items con distinto `tipo` se agrupan y renderizan en TABLAS
+  // SEPARADAS — antes una sola tabla mostraba el header del primer item para
+  // todos, lo que hacía que los items SI/NO o Completo/Incompleto cayeran en
+  // las columnas equivocadas. La agrupación replica exactamente lo que hace
+  // el formulario en pantalla.
+  type CheckItem = { key: string; label: string; tipo?: "bm" | "sn" | "ci" };
+  const opcionesPorTipo = (tipo?: CheckItem["tipo"]): { vals: string[]; labels: string[] } => {
+    if (tipo === "sn") return { vals: ["SI", "NO", "NA"], labels: ["SI", "NO", "N/A"] };
+    if (tipo === "ci") return { vals: ["Completo", "Incompleto", "NA"], labels: ["Completo", "Incompleto", "N/A"] };
+    return { vals: ["Bueno", "Malo", "NA"], labels: ["Bueno", "Malo", "N/A"] };
+  };
   const renderChecksTable = (prefix: string, items: CheckItem[], titulo?: string): string => {
     if (!items.length) return "";
-    const rows = items
-      .map((it) => {
-        const valor = v(`${prefix}_${it.key}`);
-        const cabecera = it.tipo === "sn" ? ["SI", "NO", "NA"] : ["Bueno", "Malo", "NA"];
-        const marca = (op: string) => (valor === op ? "X" : "");
-        return `<tr>
-          <td class="label">${esc(it.label)}</td>
-          <td class="editable">${marca(cabecera[0])}</td>
-          <td class="editable">${marca(cabecera[1])}</td>
-          <td class="editable">${marca(cabecera[2])}</td>
-        </tr>`;
+    // Agrupar items consecutivos por tipo (mismo criterio que el form).
+    const grupos: { tipo?: CheckItem["tipo"]; items: CheckItem[] }[] = [];
+    for (const it of items) {
+      const ultimo = grupos[grupos.length - 1];
+      if (ultimo && ultimo.tipo === it.tipo) ultimo.items.push(it);
+      else grupos.push({ tipo: it.tipo, items: [it] });
+    }
+    const tablas = grupos
+      .map((g) => {
+        const { vals, labels } = opcionesPorTipo(g.tipo);
+        const rows = g.items
+          .map((it) => {
+            const valor = v(`${prefix}_${it.key}`);
+            const marca = (op: string) => (valor === op ? "X" : "");
+            return `<tr>
+              <td class="label">${esc(it.label)}</td>
+              <td class="editable">${marca(vals[0])}</td>
+              <td class="editable">${marca(vals[1])}</td>
+              <td class="editable">${marca(vals[2])}</td>
+            </tr>`;
+          })
+          .join("");
+        return `<table><thead>
+            <tr>
+              <th style="width:40%">Verificación</th>
+              <th>${esc(labels[0])}</th>
+              <th>${esc(labels[1])}</th>
+              <th>${esc(labels[2])}</th>
+            </tr>
+          </thead><tbody>${rows}</tbody></table>`;
       })
       .join("");
-    // Cabeceras: si hay items mezclados (sn y bm), usar el primero como referencia visual
-    const primerTipo = items[0]?.tipo === "sn" ? ["SI", "NO", "NA"] : ["Bueno", "Malo", "NA"];
-    return `${titulo ? `<div class="campo-texto"><b>${esc(titulo)}</b></div>` : ""}
-      <table><thead>
-        <tr>
-          <th style="width:40%">Verificación</th>
-          <th>${primerTipo[0]}</th>
-          <th>${primerTipo[1]}</th>
-          <th>${primerTipo[2]}</th>
-        </tr>
-      </thead><tbody>${rows}</tbody></table>`;
+    return `${titulo ? `<div class="campo-texto"><b>${esc(titulo)}</b></div>` : ""}${tablas}`;
   };
 
   // Helper: campo radio (Convencional/Concavo, Cojinete/Rotula/Pin, etc.) -> linea simple
@@ -269,9 +290,16 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
         { key: "roscada", label: "Estado de sup. Roscada" },
         { key: "estado_cancamo", label: "Estado de cáncamo" },
         { key: "ndt", label: "Pasa a NDT", tipo: "sn" },
+        { key: "placa_conectores", label: "Placa / Conectores", tipo: "ci" },
       ],
       "Checks - Cilindro Principal"
     );
+    {
+      const placaComentTel = v(`${p}_cil_placa_conectores_coment`);
+      if (placaComentTel) {
+        seccionesHTML += `<div class="campo-texto"><b>Comentario — Placa / Conectores</b><div class="textarea-box">${esc(placaComentTel)}</div></div>`;
+      }
+    }
 
     // ─── Vastago principal ───
     const medidasVasTel = [
@@ -680,7 +708,13 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
         cilChecks.push({ key: "est_cartelas", label: "Est. de cartelas" });
       }
       cilChecks.push({ key: "ndt", label: "Pasa a NDT", tipo: "sn" });
+      cilChecks.push({ key: "placa_conectores", label: "Placa / Conectores", tipo: "ci" });
       seccionesHTML += renderChecksTable(`${p}_cil`, cilChecks, "Checks - Cilindro");
+      // Comentario libre asociado al check "Placa / Conectores" (solo si tiene texto).
+      const placaComent = v(`${p}_cil_placa_conectores_coment`);
+      if (placaComent) {
+        seccionesHTML += `<div class="campo-texto"><b>Comentario — Placa / Conectores</b><div class="textarea-box">${esc(placaComent)}</div></div>`;
+      }
     }
 
     // Vastago
