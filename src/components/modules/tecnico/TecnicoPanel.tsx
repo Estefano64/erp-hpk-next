@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Typography, Card, Row, Col, Table, Tag, Button, Statistic, Empty, Progress, Space, App, Tooltip, Segmented, Modal, Input, Upload,
+  Typography, Card, Row, Col, Table, Tag, Button, Statistic, Empty, Space, App, Tooltip, Segmented, Modal, Input, Upload,
 } from "antd";
 import {
-  PlayCircleOutlined, PauseCircleOutlined, CheckCircleOutlined, TrophyOutlined,
+  PlayCircleOutlined, PauseCircleOutlined, CheckCircleOutlined,
   ClockCircleOutlined, ReloadOutlined, FireOutlined, LineChartOutlined,
   LeftOutlined, RightOutlined, DownOutlined, UpOutlined,
   PaperClipOutlined, DeleteOutlined,
@@ -94,20 +94,6 @@ interface MiTrabajo {
   rendimientoMes: Rendimiento;
   historico: { semana: string; estimadas: number; reales: number; eficienciaPct: number | null }[];
 }
-interface RankingItem {
-  tecnico: string;
-  tareas: number;
-  horas_estimadas: number;
-  horas_reales: number;
-  eficienciaPct: number | null;
-}
-
-function eficienciaColor(pct: number | null): string {
-  if (pct == null) return brand.textSecondary;
-  if (pct >= 100) return "#52c41a";
-  if (pct >= 80) return "#faad14";
-  return "#cf1322";
-}
 // Nombres de trabajador vienen como "APELLIDO APELLIDO NOMBRE NOMBRE" (sin coma).
 // Para el saludo mostramos "Primer nombre Primer apellido" (ej. "Jose Huamani").
 function saludoNombre(full: string): string {
@@ -137,8 +123,6 @@ export default function TecnicoPanel() {
   const { message, modal } = App.useApp();
   const { screens, isMobile } = useResponsive(); // isMobile = < 768px
   const [data, setData] = useState<MiTrabajo | null>(null);
-  const [ranking, setRanking] = useState<RankingItem[]>([]);
-  const [rankingPeriodo, setRankingPeriodo] = useState<"semana" | "mes">("semana");
   const [loading, setLoading] = useState(false);
   const [accionLoading, setAccionLoading] = useState<number | null>(null);
   // Cronómetro local que avanza desde transcurrido_seg
@@ -196,16 +180,7 @@ export default function TecnicoPanel() {
     return [...base].sort((a, b) => Number(!!b.es_correctivo) - Number(!!a.es_correctivo));
   })();
 
-  const fetchRanking = useCallback(async (periodo: "semana" | "mes") => {
-    const r = await fetch(`/api/ranking-tecnicos?periodo=${periodo}`);
-    if (r.ok) {
-      const j = await r.json();
-      setRanking(j.ranking ?? []);
-    }
-  }, []);
-
   useEffect(() => { fetchData(); }, [fetchData]);
-  useEffect(() => { fetchRanking(rankingPeriodo); }, [fetchRanking, rankingPeriodo]);
 
   // Tick del cronómetro cada segundo si hay sesión en curso.
   useEffect(() => {
@@ -570,8 +545,6 @@ export default function TecnicoPanel() {
     );
   }
 
-  const miPosicion = ranking.findIndex((r) => r.tecnico === data.me.nombre);
-
   return (
     <div>
       <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
@@ -644,20 +617,12 @@ export default function TecnicoPanel() {
         <Col xs={24} md={12}>
           <Card size="small" title={<><LineChartOutlined /> Mi semana</>}>
             <Row gutter={16}>
-              <Col span={8}>
+              <Col span={12}>
                 <Statistic title="Tareas hechas" value={data.rendimientoSemana.realizadas} suffix={`/ ${data.rendimientoSemana.totalProgramadas}`} />
               </Col>
-              <Col span={8}>
+              <Col span={12}>
                 <Statistic title="Horas reales" value={data.rendimientoSemana.horas_reales} suffix="h" precision={1} />
                 <Text type="secondary" style={{ fontSize: 11 }}>est. {data.rendimientoSemana.horas_estimadas.toFixed(1)}h</Text>
-              </Col>
-              <Col span={8}>
-                <Statistic
-                  title="Eficiencia"
-                  value={data.rendimientoSemana.eficienciaPct ?? "—"}
-                  suffix={data.rendimientoSemana.eficienciaPct != null ? "%" : ""}
-                  valueStyle={{ color: eficienciaColor(data.rendimientoSemana.eficienciaPct) }}
-                />
               </Col>
             </Row>
           </Card>
@@ -665,20 +630,12 @@ export default function TecnicoPanel() {
         <Col xs={24} md={12}>
           <Card size="small" title={<><LineChartOutlined /> Mi mes</>}>
             <Row gutter={16}>
-              <Col span={8}>
+              <Col span={12}>
                 <Statistic title="Tareas hechas" value={data.rendimientoMes.realizadas} suffix={`/ ${data.rendimientoMes.totalProgramadas}`} />
               </Col>
-              <Col span={8}>
+              <Col span={12}>
                 <Statistic title="Horas reales" value={data.rendimientoMes.horas_reales} suffix="h" precision={1} />
                 <Text type="secondary" style={{ fontSize: 11 }}>est. {data.rendimientoMes.horas_estimadas.toFixed(1)}h</Text>
-              </Col>
-              <Col span={8}>
-                <Statistic
-                  title="Eficiencia"
-                  value={data.rendimientoMes.eficienciaPct ?? "—"}
-                  suffix={data.rendimientoMes.eficienciaPct != null ? "%" : ""}
-                  valueStyle={{ color: eficienciaColor(data.rendimientoMes.eficienciaPct) }}
-                />
               </Col>
             </Row>
           </Card>
@@ -687,7 +644,7 @@ export default function TecnicoPanel() {
 
       <Row gutter={[16, 16]}>
         {/* Tareas de TODA la semana (hoy resaltado con el tag "Hoy") */}
-        <Col xs={24} lg={16}>
+        <Col xs={24}>
           <Card
             size="small"
             title={
@@ -735,76 +692,6 @@ export default function TecnicoPanel() {
                       expandable={expandable}
                     />
                   )
-            }
-          </Card>
-        </Col>
-
-        {/* Ranking público + histórico */}
-        <Col xs={24} lg={8}>
-          <Card
-            size="small"
-            title={<><TrophyOutlined /> Ranking de técnicos</>}
-            extra={<Segmented size="small" value={rankingPeriodo} onChange={(v) => setRankingPeriodo(v as "semana" | "mes")} options={[{ value: "semana", label: "Semana" }, { value: "mes", label: "Mes" }]} />}
-          >
-            {ranking.length === 0
-              ? <Empty description="Aún no hay tareas realizadas en el período" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-              : (
-                <div>
-                  {miPosicion >= 0 && (
-                    <div style={{ marginBottom: 8, padding: 6, background: "#FFF1F0", borderRadius: 4, fontSize: 12, textAlign: "center" }}>
-                      Estás en el puesto <strong>#{miPosicion + 1}</strong> de {ranking.length}
-                    </div>
-                  )}
-                  {ranking.slice(0, 10).map((r, i) => {
-                    const esYo = r.tecnico === data.me.nombre;
-                    return (
-                      <div
-                        key={r.tecnico}
-                        style={{
-                          display: "flex", alignItems: "center", padding: 6, gap: 8,
-                          background: esYo ? "#FFF1F0" : (i % 2 ? "transparent" : "#FAFAFA"),
-                          borderRadius: 4,
-                          fontSize: 12,
-                          fontWeight: esYo ? 600 : 400,
-                        }}
-                      >
-                        <span style={{ width: 22, textAlign: "center", color: i < 3 ? "#fa8c16" : brand.textSecondary, fontWeight: 700 }}>
-                          {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`}
-                        </span>
-                        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {r.tecnico}{esYo && " (vos)"}
-                        </span>
-                        <Tag color={eficienciaColor(r.eficienciaPct) === "#52c41a" ? "success" : eficienciaColor(r.eficienciaPct) === "#faad14" ? "warning" : "error"} style={{ fontSize: 10, margin: 0 }}>
-                          {r.eficienciaPct != null ? `${r.eficienciaPct}%` : "—"}
-                        </Tag>
-                      </div>
-                    );
-                  })}
-                </div>
-              )
-            }
-          </Card>
-
-          <Card size="small" title="Últimas 4 semanas" style={{ marginTop: 16 }}>
-            {data.historico.length === 0
-              ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />
-              : data.historico.map((h, idx) => (
-                  <div key={idx} style={{ marginBottom: 8 }}>
-                    <Row justify="space-between" style={{ marginBottom: 2 }}>
-                      <Text style={{ fontSize: 12 }}>Sem. {h.semana}</Text>
-                      <Text strong style={{ fontSize: 12, color: eficienciaColor(h.eficienciaPct) }}>
-                        {h.eficienciaPct != null ? `${h.eficienciaPct}%` : "—"}
-                      </Text>
-                    </Row>
-                    <Progress
-                      percent={h.estimadas > 0 && h.reales > 0 ? Math.min(100, Math.round((h.estimadas / h.reales) * 100)) : 0}
-                      size="small"
-                      status={h.eficienciaPct == null || h.eficienciaPct < 80 ? "exception" : "active"}
-                      showInfo={false}
-                    />
-                    <Text type="secondary" style={{ fontSize: 10 }}>{h.estimadas}h est. / {h.reales}h real</Text>
-                  </div>
-                ))
             }
           </Card>
         </Col>
