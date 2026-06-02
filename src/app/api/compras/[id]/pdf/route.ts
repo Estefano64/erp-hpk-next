@@ -138,11 +138,22 @@ export async function GET(_req: NextRequest, { params }: Params) {
       const pu = r.precio_unitario ? Number(r.precio_unitario) : 0;
       const tot = cant * pu;
 
+      // Plantilla 2026: la columna "OT" muestra el código formateado de la OT
+      // a la que pertenece el ítem (externa o interna). Cae al N/P o código de
+      // material como fallback si el item no tiene OT (caso raro: items libres
+      // creados sin vinculación).
+      const otCodigoItem = r.orden_trabajo?.ot != null
+        ? formatOtCodigo(r.orden_trabajo.ot, r.orden_trabajo.tipo_codigo, "")
+        : r.orden_trabajo_interna?.ot != null
+        ? formatOtInternaCodigo(r.orden_trabajo_interna.ot, "")
+        : "";
+      const colOt = otCodigoItem || np || codigo;
+
       itemsRows.push(`
         <tr>
           <td class="center">${idx + 1}</td>
           <td class="center">${cant}</td>
-          <td class="center">${esc(np || codigo)}</td>
+          <td class="center">${esc(colOt)}</td>
           <td class="desc">${esc(descripcion)}</td>
           <td class="center">${esc(um)}</td>
           <td class="center">${fmtDate(compra.fecha_entrega_esperada) || "-"}</td>
@@ -342,7 +353,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
       <tr>
         <th style="width:5%">ITEM</th>
         <th style="width:7%">CANT.</th>
-        <th style="width:14%">Nro. PARTE/COD</th>
+        <th style="width:14%">OT</th>
         <th style="width:38%">DESCRIPCION</th>
         <th style="width:6%">UN</th>
         <th style="width:10%">F. ENTREGA</th>
