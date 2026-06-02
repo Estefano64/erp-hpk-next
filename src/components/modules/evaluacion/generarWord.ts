@@ -1,4 +1,5 @@
 import { MODELOS_EVALUACION } from "./EvaluacionFormulario";
+import { CATALOGOS_EVALUACION } from "@/lib/evaluacion-catalogos";
 
 interface OTDetalle {
   ot: string | null;
@@ -165,14 +166,161 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
     return `<tr><td class="label">${esc(label)}</td><td class="editable" colspan="2">${esc(val) || "—"}</td></tr>`;
   };
 
-  // Helper: render de imagenes subidas (max 6, grilla 3x2, altura uniforme)
+  // ──────────────────────────────────────────────────────────────────────────
+  // Helpers basados en CATALOGOS_EVALUACION — antes los hallazgos y
+  // recomendaciones se hardcoreaban acá con keys "_g0_0", "_g1_1" que NUNCA
+  // matcheaban con lo que guarda el form (que usa item.key del catálogo). Por
+  // eso ninguna observación marcada por el evaluador aparecía en el Word.
+  // Ahora iteramos sobre el mismo catálogo que usa el form (single source of
+  // truth) — si el form lo guarda, el Word lo encuentra.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // Helper: arma el texto de un hallazgo marcado, incorporando la severidad,
+  // las opciones múltiples elegidas y el campo libre. Si el texto contiene
+  // "____", se reemplaza con las opciones (formato del catálogo original).
+  const renderHallazgoMarcado = (itemKey: string, item: {
+    texto: string;
+    severidades?: string[];
+    opcionesMultiples?: string[];
+    campoLibre?: string;
+  }): string => {
+    let texto = item.texto;
+    // Opciones múltiples: el form guarda `${itemKey}_op_<slug>` donde slug es
+    // el nombre minúsculas y espacios→guion bajo.
+    if (item.opcionesMultiples) {
+      const elegidas = item.opcionesMultiples.filter((op) =>
+        !!datos[`${itemKey}_op_${op.replace(/\s+/g, "_").toLowerCase()}`],
+      );
+      if (elegidas.length > 0) {
+        if (texto.includes("____")) texto = texto.replace("____", elegidas.join(", "));
+        else texto += ` (${elegidas.join(", ")})`;
+      }
+    }
+    // Campo libre (ej. "Indicar medida")
+    if (item.campoLibre) {
+      const libre = v(`${itemKey}_libre`);
+      if (libre) {
+        if (texto.includes("____")) texto = texto.replace("____", libre);
+        else texto += ` — ${libre}`;
+      }
+    }
+    // Severidad (al final, entre paréntesis)
+    if (item.severidades) {
+      const sev = v(`${itemKey}_sev`);
+      if (sev) texto += ` [${sev}]`;
+    }
+    return esc(texto);
+  };
+
+  // Renderiza los hallazgos del CATÁLOGO para un componente. Solo aparecen los
+  // que el evaluador marcó. `componentePrefix` es lo mismo que pasa el form a
+  // HallazgosCatalogo en `prefix=` (ej. `${p}_cil`); `filtros` son los prefijos
+  // de grupo que matchean este componente (ej. ["cil_"] para cilindro).
+  // `sujecion` filtra los grupos *_cojinete/_rotula/_pin para mostrar solo el
+  // que el usuario eligió en la pregunta global (mismo criterio del form).
+  const renderHallazgosCatalogo = (
+    componentePrefix: string,
+    filtros: string[],
+    sujecion?: string,
+  ): string => {
+    const cat = CATALOGOS_EVALUACION[modeloEvaluacion];
+    if (!cat) return "";
+    const SUJECION_SLUG: Record<string, string> = {
+      "Cojinete": "cojinete",
+      "Rótula": "rotula",
+      "Pin directo": "pin",
+    };
+    const todosSlugs = Object.values(SUJECION_SLUG);
+    const elegido = sujecion ? SUJECION_SLUG[sujecion] : undefined;
+
+    const lineas: string[] = [];
+    for (const [groupKey, group] of Object.entries(cat.hallazgos)) {
+      // Filtro por prefijo de grupo
+      if (!filtros.some((f) => groupKey.startsWith(f))) continue;
+      // Filtro por sujeción (cojinete/rotula/pin)
+      const esGrupoSujecion = todosSlugs.some((s) => groupKey.endsWith(`_${s}`));
+      if (esGrupoSujecion) {
+        if (!elegido) continue;                // sin elección → ocultar todos
+        if (!groupKey.endsWith(`_${elegido}`)) continue; // solo el elegido
+      }
+      for (const item of group.items) {
+        const itemKey = `${componentePrefix}_${groupKey}_${item.key}`;
+        if (!datos[itemKey]) continue;
+        lineas.push(`<li>${renderHallazgoMarcado(itemKey, item)}</li>`);
+      }
+    }
+    if (lineas.length === 0) return "";
+    return `<div class="hallazgos"><b>Hallazgos encontrados:</b><ul>${lineas.join("")}</ul></div>`;
+  };
+
+  // Renderiza recomendaciones del CATÁLOGO (estándar + no estándar) para un
+  // componente. El form usa el patrón `${p}_recom_${componente}_est_${itemKey}`
+  // y `${p}_recom_${componente}_no_${itemKey}` — replicamos eso.
+  const renderRecomendacionesCatalogo = (componente: string): string => {
+    const cat = CATALOGOS_EVALUACION[modeloEvaluacion];
+    if (!cat) return "";
+    const recoms = cat.recomendaciones[componente];
+    if (!recoms) return "";
+
+    const linea = (subPrefix: "est" | "no", item: {
+      key: string;
+      texto: string;
+      subOpciones?: string[];
+      cantidad?: boolean;
+      omitirSubOpEnInforme?: boolean;
+    }): string | null => {
+      const base = `${p}_recom_${componente}_${subPrefix}_${item.key}`;
+      if (!datos[base]) return null;
+      let texto = item.texto;
+      // Sub-opción (radio, ej. COJINETE / ROTULA)
+      if (item.subOpciones && !item.omitirSubOpEnInforme) {
+        const sub = v(`${base}_sub`);
+        if (sub) {
+          if (texto.includes("____")) texto = texto.replace("____", sub);
+          else texto += ` (${sub})`;
+        }
+      }
+      // Cantidad numérica (ej. "REALIZAR CAMBIO DE ___ PERNOS")
+      if (item.cantidad) {
+        const cant = v(`${base}_cant`);
+        if (cant) {
+          if (texto.includes("___")) texto = texto.replace("___", cant);
+          else texto += ` × ${cant}`;
+        }
+      }
+      return `<li>${esc(texto)}</li>`;
+    };
+
+    const lineasEst = recoms.estandar
+      .map((it) => linea("est", it))
+      .filter((x): x is string => x !== null);
+    const lineasNo = recoms.noEstandar
+      .map((it) => linea("no", it))
+      .filter((x): x is string => x !== null);
+
+    if (lineasEst.length === 0 && lineasNo.length === 0) return "";
+    let html = `<div class="campo-texto"><b>Recomendaciones — ${esc(recoms.nombre)}</b></div>`;
+    if (lineasEst.length > 0) {
+      html += `<div class="recom-grupo"><div class="recom-sub">Estándar</div><ul>${lineasEst.join("")}</ul></div>`;
+    }
+    if (lineasNo.length > 0) {
+      html += `<div class="recom-grupo"><div class="recom-sub">No estándar</div><ul>${lineasNo.join("")}</ul></div>`;
+    }
+    return html;
+  };
+
+  // Helper: render de imagenes subidas (max 6, grilla 3x2, altura uniforme).
+  // Inline style en el <img> porque MS Word ignora reglas CSS de clases para
+  // imágenes en algunos casos — el style inline siempre se respeta. La imagen
+  // entra dentro de la celda (max-width 100%) sin pasarse de 9.5cm de alto.
   const renderImagenesSubidas = (prefix: string): string => {
     const imgs = ((datos[`${prefix}_imagenes`] as { name: string; data: string }[] | undefined) || []).slice(0, 6);
     if (!imgs.length) return "";
     const COLS = 3;
+    const imgStyle = "max-width:100%;max-height:9.5cm;width:auto;height:auto;display:inline-block;";
     const cells = imgs.map(
       (img) =>
-        `<td class="foto-cell"><div class="foto-img-wrap"><img src="${img.data}" /></div><div class="foto-caption">${esc(
+        `<td class="foto-cell"><div class="foto-img-wrap"><img src="${img.data}" style="${imgStyle}" /></div><div class="foto-caption">${esc(
           img.name || ""
         )}</div></td>`
     );
@@ -187,7 +335,7 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
     return `
       <div class="fotos-subidas">
         <div class="fotos-titulo">Evidencia fotografica</div>
-        <table class="tabla-fotos"><tbody>${rows.join("")}</tbody></table>
+        <table class="tabla-fotos" width="100%" cellspacing="0" cellpadding="0"><tbody>${rows.join("")}</tbody></table>
       </div>
     `;
   };
@@ -241,7 +389,9 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
     `;
   };
 
-  // Prefijo del modelo
+  // Prefijo del modelo — DEBE matchear exactamente el map del form
+  // (EvaluacionFormulario.tsx ~línea 1390). Si se desalinea, el form guarda
+  // bajo "t9_..." pero generarWord busca bajo "t1_..." y NO encuentra nada.
   const prefijos: Record<string, string> = {
     cil_vastago_simple: "t1",
     cil_pivotado: "t2",
@@ -251,6 +401,7 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
     acum_vejiga: "t6",
     rueda_delantera: "t7",
     suspension_delantera: "t8",
+    freno_servicio_parqueo: "t9",
   };
   const p = prefijos[modeloEvaluacion] || "t1";
 
@@ -309,6 +460,12 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
         seccionesHTML += `<div class="campo-texto"><b>Comentario — Placa / Conectores</b><div class="textarea-box">${esc(placaComentTel)}</div></div>`;
       }
     }
+    // Hallazgos + recomendaciones del catálogo para Cilindro Principal
+    {
+      const sujCil = v(`${p}_cil_elem_sujecion`) || v(`${p}_elem_sujecion`) || undefined;
+      seccionesHTML += renderHallazgosCatalogo(`${p}_cil`, ["cil_"], sujCil);
+      seccionesHTML += renderRecomendacionesCatalogo("cilindro");
+    }
 
     // ─── Vastago principal ───
     const medidasVasTel = [
@@ -362,6 +519,12 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
       ],
       "Checks - Vástago Principal"
     );
+    // Hallazgos + recomendaciones del catálogo para Vástago Principal
+    {
+      const sujVas = v(`${p}_vas_elem_sujecion`) || v(`${p}_elem_sujecion`) || undefined;
+      seccionesHTML += renderHallazgosCatalogo(`${p}_vas`, ["vas_"], sujVas);
+      seccionesHTML += renderRecomendacionesCatalogo("vastago");
+    }
 
     // ─── Etapas ───
     const numEtapas = Number(datos[`${p}_num_etapas`] || 2);
@@ -460,6 +623,8 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
     if (tapaSec) {
       seccionesHTML += `<div class="campo-texto"><b>Detalle adicional - Tapa roscada secundaria</b><div class="textarea-box">${esc(tapaSec)}</div></div>`;
     }
+    // Hallazgos del catálogo: telescópico usa grupo "tapa_roscada"
+    seccionesHTML += renderHallazgosCatalogo(`${p}_tapa_sec`, ["tapa_roscada"]);
 
     // ─── Tapa Posterior de Sujeción (estructurada) ───
     seccionesHTML += renderSeccionComponente(
@@ -488,6 +653,8 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
     if (tapaPost) {
       seccionesHTML += `<div class="campo-texto"><b>Detalle adicional - Tapa posterior</b><div class="textarea-box">${esc(tapaPost)}</div></div>`;
     }
+    // Hallazgos del catálogo: telescópico usa grupo "tapa_posterior"
+    seccionesHTML += renderHallazgosCatalogo(`${p}_tapa_post`, ["tapa_posterior"]);
 
     // ─── Tapa (main) ───
     // El telescópico ALSO renderiza una sección de Tapa "principal" además de
@@ -515,6 +682,9 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
       ],
       "Checks - Tapa"
     );
+    // Hallazgos + recomendaciones del catálogo para Tapa main
+    seccionesHTML += renderHallazgosCatalogo(`${p}_tapa`, ["tapa"]);
+    seccionesHTML += renderRecomendacionesCatalogo("tapa");
 
     // ─── Émbolo (último del telescópico) ───
     seccionesHTML += renderSeccionComponente(
@@ -539,6 +709,9 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
       ],
       "Checks - Émbolo"
     );
+    // Hallazgos + recomendaciones del catálogo para Émbolo del telescópico
+    seccionesHTML += renderHallazgosCatalogo(`${p}_emb`, ["embolo"]);
+    seccionesHTML += renderRecomendacionesCatalogo("embolo");
 
     saltarEstandar = true;
   }
@@ -550,64 +723,77 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
       renderMedida(`${p}_hub_a`, "A - Alojamiento pista rodamiento mayor", "xy"),
       renderMedida(`${p}_hub_b`, "B - Alojamiento pista rodamiento menor", "xy"),
     ].join("");
-    const hallazgosHub = [
-      "Alojamientos de pistas de rodamientos conicos presentan desgaste",
-      "Alojamientos de pistas de rodamientos conicos presentan rayaduras",
-      "Pistas de rodamientos conicos presentan desgaste",
-      "Pistas de rodamientos conicos presentan rayaduras",
-      "Pernos de sujecion de rueda presentan desgaste",
-      "Pernos de sujecion de rueda presentan fatiga",
-      "Pernos de sujecion de rueda presentan hilos dañados",
-      "Pernos de sujecion de rueda presentan fractura",
-      "Presenta corrosion en portasellos",
-      "Sello Duo Cone presenta desgaste",
-      "Engranaje de sensor presenta corrosion",
-      "Lainas de separacion llegaron dañadas",
-    ].map((texto, idx) => ({ key: `${p}_hub_g0_${idx}`, texto }));
-    seccionesHTML += renderSeccionComponente(numSec++, "HUB (Cubo)", imgHub, "Hub", medidasHub, `${p}_hub`, hallazgosHub);
+    seccionesHTML += renderSeccionComponente(numSec++, "HUB (Cubo)", imgHub, "Hub", medidasHub, `${p}_hub`, []);
+    seccionesHTML += renderHallazgosCatalogo(`${p}_hub`, ["hub"]);
+    seccionesHTML += renderRecomendacionesCatalogo("hub");
 
     // SPINDLE
     const medidasSpi = [
       renderMedida(`${p}_spi_a`, "A - Asiento rodamiento mayor", "xy"),
       renderMedida(`${p}_spi_b`, "B - Asiento rodamiento menor", "xy"),
     ].join("");
-    const hallazgosSpi = [
-      "Presenta picaduras en asiento de rodamiento",
-      "Presenta rayaduras en asiento de rodamiento",
-      "Daños en alojamientos roscados",
-      "Presenta daños en alojamiento conico",
-      "Presenta corrosion en alojamiento conico",
-      "Presenta picaduras en alojamiento conico",
-      "Alojamientos roscados de pernos de sujecion de bastidor",
-    ].map((texto, idx) => ({ key: `${p}_spi_g0_${idx}`, texto }));
-    seccionesHTML += renderSeccionComponente(numSec++, "SPINDLE (Muñon)", imgSpindle, "Spindle", medidasSpi, `${p}_spi`, hallazgosSpi);
+    seccionesHTML += renderSeccionComponente(numSec++, "SPINDLE (Muñon)", imgSpindle, "Spindle", medidasSpi, `${p}_spi`, []);
+    seccionesHTML += renderHallazgosCatalogo(`${p}_spi`, ["spindle"]);
+    seccionesHTML += renderRecomendacionesCatalogo("spindle");
 
     // CONJUNTO DE FRENO
-    const hallazgosFreno = [
-      "Piston de freno presenta rayaduras en alojamientos de sellos",
-      "Presenta desgaste en resortes de retraccion",
-      "Pernos de sujecion llegaron elongados",
-      "Sellos presentan desgaste",
-    ].map((texto, idx) => ({ key: `${p}_freno_g0_${idx}`, texto }));
-    seccionesHTML += renderSeccionComponente(numSec++, "CONJUNTO DE FRENO", imgConjFreno, "Conjunto de Freno", "", `${p}_freno`, hallazgosFreno);
+    seccionesHTML += renderSeccionComponente(numSec++, "CONJUNTO DE FRENO", imgConjFreno, "Conjunto de Freno", "", `${p}_freno`, []);
+    seccionesHTML += renderHallazgosCatalogo(`${p}_freno`, ["conjunto_freno"]);
+    seccionesHTML += renderRecomendacionesCatalogo("conjunto_freno");
 
     // CAJA DE FRENO
-    const hallazgosCaja = [
-      "Presenta rayas en asientos de sellos",
-      "Alojamientos roscados presentan contaminacion",
-    ].map((texto, idx) => ({ key: `${p}_caja_g0_${idx}`, texto }));
-    seccionesHTML += renderSeccionComponente(numSec++, "CAJA DE FRENO", imgPistonFreno, "Pistón de Freno", "", `${p}_caja`, hallazgosCaja);
+    seccionesHTML += renderSeccionComponente(numSec++, "CAJA DE FRENO", imgPistonFreno, "Pistón de Freno", "", `${p}_caja`, []);
+    seccionesHTML += renderHallazgosCatalogo(`${p}_caja`, ["caja_freno"]);
+    seccionesHTML += renderRecomendacionesCatalogo("caja_freno");
 
     // GENERAL
-    const hallazgosGen = [
-      "Discos de friccion presentan desgaste",
-      "Discos de friccion presentan marcas de temperatura (recalentamiento)",
-      "Placas separadoras presentan rayas circulares",
-      "Placas separadoras presentan desgaste",
-      "Placas separadoras presentan manchas de sobrecalentamiento",
-      "Dumpers presentan desgaste y daños por temperatura",
-    ].map((texto, idx) => ({ key: `${p}_gen_g0_${idx}`, texto }));
-    seccionesHTML += renderSeccionComponente(numSec++, "GENERAL", "", "", "", `${p}_gen`, hallazgosGen);
+    seccionesHTML += renderSeccionComponente(numSec++, "GENERAL", "", "", "", `${p}_gen`, []);
+    seccionesHTML += renderHallazgosCatalogo(`${p}_gen`, ["general"]);
+    seccionesHTML += renderRecomendacionesCatalogo("general");
+
+    saltarEstandar = true;
+  }
+
+  // ── FRENO DE SERVICIO & PARQUEO (tipo 9) ──
+  // Sub-componentes: Housing + Spindle (con medidas) + Sprocket + 2 pistones de
+  // freno (servicio + parqueo, ambos solo con hallazgos y recomendaciones).
+  if (modeloEvaluacion === "freno_servicio_parqueo") {
+    // HOUSING (con REF.NP + medidas A/B)
+    const refNpHousing = v(`${p}_housing_ref_np`);
+    const medidasHousing = [
+      ...(refNpHousing ? [`<tr><td class="label">REF. N/P</td><td class="editable" colspan="2">${esc(refNpHousing)}</td></tr>`] : []),
+      renderMedida(`${p}_housing_a`, "Diám. Alojamiento 1 (A)", "xy"),
+      renderMedida(`${p}_housing_b`, "Diám. Alojamiento 2 (B)", "xy"),
+    ].join("");
+    seccionesHTML += renderSeccionComponente(numSec++, "Housing", imgHub, "Housing (A, B)", medidasHousing, `${p}_housing`, []);
+    seccionesHTML += renderHallazgosCatalogo(`${p}_housing`, ["housing"]);
+    seccionesHTML += renderRecomendacionesCatalogo("housing");
+
+    // SPINDLE (con REF.NP + medidas A/L)
+    const refNpSpindle = v(`${p}_spindle_ref_np`);
+    const medidasSpindle = [
+      ...(refNpSpindle ? [`<tr><td class="label">REF. N/P</td><td class="editable" colspan="2">${esc(refNpSpindle)}</td></tr>`] : []),
+      renderMedida(`${p}_spindle_a`, "Diám. asiento rodamiento (A)", "xy"),
+      renderMedida(`${p}_spindle_l`, "Longitud (L)", "single"),
+    ].join("");
+    seccionesHTML += renderSeccionComponente(numSec++, "Spindle", imgSpindle, "Spindle (A, L)", medidasSpindle, `${p}_spindle`, []);
+    seccionesHTML += renderHallazgosCatalogo(`${p}_spindle`, ["spindle"]);
+    seccionesHTML += renderRecomendacionesCatalogo("spindle");
+
+    // SPROCKET (solo hallazgos + recomendaciones, sin medidas)
+    seccionesHTML += renderSeccionComponente(numSec++, "Sprocket", "", "", "", `${p}_sprocket`, []);
+    seccionesHTML += renderHallazgosCatalogo(`${p}_sprocket`, ["sprocket"]);
+    seccionesHTML += renderRecomendacionesCatalogo("sprocket");
+
+    // PISTÓN FRENO SERVICIO
+    seccionesHTML += renderSeccionComponente(numSec++, "Pistón Freno Servicio", imgPistonFreno, "Pistón Freno Servicio", "", `${p}_piston_servicio`, []);
+    seccionesHTML += renderHallazgosCatalogo(`${p}_piston_servicio`, ["piston_servicio"]);
+    seccionesHTML += renderRecomendacionesCatalogo("piston_servicio");
+
+    // PISTÓN FRENO PARQUEO
+    seccionesHTML += renderSeccionComponente(numSec++, "Pistón Freno Parqueo", imgPistonFreno, "Pistón Freno Parqueo", "", `${p}_piston_parqueo`, []);
+    seccionesHTML += renderHallazgosCatalogo(`${p}_piston_parqueo`, ["piston_parqueo"]);
+    seccionesHTML += renderRecomendacionesCatalogo("piston_parqueo");
 
     saltarEstandar = true;
   }
@@ -706,13 +892,13 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
         ].join("")
       : "";
     const medidasCil = medidasCilBase + medidasCilExtra;
-    const hallazgosCil = [
-      ["Cilindro Interior", ["Presenta rayaduras axiales en interior", "Presenta rayaduras radiales en interior", "Diametro interior presenta deformacion", "Medida interna fuera de tolerancia", "Diametro interior muestra desgaste", "Diametro de sellado muestra desgaste"]],
-      ["Cilindro Exterior", ["Presenta golpes en el exterior del cilindro", "Presenta desgaste en exterior del cilindro", "Presenta deformacion en exterior de cilindro", "Presenta depositos de soldadura ajenos al diseño"]],
-    ].flatMap(([, items], gi) =>
-      (items as string[]).map((texto, idx) => ({ key: `${p}_cil_g${gi}_${idx}`, texto }))
-    );
-    seccionesHTML += renderSeccionComponente(numSec++, "Cilindro (Botella)", imgCilindro, "Cilindro (A1-A4, C, D, E)", medidasCil, `${p}_cil`, hallazgosCil);
+    // Lee la elección global de sujeción para filtrar los grupos cojinete/rotula/pin
+    const sujecionGlobal = v(`${p}_cil_elem_sujecion`) || v(`${p}_elem_sujecion`) || undefined;
+    seccionesHTML += renderSeccionComponente(numSec++, "Cilindro (Botella)", imgCilindro, "Cilindro (A1-A4, C, D, E)", medidasCil, `${p}_cil`, []);
+    // Hallazgos del catálogo + recomendaciones — mismo filtro que pasa el form
+    // a HallazgosCatalogo: ["cil_", "acumulador"] (acumulador para acum_vejiga).
+    seccionesHTML += renderHallazgosCatalogo(`${p}_cil`, ["cil_", "acumulador"], sujecionGlobal);
+    seccionesHTML += renderRecomendacionesCatalogo(modeloEvaluacion === "acum_vejiga" ? "acumulador" : "cilindro");
 
     // Extras CHP: dos lecturas X/Y de cojinete y pivotante + longitud pivotante
     if (esPivotado) {
@@ -798,13 +984,10 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
         renderMedida(`${p}_vas_ancho_ojo`, "Ancho de Ojo", "xy"),
       ].join("");
       const medidasVas = medidasVasBase + medidasVasExtra;
-      const hallazgosVas = [
-        ["Cojinete", ["Presenta corrosion en exterior de cojinete", "Presenta picaduras en exterior de cojinete", "Presenta desgaste en exterior de cojinete", "Cojinete llego fisurado", "Llego sin cojinete"]],
-        ["Rotula", ["Presenta corrosion en interior de rotula", "Presenta picaduras en interior de rotula", "Presenta desgaste en interior de rotula"]],
-      ].flatMap(([, items], gi) =>
-        (items as string[]).map((texto, idx) => ({ key: `${p}_vas_g${gi}_${idx}`, texto }))
-      );
-      seccionesHTML += renderSeccionComponente(numSec++, "Vastago", imgVastago, "Vastago (A-J)", medidasVas, `${p}_vas`, hallazgosVas);
+      seccionesHTML += renderSeccionComponente(numSec++, "Vastago", imgVastago, "Vastago (A-J)", medidasVas, `${p}_vas`, []);
+      // Hallazgos del catálogo para vástago + recomendaciones componente "vastago"
+      seccionesHTML += renderHallazgosCatalogo(`${p}_vas`, ["vas_"], sujecionGlobal);
+      seccionesHTML += renderRecomendacionesCatalogo("vastago");
 
       // Flexion y Esp. Cromo (B, C, D)
       const flxB = v(`${p}_vas_flexion_b`);
@@ -877,12 +1060,6 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
         medidasTapaHTML = medidasTapa;
       }
 
-      const hallazgosTapa = [
-        ["Tapa", ["Tapa presenta rayaduras", "Tapa presenta deformacion", "Tapa fuera de tolerancia", "Roscas de tapa danadas"]],
-      ].flatMap(([, items], gi) =>
-        (items as string[]).map((texto, idx) => ({ key: `${p}_tapa_g${gi}_${idx}`, texto }))
-      );
-
       // Renderizar con layout estandar (imagen + medidas a la derecha)
       // Para doble vastago, medidasTapaHTML ya es una tabla completa (no formato fila X/Y),
       // por eso renderizamos manualmente cuando es esDobleVastago.
@@ -896,21 +1073,17 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
             <td class="seccion-med-cell">${medidasTapaHTML}</td>
           </tr></table>
         `;
-        // Hallazgos, fotos y resultado a mano (consistente con renderSeccionComponente)
-        const hallazgosMarcados = hallazgosTapa.filter((h) => v(h.key));
-        if (hallazgosMarcados.length > 0) {
-          seccionesHTML += `<div class="hallazgos"><b>Hallazgos encontrados:</b><ul>${hallazgosMarcados
-            .map((h) => `<li>${esc(h.texto)}</li>`)
-            .join("")}</ul></div>`;
-        }
         seccionesHTML += renderImagenesSubidas(`${p}_tapa`);
         const resTapa = v(`${p}_tapa_resultado`);
         const recTapa = v(`${p}_tapa_recomendaciones`);
         if (resTapa) seccionesHTML += `<div class="campo-texto"><b>Resultado</b><div class="textarea-box">${esc(resTapa)}</div></div>`;
         if (recTapa) seccionesHTML += `<div class="campo-texto"><b>Recomendaciones</b><div class="textarea-box">${esc(recTapa)}</div></div>`;
       } else {
-        seccionesHTML += renderSeccionComponente(numSec++, "Tapa", imgTapa, "Tapa (A, B, C, D)", medidasTapaHTML, `${p}_tapa`, hallazgosTapa);
+        seccionesHTML += renderSeccionComponente(numSec++, "Tapa", imgTapa, "Tapa (A, B, C, D)", medidasTapaHTML, `${p}_tapa`, []);
       }
+      // Hallazgos del catálogo (grupos "tapa") + recomendaciones componente "tapa"
+      seccionesHTML += renderHallazgosCatalogo(`${p}_tapa`, ["tapa"]);
+      seccionesHTML += renderRecomendacionesCatalogo("tapa");
 
       // Checks de tapa (todos los modelos con tapa)
       const tapaChecks: CheckItem[] = [
@@ -926,12 +1099,10 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
       renderMedida(`${p}_pis_dint`, "Diametro Interior (B)", "single"),
       renderMedida(`${p}_pis_ltot`, "Longitud (C)", "single"),
     ].join("");
-    const hallazgosPis = [
-      ["Piston / Embolo", ["Piston presenta rayaduras", "Piston presenta deformacion", "Piston fuera de tolerancia", "Canales de sellos danados"]],
-    ].flatMap(([, items], gi) =>
-      (items as string[]).map((texto, idx) => ({ key: `${p}_pis_g${gi}_${idx}`, texto }))
-    );
-    seccionesHTML += renderSeccionComponente(numSec++, modeloEvaluacion === "acum_embolo" ? "Embolo" : "Piston", imgPiston, "Piston (A, B, C)", medidasPis, `${p}_pis`, hallazgosPis);
+    seccionesHTML += renderSeccionComponente(numSec++, modeloEvaluacion === "acum_embolo" ? "Embolo" : "Piston", imgPiston, "Piston (A, B, C)", medidasPis, `${p}_pis`, []);
+    // Hallazgos del catálogo (grupos "embolo") + recomendaciones componente "embolo"
+    seccionesHTML += renderHallazgosCatalogo(`${p}_pis`, ["embolo"]);
+    seccionesHTML += renderRecomendacionesCatalogo("embolo");
     // Checks del Pistón / Émbolo — todos los modelos estándar los tienen.
     // El form usa `${p}_pis` también para el émbolo del acumulador, por eso
     // estos labels son genéricos ("interior roscado" aplica a ambos).
@@ -984,17 +1155,31 @@ td.editable { color: ${AZUL_CLARO}; font-weight: 600; text-align: center; }
 
 .fotos-subidas { margin: 10pt 0 12pt; }
 .fotos-titulo { font-size: 9pt; color: ${AZUL}; font-weight: 700; padding: 5pt 8pt; background: ${GRIS_FONDO}; border-left: 4pt solid ${AZUL}; margin-bottom: 6pt; letter-spacing: 0.4pt; }
+/* Tabla de fotos: ancho fijo del 100% (= ancho útil de la página A4 landscape
+   menos márgenes), table-layout: fixed para que las columnas NO crezcan con
+   el contenido. Cada celda obtiene exactamente 33.33% del ancho. */
 .tabla-fotos { width: 100%; border-collapse: collapse; table-layout: fixed; }
-.tabla-fotos td.foto-cell { border: 0.5pt solid #ccc; padding: 6pt; width: 33.33%; text-align: center; background: #fff; vertical-align: top; }
+.tabla-fotos td.foto-cell { border: 0.5pt solid #ccc; padding: 6pt; width: 33.33%; text-align: center; background: #fff; vertical-align: top; overflow: hidden; }
 .tabla-fotos td.foto-vacia { border: 0; background: transparent; }
-.foto-img-wrap { width: 100%; height: 150pt; text-align: center; overflow: hidden; padding: 2pt; }
-.foto-img-wrap img { max-height: 146pt; max-width: 100%; width: auto; height: auto; vertical-align: middle; }
+/* Wrapper de la foto: ancho 100% del cell, alto MÁXIMO 9.5cm.
+   La imagen se ajusta para entrar dentro de esos límites SIN desfigurar la
+   tabla — el alto puede ser menor si la foto es muy ancha (la limita max-width).
+   object-fit: contain garantiza que aspect ratio se mantenga. */
+.foto-img-wrap { width: 100%; max-height: 9.5cm; text-align: center; overflow: hidden; padding: 2pt; }
+.foto-img-wrap img { max-height: 9.5cm; max-width: 100%; height: auto; width: auto; vertical-align: middle; object-fit: contain; }
 .foto-caption { font-size: 7.5pt; color: #555; margin-top: 4pt; font-style: italic; line-height: 1.3; max-height: 22pt; overflow: hidden; }
 
 .hallazgos { margin: 6pt 0; padding: 4pt 8pt; border-left: 3pt solid #c0392b; background: #fef5f5; }
 .hallazgos b { color: #c0392b; font-size: 9pt; }
 .hallazgos ul { margin: 3pt 0 3pt 14pt; padding: 0; }
 .hallazgos li { font-size: 8.5pt; margin-bottom: 2pt; color: #333; }
+
+/* Recomendaciones del catálogo — bloque azul para diferenciarlas de los
+   hallazgos (rojo). Se separan en Estándar / No estándar igual que el form. */
+.recom-grupo { margin: 4pt 0 4pt 6pt; padding: 3pt 8pt; border-left: 3pt solid ${AZUL_CLARO}; background: #f0f6ff; }
+.recom-grupo .recom-sub { font-size: 7.5pt; font-weight: 700; color: ${AZUL_CLARO}; text-transform: uppercase; letter-spacing: 0.5pt; margin-bottom: 2pt; }
+.recom-grupo ul { margin: 2pt 0 2pt 14pt; padding: 0; }
+.recom-grupo li { font-size: 8.5pt; margin-bottom: 2pt; color: #333; }
 
 .campo-texto { margin: 5pt 0; }
 .campo-texto b { font-size: 8.5pt; color: ${AZUL}; display: block; margin-bottom: 2pt; }

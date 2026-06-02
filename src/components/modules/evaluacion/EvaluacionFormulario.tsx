@@ -623,13 +623,23 @@ function ResultadoComponente({
 }
 
 // ── Comprimir imagen a base64 para almacenar en datos_formulario ──
-async function comprimirImagen(file: File, maxWidth = 900, quality = 0.78): Promise<string> {
+// Comprime cada foto a un tamaño razonable manteniendo aspect ratio. Limita
+// la dimensión MAYOR a `maxDim` px (default 600) — alcanza para renderizar a
+// 9.5 cm en el Word con calidad nítida sin inflar el JSON ni el documento.
+//
+// Importante: limitamos la dimensión MAYOR (no solo el alto) para que las
+// fotos panorámicas (ej. 4000×2000) no terminen con un ancho enorme que
+// rompa la tabla del Word. El CSS del Word luego decide el alto final
+// (max-height: 9.5cm) — esta compresión es solo para reducir peso/tamaño.
+async function comprimirImagen(file: File, maxDim = 600, quality = 0.82): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (ev) => {
       const img = new window.Image();
       img.onload = () => {
-        const scale = Math.min(1, maxWidth / img.width);
+        const mayor = Math.max(img.width, img.height);
+        // No agrandamos si ya es chica.
+        const scale = Math.min(1, maxDim / mayor);
         const w = Math.round(img.width * scale);
         const h = Math.round(img.height * scale);
         const canvas = document.createElement("canvas");
