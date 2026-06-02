@@ -35,7 +35,9 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
 
   try {
-    const folderPrefix = R2Keys.otAdjunto(otCodigoFor(access.ot));
+    // 2026-06: cada etapa va a su propia subcarpeta en R2 — espeja la
+    // estructura visual de pestañas del UI (Recepción, Evaluación, etc.).
+    const folderPrefix = R2Keys.otAdjunto(otCodigoFor(access.ot), etapa);
     const result = await generateUploadUrl({
       folderPrefix,
       fileName: upload.value.fileName,

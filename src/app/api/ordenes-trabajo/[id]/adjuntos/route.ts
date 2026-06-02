@@ -99,8 +99,14 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
     // La key debe vivir bajo el namespace de ESTA OT (defensa en profundidad
     // contra clientes que firmen para una OT pero registren en otra).
-    const expectedPrefix = R2Keys.otAdjunto(otCodigoFor(ot)) + "/";
-    if (!key.startsWith(expectedPrefix)) {
+    //
+    // 2026-06: ahora cada etapa tiene su propia subcarpeta. La key generada
+    // por /upload-url debe matchear el prefijo con etapa. El prefijo SIN
+    // etapa también se acepta para tolerar keys legacy (subidas antes del
+    // cambio) y para no romper si el cliente se desfasa por caching.
+    const expectedPrefixConEtapa = R2Keys.otAdjunto(otCodigoFor(ot), etapa) + "/";
+    const expectedPrefixLegacy   = R2Keys.otAdjunto(otCodigoFor(ot)) + "/";
+    if (!key.startsWith(expectedPrefixConEtapa) && !key.startsWith(expectedPrefixLegacy)) {
       return NextResponse.json({ error: "key fuera del namespace de la OT" }, { status: 400 });
     }
 
