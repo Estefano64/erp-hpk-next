@@ -105,7 +105,15 @@ interface RequerimientoApi {
   orden_trabajo_interna?: { id: number; ot: number | string | null; descripcion: string | null } | null;
   material: { codigo: string; descripcion: string; unidad_medida_codigo: string | null; stock_actual?: string | number | null; np?: string | null; precio?: string | number | null; moneda_codigo?: string | null } | null;
   proveedor: { id: number; razon_social: string } | null;
-  compra: { id: number; numero_po: string } | null;
+  compra: {
+    id: number;
+    numero_po: string;
+    // Datos de la aceptación de la OC (quien la aceptó + comentario opcional).
+    // Se muestran en una columna en el detalle para distinguirlos del comentario
+    // de aprobación del REQ (que es de OTRepuesto.comentario_aprobacion).
+    usuario_aprueba?: string | null;
+    comentario_aprobacion?: string | null;
+  } | null;
   status_requerimiento: { codigo: string; nombre: string } | null;
   status_cotizacion: { codigo: string; nombre: string } | null;
   status_oc: { codigo: string; nombre: string } | null;
@@ -145,6 +153,9 @@ interface Requerimiento {
   nro_oc: string | null;
   numero_po: string | null;
   po_id: number | null;
+  // Aceptación de la OC: usuario que aceptó + comentario opcional.
+  oc_usuario_aprueba: string | null;
+  oc_comentario_aprobacion: string | null;
   proveedor_nombre: string | null;
   precio_unitario: number | null;
   // Precio unitario estimado (catálogo del material). Distinto del precio_unitario,
@@ -201,6 +212,8 @@ function normalize(r: RequerimientoApi): Requerimiento {
     nro_oc: r.nro_oc,
     numero_po: r.compra?.numero_po ?? null,
     po_id: r.po_id,
+    oc_usuario_aprueba: r.compra?.usuario_aprueba ?? null,
+    oc_comentario_aprobacion: r.compra?.comentario_aprobacion ?? null,
     proveedor_nombre: r.proveedor?.razon_social ?? null,
     precio_unitario: r.precio_unitario != null ? Number(r.precio_unitario) : null,
     precio_estimado: r.material?.precio != null ? Number(r.material.precio) : null,
@@ -892,7 +905,45 @@ function RequerimientosDetalleInner() {
       filters: obtenerValoresUnicos("numero_po"),
       filterSearch: true,
       onFilter: (value, r) => r.numero_po === value,
-      render: (v: string | null) => (v ? <Tag color="blue">{v}</Tag> : "-"),
+      // El tag muestra el número de OC y al hover se ve quién la aceptó +
+      // comentario (si dejó alguno al aceptar).
+      render: (v: string | null, r: Requerimiento) => {
+        if (!v) return "-";
+        const hay = r.oc_usuario_aprueba || r.oc_comentario_aprobacion;
+        if (!hay) return <Tag color="blue">{v}</Tag>;
+        return (
+          <Tooltip
+            title={
+              <div style={{ maxWidth: 320 }}>
+                {r.oc_usuario_aprueba && <div><b>Aceptada por:</b> {r.oc_usuario_aprueba}</div>}
+                {r.oc_comentario_aprobacion && (
+                  <div style={{ marginTop: 4, paddingTop: 4, borderTop: "1px solid rgba(255,255,255,0.2)", whiteSpace: "pre-wrap" }}>
+                    <b>Comentario:</b> {r.oc_comentario_aprobacion}
+                  </div>
+                )}
+              </div>
+            }
+          >
+            <Tag color="blue" style={{ cursor: "help" }}>{v}</Tag>
+          </Tooltip>
+        );
+      },
+    },
+    {
+      key: "comentario_aprob_oc",
+      title: "Comentario aprob. OC",
+      dataIndex: "oc_comentario_aprobacion",
+      width: 200,
+      ellipsis: true,
+      render: (_: unknown, r: Requerimiento) => {
+        const c = r.oc_comentario_aprobacion;
+        if (!c) return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
+        return (
+          <Tooltip title={<div style={{ maxWidth: 320, whiteSpace: "pre-wrap" }}>{c}</div>}>
+            <Text style={{ fontSize: 12 }} ellipsis>{c}</Text>
+          </Tooltip>
+        );
+      },
     },
     {
       key: "nro_req",

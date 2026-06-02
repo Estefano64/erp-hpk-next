@@ -61,7 +61,14 @@ export async function POST(req: NextRequest, { params }: Params) {
 
       const actualizada = await tx.compra.update({
         where: { id: compraId },
-        data: { status_oc_codigo: "PROCESO", usuario_aprueba: usuario },
+        data: {
+          status_oc_codigo: "PROCESO",
+          usuario_aprueba: usuario,
+          // Persistimos el comentario también en la fila de la OC (no solo en
+          // OTHistorial) — la UI lo muestra en /requerimientos/detalle sin
+          // tener que parsear el JSON del historial.
+          comentario_aprobacion: comentario || null,
+        },
       });
 
       // Promueve items que aún estuviesen en PEND_OC (defensivo: crear-oc ya los pone en PROCESO).

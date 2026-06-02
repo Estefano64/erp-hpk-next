@@ -121,7 +121,15 @@ export async function GET(req: NextRequest) {
           status_cotizacion: { select: { codigo: true, nombre: true } },
           status_oc: { select: { codigo: true, nombre: true } },
           proveedor: { select: { id: true, razon_social: true } },
-          compra: { select: { id: true, numero_po: true, status_oc_codigo: true } },
+          compra: {
+            select: {
+              id: true, numero_po: true, status_oc_codigo: true,
+              // Datos de la aceptación de la OC — visibles en /requerimientos/detalle
+              // como tooltip/columna separada del comentario de aprobación del req.
+              usuario_aprueba: true,
+              comentario_aprobacion: true,
+            },
+          },
           adjuntos: { select: { id: true, nombre_archivo: true, r2_key: true, tamano: true } },
         },
         orderBy: [{ fecha_solicitud: "desc" }, { id: "desc" }],
