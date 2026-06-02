@@ -145,6 +145,7 @@ export default function NuevaOTPage() {
   // conservamos atención y fecha de requerimiento porque BIE los usa también.
   // Para SER limpiamos todo lo de BIE más Atención y Fecha Req.
   useEffect(() => {
+    // BIE + SER: limpiar lo que es exclusivo de Reparación (ninguno lo usa).
     if (bloqueoBien) {
       form.setFieldsValue({
         id_viajero: undefined,
@@ -155,30 +156,20 @@ export default function NuevaOTPage() {
         horas: undefined,
         tipo_reparacion_codigo: undefined,
         base_metalica: false,
-        plaqueteo: undefined,
-        wo_cliente: undefined,
-        // po_item NO se limpia acá: BIE lo usa. Se limpia solo en SER (abajo).
       });
       setPorcentajePcr(null);
     }
+    // BIE: sin Datos del Equipo (Equipo / N/S), sin Plaqueteo ni WO Cliente.
     if (esBien) {
-      // Bien no usa Datos del Equipo (Equipo / N/S).
-      form.setFieldsValue({ equipo_codigo: undefined, ns: undefined });
-    }
-    if (esServicio) {
-      // SER no usa Atención, fecha de requerimiento (se vuelve a habilitar al
-      // tipear), ni PO Item.
       form.setFieldsValue({
-        atencion_reparacion_codigo: undefined,
-        fecha_requerimiento_cliente: undefined,
-        po_item: undefined,
+        equipo_codigo: undefined,
+        ns: undefined,
+        plaqueteo: undefined,
+        wo_cliente: undefined,
       });
-      setAtencionCodigo("");
-      setDiasCalculados(null);
-      setFechaReqCalculada(null);
-      setContratoDias(null);
-      setTieneContrato(false);
     }
+    // SER: sin estrategia ni cód. reparable (usa los campos manuales).
+    // Atención / fecha req / PO Item / Garantía SÍ los usa (no se limpian).
     if (bloqueoServicio) {
       setEstrategia(false);
       form.setFieldValue("id_cod_rep", undefined);
@@ -299,36 +290,36 @@ export default function NuevaOTPage() {
         cod_rep_posicion: estrategia ? null : (values.cod_rep_posicion || null),
         equipo_codigo: values.equipo_codigo || null,
         ns: values.ns || null,
-        // Plaqueteo / WO Cliente / PO Item / ID Viajero / Guía / Empresa /
-        // Fecha Recepción / PCR / Horas: solo aplican a Reparación. En BIE
-        // o SER se fuerzan null aunque el form los haya tenido cargados.
-        plaqueteo: bloqueoBien ? null : (values.plaqueteo || null),
-        wo_cliente: bloqueoBien ? null : (values.wo_cliente || null),
+        // Plaqueteo y WO Cliente: REP y SER (no BIE). PO Cliente y PO Item: los
+        // tres tipos. ID Viajero / Guía / Empresa / Fecha Recepción / PCR / Horas:
+        // solo Reparación.
+        plaqueteo: esBien ? null : (values.plaqueteo || null),
+        wo_cliente: esBien ? null : (values.wo_cliente || null),
         po_cliente: values.po_cliente || null,
-        po_item: bloqueoBien ? null : (values.po_item || null),
+        po_item: values.po_item || null,
         id_viajero: bloqueoBien ? null : (values.id_viajero || null),
         guia_remision: bloqueoBien ? null : (values.guia_remision || null),
         empresa_entrega: bloqueoBien ? null : (values.empresa_entrega || null),
         fecha_recepcion: bloqueoBien ? null : (values.fecha_recepcion ? values.fecha_recepcion.format("YYYY-MM-DD") : null),
         pcr: bloqueoBien ? null : (values.pcr ?? null),
         horas: bloqueoBien ? null : (values.horas ?? null),
-        // Garantía / Tipo Garantía: REP y BIE (SER no). Tipo Reparación y Base
+        // Garantía / Tipo Garantía: los tres tipos. Tipo Reparación y Base
         // Metálica: solo Reparación.
-        garantia_codigo: esServicio ? null : (garantia ? "Si" : "No"),
+        garantia_codigo: garantia ? "Si" : "No",
         tipo_reparacion_codigo: bloqueoBien ? null : (values.tipo_reparacion_codigo || null),
-        tipo_garantia_codigo: esServicio ? null : (garantia ? (values.tipo_garantia_codigo || null) : "NA"),
+        tipo_garantia_codigo: garantia ? (values.tipo_garantia_codigo || null) : "NA",
         base_metalica_codigo: bloqueoBien ? null : (values.base_metalica ? "Si" : "No"),
-        // Atención Reparación: aplica a REP y BIE (no SER). Lo conservamos
-        // cuando es BIE — el flujo de Bien también puede ser "Presupuesto",
-        // "Contrato", etc. para identificar cómo se cobra.
-        atencion_reparacion_codigo: esServicio ? null : (values.atencion_reparacion_codigo || null),
+        // Atención Reparación: los tres tipos. En BIE/SER "Contrato" se guarda como
+        // texto (no se amarra a un contrato).
+        atencion_reparacion_codigo: values.atencion_reparacion_codigo || null,
         prioridad_atencion_codigo: values.prioridad_atencion_codigo || null,
         monto_cotizacion: values.monto_cotizacion ?? null,
         moneda_cotizacion_codigo: values.moneda_cotizacion_codigo || null,
         comentarios: values.comentarios || null,
-        // Fecha Requerimiento Cliente: aplica a REP, BIE y SER. Para Contrato se
-        // calcula sola (manda null) y el backend la deriva.
-        fecha_requerimiento_cliente: atencionCodigo !== "Contrato" && values.fecha_requerimiento_cliente
+        // Fecha Requerimiento Cliente: aplica a REP, BIE y SER. Solo en REP con
+        // Atención=Contrato se calcula sola (manda null y el backend la deriva);
+        // en BIE/SER con Contrato se manda el valor manual del form.
+        fecha_requerimiento_cliente: (atencionCodigo !== "Contrato" || bloqueoBien) && values.fecha_requerimiento_cliente
           ? values.fecha_requerimiento_cliente.format("YYYY-MM-DD")
           : null,
       };
@@ -482,7 +473,7 @@ export default function NuevaOTPage() {
                 </Form.Item>
               </Col>
               <Col xs={12} md={8}>
-                <Form.Item name="np" label="N/P" rules={[{ required: !esServicio, message: "Requerido" }]}>
+                <Form.Item name="np" label="N/P" rules={[{ required: true, message: "Requerido" }]}>
                   <Input placeholder="Ej. 219-2540" />
                 </Form.Item>
               </Col>
@@ -492,7 +483,7 @@ export default function NuevaOTPage() {
                 </Form.Item>
               </Col>
               <Col xs={12} md={8}>
-                <Form.Item name="id_fabricante" label="Fabricante" rules={[{ required: !esServicio, message: "Requerido" }]}>
+                <Form.Item name="id_fabricante" label="Fabricante" rules={[{ required: true, message: "Requerido" }]}>
                   <Select
                     placeholder="Seleccionar"
                     allowClear showSearch optionFilterProp="label"
@@ -501,12 +492,12 @@ export default function NuevaOTPage() {
                 </Form.Item>
               </Col>
               <Col xs={12} md={8}>
-                <Form.Item name="cod_rep_flota" label="Flota" rules={[{ required: !esServicio, message: "Requerido" }]}>
+                <Form.Item name="cod_rep_flota" label="Flota" rules={[{ required: true, message: "Requerido" }]}>
                   <Input placeholder="Ej. 980E" />
                 </Form.Item>
               </Col>
               <Col xs={12} md={8}>
-                <Form.Item name="cod_rep_posicion" label="Posición" rules={[{ required: !esServicio, message: "Requerido" }]}>
+                <Form.Item name="cod_rep_posicion" label="Posición" rules={[{ required: true, message: "Requerido" }]}>
                   <Select
                     placeholder="Seleccionar"
                     allowClear showSearch optionFilterProp="label"
@@ -528,7 +519,7 @@ export default function NuevaOTPage() {
         <Card title="Datos del Equipo" style={{ marginBottom: 16 }} styles={{ body: { paddingBottom: 0 } }}>
           <Row gutter={16}>
             <Col xs={12} md={6}>
-              <Form.Item name="equipo_codigo" label="Equipo">
+              <Form.Item name="equipo_codigo" label="Equipo" rules={[{ required: esServicio, message: "Requerido" }]}>
                 <Input placeholder="Ej: SH001" />
               </Form.Item>
             </Col>
@@ -537,7 +528,7 @@ export default function NuevaOTPage() {
                 <Input />
               </Form.Item>
             </Col>
-            {!bloqueoBien && (
+            {!esBien && (
               <Col xs={12} md={6}>
                 <Form.Item name="plaqueteo" label="Plaqueteo">
                   <Input />
@@ -551,25 +542,23 @@ export default function NuevaOTPage() {
         {/* ── SECCIÓN: Documentos del cliente ── */}
         <Card title="Documentos y Logística" style={{ marginBottom: 16 }} styles={{ body: { paddingBottom: 0 } }}>
           <Row gutter={16}>
-            {!bloqueoBien && (
+            {!esBien && (
               <Col xs={12} md={6}>
-                <Form.Item name="wo_cliente" label="WO Cliente" rules={[{ required: esRep, message: "Requerido" }]}>
+                <Form.Item name="wo_cliente" label="WO Cliente" rules={[{ required: !esBien, message: "Requerido" }]}>
                   <Input />
                 </Form.Item>
               </Col>
             )}
             <Col xs={12} md={6}>
-              <Form.Item name="po_cliente" label="PO Cliente" rules={[{ required: !esServicio, message: "Requerido" }]}>
+              <Form.Item name="po_cliente" label="PO Cliente" rules={[{ required: true, message: "Requerido" }]}>
                 <Input />
               </Form.Item>
             </Col>
-            {!esServicio && (
-              <Col xs={12} md={6}>
-                <Form.Item name="po_item" label="PO Item" rules={[{ required: !esServicio, message: "Requerido" }]}>
-                  <Input />
-                </Form.Item>
-              </Col>
-            )}
+            <Col xs={12} md={6}>
+              <Form.Item name="po_item" label="PO Item" rules={[{ required: true, message: "Requerido" }]}>
+                <Input />
+              </Form.Item>
+            </Col>
             {!bloqueoBien && (
               <>
                 <Col xs={12} md={6}>
@@ -637,49 +626,46 @@ export default function NuevaOTPage() {
           styles={{ body: { paddingBottom: 0 } }}
         >
           <Row gutter={16}>
-            {/* Garantía toggle: Reparación y Bien (no Servicio). */}
-            {!esServicio && (
-              <Col xs={12} md={4}>
-                <Form.Item label="Garantía">
-                  <Checkbox
-                    checked={garantia}
-                    onChange={(e) => {
-                      setGarantia(e.target.checked);
-                      if (e.target.checked) {
-                        form.setFieldValue("tipo_garantia_codigo", undefined);
-                      } else {
-                        form.setFieldValue("tipo_garantia_codigo", "NA");
-                      }
-                    }}
-                  >
-                    Si
-                  </Checkbox>
-                </Form.Item>
-              </Col>
-            )}
-            {/* Atención Reparación: REP y BIE; SER no la usa. */}
-            {!esServicio && (
-              <Col xs={12} md={6}>
-                <Form.Item
-                  name="atencion_reparacion_codigo"
-                  label="Atención Reparación"
-                  rules={[{ required: true, message: "Requerido" }]}
+            {/* Garantía toggle: todos los tipos (REP, BIE, SER). */}
+            <Col xs={12} md={4}>
+              <Form.Item label="Garantía">
+                <Checkbox
+                  checked={garantia}
+                  onChange={(e) => {
+                    setGarantia(e.target.checked);
+                    if (e.target.checked) {
+                      form.setFieldValue("tipo_garantia_codigo", undefined);
+                    } else {
+                      form.setFieldValue("tipo_garantia_codigo", "NA");
+                    }
+                  }}
                 >
-                  <Select showSearch optionFilterProp="label"
-                    placeholder="Seleccionar"
-                    onChange={(v) => {
-                      setAtencionCodigo(v ?? "");
-                      buscarContrato();
-                    }}
-                    options={atencionReparaciones.map((a) => ({
-                      value: a.codigo,
-                      label: a.nombre,
-                      disabled: a.codigo === "Contrato" && !tieneContrato,
-                    }))}
-                  />
-                </Form.Item>
-              </Col>
-            )}
+                  Si
+                </Checkbox>
+              </Form.Item>
+            </Col>
+            {/* Atención Reparación: todos los tipos. En BIE/SER "Contrato" se puede
+                elegir siempre y se guarda como texto (no se amarra a un contrato). */}
+            <Col xs={12} md={6}>
+              <Form.Item
+                name="atencion_reparacion_codigo"
+                label="Atención Reparación"
+                rules={[{ required: true, message: "Requerido" }]}
+              >
+                <Select showSearch optionFilterProp="label"
+                  placeholder="Seleccionar"
+                  onChange={(v) => {
+                    setAtencionCodigo(v ?? "");
+                    if (!bloqueoBien) buscarContrato();
+                  }}
+                  options={atencionReparaciones.map((a) => ({
+                    value: a.codigo,
+                    label: a.nombre,
+                    disabled: a.codigo === "Contrato" && !bloqueoBien && !tieneContrato,
+                  }))}
+                />
+              </Form.Item>
+            </Col>
             {/* Tipo Reparación: solo Reparación. */}
             {!bloqueoBien && (
               <Col xs={12} md={6}>
@@ -695,24 +681,22 @@ export default function NuevaOTPage() {
                 </Form.Item>
               </Col>
             )}
-            {/* Tipo Garantía: Reparación y Bien (no Servicio). */}
-            {!esServicio && (
-              <Col xs={12} md={6}>
-                <Form.Item
-                  name="tipo_garantia_codigo"
-                  label="Tipo Garantía"
-                  rules={garantia ? [{ required: true, message: "Seleccioná un tipo" }] : []}
-                >
-                  <Select showSearch optionFilterProp="label"
-                    placeholder={garantia ? "Seleccionar" : "NA"}
-                    disabled={!garantia}
-                    options={tipoGarantias
-                      .filter((t) => t.codigo !== "NA")
-                      .map((t) => ({ value: t.codigo, label: t.nombre }))}
-                  />
-                </Form.Item>
-              </Col>
-            )}
+            {/* Tipo Garantía: todos los tipos (REP, BIE, SER). */}
+            <Col xs={12} md={6}>
+              <Form.Item
+                name="tipo_garantia_codigo"
+                label="Tipo Garantía"
+                rules={garantia ? [{ required: true, message: "Seleccioná un tipo" }] : []}
+              >
+                <Select showSearch optionFilterProp="label"
+                  placeholder={garantia ? "Seleccionar" : "NA"}
+                  disabled={!garantia}
+                  options={tipoGarantias
+                    .filter((t) => t.codigo !== "NA")
+                    .map((t) => ({ value: t.codigo, label: t.nombre }))}
+                />
+              </Form.Item>
+            </Col>
             <Col xs={12} md={6}>
               <Form.Item name="prioridad_atencion_codigo" label="Prioridad de Atención" rules={[{ required: true, message: "Requerido" }]}>
                 <Select showSearch optionFilterProp="label"
@@ -763,7 +747,7 @@ export default function NuevaOTPage() {
           <Divider style={{ margin: "8px 0 16px" }} />
 
           <Row gutter={16}>
-            {atencionCodigo === "Contrato" ? (
+            {atencionCodigo === "Contrato" && !bloqueoBien ? (
               <>
                 <Col xs={12} md={6}>
                   <Form.Item label="Días Contrato">
