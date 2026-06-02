@@ -86,6 +86,9 @@ interface RequerimientoApi {
   po_id: number | null;
   nro_oc: string | null;
   observaciones?: string | null;
+  // Aprobación del REQ (no de la OC). Quien lo aprobó + su comentario opcional.
+  usuario_aprueba?: string | null;
+  comentario_aprobacion?: string | null;
   status_requerimiento_codigo: string | null;
   status_cotizacion_codigo: string | null;
   status_oc_codigo: string | null;
@@ -153,7 +156,12 @@ interface Requerimiento {
   nro_oc: string | null;
   numero_po: string | null;
   po_id: number | null;
-  // Aceptación de la OC: usuario que aceptó + comentario opcional.
+  // Aprobación del REQ: usuario que aprobó + comentario opcional. La mayoría
+  // de los comentarios reales viven acá ("CAT", "ALT.", recomendaciones, etc.).
+  req_usuario_aprueba: string | null;
+  req_comentario_aprobacion: string | null;
+  // Aceptación de la OC: usuario que aceptó + comentario opcional. Es distinto
+  // del comentario del REQ — son dos pasos diferentes del flujo.
   oc_usuario_aprueba: string | null;
   oc_comentario_aprobacion: string | null;
   proveedor_nombre: string | null;
@@ -212,6 +220,8 @@ function normalize(r: RequerimientoApi): Requerimiento {
     nro_oc: r.nro_oc,
     numero_po: r.compra?.numero_po ?? null,
     po_id: r.po_id,
+    req_usuario_aprueba: r.usuario_aprueba ?? null,
+    req_comentario_aprobacion: r.comentario_aprobacion ?? null,
     oc_usuario_aprueba: r.compra?.usuario_aprueba ?? null,
     oc_comentario_aprobacion: r.compra?.comentario_aprobacion ?? null,
     proveedor_nombre: r.proveedor?.razon_social ?? null,
@@ -930,11 +940,39 @@ function RequerimientosDetalleInner() {
       },
     },
     {
-      key: "comentario_aprob_oc",
-      title: "Comentario aprob. OC",
-      dataIndex: "oc_comentario_aprobacion",
-      width: 200,
+      key: "comentario_aprob_req",
+      title: "Coment. aprob. REQ",
+      dataIndex: "req_comentario_aprobacion",
+      width: 180,
       ellipsis: true,
+      // Comentario / recomendación que dejó quien APROBÓ EL REQ (ej. "CAT",
+      // "ALT.", "negociar precio con proveedor", etc.). El tooltip muestra
+      // también quién lo aprobó.
+      render: (_: unknown, r: Requerimiento) => {
+        const c = r.req_comentario_aprobacion;
+        if (!c) return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
+        return (
+          <Tooltip
+            title={
+              <div style={{ maxWidth: 320, whiteSpace: "pre-wrap" }}>
+                {r.req_usuario_aprueba && <div><b>Por:</b> {r.req_usuario_aprueba}</div>}
+                <div style={{ marginTop: r.req_usuario_aprueba ? 4 : 0 }}>{c}</div>
+              </div>
+            }
+          >
+            <Text style={{ fontSize: 12 }} ellipsis>{c}</Text>
+          </Tooltip>
+        );
+      },
+    },
+    {
+      key: "comentario_aprob_oc",
+      title: "Coment. aprob. OC",
+      dataIndex: "oc_comentario_aprobacion",
+      width: 180,
+      ellipsis: true,
+      // Comentario que dejó quien ACEPTÓ LA OC (paso posterior, distinto del
+      // comentario del REQ). Sigue siendo opcional al aceptar.
       render: (_: unknown, r: Requerimiento) => {
         const c = r.oc_comentario_aprobacion;
         if (!c) return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
