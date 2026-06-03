@@ -73,6 +73,8 @@ interface OTDetalle {
   cod_rep_flota: string | null;
   cod_rep_posicion: string | null;
   guia_remision: string | null;
+  // PO Cliente — necesario para anexar la cotización (decisión del user).
+  po_cliente: string | null;
   cliente: { codigo: string; nombre_comercial: string | null; razon_social: string } | null;
   codigo_reparacion: {
     codigo: string;
@@ -80,6 +82,10 @@ interface OTDetalle {
     modelo_evaluacion_codigo: string | null;
   } | null;
   fabricante: { nombre: string } | null;
+  // OCs vinculadas — directas (Compra.ot_id) e indirectas (vía requerimientos
+  // agrupados en una OC). Se deduplican y muestran en Datos Generales + Word.
+  compras?: { id: number; numero_po: string; status_oc_codigo: string | null }[];
+  repuestos?: { compra: { id: number; numero_po: string; status_oc_codigo: string | null } | null }[];
 }
 
 interface Evaluacion {
@@ -374,8 +380,14 @@ export default function EvaluacionPage() {
   const handleGenerarWord = async () => {
     try {
       const values = form.getFieldsValue();
+      // Dedup OCs directas + indirectas y armar la lista de números
+      // para mostrarlos en el header del Word.
+      const ocMap = new Map<number, string>();
+      (ot?.compras ?? []).forEach((c) => ocMap.set(c.id, c.numero_po));
+      (ot?.repuestos ?? []).forEach((r) => { if (r.compra) ocMap.set(r.compra.id, r.compra.numero_po); });
+      const numerosOc = Array.from(ocMap.values()).sort();
       await generarWordEvaluacion({
-        ot,
+        ot: ot ? { ...ot, po_cliente: ot.po_cliente, numeros_oc: numerosOc } : null,
         modeloEvaluacion,
         sistemaMedicion,
         fechaEvaluacion: values.fecha_evaluacion ? (values.fecha_evaluacion as Dayjs).format("DD/MM/YYYY") : "",
@@ -649,6 +661,28 @@ export default function EvaluacionPage() {
               ) : (
                 <Tag>Sin Estrategia</Tag>
               )}
+            </div>
+          </Col>
+          <Col xs={24} sm={12} md={8}>
+            <Text type="secondary" style={{ fontSize: 12 }}>PO Cliente</Text>
+            <div>{ot.po_cliente || "-"}</div>
+          </Col>
+          <Col xs={24} sm={12} md={16}>
+            <Text type="secondary" style={{ fontSize: 12 }}>Nº OC</Text>
+            <div>
+              {(() => {
+                // Dedup OCs directas + indirectas por id
+                const map = new Map<number, { numero_po: string }>();
+                (ot.compras ?? []).forEach((c) => map.set(c.id, c));
+                (ot.repuestos ?? []).forEach((r) => { if (r.compra) map.set(r.compra.id, r.compra); });
+                const ocs = Array.from(map.values());
+                if (ocs.length === 0) return "-";
+                return (
+                  <Space size={4} wrap>
+                    {ocs.map((c) => <Tag key={c.numero_po} color="cyan">{c.numero_po}</Tag>)}
+                  </Space>
+                );
+              })()}
             </div>
           </Col>
         </Row>
