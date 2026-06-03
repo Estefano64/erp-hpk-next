@@ -1178,9 +1178,9 @@ export default function PlanificacionPage() {
       // casos donde el técnico se olvidó de marcar su fin de jornada y la sesión
       // quedó abierta (ej. volvió al día siguiente). No recalcula nada: es el valor
       // real que se guarda en la tarea.
-      title: "H. real", key: "horas_reales", width: 90, align: "right",
+      title: "Dur. real", key: "horas_reales", width: 95, align: "right",
       render: (_, r) => (
-        <Tooltip title="Duración real (horas trabajadas). Editable para regularizar olvidos de marcado.">
+        <Tooltip title="Duración real (horas trabajadas) = el equivalente real de 'Dur. (hrs)' estimada. Editable para regularizar olvidos de marcado del fin de jornada.">
           <InputNumber
             value={r.horas_reales != null ? Number(r.horas_reales) : undefined}
             min={0}
