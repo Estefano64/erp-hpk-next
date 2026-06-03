@@ -1174,26 +1174,6 @@ export default function PlanificacionPage() {
       ),
     },
     {
-      // Duración REAL (horas trabajadas). Editable por el planner para regularizar
-      // casos donde el técnico se olvidó de marcar su fin de jornada y la sesión
-      // quedó abierta (ej. volvió al día siguiente). No recalcula nada: es el valor
-      // real que se guarda en la tarea.
-      title: "Dur. real", key: "horas_reales", width: 95, align: "right",
-      render: (_, r) => (
-        <Tooltip title="Duración real (horas trabajadas) = el equivalente real de 'Dur. (hrs)' estimada. Editable para regularizar olvidos de marcado del fin de jornada.">
-          <InputNumber
-            value={r.horas_reales != null ? Number(r.horas_reales) : undefined}
-            min={0}
-            step={0.25}
-            size="small"
-            style={{ width: "100%" }}
-            placeholder="—"
-            onChange={(v) => updateField(r.id, { horas_reales: v == null ? null : v })}
-          />
-        </Tooltip>
-      ),
-    },
-    {
       title: "HE", key: "he", width: 55, align: "center",
       filters: [
         { text: "Sí", value: "true" },
@@ -1327,14 +1307,23 @@ export default function PlanificacionPage() {
         : <span style={{ color: brand.textSecondary }}>—</span>,
     },
     {
-      title: "Dur. Real", key: "dur_real", width: 80, align: "right",
-      render: (_, r) => {
-        if (r.fecha_inicio_real && r.fecha_fin_real) {
-          const h = dayjs(r.fecha_fin_real).diff(dayjs(r.fecha_inicio_real), "minute") / 60;
-          return <strong>{h.toFixed(2)}</strong>;
-        }
-        return <span style={{ color: brand.textSecondary }}>—</span>;
-      },
+      // Duración REAL = horas trabajadas guardadas en la tarea (descuenta almuerzo
+      // y pausas; no recorta el fin de jornada). Editable por el planner para
+      // regularizar olvidos de marcado (sesión que quedó abierta toda la noche).
+      title: "Dur. Real", key: "horas_reales", width: 95, align: "right",
+      render: (_, r) => (
+        <Tooltip title="Duración real (horas trabajadas) = el equivalente real de 'Dur. (hrs)' estimada. Editable para regularizar olvidos de marcado del fin de jornada.">
+          <InputNumber
+            value={r.horas_reales != null ? Number(r.horas_reales) : undefined}
+            min={0}
+            step={0.25}
+            size="small"
+            style={{ width: "100%" }}
+            placeholder="—"
+            onChange={(v) => updateField(r.id, { horas_reales: v == null ? null : v })}
+          />
+        </Tooltip>
+      ),
     },
     {
       title: "Estado", key: "estado", width: 168,
