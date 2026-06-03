@@ -113,6 +113,31 @@ export function horasHabilesEntre(inicio: Date, fin: Date): number {
 }
 
 /**
+ * Minutos de ALMUERZO (12:30–13:30 hora de Perú) que caen dentro de [inicio, fin].
+ * Se usa para descontar el almuerzo de la duración real de una sesión que lo cruza
+ * (sin recortar el resto: las horas fuera de jornada NO se tocan; el técnico marca
+ * su fin de día y el planner regulariza los casos excepcionales).
+ */
+export function minutosAlmuerzoEntre(inicio: Date, fin: Date): number {
+  if (fin.getTime() <= inicio.getTime()) return 0;
+  const iniMs = inicio.getTime();
+  const finMs = fin.getTime();
+  let total = 0;
+  let dia = dayjs(inicio).tz(TZ).startOf("day");
+  const finDia = dayjs(fin).tz(TZ).endOf("day");
+  let guard = 0;
+  while (dia.toDate().getTime() <= finDia.toDate().getTime() && guard++ < 4000) {
+    const lunchIni = dia.hour(ALMUERZO_INICIO_HORA).minute(ALMUERZO_INICIO_MIN).second(0).millisecond(0).toDate().getTime();
+    const lunchFin = dia.hour(ALMUERZO_FIN_HORA).minute(ALMUERZO_FIN_MIN).second(0).millisecond(0).toDate().getTime();
+    const a = Math.max(iniMs, lunchIni);
+    const b = Math.min(finMs, lunchFin);
+    if (b > a) total += (b - a) / 60000;
+    dia = dia.add(1, "day");
+  }
+  return total;
+}
+
+/**
  * Fin estimado para trabajo en HORAS EXTRA (banda vespertina ≥ 18:00). Tiempo de
  * reloj CONTINUO: no descuenta almuerzo ni jornada (es tz-agnóstico).
  */

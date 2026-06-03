@@ -48,8 +48,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       where: { planificacion_ot_id: planId },
       select: { tecnico: true, inicio: true, fin: true, cierre: true },
     });
-    const horas = sumarHorasReales(todas);
-    const plan = await prisma.planificacionOT.findUnique({ where: { id: planId }, select: { tecnico: true, observaciones: true } });
+    const plan = await prisma.planificacionOT.findUnique({ where: { id: planId }, select: { tecnico: true, observaciones: true, horas_extras: true } });
+    const horas = sumarHorasReales(todas, !!plan?.horas_extras);
     const estadoTarea = rollupEstadoTarea(splitRecursos(plan?.tecnico), todas);
 
     // Observaciones del técnico (acumulativas): se anexan a las existentes.

@@ -30,7 +30,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 
     const plan = await prisma.planificacionOT.findUnique({
       where: { id: planId },
-      select: { id: true, estado: true, tecnico: true, ot_id: true, descripcion: true },
+      select: { id: true, estado: true, tecnico: true, ot_id: true, descripcion: true, horas_extras: true },
     });
     if (!plan) return NextResponse.json({ error: "Tarea no encontrada" }, { status: 404 });
     if (plan.estado !== "realizado") {
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         where: { planificacion_ot_id: planId },
         select: { tecnico: true, inicio: true, fin: true, cierre: true },
       });
-      const horas = sumarHorasReales(todas);
+      const horas = sumarHorasReales(todas, !!plan.horas_extras);
       const estadoTarea = rollupEstadoTarea(splitRecursos(plan.tecnico), todas);
 
       await tx.planificacionOT.update({

@@ -90,9 +90,13 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       // ── Bloquear edición si estado = realizado ──
       const isRealizado = current.estado === "realizado";
       const intentaEditar = Object.keys(input).some((k) => k !== "forzarEdicion" && input[k as keyof typeof input] !== undefined);
-      const soloRevertirEstado = Object.keys(input).filter((k) => k !== "forzarEdicion").length === 1
+      const camposReales = Object.keys(input).filter((k) => !["forzarEdicion", "omitirAntisolape", "empujar"].includes(k));
+      const soloRevertirEstado = camposReales.length === 1
         && input.estado !== undefined && input.estado !== "realizado";
-      if (isRealizado && intentaEditar && !input.forzarEdicion && !soloRevertirEstado) {
+      // El planner puede REGULARIZAR la duración real de una tarea ya terminada
+      // (caso del técnico que se olvidó de marcar su fin de jornada).
+      const soloHorasReales = camposReales.length === 1 && input.horas_reales !== undefined;
+      if (isRealizado && intentaEditar && !input.forzarEdicion && !soloRevertirEstado && !soloHorasReales) {
         throw Object.assign(
           new Error("Tarea en estado 'realizado' no puede editarse. Cambiá el estado primero o usá forzarEdicion=true."),
           { code: "REALIZADO_LOCKED" },

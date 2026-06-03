@@ -1,13 +1,43 @@
 // Helpers compartidos para los endpoints iniciar/pausar/finalizar de tareas de
 // planificación. Suma duraciones de las sesiones cerradas y devuelve las horas
-// reales acumuladas. Convierte ms → horas con 2 decimales.
+// reales acumuladas.
 
-export function sumarHorasReales(sesiones: { inicio: Date; fin: Date | null }[]): number {
-  let ms = 0;
+import { minutosAlmuerzoEntre } from "./planification-hours";
+
+// Horas trabajadas de UNA sesión = reloj continuo, descontando el ALMUERZO que
+// la sesión cruce (12:30–13:30). Las PAUSAS ya quedan fuera porque cierran la
+// sesión (la suma es por sesión, sin contar los huecos entre ellas). NO se
+// recorta el fin de jornada: cada técnico marca su fin de día; si alguien se
+// olvidó y dejó la sesión abierta, el planner regulariza la duración real a mano.
+// HE = tiempo continuo sin descuento (es trabajo fuera de jornada, sin almuerzo).
+function horasDeSesion(inicio: Date, fin: Date, esHE: boolean): number {
+  const horasReloj = (fin.getTime() - inicio.getTime()) / 36e5;
+  if (esHE) return horasReloj;
+  return Math.max(0, horasReloj - minutosAlmuerzoEntre(inicio, fin) / 60);
+}
+
+export function sumarHorasReales(
+  sesiones: { inicio: Date; fin: Date | null }[],
+  esHE = false,
+): number {
+  let horas = 0;
   for (const s of sesiones) {
-    if (s.fin) ms += s.fin.getTime() - s.inicio.getTime();
+    if (s.fin) horas += horasDeSesion(s.inicio, s.fin, esHE);
   }
-  return Math.round((ms / 36e5) * 100) / 100;
+  return Math.round(horas * 100) / 100;
+}
+
+// Variante para sumas que MEZCLAN tareas (ej. el mes del técnico): cada sesión
+// usa el flag HE de SU tarea.
+export function sumarHorasRealesPorTarea(
+  sesiones: { planificacion_ot_id: number; inicio: Date; fin: Date | null }[],
+  esHEPorTarea: Map<number, boolean>,
+): number {
+  let horas = 0;
+  for (const s of sesiones) {
+    if (s.fin) horas += horasDeSesion(s.inicio, s.fin, esHEPorTarea.get(s.planificacion_ot_id) ?? false);
+  }
+  return Math.round(horas * 100) / 100;
 }
 
 // ── Estado POR TÉCNICO derivado de las sesiones ──────────────────────────────

@@ -6,7 +6,7 @@ import utc from "dayjs/plugin/utc";
 import timezone from "dayjs/plugin/timezone";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { sumarHorasReales, estadoTecnico, type EstadoTecnico } from "@/lib/plan-sesion";
+import { sumarHorasReales, sumarHorasRealesPorTarea, estadoTecnico, type EstadoTecnico } from "@/lib/plan-sesion";
 
 dayjs.extend(isoWeek);
 dayjs.extend(utc);
@@ -161,11 +161,15 @@ export async function GET(req: Request) {
     // Horas reales del técnico logueado en un conjunto de tareas (sus sesiones).
     async function horasRealesTecnico(taskIds: number[]): Promise<number> {
       if (taskIds.length === 0) return 0;
-      const ss = await prisma.planificacionOTSesion.findMany({
-        where: { tecnico, planificacion_ot_id: { in: taskIds } },
-        select: { inicio: true, fin: true },
-      });
-      return sumarHorasReales(ss);
+      const [ss, tareas] = await Promise.all([
+        prisma.planificacionOTSesion.findMany({
+          where: { tecnico, planificacion_ot_id: { in: taskIds } },
+          select: { planificacion_ot_id: true, inicio: true, fin: true },
+        }),
+        prisma.planificacionOT.findMany({ where: { id: { in: taskIds } }, select: { id: true, horas_extras: true } }),
+      ]);
+      const heMap = new Map(tareas.map((t) => [t.id, !!t.horas_extras]));
+      return sumarHorasRealesPorTarea(ss, heMap);
     }
 
     // ── Rendimiento (POR TÉCNICO, consistente con el resto del dashboard) ──
@@ -197,8 +201,9 @@ export async function GET(req: Request) {
     // Mes: tareas del técnico con fecha_inicio en el mes + su estado por sesiones.
     const tareasMes = await prisma.planificacionOT.findMany({
       where: { AND: [whereTecnico, { fecha_inicio: { gte: mesIni, lte: mesFin } }] },
-      select: { id: true, horas_estimadas: true },
+      select: { id: true, horas_estimadas: true, horas_extras: true },
     });
+    const heMapMes = new Map(tareasMes.map((t) => [t.id, !!t.horas_extras]));
     const mesIds = tareasMes.map((t) => t.id);
     const sesMes = mesIds.length
       ? await prisma.planificacionOTSesion.findMany({
@@ -209,8 +214,9 @@ export async function GET(req: Request) {
     const realizadasMesList = tareasMes.filter(
       (t) => estadoTecnico(sesMes.filter((s) => s.planificacion_ot_id === t.id)) === "realizado",
     );
-    const realMes = sumarHorasReales(
+    const realMes = sumarHorasRealesPorTarea(
       sesMes.filter((s) => realizadasMesList.some((t) => t.id === s.planificacion_ot_id)),
+      heMapMes,
     );
     const rendimientoMes = calcRendimiento(realizadasMesList, tareasMes.length, realMes);
 
@@ -221,8 +227,9 @@ export async function GET(req: Request) {
       const fin = dayjs().tz(TZ).subtract(i, "week").endOf("isoWeek").toDate();
       const tareas = await prisma.planificacionOT.findMany({
         where: { AND: [whereTecnico, { fecha_inicio: { gte: ini, lte: fin } }] },
-        select: { id: true, horas_estimadas: true },
+        select: { id: true, horas_estimadas: true, horas_extras: true },
       });
+      const heMapHist = new Map(tareas.map((t) => [t.id, !!t.horas_extras]));
       const ids = tareas.map((t) => t.id);
       const ses = ids.length
         ? await prisma.planificacionOTSesion.findMany({
@@ -235,7 +242,7 @@ export async function GET(req: Request) {
       );
       let est = 0;
       for (const t of hechas) est += Number(t.horas_estimadas ?? 0);
-      const real = sumarHorasReales(ses.filter((s) => hechas.some((t) => t.id === s.planificacion_ot_id)));
+      const real = sumarHorasRealesPorTarea(ses.filter((s) => hechas.some((t) => t.id === s.planificacion_ot_id)), heMapHist);
       historico.push({
         semana: dayjs(ini).format("DD/MM"),
         estimadas: Math.round(est * 10) / 10,

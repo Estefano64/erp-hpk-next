@@ -31,7 +31,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 
     const plan = await prisma.planificacionOT.findUnique({
       where: { id: planId },
-      select: { id: true, estado: true, observaciones: true, tecnico: true },
+      select: { id: true, estado: true, observaciones: true, tecnico: true, horas_extras: true },
     });
     if (!plan) return NextResponse.json({ error: "Tarea no encontrada" }, { status: 404 });
     if (plan.estado === "realizado") {
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       where: { planificacion_ot_id: planId },
       select: { tecnico: true, inicio: true, fin: true, cierre: true },
     });
-    const horas = sumarHorasReales(todas);
+    const horas = sumarHorasReales(todas, !!plan.horas_extras);
     // La tarea solo queda "realizado" cuando TODOS los técnicos asignados
     // terminaron; si falta alguno, no se cierra ni bloquea al resto.
     const estadoTarea = rollupEstadoTarea(splitRecursos(plan.tecnico), todas);

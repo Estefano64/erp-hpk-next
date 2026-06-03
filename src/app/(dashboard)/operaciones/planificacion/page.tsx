@@ -1174,6 +1174,26 @@ export default function PlanificacionPage() {
       ),
     },
     {
+      // Duración REAL (horas trabajadas). Editable por el planner para regularizar
+      // casos donde el técnico se olvidó de marcar su fin de jornada y la sesión
+      // quedó abierta (ej. volvió al día siguiente). No recalcula nada: es el valor
+      // real que se guarda en la tarea.
+      title: "H. real", key: "horas_reales", width: 90, align: "right",
+      render: (_, r) => (
+        <Tooltip title="Duración real (horas trabajadas). Editable para regularizar olvidos de marcado.">
+          <InputNumber
+            value={r.horas_reales != null ? Number(r.horas_reales) : undefined}
+            min={0}
+            step={0.25}
+            size="small"
+            style={{ width: "100%" }}
+            placeholder="—"
+            onChange={(v) => updateField(r.id, { horas_reales: v == null ? null : v })}
+          />
+        </Tooltip>
+      ),
+    },
+    {
       title: "HE", key: "he", width: 55, align: "center",
       filters: [
         { text: "Sí", value: "true" },
