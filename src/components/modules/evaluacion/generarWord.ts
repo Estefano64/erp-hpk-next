@@ -59,8 +59,71 @@ async function imagenABase64(url: string): Promise<string> {
   }
 }
 
+// Re-escala una imagen base64 a un ANCHO objetivo (en px) manteniendo aspect
+// ratio. CRÍTICO para que Word respete el tamaño: si el píxel mismo de la
+// imagen está ya en el tamaño correcto, Word la pinta así por defecto aunque
+// ignore CSS/atributos. Devuelve también las dimensiones finales para que el
+// HTML pueda setearlas como atributos `width` y `height`.
+//
+// Aplica a las fotos YA SUBIDAS también — por eso se hace al generar el Word,
+// no solo al subirlas. Una foto vieja de 4000 px de ancho se reduce a 302 px
+// (= 8 cm @ 96 dpi) acá mismo.
+async function resizeABaseWidth(dataUrl: string, targetWidthPx: number): Promise<{ dataUrl: string; w: number; h: number }> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      // No agrandar imágenes ya pequeñas — preservar calidad.
+      const scale = Math.min(1, targetWidthPx / img.width);
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      if (scale === 1) {
+        resolve({ dataUrl, w: img.width, h: img.height });
+        return;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        resolve({ dataUrl, w: img.width, h: img.height });
+        return;
+      }
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve({ dataUrl: canvas.toDataURL("image/jpeg", 0.85), w, h });
+    };
+    img.onerror = () => resolve({ dataUrl, w: 0, h: 0 });
+    img.src = dataUrl;
+  });
+}
+
 export async function generarWordEvaluacion(args: GenerarWordArgs) {
-  const { ot, modeloEvaluacion, sistemaMedicion, fechaEvaluacion, evaluadoPor, supervisor = "", datos, resultadoGeneral, recomendacionesGeneral } = args;
+  const { ot, modeloEvaluacion, sistemaMedicion, fechaEvaluacion, evaluadoPor, supervisor = "", datos: datosRaw, resultadoGeneral, recomendacionesGeneral } = args;
+
+  // PRE-PROCESO: re-escalar TODAS las fotos a 8 cm de ANCHO antes de generar
+  // el HTML. Esto es lo que finalmente fuerza el tamaño en Word — el píxel
+  // mismo queda a 302 px (= 8 cm a 96 dpi), así Word la pinta a 8 cm aunque
+  // ignore todo el CSS y los atributos.
+  //
+  // Aplica TAMBIÉN a las fotos ya subidas hace tiempo (con tamaños originales
+  // grandes) — eso es lo que el user pidió: que las viejas también se
+  // achiquen al generar el Word.
+  //
+  // Copiamos `datos` (no mutamos el original) porque el caller sigue
+  // usándolo después del Word.
+  const TARGET_W_PX = 302; // 8 cm @ 96 dpi
+  const datos: Record<string, unknown> = { ...datosRaw };
+  type FotoConDims = { name: string; data: string; w: number; h: number };
+  for (const key of Object.keys(datosRaw)) {
+    if (!key.endsWith("_imagenes")) continue;
+    const arr = datosRaw[key];
+    if (!Array.isArray(arr)) continue;
+    datos[key] = await Promise.all(
+      (arr as { name: string; data: string }[]).map(async (img): Promise<FotoConDims> => {
+        const r = await resizeABaseWidth(img.data, TARGET_W_PX);
+        return { name: img.name, data: r.dataUrl, w: r.w, h: r.h };
+      }),
+    );
+  }
 
   const modelo = MODELOS_EVALUACION.find((m) => m.value === modeloEvaluacion);
   const tituloModelo = modelo?.label || "Cilindro hidraulico vastago simple";
@@ -309,33 +372,31 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
     return html;
   };
 
-  // Helper: render de imagenes subidas (max 6, grilla 3x2, altura uniforme).
-  // Inline style en el <img> porque MS Word ignora reglas CSS de clases para
-  // imágenes en algunos casos — el style inline siempre se respeta. La imagen
-  // entra dentro de la celda (max-width 100%) sin pasarse de 9.5cm de alto.
+  // Helper: render de imagenes subidas (max 6). SIN tabla — bloques continuos.
+  // Cada imagen ya viene re-escalada a 302 px de ANCHO (= 8 cm) por el
+  // pre-proceso arriba; el alto es proporcional para no deformar.
+  //
+  // Triple seguro contra "imágenes salen en otro tamaño":
+  //   1) Píxel real de la imagen: 302 px de ancho (re-escalada). Word
+  //      renderiza al tamaño embedido por default.
+  //   2) HTML attrs width/height: redundantes con el tamaño embedido. Word
+  //      los respeta aunque ignore CSS.
+  //   3) CSS width: 8cm + height: auto: para navegadores modernos y casos edge.
   const renderImagenesSubidas = (prefix: string): string => {
-    const imgs = ((datos[`${prefix}_imagenes`] as { name: string; data: string }[] | undefined) || []).slice(0, 6);
+    const imgs = ((datos[`${prefix}_imagenes`] as { name: string; data: string; w?: number; h?: number }[] | undefined) || []).slice(0, 6);
     if (!imgs.length) return "";
-    const COLS = 3;
-    const imgStyle = "max-width:100%;max-height:9.5cm;width:auto;height:auto;display:inline-block;";
-    const cells = imgs.map(
-      (img) =>
-        `<td class="foto-cell"><div class="foto-img-wrap"><img src="${img.data}" style="${imgStyle}" /></div><div class="foto-caption">${esc(
-          img.name || ""
-        )}</div></td>`
-    );
-    // Completar la ultima fila con celdas vacias para que la grilla quede ordenada
-    while (cells.length % COLS !== 0) {
-      cells.push('<td class="foto-cell foto-vacia"></td>');
-    }
-    const rows: string[] = [];
-    for (let i = 0; i < cells.length; i += COLS) {
-      rows.push(`<tr>${cells.slice(i, i + COLS).join("")}</tr>`);
-    }
+    const imgStyle = "width:8cm;height:auto;";
+    const blocks = imgs.map((img) => {
+      const w = img.w && img.w > 0 ? img.w : 302;
+      const h = img.h && img.h > 0 ? img.h : 226;  // fallback ratio 4:3
+      // Sin caption — el user pidió que las imágenes vayan continuas sin
+      // texto de nombre debajo.
+      return `<div class="foto-bloque"><img src="${img.data}" width="${w}" height="${h}" style="${imgStyle}" /></div>`;
+    }).join("");
     return `
       <div class="fotos-subidas">
         <div class="fotos-titulo">Evidencia fotografica</div>
-        <table class="tabla-fotos" width="100%" cellspacing="0" cellpadding="0"><tbody>${rows.join("")}</tbody></table>
+        ${blocks}
       </div>
     `;
   };
@@ -1155,19 +1216,11 @@ td.editable { color: ${AZUL_CLARO}; font-weight: 600; text-align: center; }
 
 .fotos-subidas { margin: 10pt 0 12pt; }
 .fotos-titulo { font-size: 9pt; color: ${AZUL}; font-weight: 700; padding: 5pt 8pt; background: ${GRIS_FONDO}; border-left: 4pt solid ${AZUL}; margin-bottom: 6pt; letter-spacing: 0.4pt; }
-/* Tabla de fotos: ancho fijo del 100% (= ancho útil de la página A4 landscape
-   menos márgenes), table-layout: fixed para que las columnas NO crezcan con
-   el contenido. Cada celda obtiene exactamente 33.33% del ancho. */
-.tabla-fotos { width: 100%; border-collapse: collapse; table-layout: fixed; }
-.tabla-fotos td.foto-cell { border: 0.5pt solid #ccc; padding: 6pt; width: 33.33%; text-align: center; background: #fff; vertical-align: top; overflow: hidden; }
-.tabla-fotos td.foto-vacia { border: 0; background: transparent; }
-/* Wrapper de la foto: ancho 100% del cell, alto MÁXIMO 9.5cm.
-   La imagen se ajusta para entrar dentro de esos límites SIN desfigurar la
-   tabla — el alto puede ser menor si la foto es muy ancha (la limita max-width).
-   object-fit: contain garantiza que aspect ratio se mantenga. */
-.foto-img-wrap { width: 100%; max-height: 9.5cm; text-align: center; overflow: hidden; padding: 2pt; }
-.foto-img-wrap img { max-height: 9.5cm; max-width: 100%; height: auto; width: auto; vertical-align: middle; object-fit: contain; }
-.foto-caption { font-size: 7.5pt; color: #555; margin-top: 4pt; font-style: italic; line-height: 1.3; max-height: 22pt; overflow: hidden; }
+/* Bloque por foto: SIN tabla, SIN caption, SIN borde — el user pidió que
+   las imágenes vayan continuas. Margen vertical mínimo (2pt) para que se
+   vean pegadas pero no superpuestas. */
+.foto-bloque { text-align: center; margin: 2pt 0; page-break-inside: avoid; }
+.foto-bloque img { width: 8cm; height: auto; display: block; margin: 0 auto; }
 
 .hallazgos { margin: 6pt 0; padding: 4pt 8pt; border-left: 3pt solid #c0392b; background: #fef5f5; }
 .hallazgos b { color: #c0392b; font-size: 9pt; }
