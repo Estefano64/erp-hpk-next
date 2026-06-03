@@ -623,25 +623,33 @@ function ResultadoComponente({
 }
 
 // ── Comprimir imagen a base64 para almacenar en datos_formulario ──
-// Comprime cada foto a un tamaño razonable manteniendo aspect ratio. Limita
-// la dimensión MAYOR a `maxDim` px (default 600) — alcanza para renderizar a
-// 9.5 cm en el Word con calidad nítida sin inflar el JSON ni el documento.
+// Estandariza las fotos a una ALTURA fija (8 cm a 96 dpi ≈ 300 px) con
+// ancho proporcional para que aspect ratio se mantenga y la imagen no se
+// deforme. Decisión del user: todas las fotos del informe deben quedar a
+// la misma altura visual de 8 cm; el ancho lo dicta el aspect ratio.
 //
-// Importante: limitamos la dimensión MAYOR (no solo el alto) para que las
-// fotos panorámicas (ej. 4000×2000) no terminen con un ancho enorme que
-// rompa la tabla del Word. El CSS del Word luego decide el alto final
-// (max-height: 9.5cm) — esta compresión es solo para reducir peso/tamaño.
-async function comprimirImagen(file: File, maxDim = 600, quality = 0.82): Promise<string> {
+// 8 cm = 8 * 96 / 2.54 ≈ 302 px → redondeamos a 300.
+// El CSS del Word usa height: 8cm + max-width: 100% (cell) — si una foto
+// panorámica se pasa del ancho del cell, ahí sí se cae a max-width y la
+// altura baja proporcionalmente. Por eso también limitamos el ANCHO MÁXIMO
+// a 800 px (≈ 21 cm) para no inflar el JSON con panorámicas absurdas.
+async function comprimirImagen(file: File, targetHeightPx = 300, maxWidthPx = 800, quality = 0.85): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (ev) => {
       const img = new window.Image();
       img.onload = () => {
-        const mayor = Math.max(img.width, img.height);
-        // No agrandamos si ya es chica.
-        const scale = Math.min(1, maxDim / mayor);
-        const w = Math.round(img.width * scale);
-        const h = Math.round(img.height * scale);
+        // Primero escalamos para que el alto matche el target (sin agrandar).
+        const scaleH = Math.min(1, targetHeightPx / img.height);
+        let w = Math.round(img.width * scaleH);
+        let h = Math.round(img.height * scaleH);
+        // Si después de escalar por alto el ancho supera el cap, achicamos
+        // por ancho (aspect ratio se mantiene en ambos casos).
+        if (w > maxWidthPx) {
+          const scaleW = maxWidthPx / w;
+          w = Math.round(w * scaleW);
+          h = Math.round(h * scaleW);
+        }
         const canvas = document.createElement("canvas");
         canvas.width = w;
         canvas.height = h;

@@ -309,15 +309,22 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
     return html;
   };
 
-  // Helper: render de imagenes subidas (max 6, grilla 3x2, altura uniforme).
+  // Helper: render de imagenes subidas (max 6, grilla 2 columnas, altura
+  // uniforme 8 cm). Decisión del user: todas las fotos a 8 cm de alto con
+  // ancho proporcional (aspect ratio mantenido). Usamos 2 cols en vez de 3
+  // para que cada celda tenga ~13 cm de ancho y las panorámicas también
+  // lleguen a los 8 cm de alto sin que max-width las achique.
+  //
   // Inline style en el <img> porque MS Word ignora reglas CSS de clases para
-  // imágenes en algunos casos — el style inline siempre se respeta. La imagen
-  // entra dentro de la celda (max-width 100%) sin pasarse de 9.5cm de alto.
+  // imágenes en algunos casos — el style inline siempre se respeta.
   const renderImagenesSubidas = (prefix: string): string => {
     const imgs = ((datos[`${prefix}_imagenes`] as { name: string; data: string }[] | undefined) || []).slice(0, 6);
     if (!imgs.length) return "";
-    const COLS = 3;
-    const imgStyle = "max-width:100%;max-height:9.5cm;width:auto;height:auto;display:inline-block;";
+    const COLS = 2;
+    // height: 8cm + max-width: 100% — el alto es fijo a 8cm; si la foto es
+    // tan ancha que se pasa del cell, ahí max-width la limita y el alto
+    // baja proporcionalmente (ningún caso desfigura la tabla).
+    const imgStyle = "height:8cm;max-width:100%;width:auto;display:inline-block;";
     const cells = imgs.map(
       (img) =>
         `<td class="foto-cell"><div class="foto-img-wrap"><img src="${img.data}" style="${imgStyle}" /></div><div class="foto-caption">${esc(
@@ -1155,18 +1162,18 @@ td.editable { color: ${AZUL_CLARO}; font-weight: 600; text-align: center; }
 
 .fotos-subidas { margin: 10pt 0 12pt; }
 .fotos-titulo { font-size: 9pt; color: ${AZUL}; font-weight: 700; padding: 5pt 8pt; background: ${GRIS_FONDO}; border-left: 4pt solid ${AZUL}; margin-bottom: 6pt; letter-spacing: 0.4pt; }
-/* Tabla de fotos: ancho fijo del 100% (= ancho útil de la página A4 landscape
+/* Tabla de fotos: ancho fijo 100% (= ancho útil de la página A4 landscape
    menos márgenes), table-layout: fixed para que las columnas NO crezcan con
-   el contenido. Cada celda obtiene exactamente 33.33% del ancho. */
+   el contenido. Grilla de 2 columnas: cada celda obtiene 50% del ancho
+   (~13 cm) — suficiente para que una foto panorámica a 8 cm de alto entre
+   sin deformar la tabla. */
 .tabla-fotos { width: 100%; border-collapse: collapse; table-layout: fixed; }
-.tabla-fotos td.foto-cell { border: 0.5pt solid #ccc; padding: 6pt; width: 33.33%; text-align: center; background: #fff; vertical-align: top; overflow: hidden; }
+.tabla-fotos td.foto-cell { border: 0.5pt solid #ccc; padding: 6pt; width: 50%; text-align: center; background: #fff; vertical-align: top; overflow: hidden; }
 .tabla-fotos td.foto-vacia { border: 0; background: transparent; }
-/* Wrapper de la foto: ancho 100% del cell, alto MÁXIMO 9.5cm.
-   La imagen se ajusta para entrar dentro de esos límites SIN desfigurar la
-   tabla — el alto puede ser menor si la foto es muy ancha (la limita max-width).
-   object-fit: contain garantiza que aspect ratio se mantenga. */
-.foto-img-wrap { width: 100%; max-height: 9.5cm; text-align: center; overflow: hidden; padding: 2pt; }
-.foto-img-wrap img { max-height: 9.5cm; max-width: 100%; height: auto; width: auto; vertical-align: middle; object-fit: contain; }
+/* Wrapper: alto 8 cm fijo para que todas las fotos queden alineadas en
+   filas uniformes. La imagen dentro respeta ese alto + max-width 100%. */
+.foto-img-wrap { width: 100%; height: 8cm; text-align: center; overflow: hidden; padding: 2pt; }
+.foto-img-wrap img { height: 8cm; max-width: 100%; width: auto; vertical-align: middle; }
 .foto-caption { font-size: 7.5pt; color: #555; margin-top: 4pt; font-style: italic; line-height: 1.3; max-height: 22pt; overflow: hidden; }
 
 .hallazgos { margin: 6pt 0; padding: 4pt 8pt; border-left: 3pt solid #c0392b; background: #fef5f5; }
