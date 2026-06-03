@@ -40,7 +40,11 @@ export async function GET(_req: NextRequest, { params }: Params) {
         ot_repuestos: {
           include: {
             material: { select: { codigo: true, descripcion: true } },
-            orden_trabajo: { select: { id: true, ot: true } },
+            // tipo_codigo necesario para formatOtCodigo (V/S/REP prefix) en el editor.
+            orden_trabajo: { select: { id: true, ot: true, tipo_codigo: true } },
+            // OT interna (cuando el req viene de mantenimiento interno) — formato
+            // OIXXXXYY. Permite que el editor muestre la OT correcta por fila.
+            orden_trabajo_interna: { select: { id: true, ot: true } },
             // Adjuntos del req original (cotización, ficha técnica, fotos)
             // para que el aprobador de OC los pueda revisar antes de aceptar.
             adjuntos: { select: { id: true, nombre_archivo: true, r2_key: true, tamano: true } },
@@ -107,6 +111,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
           : "Pendiente",
         material: rep.material,
         orden_trabajo: rep.orden_trabajo,
+        orden_trabajo_interna: rep.orden_trabajo_interna,
         comentario_aprobacion: rep.comentario_aprobacion,
         adjuntos: rep.adjuntos,
       })),

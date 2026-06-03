@@ -51,6 +51,10 @@ interface MaterialOpt {
   descripcion: string;
   fabricante_codigo: string | null;
   unidad_medida_codigo: string | null;
+  // Precio del catálogo — se usa para auto-cargar el PU al elegir un material
+  // MAC en el form (el user pidió PU obligatorio).
+  precio: number | string | null;
+  moneda_codigo: string | null;
 }
 
 // Item del modal "Nuevo requerimiento" — antes de mandar al backend.
@@ -168,7 +172,9 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
     setDraftItems((prev) => prev.map((d) => {
       if (d.key !== key) return d;
       const next = { ...d, ...patch };
-      // Auto-completar descripción / unidad / fabricante desde el material si MAC.
+      // Auto-completar descripción / unidad / fabricante / precio desde el
+      // material si MAC. El precio es obligatorio en req de OT interna; si el
+      // catálogo lo tiene, se preselecciona — el user puede sobreescribir.
       if (patch.material_codigo && next.tipo_codigo === "MAC") {
         const mat = materiales.find((m) => m.codigo === patch.material_codigo);
         if (mat) {
@@ -178,6 +184,10 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
           }
           if (!next.fabricante_codigo && mat.fabricante_codigo) {
             next.fabricante_codigo = mat.fabricante_codigo;
+          }
+          if (next.precio_unitario == null && mat.precio != null && Number(mat.precio) > 0) {
+            next.precio_unitario = Number(mat.precio);
+            next.moneda = next.moneda ?? mat.moneda_codigo ?? "USD";
           }
         }
       }
@@ -203,6 +213,10 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
       }
       if (it.tipo_codigo === "MAC" && !it.material_codigo) {
         message.error(`Item ${i + 1}: tipo MAC requiere seleccionar material.`);
+        return;
+      }
+      if (it.precio_unitario == null || it.precio_unitario <= 0) {
+        message.error(`Item ${i + 1}: precio unitario es obligatorio (mayor a 0).`);
         return;
       }
       if (!it.fecha_requerida) {
@@ -628,40 +642,39 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
                 ),
               },
               {
-                // Precio referencial — solo aplica a SER y CAD (MAC usa el catálogo).
-                title: "Precio ref.", dataIndex: "precio_unitario", width: 180,
-                render: (v: number | undefined, row) => {
-                  if (row.tipo_codigo !== "SER" && row.tipo_codigo !== "CAD") {
-                    return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
-                  }
-                  return (
-                    <Space size={2}>
-                      <InputNumber
-                        size="small"
-                        value={v}
-                        min={0}
-                        step={0.01}
-                        placeholder="0.00"
-                        style={{ width: 90 }}
-                        onChange={(nv) => updateDraft(row.key, { precio_unitario: nv ?? undefined })}
-                      />
-                      <Select showSearch optionFilterProp="label"
-                        size="small"
-                        value={row.moneda ?? "USD"}
-                        style={{ width: 70 }}
-                        onChange={(nv) => updateDraft(row.key, { moneda: nv })}
-                        options={[
-                          { value: "USD", label: "USD" },
-                          { value: "SOL", label: "SOL" },
-                        ]}
-                      />
-                    </Space>
-                  );
-                },
+                // Precio unitario — obligatorio para TODOS los tipos.
+                // MAC auto-rellena desde el catálogo del material (si tiene
+                // precio); SER y CAD lo ingresa el usuario.
+                title: <span>Precio <Text type="danger">*</Text></span>,
+                dataIndex: "precio_unitario", width: 180,
+                render: (v: number | undefined, row) => (
+                  <Space size={2}>
+                    <InputNumber
+                      size="small"
+                      value={v}
+                      min={0}
+                      step={0.01}
+                      placeholder="0.00"
+                      style={{ width: 90 }}
+                      onChange={(nv) => updateDraft(row.key, { precio_unitario: nv ?? undefined })}
+                    />
+                    <Select showSearch optionFilterProp="label"
+                      size="small"
+                      value={row.moneda ?? "USD"}
+                      style={{ width: 70 }}
+                      onChange={(nv) => updateDraft(row.key, { moneda: nv })}
+                      options={[
+                        { value: "USD", label: "USD" },
+                        { value: "SOL", label: "SOL" },
+                      ]}
+                    />
+                  </Space>
+                ),
               },
               {
                 // Fecha requerida — obligatoria para poder enviar a aprobación.
-                title: "F. requerida", dataIndex: "fecha_requerida", width: 140,
+                title: <span>F. requerida <Text type="danger">*</Text></span>,
+                dataIndex: "fecha_requerida", width: 140,
                 render: (_: unknown, row) => (
                   <DatePicker
                     size="small"

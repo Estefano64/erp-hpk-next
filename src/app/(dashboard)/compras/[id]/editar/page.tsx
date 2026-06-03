@@ -15,6 +15,7 @@ import dayjs, { Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
 import { useUnsavedChangesWarning, confirmLeave } from "@/lib/unsaved-changes";
 import { useColumnasRedimensionables, STICKY_HEADER } from "@/lib/tables";
+import { formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
 
 const { Title, Text } = Typography;
 
@@ -33,6 +34,11 @@ interface ItemRow {
   moneda: string | null;
   fabricante_codigo: string | null;
   fecha_entrega_esperada: string | null;
+  // OT derivada (read-only): código formateado de la OT externa o interna a
+  // la que pertenece el req. Si el item es nuevo (sin id en BD), se hereda
+  // de la OT default de la OC (la primera existente). El user lo veía vacío
+  // antes y lo llenaba a mano en "Código" — ahora aparece automático.
+  _ot_codigo: string | null;
   _deleted?: boolean;
 }
 
@@ -61,6 +67,8 @@ interface CompraData {
     precio_unitario: number | null;
     moneda: string | null;
     fabricante_codigo: string | null;
+    orden_trabajo?: { id: number; ot: number | string | null; tipo_codigo: string | null } | null;
+    orden_trabajo_interna?: { id: number; ot: number | string | null } | null;
   }>;
 }
 
@@ -116,6 +124,12 @@ export default function EditarOCPage() {
         moneda: it.moneda ?? c.moneda,
         fabricante_codigo: it.fabricante_codigo,
         fecha_entrega_esperada: null,
+        // Código formateado de la OT (externa → V/S/REP) o interna (OIxxxxYY).
+        _ot_codigo: it.orden_trabajo?.ot != null
+          ? formatOtCodigo(it.orden_trabajo.ot as number | string | null, it.orden_trabajo.tipo_codigo, "")
+          : it.orden_trabajo_interna?.ot != null
+          ? formatOtInternaCodigo(it.orden_trabajo_interna.ot as number | string | null, "")
+          : null,
       }));
       setRows(mapped);
       setOriginalRowsHash(JSON.stringify(mapped));
@@ -146,6 +160,10 @@ export default function EditarOCPage() {
   };
 
   const addRow = () => {
+    // Items libres heredan la OT del primer item existente que tenga código.
+    // Replica el comportamiento del backend (que asigna ot_id = primer ot_id
+    // de la OC al crear un OTRepuesto nuevo desde acá).
+    const otHeredada = rows.find((r) => r._ot_codigo)?._ot_codigo ?? null;
     setRows((prev) => [
       ...prev,
       {
@@ -161,6 +179,7 @@ export default function EditarOCPage() {
         moneda: compra?.moneda ?? "USD",
         fabricante_codigo: null,
         fecha_entrega_esperada: null,
+        _ot_codigo: otHeredada,
       },
     ]);
   };
@@ -251,6 +270,15 @@ export default function EditarOCPage() {
     {
       title: "#", key: "n", width: 50, align: "center",
       render: (_v, _r, idx) => <Text strong>{idx + 1}</Text>,
+    },
+    {
+      // Columna NUEVA (read-only): muestra automáticamente la OT a la que
+      // pertenece cada item. Antes el user tenía que tipearla en "Código"
+      // a mano — ahora se deriva del ot_id del repuesto.
+      title: "OT", key: "ot_auto", width: 90, align: "center",
+      render: (_v, r) => r._ot_codigo
+        ? <Tag color={brand.navy}>{r._ot_codigo}</Tag>
+        : <Text type="secondary" style={{ fontSize: 11 }}>—</Text>,
     },
     {
       title: "Código", key: "codigo", dataIndex: "material_codigo", width: 130, align: "left",
