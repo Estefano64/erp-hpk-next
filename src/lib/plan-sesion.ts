@@ -2,42 +2,33 @@
 // planificación. Suma duraciones de las sesiones cerradas y devuelve las horas
 // reales acumuladas.
 
-import { minutosAlmuerzoEntre } from "./planification-hours";
+import { horasHabilesEntre } from "./planification-hours";
 
-// Horas trabajadas de UNA sesión = reloj continuo, descontando el ALMUERZO que
-// la sesión cruce (12:30–13:30). Las PAUSAS ya quedan fuera porque cierran la
-// sesión (la suma es por sesión, sin contar los huecos entre ellas). NO se
-// recorta el fin de jornada: cada técnico marca su fin de día; si alguien se
-// olvidó y dejó la sesión abierta, el planner regulariza la duración real a mano.
-// HE = tiempo continuo sin descuento (es trabajo fuera de jornada, sin almuerzo).
-function horasDeSesion(inicio: Date, fin: Date, esHE: boolean): number {
-  const horasReloj = (fin.getTime() - inicio.getTime()) / 36e5;
-  if (esHE) return horasReloj;
-  return Math.max(0, horasReloj - minutosAlmuerzoEntre(inicio, fin) / 60);
+// Horas de JORNADA trabajadas en un conjunto de sesiones (jornada 8–18, sin
+// almuerzo, L–V). Las PAUSAS quedan fuera porque cierran la sesión (la suma es
+// por sesión). El tiempo fuera de jornada (noche / fin de semana) NO se cuenta:
+// si el técnico se olvidó de marcar su fin de día, la jornada igual lo acota (y
+// el planner puede ajustar la Dur. real a mano si hace falta).
+export function horasHabilesDeSesiones(sesiones: { inicio: Date; fin: Date | null }[]): number {
+  let h = 0;
+  for (const s of sesiones) {
+    if (s.fin) h += horasHabilesEntre(s.inicio, s.fin);
+  }
+  return Math.round(h * 100) / 100;
 }
 
-export function sumarHorasReales(
+// Duración REAL de UNA tarea = horas hábiles de sus sesiones + Horas Extra (HE),
+// si la tarea está marcada como HE. La HE es trabajo fuera de jornada, así que se
+// suma como la cantidad de HE (igual que HH = estimada × qty + HE, pero del lado real).
+export function duracionRealTarea(
   sesiones: { inicio: Date; fin: Date | null }[],
-  esHE = false,
+  esHE: boolean,
+  // Prisma entrega horas_extras_qty como Decimal; aceptamos cualquier numérico.
+  horasExtrasQty: number | string | { toString(): string } | null | undefined,
 ): number {
-  let horas = 0;
-  for (const s of sesiones) {
-    if (s.fin) horas += horasDeSesion(s.inicio, s.fin, esHE);
-  }
-  return Math.round(horas * 100) / 100;
-}
-
-// Variante para sumas que MEZCLAN tareas (ej. el mes del técnico): cada sesión
-// usa el flag HE de SU tarea.
-export function sumarHorasRealesPorTarea(
-  sesiones: { planificacion_ot_id: number; inicio: Date; fin: Date | null }[],
-  esHEPorTarea: Map<number, boolean>,
-): number {
-  let horas = 0;
-  for (const s of sesiones) {
-    if (s.fin) horas += horasDeSesion(s.inicio, s.fin, esHEPorTarea.get(s.planificacion_ot_id) ?? false);
-  }
-  return Math.round(horas * 100) / 100;
+  const base = horasHabilesDeSesiones(sesiones);
+  const he = esHE ? Math.max(0, Number(horasExtrasQty ?? 0)) : 0;
+  return Math.round((base + he) * 100) / 100;
 }
 
 // ── Estado POR TÉCNICO derivado de las sesiones ──────────────────────────────
