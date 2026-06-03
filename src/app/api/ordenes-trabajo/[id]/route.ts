@@ -26,6 +26,16 @@ export async function GET(_req: NextRequest, { params }: Params) {
         recursos_status: true,
         taller_status: true,
         moneda_cotizacion: true,
+        // Compras DIRECTAS (Compra.ot_id = this.id) — solo lo mínimo para
+        // mostrar el N° OC en la hoja de evaluación y en el Word.
+        compras: { select: { id: true, numero_po: true, status_oc_codigo: true } },
+        // Compras INDIRECTAS (vía requerimientos agrupados en una OC).
+        // Tomamos solo 1 fila por compra distinta gracias a `distinct`.
+        repuestos: {
+          where: { po_id: { not: null } },
+          select: { compra: { select: { id: true, numero_po: true, status_oc_codigo: true } } },
+          distinct: ["po_id"],
+        },
       },
     });
 

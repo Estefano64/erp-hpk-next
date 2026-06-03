@@ -11,6 +11,12 @@ interface OTDetalle {
   cod_rep_posicion: string | null;
   guia_remision: string | null;
   fecha_recepcion: string | null;
+  // PO Cliente — el user lo pidió porque sin este número no hay forma de
+  // anexar la cotización al PO del cliente.
+  po_cliente?: string | null;
+  // Lista de OCs vinculadas a la OT (puede ser 0, 1 o varias). Se rendea
+  // como "260003, 260005" en el header.
+  numeros_oc?: string[];
   cliente: { nombre_comercial: string | null; razon_social: string } | null;
   codigo_reparacion: { codigo: string } | null;
   fabricante: { nombre: string } | null;
@@ -1264,6 +1270,7 @@ td.editable { color: ${AZUL_CLARO}; font-weight: 600; text-align: center; }
     <tr><td class="label">Fabricante</td><td class="editable">${esc(ot?.fabricante?.nombre)}</td><td class="label">Flota</td><td class="editable">${esc(ot?.cod_rep_flota)}</td></tr>
     <tr><td class="label">Tipo</td><td class="editable">${esc(ot?.tipo)}</td><td class="label">N/P</td><td class="editable">${esc(ot?.np)}</td></tr>
     <tr><td class="label">Equipo</td><td class="editable">${esc(ot?.equipo_codigo)}</td><td class="label">Posicion</td><td class="editable">${esc(ot?.cod_rep_posicion)}</td></tr>
+    <tr><td class="label">PO Cliente</td><td class="editable">${esc(ot?.po_cliente) || "—"}</td><td class="label">N° OC</td><td class="editable">${esc((ot?.numeros_oc ?? []).join(", ")) || "—"}</td></tr>
     <tr><td class="label">Descripcion</td><td class="editable" colspan="3">${esc(ot?.descripcion)}</td></tr>
 </tbody></table>
 
