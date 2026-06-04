@@ -8,14 +8,19 @@ import { recalcularCostoPromedio } from "@/lib/inventario";
 // OTRepuesto a recibir + la zona/posición del almacén físico donde se guarda.
 // Si no se pasa repuesto_id, mantiene la lógica histórica (distribución por
 // material entre detalles).
+// material_id es opcional: para items "free" (CAD sin catálogo) viene null y
+// repuesto_id es obligatorio. La validación cruzada se hace abajo.
 const ItemSchema = z.object({
-  material_id: z.coerce.number().int().positive(),
+  material_id: z.coerce.number().int().positive().optional().nullable(),
   cantidad: z.coerce.number().positive(),
   observacion: z.string().trim().optional().nullable(),
   repuesto_id: z.coerce.number().int().positive().optional().nullable(),
   almacen_zona_id: z.coerce.number().int().positive().optional().nullable(),
   almacen_posicion_id: z.coerce.number().int().positive().optional().nullable(),
-});
+}).refine(
+  (item) => item.material_id != null || item.repuesto_id != null,
+  { message: "Cada item debe tener material_id o repuesto_id" },
+);
 
 const Schema = z.object({
   po_id: z.coerce.number().int().positive(),
@@ -108,9 +113,51 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const movimientosCreados: { material_id: number; cantidad: number }[] = [];
+      const movimientosCreados: { material_id: number | null; cantidad: number }[] = [];
 
       for (const item of d.items) {
+        // ─── Caso "free" (item sin material catalogado) ───────────────────
+        // Identificado por material_id == null. La distribución va por
+        // repuesto_id directamente: actualizamos OTRepuesto.cantidad_recibida
+        // y saltamos MovimientoInventario + stock_actual (no hay material).
+        if (item.material_id == null) {
+          if (!item.repuesto_id) {
+            throw Object.assign(
+              new Error("Item sin material_id requiere repuesto_id"),
+              { code: "BAD_LINE" },
+            );
+          }
+          const reqFree = await tx.oTRepuesto.findUnique({
+            where: { id: item.repuesto_id },
+            select: { id: true, po_id: true, cantidad: true, cantidad_recibida: true, descripcion: true },
+          });
+          if (!reqFree || reqFree.po_id !== d.po_id) {
+            throw Object.assign(
+              new Error(`Repuesto ${item.repuesto_id} no pertenece a la OC ${compra.numero_po}`),
+              { code: "BAD_LINE" },
+            );
+          }
+          const pendienteFree = Number(reqFree.cantidad) - Number(reqFree.cantidad_recibida ?? 0);
+          if (item.cantidad > pendienteFree + 0.0001) {
+            throw Object.assign(
+              new Error(`${reqFree.descripcion ?? "Item"}: cantidad ${item.cantidad} excede lo pendiente (${pendienteFree})`),
+              { code: "OVER_QTY" },
+            );
+          }
+          await tx.oTRepuesto.update({
+            where: { id: reqFree.id },
+            data: {
+              cantidad_recibida: new Prisma.Decimal(reqFree.cantidad_recibida ?? 0).plus(item.cantidad),
+              ...(item.almacen_zona_id
+                ? { almacen_zona_id: item.almacen_zona_id, almacen_posicion_id: item.almacen_posicion_id ?? null }
+                : {}),
+            },
+          });
+          movimientosCreados.push({ material_id: null, cantidad: item.cantidad });
+          continue;
+        }
+
+        // ─── Caso catalogado (material_id presente) ────────────────────────
         const detalles = detallesPorMaterial.get(item.material_id);
         if (!detalles || detalles.length === 0) {
           throw Object.assign(
@@ -224,14 +271,26 @@ export async function POST(req: NextRequest) {
         movimientosCreados.push({ material_id: item.material_id, cantidad: item.cantidad });
       }
 
-      // Recalcular estado de la OC en función de cuánto queda pendiente en TODOS los detalles.
+      // Recalcular estado de la OC: si hay CompraDetalle, los usamos; si no
+      // (OC de items free), nos basamos en OTRepuesto.cantidad_recibida.
       const detallesActualizados = await tx.compraDetalle.findMany({
         where: { compra_id: d.po_id },
         select: { cantidad: true, cantidad_recibida: true },
       });
-      const todasCompletas = detallesActualizados.every(
-        (x) => Number(x.cantidad_recibida ?? 0) >= Number(x.cantidad) - 0.0001,
-      );
+      let todasCompletas: boolean;
+      if (detallesActualizados.length > 0) {
+        todasCompletas = detallesActualizados.every(
+          (x) => Number(x.cantidad_recibida ?? 0) >= Number(x.cantidad) - 0.0001,
+        );
+      } else {
+        const reqsActualizados = await tx.oTRepuesto.findMany({
+          where: { po_id: d.po_id },
+          select: { cantidad: true, cantidad_recibida: true },
+        });
+        todasCompletas = reqsActualizados.every(
+          (x) => Number(x.cantidad_recibida ?? 0) >= Number(x.cantidad) - 0.0001,
+        );
+      }
       const nuevoEstado = todasCompletas ? "ENTREGADO" : "INCOMPLETO";
 
       const updateCompra: Prisma.CompraUncheckedUpdateInput = {
