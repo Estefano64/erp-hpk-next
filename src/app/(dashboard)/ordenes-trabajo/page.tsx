@@ -751,6 +751,23 @@ export default function OrdenesTrabajoPage() {
             endpoint="/api/ordenes-trabajo?export=1"
             filename="OTs-Externas"
             sheetName="OTs Externas"
+            dateFilter={{
+              label: "Fecha de recepción",
+              paramNameDesde: "fecha_recepcion_desde",
+              paramNameHasta: "fecha_recepcion_hasta",
+            }}
+            categoryFilters={[
+              {
+                key: "tipo_ot",
+                label: "Tipo de OT",
+                paramName: "tipo_ot",
+                options: [
+                  { value: "Reparación", label: "Reparación" },
+                  { value: "Bien", label: "Bien" },
+                  { value: "Servicio", label: "Servicio" },
+                ],
+              },
+            ]}
             columns={[
               // Prefijo V/S según tipo (Bien/Servicio). Reparación queda como número puro.
               { label: "OT", value: (r) => formatOtCodigo(r.ot, r.tipo_ot?.codigo ?? r.tipo_codigo, "") },

@@ -371,6 +371,32 @@ export default function CodigosReparacionPage() {
           <ExportarExcelButton<CodRep>
             endpoint="/api/codigos-reparacion"
             filename="Codigos-Reparacion"
+            categoryFilters={[
+              {
+                key: "tipo",
+                label: "Tipo",
+                options: tipos.map((t) => ({ value: t.codigo, label: t.nombre })),
+                predicate: (r, sel) => sel.includes(r.tipo_codigo ?? ""),
+              },
+              {
+                key: "categoria",
+                label: "Categoría",
+                options: categorias.map((c) => ({ value: c.codigo, label: c.nombre })),
+                predicate: (r, sel) => sel.includes(r.categoria_codigo ?? ""),
+              },
+              {
+                key: "flota",
+                label: "Flota",
+                options: flotas.map((f) => ({ value: f.codigo, label: f.nombre })),
+                predicate: (r, sel) => sel.includes(r.flota_codigo ?? ""),
+              },
+              {
+                key: "fabricante",
+                label: "Fabricante",
+                options: fabricantes.map((f) => ({ value: f.codigo, label: f.nombre })),
+                predicate: (r, sel) => sel.includes(r.fabricante_codigo ?? ""),
+              },
+            ]}
             columns={[
               { label: "Código", value: (r) => r.codigo },
               { label: "Descripción", value: (r) => r.descripcion },
