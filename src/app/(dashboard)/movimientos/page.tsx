@@ -648,15 +648,15 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
       message.warning("Ingresa al menos una cantidad");
       return;
     }
-    if (!ubicacionRec) {
-      message.warning("Indicá la ubicación física donde se guardó el material recibido.");
-      return;
-    }
+    // El campo "Ubicación física" de arriba es OPCIONAL desde que cada item
+    // ya guarda su zona del almacén HP&K en `almacen_zona_id`. Si el user
+    // no lo llena, simplemente no se setea `ubicacion_codigo` en la OT.
     // Cada material recibido debe tener zona del almacén HP&K asignada
-    // (HER / SUM / REP / STO) — la posición es opcional.
+    // (HER / SUM / REP / STO) — la posición es opcional. Solo validamos las
+    // zonas de items que efectivamente se están recibiendo (cantidad > 0).
     const sinZona = items.filter((it) => !it.almacen_zona_id);
     if (sinZona.length > 0) {
-      message.warning(`Faltan zonas de almacén en ${sinZona.length} item(s). Elegí la zona en cada fila.`);
+      message.warning(`Faltan zonas de almacén en ${sinZona.length} item(s) que estás recibiendo. Elegí la zona en cada fila.`);
       return;
     }
 
@@ -988,7 +988,7 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
               <Row gutter={12}>
                 <Col xs={24} sm={12}>
                   <Text strong style={{ fontSize: 12 }}>
-                    Ubicación física del material <span style={{ color: "#cf1322" }}>*</span>
+                    Ubicación física del material <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
                   </Text>
                   <Select
                     placeholder="¿Dónde se guardó el material recibido?"
@@ -1001,7 +1001,7 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                     style={{ width: "100%" }}
                   />
                   <Text type="secondary" style={{ fontSize: 11 }}>
-                    Se guardará en la(s) OT(s) de esta PO para saber dónde está el material al despachar.
+                    Opcional — cada item ya guarda su zona del almacén (HER / SUM / REP / STO) en la tabla de abajo. Este campo es solo para registrar una ubicación de almacén general a nivel OT.
                   </Text>
                 </Col>
               </Row>

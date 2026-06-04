@@ -277,7 +277,11 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
       if (!it.descripcion?.trim()) errors.push(`Item ${idx + 1}: descripción requerida`);
       if (!it.cantidad || it.cantidad <= 0) errors.push(`Item ${idx + 1}: cantidad debe ser > 0`);
       if (it.tipo_codigo === "MAC" && !it.material_codigo) errors.push(`Item ${idx + 1}: tipo MAC requiere material`);
-      if (fechaRecepcion && it.fecha_requerida && it.fecha_requerida.isBefore(fechaRecepcion, "day")) {
+      // F. requerida es OBLIGATORIA — sin ella el flujo de aprobación no
+      // puede planificar entrega, así que rechazamos al guardar.
+      if (!it.fecha_requerida) {
+        errors.push(`Item ${idx + 1}: fecha requerida es obligatoria (sin ella no se puede enviar a aprobación)`);
+      } else if (fechaRecepcion && it.fecha_requerida.isBefore(fechaRecepcion, "day")) {
         errors.push(`Item ${idx + 1}: F. requerida no puede ser anterior a la recepción de la OT.`);
       }
     }
@@ -1260,7 +1264,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
                 },
               },
               {
-                title: "F. requerida", key: "freq", width: 130,
+                title: <span>F. requerida <Text type="danger">*</Text></span>, key: "freq", width: 130,
                 render: (_: unknown, r: DraftItem) => (
                   <DatePicker
                     size="small" style={{ width: "100%" }}

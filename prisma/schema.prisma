@@ -934,6 +934,9 @@ model OrdenTrabajo {
   id_cod_rep                  Int?
   tipo                        String?             @db.VarChar(100)
   tipo_codigo                 String?             @db.VarChar(10)
+  // Cantidad de unidades de la OT — aplica a los 3 tipos (REP/BIE/SER).
+  // Por default 1 (caso histórico mayoritario: 1 componente / 1 servicio).
+  cantidad                    Int                 @default(1)
   np                          String?             @db.VarChar(100)
   descripcion                 String?
   id_fabricante               Int?

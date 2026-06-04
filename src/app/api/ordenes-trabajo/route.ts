@@ -343,6 +343,8 @@ export async function POST(req: NextRequest) {
           id_cod_rep: body.id_cod_rep || null,
           tipo,
           tipo_codigo: body.tipo_codigo,
+          // Cantidad de unidades de la OT (aplica a REP/BIE/SER). Default 1.
+          cantidad: Number.isFinite(body.cantidad) && Number(body.cantidad) > 0 ? Number(body.cantidad) : 1,
           np,
           descripcion,
           id_fabricante: idFabricante,

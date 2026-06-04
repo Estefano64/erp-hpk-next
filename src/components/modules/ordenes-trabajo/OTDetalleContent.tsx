@@ -97,6 +97,8 @@ interface OTDetalle {
   plaqueteo: string | null;
   descripcion: string | null;
   tipo: string | null;
+  // Cantidad de unidades de la OT (REP/BIE/SER). Default 1.
+  cantidad?: number | null;
   np: string | null;
   cod_rep_flota: string | null;
   cod_rep_posicion: string | null;
@@ -701,8 +703,14 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
             <Button
               icon={<EditOutlined />}
               onClick={startEditing}
-              disabled={!lock.canEdit}
-              title={!lock.canEdit && lock.lockedBy ? `Editando: ${lock.lockedBy}` : undefined}
+              // Bloqueamos edición si la OT está Cerrada — para modificarla
+              // primero hay que reabrirla cambiando el OT Status.
+              disabled={!lock.canEdit || ot?.ot_status_codigo === "Cerrada"}
+              title={
+                ot?.ot_status_codigo === "Cerrada"
+                  ? "La OT está Cerrada — reabrila primero cambiando OT Status"
+                  : !lock.canEdit && lock.lockedBy ? `Editando: ${lock.lockedBy}` : undefined
+              }
             >
               Editar OT
             </Button>
@@ -818,6 +826,9 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                 <Col xs={12} md={6}><Field label="Cod. Reparable" value={ot.codigo_reparacion ? `${ot.codigo_reparacion.codigo} - ${ot.codigo_reparacion.descripcion}` : null} /></Col>
                 <Col xs={12} md={6}><Field label="Tipo" value={ot.tipo} /></Col>
                 <Col xs={12} md={6}><Field label="N/P" value={ot.np} /></Col>
+                <Col xs={12} md={6}><Field label="Cantidad" value={ot.cantidad != null ? String(ot.cantidad) : "1"} /></Col>
+              </Row>
+              <Row gutter={[16, 4]}>
                 <Col xs={12} md={6}><Field label="Fabricante" value={ot.fabricante?.nombre} /></Col>
               </Row>
               <Row gutter={[16, 4]}>
@@ -916,6 +927,19 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                   <Col xs={12} md={6}><Field label="Posición" value={(editData.cod_rep_posicion as string) ?? ot.cod_rep_posicion} /></Col>
                 </Row>
               )}
+              {/* Cantidad — siempre editable (aplica a los 3 tipos) */}
+              <Row gutter={[16, 12]} style={{ marginTop: 8 }}>
+                <Col xs={12} md={4}>
+                  <FieldLabel>Cantidad</FieldLabel>
+                  <InputNumber
+                    style={{ width: "100%" }}
+                    min={1}
+                    step={1}
+                    value={(editData.cantidad as number) ?? 1}
+                    onChange={(v) => setField("cantidad", v ?? 1)}
+                  />
+                </Col>
+              </Row>
               <Row gutter={[16, 12]} style={{ marginTop: 8 }}>
                 <Col xs={12} md={6}>
                   <FieldLabel>Equipo</FieldLabel>

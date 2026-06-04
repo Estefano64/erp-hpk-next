@@ -281,6 +281,7 @@ export default function NuevaOTPage() {
         // Si NO hay estrategia, mandar los campos manuales. Si sí hay, el backend deriva del cod_rep.
         tipo: estrategia ? null : (values.tipo || null),
         tipo_codigo: values.tipo_codigo,
+        cantidad: values.cantidad ?? 1,
         // N/P: siempre enviar el valor del form (con estrategia, el usuario
         // puede sobreescribir el N/P sugerido por el cod_rep).
         np: values.np || null,
@@ -374,7 +375,21 @@ export default function NuevaOTPage() {
                 />
               </Form.Item>
             </Col>
-            <Col xs={24} md={8}>
+            <Col xs={12} md={3}>
+              <Form.Item
+                name="cantidad"
+                label="Cantidad"
+                initialValue={1}
+                rules={[
+                  { required: true, message: "Requerido" },
+                  { type: "number", min: 1, message: "≥ 1" },
+                ]}
+                tooltip="Cantidad de unidades de la OT. Aplica a los 3 tipos (REP/BIE/SER)."
+              >
+                <InputNumber min={1} step={1} style={{ width: "100%" }} placeholder="1" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={7}>
               <Form.Item name="id_cliente" label="Cliente" rules={[{ required: true, message: "Requerido" }]}>
                 <Select
                   showSearch
