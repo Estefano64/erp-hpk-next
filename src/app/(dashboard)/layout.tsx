@@ -263,9 +263,11 @@ export default function DashboardLayout({
   const userMenuItems: MenuProps["items"] = [
     {
       key: "profile",
-      icon: <SettingOutlined />,
+      icon: <UserOutlined />,
       label: "Mi perfil",
-      disabled: true,
+      onClick: () => {
+        if (confirmLeave()) router.push("/perfil");
+      },
     },
     { type: "divider" },
     {

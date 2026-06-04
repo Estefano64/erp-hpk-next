@@ -11,7 +11,9 @@
 
 // Rutas de página que un técnico restringido puede visitar. Cualquier subruta
 // (p. ej. /tickets/123) también se permite por prefijo.
-export const RUTAS_TECNICO = ["/dashboard", "/mis-tareas", "/tickets"] as const;
+// `/perfil` se incluye para que cualquier usuario logueado pueda cambiar su
+// propia contraseña, sin importar el rol.
+export const RUTAS_TECNICO = ["/dashboard", "/mis-tareas", "/tickets", "/perfil"] as const;
 
 export function esTecnicoRestringido(roles: string[] | null | undefined): boolean {
   const r = roles ?? [];
