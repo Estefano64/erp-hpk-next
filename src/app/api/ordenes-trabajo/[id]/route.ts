@@ -118,6 +118,22 @@ export async function PUT(req: NextRequest, { params }: Params) {
         return { conflict: false, notFound: true } as const;
       }
 
+      // OT cerrada — solo se permite reabrir (cambiar ot_status_codigo).
+      // Cualquier otro cambio queda bloqueado para preservar la trazabilidad
+      // del cierre. Si el body intenta tocar otros campos junto con el cambio
+      // de status, también bloqueamos (queremos que reabra primero, edite después).
+      const beforeRecord = before as { ot_status_codigo?: string | null };
+      if (beforeRecord.ot_status_codigo === "Cerrada") {
+        const cambiaStatusAOtraCosa =
+          body.ot_status_codigo !== undefined && body.ot_status_codigo !== "Cerrada";
+        const otrasClavesQueEditan = Object.keys(body).filter(
+          (k) => k !== "ot_status_codigo" && k !== "version",
+        );
+        if (!cambiaStatusAOtraCosa || otrasClavesQueEditan.length > 0) {
+          return { conflict: false, closed: true } as const;
+        }
+      }
+
       // Concurrencia: si cliente envió version, debe coincidir
       if (clientVersion !== undefined && clientVersion !== before.version) {
         return { conflict: true, currentVersion: before.version } as const;
@@ -149,6 +165,12 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
     if ("notFound" in result && result.notFound) {
       return NextResponse.json({ error: "OT no encontrada" }, { status: 404 });
+    }
+    if ("closed" in result && result.closed) {
+      return NextResponse.json(
+        { error: "La OT está Cerrada. Reabrila primero (cambiar OT Status) antes de editar otros campos." },
+        { status: 403 },
+      );
     }
     if (result.conflict) {
       return NextResponse.json(
