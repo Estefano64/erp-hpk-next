@@ -493,6 +493,9 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
   const [itemsPage, setItemsPage] = useState(1);
   const [itemsPageSize, setItemsPageSize] = useState(25);
   const [poSeleccionada, setPoSeleccionada] = useState<POPendiente | null>(null);
+  // Selección por checkbox: el user marca items de UNA OC y luego clickea
+  // "Recibir seleccionados" arriba — abre el modal con esos items pre-cargados.
+  const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
   const [cantidadesRecibidas, setCantidadesRecibidas] = useState<Record<number, number>>({});
   const [nroGuia, setNroGuia] = useState("");
   const [nroFactura, setNroFactura] = useState("");
@@ -596,12 +599,19 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
   const proveedoresUnicos = [...new Set(pos.map((p) => p.proveedor_nombre).filter(Boolean) as string[])];
   const estadosUnicos = [...new Set(pos.map((p) => p.estado))];
 
-  const abrirRecibir = async (po_id: number) => {
+  // Si `selectedIds` se pasa, solo esos items se pre-llenan con su cantidad
+  // total; el resto quedan en 0 (el user puede activarlos en el modal si quiere).
+  // Sin selección → todos arrancan con cantidad completa (comportamiento anterior).
+  const abrirRecibir = async (po_id: number, selectedIds?: number[]) => {
     const po = pos.find((p) => p.id === po_id);
     if (!po) return;
     setPoSeleccionada(po);
     const inicial: Record<number, number> = {};
-    po.items.forEach((i) => { inicial[i.id] = i.cantidad; });
+    const conSeleccion = selectedIds && selectedIds.length > 0;
+    const selSet = new Set(selectedIds ?? []);
+    po.items.forEach((i) => {
+      inicial[i.id] = conSeleccion ? (selSet.has(i.id) ? i.cantidad : 0) : i.cantidad;
+    });
     setCantidadesRecibidas(inicial);
     setNroGuia("");
     setNroFactura("");
@@ -690,6 +700,7 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
       if (!res.ok) throw new Error(json.error || "Error al registrar ingreso");
       message.success(json.message);
       setPoSeleccionada(null);
+      setSelectedItemIds([]);
       await fetchPOs();
       onRefresh();
     } catch (err: unknown) {
@@ -811,23 +822,6 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
       sorter: (a, b) => (a.fecha_entrega_esperada || "").localeCompare(b.fecha_entrega_esperada || ""),
       render: (v: string | null) => (v ? formatDateOnly(v) : "-"),
     },
-    {
-      key: "acciones",
-      title: "Acciones",
-      width: 110,
-      fixed: "right",
-      align: "center",
-      render: (_, r) => (
-        <Button
-          type="primary"
-          size="small"
-          icon={<InboxOutlined />}
-          onClick={() => abrirRecibir(r.po_id)}
-        >
-          Recibir
-        </Button>
-      ),
-    },
   ];
 
   const { columnas: itemsResizable, components: itemsComponents, resetAnchos: resetItemsAnchos, TableDragWrapper: ItemsDragWrapper } =
@@ -901,18 +895,42 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
       )}
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
-        <RangoFechasFiltro
-          label="Fecha entrega esperada"
-          value={rangoEntrega}
-          onChange={setRangoEntrega}
-        />
-        <ColumnasToggleButton<ItemFila>
-          columns={columnasItems}
-          ocultas={ingresoOcultas}
-          setOcultas={setIngresoOcultas}
-          obligatorias={["numero_po", "descripcion", "acciones"]}
-        />
-        <Button onClick={resetItemsAnchos}>Restablecer anchos</Button>
+        <Space>
+          <RangoFechasFiltro
+            label="Fecha entrega esperada"
+            value={rangoEntrega}
+            onChange={setRangoEntrega}
+          />
+          {/* Acción principal: recibir los items seleccionados via checkbox.
+              Valida que todos pertenezcan a una sola OC (el modal recibe 1 OC
+              por vez con su guía + factura). */}
+          <Button
+            type="primary"
+            icon={<InboxOutlined />}
+            disabled={selectedItemIds.length === 0}
+            onClick={() => {
+              const seleccionadas = filasAplanadas.filter((r) => selectedItemIds.includes(r.id));
+              const ocsUnicas = [...new Set(seleccionadas.map((r) => r.po_id))];
+              if (ocsUnicas.length === 0) return;
+              if (ocsUnicas.length > 1) {
+                message.warning("Seleccioná items de UNA sola OC por vez. Cada OC se recibe por separado (lleva su propia guía + factura).");
+                return;
+              }
+              abrirRecibir(ocsUnicas[0], selectedItemIds);
+            }}
+          >
+            Recibir seleccionados ({selectedItemIds.length})
+          </Button>
+        </Space>
+        <Space>
+          <ColumnasToggleButton<ItemFila>
+            columns={columnasItems}
+            ocultas={ingresoOcultas}
+            setOcultas={setIngresoOcultas}
+            obligatorias={["numero_po", "descripcion"]}
+          />
+          <Button onClick={resetItemsAnchos}>Restablecer anchos</Button>
+        </Space>
       </div>
 
       <ItemsDragWrapper>
@@ -923,6 +941,15 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
           dataSource={filasFiltradas.filter((r) => dentroDeRango(r, "fecha_entrega_esperada", rangoEntrega))}
           columns={visibleColumns(itemsResizable, ingresoOcultas)}
           components={itemsComponents}
+          // Checkboxes para seleccionar items y recibirlos en lote vía botón
+          // "Recibir seleccionados" de arriba (similar a "Generar OC").
+          rowSelection={{
+            selectedRowKeys: selectedItemIds,
+            onChange: (keys) => setSelectedItemIds(keys as number[]),
+            // Helper visual: cuando se selecciona, mostrar tip si hay items
+            // de distintas OCs (la acción luego lo bloquea de forma dura).
+            getCheckboxProps: () => ({}),
+          }}
           pagination={paginacionEstandar({
             current: itemsPage,
             pageSize: itemsPageSize,
