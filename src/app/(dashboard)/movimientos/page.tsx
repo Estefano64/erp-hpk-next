@@ -144,7 +144,11 @@ interface POPendiente {
   factura_nombre: string | null;
   items: Array<{
     id: number;
-    material_id: number;
+    // repuesto_id se setea cuando el item viene de ot_repuestos (item free
+    // sin material_id). Para items de compra_detalle es null y la API usa
+    // material_id para matchear.
+    repuesto_id?: number | null;
+    material_id: number | null;
     codigo: string | null;
     descripcion: string | null;
     unidad_medida: string;
@@ -471,7 +475,8 @@ interface ItemFila {
   fecha_entrega_esperada: string | null;
   estado: string;
   observaciones_compra: string | null;
-  material_id: number;
+  // material_id puede ser null para items "free" (CAD sin catálogo).
+  material_id: number | null;
   codigo: string | null;
   descripcion: string | null;
   cantidad: number;
@@ -635,9 +640,15 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
     const items = poSeleccionada.items
       .filter((i) => cantidadesRecibidas[i.id] > 0)
       .map((i) => {
-        const u = ubicByMaterial[i.material_id];
+        // ubicByMaterial usa material_id como key, pero los items free no tienen
+        // material_id → usamos id del item como fallback para no perder la zona.
+        const matKey = i.material_id ?? i.id;
+        const u = ubicByMaterial[matKey];
         return {
+          // material_id puede ser null para items free (CAD sin catálogo). El
+          // backend usa repuesto_id en ese caso para identificar el item.
           material_id: i.material_id,
+          repuesto_id: i.repuesto_id ?? null,
           cantidad: cantidadesRecibidas[i.id],
           almacen_zona_id: u?.zona_id ?? null,
           almacen_posicion_id: u?.posicion_id ?? null,
@@ -1200,14 +1211,17 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                   title: <span>Zona almacén <span style={{ color: "#cf1322" }}>*</span></span>,
                   width: 160,
                   render: (_, r) => {
-                    const u = ubicByMaterial[r.material_id];
+                    // Para items free (material_id null), usamos el id del item
+                    // como key — así cada item tiene su propio slot de zona.
+                    const matKey = r.material_id ?? r.id;
+                    const u = ubicByMaterial[matKey];
                     const esSugerida = u?.zona_id != null && previewItems.find((p) => p.material_id === r.material_id)?.ubicacion_sugerida?.zona_id === u.zona_id;
                     return (
                       <Select
                         value={u?.zona_id ?? undefined}
                         onChange={(v) => setUbicByMaterial({
                           ...ubicByMaterial,
-                          [r.material_id]: { zona_id: v ?? null, posicion_id: null },
+                          [matKey]: { zona_id: v ?? null, posicion_id: null },
                         })}
                         placeholder="Zona"
                         size="small"
@@ -1223,7 +1237,8 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                   title: "Posición",
                   width: 130,
                   render: (_, r) => {
-                    const u = ubicByMaterial[r.material_id];
+                    const matKey = r.material_id ?? r.id;
+                    const u = ubicByMaterial[matKey];
                     const zona = zonasAlmacen.find((z) => z.id === u?.zona_id);
                     const posiciones = zona?.posiciones ?? [];
                     return (
@@ -1231,7 +1246,7 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                         value={u?.posicion_id ?? undefined}
                         onChange={(v) => setUbicByMaterial({
                           ...ubicByMaterial,
-                          [r.material_id]: { zona_id: u?.zona_id ?? null, posicion_id: v ?? null },
+                          [matKey]: { zona_id: u?.zona_id ?? null, posicion_id: v ?? null },
                         })}
                         placeholder={u?.zona_id == null ? "—" : "Ej. A1"}
                         disabled={u?.zona_id == null}
