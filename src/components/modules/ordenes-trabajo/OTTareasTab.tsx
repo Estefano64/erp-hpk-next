@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  Button, Card, Col, Empty, Input, Popconfirm, Progress, Row, Select, Space, Table, Tag, Tooltip, Typography, message,
+  Button, Card, Col, Drawer, Empty, Input, InputNumber, Popconfirm, Progress, Row, Select, Space, Table, Tag, Tooltip, Typography, message,
 } from "antd";
 import {
   PlusOutlined, UnorderedListOutlined, EditOutlined, DeleteOutlined, CloseOutlined,
@@ -11,6 +11,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { brand } from "@/lib/theme";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 import { useTabSync } from "@/lib/useTabSync";
 import { formatDateOnlyShort } from "@/lib/dates";
 import {
@@ -72,10 +73,27 @@ const TIPO_TAREA_OPTS = [
 interface StatusTareaOpt { codigo: string; nombre: string; color: string | null }
 
 export default function OTTareasTab({ otId, codRepCodigo }: Props) {
+  const { screens } = useResponsive();
   const [rows, setRows] = useState<PlanRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Edición de una tarea existente (lápiz). Reusa la misma lógica Parte→Tipo→Tarea
+  // del form de "Nueva Tarea" pero contra PUT /api/planificacion/:id.
+  type EditState = {
+    id: number;
+    parte: string | null;
+    tipo_tarea: string;
+    operacion_codigo: string | null;
+    nueva_operacion_nombre: string | null;
+    trabajo_manual: string | null;
+    tecnico: string | null;
+    equipo: string | null;
+    horas_estimadas: number | null;
+    comentario: string | null;
+  };
+  const [edit, setEdit] = useState<EditState | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
   const [componentes, setComponentes] = useState<ComponenteOpt[]>([]);
   const [operaciones, setOperaciones] = useState<OperacionOpt[]>([]);
   const [equipos, setEquipos] = useState<EquipoOpt[]>([]);
@@ -378,6 +396,96 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
     }
   }
 
+  // ── Edición de una tarea existente (lápiz) ──────────────────────────────
+  // ¿La parte+tipo tiene operaciones de catálogo? Si no, se usa texto libre.
+  function opsParaParteTipo(parte: string | null, tipo: string): OperacionOpt[] {
+    if (!parte) return [];
+    const clas = tipo === "NoEstandar" ? "NO_STD" : "STD";
+    return operaciones.filter((o) => o.componente_codigo === parte && o.clasificacion === clas);
+  }
+  function editUsaTextoLibre(e: EditState): boolean {
+    return !!e.parte && opsParaParteTipo(e.parte, e.tipo_tarea).length === 0;
+  }
+
+  function openEdit(r: PlanRow) {
+    const tipo = r.tipo_reparacion === "NoEstandar" ? "NoEstandar" : "Estandar";
+    // Si el operacion_codigo de la tarea matchea una operación de catálogo, lo
+    // pre-seleccionamos; si no, tratamos la descripción como texto libre.
+    const esCatalogo = operaciones.some((o) => o.codigo === r.operacion_codigo);
+    setEdit({
+      id: r.id,
+      parte: r.componente || null,
+      tipo_tarea: tipo,
+      operacion_codigo: esCatalogo ? r.operacion_codigo : null,
+      nueva_operacion_nombre: null,
+      trabajo_manual: esCatalogo ? null : (r.descripcion ?? ""),
+      tecnico: r.tecnico,
+      equipo: r.maquina,
+      horas_estimadas: r.horas_estimadas != null ? Number(r.horas_estimadas) : null,
+      comentario: r.comentario,
+    });
+  }
+  function updateEdit(patch: Partial<EditState>) {
+    setEdit((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, ...patch };
+      // Cambiar parte o tipo invalida la operación elegida.
+      if ((patch.parte !== undefined && patch.parte !== prev.parte)
+        || (patch.tipo_tarea !== undefined && patch.tipo_tarea !== prev.tipo_tarea)) {
+        next.operacion_codigo = null;
+        next.nueva_operacion_nombre = null;
+        next.trabajo_manual = null;
+      }
+      return next;
+    });
+  }
+  function closeEdit() { setEdit(null); }
+
+  async function saveEdit() {
+    if (!edit) return;
+    if (!edit.parte) { messageApi.error("Falta seleccionar Parte"); return; }
+    const libre = editUsaTextoLibre(edit);
+    const tieneNueva = !!edit.nueva_operacion_nombre?.trim();
+    if (libre && !edit.trabajo_manual?.trim()) { messageApi.error("Falta la descripción de la tarea"); return; }
+    if (!libre && !edit.operacion_codigo && !tieneNueva) { messageApi.error("Falta seleccionar la tarea"); return; }
+    const r = rows.find((x) => x.id === edit.id);
+    if (!r) return;
+    setSavingEdit(true);
+    try {
+      let operacionCodigo = edit.operacion_codigo;
+      // Operación nueva tipeada: crearla primero en catálogo.
+      if (edit.nueva_operacion_nombre && !operacionCodigo) {
+        const resOp = await fetch("/api/operaciones-reparacion", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nombre: edit.nueva_operacion_nombre.trim(),
+            componente_codigo: edit.parte,
+            clasificacion: edit.tipo_tarea === "NoEstandar" ? "NO_STD" : "STD",
+          }),
+        });
+        if (!resOp.ok) { messageApi.error("No se pudo crear la operación nueva"); return; }
+        const j = await resOp.json();
+        operacionCodigo = j.data.codigo;
+        if (!j.reused) setOperaciones((prev) => [...prev, j.data]);
+      }
+      const body: Record<string, unknown> = {
+        componente_codigo: edit.parte,
+        tipo_reparacion: edit.tipo_tarea,
+        tecnico: edit.tecnico || null,
+        maquina: edit.equipo || null,
+        horas_estimadas: edit.horas_estimadas,
+        comentario: edit.comentario?.trim() || null,
+      };
+      if (libre) body.trabajo = edit.trabajo_manual;
+      else body.operacion_reparacion_codigo = operacionCodigo;
+      const ok = await putTarea(r, body);
+      if (ok) { messageApi.success("Tarea actualizada"); closeEdit(); fetchRows(); }
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
   const progreso = rows.length
     ? Math.round((rows.filter((r) => r.estado === "realizado").length / rows.length) * 100)
     : 0;
@@ -572,7 +680,9 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
                 <Button type="text" size="small" icon={<CheckCircleOutlined style={{ color: brand.cyan }} />} onClick={() => handleFinalizar(r)} />
               </Tooltip>
             )}
-            <Button type="text" size="small" icon={<EditOutlined style={{ color: brand.navy }} />} disabled={realizada} />
+            <Tooltip title={realizada ? "No editable (realizado)" : "Editar tarea"}>
+              <Button type="text" size="small" icon={<EditOutlined style={{ color: realizada ? "#ccc" : brand.navy }} />} disabled={realizada} onClick={() => openEdit(r)} />
+            </Tooltip>
             <Popconfirm title="¿Eliminar tarea?" onConfirm={() => handleDelete(r.id)} disabled={realizada}>
               <Button type="text" size="small" icon={<DeleteOutlined style={{ color: realizada ? "#ccc" : brand.error }} />} disabled={realizada} />
             </Popconfirm>
@@ -779,6 +889,127 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
           locale={{ emptyText: <Empty description="Sin tareas. Agregalas con el botón 'Nueva Tarea'." /> }}
         />
       </TableDragWrapper>
+
+      <Drawer
+        title="Editar tarea"
+        placement={screens.md ? "right" : "bottom"}
+        width={modalWidth(screens, 480)}
+        height={screens.md ? undefined : "85vh"}
+        open={!!edit}
+        onClose={closeEdit}
+        destroyOnClose
+        extra={
+          <Space>
+            <Button onClick={closeEdit}>Cancelar</Button>
+            <Button
+              type="primary"
+              style={{ background: brand.success, borderColor: brand.success }}
+              loading={savingEdit}
+              onClick={saveEdit}
+            >
+              Guardar
+            </Button>
+          </Space>
+        }
+      >
+        {edit && (() => {
+          const opsFila = opsParaParteTipo(edit.parte, edit.tipo_tarea);
+          const libre = editUsaTextoLibre(edit);
+          return (
+            <Space direction="vertical" size={14} style={{ width: "100%" }}>
+              <div>
+                <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>Parte *</div>
+                <Select showSearch optionFilterProp="label"
+                  value={edit.parte ?? undefined}
+                  onChange={(v) => updateEdit({ parte: v })}
+                  placeholder="Seleccione..."
+                  options={componentes.map((c) => ({ value: c.codigo, label: c.nombre }))}
+                  style={{ width: "100%" }}
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>Tipo *</div>
+                <Select showSearch optionFilterProp="label"
+                  value={edit.tipo_tarea}
+                  onChange={(v) => updateEdit({ tipo_tarea: v })}
+                  options={TIPO_TAREA_OPTS}
+                  disabled={!edit.parte}
+                  style={{ width: "100%" }}
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>Tarea *</div>
+                {libre ? (
+                  <Input
+                    value={edit.trabajo_manual ?? ""}
+                    onChange={(e) => updateEdit({ trabajo_manual: e.target.value })}
+                    placeholder={`Describa la tarea ${edit.tipo_tarea === "NoEstandar" ? "no estándar" : ""} para ${edit.parte ?? ""}...`}
+                  />
+                ) : (
+                  <OperacionCombo
+                    draft={edit}
+                    opciones={opsFila}
+                    onPickExisting={(codigo) => updateEdit({ operacion_codigo: codigo, nueva_operacion_nombre: null })}
+                    onCreateNew={(nombre) => updateEdit({ operacion_codigo: null, nueva_operacion_nombre: nombre })}
+                    onClear={() => updateEdit({ operacion_codigo: null, nueva_operacion_nombre: null })}
+                  />
+                )}
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>Operario</div>
+                <Select
+                  value={edit.tecnico ?? undefined}
+                  onChange={(nombre) => {
+                    const patch: Partial<EditState> = { tecnico: nombre ?? null };
+                    if (nombre && !edit.equipo) {
+                      const t = trabajadores.find((x) => x.nombre === nombre);
+                      if (t?.equipo_codigo) patch.equipo = t.equipo_codigo;
+                    }
+                    updateEdit(patch);
+                  }}
+                  placeholder="Operario..."
+                  allowClear showSearch
+                  filterOption={(input, option) => (option?.label as string).toLowerCase().includes(input.toLowerCase())}
+                  options={trabajadores.map((t) => ({ value: t.nombre, label: `${t.nombre} — ${t.puesto}` }))}
+                  style={{ width: "100%" }}
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>Equipo</div>
+                <Select
+                  value={edit.equipo ?? undefined}
+                  onChange={(v) => updateEdit({ equipo: v ?? null })}
+                  placeholder="Equipo..."
+                  allowClear showSearch
+                  filterOption={(input, option) => (option?.label as string).toLowerCase().includes(input.toLowerCase())}
+                  options={equipos.map((e) => ({ value: e.codigo, label: `${e.codigo} — ${e.descripcion}` }))}
+                  style={{ width: "100%" }}
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>Duración estimada (hrs)</div>
+                <InputNumber
+                  value={edit.horas_estimadas}
+                  onChange={(v) => updateEdit({ horas_estimadas: v == null ? null : Number(v) })}
+                  min={0}
+                  step={0.5}
+                  style={{ width: "100%" }}
+                  placeholder="—"
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>Comentario para el técnico</div>
+                <Input.TextArea
+                  autoSize={{ minRows: 2, maxRows: 4 }}
+                  value={edit.comentario ?? ""}
+                  onChange={(e) => updateEdit({ comentario: e.target.value })}
+                  placeholder="Ej: revisar fuga, usar repuesto X…"
+                />
+              </div>
+            </Space>
+          );
+        })()}
+      </Drawer>
     </div>
   );
 }

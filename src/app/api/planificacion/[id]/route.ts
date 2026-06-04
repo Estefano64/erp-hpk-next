@@ -26,6 +26,13 @@ const UpdateSchema = z.object({
   observaciones: z.string().trim().optional().nullable(),
   comentario: z.string().trim().optional().nullable(),
   semana_plan: z.string().trim().optional().nullable(),
+  // Cambiar la Parte/Tarea de una tarea existente (desde el detalle de OT). Son
+  // campos "virtuales": se resuelven a las columnas componente/operacion_codigo/
+  // descripcion antes del update (no se mandan tal cual a Prisma).
+  componente_codigo: z.string().trim().optional(),
+  operacion_reparacion_codigo: z.string().trim().optional().nullable(),
+  trabajo: z.string().trim().optional(),
+  tipo_reparacion: z.string().trim().optional().nullable(),
   qty_personal: z.coerce.number().int().min(1).optional(),
   horas_extras: z.boolean().optional(),
   horas_extras_qty: z.coerce.number().min(0).optional().nullable(),
@@ -106,14 +113,49 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       // ── Construir patch base ──
       const data: Record<string, unknown> = {};
       const dateFields = new Set(["fecha_inicio", "fecha_fin", "fecha_inicio_real", "fecha_fin_real"]);
-      // Flags de control: NO son columnas de la BD, no deben ir al update de Prisma.
-      const flagsControl = new Set(["forzarEdicion", "omitirAntisolape", "empujar"]);
+      // Flags de control + campos virtuales: NO son columnas de la BD, no deben ir
+      // al update de Prisma. Los virtuales (componente_codigo/operacion_reparacion_
+      // codigo/trabajo) se resuelven aparte a componente/operacion_codigo/descripcion.
+      const flagsControl = new Set([
+        "forzarEdicion", "omitirAntisolape", "empujar",
+        "componente_codigo", "operacion_reparacion_codigo", "trabajo",
+      ]);
       for (const k of Object.keys(input) as Array<keyof typeof input>) {
         if (flagsControl.has(k as string)) continue;
         const v = input[k];
         if (v === undefined) continue;
         if (dateFields.has(k as string)) data[k] = toDate(v as string | null);
         else data[k] = v;
+      }
+
+      // ── Cambio de Parte/Tarea (resolver campos virtuales → columnas) ──
+      if (input.componente_codigo !== undefined) {
+        data.componente = input.componente_codigo || "General";
+      }
+      const cambiaTarea = input.operacion_reparacion_codigo !== undefined || input.trabajo !== undefined;
+      if (cambiaTarea) {
+        if (input.operacion_reparacion_codigo) {
+          const op = await tx.operacionReparacion.findUnique({
+            where: { codigo: input.operacion_reparacion_codigo },
+            select: { codigo: true, nombre: true },
+          });
+          if (!op) {
+            throw Object.assign(
+              new Error(`Operación ${input.operacion_reparacion_codigo} no existe`),
+              { code: "OP_NOT_FOUND" },
+            );
+          }
+          data.operacion_codigo = op.codigo;
+          data.descripcion = input.trabajo?.trim() || op.nombre;
+        } else if (input.trabajo?.trim()) {
+          // Texto libre (operación no estándar sin código de catálogo).
+          const txt = input.trabajo.trim();
+          data.operacion_codigo = txt.slice(0, 20);
+          data.descripcion = txt;
+        }
+        // Al reemplazar la operación, la tarea deja de corresponder al item del
+        // template: soltamos el link para no dejar referencia inconsistente.
+        data.operacion_cod_rep_id = null;
       }
 
       // ── Tarea ya iniciada por el técnico: no se reprograma ──
@@ -300,6 +342,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     if (err?.code === "INICIADA_LOCKED") return NextResponse.json({ error: err.message }, { status: 423 });
     if (err?.code === "OVERLAP") return NextResponse.json({ error: err.message }, { status: 409 });
     if (err?.code === "HE_INVALID") return NextResponse.json({ error: err.message }, { status: 400 });
+    if (err?.code === "OP_NOT_FOUND") return NextResponse.json({ error: err.message }, { status: 400 });
     if ((err as { code?: string })?.code === "P2025") return NextResponse.json({ error: "No encontrado" }, { status: 404 });
     console.error("PUT /api/planificacion/[id] error:", error);
     return NextResponse.json({ error: "Error al actualizar" }, { status: 500 });
