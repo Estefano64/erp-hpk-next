@@ -316,8 +316,6 @@ export default function NuevaOTPage() {
         prioridad_atencion_codigo: values.prioridad_atencion_codigo || null,
         monto_cotizacion: values.monto_cotizacion ?? null,
         moneda_cotizacion_codigo: values.moneda_cotizacion_codigo || null,
-        // Cantidad: solo Bien y Servicio.
-        cantidad: bloqueoBien ? (values.cantidad ?? null) : null,
         comentarios: values.comentarios || null,
         // Fecha Requerimiento Cliente: aplica a REP, BIE y SER. Solo en REP con
         // Atención=Contrato se calcula sola (manda null y el backend la deriva);

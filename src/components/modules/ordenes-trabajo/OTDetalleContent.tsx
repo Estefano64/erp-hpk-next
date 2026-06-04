@@ -98,7 +98,7 @@ interface OTDetalle {
   descripcion: string | null;
   tipo: string | null;
   // Cantidad de unidades de la OT (REP/BIE/SER). Default 1.
-  cantidad?: number | null;
+  cantidad: number | null;
   np: string | null;
   cod_rep_flota: string | null;
   cod_rep_posicion: string | null;
@@ -106,7 +106,6 @@ interface OTDetalle {
   wo_cliente: string | null;
   po_cliente: string | null;
   po_item: string | null;
-  cantidad: number | null;
   id_viajero: string | null;
   guia_remision: string | null;
   empresa_entrega: string | null;
