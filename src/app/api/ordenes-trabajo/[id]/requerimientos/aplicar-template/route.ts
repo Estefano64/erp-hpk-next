@@ -100,34 +100,33 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 
       // Resolver descripción usa el helper compartido (también lo usa POST /api/ordenes-trabajo).
 
-      // Un solo nro_req para todo el template, item_req incremental dentro
+      // Un solo nro_req para todo el template, item_req incremental dentro.
+      // Insertamos los items con UN solo createMany (no 31 creates sueltos): así
+      // la transacción hace un único round-trip y no se pasa del timeout (P2028).
       const nroReq = await nextNroReqExterna(tx, otId);
-      let creados = 0;
-      for (let i = 0; i < tareas.length; i++) {
-        const t = tareas[i];
+      const data = tareas.map((t, i) => {
         const mat = t.material_codigo ? matByCodigo.get(t.material_codigo) : null;
-        await tx.oTRepuesto.create({
-          data: {
-            ot_id: otId,
-            material_id: mat?.material_id ?? null,
-            material_codigo: t.material_codigo ?? null,
-            tipo_codigo: t.tipo_codigo,
-            cantidad: pickCantidadFromTarea(t),
-            descripcion: pickDescripcionFromTarea(t, matByCodigo, svcByCodigo),
-            texto: t.texto ?? null,
-            fabricante_codigo: t.fabricante_codigo ?? mat?.fabricante_codigo ?? null,
-            unidad_medida: mat?.unidad_medida_codigo ?? "UNIDAD",
-            precio_unitario: t.precio ?? null,
-            moneda: "USD",
-            es_adicional: false,
-            nro_req: nroReq,
-            item_req: i + 1,
-            status_requerimiento_codigo: "BORRADOR",
-            usuario_solicita: usuario,
-          },
-        });
-        creados++;
-      }
+        return {
+          ot_id: otId,
+          material_id: mat?.material_id ?? null,
+          material_codigo: t.material_codigo ?? null,
+          tipo_codigo: t.tipo_codigo,
+          cantidad: pickCantidadFromTarea(t),
+          descripcion: pickDescripcionFromTarea(t, matByCodigo, svcByCodigo),
+          texto: t.texto ?? null,
+          fabricante_codigo: t.fabricante_codigo ?? mat?.fabricante_codigo ?? null,
+          unidad_medida: mat?.unidad_medida_codigo ?? "UNIDAD",
+          precio_unitario: t.precio ?? null,
+          moneda: "USD",
+          es_adicional: false,
+          nro_req: nroReq,
+          item_req: i + 1,
+          status_requerimiento_codigo: "BORRADOR",
+          usuario_solicita: usuario,
+        };
+      });
+      const ins = await tx.oTRepuesto.createMany({ data });
+      const creados = ins.count;
 
       // Historial
       await tx.oTHistorial.create({
@@ -140,7 +139,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       });
 
       return { creados, eliminados, codRep, total: tareas.length, nro_req: nroReq } as const;
-    });
+    }, { maxWait: 10_000, timeout: 20_000 });
 
     if ("error" in result) {
       const codes: Record<string, [number, string]> = {
