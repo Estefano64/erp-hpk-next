@@ -36,6 +36,9 @@ interface PlanRow {
   horas_estimadas: string | null;
   fecha_inicio: string | null;
   fecha_fin: string | null;
+  fecha_inicio_real: string | null;
+  fecha_fin_real: string | null;
+  horas_reales: string | null;
   tecnico: string | null;
   maquina: string | null;
   estado: string | null;
@@ -2005,6 +2008,9 @@ export default function ProgramacionSemanalPage() {
             <Descriptions.Item label="Inicio">{selectedTask.fecha_inicio ? dayjs(selectedTask.fecha_inicio).format("DD/MM/YY HH:mm") : "—"}</Descriptions.Item>
             <Descriptions.Item label="Fin">{selectedTask.fecha_fin ? dayjs(selectedTask.fecha_fin).format("DD/MM/YY HH:mm") : "—"}</Descriptions.Item>
             <Descriptions.Item label="Duración">{Number(selectedTask.horas_estimadas ?? 0).toFixed(1)}h · Qty {selectedTask.qty_personal ?? 1}</Descriptions.Item>
+            <Descriptions.Item label="Inicio real">{selectedTask.fecha_inicio_real ? dayjs(selectedTask.fecha_inicio_real).format("DD/MM/YY HH:mm") : "—"}</Descriptions.Item>
+            <Descriptions.Item label="Fin real">{selectedTask.fecha_fin_real ? dayjs(selectedTask.fecha_fin_real).format("DD/MM/YY HH:mm") : "—"}</Descriptions.Item>
+            <Descriptions.Item label="Duración real">{selectedTask.horas_reales != null ? `${Number(selectedTask.horas_reales).toFixed(2)}h` : "—"}</Descriptions.Item>
             <Descriptions.Item label="Estado"><Tag color={estadoColor(selectedTask.estado)}>{estadoNombre(selectedTask.estado)}</Tag></Descriptions.Item>
             {conflictos.has(selectedTask.id) && (
               <Descriptions.Item label="">
