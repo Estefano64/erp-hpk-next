@@ -226,6 +226,54 @@ export default function AceptacionesPage() {
       message.error(e instanceof Error ? e.message : "Error");
     }
   }
+  // Anular (rechazar) OC desde el panel de aprobaciones. Pide motivo opcional.
+  // Distinto de aceptar: marca la OC como ANULADO, propaga a los OTRepuestos
+  // vinculados, y registra el motivo en OTHistorial de cada OT afectada.
+  function anularOC(id: number, numero_po: string) {
+    let motivo = "";
+    modal.confirm({
+      title: `Rechazar OC ${numero_po}`,
+      content: (
+        <div style={{ marginTop: 8 }}>
+          <Text style={{ fontSize: 12 }}>
+            Motivo <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+          </Text>
+          <Text type="secondary" style={{ fontSize: 11, display: "block" }}>
+            La OC pasará a ANULADA. Los items vinculados también quedan anulados.
+          </Text>
+          <Input.TextArea
+            rows={3}
+            maxLength={500}
+            showCount
+            placeholder="Ej: precio incorrecto, proveedor cancelado, etc."
+            onChange={(e) => { motivo = e.target.value; }}
+            style={{ marginTop: 8 }}
+          />
+        </div>
+      ),
+      okText: "Rechazar OC",
+      okButtonProps: { danger: true },
+      cancelText: "Cancelar",
+      width: 480,
+      onOk: () => doAnularOC(id, numero_po, motivo),
+    });
+  }
+  async function doAnularOC(id: number, numero_po: string, motivo: string) {
+    try {
+      const txt = motivo.trim();
+      const res = await fetch(`/api/compras/${id}/anular`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ motivo: txt || null }),
+      });
+      const j = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(j?.error ?? "Error al rechazar OC");
+      message.success(`OC ${numero_po} rechazada.`);
+      fetchData();
+    } catch (e: unknown) {
+      message.error(e instanceof Error ? e.message : "Error");
+    }
+  }
   async function aprobarReq(
     id: number,
     ref: string,
@@ -655,7 +703,7 @@ export default function AceptacionesPage() {
       render: (_, o) => o.usuario_solicita,
     },
     {
-      key: "acciones", title: "Acciones", width: 160, fixed: "right", align: "center",
+      key: "acciones", title: "Acciones", width: 220, fixed: "right", align: "center",
       render: (_, o) => (
         <Space size={4}>
           <Tooltip title="Aprobar OC (pasa a En Proceso)">
@@ -667,6 +715,14 @@ export default function AceptacionesPage() {
             >
               <Button type="primary" size="small" icon={<CheckOutlined />}>Aprobar</Button>
             </Popconfirm>
+          </Tooltip>
+          <Tooltip title="Rechazar OC (la anula)">
+            <Button
+              danger size="small" icon={<CloseOutlined />}
+              onClick={() => anularOC(o.id, o.numero_po)}
+            >
+              Rechazar
+            </Button>
           </Tooltip>
           <Tooltip title={o.orden_trabajo?.ot ? `Ver OT ${o.orden_trabajo.ot}` : "Ver compras"}>
             <Button
@@ -822,7 +878,7 @@ export default function AceptacionesPage() {
       render: (_, r) => r.usuario_solicita,
     },
     {
-      key: "acciones", title: "Acciones", width: 160, fixed: "right", align: "center",
+      key: "acciones", title: "Acciones", width: 220, fixed: "right", align: "center",
       render: (_, r) => (
         <Space size={4}>
           <Tooltip title="Aprobar requerimiento">
@@ -831,6 +887,14 @@ export default function AceptacionesPage() {
               onClick={() => openAprobarModal(r)}
             >
               Aprobar
+            </Button>
+          </Tooltip>
+          <Tooltip title="Rechazar (desaprobar) requerimiento">
+            <Button
+              danger size="small" icon={<CloseOutlined />}
+              onClick={() => desaprobarReq(r)}
+            >
+              Rechazar
             </Button>
           </Tooltip>
           <Tooltip title={r.orden_trabajo?.ot ? `Ver OT ${r.orden_trabajo.ot}` : "Ver requerimientos"}>
