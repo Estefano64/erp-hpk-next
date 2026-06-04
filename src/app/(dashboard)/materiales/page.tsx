@@ -506,6 +506,38 @@ export default function MaterialesPage() {
           <ExportarExcelButton<MaterialRecord>
             endpoint="/api/materiales"
             filename="Materiales"
+            categoryFilters={[
+              {
+                key: "categoria",
+                label: "Categoría",
+                options: categorias.map((c) => ({ value: c.codigo, label: c.nombre })),
+                predicate: (r, sel) => sel.includes(r.categoria_codigo ?? ""),
+              },
+              {
+                key: "clasificacion",
+                label: "Clasificación",
+                options: clasificaciones.map((c) => ({ value: c.codigo, label: c.nombre })),
+                predicate: (r, sel) => sel.includes(r.clasificacion_codigo ?? ""),
+              },
+              {
+                key: "fabricante",
+                label: "Fabricante",
+                options: fabricantes.map((f) => ({ value: f.codigo, label: f.nombre })),
+                predicate: (r, sel) => sel.includes(r.fabricante_codigo ?? ""),
+              },
+              {
+                key: "planta",
+                label: "Planta",
+                options: plantas.map((p) => ({ value: p.codigo, label: p.nombre })),
+                predicate: (r, sel) => sel.includes(r.planta_codigo ?? ""),
+              },
+              {
+                key: "area",
+                label: "Área",
+                options: areas.map((a) => ({ value: a.codigo, label: a.nombre })),
+                predicate: (r, sel) => sel.includes(r.area_codigo ?? ""),
+              },
+            ]}
             columns={[
               { label: "Código", value: (r) => r.codigo },
               { label: "Descripción", value: (r) => r.descripcion },

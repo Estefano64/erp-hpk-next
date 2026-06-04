@@ -1,15 +1,61 @@
 "use client";
 
-import { useState } from "react";
-import { Button, App } from "antd";
-import { FileExcelOutlined } from "@ant-design/icons";
-import dayjs from "dayjs";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Button, App, Modal, Form, DatePicker, Checkbox, Input, Space, Divider,
+  Typography, Tag, Alert,
+} from "antd";
+import {
+  FileExcelOutlined, SearchOutlined, CalendarOutlined, FilterOutlined,
+} from "@ant-design/icons";
+import dayjs, { type Dayjs } from "dayjs";
+import { brand, space as spc } from "@/lib/theme";
+
+const { Text } = Typography;
 
 export interface ExportColumn<T> {
+  /** Identificador para selección/persistencia. Si no se pasa, se usa `label`. */
+  key?: string;
   /** Header de la columna en el .xlsx */
   label: string;
   /** Cómo extraer el valor desde el record */
   value: (record: T) => string | number | boolean | null | undefined;
+  /** Si false, arranca DESMARCADA en el selector. Default: true. */
+  defaultSelected?: boolean;
+}
+
+/** Filtro multi-select de categoría (ej. tipo de OT, estado, etc.). */
+export interface ExportCategoryFilter<T = unknown> {
+  /** ID interno (para form + storage). */
+  key: string;
+  /** Etiqueta visible. */
+  label: string;
+  options: { value: string; label: string }[];
+  /**
+   * Si se pasa, los valores seleccionados se mandan al endpoint como query param
+   * (CSV de los `value`). Ej. paramName="tipo_ot" → ?tipo_ot=Bien,Servicio
+   */
+  paramName?: string;
+  /**
+   * Si se pasa, el filtro se aplica en el cliente sobre cada registro DESPUÉS
+   * de bajar todo. Útil cuando el endpoint no acepta el filtro como query.
+   */
+  predicate?: (record: T, selected: string[]) => boolean;
+}
+
+/** Filtro de rango de fechas. Puede aplicar server-side, client-side, o ambos. */
+export interface ExportDateFilter<T = unknown> {
+  /** Etiqueta del campo (default: "Rango de fechas"). */
+  label?: string;
+  /** Si se pasa, se manda como query param (formato YYYY-MM-DD). */
+  paramNameDesde?: string;
+  /** Si se pasa, se manda como query param (formato YYYY-MM-DD). */
+  paramNameHasta?: string;
+  /**
+   * Filtro client-side: se llama por cada record con el rango elegido.
+   * Si devuelve false, el record se excluye.
+   */
+  predicate?: (record: T, desde: Dayjs | null, hasta: Dayjs | null) => boolean;
 }
 
 interface Props<T> {
@@ -17,41 +63,150 @@ interface Props<T> {
   endpoint: string;
   /** Si el endpoint pagina, se itera con este límite y page hasta consumir todo */
   limit?: number;
-  /** Columnas a exportar */
+  /** Columnas disponibles para exportar */
   columns: ExportColumn<T>[];
   /** Nombre base del archivo (sin extensión ni timestamp) */
   filename: string;
   /** Sheet name dentro del .xlsx (default: filename) */
   sheetName?: string;
+  /** Filtro opcional de rango de fechas. */
+  dateFilter?: ExportDateFilter<T>;
+  /** Filtros opcionales de categoría (multi-select). */
+  categoryFilters?: ExportCategoryFilter<T>[];
+  /**
+   * Clave de localStorage para persistir las columnas elegidas + filtros entre
+   * descargas. Default: `excel-export-${filename}`.
+   */
+  storageKey?: string;
   /** Texto del botón */
   children?: React.ReactNode;
 }
 
-// Botón que descarga todos los registros del endpoint en un .xlsx.
-// Itera páginas si el endpoint las soporta; agrega timestamp al filename.
+// Resuelve un key estable por columna (cae a label si no se pasa explícito).
+function colKey<T>(c: ExportColumn<T>): string {
+  return c.key ?? c.label;
+}
+
+/**
+ * Botón que abre un modal de configuración antes de descargar el .xlsx:
+ *  - Rango de fechas (opcional)
+ *  - Filtros multi-select de categoría (opcional)
+ *  - Checklist de columnas a incluir
+ *
+ * Persiste la última selección de columnas y filtros en localStorage por tabla.
+ * Itera páginas del endpoint si las soporta; agrega timestamp al filename.
+ */
 export function ExportarExcelButton<T>({
-  endpoint, limit = 1000, columns, filename, sheetName, children,
+  endpoint,
+  limit = 1000,
+  columns,
+  filename,
+  sheetName,
+  dateFilter,
+  categoryFilters,
+  storageKey,
+  children,
 }: Props<T>) {
   const { message } = App.useApp();
   const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  const persistKey = storageKey ?? `excel-export-${filename}`;
+
+  // ── Selección de columnas ──────────────────────────────────────────────
+  const allKeys = useMemo(() => columns.map((c) => colKey(c)), [columns]);
+  const defaultSelected = useMemo(
+    () => columns.filter((c) => c.defaultSelected !== false).map((c) => colKey(c)),
+    [columns],
+  );
+
+  const [selectedCols, setSelectedCols] = useState<string[]>(defaultSelected);
+  const [colSearch, setColSearch] = useState("");
+
+  // ── Filtros ────────────────────────────────────────────────────────────
+  const [desde, setDesde] = useState<Dayjs | null>(null);
+  const [hasta, setHasta] = useState<Dayjs | null>(null);
+  // Por cada categoryFilter, un array de valores seleccionados.
+  const [catSelections, setCatSelections] = useState<Record<string, string[]>>({});
+
+  // Hidratar desde localStorage al abrir el modal por primera vez.
+  useEffect(() => {
+    if (!open) return;
+    try {
+      const stored = localStorage.getItem(persistKey);
+      if (stored) {
+        const parsed = JSON.parse(stored) as {
+          cols?: string[];
+          cats?: Record<string, string[]>;
+        };
+        // Filtrar keys que ya no existen (columnas eliminadas en código).
+        if (Array.isArray(parsed.cols)) {
+          const validas = parsed.cols.filter((k) => allKeys.includes(k));
+          // Si quedó vacío (todas las cols del usuario desaparecieron), volver al default.
+          setSelectedCols(validas.length > 0 ? validas : defaultSelected);
+        } else {
+          setSelectedCols(defaultSelected);
+        }
+        if (parsed.cats && typeof parsed.cats === "object") {
+          setCatSelections(parsed.cats);
+        }
+      } else {
+        setSelectedCols(defaultSelected);
+      }
+    } catch {
+      setSelectedCols(defaultSelected);
+    }
+    // Reset filtros de fecha cada vez que abre — no persistimos para evitar
+    // que el usuario descargue accidentalmente filtrado de una vez previa.
+    setDesde(null);
+    setHasta(null);
+    setColSearch("");
+  }, [open, persistKey, allKeys, defaultSelected]);
+
+  function persistir(next: { cols?: string[]; cats?: Record<string, string[]> }) {
+    try {
+      const current = {
+        cols: next.cols ?? selectedCols,
+        cats: next.cats ?? catSelections,
+      };
+      localStorage.setItem(persistKey, JSON.stringify(current));
+    } catch {
+      /* ignore */
+    }
+  }
 
   async function fetchAll(): Promise<T[]> {
+    // Construir query params extra a partir de los filtros server-side.
+    const extraParams = new URLSearchParams();
+    if (dateFilter?.paramNameDesde && desde) {
+      extraParams.set(dateFilter.paramNameDesde, desde.format("YYYY-MM-DD"));
+    }
+    if (dateFilter?.paramNameHasta && hasta) {
+      extraParams.set(dateFilter.paramNameHasta, hasta.format("YYYY-MM-DD"));
+    }
+    for (const f of categoryFilters ?? []) {
+      const sel = catSelections[f.key] ?? [];
+      if (f.paramName && sel.length > 0) {
+        extraParams.set(f.paramName, sel.join(","));
+      }
+    }
+    const extraStr = extraParams.toString();
+
     const all: T[] = [];
     let page = 1;
     while (true) {
       const sep = endpoint.includes("?") ? "&" : "?";
-      const url = `${endpoint}${sep}page=${page}&limit=${limit}`;
+      const extra = extraStr ? `&${extraStr}` : "";
+      const url = `${endpoint}${sep}page=${page}&limit=${limit}${extra}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Error cargando página ${page}`);
       const j = await res.json();
       const rows = (j.data ?? []) as T[];
       all.push(...rows);
       const total = typeof j.total === "number" ? j.total : null;
-      // Si el endpoint no devuelve total, paramos cuando recibimos menos del limit
       if ((total != null && all.length >= total) || rows.length < limit) break;
       page++;
       if (page > 50) {
-        // Safety net: 50 páginas * 1000 = 50k registros. Si excede, abortar.
         message.warning("Más de 50.000 registros — exportación truncada");
         break;
       }
@@ -59,19 +214,45 @@ export function ExportarExcelButton<T>({
     return all;
   }
 
-  async function handleClick() {
+  function aplicarFiltrosCliente(records: T[]): T[] {
+    let out = records;
+    // Fecha client-side (solo si el caller pasó predicate).
+    if (dateFilter?.predicate && (desde || hasta)) {
+      out = out.filter((r) => dateFilter.predicate!(r, desde, hasta));
+    }
+    // Categorías client-side.
+    for (const f of categoryFilters ?? []) {
+      const sel = catSelections[f.key] ?? [];
+      if (sel.length > 0 && f.predicate) {
+        out = out.filter((r) => f.predicate!(r, sel));
+      }
+    }
+    return out;
+  }
+
+  async function descargar() {
+    if (selectedCols.length === 0) {
+      message.warning("Elegí al menos una columna");
+      return;
+    }
     setLoading(true);
     try {
       const records = await fetchAll();
-      if (records.length === 0) {
-        message.info("No hay registros para exportar");
+      const filtrados = aplicarFiltrosCliente(records);
+      if (filtrados.length === 0) {
+        message.info("No hay registros que cumplan los filtros");
         return;
       }
-      // Lazy-load xlsx (~400KB) solo cuando se usa
+      // Persistir selección actual para próxima descarga.
+      persistir({ cols: selectedCols, cats: catSelections });
+
+      // Conservar el orden original de columnas (no el orden en que el usuario las marcó).
+      const colsParaExport = columns.filter((c) => selectedCols.includes(colKey(c)));
+
       const XLSX = await import("xlsx");
-      const rows = records.map((r) => {
+      const rows = filtrados.map((r) => {
         const row: Record<string, unknown> = {};
-        for (const col of columns) {
+        for (const col of colsParaExport) {
           row[col.label] = col.value(r) ?? "";
         }
         return row;
@@ -81,7 +262,8 @@ export function ExportarExcelButton<T>({
       XLSX.utils.book_append_sheet(wb, ws, sheetName ?? filename);
       const ts = dayjs().format("YYYYMMDD-HHmm");
       XLSX.writeFile(wb, `${filename}-${ts}.xlsx`);
-      message.success(`Excel descargado: ${records.length} registro(s)`);
+      message.success(`Excel descargado: ${filtrados.length} registro(s)`);
+      setOpen(false);
     } catch (e) {
       message.error(e instanceof Error ? e.message : "Error al exportar");
     } finally {
@@ -89,14 +271,215 @@ export function ExportarExcelButton<T>({
     }
   }
 
+  const colsFiltradas = useMemo(() => {
+    const term = colSearch.trim().toLowerCase();
+    if (!term) return columns;
+    return columns.filter((c) => c.label.toLowerCase().includes(term));
+  }, [columns, colSearch]);
+
+  const todasMarcadas = selectedCols.length === columns.length;
+  const ningunaMarcada = selectedCols.length === 0;
+
   return (
-    <Button
-      icon={<FileExcelOutlined />}
-      onClick={handleClick}
-      loading={loading}
-      style={{ background: "#1d6f42", color: "#fff", borderColor: "#1d6f42" }}
-    >
-      {children ?? "Descargar Excel"}
-    </Button>
+    <>
+      <Button
+        icon={<FileExcelOutlined />}
+        onClick={() => setOpen(true)}
+        style={{ background: "#1d6f42", color: "#fff", borderColor: "#1d6f42" }}
+      >
+        {children ?? "Descargar Excel"}
+      </Button>
+
+      <Modal
+        open={open}
+        onCancel={() => setOpen(false)}
+        title={
+          <Space>
+            <FileExcelOutlined style={{ color: "#1d6f42" }} />
+            <span>Configurar exportación a Excel</span>
+          </Space>
+        }
+        width={720}
+        destroyOnHidden
+        footer={
+          <Space>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {selectedCols.length} de {columns.length} columna(s) seleccionada(s)
+            </Text>
+            <Button onClick={() => setOpen(false)}>Cancelar</Button>
+            <Button
+              type="primary"
+              icon={<FileExcelOutlined />}
+              loading={loading}
+              onClick={descargar}
+              style={{ background: "#1d6f42", borderColor: "#1d6f42" }}
+            >
+              Descargar
+            </Button>
+          </Space>
+        }
+      >
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: spc.md }}
+          message={
+            <span style={{ fontSize: 12 }}>
+              Tu selección se recuerda para la próxima descarga.
+            </span>
+          }
+        />
+
+        {/* Rango de fechas */}
+        {dateFilter && (
+          <Form layout="vertical" style={{ marginBottom: spc.sm }}>
+            <Form.Item
+              label={
+                <Space size={4}>
+                  <CalendarOutlined style={{ color: brand.cyan }} />
+                  <Text strong>{dateFilter.label ?? "Rango de fechas"}</Text>
+                </Space>
+              }
+              style={{ marginBottom: spc.sm }}
+            >
+              <Space wrap>
+                <DatePicker
+                  placeholder="Desde"
+                  format="DD/MM/YYYY"
+                  value={desde}
+                  onChange={(d) => setDesde(d)}
+                  allowClear
+                />
+                <DatePicker
+                  placeholder="Hasta"
+                  format="DD/MM/YYYY"
+                  value={hasta}
+                  onChange={(d) => setHasta(d)}
+                  allowClear
+                />
+                {(desde || hasta) && (
+                  <Button size="small" type="link" onClick={() => { setDesde(null); setHasta(null); }}>
+                    Limpiar
+                  </Button>
+                )}
+              </Space>
+            </Form.Item>
+          </Form>
+        )}
+
+        {/* Categorías multi-select */}
+        {(categoryFilters ?? []).length > 0 && (
+          <div style={{ marginBottom: spc.md }}>
+            {(categoryFilters ?? []).map((f) => {
+              const sel = catSelections[f.key] ?? [];
+              const allVals = f.options.map((o) => o.value);
+              const todos = sel.length === allVals.length;
+              return (
+                <div key={f.key} style={{ marginBottom: spc.sm }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                    <Space size={4}>
+                      <FilterOutlined style={{ color: brand.cyan }} />
+                      <Text strong>{f.label}</Text>
+                      {sel.length > 0 && sel.length < allVals.length && (
+                        <Tag color="blue" style={{ margin: 0 }}>{sel.length} de {allVals.length}</Tag>
+                      )}
+                      {todos && <Tag color="default" style={{ margin: 0 }}>Todos</Tag>}
+                    </Space>
+                    <Space size={4}>
+                      <Button
+                        size="small" type="link"
+                        onClick={() => setCatSelections((prev) => ({ ...prev, [f.key]: allVals }))}
+                        disabled={todos}
+                      >
+                        Todos
+                      </Button>
+                      <Button
+                        size="small" type="link"
+                        onClick={() => setCatSelections((prev) => ({ ...prev, [f.key]: [] }))}
+                        disabled={sel.length === 0}
+                      >
+                        Ninguno
+                      </Button>
+                    </Space>
+                  </div>
+                  <Checkbox.Group
+                    value={sel}
+                    onChange={(vals) => setCatSelections((prev) => ({ ...prev, [f.key]: vals as string[] }))}
+                    options={f.options}
+                  />
+                </div>
+              );
+            })}
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              Si no marcás ninguna opción de un filtro, no se aplica (se exportan todos).
+            </Text>
+          </div>
+        )}
+
+        <Divider style={{ margin: `${spc.sm}px 0` }} />
+
+        {/* Selección de columnas */}
+        <div style={{ marginBottom: spc.sm, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <Text strong>Columnas a exportar</Text>
+          <Space size={4}>
+            <Button
+              size="small" type="link"
+              onClick={() => setSelectedCols(allKeys)}
+              disabled={todasMarcadas}
+            >
+              Marcar todas
+            </Button>
+            <Button
+              size="small" type="link" danger
+              onClick={() => setSelectedCols([])}
+              disabled={ningunaMarcada}
+            >
+              Desmarcar todas
+            </Button>
+          </Space>
+        </div>
+
+        <Input
+          placeholder="Buscar columna..."
+          prefix={<SearchOutlined />}
+          value={colSearch}
+          onChange={(e) => setColSearch(e.target.value)}
+          allowClear
+          style={{ marginBottom: spc.sm }}
+        />
+
+        <div
+          style={{
+            maxHeight: 320,
+            overflowY: "auto",
+            border: `1px solid ${brand.border}`,
+            borderRadius: 4,
+            padding: spc.sm,
+          }}
+        >
+          <Checkbox.Group
+            value={selectedCols}
+            onChange={(vals) => setSelectedCols(vals as string[])}
+            style={{ width: "100%" }}
+          >
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+              {colsFiltradas.map((c) => {
+                const k = colKey(c);
+                return (
+                  <Checkbox key={k} value={k} style={{ fontSize: 13 }}>
+                    {c.label}
+                  </Checkbox>
+                );
+              })}
+            </div>
+            {colsFiltradas.length === 0 && (
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                Sin columnas que coincidan con "{colSearch}".
+              </Text>
+            )}
+          </Checkbox.Group>
+        </div>
+      </Modal>
+    </>
   );
 }

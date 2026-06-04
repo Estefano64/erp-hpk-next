@@ -529,6 +529,38 @@ export default function EquiposPage() {
           <ExportarExcelButton<EquipoRecord>
             endpoint="/api/equipos"
             filename="Equipos"
+            categoryFilters={[
+              {
+                key: "tipo",
+                label: "Tipo de equipo",
+                options: tipos.map((t) => ({ value: t.codigo, label: t.nombre })),
+                predicate: (r, sel) => sel.includes(r.tipo_codigo ?? ""),
+              },
+              {
+                key: "status",
+                label: "Estado",
+                options: statuses.map((s) => ({ value: s.codigo, label: s.nombre })),
+                predicate: (r, sel) => sel.includes(r.status_codigo ?? ""),
+              },
+              {
+                key: "criticidad",
+                label: "Criticidad",
+                options: criticidades.map((c) => ({ value: c.codigo, label: c.nombre })),
+                predicate: (r, sel) => sel.includes(r.criticidad_codigo ?? ""),
+              },
+              {
+                key: "planta",
+                label: "Planta",
+                options: plantas.map((p) => ({ value: p.codigo, label: p.nombre })),
+                predicate: (r, sel) => sel.includes(r.planta_codigo ?? ""),
+              },
+              {
+                key: "area",
+                label: "Área",
+                options: areas.map((a) => ({ value: a.codigo, label: a.nombre })),
+                predicate: (r, sel) => sel.includes(r.area_codigo ?? ""),
+              },
+            ]}
             columns={[
               { label: "Código", value: (r) => r.codigo },
               { label: "Descripción", value: (r) => r.descripcion },

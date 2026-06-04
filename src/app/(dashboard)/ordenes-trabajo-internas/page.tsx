@@ -439,7 +439,7 @@ export default function OrdenesTrabajoInternasPage() {
   ], [page, pageSize, rows, esAdmin]);
 
   const { columnas, components, resetAnchos, TableDragWrapper } =
-    useColumnasRedimensionables<OTInternaRow>(baseColumns, "ot-internas-cols-widths-v1");
+    useColumnasRedimensionables<OTInternaRow>(baseColumns, "ot-internas-cols-widths-v1", { data: rows });
 
   return (
     <div>
