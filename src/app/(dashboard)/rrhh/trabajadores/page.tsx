@@ -1,22 +1,30 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Typography, Card, Table, Tag, Space, Button, Input, Select, InputNumber,
-  Modal, Form, Popconfirm, App, Tooltip, Segmented, Alert,
+  Modal, Form, Popconfirm, App, Tooltip, Segmented, Alert, Drawer, Row, Col,
+  Statistic, Empty, DatePicker, Descriptions,
 } from "antd";
 import {
   TeamOutlined, ReloadOutlined, SearchOutlined, PlusOutlined,
   EditOutlined, DeleteOutlined, ToolOutlined,
   UserOutlined, UserAddOutlined, LinkOutlined, DisconnectOutlined,
+  EyeOutlined, IdcardOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
+import dayjs, { type Dayjs } from "dayjs";
+import isoWeek from "dayjs/plugin/isoWeek";
 import { brand } from "@/lib/theme";
+import { formatDateOnly } from "@/lib/dates";
 import {
   numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE,
   useColumnasOcultas, ColumnasToggleButton, visibleColumns, filtroPorColumna,
   useColumnasRedimensionables,
 } from "@/lib/tables";
+import { useResponsive } from "@/lib/responsive";
+
+dayjs.extend(isoWeek);
 
 const { Title, Text } = Typography;
 
@@ -75,8 +83,91 @@ const COLOR_POR_ROL: Record<string, string> = {
   viewer: "default",
 };
 
+// Tarea devuelta por /api/admin/vista-tecnico — mismo shape que /api/mi-trabajo/historico.
+interface TareaHistVista {
+  id: number;
+  ot_id: number;
+  componente: string;
+  operacion_codigo: string;
+  descripcion: string;
+  horas_estimadas: string | number | null;
+  horas_reales: string | number | null;
+  fecha_inicio: string | null;
+  fecha_fin: string | null;
+  fecha_inicio_real: string | null;
+  fecha_fin_real: string | null;
+  estado: string | null;
+  status_tarea: { codigo: string; nombre: string } | null;
+  orden_trabajo: { ot: number | null; descripcion: string | null } | null;
+}
+
+interface VistaTecnicoResp {
+  trabajador: {
+    trabajador_id: number;
+    nombre: string;
+    dni: string | null;
+    area: string;
+    puesto: string;
+    activo: boolean;
+    equipo: { codigo: string; descripcion: string } | null;
+  };
+  usuario: {
+    id: number;
+    codigoEmpleado: string;
+    email: string | null;
+    roles: string[];
+    activo: boolean;
+  } | null;
+  tareas: TareaHistVista[];
+  total: number;
+  page: number;
+  limit: number;
+  resumen: {
+    totalTareas: number;
+    realizadas: number;
+    totalHorasReales: number;
+    totalHorasEstimadas: number;
+    breakdown: { estado: string | null; count: number; horas_est: number; horas_real: number }[];
+  };
+}
+
+const ESTADO_OPCIONES_VISTA = [
+  { value: "abierto", label: "Abierto" },
+  { value: "programado", label: "Programado" },
+  { value: "en_proceso", label: "En proceso" },
+  { value: "pausado", label: "Pausado" },
+  { value: "realizado", label: "Realizado" },
+  { value: "correctivo", label: "Correctivo" },
+  { value: "cancelado", label: "Cancelado" },
+];
+
+function estadoColorVista(estado: string | null): string {
+  switch (estado) {
+    case "realizado": return "success";
+    case "en_proceso": return "processing";
+    case "programado": return "blue";
+    case "pausado": return "warning";
+    case "cancelado": return "error";
+    default: return "default";
+  }
+}
+
+function eficienciaVista(est: string | number | null, real: string | number | null): number | null {
+  const e = Number(est ?? 0), r = Number(real ?? 0);
+  if (r <= 0 || e <= 0) return null;
+  return Math.round((e / r) * 100);
+}
+
+function eficienciaColorVista(pct: number | null): string {
+  if (pct == null) return brand.textSecondary;
+  if (pct >= 100) return "#52c41a";
+  if (pct >= 80) return "#faad14";
+  return brand.error;
+}
+
 export default function TrabajadoresPage() {
   const { message, modal } = App.useApp();
+  const { isMobile } = useResponsive();
   const [rows, setRows] = useState<Trabajador[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -120,6 +211,144 @@ export default function TrabajadoresPage() {
   // Lista completa de usuarios + mapa trabajadorId → Usuario (para badges).
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [usuariosByTrabajador, setUsuariosByTrabajador] = useState<Record<number, Usuario>>({});
+
+  // ── Drawer: "Ver vista de técnico" (gerente busca por DNI o desde la fila).
+  const [vistaOpen, setVistaOpen] = useState(false);
+  const [vistaDni, setVistaDni] = useState("");
+  const [vistaTrabajadorId, setVistaTrabajadorId] = useState<number | null>(null);
+  const [vistaData, setVistaData] = useState<VistaTecnicoResp | null>(null);
+  const [vistaLoading, setVistaLoading] = useState(false);
+  const [vistaError, setVistaError] = useState<string | null>(null);
+  const [vistaPage, setVistaPage] = useState(1);
+  const [vistaPageSize, setVistaPageSize] = useState(50);
+  const [vistaEstado, setVistaEstado] = useState<string | undefined>();
+  const [vistaSearch, setVistaSearch] = useState("");
+  const [vistaSemana, setVistaSemana] = useState<Dayjs | null>(null);
+
+  const vistaFetch = useCallback(async () => {
+    // Necesita o DNI o trabajadorId.
+    if (!vistaDni.trim() && vistaTrabajadorId == null) return;
+    setVistaLoading(true);
+    setVistaError(null);
+    try {
+      const params = new URLSearchParams({
+        page: String(vistaPage),
+        limit: String(vistaPageSize),
+      });
+      if (vistaTrabajadorId != null) {
+        params.set("trabajadorId", String(vistaTrabajadorId));
+      } else {
+        params.set("dni", vistaDni.trim());
+      }
+      if (vistaEstado) params.set("estado", vistaEstado);
+      if (vistaSearch) params.set("search", vistaSearch);
+      if (vistaSemana) {
+        params.set("fecha_desde", vistaSemana.startOf("isoWeek").format("YYYY-MM-DD"));
+        params.set("fecha_hasta", vistaSemana.endOf("isoWeek").format("YYYY-MM-DD") + "T23:59:59");
+      }
+      const res = await fetch(`/api/admin/vista-tecnico?${params.toString()}`, { cache: "no-store" });
+      const json = await res.json();
+      if (!res.ok) {
+        setVistaError(json?.error ?? "Error al cargar la vista");
+        setVistaData(null);
+        return;
+      }
+      setVistaData(json as VistaTecnicoResp);
+    } catch (e) {
+      setVistaError(e instanceof Error ? e.message : "Error");
+      setVistaData(null);
+    } finally {
+      setVistaLoading(false);
+    }
+  }, [vistaDni, vistaTrabajadorId, vistaPage, vistaPageSize, vistaEstado, vistaSearch, vistaSemana]);
+
+  // Refetch automático cuando cambian filtros/paginación (siempre y cuando ya
+  // haya un técnico cargado — no quiero disparar la query con DNI vacío).
+  useEffect(() => {
+    if (vistaOpen && (vistaTrabajadorId != null || vistaDni.trim() !== "")) {
+      void vistaFetch();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vistaPage, vistaPageSize, vistaEstado, vistaSearch, vistaSemana, vistaTrabajadorId]);
+
+  function abrirVista(t?: Trabajador) {
+    setVistaPage(1);
+    setVistaPageSize(50);
+    setVistaEstado(undefined);
+    setVistaSearch("");
+    setVistaSemana(null);
+    setVistaError(null);
+    setVistaData(null);
+    if (t) {
+      // Abierta desde una fila: cargar directo.
+      setVistaDni(t.dni ?? "");
+      setVistaTrabajadorId(t.trabajador_id);
+    } else {
+      // Abierta desde el botón del header: requiere que el gerente tipee el DNI.
+      setVistaDni("");
+      setVistaTrabajadorId(null);
+    }
+    setVistaOpen(true);
+  }
+
+  function cerrarVista() {
+    setVistaOpen(false);
+    setVistaData(null);
+    setVistaTrabajadorId(null);
+    setVistaDni("");
+  }
+
+  // Disparo manual desde el botón "Cargar" (cuando el usuario tipeó un DNI).
+  async function cargarPorDni() {
+    if (!vistaDni.trim()) {
+      message.warning("Ingresá un DNI");
+      return;
+    }
+    setVistaTrabajadorId(null);
+    setVistaPage(1);
+    await vistaFetch();
+  }
+
+  // Columnas del listado de tareas dentro del drawer (read-only, refleja
+  // /mis-tareas).
+  const columnasVista: ColumnsType<TareaHistVista> = useMemo(() => [
+    {
+      key: "ot", title: "OT", width: 100, fixed: "left",
+      render: (_v, r) => <Tag color={brand.navy} style={{ margin: 0 }}>{r.orden_trabajo?.ot ?? `#${r.ot_id}`}</Tag>,
+    },
+    { key: "componente", title: "Componente", width: 110, render: (_v, r) => r.componente || "—" },
+    { key: "operacion", title: "Operación", width: 100, render: (_v, r) => r.operacion_codigo || "—" },
+    { key: "descripcion", title: "Descripción", ellipsis: true, render: (_v, r) => r.descripcion || <Text type="secondary">—</Text> },
+    {
+      key: "estado", title: "Estado", width: 110,
+      render: (_v, r) => <Tag color={estadoColorVista(r.estado)} style={{ margin: 0 }}>{r.status_tarea?.nombre ?? r.estado ?? "—"}</Tag>,
+    },
+    {
+      key: "ini_real", title: "Inicio real", width: 110,
+      render: (_v, r) => r.fecha_inicio_real ? formatDateOnly(r.fecha_inicio_real) : <Text type="secondary">—</Text>,
+    },
+    {
+      key: "fin_real", title: "Fin real", width: 110,
+      render: (_v, r) => r.fecha_fin_real ? formatDateOnly(r.fecha_fin_real) : <Text type="secondary">—</Text>,
+    },
+    {
+      key: "h_est", title: "H. est.", width: 80, align: "right",
+      render: (_v, r) => r.horas_estimadas != null ? Number(r.horas_estimadas).toFixed(1) : "—",
+    },
+    {
+      key: "h_real", title: "H. real", width: 80, align: "right",
+      render: (_v, r) => r.horas_reales != null ? Number(r.horas_reales).toFixed(1) : "—",
+    },
+    {
+      key: "efic", title: "Efic.", width: 80, align: "right",
+      render: (_v, r) => {
+        const pct = eficienciaVista(r.horas_estimadas, r.horas_reales);
+        return pct != null
+          ? <Text strong style={{ color: eficienciaColorVista(pct) }}>{pct}%</Text>
+          : <Text type="secondary">—</Text>;
+      },
+    },
+  ], []);
 
   const fetchUsuarios = useCallback(async () => {
     const res = await fetch("/api/usuarios");
@@ -466,9 +695,12 @@ export default function TrabajadoresPage() {
       },
     },
     {
-      key: "acciones", title: "", width: 110, fixed: "right", align: "center",
+      key: "acciones", title: "", width: 140, fixed: "right", align: "center",
       render: (_, r) => (
         <Space size={2}>
+          <Tooltip title="Ver vista de este técnico (solo lectura)">
+            <Button type="text" size="small" icon={<EyeOutlined />} onClick={() => abrirVista(r)} />
+          </Tooltip>
           <Tooltip title="Editar"><Button type="text" size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} /></Tooltip>
           {r.activo && (
             <Popconfirm title={`Desactivar a ${r.nombre}?`} onConfirm={() => handleDelete(r)} okText="Sí" cancelText="No">
@@ -491,6 +723,9 @@ export default function TrabajadoresPage() {
           Trabajadores
         </Title>
         <Space>
+          <Tooltip title="Ver lo que un técnico vería en su sesión (por DNI). Solo lectura.">
+            <Button icon={<EyeOutlined />} onClick={() => abrirVista()}>Ver vista de técnico</Button>
+          </Tooltip>
           <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>Refrescar</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nuevo</Button>
         </Space>
@@ -753,6 +988,209 @@ export default function TrabajadoresPage() {
           </>
         )}
       </Modal>
+
+      <Drawer
+        open={vistaOpen}
+        onClose={cerrarVista}
+        placement={isMobile ? "bottom" : "right"}
+        width={isMobile ? "100%" : 1100}
+        height={isMobile ? "92%" : undefined}
+        destroyOnHidden
+        title={
+          <Space>
+            <EyeOutlined style={{ color: brand.cyan }} />
+            <span>Vista de técnico</span>
+            {vistaData?.trabajador && (
+              <Tag color="blue" style={{ marginLeft: 4 }}>
+                {vistaData.trabajador.nombre}
+              </Tag>
+            )}
+          </Space>
+        }
+      >
+        <Alert
+          showIcon
+          type="info"
+          style={{ marginBottom: 12 }}
+          message="Vista de solo lectura"
+          description="Ves las tareas, horas y eficiencia del técnico tal cual aparecen en su sesión. No se ejecuta ninguna acción a su nombre."
+        />
+
+        <Card size="small" style={{ marginBottom: 12 }} styles={{ body: { padding: 12 } }}>
+          <Space wrap>
+            <Input
+              prefix={<IdcardOutlined />}
+              placeholder="DNI del técnico"
+              value={vistaDni}
+              onChange={(e) => setVistaDni(e.target.value)}
+              onPressEnter={() => void cargarPorDni()}
+              style={{ width: 200 }}
+              allowClear
+              onClear={() => { setVistaDni(""); setVistaData(null); setVistaTrabajadorId(null); }}
+            />
+            <Button type="primary" onClick={() => void cargarPorDni()} loading={vistaLoading}>
+              Cargar
+            </Button>
+            {vistaData && (
+              <Button icon={<ReloadOutlined />} onClick={() => void vistaFetch()} loading={vistaLoading}>
+                Actualizar
+              </Button>
+            )}
+          </Space>
+        </Card>
+
+        {vistaError && (
+          <Alert type="error" showIcon message={vistaError} style={{ marginBottom: 12 }} />
+        )}
+
+        {!vistaData && !vistaError && !vistaLoading && (
+          <Empty description="Ingresá un DNI y presioná Cargar, o abrí la vista desde una fila de la tabla." />
+        )}
+
+        {vistaData && (
+          <>
+            <Card size="small" style={{ marginBottom: 12 }} title="Datos del técnico">
+              <Descriptions size="small" column={{ xs: 1, sm: 2, md: 3 }}>
+                <Descriptions.Item label="Nombre">
+                  <Text strong>{vistaData.trabajador.nombre}</Text>
+                </Descriptions.Item>
+                <Descriptions.Item label="DNI">{vistaData.trabajador.dni ?? "—"}</Descriptions.Item>
+                <Descriptions.Item label="Área">{vistaData.trabajador.area}</Descriptions.Item>
+                <Descriptions.Item label="Cargo">{vistaData.trabajador.puesto}</Descriptions.Item>
+                <Descriptions.Item label="Máquina">
+                  {vistaData.trabajador.equipo
+                    ? `${vistaData.trabajador.equipo.descripcion} (${vistaData.trabajador.equipo.codigo})`
+                    : "—"}
+                </Descriptions.Item>
+                <Descriptions.Item label="Estado">
+                  {vistaData.trabajador.activo
+                    ? <Tag color="success">Activo</Tag>
+                    : <Tag color="default">Inactivo</Tag>}
+                </Descriptions.Item>
+                <Descriptions.Item label="Cuenta" span={3}>
+                  {vistaData.usuario
+                    ? (
+                      <Space wrap>
+                        <Tag icon={<UserOutlined />} color={vistaData.usuario.activo ? "cyan" : "default"}>
+                          {vistaData.usuario.codigoEmpleado}
+                        </Tag>
+                        {vistaData.usuario.email && <Text type="secondary">{vistaData.usuario.email}</Text>}
+                        {vistaData.usuario.roles.map((r) => (
+                          <Tag key={r} color={COLOR_POR_ROL[r] ?? "blue"} style={{ margin: 0 }}>{r}</Tag>
+                        ))}
+                        {!vistaData.usuario.activo && <Tag color="default">cuenta inactiva</Tag>}
+                      </Space>
+                    )
+                    : <Text type="secondary">Sin cuenta vinculada</Text>}
+                </Descriptions.Item>
+              </Descriptions>
+            </Card>
+
+            <Row gutter={12} style={{ marginBottom: 12 }}>
+              <Col xs={12} md={6}>
+                <Card size="small">
+                  <Statistic
+                    title="Tareas totales"
+                    value={vistaData.resumen.totalTareas}
+                    styles={{ content: { color: brand.navy } }}
+                  />
+                </Card>
+              </Col>
+              <Col xs={12} md={6}>
+                <Card size="small">
+                  <Statistic
+                    title="Realizadas"
+                    value={vistaData.resumen.realizadas}
+                    styles={{ content: { color: "#52c41a" } }}
+                  />
+                </Card>
+              </Col>
+              <Col xs={12} md={6}>
+                <Card size="small">
+                  <Statistic
+                    title="Horas estimadas"
+                    value={vistaData.resumen.totalHorasEstimadas}
+                    precision={1}
+                    suffix="h"
+                    styles={{ content: { color: brand.textPrimary } }}
+                  />
+                </Card>
+              </Col>
+              <Col xs={12} md={6}>
+                <Card size="small">
+                  <Statistic
+                    title="Horas reales"
+                    value={vistaData.resumen.totalHorasReales}
+                    precision={1}
+                    suffix="h"
+                    styles={{ content: { color: brand.cyan } }}
+                  />
+                </Card>
+              </Col>
+            </Row>
+
+            {vistaData.resumen.breakdown.length > 0 && (
+              <Card size="small" style={{ marginBottom: 12 }} title="Distribución por estado">
+                <Space wrap size={[8, 8]}>
+                  {vistaData.resumen.breakdown.map((b) => (
+                    <Tag key={b.estado ?? "sin"} color={estadoColorVista(b.estado)} style={{ padding: "2px 8px" }}>
+                      {b.estado ?? "sin estado"}: <strong>{b.count}</strong>
+                    </Tag>
+                  ))}
+                </Space>
+              </Card>
+            )}
+
+            <Card size="small" title={`Tareas (${vistaData.total})`}>
+              <Space style={{ marginBottom: 12, flexWrap: "wrap" }}>
+                <Input.Search
+                  placeholder="Buscar OT, componente, operación…"
+                  allowClear
+                  defaultValue={vistaSearch}
+                  onSearch={(v) => { setVistaPage(1); setVistaSearch(v.trim()); }}
+                  style={{ width: 260 }}
+                />
+                <Select
+                  placeholder="Estado"
+                  allowClear showSearch optionFilterProp="label"
+                  value={vistaEstado}
+                  onChange={(v) => { setVistaPage(1); setVistaEstado(v); }}
+                  options={ESTADO_OPCIONES_VISTA}
+                  style={{ width: 160 }}
+                />
+                <DatePicker
+                  picker="week"
+                  placeholder="Semana"
+                  value={vistaSemana}
+                  onChange={(v) => { setVistaPage(1); setVistaSemana(v); }}
+                  style={{ width: 180 }}
+                />
+                {vistaSemana && (
+                  <Button size="small" onClick={() => { setVistaPage(1); setVistaSemana(null); }}>
+                    Limpiar semana
+                  </Button>
+                )}
+              </Space>
+              <Table<TareaHistVista>
+                rowKey="id"
+                size="small"
+                columns={columnasVista}
+                dataSource={vistaData.tareas}
+                loading={vistaLoading}
+                pagination={paginacionEstandar({
+                  current: vistaPage,
+                  pageSize: vistaPageSize,
+                  total: vistaData.total,
+                  onChange: (p, s) => { setVistaPage(p); setVistaPageSize(s); },
+                  label: "tarea(s)",
+                })}
+                scroll={{ x: 1000 }}
+                locale={{ emptyText: <Empty description="Sin tareas para los filtros aplicados" /> }}
+              />
+            </Card>
+          </>
+        )}
+      </Drawer>
     </div>
   );
 }
