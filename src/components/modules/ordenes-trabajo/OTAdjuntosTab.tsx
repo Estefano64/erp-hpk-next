@@ -12,6 +12,11 @@ import {
   Popconfirm,
   Spin,
   Empty,
+  Card,
+  DatePicker,
+  Checkbox,
+  Input,
+  Space,
 } from "antd";
 import {
   UploadOutlined,
@@ -30,12 +35,36 @@ import {
   CarOutlined,
   FolderOpenOutlined,
   SolutionOutlined,
+  SaveOutlined,
+  LockOutlined,
 } from "@ant-design/icons";
+import dayjs, { type Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
 import { uploadToR2, getDownloadUrl, openR2File } from "@/lib/r2-client";
 
 const { Text } = Typography;
 const { Dragger } = Upload;
+
+// Datos de flujo comercial/logístico de la OT que se editan desde los sub-tabs
+// de Adjuntos (Cotización / PO Cliente / Despacho). Se persisten a nivel
+// OrdenTrabajo vía PUT parcial, igual que el resto del detalle.
+export interface OTAdjuntosMeta {
+  version: number;
+  ot_status_codigo: string | null;
+  fecha_cotizacion: string | null;
+  fecha_aprobacion: string | null;
+  fecha_generacion_po: string | null;
+  po_cliente_ok: boolean | null;
+  fecha_despacho: string | null;
+  empresa_recibe: string | null;
+  fecha_facturacion: string | null;
+}
+
+const ETAPAS_CON_META = new Set(["cotizacion", "po_cliente", "despacho", "facturacion"]);
+
+function toDayjs(s: string | null | undefined): Dayjs | null {
+  return s ? dayjs(String(s).slice(0, 10)) : null;
+}
 
 interface Adjunto {
   id: number;
@@ -50,6 +79,10 @@ interface Adjunto {
 
 interface Props {
   otId: number;
+  // Datos del flujo comercial para los sub-tabs Cotización/PO Cliente/Despacho.
+  meta?: OTAdjuntosMeta | null;
+  // Refresca la OT en el padre tras guardar una fecha/check desde un sub-tab.
+  onMetaSaved?: () => void;
 }
 
 const ETAPAS = [
@@ -115,8 +148,161 @@ function isImage(mime: string) {
   return mime.startsWith("image/");
 }
 
+/* ── Datos del flujo comercial editables por etapa (fecha + check + empresa) ── */
+function EtapaMetaForm({
+  otId,
+  etapaKey,
+  meta,
+  onSaved,
+}: {
+  otId: number;
+  etapaKey: string;
+  meta: OTAdjuntosMeta;
+  onSaved?: () => void;
+}) {
+  const [messageApi, contextHolder] = message.useMessage();
+  const [saving, setSaving] = useState(false);
+  const cerrada = meta.ot_status_codigo === "Cerrada";
+
+  const [fechaCotizacion, setFechaCotizacion] = useState<Dayjs | null>(toDayjs(meta.fecha_cotizacion));
+  const [fechaGeneracionPo, setFechaGeneracionPo] = useState<Dayjs | null>(toDayjs(meta.fecha_generacion_po));
+  const [fechaAprobacion, setFechaAprobacion] = useState<Dayjs | null>(toDayjs(meta.fecha_aprobacion));
+  const [poOk, setPoOk] = useState<boolean>(!!meta.po_cliente_ok);
+  const [fechaDespacho, setFechaDespacho] = useState<Dayjs | null>(toDayjs(meta.fecha_despacho));
+  const [empresaRecibe, setEmpresaRecibe] = useState<string>(meta.empresa_recibe ?? "");
+  const [fechaFacturacion, setFechaFacturacion] = useState<Dayjs | null>(toDayjs(meta.fecha_facturacion));
+
+  // Re-sincroniza los controles cuando la OT cambia (tras guardar y refetch).
+  useEffect(() => {
+    setFechaCotizacion(toDayjs(meta.fecha_cotizacion));
+    setFechaGeneracionPo(toDayjs(meta.fecha_generacion_po));
+    setFechaAprobacion(toDayjs(meta.fecha_aprobacion));
+    setPoOk(!!meta.po_cliente_ok);
+    setFechaDespacho(toDayjs(meta.fecha_despacho));
+    setEmpresaRecibe(meta.empresa_recibe ?? "");
+    setFechaFacturacion(toDayjs(meta.fecha_facturacion));
+  }, [meta.fecha_cotizacion, meta.fecha_generacion_po, meta.fecha_aprobacion, meta.po_cliente_ok, meta.fecha_despacho, meta.empresa_recibe, meta.fecha_facturacion]);
+
+  const fmt = (d: Dayjs | null) => (d ? d.format("YYYY-MM-DD") : null);
+
+  async function guardar(patch: Record<string, unknown>) {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/ordenes-trabajo/${otId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...patch, version: meta.version }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error ?? "Error al guardar");
+      }
+      messageApi.success("Datos guardados");
+      onSaved?.();
+    } catch (e) {
+      messageApi.error(e instanceof Error ? e.message : "Error al guardar");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const labelStyle: React.CSSProperties = { fontSize: 12, color: brand.textSecondary, marginBottom: 4 };
+  const guardarBtn = (patch: Record<string, unknown>) => (
+    <Button
+      type="primary"
+      size="small"
+      icon={<SaveOutlined />}
+      loading={saving}
+      disabled={cerrada}
+      style={{ background: brand.cyan, borderColor: brand.cyan }}
+      onClick={() => guardar(patch)}
+    >
+      Guardar
+    </Button>
+  );
+
+  let contenido: React.ReactNode = null;
+  if (etapaKey === "cotizacion") {
+    contenido = (
+      <Space wrap align="end" size={16}>
+        <div>
+          <div style={labelStyle}>Fecha de envío de cotización</div>
+          <DatePicker format="DD/MM/YYYY" value={fechaCotizacion} onChange={setFechaCotizacion} disabled={cerrada} style={{ width: 180 }} />
+        </div>
+        {guardarBtn({ fecha_cotizacion: fmt(fechaCotizacion) })}
+      </Space>
+    );
+  } else if (etapaKey === "po_cliente") {
+    contenido = (
+      <Space wrap align="end" size={16}>
+        <div>
+          <div style={labelStyle}>Fecha de generación de PO</div>
+          <DatePicker format="DD/MM/YYYY" value={fechaGeneracionPo} onChange={setFechaGeneracionPo} disabled={cerrada} style={{ width: 180 }} />
+        </div>
+        <div>
+          <div style={labelStyle}>Fecha de aprobación de cotización</div>
+          <DatePicker format="DD/MM/YYYY" value={fechaAprobacion} onChange={setFechaAprobacion} disabled={cerrada} style={{ width: 180 }} />
+        </div>
+        <Checkbox checked={poOk} onChange={(e) => setPoOk(e.target.checked)} disabled={cerrada} style={{ paddingBottom: 4 }}>
+          Cotización aprobada / conforme
+        </Checkbox>
+        {guardarBtn({ fecha_generacion_po: fmt(fechaGeneracionPo), fecha_aprobacion: fmt(fechaAprobacion), po_cliente_ok: poOk })}
+      </Space>
+    );
+  } else if (etapaKey === "despacho") {
+    contenido = (
+      <Space wrap align="end" size={16}>
+        <div>
+          <div style={labelStyle}>Fecha de despacho</div>
+          <DatePicker format="DD/MM/YYYY" value={fechaDespacho} onChange={setFechaDespacho} disabled={cerrada} style={{ width: 180 }} />
+        </div>
+        <div>
+          <div style={labelStyle}>Empresa que recibe</div>
+          <Input value={empresaRecibe} onChange={(e) => setEmpresaRecibe(e.target.value)} disabled={cerrada} placeholder="Ej. Minera ..." style={{ width: 240 }} maxLength={200} />
+        </div>
+        {guardarBtn({ fecha_despacho: fmt(fechaDespacho), empresa_recibe: empresaRecibe.trim() || null })}
+      </Space>
+    );
+  } else if (etapaKey === "facturacion") {
+    contenido = (
+      <Space wrap align="end" size={16}>
+        <div>
+          <div style={labelStyle}>Fecha de facturación</div>
+          <DatePicker format="DD/MM/YYYY" value={fechaFacturacion} onChange={setFechaFacturacion} disabled={cerrada} style={{ width: 180 }} />
+        </div>
+        {guardarBtn({ fecha_facturacion: fmt(fechaFacturacion) })}
+      </Space>
+    );
+  }
+
+  return (
+    <Card size="small" style={{ marginBottom: 16, background: "#F0F7FF", borderColor: brand.cyan }} styles={{ body: { padding: "12px 16px" } }}>
+      {contextHolder}
+      {contenido}
+      {cerrada && (
+        <div style={{ marginTop: 8 }}>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            <LockOutlined style={{ marginRight: 4 }} />
+            OT cerrada — reabrila (cambiar Estado OT) para editar estos datos.
+          </Text>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 /* ── Sub-panel por etapa ── */
-function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number] }) {
+function EtapaPanel({
+  otId,
+  etapa,
+  meta,
+  onMetaSaved,
+}: {
+  otId: number;
+  etapa: typeof ETAPAS[number];
+  meta?: OTAdjuntosMeta | null;
+  onMetaSaved?: () => void;
+}) {
   const [adjuntos, setAdjuntos] = useState<Adjunto[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -230,6 +416,11 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
           </Button>
         </div>
       </div>
+
+      {/* Datos del flujo comercial (fecha + check + empresa) de esta etapa */}
+      {ETAPAS_CON_META.has(etapa.key) && meta && (
+        <EtapaMetaForm otId={otId} etapaKey={etapa.key} meta={meta} onSaved={onMetaSaved} />
+      )}
 
       {/* Zona de drag & drop */}
       <Dragger
@@ -367,7 +558,7 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
 }
 
 /* ── Componente principal con tabs de etapas ── */
-export default function OTAdjuntosTab({ otId }: Props) {
+export default function OTAdjuntosTab({ otId, meta, onMetaSaved }: Props) {
   const tabItems = ETAPAS.map((etapa) => ({
     key: etapa.key,
     label: (
@@ -375,7 +566,7 @@ export default function OTAdjuntosTab({ otId }: Props) {
         {etapa.icon} {etapa.label}
       </span>
     ),
-    children: <EtapaPanel otId={otId} etapa={etapa} />,
+    children: <EtapaPanel otId={otId} etapa={etapa} meta={meta} onMetaSaved={onMetaSaved} />,
   }));
 
   return (

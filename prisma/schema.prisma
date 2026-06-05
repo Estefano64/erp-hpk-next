@@ -989,11 +989,21 @@ model OrdenTrabajo {
   dias_cotizacion             Int?
   fecha_aprobacion            DateTime?           @db.Date
   dias_aprobacion             Int?
+  // Flujo comercial editable desde el sub-tab "PO Cliente" de Adjuntos:
+  // fecha en que se generó la PO del cliente y check de conformidad de la
+  // cotización aprobada (las 2 fechas — generación PO + aprobación — correctas).
+  fecha_generacion_po         DateTime?           @db.Date
+  po_cliente_ok               Boolean?            @default(false)
   fecha_req_1                 DateTime?           @db.Date
   fecha_req_2                 DateTime?           @db.Date
   fecha_llegada_repuestos     DateTime?           @db.Date
   dias_proceso                Int?
   fecha_entrega               DateTime?           @db.Date
+  // Despacho (salida del taller) — editable desde el sub-tab "Despacho" de
+  // Adjuntos. Distinto de fecha_entrega (entrega final). empresa_recibe es la
+  // empresa que recibe el componente en el despacho (texto libre).
+  fecha_despacho              DateTime?           @db.Date
+  empresa_recibe              String?             @db.VarChar(200)
   cumplimiento                String?             @db.VarChar(20)
   nro_informe_entrega         String?             @db.VarChar(100)
   guia_entrega_salida         String?             @db.VarChar(100)

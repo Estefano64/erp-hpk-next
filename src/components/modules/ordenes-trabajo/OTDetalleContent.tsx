@@ -141,6 +141,14 @@ interface OTDetalle {
   monto_cotizacion: number | string | null;
   moneda_cotizacion_codigo: string | null;
   moneda_cotizacion: { codigo: string; nombre: string } | null;
+  // Flujo comercial/logístico editable desde los sub-tabs de Adjuntos.
+  fecha_cotizacion: string | null;
+  fecha_aprobacion: string | null;
+  fecha_generacion_po: string | null;
+  po_cliente_ok: boolean | null;
+  fecha_despacho: string | null;
+  empresa_recibe: string | null;
+  fecha_facturacion: string | null;
 }
 
 interface Props {
@@ -385,6 +393,13 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   /* ── Guardar estados + comentarios ── */
   async function handleSaveStatuses() {
     if (!ot) return;
+    // Para CERRAR la OT, el monto de cotización es obligatorio. Lo validamos
+    // contra el valor ya guardado en la OT (se carga en "Editar OT").
+    const vaACerrar = otStatus === "Cerrada" && ot.ot_status_codigo !== "Cerrada";
+    if (vaACerrar && !(Number(ot.monto_cotizacion ?? 0) > 0)) {
+      messageApi.error("Para cerrar la OT, el monto de cotización es obligatorio. Cargalo en 'Editar OT' antes de cerrar.");
+      return;
+    }
     setSavingStatus(true);
     try {
       const res = await fetch(`/api/ordenes-trabajo/${ot.id}`, {
@@ -403,13 +418,16 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
         fetchOT();
         return;
       }
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error ?? "Error al guardar");
+      }
       messageApi.success("Estados y comentarios guardados");
       fetchOT();
       notifySync();
       onUpdated?.();
-    } catch {
-      messageApi.error("Error al guardar");
+    } catch (e) {
+      messageApi.error(e instanceof Error ? e.message : "Error al guardar");
     } finally {
       setSavingStatus(false);
     }
@@ -984,6 +1002,18 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                 <Col xs={12} md={6}><Field label="Fecha Recepción" value={fmtDate(ot.fecha_recepcion)} /></Col>
                 <Col xs={12} md={6}><Field label="Plaqueteo" value={ot.plaqueteo} /></Col>
               </Row>
+              {/* Flujo comercial — se edita desde los sub-tabs de Adjuntos. */}
+              <Row gutter={[16, 4]} style={{ marginTop: 4 }}>
+                <Col xs={12} md={6}><Field label="Fecha envío cotización" value={fmtDate(ot.fecha_cotizacion)} /></Col>
+                <Col xs={12} md={6}><Field label="Fecha generación PO" value={fmtDate(ot.fecha_generacion_po)} /></Col>
+                <Col xs={12} md={6}><Field label="Fecha aprob. cotización" value={fmtDate(ot.fecha_aprobacion)} /></Col>
+                <Col xs={12} md={6}><Field label="Cotización conforme" value={ot.po_cliente_ok ? <span style={{ color: brand.success, fontWeight: 600 }}>✓ Sí</span> : "No"} /></Col>
+              </Row>
+              <Row gutter={[16, 4]}>
+                <Col xs={12} md={6}><Field label="Fecha despacho" value={fmtDate(ot.fecha_despacho)} /></Col>
+                <Col xs={12} md={6}><Field label="Empresa que recibe" value={ot.empresa_recibe} /></Col>
+                <Col xs={12} md={6}><Field label="Fecha facturación" value={fmtDate(ot.fecha_facturacion)} /></Col>
+              </Row>
             </>
           ) : (
             <>
@@ -1263,7 +1293,23 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
     { key: "tareas", label: "Tareas", icon: <UnorderedListOutlined />, children: ot ? <OTTareasTab otId={ot.id} codRepCodigo={ot.codigo_reparacion?.codigo ?? null} /> : null },
     { key: "requerimientos", label: "Requerimientos", icon: <InboxOutlined />, children: ot ? <OTRequerimientosTab otId={ot.id} codRepCodigo={ot.codigo_reparacion?.codigo ?? null} otFechaRecepcion={ot.fecha_recepcion} onUpdated={() => fetchOT()} /> : null },
     { key: "costos", label: "Costos", icon: <DollarOutlined />, children: ot ? <OTCostosTab otId={ot.id} /> : null },
-    { key: "adjuntos", label: "Adjuntos", icon: <PaperClipOutlined />, children: ot ? <OTAdjuntosTab otId={ot.id} /> : null },
+    { key: "adjuntos", label: "Adjuntos", icon: <PaperClipOutlined />, children: ot ? (
+      <OTAdjuntosTab
+        otId={ot.id}
+        meta={{
+          version: ot.version,
+          ot_status_codigo: ot.ot_status_codigo,
+          fecha_cotizacion: ot.fecha_cotizacion,
+          fecha_aprobacion: ot.fecha_aprobacion,
+          fecha_generacion_po: ot.fecha_generacion_po,
+          po_cliente_ok: ot.po_cliente_ok,
+          fecha_despacho: ot.fecha_despacho,
+          empresa_recibe: ot.empresa_recibe,
+          fecha_facturacion: ot.fecha_facturacion,
+        }}
+        onMetaSaved={() => fetchOT()}
+      />
+    ) : null },
     { key: "historial", label: "Historial", icon: <HistoryOutlined />, children: ot ? <OTHistorialTab otId={ot.id} /> : null },
   ];
 

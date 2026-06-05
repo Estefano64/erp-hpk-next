@@ -73,6 +73,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
       "fecha_evaluacion", "fecha_entrega_informe", "fecha_cotizacion",
       "fecha_aprobacion", "fecha_llegada_repuestos", "fecha_entrega",
       "fecha_facturacion", "fecha_req_1", "fecha_req_2",
+      "fecha_generacion_po", "fecha_despacho",
     ];
     for (const field of dateFields) {
       if (body[field]) body[field] = parseDateOnly(body[field]);
@@ -111,11 +112,24 @@ export async function PUT(req: NextRequest, { params }: Params) {
     const result = await prisma.$transaction(async (tx) => {
       const before = await tx.ordenTrabajo.findUnique({
         where: { id: Number(id) },
-        select: { version: true, ...AUDIT_OT_SELECT_FIELDS },
+        select: { version: true, monto_cotizacion: true, ...AUDIT_OT_SELECT_FIELDS },
       });
 
       if (!before) {
         return { conflict: false, notFound: true } as const;
+      }
+
+      // Para CERRAR una OT, el monto de cotización es obligatorio. Vale el del
+      // body (si se manda en el mismo PUT) o el ya guardado en la OT.
+      const beforeStatus = (before as { ot_status_codigo?: string | null }).ot_status_codigo;
+      const vaACerrar = body.ot_status_codigo === "Cerrada" && beforeStatus !== "Cerrada";
+      if (vaACerrar) {
+        const montoEfectivo = body.monto_cotizacion !== undefined
+          ? body.monto_cotizacion
+          : (before as { monto_cotizacion?: unknown }).monto_cotizacion;
+        if (!(Number(montoEfectivo ?? 0) > 0)) {
+          return { conflict: false, needsMonto: true } as const;
+        }
       }
 
       // OT cerrada — solo se permite reabrir (cambiar ot_status_codigo).
@@ -170,6 +184,12 @@ export async function PUT(req: NextRequest, { params }: Params) {
       return NextResponse.json(
         { error: "La OT está Cerrada. Reabrila primero (cambiar OT Status) antes de editar otros campos." },
         { status: 403 },
+      );
+    }
+    if ("needsMonto" in result && result.needsMonto) {
+      return NextResponse.json(
+        { error: "Para cerrar la OT, el monto de cotización es obligatorio. Cargalo en 'Editar OT' antes de cerrar." },
+        { status: 400 },
       );
     }
     if (result.conflict) {
