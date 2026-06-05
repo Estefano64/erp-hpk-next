@@ -262,6 +262,18 @@ export default function ProgramacionSemanalPage() {
   const days = useMemo(() => buildWeekDays(lunes), [lunes]);
   const semanaActual = useMemo(() => semanaCodigo(lunes), [lunes]);
 
+  // ¿La tarea PERTENECE a la semana mostrada? (no solo se solapa con ella). Una
+  // tarea que empezó la semana pasada y cuyo fin se desborda al lunes aparece en
+  // el carril por solape de fechas, pero NO es parte del plan de esta semana.
+  // Este criterio debe ser el MISMO que usa la publicación, si no el indicador
+  // "Publicada/Reabrir" se desincroniza de lo que publicar realmente afecta.
+  const perteneceASemana = useCallback((r: PlanRow): boolean =>
+    r.semana_plan === semanaActual ||
+    (!!r.fecha_inicio &&
+      dayjs(r.fecha_inicio).isoWeek() === lunes.isoWeek() &&
+      dayjs(r.fecha_inicio).isoWeekYear() === lunes.isoWeekYear()),
+  [semanaActual, lunes]);
+
   const fetchData = useCallback(async () => {
     setCargando(true);
     try {
@@ -799,13 +811,8 @@ export default function ProgramacionSemanalPage() {
     }
     // IDs exactos del operario en la semana mostrada (con o sin hora). Matchear por
     // IDs es determinista: evita que el match por semana_plan deje tareas afuera.
-    const enSemana = (r: PlanRow) =>
-      r.semana_plan === semanaActual ||
-      (!!r.fecha_inicio &&
-        dayjs(r.fecha_inicio).isoWeek() === lunes.isoWeek() &&
-        dayjs(r.fecha_inicio).isoWeekYear() === lunes.isoWeekYear());
     const ids = allRows
-      .filter((r) => splitTecnicos(r.tecnico).includes(tecnico) && enSemana(r))
+      .filter((r) => splitTecnicos(r.tecnico).includes(tecnico) && perteneceASemana(r))
       .map((r) => r.id);
     if (ids.length === 0) {
       messageApi.info("Ese operario no tiene tareas en esta semana.");
@@ -2025,7 +2032,13 @@ export default function ProgramacionSemanalPage() {
                     })()}
                     {/* Publicar / reabrir la semana de este operario (planner). */}
                     {view === "operario" && tasks.length > 0 && (() => {
-                      const pub = tasks.every((t) => t.publicado);
+                      // Solo cuentan las tareas que PERTENECEN a esta semana, no las
+                      // que se desbordan desde otra (mismo criterio que publicarSemana).
+                      // Si no, una tarea spillover sin publicar dejaba `pub` en false
+                      // para siempre y "Reabrir" nunca aparecía.
+                      const tasksSemana = tasks.filter(perteneceASemana);
+                      if (tasksSemana.length === 0) return null;
+                      const pub = tasksSemana.every((t) => t.publicado);
                       return (
                         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
                           <Tag color={pub ? "success" : "default"} style={{ fontSize: 9, margin: 0, lineHeight: "14px" }}>
