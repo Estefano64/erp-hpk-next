@@ -230,6 +230,11 @@ export default function ProgramacionSemanalPage() {
   useEffect(() => {
     setDurModal(selectedTask?.horas_estimadas != null ? Number(selectedTask.horas_estimadas) : null);
   }, [selectedTask]);
+  // Comentario en edición dentro del modal Detalle (se guarda al salir del campo).
+  const [comentarioModal, setComentarioModal] = useState<string>("");
+  useEffect(() => {
+    setComentarioModal(selectedTask?.comentario ?? "");
+  }, [selectedTask]);
   const [hourPx, setHourPx] = useState<number>(HOUR_PX_DEFAULT);
   const [resizing, setResizing] = useState<{ id: number; initialX: number; initialWidth: number; recurso: string } | null>(null);
   const [resizeWidth, setResizeWidth] = useState<number>(0);
@@ -949,6 +954,13 @@ export default function ProgramacionSemanalPage() {
       },
       `Duración: ${horasPorPersona.toFixed(2)}h`,
     );
+  }
+  function detalleEditarComentario(texto: string) {
+    if (!selectedTask) return;
+    const limpio = texto.trim();
+    // No persistir si no cambió (el blur se dispara igual al cerrar el campo).
+    if ((selectedTask.comentario ?? "") === limpio) return;
+    guardarCampoDetalle({ comentario: limpio || null }, "Comentario guardado");
   }
   function detalleCambiarPrioridad(correctiva: boolean) {
     if (!selectedTask) return;
@@ -2404,6 +2416,20 @@ export default function ProgramacionSemanalPage() {
             <Descriptions.Item label="Fin real">{selectedTask.fecha_fin_real ? dayjs(selectedTask.fecha_fin_real).format("DD/MM/YY HH:mm") : "—"}</Descriptions.Item>
             <Descriptions.Item label="Duración real">{selectedTask.horas_reales != null ? `${Number(selectedTask.horas_reales).toFixed(2)}h` : "—"}</Descriptions.Item>
             <Descriptions.Item label="Estado"><Tag color={estadoColor(selectedTask.estado)}>{estadoNombre(selectedTask.estado)}</Tag></Descriptions.Item>
+            <Descriptions.Item label="Comentario">
+              {editMode ? (
+                <Input.TextArea
+                  size="small"
+                  autoSize={{ minRows: 2, maxRows: 6 }}
+                  placeholder="Agregá un comentario para esta tarea…"
+                  value={comentarioModal}
+                  onChange={(e) => setComentarioModal(e.target.value)}
+                  onBlur={() => detalleEditarComentario(comentarioModal)}
+                />
+              ) : (
+                <span style={{ whiteSpace: "pre-wrap" }}>{selectedTask.comentario || "—"}</span>
+              )}
+            </Descriptions.Item>
             {conflictos.has(selectedTask.id) && (
               <Descriptions.Item label="">
                 <Tag color="error">⚠ Conflicto con otra tarea del mismo recurso</Tag>

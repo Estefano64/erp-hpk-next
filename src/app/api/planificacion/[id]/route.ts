@@ -106,7 +106,10 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       // El planner puede REGULARIZAR la duración real de una tarea ya terminada
       // (caso del técnico que se olvidó de marcar su fin de jornada).
       const soloHorasReales = camposReales.length === 1 && input.horas_reales !== undefined;
-      if (isRealizado && intentaEditar && !input.forzarEdicion && !soloRevertirEstado && !soloHorasReales) {
+      // Dejar un comentario es una nota informativa: se permite aunque la tarea ya
+      // esté realizada (no toca la planificación ni la ejecución).
+      const soloComentario = camposReales.length === 1 && input.comentario !== undefined;
+      if (isRealizado && intentaEditar && !input.forzarEdicion && !soloRevertirEstado && !soloHorasReales && !soloComentario) {
         throw Object.assign(
           new Error("Tarea en estado 'realizado' no puede editarse. Cambiá el estado primero o usá forzarEdicion=true."),
           { code: "REALIZADO_LOCKED" },
