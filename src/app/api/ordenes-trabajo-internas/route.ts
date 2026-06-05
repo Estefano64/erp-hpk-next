@@ -119,6 +119,7 @@ export async function POST(req: NextRequest) {
           recursos_status_codigo: body.recursos_status_codigo || "En revision procesos",
           asignado_a: body.asignado_a || null,
           comentarios: body.comentarios || null,
+          solicitud_mantenimiento: body.solicitud_mantenimiento === true,
         },
         include: {
           equipo: { select: { codigo: true, descripcion: true } },

@@ -268,7 +268,12 @@ export default function OTInternaDetallePage() {
   }
 
   const tipoTag = ot.tipo_ot_interna?.codigo;
-  const tipoColor = tipoTag === "PREVENTIVA" ? "blue" : tipoTag === "CORRECTIVA" ? "orange" : "default";
+  // Aceptamos códigos viejos por compat:
+  //   ESTRATEGICA / PREVENTIVA → azul (con estrategia + task_list)
+  //   NO_ESTRATEGICA / CORRECTIVA → naranja (sin estrategia, improvisada)
+  const tipoColor = tipoTag === "ESTRATEGICA" || tipoTag === "PREVENTIVA"
+    ? "blue"
+    : tipoTag === "NO_ESTRATEGICA" || tipoTag === "CORRECTIVA" ? "orange" : "default";
 
   return (
     <div>

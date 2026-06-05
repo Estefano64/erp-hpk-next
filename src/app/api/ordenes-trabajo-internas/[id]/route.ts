@@ -62,7 +62,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
       "planta_codigo", "equipo_codigo", "area_taller", "tipo_ot_interna_codigo", "descripcion",
       "prioridad_atencion_codigo", "semana_revision", "estrategia_id", "task_list",
       "user_status_codigo", "ot_status_codigo", "recursos_status_codigo",
-      "asignado_a", "comentarios",
+      "asignado_a", "comentarios", "solicitud_mantenimiento",
     ];
     for (const k of editable) {
       if (k in body) data[k] = body[k] === "" ? null : body[k];

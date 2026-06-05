@@ -1087,6 +1087,10 @@ model OrdenTrabajoInterna {
   asignado_a                String?            @db.VarChar(150)
   // Comentarios libres sobre la OT (instrucciones, contexto adicional).
   comentarios               String?
+  // Flag para diferenciar OTs que nacen de una solicitud de mantenimiento
+  // (un usuario operativo pide intervención) vs OTs creadas por planificación.
+  // Sirve para filtrar/auditar en la lista. Default false = OT regular.
+  solicitud_mantenimiento   Boolean            @default(false)
   version                   Int                @default(1)
   estrategia                Estrategia?        @relation(fields: [estrategia_id], references: [estrategia_id])
   equipo                    Equipo?            @relation(fields: [equipo_codigo], references: [codigo])
