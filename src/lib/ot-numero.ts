@@ -102,3 +102,29 @@ export async function nextNumeroOTInterna(
   const next = maxN + 1;
   return next * 100 + year2;
 }
+
+/**
+ * Próximo correlativo de reporte correctivo (per-año). Devuelve { numero, anio }
+ * donde `numero` es el correlativo crudo (1..9999) y `anio` los dos dígitos del
+ * año. El código visible se construye como `RC-NNNN-YY`. Debe llamarse dentro
+ * de una transacción Prisma.
+ */
+export async function nextNumeroCorrectivo(
+  tx: Prisma.TransactionClient,
+): Promise<{ numero: number; anio: number }> {
+  const year2 = new Date().getFullYear() % 100;
+  const yyKey = String(year2).padStart(2, "0");
+  const scope = `correctivo:${yyKey}`;
+  await lockNumeroOT(tx, scope);
+
+  const candidatos = await tx.reporteCorrectivo.findMany({
+    where: { anio: year2, activo: true },
+    select: { numero: true },
+  });
+
+  let maxN = 0;
+  for (const { numero } of candidatos) {
+    if (numero != null && numero > maxN) maxN = numero;
+  }
+  return { numero: maxN + 1, anio: year2 };
+}

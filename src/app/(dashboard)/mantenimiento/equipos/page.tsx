@@ -27,6 +27,7 @@ import {
   DeleteOutlined,
   StopOutlined,
   ReloadOutlined,
+  FilePdfOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
@@ -479,32 +480,44 @@ export default function EquiposPage() {
     {
       key: "acciones",
       title: "Acciones",
-      width: 100,
+      width: 140,
       align: "center",
       fixed: "right",
-      render: (_: unknown, record: EquipoRecord) => (
-        <Space size="small">
-          <Button type="text" icon={<EditOutlined />} onClick={() => openEdit(record)} />
-          <Popconfirm
-            title="¿Desactivar este equipo?"
-            description="Se ocultará de las listas pero se conservará en la base de datos."
-            onConfirm={() => handleDesactivar(record.equipo_id)}
-          >
-            <Button type="text" icon={<StopOutlined />} title="Desactivar" />
-          </Popconfirm>
-          {isAdminUser && (
+      render: (_: unknown, record: EquipoRecord) => {
+        // Ficha técnica solo aplica a Máquinas (MAQ) y Herramientas (HER).
+        const aplicaFichaTecnica = record.tipo_codigo === "MAQ" || record.tipo_codigo === "HER";
+        return (
+          <Space size="small">
+            <Button type="text" icon={<EditOutlined />} onClick={() => openEdit(record)} title="Editar" />
+            {aplicaFichaTecnica && (
+              <Button
+                type="text"
+                icon={<FilePdfOutlined />}
+                onClick={() => window.open(`/api/equipos/${record.equipo_id}/ficha-tecnica`, "_blank")}
+                title="Descargar Ficha Técnica (PDF)"
+              />
+            )}
             <Popconfirm
-              title="¿Eliminar permanentemente?"
-              description="Esta acción no se puede deshacer."
-              okType="danger"
-              okText="Eliminar"
-              onConfirm={() => handleEliminarPermanente(record.equipo_id)}
+              title="¿Desactivar este equipo?"
+              description="Se ocultará de las listas pero se conservará en la base de datos."
+              onConfirm={() => handleDesactivar(record.equipo_id)}
             >
-              <Button type="text" danger icon={<DeleteOutlined />} title="Eliminar permanentemente" />
+              <Button type="text" icon={<StopOutlined />} title="Desactivar" />
             </Popconfirm>
-          )}
-        </Space>
-      ),
+            {isAdminUser && (
+              <Popconfirm
+                title="¿Eliminar permanentemente?"
+                description="Esta acción no se puede deshacer."
+                okType="danger"
+                okText="Eliminar"
+                onConfirm={() => handleEliminarPermanente(record.equipo_id)}
+              >
+                <Button type="text" danger icon={<DeleteOutlined />} title="Eliminar permanentemente" />
+              </Popconfirm>
+            )}
+          </Space>
+        );
+      },
     },
   ];
 

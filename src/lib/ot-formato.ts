@@ -48,6 +48,17 @@ export function formatOtInternaCodigo(
   return formatOtCodigo(ot, "INT", fallback);
 }
 
+// Formato visual del reporte correctivo: RC-NNNN-YY.
+// numero = correlativo raw (1..9999), anio = 2 dígitos.
+export function formatReporteCorrectivoCodigo(
+  numero: number | null | undefined,
+  anio: number | null | undefined,
+  fallback: string = "—",
+): string {
+  if (numero == null || anio == null) return fallback;
+  return `RC-${String(numero).padStart(4, "0")}-${String(anio).padStart(2, "0")}`;
+}
+
 // Para callers que reciben tipo como nombre ("Bien", "Servicio") en vez de
 // código. Útil cuando la fuente está desnormalizada. Mapea al código y
 // delega en formatOtCodigo para mantener una sola fuente de verdad del
