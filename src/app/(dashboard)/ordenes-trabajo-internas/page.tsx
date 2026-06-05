@@ -142,7 +142,9 @@ export default function OrdenesTrabajoInternasPage() {
     (async () => {
       const [tRes, eRes, pRes, prRes, usRes, estRes, trRes] = await Promise.all([
         fetch("/api/catalogos?tabla=tipoOTInterna"),
-        fetch("/api/equipos?limit=500"),
+        // tipo=MAQ → solo máquinas (excluye herramientas/instrumentos). Las OT
+        // internas se levantan contra máquinas del taller, no herramientas.
+        fetch("/api/equipos?limit=500&tipo=MAQ"),
         fetch("/api/catalogos?tabla=planta"),
         fetch("/api/catalogos?tabla=prioridadAtencion"),
         fetch("/api/catalogos?tabla=userStatus"),
@@ -589,13 +591,13 @@ export default function OrdenesTrabajoInternasPage() {
             <Col xs={24} md={24}>
               <Form.Item
                 name="equipo_codigo"
-                label="Equipo (opcional)"
-                tooltip="Si la OT es para un equipo específico del taller, seleccionalo. Para trabajos del área en general, dejá vacío."
+                label="Equipo"
+                tooltip="Equipo (máquina) del taller al que aplica la OT interna. Solo se listan equipos tipo MAQ — las herramientas no aparecen."
+                rules={[{ required: true, message: "Seleccioná el equipo" }]}
               >
                 <Select
                   placeholder="Buscar equipo (código o descripción)"
                   showSearch
-                  allowClear
                   optionFilterProp="label"
                   options={equipos.map((e) => ({ value: e.codigo, label: `${e.codigo} — ${e.descripcion}` }))}
                 />

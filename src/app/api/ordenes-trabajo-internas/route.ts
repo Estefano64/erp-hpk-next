@@ -75,8 +75,8 @@ export async function POST(req: NextRequest) {
     if (!body.tipo_ot_interna_codigo) {
       return NextResponse.json({ error: "tipo_ot_interna_codigo es requerido" }, { status: 400 });
     }
-    if (!body.area_taller && !body.equipo_codigo) {
-      return NextResponse.json({ error: "area_taller (o equipo_codigo legacy) es requerido" }, { status: 400 });
+    if (!body.equipo_codigo) {
+      return NextResponse.json({ error: "equipo_codigo es requerido (la OT interna siempre apunta a una máquina del taller)" }, { status: 400 });
     }
     if (!body.descripcion || typeof body.descripcion !== "string" || !body.descripcion.trim()) {
       return NextResponse.json({ error: "descripcion es requerida" }, { status: 400 });
