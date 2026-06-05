@@ -1,18 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getAuditUser } from "@/lib/audit";
 
 type Params = { params: Promise<{ id: string }> };
 
 // POST — ejecuta accion sobre la evaluacion
-// body: { accion: "solicitar" | "aprobar" | "rechazar", usuario, comentarios? }
+// body: { accion: "solicitar" | "aprobar" | "rechazar", comentarios? }
+// El nombre del usuario (solicitante / aprobador) NO se acepta del body: se toma
+// SIEMPRE del usuario logueado (token), para que nadie firme con un nombre ajeno.
 export async function POST(req: NextRequest, { params }: Params) {
   try {
     const { id } = await params;
     const body = await req.json();
-    const { accion, usuario, comentarios } = body;
+    const { accion, comentarios } = body;
 
-    if (!accion || !usuario) {
-      return NextResponse.json({ error: "Falta accion o usuario" }, { status: 400 });
+    if (!accion) {
+      return NextResponse.json({ error: "Falta accion" }, { status: 400 });
+    }
+    const usuario = await getAuditUser(req);
+    if (!usuario) {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
     // Comentario opcional. Si viene se guarda en `comentarios_revision`.
     const comentarioTrim = typeof comentarios === "string" ? comentarios.trim() : "";
@@ -30,6 +37,13 @@ export async function POST(req: NextRequest, { params }: Params) {
         if (!["BORRADOR", "COMPLETADA", "RECHAZADA"].includes(evalActual.estado)) {
           return NextResponse.json(
             { error: `No se puede solicitar revision desde estado ${evalActual.estado}` },
+            { status: 400 }
+          );
+        }
+        // El evaluador es obligatorio para mandar la hoja a revisión.
+        if (!evalActual.evaluado_por?.trim()) {
+          return NextResponse.json(
+            { error: "Falta el evaluador: completá 'Evaluado por' en la hoja antes de enviarla a revisión." },
             { status: 400 }
           );
         }

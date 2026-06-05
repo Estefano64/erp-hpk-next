@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
   Typography,
   Table,
@@ -122,6 +123,16 @@ export default function EvaluacionesPage() {
   const [modalAccion, setModalAccion] = useState<{ evalItem: Evaluacion; accion: "aprobar" | "rechazar" | "solicitar" } | null>(null);
   const [accionForm] = Form.useForm();
   const [procesando, setProcesando] = useState(false);
+  // Nombre del aprobador/solicitante: se toma del usuario logueado (solo-lectura).
+  // El registro real lo hace el backend desde el token; el cliente no lo manda.
+  const { data: session } = useSession();
+  const currentUser = session?.user?.name ?? session?.user?.email ?? "";
+  // El Modal usa forceRender (renderiza su contenido aunque esté cerrado, vía
+  // portal). En SSR ese portal no matchea al cliente y React 19 tira un error de
+  // hidratación. Activamos forceRender recién tras montar: así SSR y la primera
+  // render del cliente coinciden (modal cerrado = sin contenido).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -165,15 +176,26 @@ export default function EvaluacionesPage() {
 
   const ejecutarAccion = async () => {
     if (!modalAccion) return;
+    // Al mandar a revisión, el evaluador (evaluado_por) es obligatorio.
+    if (modalAccion.accion === "solicitar" && !modalAccion.evalItem.evaluado_por?.trim()) {
+      message.error("Falta el evaluador: completá 'Evaluado por' en la hoja antes de enviarla a revisión.");
+      return;
+    }
+    // La validación del form (ej. motivo de rechazo) muestra el error inline;
+    // si falla, abortamos sin toast genérico.
+    let values: { comentarios?: string };
     try {
-      const values = accionForm.getFieldsValue();
+      values = await accionForm.validateFields();
+    } catch {
+      return;
+    }
+    try {
       setProcesando(true);
       const res = await fetch(`/api/evaluaciones/${modalAccion.evalItem.id}/revision`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           accion: modalAccion.accion,
-          usuario: values.usuario || "Usuario",
           comentarios: values.comentarios || null,
         }),
       });
@@ -524,7 +546,7 @@ export default function EvaluacionesPage() {
           danger: modalAccion?.accion === "rechazar",
           type: "primary",
         }}
-        forceRender
+        forceRender={mounted}
       >
         {modalAccion && (
           <Card size="small" style={{ background: brand.bgPage, marginBottom: 12 }}>
@@ -547,11 +569,10 @@ export default function EvaluacionesPage() {
 
         <Form form={accionForm} layout="vertical">
           <Form.Item
-            label={modalAccion?.accion === "solicitar" ? "Tu nombre" : "Nombre del revisor"}
-            name="usuario"
-            rules={[{ required: true, message: "Ingresa tu nombre" }]}
+            label={modalAccion?.accion === "solicitar" ? "Solicitante" : "Aprobador / Revisor"}
+            tooltip="Se registra automáticamente con tu usuario logueado; no se puede editar."
           >
-            <Input placeholder="Ej. Juan Pérez" />
+            <Input value={currentUser} disabled />
           </Form.Item>
           <Form.Item
             label={
