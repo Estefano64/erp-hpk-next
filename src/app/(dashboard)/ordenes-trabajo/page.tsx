@@ -34,10 +34,11 @@ import {
   numeracionColumn,
   paginacionEstandar,
   useColumnasOcultas,
+  usePersistedState,
+  useRangoFechasPersistente,
   ColumnasToggleButton,
   visibleColumns,
   filtroPorColumna,
-  useRangoFechas,
   RangoFechasFiltro,
   useColumnasRedimensionables,
 } from "@/lib/tables";
@@ -195,18 +196,20 @@ export default function OrdenesTrabajoPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
+  // Filtros: ahora PERSISTENTES por usuario (sobreviven F5 y navegación).
+  const [search, setSearch] = usePersistedState<string>("ot-list-search", "");
   // Paginación server-side: los filtros de columna y el orden se mandan al
   // server. `columnFilters` = estado de filtros de la tabla (key → valores),
   // `sorter` = columna+orden activos, `facets` = opciones de los dropdowns enum.
-  const [columnFilters, setColumnFilters] = useState<Record<string, Key[] | null>>({});
+  const [columnFilters, setColumnFilters] = usePersistedState<Record<string, Key[] | null>>("ot-list-column-filters", {});
+  // Sort NO se persiste (decisión: F5 vuelve al sort default).
   const [sorter, setSorter] = useState<{ field: string | null; order: "ascend" | "descend" | null }>({ field: null, order: null });
   const [facets, setFacets] = useState<Record<string, { value: string; text: string }[]>>({});
   // Años disponibles (2 dígitos) y los seleccionados. Por default, el año actual.
   const [aniosDisponibles, setAniosDisponibles] = useState<number[]>([]);
-  const [aniosSel, setAniosSel] = useState<number[]>([new Date().getFullYear() % 100]);
+  const [aniosSel, setAniosSel] = usePersistedState<number[]>("ot-list-anios", [new Date().getFullYear() % 100]);
   // Admin: ver también las OTs desactivadas (para reactivarlas).
-  const [verInactivas, setVerInactivas] = useState(false);
+  const [verInactivas, setVerInactivas] = usePersistedState<boolean>("ot-list-ver-inactivas", false);
   // v2: nuevas columnas opcionales (tipo, NP, flota, posición, fabricante, garantía, base metálica, etc.)
   // ocultas por default — el usuario las habilita desde el botón "Columnas".
   const { ocultas, setOcultas } = useColumnasOcultas("ordenes-trabajo-list-cols-v2", [
@@ -218,7 +221,7 @@ export default function OrdenesTrabajoPage() {
     "atencion_reparacion", "tipo_reparacion", "garantia", "tipo_garantia", "base_metalica",
     "comentarios",
   ]);
-  const { rango: rangoRecepcion, setRango: setRangoRecepcion } = useRangoFechas();
+  const { rango: rangoRecepcion, setRango: setRangoRecepcion } = useRangoFechasPersistente("ot-list-rango-recepcion");
 
   // Modal detalle
   const [modalOtId, setModalOtId] = useState<number | null>(null);
@@ -757,6 +760,15 @@ export default function OrdenesTrabajoPage() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <Title level={3} style={{ margin: 0 }}>Órdenes de Trabajo</Title>
         <Space>
+          <Tooltip title="Refrescar el listado preservando filtros, paginación y ancho de columnas (sin recargar la página).">
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={() => fetchData()}
+              loading={loading}
+            >
+              Refrescar
+            </Button>
+          </Tooltip>
           <ColumnasToggleButton<OTRecord>
             columns={columns}
             ocultas={ocultas}
@@ -958,7 +970,10 @@ export default function OrdenesTrabajoPage() {
       <OTDetalleModal
         otId={modalOtId}
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        // Al cerrar el modal siempre refrescamos: cubre el caso típico de subir
+        // un adjunto (ej. PO Cliente) que cambia el "Estado PO" del listado pero
+        // no dispara onUpdated. Es un fetch barato y preserva todos los filtros.
+        onClose={() => { setModalOpen(false); fetchData(); }}
         onUpdated={() => fetchData()}
       />
     </div>

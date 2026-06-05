@@ -33,7 +33,8 @@ import {
   ColumnasToggleButton,
   visibleColumns,
   useColumnasRedimensionables,
-  useRangoFechas,
+  useRangoFechasPersistente,
+  usePersistedState,
   RangoFechasFiltro,
   dentroDeRango,
   filtroPorColumna,
@@ -248,8 +249,8 @@ export default function RequerimientosPage() {
   // Usamos un tipo mínimo porque la interfaz `GrupoReq` está declarada
   // más abajo en este mismo componente — un tipo estructural sirve igual.
   const [vistaActual, setVistaActual] = useState<readonly { items: RequerimientoRow[] }[] | null>(null);
-  const { rango: rangoSol, setRango: setRangoSol } = useRangoFechas();
-  const { rango: rangoReq, setRango: setRangoReq } = useRangoFechas();
+  const { rango: rangoSol, setRango: setRangoSol } = useRangoFechasPersistente("req-list-rango-sol");
+  const { rango: rangoReq, setRango: setRangoReq } = useRangoFechasPersistente("req-list-rango-req");
   const [semanaSel, setSemanaSel] = useState<dayjs.Dayjs | null>(null);
   // Sobre qué fecha aplica el filtro de semana: solicitud o requerida.
   const [semanaCampo, setSemanaCampo] = useState<"solicitud" | "requerida">("solicitud");
@@ -278,15 +279,16 @@ export default function RequerimientosPage() {
   }, [semanaSel, aplicarSemana]);
 
   // Filtros
-  const [search, setSearch] = useState("");
-  const [filterOt, setFilterOt] = useState("");
-  const [filterStatusReq, setFilterStatusReq] = useState<string | undefined>();
-  const [filterStatusCot, setFilterStatusCot] = useState<string | undefined>();
-  const [filterStatusOc, setFilterStatusOc] = useState<string | undefined>();
-  const [filterTipo, setFilterTipo] = useState<string | undefined>();
-  const [filterProveedor, setFilterProveedor] = useState<number | undefined>();
+  // Filtros persistidos por usuario.
+  const [search, setSearch] = usePersistedState<string>("req-list-search", "");
+  const [filterOt, setFilterOt] = usePersistedState<string>("req-list-filter-ot", "");
+  const [filterStatusReq, setFilterStatusReq] = usePersistedState<string | undefined>("req-list-status-req", undefined);
+  const [filterStatusCot, setFilterStatusCot] = usePersistedState<string | undefined>("req-list-status-cot", undefined);
+  const [filterStatusOc, setFilterStatusOc] = usePersistedState<string | undefined>("req-list-status-oc", undefined);
+  const [filterTipo, setFilterTipo] = usePersistedState<string | undefined>("req-list-tipo", undefined);
+  const [filterProveedor, setFilterProveedor] = usePersistedState<number | undefined>("req-list-proveedor", undefined);
   const [filterFechas, setFilterFechas] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null] | null>(null);
-  const [soloAprobadosSinOC, setSoloAprobadosSinOC] = useState(false);
+  const [soloAprobadosSinOC, setSoloAprobadosSinOC] = usePersistedState<boolean>("req-list-solo-aprob-sin-oc", false);
 
   // Selección
   const [selectedKeys, setSelectedKeys] = useState<number[]>([]);

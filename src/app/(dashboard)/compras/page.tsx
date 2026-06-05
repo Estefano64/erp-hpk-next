@@ -49,10 +49,11 @@ import {
   ColumnasToggleButton,
   visibleColumns,
   filtroPorColumna,
-  useRangoFechas,
   RangoFechasFiltro,
   dentroDeRango,
   useColumnasRedimensionables,
+  usePersistedState,
+  useRangoFechasPersistente,
 } from "@/lib/tables";
 import { Popover, Divider } from "antd";
 import { brand } from "@/lib/theme";
@@ -103,8 +104,9 @@ export default function ComprasPage() {
 
   const [data, setData] = useState<Compra[]>([]);
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
-  const [estado, setEstado] = useState<string>("");
+  // Filtros persistidos por usuario.
+  const [search, setSearch] = usePersistedState<string>("compras-list-search", "");
+  const [estado, setEstado] = usePersistedState<string>("compras-list-estado", "");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
 
@@ -112,8 +114,8 @@ export default function ComprasPage() {
   const { ocultas, setOcultas } = useColumnasOcultas("compras-list-cols-v2", [
     "numero_req", "ot_numero", "fecha_entrega_real", "impuesto", "moneda",
   ]);
-  const { rango: rangoSolicitud, setRango: setRangoSolicitud } = useRangoFechas();
-  const { rango: rangoEntrega, setRango: setRangoEntrega } = useRangoFechas();
+  const { rango: rangoSolicitud, setRango: setRangoSolicitud } = useRangoFechasPersistente("compras-list-rango-solicitud");
+  const { rango: rangoEntrega, setRango: setRangoEntrega } = useRangoFechasPersistente("compras-list-rango-entrega");
   // Filas después de TODOS los filtros (búsqueda + rangos de fecha + filtros de
   // columna). La setea el Table.onChange. Si está null, el export cae a
   // `data` filtrada solo por los rangos de fecha (sin filtros de columna).

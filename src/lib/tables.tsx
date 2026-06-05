@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useSession } from "next-auth/react";
 import { Button, Checkbox, DatePicker, Divider, Popover, Space, Typography } from "antd";
 import { CalendarOutlined, SettingOutlined, PushpinOutlined, PushpinFilled } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
@@ -984,3 +985,119 @@ export function useFilasArrastrables(opts: {
 
   return { components, RowDragWrapper };
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// Persistencia de filtros / búsquedas por usuario (localStorage namespaced)
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Drop-in replacement de `useState` que persiste el valor en localStorage,
+ * namespacificado por el usuario logueado (`session.user.id`). Pensado para
+ * filtros de tabla: búsqueda libre, Selects, rangos de fecha, columnFilters
+ * de antd, etc.
+ *
+ * - Distintos usuarios del ERP en la misma PC NO se pisan los filtros.
+ * - F5 / reload no resetea el filtro.
+ * - Navegación a otra ruta y volver tampoco lo resetea.
+ *
+ * Para tipos no-JSON-serializables (ej. `Dayjs`), pasá `opts.serialize` y
+ * `opts.deserialize`. Por ejemplo, para un rango de fechas:
+ *
+ *   const [desde, setDesde] = usePersistedState<Dayjs | null>(
+ *     "ot-fecha-desde",
+ *     null,
+ *     { serialize: (v) => v?.toISOString() ?? null, deserialize: (s) => s ? dayjs(s as string) : null },
+ *   );
+ *
+ * IMPORTANTE: el `baseKey` debe ser único por tabla+campo. Si dos tablas usan
+ * el mismo baseKey, comparten filtro (no es lo que querés).
+ */
+export function usePersistedState<T>(
+  baseKey: string,
+  initial: T,
+  opts?: {
+    serialize?: (v: T) => unknown;
+    deserialize?: (v: unknown) => T;
+  },
+): [T, Dispatch<SetStateAction<T>>] {
+  const { data: session } = useSession();
+  // Si no hay sesión todavía, usamos "anon" — los anon shares-storage entre
+  // sí pero por la naturaleza del ERP siempre hay sesión, esto solo aplica
+  // durante el primer render antes de que next-auth resuelva la cookie.
+  const userId = (session?.user as { id?: string } | undefined)?.id ?? "anon";
+  const storageKey = `${baseKey}::${userId}`;
+  const serialize = opts?.serialize;
+  const deserialize = opts?.deserialize;
+
+  const [value, setValue] = useState<T>(initial);
+  const [hidratado, setHidratado] = useState(false);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(storageKey);
+      if (stored !== null) {
+        const parsed = JSON.parse(stored) as unknown;
+        setValue(deserialize ? deserialize(parsed) : (parsed as T));
+      } else {
+        setValue(initial);
+      }
+    } catch { /* ignore */ }
+    setHidratado(true);
+    // initial/deserialize pueden cambiar entre renders sin afectar persistencia.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageKey]);
+
+  useEffect(() => {
+    if (!hidratado) return;
+    try {
+      const toStore = serialize ? serialize(value) : value;
+      localStorage.setItem(storageKey, JSON.stringify(toStore));
+    } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, hidratado, storageKey]);
+
+  return [value, setValue];
+}
+
+// Helpers de (de)serialización para tipos comunes que no son JSON-clean.
+
+/** Para un solo Dayjs nullable. */
+export const persistDayjs = {
+  serialize: (v: Dayjs | null): string | null => (v && v.isValid() ? v.toISOString() : null),
+  deserialize: (s: unknown): Dayjs | null => {
+    if (typeof s !== "string" || !s) return null;
+    const d = dayjs(s);
+    return d.isValid() ? d : null;
+  },
+} as const;
+
+/** Para un rango {desde, hasta} de Dayjs (usar con `useRangoFechas`-style). */
+export const persistRangoFechas = {
+  serialize: (v: RangoFechas): { desde: string | null; hasta: string | null } => ({
+    desde: persistDayjs.serialize(v.desde),
+    hasta: persistDayjs.serialize(v.hasta),
+  }),
+  deserialize: (s: unknown): RangoFechas => {
+    const obj = (s && typeof s === "object" ? s : {}) as { desde?: unknown; hasta?: unknown };
+    return {
+      desde: persistDayjs.deserialize(obj.desde),
+      hasta: persistDayjs.deserialize(obj.hasta),
+    };
+  },
+} as const;
+
+/**
+ * Versión persistente de `useRangoFechas`. Mismo API que el original
+ * (`{ rango, setRango, limpiar, hayFiltro }`) pero el rango sobrevive
+ * a F5 / navegación, scope por usuario.
+ */
+export function useRangoFechasPersistente(
+  baseKey: string,
+  initial: RangoFechas = { desde: null, hasta: null },
+) {
+  const [rango, setRango] = usePersistedState<RangoFechas>(baseKey, initial, persistRangoFechas);
+  const limpiar = useCallback(() => setRango({ desde: null, hasta: null }), [setRango]);
+  const hayFiltro = !!(rango.desde || rango.hasta);
+  return { rango, setRango, limpiar, hayFiltro };
+}
+
