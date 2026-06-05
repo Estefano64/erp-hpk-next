@@ -32,7 +32,7 @@ export const AREAS_TALLER: AreaTallerOpt[] = [
   // 1.3 Mantenimiento
   { value: "1.3",   label: "MANTENIMIENTO" },
   { value: "1.3.1", label: "HERRAMIENTAS",   parent: "1.3" },
-  { value: "1.3.2", label: "EQUIPOS",        parent: "1.3" },
+  { value: "1.3.2", label: "MÁQUINAS",       parent: "1.3" },
   { value: "1.3.3", label: "VEHÍCULOS",      parent: "1.3" },
   { value: "1.3.4", label: "INFRAESTRUCTURA",parent: "1.3" },
 
