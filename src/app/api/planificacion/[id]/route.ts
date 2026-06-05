@@ -38,6 +38,9 @@ const UpdateSchema = z.object({
   horas_extras_qty: z.coerce.number().min(0).optional().nullable(),
   trabajo_externo: z.boolean().optional(),
   orden: z.coerce.number().int().min(0).optional(),
+  // Prioridad de la tarea = correctiva (emergencia) o no. Marcar como correctiva
+  // con cascada se hace por /emergencia; acá se permite VOLVER a normal (false).
+  es_correctivo: z.boolean().optional(),
   // Si true, ignora el check de estado=realizado (uso interno: revertir)
   forzarEdicion: z.boolean().optional(),
   // Si true, salta el anti-solape de servidor (el multi-move ya valida el grupo

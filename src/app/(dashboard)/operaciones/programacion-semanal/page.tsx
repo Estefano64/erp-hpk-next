@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Typography, Button, Space, Tag, Card, Modal, Descriptions, Tooltip, message, Empty, DatePicker, Collapse, Segmented, Slider, Alert, Popover, Divider, Select, Popconfirm, Switch, Input,
+  Typography, Button, Space, Tag, Card, Modal, Descriptions, Tooltip, message, Empty, DatePicker, Collapse, Segmented, Slider, Alert, Popover, Divider, Select, Popconfirm, Switch, Input, InputNumber,
 } from "antd";
 import {
   CalendarOutlined, LeftOutlined, RightOutlined, UserOutlined, ToolOutlined, AimOutlined,
@@ -17,7 +17,7 @@ import { useRouter } from "next/navigation";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import { calcularFin, normalizarAInicioHabil, horasHabilesEntre } from "@/lib/planification-hours";
-import { splitRecursos } from "@/lib/recursos";
+import { splitRecursos, joinRecursos } from "@/lib/recursos";
 import { useTabSync } from "@/lib/useTabSync";
 import { useSession } from "next-auth/react";
 import { useEditLock } from "@/lib/useEditLock";
@@ -65,7 +65,7 @@ interface PlanRow {
   } | null;
 }
 
-interface Trabajador { trabajador_id: number; nombre: string; area: string; puesto: string }
+interface Trabajador { trabajador_id: number; nombre: string; area: string; puesto: string; equipo_codigo: string | null }
 interface Equipo { codigo: string; descripcion: string }
 interface StatusTareaOpt { codigo: string; nombre: string; color: string | null }
 
@@ -189,6 +189,12 @@ export default function ProgramacionSemanalPage() {
   const [equipos, setEquipos] = useState<Equipo[]>([]);
   const [estadosCat, setEstadosCat] = useState<StatusTareaOpt[]>([]);
   const [selectedTask, setSelectedTask] = useState<PlanRow | null>(null);
+  // Duración en edición dentro del modal Detalle (se guarda al salir del campo,
+  // no en cada tecla). Se sincroniza con la tarea seleccionada.
+  const [durModal, setDurModal] = useState<number | null>(null);
+  useEffect(() => {
+    setDurModal(selectedTask?.horas_estimadas != null ? Number(selectedTask.horas_estimadas) : null);
+  }, [selectedTask]);
   const [hourPx, setHourPx] = useState<number>(HOUR_PX_DEFAULT);
   const [resizing, setResizing] = useState<{ id: number; initialX: number; initialWidth: number; recurso: string } | null>(null);
   const [resizeWidth, setResizeWidth] = useState<number>(0);
@@ -784,6 +790,78 @@ export default function ProgramacionSemanalPage() {
       const msg = e instanceof Error ? e.message : "Error al marcar emergencia";
       endSave(msg);
       messageApi.error(msg);
+    }
+  }
+
+  // ── Edición de campos del modal Detalle (operario/equipo/duración/prioridad) ──
+  // PUT optimista a /api/planificacion/:id. Gateado por modo edición.
+  async function guardarCampoDetalle(patch: Record<string, unknown>, msg: string) {
+    if (!selectedTask) return;
+    const id = selectedTask.id;
+    const apply = (r: PlanRow): PlanRow => (r.id === id ? ({ ...r, ...patch } as PlanRow) : r);
+    setRows((prev) => prev.map(apply));
+    setAllRows((prev) => prev.map(apply));
+    setSelectedTask((s) => (s ? apply(s) : s));
+    beginSave();
+    try {
+      const res = await fetch(`/api/planificacion/${id}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (res.status === 423) { messageApi.error("Tarea cerrada (realizado), no editable."); endSave("cerrada"); fetchData(); return; }
+      if (!res.ok) { const e = await res.json().catch(() => null); throw new Error(e?.error ?? "Error"); }
+      messageApi.success(msg); endSave(); notifySync(); fetchData();
+    } catch (e) {
+      const m = e instanceof Error ? e.message : "Error al guardar";
+      endSave(m); messageApi.error(m); fetchData();
+    }
+  }
+  function detalleEditarOperario(nombres: string[]) {
+    const tecnico = joinRecursos(nombres) || null;
+    const patch: Record<string, unknown> = { tecnico };
+    // Equipo amarrado al operario: si no hay equipo, tomar el del primer operario que tenga.
+    if (!selectedTask?.maquina?.trim()) {
+      for (const n of nombres) {
+        const t = trabajadores.find((x) => x.nombre === n);
+        if (t?.equipo_codigo) { patch.maquina = t.equipo_codigo; break; }
+      }
+    }
+    guardarCampoDetalle(patch, "Operario actualizado");
+  }
+  function detalleEditarEquipo(codes: string[]) {
+    guardarCampoDetalle({ maquina: joinRecursos(codes) || null }, "Equipo actualizado");
+  }
+  function detalleEditarDuracion(horasPorPersona: number | null) {
+    if (!selectedTask || horasPorPersona == null || !(horasPorPersona > 0)) return;
+    const qty = Math.max(1, Number(selectedTask.qty_personal ?? 1));
+    const inicio = selectedTask.fecha_inicio ? new Date(selectedTask.fecha_inicio) : null;
+    const finCalc = inicio ? calcularFin(inicio, horasPorPersona * qty, !!selectedTask.horas_extras) : null;
+    // Igual que el resize: no permitir agrandar si choca con otra tarea del recurso.
+    if (inicio && finCalc) {
+      const recurso = view === "equipo" ? selectedTask.maquina : selectedTask.tecnico;
+      const choque = tareaSuperpuesta(selectedTask.id, inicio.getTime(), finCalc.getTime(), recurso);
+      if (choque) {
+        messageApi.error(`No se puede: la nueva duración choca con ${choque.task.orden_trabajo?.cliente?.nombre_comercial ?? choque.task.orden_trabajo?.cliente?.razon_social ?? `OT ${choque.task.orden_trabajo?.ot ?? "#?"}`} — ${choque.task.descripcion ?? choque.task.operacion_codigo}`);
+        setDurModal(selectedTask.horas_estimadas != null ? Number(selectedTask.horas_estimadas) : null);
+        return;
+      }
+    }
+    guardarCampoDetalle(
+      { horas_estimadas: horasPorPersona, ...(finCalc ? { fecha_fin: finCalc.toISOString() } : {}) },
+      `Duración: ${horasPorPersona.toFixed(2)}h`,
+    );
+  }
+  function detalleCambiarPrioridad(correctiva: boolean) {
+    if (!selectedTask) return;
+    if (correctiva) {
+      Modal.confirm({
+        title: "Marcar como correctiva (emergencia)",
+        content: "Se reprograman las tareas del mismo día y operario que arranquen después de esta; las que no entren en el día van al pool.",
+        okText: "Marcar 🚨", cancelText: "Cancelar", okButtonProps: { danger: true },
+        onOk: () => marcarEmergencia(selectedTask),
+      });
+    } else {
+      guardarCampoDetalle({ es_correctivo: false }, "Prioridad: Normal");
     }
   }
 
@@ -1965,26 +2043,21 @@ export default function ProgramacionSemanalPage() {
               <Button danger disabled={!editMode || !!selectedTask?.publicado || haEmpezado(selectedTask?.estado)}>Sacar de la semana</Button>
             </Popconfirm>
           ) : null,
-          selectedTask && !selectedTask.es_correctivo ? (
-            <Popconfirm
-              key="emergencia"
-              title="Marcar como emergencia (correctiva)"
-              description="Se reprograman las tareas del mismo día y operario que arranquen después de esta; las que no entren en el día van al pool."
-              okText="Marcar 🚨"
-              cancelText="Cancelar"
-              okButtonProps={{ danger: true }}
-              onConfirm={() => selectedTask && marcarEmergencia(selectedTask)}
-            >
-              <Button danger disabled={!editMode}>🚨 Emergencia</Button>
-            </Popconfirm>
-          ) : null,
           <Button key="plan" type="primary" onClick={() => router.push("/operaciones/planificacion")}>
             Editar en Planificación
           </Button>,
         ]}
         width={modalWidth(screens, 680)}
       >
-        {selectedTask && (
+        {selectedTask && (() => {
+          // operario/equipo/prioridad: solo para tareas NO iniciadas.
+          const editable = editMode && !selectedTask.publicado && !haEmpezado(selectedTask.estado);
+          // duración: editable aunque la tarea esté en curso; solo se bloquea si
+          // está realizada o la semana publicada (igual que lo permite el backend).
+          const editableDur = editMode && !selectedTask.publicado && selectedTask.estado !== "realizado";
+          const operarios = splitRecursos(selectedTask.tecnico);
+          const equiposSel = splitRecursos(selectedTask.maquina);
+          return (
           <>
           <Descriptions column={1} size="small">
             <Descriptions.Item label="OT">{selectedTask.orden_trabajo?.ot ?? `#${selectedTask.ot_id}`}</Descriptions.Item>
@@ -2003,11 +2076,46 @@ export default function ProgramacionSemanalPage() {
             </Descriptions.Item>
             <Descriptions.Item label="Tarea">{selectedTask.operacion_codigo} — {selectedTask.descripcion}</Descriptions.Item>
             <Descriptions.Item label="Parte">{selectedTask.componente}</Descriptions.Item>
-            <Descriptions.Item label="Operario">{selectedTask.tecnico ?? "-"}</Descriptions.Item>
-            <Descriptions.Item label="Equipo">{selectedTask.maquina ?? "-"}</Descriptions.Item>
+            <Descriptions.Item label="Operario">
+              {editable ? (
+                <Select mode="multiple" size="small" style={{ width: "100%" }} placeholder="Sin asignar"
+                  value={operarios}
+                  onChange={(vals) => detalleEditarOperario(vals as string[])}
+                  options={trabajadores.map((t) => ({ value: t.nombre, label: t.nombre }))}
+                  optionFilterProp="label" maxTagCount="responsive" />
+              ) : (selectedTask.tecnico ?? "-")}
+            </Descriptions.Item>
+            <Descriptions.Item label="Equipo">
+              {editable ? (
+                <Select mode="multiple" size="small" style={{ width: "100%" }} placeholder="Sin asignar"
+                  value={equiposSel}
+                  onChange={(vals) => detalleEditarEquipo(vals as string[])}
+                  options={equipos.map((e) => ({ value: e.codigo, label: `${e.codigo} — ${e.descripcion ?? ""}` }))}
+                  optionFilterProp="label" maxTagCount="responsive" />
+              ) : (selectedTask.maquina ?? "-")}
+            </Descriptions.Item>
+            <Descriptions.Item label="Prioridad">
+              {editable ? (
+                <Select size="small" style={{ width: 180 }}
+                  value={selectedTask.es_correctivo ? "correctiva" : "normal"}
+                  onChange={(v) => detalleCambiarPrioridad(v === "correctiva")}
+                  options={[{ value: "normal", label: "Normal" }, { value: "correctiva", label: "🚨 Correctiva (emergencia)" }]} />
+              ) : (selectedTask.es_correctivo ? <Tag color="error">🚨 Correctiva</Tag> : "Normal")}
+            </Descriptions.Item>
             <Descriptions.Item label="Inicio">{selectedTask.fecha_inicio ? dayjs(selectedTask.fecha_inicio).format("DD/MM/YY HH:mm") : "—"}</Descriptions.Item>
             <Descriptions.Item label="Fin">{selectedTask.fecha_fin ? dayjs(selectedTask.fecha_fin).format("DD/MM/YY HH:mm") : "—"}</Descriptions.Item>
-            <Descriptions.Item label="Duración">{Number(selectedTask.horas_estimadas ?? 0).toFixed(1)}h · Qty {selectedTask.qty_personal ?? 1}</Descriptions.Item>
+            <Descriptions.Item label="Duración">
+              {editableDur ? (
+                <Space>
+                  <InputNumber size="small" min={0.25} step={0.5} style={{ width: 90 }}
+                    value={durModal}
+                    onChange={(v) => setDurModal(v == null ? null : Number(v))}
+                    onBlur={() => { if (durModal != null && Number(durModal) !== Number(selectedTask.horas_estimadas ?? 0)) detalleEditarDuracion(durModal); }}
+                    onPressEnter={() => { if (durModal != null) detalleEditarDuracion(durModal); }} />
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>h/persona · Qty {selectedTask.qty_personal ?? 1}</Typography.Text>
+                </Space>
+              ) : `${Number(selectedTask.horas_estimadas ?? 0).toFixed(1)}h · Qty ${selectedTask.qty_personal ?? 1}`}
+            </Descriptions.Item>
             <Descriptions.Item label="Inicio real">{selectedTask.fecha_inicio_real ? dayjs(selectedTask.fecha_inicio_real).format("DD/MM/YY HH:mm") : "—"}</Descriptions.Item>
             <Descriptions.Item label="Fin real">{selectedTask.fecha_fin_real ? dayjs(selectedTask.fecha_fin_real).format("DD/MM/YY HH:mm") : "—"}</Descriptions.Item>
             <Descriptions.Item label="Duración real">{selectedTask.horas_reales != null ? `${Number(selectedTask.horas_reales).toFixed(2)}h` : "—"}</Descriptions.Item>
@@ -2018,11 +2126,21 @@ export default function ProgramacionSemanalPage() {
               </Descriptions.Item>
             )}
           </Descriptions>
+          {!editable && (
+            <Typography.Text type="secondary" style={{ fontSize: 11, display: "block", marginTop: 6 }}>
+              {!editMode ? "Activá Modo Edición para modificar operario, equipo, prioridad y duración."
+                : selectedTask.publicado ? "Semana publicada — reabrila para editar."
+                : selectedTask.estado === "realizado" ? "La tarea está realizada; no se edita desde acá."
+                : haEmpezado(selectedTask.estado) ? "Tarea en curso: solo se puede ajustar la duración."
+                : null}
+            </Typography.Text>
+          )}
           <div style={{ marginTop: 8 }}>
             <TareaAdjuntosLista taskId={selectedTask.id} />
           </div>
           </>
-        )}
+          );
+        })()}
       </Modal>
 
       <style jsx global>{`
