@@ -46,6 +46,7 @@ import {
   visibleColumns,
   filtroPorColumna,
   useColumnasRedimensionables,
+  usePersistedState,
 } from "@/lib/tables";
 import { ImportarExcelModal } from "@/components/ImportarExcelModal";
 import { EmptyState } from "@/components/EmptyState";
@@ -107,12 +108,13 @@ export default function MaterialesPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
-  const [filterPlanta, setFilterPlanta] = useState("");
-  const [filterArea, setFilterArea] = useState("");
-  const [filterCategoria, setFilterCategoria] = useState("");
-  const [filterClasificacion, setFilterClasificacion] = useState("");
-  const [filterFab, setFilterFab] = useState("");
+  // Filtros persistidos por usuario.
+  const [search, setSearch] = usePersistedState<string>("mat-list-search", "");
+  const [filterPlanta, setFilterPlanta] = usePersistedState<string>("mat-list-planta", "");
+  const [filterArea, setFilterArea] = usePersistedState<string>("mat-list-area", "");
+  const [filterCategoria, setFilterCategoria] = usePersistedState<string>("mat-list-categoria", "");
+  const [filterClasificacion, setFilterClasificacion] = usePersistedState<string>("mat-list-clasificacion", "");
+  const [filterFab, setFilterFab] = usePersistedState<string>("mat-list-fab", "");
   const { ocultas, setOcultas } = useColumnasOcultas("materiales-list-cols-v2", [
     "stock_actual", "stock_maximo", "punto_reposicion", "ubicacion", "caja", "modelo", "plazo_entrega",
   ]);

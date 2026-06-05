@@ -24,6 +24,7 @@ import {
   visibleColumns,
   useColumnasRedimensionables,
   filtroPorColumna,
+  usePersistedState,
 } from "@/lib/tables";
 import { areasTallerGrouped, areaTallerLabel } from "@/lib/areas-taller";
 import { formatOtInternaCodigo } from "@/lib/ot-formato";
@@ -96,14 +97,15 @@ export default function OrdenesTrabajoInternasPage() {
 
   // Estado
   const [rows, setRows] = useState<OTInternaRow[]>([]);
-  const [verInactivas, setVerInactivas] = useState(false);
+  const [verInactivas, setVerInactivas] = usePersistedState<boolean>("oti-list-ver-inactivas", false);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
-  const [search, setSearch] = useState("");
-  const [filterTipo, setFilterTipo] = useState<string | undefined>();
-  const [filterEquipo, setFilterEquipo] = useState<string | undefined>();
+  // Filtros persistidos por usuario (localStorage namespaced).
+  const [search, setSearch] = usePersistedState<string>("oti-list-search", "");
+  const [filterTipo, setFilterTipo] = usePersistedState<string | undefined>("oti-list-tipo", undefined);
+  const [filterEquipo, setFilterEquipo] = usePersistedState<string | undefined>("oti-list-equipo", undefined);
   const [saving, setSaving] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<OTInternaRow | null>(null);
