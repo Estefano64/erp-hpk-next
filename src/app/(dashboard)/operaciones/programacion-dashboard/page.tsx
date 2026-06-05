@@ -21,6 +21,7 @@ import {
   App,
   Segmented,
   Skeleton,
+  DatePicker,
 } from "antd";
 import {
   AppstoreOutlined,
@@ -35,9 +36,17 @@ import {
   FileExcelOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType, ColumnGroupType, ColumnType } from "antd/es/table/interface";
-import dayjs from "dayjs";
+import dayjs, { type Dayjs } from "dayjs";
+import isoWeek from "dayjs/plugin/isoWeek";
 import Link from "next/link";
 import * as XLSX from "xlsx";
+
+dayjs.extend(isoWeek);
+
+// Código ISO de semana "YYYYWww" — mismo formato que semana_plan/semana_base.
+function semanaCodigo(d: Dayjs): string {
+  return `${d.isoWeekYear()}W${String(d.isoWeek()).padStart(2, "0")}`;
+}
 import { brand, radius, shadow, space } from "@/lib/theme";
 import { useResponsive } from "@/lib/responsive";
 import {
@@ -178,6 +187,163 @@ function Kpi({ label, value, color, active, onClick }: {
   );
 }
 
+// ── Rendimiento por operario (semana). Mide justo: cumplimiento del plan +
+//    correctivos (crédito) + eficiencia (horas est/real). Usa /api/operaciones/rendimiento. ──
+interface RendimientoOperario {
+  operario: string;
+  planAsignadas: number; planCumplidas: number; pendientes: number;
+  correctivos: number; cargaReal: number;
+  cumplimiento: number | null; eficiencia: number | null;
+  horasEst: number; horasRealPlan: number; horasRealCorrectivos: number;
+}
+
+function RendimientoOperarios({ isMobile }: { isMobile: boolean }) {
+  const { message } = App.useApp();
+  const [semanaDate, setSemanaDate] = useState<Dayjs>(() => dayjs().startOf("isoWeek"));
+  const [rows, setRows] = useState<RendimientoOperario[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const semana = semanaCodigo(semanaDate);
+
+  const fetchR = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/operaciones/rendimiento?semana=${encodeURIComponent(semana)}`);
+      if (!res.ok) throw new Error("Error al cargar rendimiento");
+      const data = await res.json();
+      setRows((data.operarios ?? []) as RendimientoOperario[]);
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "Error");
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [semana, message]);
+  useEffect(() => { fetchR(); }, [fetchR]);
+
+  const tot = useMemo(() => {
+    const planAsig = rows.reduce((s, r) => s + r.planAsignadas, 0);
+    const planCump = rows.reduce((s, r) => s + r.planCumplidas, 0);
+    const corr = rows.reduce((s, r) => s + r.correctivos, 0);
+    return { planAsig, planCump, corr, cumpl: planAsig > 0 ? Math.round((planCump / planAsig) * 100) : 0, operarios: rows.length };
+  }, [rows]);
+
+  const pct = (v: number | null) => (v == null ? "—" : `${Math.round(v * 100)}%`);
+  const cumplColor = (v: number | null) => (v == null ? brand.textSecondary : v >= 0.85 ? brand.success : v >= 0.6 ? brand.warning : brand.error);
+  const efColor = (v: number | null) => (v == null ? brand.textSecondary : v >= 1 ? brand.success : v >= 0.8 ? brand.warning : brand.error);
+
+  const columns: ColumnsType<RendimientoOperario> = [
+    { title: "Operario", dataIndex: "operario", key: "operario", fixed: "left", width: 210, render: (s: string) => <Text strong>{s}</Text> },
+    {
+      title: <Tooltip title="Tareas del plan cumplidas / asignadas en la semana">Plan</Tooltip>,
+      key: "plan", width: 110, align: "center",
+      render: (_: unknown, r) => <span>{r.planCumplidas}<Text type="secondary"> / {r.planAsignadas}</Text></span>,
+    },
+    {
+      title: "Cumplimiento", dataIndex: "cumplimiento", key: "cumplimiento", width: 150,
+      sorter: (a, b) => (a.cumplimiento ?? -1) - (b.cumplimiento ?? -1),
+      render: (v: number | null) => (
+        <Tooltip title="% de tareas del plan que completó">
+          <Progress percent={v == null ? 0 : Math.round(v * 100)} size="small" strokeColor={cumplColor(v)} format={() => pct(v)} />
+        </Tooltip>
+      ),
+    },
+    {
+      title: <Tooltip title="Tareas del plan que quedaron sin completar">Pendientes</Tooltip>,
+      dataIndex: "pendientes", key: "pendientes", width: 110, align: "center",
+      render: (v: number) => (v > 0 ? <Tag color="warning" style={{ margin: 0 }}>{v}</Tag> : <Text type="secondary">0</Text>),
+    },
+    {
+      title: <Tooltip title="Correctivos (emergencias) que hizo fuera del plan — crédito extra">Correctivos</Tooltip>,
+      dataIndex: "correctivos", key: "correctivos", width: 120, align: "center",
+      sorter: (a, b) => a.correctivos - b.correctivos,
+      render: (v: number) => (v > 0 ? <Tag color="red" style={{ margin: 0 }}>+{v}</Tag> : <Text type="secondary">0</Text>),
+    },
+    {
+      title: <Tooltip title="Total que sacó: tareas del plan cumplidas + correctivos">Carga real</Tooltip>,
+      dataIndex: "cargaReal", key: "cargaReal", width: 110, align: "center",
+      defaultSortOrder: "descend", sorter: (a, b) => a.cargaReal - b.cargaReal,
+      render: (v: number) => <Text strong style={{ fontSize: 15 }}>{v}</Text>,
+    },
+    {
+      title: <Tooltip title="Horas estimadas / horas reales de lo cumplido. >100% = más rápido que lo planeado.">Eficiencia</Tooltip>,
+      dataIndex: "eficiencia", key: "eficiencia", width: 120, align: "center",
+      sorter: (a, b) => (a.eficiencia ?? -1) - (b.eficiencia ?? -1),
+      render: (v: number | null) => <span style={{ color: efColor(v), fontWeight: 600 }}>{pct(v)}</span>,
+    },
+    {
+      title: "Horas (real / est)", key: "horas", width: 150, align: "center",
+      render: (_: unknown, r) => <Text type="secondary" style={{ fontSize: 12 }}>{r.horasRealPlan}h / {r.horasEst}h</Text>,
+    },
+  ];
+
+  const header = (
+    <Card size="small" style={{ marginBottom: space.sm }} styles={{ body: { padding: 10 } }}>
+      <Space wrap>
+        <DatePicker
+          picker="week"
+          value={semanaDate}
+          onChange={(d) => d && setSemanaDate(d.startOf("isoWeek"))}
+          format={(v) => `Semana ${v.isoWeek()}, ${v.isoWeekYear()}`}
+          allowClear={false}
+          style={{ minWidth: 180 }}
+        />
+        <Button onClick={() => setSemanaDate(dayjs().startOf("isoWeek"))}>Esta semana</Button>
+        <Button icon={<ReloadOutlined />} onClick={fetchR} loading={loading}>Refrescar</Button>
+        <Text type="secondary" style={{ fontSize: 12 }}>{semana}</Text>
+      </Space>
+    </Card>
+  );
+
+  const kpis = (
+    <div style={{ display: "flex", gap: space.sm, flexWrap: "wrap", marginBottom: space.sm }}>
+      <Kpi label="Operarios" value={tot.operarios} color={brand.navy} />
+      <Kpi label="Plan cumplido" value={`${tot.planCump}/${tot.planAsig}`} color={brand.cyan} />
+      <Kpi label="Cumplimiento" value={`${tot.cumpl}%`} color={tot.cumpl >= 85 ? brand.success : tot.cumpl >= 60 ? brand.warning : brand.error} />
+      <Kpi label="Correctivos" value={tot.corr} color={brand.error} />
+    </div>
+  );
+
+  return (
+    <>
+      {header}
+      {kpis}
+      {rows.length === 0 ? (
+        <Empty description={loading ? "Cargando…" : "Sin actividad de operarios en esta semana."} />
+      ) : isMobile ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: space.sm }}>
+          {rows.map((r) => (
+            <Card key={r.operario} size="small" styles={{ body: { padding: 12 } }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <Text strong style={{ color: brand.navy }}>{r.operario}</Text>
+                <Text strong>Carga real: {r.cargaReal}</Text>
+              </div>
+              <Progress percent={r.cumplimiento == null ? 0 : Math.round(r.cumplimiento * 100)} size="small" strokeColor={cumplColor(r.cumplimiento)} format={() => `Plan ${r.planCumplidas}/${r.planAsignadas} · ${pct(r.cumplimiento)}`} />
+              <div style={{ fontSize: 12, color: brand.textSecondary, marginTop: 6 }}>
+                {r.correctivos > 0 && <Tag color="red" style={{ margin: 0, marginRight: 6 }}>+{r.correctivos} correctivos</Tag>}
+                Eficiencia <span style={{ color: efColor(r.eficiencia), fontWeight: 600 }}>{pct(r.eficiencia)}</span> · {r.horasRealPlan}h/{r.horasEst}h
+              </div>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <Card size="small" styles={{ body: { padding: 0 } }}>
+          <Table<RendimientoOperario>
+            rowKey="operario"
+            columns={columns}
+            dataSource={rows}
+            loading={loading}
+            size="small"
+            scroll={{ x: 1080 }}
+            pagination={paginacionEstandar({ current: page, pageSize, total: rows.length, onChange: (p, s) => { setPage(p); setPageSize(s); }, label: "operarios" })}
+          />
+        </Card>
+      )}
+    </>
+  );
+}
+
 export default function ProgramacionDashboardPage() {
   const { screens } = useResponsive();
   const isMobile = !screens.md;
@@ -214,6 +380,8 @@ export default function ProgramacionDashboardPage() {
   const [componentesOrden, setComponentesOrden] = useState<string[]>([]);
   const [componentesOrdenHidratado, setComponentesOrdenHidratado] = useState(false);
   const [vistaConfigOpen, setVistaConfigOpen] = useState(false);
+  // Vista principal: matriz de OTs (default) o rendimiento por operario.
+  const [vistaTab, setVistaTab] = useState<"matriz" | "rendimiento">("matriz");
   useEffect(() => {
     try {
       const raw = localStorage.getItem("programacion-dashboard-ops-ocultas-v1");
@@ -691,6 +859,15 @@ export default function ProgramacionDashboardPage() {
           <Tooltip title="Matriz de OTs activas × operaciones del catálogo. Cada celda muestra el estado actual de esa operación en la OT.">
             <InfoCircleOutlined style={{ color: brand.textSecondary, marginRight: 4 }} />
           </Tooltip>
+          <Segmented
+            value={vistaTab}
+            onChange={(v) => setVistaTab(v as "matriz" | "rendimiento")}
+            options={[
+              { label: "Matriz de OTs", value: "matriz" },
+              { label: "Rendimiento", value: "rendimiento" },
+            ]}
+          />
+          {vistaTab === "matriz" && (<>
           <Input
             placeholder="Buscar OT, descripción, cliente, equipo…"
             prefix={<SearchOutlined />}
@@ -744,10 +921,13 @@ export default function ProgramacionDashboardPage() {
           <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>
             Refrescar
           </Button>
+          </>)}
         </Space>
       </Card>
 
-      {cargandoInicial ? (
+      {vistaTab === "rendimiento" ? (
+        <RendimientoOperarios isMobile={isMobile} />
+      ) : cargandoInicial ? (
         <Skeleton active title={false} paragraph={{ rows: 10 }} style={{ padding: 16 }} />
       ) : (
         <>
