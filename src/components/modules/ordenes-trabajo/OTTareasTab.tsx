@@ -1019,7 +1019,7 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
 // Si el usuario tipea texto que no matchea ninguna opción, ofrece "+ Crear: <texto>".
 // Al confirmar la creación, el padre la guardará en catálogo al hacer "Guardar".
 // ───────────────────────────────────────────────────────────────────────────
-interface OperacionComboProps {
+export interface OperacionComboProps {
   draft: {
     parte: string | null;
     operacion_codigo: string | null;
@@ -1038,7 +1038,10 @@ interface OperacionComboProps {
   loadAllCount?: number;
 }
 
-function OperacionCombo({ draft, opciones, onPickExisting, onCreateNew, onClear, onLoadAll, loadAllCount = 0 }: OperacionComboProps) {
+// Combo de Tarea reutilizable (detalle de OT + Planificación). Permite elegir una
+// operación de catálogo, tipear una nueva ("+ Crear: …") o jalar todas las de la
+// parte. Exportado para que Planificación use exactamente el mismo control.
+export function OperacionCombo({ draft, opciones, onPickExisting, onCreateNew, onClear, onLoadAll, loadAllCount = 0 }: OperacionComboProps) {
   const [search, setSearch] = useState("");
   // Valor visible en el Select: si hay operacion_codigo elegida, su código.
   // Si hay nueva_operacion_nombre (pendiente de crear), un marker "__new__:nombre".

@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Typography, Card, Table, Tag, Input, Select, Space, Button, DatePicker, InputNumber, Checkbox, message, Row, Col, Alert, Switch, Popconfirm, Tooltip, Modal, Timeline, Empty,
 } from "antd";
-import { SearchOutlined, ReloadOutlined, CalendarOutlined, InfoCircleOutlined, SaveOutlined, UndoOutlined, ThunderboltOutlined, PlusOutlined, DeleteOutlined, HistoryOutlined } from "@ant-design/icons";
+import { SearchOutlined, ReloadOutlined, CalendarOutlined, InfoCircleOutlined, SaveOutlined, UndoOutlined, ThunderboltOutlined, PlusOutlined, DeleteOutlined, HistoryOutlined, CloseOutlined } from "@ant-design/icons";
+import { OperacionCombo } from "@/components/modules/ordenes-trabajo/OTTareasTab";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 import type { ColumnsType } from "antd/es/table";
 import {
   numeracionColumn,
@@ -166,6 +168,31 @@ interface EquipoOpt { codigo: string; descripcion: string }
 
 interface StatusTareaOpt { codigo: string; nombre: string; color: string | null; orden: number | null }
 
+// Fila del form multi-tarea de "Nueva tarea" (calca del de OT + campos extra).
+interface DraftPlan {
+  id: string; // uuid local
+  ot_id: number | null;
+  parte: string | null;
+  tipo_tarea: "Estandar" | "NoEstandar";
+  operacion_codigo: string | null;
+  trabajo_manual: string | null;
+  nueva_operacion_nombre: string | null;
+  qty: number;
+  horas: number | null;
+  semana: string | null;
+  tecnico: string | null;
+  equipo: string | null;
+  comentario: string | null;
+}
+function newDraftPlan(): DraftPlan {
+  return {
+    id: crypto.randomUUID(),
+    ot_id: null, parte: null, tipo_tarea: "Estandar", operacion_codigo: null,
+    trabajo_manual: null, nueva_operacion_nombre: null, qty: 1, horas: null,
+    semana: null, tecnico: null, equipo: null, comentario: null,
+  };
+}
+
 // Genera códigos de semana ISO (YYYY-Wnn) para el filtro: 8 semanas pasadas y 8 futuras
 function buildSemanasOptions(): { value: string; label: string }[] {
   const opts: { value: string; label: string }[] = [];
@@ -207,10 +234,10 @@ export default function PlanificacionPage() {
   const [otOpts, setOtOpts] = useState<{ value: number; label: string }[]>([]);
   const [componentes, setComponentes] = useState<{ codigo: string; nombre: string }[]>([]);
   const [operaciones, setOperaciones] = useState<{ codigo: string; nombre: string; componente_codigo: string | null; clasificacion: string }[]>([]);
-  // Modal "Nueva tarea" (mismo flujo Parte→Tipo→Tarea que el form de Tareas de la OT)
+  // Modal "Nueva tarea" — calca multi-tarea del form de Tareas de la OT.
   const [nuevaOpen, setNuevaOpen] = useState(false);
   const [nuevaSaving, setNuevaSaving] = useState(false);
-  const [nueva, setNueva] = useState<{ ot_id: number | null; parte: string | null; tipo: "Estandar" | "NoEstandar"; operacionCodigo: string | null; qty: number; horas: number | null; tecnico: string | null; maquina: string | null; comentario: string }>({ ot_id: null, parte: null, tipo: "Estandar", operacionCodigo: null, qty: 1, horas: null, tecnico: null, maquina: null, comentario: "" });
+  const [draftRows, setDraftRows] = useState<DraftPlan[]>([]);
   // Modal de historial de ejecución
   const [histOpen, setHistOpen] = useState(false);
   const [histLoading, setHistLoading] = useState(false);
@@ -228,6 +255,7 @@ export default function PlanificacionPage() {
   const [bulkMaquina, setBulkMaquina] = useState<string | undefined>();
   const [bulkSemana, setBulkSemana] = useState<string | undefined>();
   const [messageApi, contextHolder] = message.useMessage();
+  const { screens } = useResponsive();
   const debounceTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const { ocultas, setOcultas } = useColumnasOcultas("planificacion-cols-v1");
   const { rango: rangoInicio, setRango: setRangoInicio } = useRangoFechas();
@@ -351,40 +379,103 @@ export default function PlanificacionPage() {
     })();
   }, []);
 
-  // Crear una tarea desde el modal "Nueva tarea" (con o sin OT).
-  const guardarNueva = useCallback(async () => {
-    if (!nueva.parte) { messageApi.warning("Elegí la Parte."); return; }
-    if (!nueva.operacionCodigo) { messageApi.warning("Elegí la Tarea."); return; }
+  // ── Form multi-tarea "Nueva tarea" (calca del de OT) ──────────────────────
+  function abrirNueva() { setDraftRows([newDraftPlan()]); setNuevaOpen(true); }
+  function updateDraft(id: string, patch: Partial<DraftPlan>) {
+    setDraftRows((prev) => prev.map((d) => {
+      if (d.id !== id) return d;
+      const next = { ...d, ...patch };
+      // Cambiar parte o tipo invalida la operación elegida.
+      if ((patch.parte !== undefined && patch.parte !== d.parte)
+        || (patch.tipo_tarea !== undefined && patch.tipo_tarea !== d.tipo_tarea)) {
+        next.operacion_codigo = null;
+        next.trabajo_manual = null;
+        next.nueva_operacion_nombre = null;
+      }
+      return next;
+    }));
+  }
+  function addDraft() { setDraftRows((prev) => [...prev, newDraftPlan()]); }
+  function removeDraft(id: string) { setDraftRows((prev) => prev.filter((d) => d.id !== id)); }
+  function opsParaFila(d: DraftPlan) {
+    if (!d.parte) return [];
+    const clas = d.tipo_tarea === "NoEstandar" ? "NO_STD" : "STD";
+    return operaciones.filter((o) => o.componente_codigo === d.parte && o.clasificacion === clas);
+  }
+  function usaTextoLibrePara(d: DraftPlan) { return !!d.parte && opsParaFila(d).length === 0; }
+  // "Jalar todas las tareas {tipo} de {parte}": reemplaza el draft origen por N
+  // drafts pre-llenos (uno por operación que matchea), evitando duplicados.
+  function loadAllForRow(rowId: string) {
+    setDraftRows((prev) => {
+      const src = prev.find((d) => d.id === rowId);
+      if (!src || !src.parte) return prev;
+      const clas = src.tipo_tarea === "NoEstandar" ? "NO_STD" : "STD";
+      const candidatas = operaciones.filter((o) => o.componente_codigo === src.parte && o.clasificacion === clas);
+      const yaUsados = new Set(prev.filter((d) => d.id !== rowId && d.parte === src.parte && d.operacion_codigo).map((d) => d.operacion_codigo as string));
+      const nuevas = candidatas.filter((o) => !yaUsados.has(o.codigo));
+      if (nuevas.length === 0) { messageApi.warning("Todas las tareas de esa parte+tipo ya están en la lista."); return prev; }
+      const generados: DraftPlan[] = nuevas.map((o) => ({ ...newDraftPlan(), ot_id: src.ot_id, parte: src.parte, tipo_tarea: src.tipo_tarea, operacion_codigo: o.codigo, qty: src.qty, horas: src.horas, semana: src.semana, tecnico: src.tecnico, equipo: src.equipo }));
+      messageApi.success(`${generados.length} tarea(s) cargada(s). Revisá y guardá.`);
+      return [...prev.filter((d) => d.id !== rowId), ...generados];
+    });
+  }
+
+  // Crea TODAS las tareas del lote (con o sin OT). Crea operaciones nuevas en
+  // catálogo si el usuario tipeó una. Cada fila puede tener su OT/QTY/horas/semana.
+  const saveDrafts = useCallback(async () => {
+    const errs: string[] = [];
+    draftRows.forEach((d, i) => {
+      const label = `Tarea ${i + 1}`;
+      if (!d.parte) errs.push(`${label}: falta Parte`);
+      const libre = !!d.parte && operaciones.filter((o) => o.componente_codigo === d.parte && o.clasificacion === (d.tipo_tarea === "NoEstandar" ? "NO_STD" : "STD")).length === 0;
+      const tieneNueva = !!d.nueva_operacion_nombre?.trim();
+      if (libre && !d.trabajo_manual?.trim()) errs.push(`${label}: falta descripción (texto libre)`);
+      if (!libre && !d.operacion_codigo && !tieneNueva) errs.push(`${label}: falta seleccionar Tarea`);
+    });
+    if (errs.length) { messageApi.error(errs[0]); return; }
     setNuevaSaving(true);
+    let ok = 0, fail = 0, nuevasOps = 0;
     try {
-      const res = await fetch("/api/planificacion", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ot_id: nueva.ot_id ?? undefined,
-          componente_codigo: nueva.parte,
-          operacion_reparacion_codigo: nueva.operacionCodigo,
-          tipo_reparacion: nueva.tipo,
-          qty: nueva.qty,
-          horas_estimadas: nueva.horas ?? undefined,
-          tecnico: nueva.tecnico ?? undefined,
-          maquina: nueva.maquina ?? undefined,
-          comentario: nueva.comentario.trim() || undefined,
-        }),
-      });
-      if (res.ok) {
-        messageApi.success("Tarea creada. Asignale fecha arrastrándola en Programación Semanal.");
+      for (const d of draftRows) {
+        let operacionCodigo = d.operacion_codigo;
+        if (d.nueva_operacion_nombre && !operacionCodigo) {
+          const resOp = await fetch("/api/operaciones-reparacion", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ nombre: d.nueva_operacion_nombre.trim(), componente_codigo: d.parte, clasificacion: d.tipo_tarea === "NoEstandar" ? "NO_STD" : "STD" }),
+          });
+          if (!resOp.ok) { fail++; continue; }
+          const j = await resOp.json();
+          operacionCodigo = j.data.codigo;
+          if (!j.reused) { nuevasOps++; setOperaciones((prev) => [...prev, j.data]); }
+        }
+        const libre = !!d.parte && operaciones.filter((o) => o.componente_codigo === d.parte && o.clasificacion === (d.tipo_tarea === "NoEstandar" ? "NO_STD" : "STD")).length === 0;
+        const body: Record<string, unknown> = {
+          ot_id: d.ot_id ?? undefined,
+          componente_codigo: d.parte,
+          tipo_reparacion: d.tipo_tarea,
+          qty: Number(d.qty ?? 1),
+          horas_estimadas: d.horas ?? undefined,
+          semana_plan: d.semana ?? undefined,
+          tecnico: d.tecnico ?? undefined,
+          maquina: d.equipo ?? undefined,
+          comentario: d.comentario?.trim() || undefined,
+        };
+        if (libre) body.trabajo = d.trabajo_manual;
+        else body.operacion_reparacion_codigo = operacionCodigo;
+        const res = await fetch("/api/planificacion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        if (res.ok) ok++; else fail++;
+      }
+      if (ok > 0) {
+        messageApi.success(`${ok} tarea(s) creada(s)${nuevasOps ? ` (${nuevasOps} operación(es) nueva(s))` : ""}.`);
         setNuevaOpen(false);
         notifySync();
         fetchData();
-      } else {
-        const e = await res.json().catch(() => null);
-        messageApi.error(e?.error ?? "Error al crear la tarea");
       }
+      if (fail > 0) messageApi.warning(`${fail} tarea(s) fallaron`);
     } finally {
       setNuevaSaving(false);
     }
-  }, [nueva, messageApi, notifySync, fetchData]);
+  }, [draftRows, operaciones, messageApi, notifySync, fetchData]);
 
   // Abrir el historial de ejecución de una tarea.
   const abrirHistorial = useCallback(async (r: PlanRow) => {
@@ -1431,7 +1522,7 @@ export default function PlanificacionPage() {
             {editMode ? "Salir de edición" : "Modo edición"}
           </Button>
           {editMode && (
-            <Button type="dashed" icon={<PlusOutlined />} onClick={() => { setNueva({ ot_id: null, parte: null, tipo: "Estandar", operacionCodigo: null, qty: 1, horas: null, tecnico: null, maquina: null, comentario: "" }); setNuevaOpen(true); }}>
+            <Button type="dashed" icon={<PlusOutlined />} onClick={abrirNueva}>
               Nueva tarea
             </Button>
           )}
@@ -1734,81 +1825,119 @@ export default function PlanificacionPage() {
       `}</style>
 
       <Modal
-        title="Nueva tarea"
+        title={`Nueva(s) tarea(s)${draftRows.length > 1 ? ` — ${draftRows.length}` : ""}`}
         open={nuevaOpen}
         onCancel={() => setNuevaOpen(false)}
-        onOk={guardarNueva}
-        okText="Crear"
-        cancelText="Cancelar"
-        confirmLoading={nuevaSaving}
-        width={520}
+        width={modalWidth(screens, 960)}
+        footer={[
+          <Button key="cancel" onClick={() => setNuevaOpen(false)}>Cancelar</Button>,
+          <Button key="add" type="dashed" icon={<PlusOutlined />} onClick={addDraft}>Agregar otra</Button>,
+          <Button key="save" type="primary" loading={nuevaSaving} onClick={saveDrafts} style={{ background: brand.success, borderColor: brand.success }}>
+            Guardar{draftRows.length > 1 ? ` (${draftRows.length})` : ""}
+          </Button>,
+        ]}
       >
-        <Space direction="vertical" style={{ width: "100%" }} size={12}>
-          <Row gutter={12}>
-            <Col span={14}>
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>Parte *</Typography.Text>
-              <Select
-                showSearch style={{ width: "100%" }} placeholder="Seleccione…"
-                value={nueva.parte ?? undefined}
-                onChange={(v) => setNueva((n) => ({ ...n, parte: v as string, operacionCodigo: null }))}
-                options={componentes.map((c) => ({ value: c.codigo, label: c.nombre }))}
-                optionFilterProp="label"
-              />
-            </Col>
-            <Col span={10}>
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>Tipo *</Typography.Text>
-              <Select
-                style={{ width: "100%" }}
-                value={nueva.tipo}
-                onChange={(v) => setNueva((n) => ({ ...n, tipo: v as "Estandar" | "NoEstandar", operacionCodigo: null }))}
-                options={[{ value: "Estandar", label: "Estándar" }, { value: "NoEstandar", label: "No estándar" }]}
-              />
-            </Col>
-          </Row>
-          <div>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>Tarea *</Typography.Text>
-            <Select
-              showSearch style={{ width: "100%" }}
-              placeholder={nueva.parte ? "Seleccione…" : "Seleccione parte primero…"}
-              disabled={!nueva.parte}
-              value={nueva.operacionCodigo ?? undefined}
-              onChange={(v) => setNueva((n) => ({ ...n, operacionCodigo: v as string }))}
-              options={operaciones
-                .filter((o) => o.componente_codigo === nueva.parte && o.clasificacion === (nueva.tipo === "NoEstandar" ? "NO_STD" : "STD"))
-                .map((o) => ({ value: o.codigo, label: o.nombre }))}
-              optionFilterProp="label"
-            />
-          </div>
-          <div>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>Operario</Typography.Text>
-            <Select
-              showSearch allowClear style={{ width: "100%" }}
-              placeholder="Sin asignar"
-              value={nueva.tecnico ?? undefined}
-              onChange={(v) => setNueva((n) => ({ ...n, tecnico: (v as string | undefined) ?? null }))}
-              options={trabajadores.map((t) => ({ value: t.nombre, label: t.nombre }))}
-              optionFilterProp="label"
-            />
-          </div>
-          <div>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>Máquina / equipo</Typography.Text>
-            <Select
-              showSearch allowClear style={{ width: "100%" }}
-              placeholder="Sin asignar"
-              value={nueva.maquina ?? undefined}
-              onChange={(v) => setNueva((n) => ({ ...n, maquina: (v as string | undefined) ?? null }))}
-              options={equipos.map((e) => ({ value: e.codigo, label: `${e.codigo} — ${e.descripcion ?? ""}` }))}
-              optionFilterProp="label"
-            />
-          </div>
-          <div>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>Comentario para el técnico (opcional)</Typography.Text>
-            <Input.TextArea rows={2} value={nueva.comentario} onChange={(e) => setNueva((n) => ({ ...n, comentario: e.target.value }))} maxLength={500} />
-          </div>
+        <div style={{ maxHeight: "65vh", overflowY: "auto", paddingRight: 4 }}>
+          {draftRows.map((d) => {
+            const opsFila = opsParaFila(d);
+            const libre = usaTextoLibrePara(d);
+            const lbl: React.CSSProperties = { fontSize: 11, color: brand.textSecondary, marginBottom: 2 };
+            return (
+              <div key={d.id} style={{ border: `1px solid ${brand.border}`, borderRadius: 8, padding: 12, marginBottom: 12, position: "relative" }}>
+                {draftRows.length > 1 && (
+                  <Tooltip title="Quitar esta tarea">
+                    <Button size="small" type="text" danger icon={<CloseOutlined />} onClick={() => removeDraft(d.id)} style={{ position: "absolute", top: 4, right: 4 }} />
+                  </Tooltip>
+                )}
+                <Row gutter={[10, 8]}>
+                  <Col xs={24} sm={8} md={5}>
+                    <div style={lbl}>Nro de OT</div>
+                    <Select showSearch allowClear style={{ width: "100%" }} size="small" placeholder="Sin OT"
+                      value={d.ot_id ?? undefined}
+                      onChange={(v) => updateDraft(d.id, { ot_id: (v as number | undefined) ?? null })}
+                      options={otOptsMerged} optionFilterProp="label" />
+                  </Col>
+                  <Col xs={24} sm={8} md={5}>
+                    <div style={lbl}>Parte *</div>
+                    <Select showSearch style={{ width: "100%" }} size="small" placeholder="Seleccione…"
+                      value={d.parte ?? undefined}
+                      onChange={(v) => updateDraft(d.id, { parte: v as string })}
+                      options={componentes.map((c) => ({ value: c.codigo, label: c.nombre }))} optionFilterProp="label" />
+                  </Col>
+                  <Col xs={24} sm={8} md={4}>
+                    <div style={lbl}>Tipo *</div>
+                    <Select style={{ width: "100%" }} size="small" disabled={!d.parte}
+                      value={d.tipo_tarea}
+                      onChange={(v) => updateDraft(d.id, { tipo_tarea: v as "Estandar" | "NoEstandar" })}
+                      options={[{ value: "Estandar", label: "Estándar" }, { value: "NoEstandar", label: "No estándar" }]} />
+                  </Col>
+                  <Col xs={24} md={10}>
+                    <div style={lbl}>Tarea *</div>
+                    {libre ? (
+                      <Input size="small" value={d.trabajo_manual ?? ""} onChange={(e) => updateDraft(d.id, { trabajo_manual: e.target.value })}
+                        placeholder={`Describa la tarea ${d.tipo_tarea === "NoEstandar" ? "no estándar" : ""} para ${d.parte ?? ""}…`} />
+                    ) : (
+                      <OperacionCombo
+                        draft={d}
+                        opciones={opsFila}
+                        onPickExisting={(codigo) => updateDraft(d.id, { operacion_codigo: codigo, nueva_operacion_nombre: null })}
+                        onCreateNew={(nombre) => updateDraft(d.id, { operacion_codigo: null, nueva_operacion_nombre: nombre })}
+                        onClear={() => updateDraft(d.id, { operacion_codigo: null, nueva_operacion_nombre: null })}
+                        onLoadAll={d.parte && opsFila.length > 0 ? () => loadAllForRow(d.id) : undefined}
+                        loadAllCount={opsFila.length}
+                      />
+                    )}
+                  </Col>
+                  <Col xs={24} sm={12} md={6}>
+                    <div style={lbl}>Operario</div>
+                    <Select showSearch allowClear style={{ width: "100%" }} size="small" placeholder="Sin asignar"
+                      value={d.tecnico ?? undefined}
+                      onChange={(nombre) => {
+                        const patch: Partial<DraftPlan> = { tecnico: (nombre as string | undefined) ?? null };
+                        if (nombre && !d.equipo) {
+                          const t = trabajadores.find((x) => x.nombre === nombre);
+                          if (t?.equipo_codigo) patch.equipo = t.equipo_codigo;
+                        }
+                        updateDraft(d.id, patch);
+                      }}
+                      options={trabajadores.map((t) => ({ value: t.nombre, label: t.nombre }))} optionFilterProp="label" />
+                  </Col>
+                  <Col xs={24} sm={12} md={6}>
+                    <div style={lbl}>Equipo</div>
+                    <Select showSearch allowClear style={{ width: "100%" }} size="small" placeholder="Sin asignar"
+                      value={d.equipo ?? undefined}
+                      onChange={(v) => updateDraft(d.id, { equipo: (v as string | undefined) ?? null })}
+                      options={equipos.map((e) => ({ value: e.codigo, label: `${e.codigo} — ${e.descripcion ?? ""}` }))} optionFilterProp="label" />
+                  </Col>
+                  <Col xs={12} sm={6} md={3}>
+                    <div style={lbl}>QTY</div>
+                    <InputNumber min={1} style={{ width: "100%" }} size="small" value={d.qty} onChange={(v) => updateDraft(d.id, { qty: Number(v ?? 1) })} />
+                  </Col>
+                  <Col xs={12} sm={6} md={4}>
+                    <div style={lbl}>Horas</div>
+                    <InputNumber min={0} step={0.5} style={{ width: "100%" }} size="small" placeholder="—" value={d.horas} onChange={(v) => updateDraft(d.id, { horas: v == null ? null : Number(v) })} />
+                  </Col>
+                  <Col xs={24} sm={12} md={5}>
+                    <div style={lbl}>Semana</div>
+                    <Select showSearch allowClear style={{ width: "100%" }} size="small" placeholder="Sin semana"
+                      value={d.semana ?? undefined}
+                      onChange={(v) => updateDraft(d.id, { semana: (v as string | undefined) ?? null })}
+                      options={semanaOpts} optionFilterProp="label" />
+                  </Col>
+                  <Col xs={24}>
+                    <div style={lbl}>Comentario para el técnico (opcional)</div>
+                    <Input.TextArea size="small" autoSize={{ minRows: 1, maxRows: 3 }} maxLength={500}
+                      value={d.comentario ?? ""} onChange={(e) => updateDraft(d.id, { comentario: e.target.value })}
+                      placeholder="Ej: revisar fuga, usar repuesto X…" />
+                  </Col>
+                </Row>
+              </div>
+            );
+          })}
           <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-            Se crea sin fecha; arrastrala en Programación Semanal para fijarle día y hora.
+            Si no asignás semana ni fecha, la tarea queda en el pool; arrastrala en Programación Semanal para fijarle día y hora.
           </Typography.Text>
-        </Space>
+        </div>
       </Modal>
 
       <Modal

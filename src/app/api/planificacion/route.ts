@@ -118,6 +118,9 @@ const CreateSchema = z.object({
   orden: z.coerce.number().int().min(0).optional(),
   horas_estimadas: z.coerce.number().min(0).optional().nullable(),
   comentario: z.string().trim().optional().nullable(),
+  // Semana de planificación (ej. "2026W23"). Opcional — desde el form de
+  // Planificación se puede asignar al crear; si no, queda en el pool.
+  semana_plan: z.string().trim().optional().nullable(),
 });
 
 // POST /api/planificacion — crear una fila PlanificacionOT individual
@@ -169,6 +172,7 @@ export async function POST(req: NextRequest) {
         maquina: d.maquina ?? null,
         tecnico: d.tecnico ?? null,
         comentario: d.comentario ?? null,
+        semana_plan: d.semana_plan ?? null,
         estado: "abierto",
       },
       include: {
