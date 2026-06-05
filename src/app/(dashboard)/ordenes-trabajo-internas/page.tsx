@@ -396,7 +396,7 @@ export default function OrdenesTrabajoInternasPage() {
       },
     },
     {
-      key: "area_taller", title: "Área del taller", width: 200, ellipsis: true,
+      key: "area_taller", title: "Área asignada", width: 200, ellipsis: true,
       render: (_: unknown, r: OTInternaRow) => {
         // Prioridad: área del taller (campo nuevo). Si no, fallback a equipo legacy.
         if (r.area_taller) return <span>{areaTallerLabel(r.area_taller)}</span>;
@@ -725,7 +725,7 @@ export default function OrdenesTrabajoInternasPage() {
             <Col xs={24} md={16}>
               <Form.Item
                 name="area_taller"
-                label="Área del taller"
+                label="Área asignada"
                 rules={[{ required: true, message: "Requerido" }]}
               >
                 <Select
