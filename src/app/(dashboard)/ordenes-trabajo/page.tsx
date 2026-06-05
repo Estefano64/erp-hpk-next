@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, type Key } from "react";
+import { useState, useEffect, useCallback, useMemo, type Key } from "react";
 import {
   Typography,
   Table,
@@ -227,12 +227,11 @@ export default function OrdenesTrabajoPage() {
   const [modalOtId, setModalOtId] = useState<number | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
-  // Paginación server-side: trae solo la página actual (50). Manda al server
-  // la búsqueda, los filtros de columna, el rango de fecha y el orden. Campos
-  // de texto van como txt_<campo>; el resto (enum) por su nombre de columna.
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
+  // Filtros server-side activos (todo lo que vamos a mandar al endpoint,
+  // EXCEPTO page/limit que cambian por paginación). Memoizado para reusar
+  // entre fetchData y el botón de exportar (que respeta los mismos filtros).
+  const filtrosServer = useMemo(() => {
+    const params = new URLSearchParams();
     if (search) params.set("search", search);
     for (const [key, vals] of Object.entries(columnFilters)) {
       // TEXT_KEYS son inputs de búsqueda (un solo valor); el resto son enum
@@ -257,12 +256,23 @@ export default function OrdenesTrabajoPage() {
     if (rangoRecepcion.hasta) params.set("fecha_recepcion_hasta", rangoRecepcion.hasta.format("YYYY-MM-DD"));
     if (aniosSel.length) params.set("anios", aniosSel.join(","));
     if (verInactivas) params.set("incluirInactivas", "1");
+    return params;
+  }, [search, columnFilters, sorter, rangoRecepcion, aniosSel, verInactivas]);
+
+  // Paginación server-side: trae solo la página actual (50). Manda al server
+  // la búsqueda, los filtros de columna, el rango de fecha y el orden. Campos
+  // de texto van como txt_<campo>; el resto (enum) por su nombre de columna.
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    const params = new URLSearchParams(filtrosServer);
+    params.set("page", String(page));
+    params.set("limit", String(pageSize));
     const res = await fetch(`/api/ordenes-trabajo?${params}`);
     const json = await res.json();
     setData(json.data ?? []);
     setTotal(json.total ?? 0);
     setLoading(false);
-  }, [page, pageSize, search, columnFilters, sorter, rangoRecepcion, aniosSel, verInactivas]);
+  }, [page, pageSize, filtrosServer]);
 
   // Desactivar (anular, reversible) / reactivar una OT. Solo admin.
   async function toggleActivo(record: OTRecord) {
@@ -780,6 +790,10 @@ export default function OrdenesTrabajoPage() {
             endpoint="/api/ordenes-trabajo?export=1"
             filename="OTs-Externas"
             sheetName="OTs Externas"
+            // Cuando el usuario marca "Usar filtros actuales de la tabla", la
+            // descarga envía estos mismos filtros server-side al endpoint y
+            // recibe TODAS las filas que cumplen (no solo la página visible).
+            endpointParams={filtrosServer}
             dateFilter={{
               label: "Fecha de recepción",
               paramNameDesde: "fecha_recepcion_desde",
@@ -819,16 +833,24 @@ export default function OrdenesTrabajoPage() {
               { label: "PO Item", value: (r) => r.po_item ?? "" },
               { label: "ID Viajero", value: (r) => r.id_viajero ?? "" },
               { label: "Guía Remisión", value: (r) => r.guia_remision ?? "" },
+              { label: "Empresa entrega", value: (r) => r.empresa_entrega ?? "" },
               { label: "Fecha Recepción", value: (r) => formatDateOnly(r.fecha_recepcion) ?? "" },
+              { label: "F. Req. Cliente", value: (r) => formatDateOnly(r.fecha_requerimiento_cliente) ?? "" },
+              { label: "F. Reprogramada", value: (r) => formatDateOnly(r.fecha_reprogramada) ?? "" },
               { label: "PCR", value: (r) => r.pcr ?? "" },
               { label: "Horas", value: (r) => r.horas ?? "" },
               { label: "% PCR", value: (r) => r.porcentaje_pcr ?? "" },
+              { label: "Días contrato", value: (r) => r.contrato_dias ?? "" },
               { label: "Prioridad", value: (r) => r.prioridad_atencion?.nombre ?? "" },
+              { label: "Atención Rep.", value: (r) => r.atencion_reparacion?.nombre ?? "" },
+              { label: "Tipo Rep.", value: (r) => r.tipo_reparacion?.nombre ?? "" },
               { label: "OT Status", value: (r) => r.ot_status?.nombre ?? r.ot_status_codigo ?? "" },
               { label: "Recursos Status", value: (r) => r.recursos_status?.nombre ?? r.recursos_status_codigo ?? "" },
               { label: "Taller Status", value: (r) => r.taller_status?.nombre ?? r.taller_status_codigo ?? "" },
               { label: "Garantía", value: (r) => r.garantia?.nombre ?? "" },
+              { label: "Tipo Garantía", value: (r) => r.tipo_garantia?.nombre ?? "" },
               { label: "Base Metálica", value: (r) => r.base_metalica?.nombre ?? "" },
+              { label: "Comentarios", value: (r) => r.comentarios ?? "" },
               // Histórico (importado del Excel)
               { label: "Fecha Evaluación", value: (r) => formatDateOnly(r.fecha_evaluacion ?? null) ?? "" },
               { label: "Evaluador", value: (r) => r.evaluador ?? "" },

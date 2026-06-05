@@ -13,6 +13,8 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import { useSession } from "next-auth/react";
 import dayjs, { type Dayjs } from "dayjs";
+import isoWeek from "dayjs/plugin/isoWeek";
+dayjs.extend(isoWeek);
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import {
@@ -30,6 +32,37 @@ import { areasTallerGrouped, areaTallerLabel, tipoEquipoPorAreaTaller } from "@/
 import { formatOtInternaCodigo } from "@/lib/ot-formato";
 
 const { Title, Text } = Typography;
+
+// Label visual de un Task List (lo usamos como `value` en el Select porque
+// task_list en la BD es texto libre VarChar(200) — no hay FK al id del catálogo).
+// Manteniendo la forma "MAQUINA · MP_X · descripción truncada" el dato queda
+// legible aunque alguien lo lea directo de la BD.
+function labelDeTaskList(t: {
+  maquina_taller: string; actividad_codigo: string; descripcion: string;
+}): string {
+  const desc = t.descripcion.length > 80 ? t.descripcion.slice(0, 77) + "…" : t.descripcion;
+  return `${t.maquina_taller} · ${t.actividad_codigo} · ${desc}`;
+}
+
+// ─── Semana ISO ↔ string "YYYYWww" ─────────────────────────────────────────
+// Formato consistente con src/lib/emergencia-cascade.ts (sin guión entre año y W).
+// Aceptamos también "YYYY-Www" al parsear por compatibilidad.
+function isoWeekFormat(d: Dayjs | null | undefined): string | null {
+  if (!d) return null;
+  return `${d.isoWeekYear()}W${String(d.isoWeek()).padStart(2, "0")}`;
+}
+function isoWeekParse(s: string | null | undefined): Dayjs | null {
+  if (!s) return null;
+  const m = s.match(/^(\d{4})-?W(\d{1,2})$/i);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const week = Number(m[2]);
+  if (week < 1 || week > 53) return null;
+  // 4 de enero ALWAYS pertenece a la semana ISO 1 del año. Anchamos ahí y
+  // sumamos (week-1) semanas. Más portable que usar setters isoWeek/isoWeekYear
+  // (que los tipos de dayjs no exponen como setters cuando reciben argumento).
+  return dayjs(`${year}-01-04`).startOf("isoWeek").add(week - 1, "week");
+}
 
 interface CatalogOption { codigo: string; nombre: string }
 interface EquipoOption { codigo: string; descripcion: string }
@@ -136,6 +169,11 @@ export default function OrdenesTrabajoInternasPage() {
   const [userStatuses, setUserStatuses] = useState<CatalogOption[]>([]);
   const [estrategias, setEstrategias] = useState<EstrategiaOption[]>([]);
   const [trabajadores, setTrabajadores] = useState<TrabajadorOpt[]>([]);
+  // Catálogo de Task Lists del taller (importado del Excel HPK). Se usa en el
+  // form para que el usuario elija una tarea en vez de tipearla como texto libre.
+  const [taskLists, setTaskLists] = useState<Array<{
+    id: number; maquina_taller: string; actividad_codigo: string; descripcion: string;
+  }>>([]);
 
   // El dropdown "Asignado a" en OTs internas muestra TODO el personal de
   // Logística (incluyendo jefe/compras/almacén) + Mantenimiento + Limpieza
@@ -160,7 +198,7 @@ export default function OrdenesTrabajoInternasPage() {
   // Cargar catálogos una vez
   useEffect(() => {
     (async () => {
-      const [tRes, pRes, prRes, usRes, estRes, trRes] = await Promise.all([
+      const [tRes, pRes, prRes, usRes, estRes, trRes, tlRes] = await Promise.all([
         fetch("/api/catalogos?tabla=tipoOTInterna"),
         fetch("/api/catalogos?tabla=planta"),
         fetch("/api/catalogos?tabla=prioridadAtencion"),
@@ -169,6 +207,8 @@ export default function OrdenesTrabajoInternasPage() {
         // No usamos soloOperarios=1 acá: necesitamos incluir JEFE DE LOGISTICA
         // y COMPRAS (que sí pueden ser asignados de OTs internas).
         fetch("/api/trabajadores?limit=200"),
+        // Catálogo de Task Lists del taller (291 entradas importadas del Excel).
+        fetch("/api/mantenimiento/task-lists?limit=2000"),
       ]);
       if (tRes.ok) setTiposOTInterna((await tRes.json()).data ?? []);
       // NOTA: los equipos se cargan dinámicamente según el área del taller
@@ -178,6 +218,7 @@ export default function OrdenesTrabajoInternasPage() {
       if (usRes.ok) setUserStatuses((await usRes.json()).data ?? []);
       if (estRes.ok) setEstrategias((await estRes.json()).data ?? []);
       if (trRes.ok) setTrabajadores((await trRes.json()).data ?? []);
+      if (tlRes.ok) setTaskLists((await tlRes.json()).data ?? []);
     })();
   }, []);
 
@@ -698,15 +739,29 @@ export default function OrdenesTrabajoInternasPage() {
                 />
               </Form.Item>
             </Col>
-            {/* Semana revisión: solo aparece al editar — al crear no se pide. */}
+            {/* Semana revisión: solo aparece al editar — al crear no se pide.
+                El form value se guarda como string "YYYYWww" (formato del sistema
+                — ver src/lib/emergencia-cascade.ts) pero la UI usa DatePicker
+                week. Convertimos entrada/salida con isoWeekParse/isoWeekFormat. */}
             {editing && (
               <Col xs={12} md={6}>
                 <Form.Item
                   name="semana_revision"
                   label="Semana revisión"
-                  tooltip="Formato ISO YYYY-Www (ej: 2026W18)"
+                  tooltip="Semana ISO (formato YYYYWww, ej: 2026W18)"
+                  // Form guarda string; DatePicker quiere Dayjs → convertimos
+                  // ida y vuelta acá.
+                  getValueProps={(value: string | null | undefined) => ({
+                    value: isoWeekParse(value),
+                  })}
+                  normalize={(value: Dayjs | null) => isoWeekFormat(value)}
                 >
-                  <Input placeholder="2026W18" maxLength={10} />
+                  <DatePicker
+                    picker="week"
+                    format="YYYY [W]WW"
+                    style={{ width: "100%" }}
+                    placeholder="Elegí semana"
+                  />
                 </Form.Item>
               </Col>
             )}
@@ -745,10 +800,30 @@ export default function OrdenesTrabajoInternasPage() {
                 <Col xs={24} md={12}>
                   <Form.Item
                     name="task_list"
-                    label="Task list (referencia libre)"
-                    tooltip="Texto libre por ahora. En el futuro se vinculará al catálogo de Tarea."
+                    label="Task list"
+                    tooltip="Catálogo importado del Excel de mantenimiento. Al elegir uno se auto-llena la descripción si está vacía."
                   >
-                    <Input placeholder="MP1 · Cambio aceite trimestral" maxLength={200} />
+                    <Select
+                      allowClear
+                      showSearch
+                      placeholder="Buscar tarea (máquina, MP, descripción)"
+                      optionFilterProp="label"
+                      onChange={(value) => {
+                        // Al elegir un task list, autocompletar la descripción si
+                        // está vacía. El usuario puede modificarla después.
+                        if (!value) return;
+                        const tl = taskLists.find((t) => labelDeTaskList(t) === value);
+                        if (!tl) return;
+                        const descActual = (form.getFieldValue("descripcion") as string | undefined)?.trim();
+                        if (!descActual) {
+                          form.setFieldValue("descripcion", tl.descripcion);
+                        }
+                      }}
+                      options={taskLists.map((t) => ({
+                        value: labelDeTaskList(t),
+                        label: labelDeTaskList(t),
+                      }))}
+                    />
                   </Form.Item>
                 </Col>
               </>

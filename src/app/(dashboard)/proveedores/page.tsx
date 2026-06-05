@@ -280,6 +280,8 @@ export default function ProveedoresPage() {
           <ExportarExcelButton<ProveedorRecord>
             endpoint="/api/proveedores"
             filename="Proveedores"
+            // Respeta el filtro de búsqueda activo en la tabla.
+            endpointParams={{ search }}
             columns={[
               { label: "RUC", value: (r) => r.ruc },
               { label: "Razón social", value: (r) => r.razon_social },

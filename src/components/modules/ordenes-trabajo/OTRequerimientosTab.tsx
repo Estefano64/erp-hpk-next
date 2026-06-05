@@ -94,6 +94,7 @@ const REQ_COLOR: Record<string, string> = {
   APROBADO: "success",
   DESAPROBADO: "error",
   ANULADO: "default",
+  CERRADO: "blue",
 };
 const COT_COLOR: Record<string, string> = {
   PEND_COT: "default",

@@ -15,16 +15,19 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Table, Button, Tag, Space, Modal, Form, Input, InputNumber, Select,
   Typography, Empty, App, AutoComplete, Popconfirm, Tooltip, Card, DatePicker,
+  Popover, Upload,
 } from "antd";
 import dayjs from "dayjs";
 import {
   PlusOutlined, ReloadOutlined, SendOutlined, DeleteOutlined,
-  CloseCircleOutlined, EditOutlined,
+  CloseCircleOutlined, EditOutlined, PaperClipOutlined, CalendarOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import { useColumnasRedimensionables, STICKY_HEADER } from "@/lib/tables";
+import { uploadToR2 } from "@/lib/r2-client";
+import { R2FileLink } from "@/components/R2FileLink";
 
 const { Text } = Typography;
 
@@ -41,8 +44,12 @@ interface RequerimientoRow {
   precio_unitario: string | number | null;
   moneda: string | null;
   observaciones: string | null;
+  fecha_requerida: string | null;
   material: { codigo: string; descripcion: string } | null;
   status_requerimiento: { codigo: string; nombre: string } | null;
+  // Adjuntos del ítem — fotos / cotizaciones / comprobantes. Mismo polimorfismo
+  // que OT externa (OTRepuestoAdjunto está atado a OTRepuesto, no a la OT).
+  adjuntos?: { id: number; nombre_archivo: string; r2_key: string; tamano: number }[];
 }
 
 interface MaterialOpt {
@@ -82,6 +89,7 @@ const REQ_COLOR: Record<string, string> = {
   APROBADO: "green",
   DESAPROBADO: "red",
   ANULADO: "red",
+  CERRADO: "blue",
 };
 
 const TIPO_COLOR: Record<string, string> = { MAC: "blue", CAD: "orange", SER: "purple" };
@@ -101,6 +109,9 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
   const [rows, setRows] = useState<RequerimientoRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [materiales, setMateriales] = useState<MaterialOpt[]>([]);
+  // Catálogo de unidades de medida — para el Select de "Unidad" en el modal
+  // multi-item. Se carga lazy al abrir el modal por primera vez.
+  const [unidades, setUnidades] = useState<{ codigo: string; nombre: string }[]>([]);
 
   // ── Modal "Nuevo requerimiento" (multi-item) ──────────────────────────
   const [modalOpen, setModalOpen] = useState(false);
@@ -130,6 +141,91 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Catálogo de unidades — se carga al mount (solo 23 entradas, peso bajo) para
+  // que esté disponible tanto en el modal "Nuevo requerimiento" como en la
+  // edición inline de la columna "Unidad".
+  useEffect(() => {
+    if (unidades.length > 0) return;
+    fetch("/api/catalogos?tabla=unidadMedida")
+      .then((r) => (r.ok ? r.json() : { data: [] }))
+      .then((j) => setUnidades(j.data ?? []))
+      .catch(() => { /* noop */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Adjuntos por ítem ───────────────────────────────────────────────
+  // El backend acepta upload via OTRepuestoAdjunto que es polimórfico (atado a
+  // OTRepuesto, no a la OT). El mismo endpoint sirve para externa e interna.
+  const [uploadingItemId, setUploadingItemId] = useState<number | null>(null);
+
+  async function subirAdjuntoItem(itemId: number, file: File) {
+    setUploadingItemId(itemId);
+    try {
+      const meta = await uploadToR2({
+        file,
+        uploadUrlEndpoint: `/api/requerimientos/${itemId}/adjuntos/upload-url`,
+      });
+      const res = await fetch(`/api/requerimientos/${itemId}/adjuntos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(meta),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        message.error(err?.error ?? "Error al registrar archivo.");
+        return;
+      }
+      message.success("Archivo adjuntado.");
+      fetchData();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "Error al subir archivo.");
+    } finally {
+      setUploadingItemId(null);
+    }
+  }
+
+  async function eliminarAdjuntoItem(itemId: number, adjuntoId: number) {
+    try {
+      const res = await fetch(`/api/requerimientos/${itemId}/adjuntos`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adjunto_id: adjuntoId }),
+      });
+      if (!res.ok) {
+        message.error("Error al eliminar adjunto.");
+        return;
+      }
+      message.success("Adjunto eliminado.");
+      fetchData();
+    } catch {
+      message.error("Error al eliminar adjunto.");
+    }
+  }
+
+  // ── Fecha requerida bulk ────────────────────────────────────────────
+  // Aplica una sola fecha a todos los ítems del requerimiento en paralelo.
+  // Cada PATCH hace su validación de status (solo BORRADOR es editable).
+  async function fijarFechaRequeridaBulk(items: RequerimientoRow[], fecha: dayjs.Dayjs) {
+    const editables = items.filter((i) => i.status_requerimiento?.codigo === "BORRADOR");
+    if (editables.length === 0) {
+      message.warning("No hay ítems en BORRADOR para actualizar.");
+      return;
+    }
+    const fechaStr = fecha.format("YYYY-MM-DD");
+    const results = await Promise.all(editables.map((i) =>
+      fetch(`/api/requerimientos/${i.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fecha_requerida: fechaStr }),
+      })
+    ));
+    const ok = results.filter((r) => r.ok).length;
+    const fail = results.length - ok;
+    if (ok > 0) message.success(`${ok} ítem(s) actualizado(s) con fecha ${fecha.format("DD/MM/YYYY")}.`);
+    if (fail > 0) message.warning(`${fail} ítem(s) fallaron.`);
+    fetchData();
+  }
+
   // Cargar materiales lazy al abrir modal por primera vez
   useEffect(() => {
     if (modalOpen && materiales.length === 0) {
@@ -138,7 +234,14 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
         .then((j) => setMateriales(j.data ?? []))
         .catch(() => { /* noop */ });
     }
-  }, [modalOpen, materiales.length]);
+    // Catálogo de unidades — solo se pide la primera vez. 23 entradas, no necesita límite.
+    if (modalOpen && unidades.length === 0) {
+      fetch("/api/catalogos?tabla=unidadMedida")
+        .then((r) => (r.ok ? r.json() : { data: [] }))
+        .then((j) => setUnidades(j.data ?? []))
+        .catch(() => { /* noop */ });
+    }
+  }, [modalOpen, materiales.length, unidades.length]);
 
   // ── Modal multi-item ────────────────────────────────────────────────
 
@@ -149,7 +252,7 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
       tipo_codigo: "MAC",
       descripcion: "",
       cantidad: 1,
-      unidad_medida: "UNIDAD",
+      unidad_medida: "und",
     }]);
     setModalOpen(true);
   }
@@ -160,7 +263,7 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
       tipo_codigo: "MAC",
       descripcion: "",
       cantidad: 1,
-      unidad_medida: "UNIDAD",
+      unidad_medida: "und",
     }]);
   }
 
@@ -179,8 +282,8 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
         const mat = materiales.find((m) => m.codigo === patch.material_codigo);
         if (mat) {
           if (!next.descripcion) next.descripcion = mat.descripcion;
-          if (!next.unidad_medida || next.unidad_medida === "UNIDAD") {
-            next.unidad_medida = mat.unidad_medida_codigo ?? "UNIDAD";
+          if (!next.unidad_medida || next.unidad_medida === "und") {
+            next.unidad_medida = mat.unidad_medida_codigo ?? "und";
           }
           if (!next.fabricante_codigo && mat.fabricante_codigo) {
             next.fabricante_codigo = mat.fabricante_codigo;
@@ -257,6 +360,7 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
     setEditValues({
       cantidad: r.cantidad,
       descripcion: r.descripcion,
+      unidad_medida: r.unidad_medida,
       precio_unitario: r.precio_unitario,
       observaciones: r.observaciones,
     });
@@ -276,6 +380,7 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
         body: JSON.stringify({
           cantidad: editValues.cantidad,
           descripcion: editValues.descripcion,
+          unidad_medida: editValues.unidad_medida ?? null,
           precio_unitario: editValues.precio_unitario ?? null,
           observaciones: editValues.observaciones ?? null,
         }),
@@ -406,16 +511,30 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
       },
     },
     {
-      key: "cantidad", title: "Cant.", width: 110, align: "right",
+      // En modo lectura: "5 lt" (cantidad + unidad). En modo edición: 2 inputs
+      // separados (InputNumber cantidad + Select unidad) para que se pueda
+      // corregir cualquier dato sin tener que anular y rehacer el item.
+      key: "cantidad", title: "Cant. / Unidad", width: 180, align: "right",
       render: (_, r) => {
         if (editingId === r.id) {
           return (
-            <InputNumber
-              value={Number(editValues.cantidad ?? 0)}
-              onChange={(v) => setEditValues((vs) => ({ ...vs, cantidad: v ?? 0 }))}
-              min={0.01}
-              style={{ width: 80 }}
-            />
+            <Space size={4}>
+              <InputNumber
+                value={Number(editValues.cantidad ?? 0)}
+                onChange={(v) => setEditValues((vs) => ({ ...vs, cantidad: v ?? 0 }))}
+                min={0.01}
+                style={{ width: 80 }}
+              />
+              <Select
+                size="small"
+                showSearch
+                optionFilterProp="label"
+                value={editValues.unidad_medida ?? ""}
+                onChange={(nv) => setEditValues((vs) => ({ ...vs, unidad_medida: nv }))}
+                style={{ width: 90 }}
+                options={unidades.map((u) => ({ value: u.codigo, label: u.codigo }))}
+              />
+            </Space>
           );
         }
         return `${Number(r.cantidad).toLocaleString()} ${r.unidad_medida ?? ""}`;
@@ -444,6 +563,70 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
       render: (_, r) => r.status_requerimiento
         ? <Tag color={REQ_COLOR[r.status_requerimiento.codigo] ?? "default"}>{r.status_requerimiento.nombre}</Tag>
         : <Text type="secondary">—</Text>,
+    },
+    {
+      // Adjuntos por ítem — popover con la lista de archivos + botón para subir.
+      // Útil para que el solicitante adjunte cotización del proveedor, foto del
+      // repuesto, comprobante, etc. — y que el aprobador los pueda descargar.
+      key: "adjuntos", title: "Adjuntos", width: 130, align: "center",
+      render: (_, r) => {
+        const adj = r.adjuntos ?? [];
+        return (
+          <Space size={4}>
+            {adj.length > 0 ? (
+              <Popover
+                placement="left"
+                title={`Adjuntos del ítem ${r.item_req ?? r.id} (${adj.length})`}
+                content={
+                  <div style={{ maxWidth: 320, display: "flex", flexDirection: "column", gap: 4 }}>
+                    {adj.map((a) => (
+                      <div
+                        key={a.id}
+                        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 12 }}
+                      >
+                        <R2FileLink resource="req-adjunto" resourceId={a.id} r2Key={a.r2_key}>
+                          <PaperClipOutlined /> {a.nombre_archivo} ({(a.tamano / 1024).toFixed(1)} KB)
+                        </R2FileLink>
+                        <Popconfirm
+                          title="¿Eliminar adjunto?"
+                          onConfirm={() => eliminarAdjuntoItem(r.id, a.id)}
+                          okText="Eliminar"
+                          okButtonProps={{ danger: true }}
+                          cancelText="Cancelar"
+                        >
+                          <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+                        </Popconfirm>
+                      </div>
+                    ))}
+                  </div>
+                }
+              >
+                <Tag color="blue" style={{ margin: 0, cursor: "pointer" }}>
+                  <PaperClipOutlined /> {adj.length}
+                </Tag>
+              </Popover>
+            ) : (
+              <Text type="secondary">—</Text>
+            )}
+            <Upload
+              showUploadList={false}
+              beforeUpload={(file) => {
+                subirAdjuntoItem(r.id, file as File);
+                return false;
+              }}
+            >
+              <Tooltip title="Adjuntar archivo">
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<PaperClipOutlined />}
+                  loading={uploadingItemId === r.id}
+                />
+              </Tooltip>
+            </Upload>
+          </Space>
+        );
+      },
     },
     {
       key: "acciones", title: "", width: 130, fixed: "right", align: "center",
@@ -506,29 +689,70 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
         </Text>
       </Space>
 
-      {/* Acciones a nivel grupo (un botón "Enviar a aprobación" por nro_req con items en BORRADOR) */}
+      {/* Resumen + acciones a nivel grupo (por nro_req): subtotal del req,
+          "Fecha requerida bulk" (fija la fecha en todos los items del grupo) y
+          "Enviar a aprobación" (todos los items en BORRADOR del req). */}
       {gruposPorReq.size > 0 && (
         <Card size="small" style={{ marginBottom: 12, background: brand.bgPage }}>
-          <Space wrap>
-            <Text type="secondary" style={{ fontSize: 11 }}>Acciones por requerimiento:</Text>
-            {[...gruposPorReq.entries()]
-              .filter(([_, items]) => items.some((i) => i.status_requerimiento?.codigo === "BORRADOR"))
-              .map(([nroReq, items]) => {
-                const enBorrador = items.filter((i) => i.status_requerimiento?.codigo === "BORRADOR").length;
-                return (
-                  <Popconfirm
-                    key={nroReq}
-                    title={`Enviar ${nroReq} a aprobación`}
-                    description={`${enBorrador} item(s) en BORRADOR pasarán a SIN_APROBACION.`}
-                    onConfirm={() => enviarAprobacion(nroReq)}
-                    okText="Enviar" cancelText="Cancelar"
-                  >
-                    <Button size="small" icon={<SendOutlined />} type="dashed">
-                      {nroReq} ({enBorrador})
-                    </Button>
-                  </Popconfirm>
-                );
-              })}
+          <Space orientation="vertical" size={6} style={{ width: "100%" }}>
+            {[...gruposPorReq.entries()].map(([nroReq, items]) => {
+              // Subtotal del requerimiento: suma de (cantidad × precio_unitario)
+              // por moneda — es habitual que un req tenga ítems en USD y SOL.
+              const subtotalPorMoneda = new Map<string, number>();
+              let itemsSinPrecio = 0;
+              for (const it of items) {
+                const cant = Number(it.cantidad) || 0;
+                const pu = it.precio_unitario != null ? Number(it.precio_unitario) : null;
+                if (pu == null || pu <= 0) {
+                  itemsSinPrecio++;
+                  continue;
+                }
+                const mon = it.moneda ?? "USD";
+                subtotalPorMoneda.set(mon, (subtotalPorMoneda.get(mon) ?? 0) + cant * pu);
+              }
+              const enBorrador = items.filter((i) => i.status_requerimiento?.codigo === "BORRADOR").length;
+              return (
+                <div
+                  key={nroReq}
+                  style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}
+                >
+                  <Tag color="default" style={{ margin: 0, fontWeight: 600 }}>{nroReq}</Tag>
+                  <Text type="secondary" style={{ fontSize: 11 }}>
+                    {items.length} ítem{items.length === 1 ? "" : "s"}
+                  </Text>
+                  {/* Subtotal por moneda */}
+                  {[...subtotalPorMoneda.entries()].map(([mon, total]) => (
+                    <Tag key={mon} color="green" style={{ margin: 0 }}>
+                      {mon} {total.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </Tag>
+                  ))}
+                  {itemsSinPrecio > 0 && (
+                    <Tooltip title="Items sin precio unitario. Edítalos antes de enviar a aprobación.">
+                      <Tag color="orange" style={{ margin: 0 }}>{itemsSinPrecio} sin precio</Tag>
+                    </Tooltip>
+                  )}
+                  {/* Fecha requerida bulk: fija una fecha a todos los items del req */}
+                  <FechaRequeridaBulk
+                    nroReq={nroReq}
+                    items={items}
+                    onConfirmar={(fecha) => fijarFechaRequeridaBulk(items, fecha)}
+                  />
+                  {/* Enviar a aprobación (solo si hay items en BORRADOR) */}
+                  {enBorrador > 0 && (
+                    <Popconfirm
+                      title={`Enviar ${nroReq} a aprobación`}
+                      description={`${enBorrador} item(s) en BORRADOR pasarán a SIN_APROBACION.`}
+                      onConfirm={() => enviarAprobacion(nroReq)}
+                      okText="Enviar" cancelText="Cancelar"
+                    >
+                      <Button size="small" icon={<SendOutlined />} type="primary">
+                        Enviar ({enBorrador})
+                      </Button>
+                    </Popconfirm>
+                  )}
+                </div>
+              );
+            })}
           </Space>
         </Card>
       )}
@@ -632,12 +856,20 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
                 ),
               },
               {
-                title: "Unidad", dataIndex: "unidad_medida", width: 100,
+                title: "Unidad", dataIndex: "unidad_medida", width: 130,
                 render: (v: string, row) => (
-                  <Input
+                  <Select
+                    showSearch
                     size="small"
                     value={v}
-                    onChange={(e) => updateDraft(row.key, { unidad_medida: e.target.value })}
+                    style={{ width: "100%" }}
+                    placeholder="Elegí unidad"
+                    optionFilterProp="label"
+                    onChange={(nv) => updateDraft(row.key, { unidad_medida: nv })}
+                    options={unidades.map((u) => ({
+                      value: u.codigo,
+                      label: `${u.codigo} — ${u.nombre}`,
+                    }))}
                   />
                 ),
               },
@@ -645,7 +877,7 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
                 // Precio unitario — obligatorio para TODOS los tipos.
                 // MAC auto-rellena desde el catálogo del material (si tiene
                 // precio); SER y CAD lo ingresa el usuario.
-                title: <span>Precio <Text type="danger">*</Text></span>,
+                title: <span>Precio unitario <Text type="danger">*</Text></span>,
                 dataIndex: "precio_unitario", width: 180,
                 render: (v: number | undefined, row) => (
                   <Space size={2}>
@@ -670,6 +902,28 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
                     />
                   </Space>
                 ),
+              },
+              {
+                // Precio total — calculado en vivo (cantidad × precio_unitario).
+                // Read-only para evitar inconsistencias; si el usuario quiere otro
+                // total, debe ajustar cantidad o precio unitario.
+                title: "Precio total",
+                key: "precio_total", width: 130, align: "right",
+                render: (_: unknown, row: DraftItem) => {
+                  const cant = Number(row.cantidad) || 0;
+                  const pu = row.precio_unitario != null ? Number(row.precio_unitario) : null;
+                  if (pu == null || pu <= 0 || cant <= 0) {
+                    return <Text type="secondary">—</Text>;
+                  }
+                  const total = cant * pu;
+                  return (
+                    <Text strong>
+                      {(row.moneda ?? "USD")} {total.toLocaleString("es-PE", {
+                        minimumFractionDigits: 2, maximumFractionDigits: 2,
+                      })}
+                    </Text>
+                  );
+                },
               },
               {
                 // Fecha requerida — obligatoria para poder enviar a aprobación.
@@ -711,6 +965,68 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
         }
       `}</style>
     </div>
+  );
+}
+
+// Popover con DatePicker para fijar una fecha requerida a TODOS los ítems
+// (en BORRADOR) de un requerimiento de una sola vez. Útil cuando los ítems se
+// crearon sin fecha o cuando hay que sincronizarlos a una sola fecha de llegada.
+function FechaRequeridaBulk({
+  nroReq, items, onConfirmar,
+}: {
+  nroReq: string;
+  items: RequerimientoRow[];
+  onConfirmar: (fecha: dayjs.Dayjs) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [fecha, setFecha] = useState<dayjs.Dayjs | null>(null);
+  const editables = items.filter((i) => i.status_requerimiento?.codigo === "BORRADOR").length;
+  if (editables === 0) return null;
+  return (
+    <Popover
+      open={open}
+      onOpenChange={setOpen}
+      trigger="click"
+      placement="top"
+      title={`Fecha requerida para ${nroReq}`}
+      content={
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 220 }}>
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            Se aplicará a {editables} ítem(s) en BORRADOR.
+          </Text>
+          <DatePicker
+            size="small"
+            value={fecha}
+            onChange={setFecha}
+            format="DD/MM/YYYY"
+            style={{ width: "100%" }}
+          />
+          <Space>
+            <Button size="small" onClick={() => setOpen(false)}>Cancelar</Button>
+            <Button
+              size="small"
+              type="primary"
+              disabled={!fecha}
+              onClick={() => {
+                if (fecha) {
+                  onConfirmar(fecha);
+                  setOpen(false);
+                  setFecha(null);
+                }
+              }}
+            >
+              Aplicar
+            </Button>
+          </Space>
+        </div>
+      }
+    >
+      <Tooltip title="Fijar fecha requerida en todos los ítems del requerimiento">
+        <Button size="small" icon={<CalendarOutlined />} type="dashed">
+          Fecha bulk
+        </Button>
+      </Tooltip>
+    </Popover>
   );
 }
 

@@ -345,7 +345,7 @@ export async function POST(req: NextRequest) {
           select: { po_id: true },
         });
         const poIds = [...new Set(reqs.map((r) => r.po_id).filter((x): x is number => x != null))];
-        if (poIds.length === 0) return "Recursos en recepción";
+        if (poIds.length === 0) return "Recursos entregados";
         const comprasOT = await tx.compra.findMany({
           where: { id: { in: poIds } },
           select: { status_oc_codigo: true },
@@ -353,7 +353,7 @@ export async function POST(req: NextRequest) {
         const todasEntregadas = comprasOT.every(
           (c) => c.status_oc_codigo === "ENTREGADO" || c.status_oc_codigo === "COMPLETO",
         );
-        return todasEntregadas ? "Recursos completos" : "Recursos en recepción";
+        return todasEntregadas ? "Recursos completos" : "Recursos entregados";
       }
 
       for (const otId of otIds) {

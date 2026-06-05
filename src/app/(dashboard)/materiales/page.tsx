@@ -508,6 +508,16 @@ export default function MaterialesPage() {
           <ExportarExcelButton<MaterialRecord>
             endpoint="/api/materiales"
             filename="Materiales"
+            // Respeta los filtros server-side activos en la tabla cuando el
+            // usuario marca "Usar filtros actuales de la tabla" en el modal.
+            endpointParams={{
+              search,
+              planta: filterPlanta,
+              area: filterArea,
+              categoria: filterCategoria,
+              clasificacion: filterClasificacion,
+              fabricante: filterFab,
+            }}
             categoryFilters={[
               {
                 key: "categoria",
