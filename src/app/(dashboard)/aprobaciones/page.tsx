@@ -399,6 +399,104 @@ export default function AceptacionesPage() {
   }
 
   // ── Acciones bulk ───────────────────────────────────────────────────
+  // Rechaza (anula) todas las OCs seleccionadas con un único motivo aplicado
+  // a todas. Si hay errores parciales, sigue procesando y avisa al final.
+  function bulkAnularOC() {
+    if (selOcs.length === 0) return;
+    let motivo = "";
+    modal.confirm({
+      title: `Rechazar ${selOcs.length} OC(s)`,
+      content: (
+        <div style={{ marginTop: 8 }}>
+          <Text style={{ fontSize: 12 }}>
+            Motivo <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+          </Text>
+          <Text type="secondary" style={{ fontSize: 11, display: "block" }}>
+            Todas las OCs seleccionadas pasarán a ANULADAS. Los items vinculados también quedan anulados.
+            Si lo dejás, el motivo se aplica a todas.
+          </Text>
+          <Input.TextArea
+            rows={3}
+            maxLength={500}
+            showCount
+            placeholder="Ej: precios desactualizados, cancelar el lote, etc."
+            onChange={(e) => { motivo = e.target.value; }}
+            style={{ marginTop: 8 }}
+          />
+        </div>
+      ),
+      okText: `Rechazar ${selOcs.length} OC(s)`,
+      okButtonProps: { danger: true },
+      cancelText: "Cancelar",
+      width: 480,
+      onOk: async () => {
+        const txt = motivo.trim();
+        const body = JSON.stringify({ motivo: txt || null });
+        let ok = 0, errs = 0;
+        for (const id of selOcs) {
+          const res = await fetch(`/api/compras/${id}/anular`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body,
+          });
+          if (res.ok) ok++; else errs++;
+        }
+        if (ok > 0) message.success(`${ok} OC(s) rechazada(s).`);
+        if (errs > 0) message.warning(`${errs} con error.`);
+        setSelOcs([]);
+        fetchData();
+      },
+    });
+  }
+
+  // Rechaza (desaprueba) todos los requerimientos seleccionados.
+  function bulkRechazarRQ() {
+    if (selReqs.length === 0) return;
+    let motivo = "";
+    modal.confirm({
+      title: `Rechazar ${selReqs.length} requerimiento(s)`,
+      content: (
+        <div style={{ marginTop: 8 }}>
+          <Text style={{ fontSize: 12 }}>
+            Motivo <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+          </Text>
+          <Text type="secondary" style={{ fontSize: 11, display: "block" }}>
+            Si lo dejás, se aplica a todos los items del lote.
+          </Text>
+          <Input.TextArea
+            rows={3}
+            maxLength={500}
+            showCount
+            placeholder="Ej: falta cotización del proveedor, prioridad cambió, etc."
+            onChange={(e) => { motivo = e.target.value; }}
+            style={{ marginTop: 8 }}
+          />
+        </div>
+      ),
+      okText: `Rechazar ${selReqs.length}`,
+      okButtonProps: { danger: true },
+      cancelText: "Cancelar",
+      width: 480,
+      onOk: async () => {
+        const txt = motivo.trim();
+        const body = JSON.stringify({ motivo: txt || null });
+        let ok = 0, errs = 0;
+        for (const id of selReqs) {
+          const res = await fetch(`/api/requerimientos/${id}/desaprobar`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body,
+          });
+          if (res.ok) ok++; else errs++;
+        }
+        if (ok > 0) message.success(`${ok} requerimiento(s) rechazado(s).`);
+        if (errs > 0) message.warning(`${errs} con error.`);
+        setSelReqs([]);
+        fetchData();
+      },
+    });
+  }
+
   function bulkAceptarOC() {
     if (selOcs.length === 0) return;
     let comentario = "";
@@ -1136,6 +1234,11 @@ export default function AceptacionesPage() {
                             </Button>
                           </Popconfirm>
                         )}
+                        {selOcs.length > 0 && (
+                          <Button danger icon={<CloseOutlined />} size="small" onClick={bulkAnularOC}>
+                            Rechazar seleccionadas ({selOcs.length})
+                          </Button>
+                        )}
                         <ColumnasToggleButton<OCPendiente>
                           columns={ocColumns}
                           ocultas={ocultasOC}
@@ -1203,6 +1306,11 @@ export default function AceptacionesPage() {
                               Aprobar seleccionados ({selReqs.length})
                             </Button>
                           </Popconfirm>
+                        )}
+                        {selReqs.length > 0 && (
+                          <Button danger icon={<CloseOutlined />} size="small" onClick={bulkRechazarRQ}>
+                            Rechazar seleccionados ({selReqs.length})
+                          </Button>
                         )}
                         <ColumnasToggleButton<ReqPendiente>
                           columns={rqColumns}
