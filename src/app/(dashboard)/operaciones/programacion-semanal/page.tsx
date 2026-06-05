@@ -1368,9 +1368,12 @@ export default function ProgramacionSemanalPage() {
             {hasConflict && <WarningFilled style={{ marginLeft: 4 }} />}
           </div>
           <div className="psg-task-sub" style={{ paddingLeft: continuaDeAntes ? 14 : 0, paddingRight: continuaDespues ? 14 : 0 }}>{r.componente} — {r.descripcion}</div>
-          {r.comentario && (
+          {r.comentario && (widthPx >= 90 ? (
             <div className="psg-task-cmt" style={{ paddingLeft: continuaDeAntes ? 14 : 0, paddingRight: continuaDespues ? 14 : 0 }}>💬 {r.comentario}</div>
-          )}
+          ) : (
+            // Bloque angosto: el comentario no entra legible → badge (texto en el tooltip).
+            <span className="psg-task-cmt-badge" title={r.comentario}>💬</span>
+          ))}
           {/* Resize handle: solo en vista Operarios (Equipos es solo lectura),
               si la tarea NO continúa a la próxima semana y NO está publicada
               (publicada = plan congelado). */}
@@ -1853,7 +1856,7 @@ export default function ProgramacionSemanalPage() {
           onMouseDown={startPan}
         >
           {lineaHoy != null && (
-            <div className="psg-now-line" style={{ left: 220 + lineaHoy }} title={`Ahora: ${diaEs(ahoraTick ?? dayjs(), true)}`}>
+            <div className="psg-now-line" style={{ left: 220 + lineaHoy, height: recursos.length * ROW_HEIGHT, bottom: "auto" }} title={`Ahora: ${diaEs(ahoraTick ?? dayjs(), true)}`}>
               <div className="psg-now-dot" />
             </div>
           )}
@@ -2680,16 +2683,21 @@ export default function ProgramacionSemanalPage() {
           background: rgba(245,34,45,0.95);
         }
         .psg-task-title {
-          font-weight: 600;
+          font-weight: 600; line-height: 1.2;
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .psg-task-sub {
-          font-size: 10px; opacity: 0.95;
+          font-size: 10px; opacity: 0.95; line-height: 1.15;
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .psg-task-cmt {
-          font-size: 10px; opacity: 0.9; font-style: italic;
+          font-size: 9px; opacity: 0.9; font-style: italic; line-height: 1.15;
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        /* Bloque angosto con comentario: badge en la esquina (texto en el tooltip). */
+        .psg-task-cmt-badge {
+          position: absolute; bottom: 1px; right: 3px;
+          font-size: 9px; opacity: 0.85; pointer-events: none; line-height: 1;
         }
 
         .psg-pool {
