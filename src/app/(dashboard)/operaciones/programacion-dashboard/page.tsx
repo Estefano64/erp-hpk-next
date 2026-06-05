@@ -20,6 +20,7 @@ import {
   Tabs,
   App,
   Segmented,
+  Skeleton,
 } from "antd";
 import {
   AppstoreOutlined,
@@ -31,10 +32,12 @@ import {
   ArrowUpOutlined,
   ArrowDownOutlined,
   InfoCircleOutlined,
+  FileExcelOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType, ColumnGroupType, ColumnType } from "antd/es/table/interface";
 import dayjs from "dayjs";
 import Link from "next/link";
+import * as XLSX from "xlsx";
 import { brand, radius, shadow, space } from "@/lib/theme";
 import { useResponsive } from "@/lib/responsive";
 import {
@@ -176,6 +179,8 @@ function Kpi({ label, value, color, active, onClick }: {
 }
 
 export default function ProgramacionDashboardPage() {
+  const { screens } = useResponsive();
+  const isMobile = !screens.md;
   const [loading, setLoading] = useState(false);
   const [componentes, setComponentes] = useState<ComponenteCat[]>([]);
   const [operaciones, setOperaciones] = useState<OperacionCat[]>([]);
@@ -351,6 +356,8 @@ export default function ProgramacionDashboardPage() {
     });
   }, [otsFiltradas, quickFilter]);
 
+  const cargandoInicial = loading && ots.length === 0;
+
   // Agrupar operaciones por componente para construir las columnas anidadas
   const opsOcultasSet = useMemo(() => new Set(opsOcultas), [opsOcultas]);
   const operacionesPorComponente = useMemo(() => {
@@ -367,7 +374,7 @@ export default function ProgramacionDashboardPage() {
 
   // Renderer de celda de operación: muestra abreviatura sobre fondo del color del estado.
   const renderCelda = (estado: string | null, externo: boolean | null) => {
-    if (!estado) return <div style={{ width: "100%", textAlign: "center", color: "#bbb" }}>—</div>;
+    if (!estado) return <div style={{ width: "100%", textAlign: "center", color: brand.textSecondary }}>—</div>;
     const color = colorDeEstado(estado);
     const abr = abreviarEstado(estado);
     return (
@@ -515,7 +522,7 @@ export default function ProgramacionDashboardPage() {
           <Tooltip title={`${realizadas}/${total} tareas realizadas (${pct}%)`}>
             <div style={{ lineHeight: 1.1 }}>
               <Progress percent={pct} size="small" status={pct === 100 ? "success" : "active"} showInfo={false} />
-              <div style={{ fontSize: 10, color: "#666" }}>{realizadas}/{total} ({pct}%)</div>
+              <div style={{ fontSize: 10, color: brand.textSecondary }}>{realizadas}/{total} ({pct}%)</div>
             </div>
           </Tooltip>
         );
@@ -554,7 +561,7 @@ export default function ProgramacionDashboardPage() {
               const cell = r.plan[key];
               if (cell?.estado) { tot++; if (String(cell.estado).toLowerCase() === "realizado") ok++; }
             }
-            if (tot === 0) return <span style={{ color: "#bbb", fontSize: 10 }}>—</span>;
+            if (tot === 0) return <span style={{ color: brand.textSecondary, fontSize: 10 }}>—</span>;
             return <span style={{ fontSize: 10, fontWeight: 700, color: ok >= tot ? brand.success : brand.textSecondary }}>{ok}/{tot}</span>;
           },
         } as ColumnType<OTRow>);
@@ -639,6 +646,38 @@ export default function ProgramacionDashboardPage() {
 
   const columns: ColumnsType<OTRow> = [...infoColumns, ...operacionColumns];
 
+  // Export client-side de la matriz a .xlsx (una columna por operación visible).
+  const exportarMatriz = useCallback(() => {
+    const rows = otsVisibles.map((o) => {
+      const r: Record<string, string | number> = {
+        "OT HP&K": o.ot ?? `#${o.id}`,
+        "Cliente": o.cliente_nombre ?? o.cliente_codigo ?? "",
+        "Descripción": o.descripcion ?? "",
+        "Flota": o.modelo ?? "",
+        "N/P": o.np ?? "",
+        "Prioridad": o.prioridad_codigo ?? "",
+        "F. Ingreso": o.fecha_recepcion ? dayjs(o.fecha_recepcion).format("DD/MM/YYYY") : "",
+        "Fecha entrega": o.fecha_entrega ? dayjs(o.fecha_entrega).format("DD/MM/YYYY") : "",
+        "Status OT": o.ot_status ?? "",
+        "Avance": o.progreso.total > 0 ? `${o.progreso.realizadas}/${o.progreso.total}` : "",
+      };
+      for (const comp of componentesOrdenados) {
+        for (const op of operacionesPorComponente.get(comp.codigo) ?? []) {
+          const key = `${comp.codigo.trim().toUpperCase()}__${op.codigo.trim().toUpperCase()}`;
+          const cell = o.plan[key];
+          r[`${comp.nombre} · ${op.nombre}`] = cell?.estado
+            ? `${estadoMap.get(cell.estado)?.nombre ?? cell.estado}${cell.externo ? " (tercero)" : ""}`
+            : "";
+        }
+      }
+      return r;
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Planificación");
+    XLSX.writeFile(wb, `Planificacion-${dayjs().format("YYYYMMDD-HHmm")}.xlsx`);
+  }, [otsVisibles, componentesOrdenados, operacionesPorComponente, estadoMap]);
+
   return (
     <div>
       {/* Encabezado compacto: título + filtros + acciones en una sola fila para
@@ -699,12 +738,19 @@ export default function ProgramacionDashboardPage() {
               Expandir grupos ({gruposColapsados.size})
             </Button>
           )}
+          <Button icon={<FileExcelOutlined />} onClick={exportarMatriz} disabled={otsVisibles.length === 0}>
+            Exportar
+          </Button>
           <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>
             Refrescar
           </Button>
         </Space>
       </Card>
 
+      {cargandoInicial ? (
+        <Skeleton active title={false} paragraph={{ rows: 10 }} style={{ padding: 16 }} />
+      ) : (
+        <>
       {/* ── KPIs (también filtran la matriz) ── */}
       <div style={{ display: "flex", gap: space.sm, flexWrap: "wrap", marginBottom: space.sm }}>
         <Kpi label="OTs activas" value={kpis.activas} active={quickFilter === "todas"} onClick={() => setQuickFilter("todas")} />
@@ -735,8 +781,50 @@ export default function ProgramacionDashboardPage() {
         </Card>
       )}
 
-      {otsVisibles.length === 0 && !loading ? (
+      {otsVisibles.length === 0 ? (
         <Empty description={quickFilter === "todas" ? "No hay OTs activas." : "No hay OTs que coincidan con el filtro."} />
+      ) : isMobile ? (
+        /* ── Fallback mobile: lista de tarjetas por OT (avance + estados resumidos) ── */
+        <div style={{ display: "flex", flexDirection: "column", gap: space.sm }}>
+          {otsVisibles.map((o) => {
+            const pct = o.progreso.total > 0 ? Math.round((o.progreso.realizadas / o.progreso.total) * 100) : 0;
+            const atrasada = otAtrasada(o);
+            return (
+              <Card
+                key={o.id}
+                size="small"
+                onClick={() => setDetalle(o)}
+                style={{ cursor: "pointer", borderLeft: atrasada ? `3px solid ${brand.error}` : `3px solid ${brand.border}` }}
+                styles={{ body: { padding: 12 } }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                  <Text strong style={{ color: brand.navy }}>OT {o.ot ?? `#${o.id}`}</Text>
+                  <Space size={4}>
+                    {o.prioridad_codigo && <Tag color={prioridadColor(o.prioridad_nivel)} style={{ margin: 0 }}>{o.prioridad_codigo}</Tag>}
+                    {atrasada && <Tag color="error" style={{ margin: 0 }}>Atrasada</Tag>}
+                  </Space>
+                </div>
+                <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 6 }}>
+                  {o.cliente_nombre ?? o.cliente_codigo ?? "—"} · {o.modelo ?? "—"}{o.descripcion ? ` · ${o.descripcion}` : ""}
+                </div>
+                <Progress percent={pct} size="small" status={pct === 100 ? "success" : "active"} />
+                <div style={{ fontSize: 11, color: brand.textSecondary, marginBottom: 6 }}>{o.progreso.realizadas}/{o.progreso.total} tareas</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  {componentesOrdenados.map((comp) => {
+                    let tot = 0, ok = 0;
+                    for (const op of operacionesPorComponente.get(comp.codigo) ?? []) {
+                      const key = `${comp.codigo.trim().toUpperCase()}__${op.codigo.trim().toUpperCase()}`;
+                      const cell = o.plan[key];
+                      if (cell?.estado) { tot++; if (String(cell.estado).toLowerCase() === "realizado") ok++; }
+                    }
+                    if (tot === 0) return null;
+                    return <Tag key={comp.codigo} color={ok >= tot ? "success" : "default"} style={{ margin: 0, fontSize: 10 }}>{comp.nombre} {ok}/{tot}</Tag>;
+                  })}
+                </div>
+              </Card>
+            );
+          })}
+        </div>
       ) : (
         <TablaProgramacion
           columns={visibleColumns(columns, ocultas)}
@@ -748,6 +836,8 @@ export default function ProgramacionDashboardPage() {
           pageSize={pageSize}
           onPageChange={(p, s) => { setPage(p); setPageSize(s); }}
         />
+      )}
+        </>
       )}
 
       <Drawer
