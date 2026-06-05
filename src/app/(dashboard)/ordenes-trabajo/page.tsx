@@ -166,7 +166,7 @@ const TEXT_KEYS = new Set<string>([
 ]);
 // Columnas enum cuyas opciones vienen del endpoint /facets.
 const ENUM_FACET_KEYS = new Set<string>([
-  "codigo_reparacion", "prioridad_atencion", "ot_status", "recursos_status",
+  "cliente", "codigo_reparacion", "prioridad_atencion", "ot_status", "recursos_status",
   "taller_status", "tipo_ot", "fabricante", "atencion_reparacion",
   "tipo_reparacion", "tipo_garantia",
 ]);
@@ -924,7 +924,14 @@ export default function OrdenesTrabajoPage() {
           dataSource={data}
           loading={loading}
           onChange={(_pag, filters, srt, extra) => {
-            setColumnFilters(filters as Record<string, Key[] | null>);
+            // El filtro de TIPO (Segmented) guarda su valor en columnFilters.tipo_ot,
+            // pero NO es una columna de la tabla: antd no lo incluye en `filters`.
+            // Si pisáramos todo el estado con `filters`, el tipo se resetearía a
+            // "Todas" cada vez que se aplica un filtro de columna. Lo preservamos.
+            setColumnFilters((prev) => ({
+              ...(filters as Record<string, Key[] | null>),
+              tipo_ot: prev.tipo_ot ?? null,
+            }));
             const s = Array.isArray(srt) ? srt[0] : srt;
             setSorter({
               field: (s?.order ? (s.field ?? s.columnKey) : null) as string | null,
