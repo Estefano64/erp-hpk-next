@@ -566,44 +566,56 @@ export function useColumnasRedimensionables<T>(
     [],
   );
 
-  // ── Anchos (resize) ─────────────────────────────────────────────────
+  // ── Anchos (resize) + Pin (fijar a la izquierda) + Orden ────────────
+  //
+  // BUG 2026-06: antes los 3 estados tenían efectos de lectura/escritura
+  // SEPARADOS. El de `pinned` no chequeaba `hidratado` y arrancaba como
+  // `new Set()` (no null como `orden`), así que en el primer mount el
+  // efecto de escritura corría ANTES del de lectura y guardaba `[]`,
+  // pisando las preferencias del usuario. Resultado: cada F5 borraba todas
+  // las columnas pineadas.
+  //
+  // Solución: UN solo efecto de lectura atómico que hidrata los 3 estados,
+  // y 3 efectos de escritura que TODOS chequean `hidratado` antes de tocar
+  // localStorage.
+  const pinnedKey = storageKey ? `${storageKey}-pinned` : undefined;
+  const orderKey = storageKey ? `${storageKey}-order` : undefined;
+
   const [anchos, setAnchos] = useState<Record<string, number>>({});
+  const [pinned, setPinned] = useState<Set<string>>(new Set());
+  const [orden, setOrden] = useState<string[] | null>(null);
   const [hidratado, setHidratado] = useState(false);
 
+  // Lectura atómica de los 3 estados desde localStorage. Se ejecuta una vez
+  // al montar (o cuando cambia el storageKey, ej. en /catalogos/[tabla]).
   useEffect(() => {
     if (!storageKey) { setHidratado(true); return; }
     try {
-      const stored = localStorage.getItem(storageKey);
-      if (stored) setAnchos(JSON.parse(stored));
+      const storedAnchos = localStorage.getItem(storageKey);
+      if (storedAnchos) setAnchos(JSON.parse(storedAnchos));
+      if (pinnedKey) {
+        const storedPinned = localStorage.getItem(pinnedKey);
+        if (storedPinned) setPinned(new Set(JSON.parse(storedPinned)));
+      }
+      if (orderKey) {
+        const storedOrden = localStorage.getItem(orderKey);
+        if (storedOrden) setOrden(JSON.parse(storedOrden));
+      }
     } catch { /* ignore */ }
     setHidratado(true);
-  }, [storageKey]);
+  }, [storageKey, pinnedKey, orderKey]);
 
+  // 3 efectos de escritura. CADA UNO chequea `hidratado` para no pisar
+  // localStorage con el valor inicial antes de haber leído.
   useEffect(() => {
     if (!storageKey || !hidratado) return;
     try { localStorage.setItem(storageKey, JSON.stringify(anchos)); } catch { /* ignore */ }
   }, [anchos, hidratado, storageKey]);
 
-  // ── Pin/unpin de columnas (fijar a la izquierda) ────────────────────
-  // Estado: set de keys de columnas fijadas por el usuario. Se persiste en
-  // localStorage bajo `${storageKey}-pinned`. Las columnas declaradas con
-  // `fixed: "left"` en el código NO se ponen acá — siempre quedan fijas y
-  // no se les ofrece el toggle de desfijar.
-  const pinnedKey = storageKey ? `${storageKey}-pinned` : undefined;
-  const [pinned, setPinned] = useState<Set<string>>(new Set());
-
   useEffect(() => {
-    if (!pinnedKey) return;
-    try {
-      const stored = localStorage.getItem(pinnedKey);
-      if (stored) setPinned(new Set(JSON.parse(stored)));
-    } catch { /* ignore */ }
-  }, [pinnedKey]);
-
-  useEffect(() => {
-    if (!pinnedKey) return;
+    if (!pinnedKey || !hidratado) return;
     try { localStorage.setItem(pinnedKey, JSON.stringify([...pinned])); } catch { /* ignore */ }
-  }, [pinned, pinnedKey]);
+  }, [pinned, hidratado, pinnedKey]);
 
   const togglePin = useCallback((key: string) => {
     setPinned((prev) => {
@@ -638,21 +650,12 @@ export function useColumnasRedimensionables<T>(
   }, [columns, pinned, claveColumna]);
 
   // ── Orden (drag-to-reorder) ─────────────────────────────────────────
-  const orderKey = storageKey ? `${storageKey}-order` : undefined;
-  const [orden, setOrden] = useState<string[] | null>(null);
-
+  // El estado + key + lectura se manejan arriba (efecto atómico de hidratación);
+  // acá solo queda el efecto de escritura, que también respeta `hidratado`.
   useEffect(() => {
-    if (!orderKey) return;
-    try {
-      const stored = localStorage.getItem(orderKey);
-      if (stored) setOrden(JSON.parse(stored));
-    } catch { /* ignore */ }
-  }, [orderKey]);
-
-  useEffect(() => {
-    if (!orderKey || orden === null) return;
+    if (!orderKey || !hidratado || orden === null) return;
     try { localStorage.setItem(orderKey, JSON.stringify(orden)); } catch { /* ignore */ }
-  }, [orden, orderKey]);
+  }, [orden, hidratado, orderKey]);
 
   // Aplicar orden personalizado a las columnas. Las columnas fixed mantienen su posición original.
   // Se usa `columnsConPin` (que ya tiene `fixed:left` inyectado para las
