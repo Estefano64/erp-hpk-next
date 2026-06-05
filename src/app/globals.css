@@ -63,7 +63,10 @@ body {
   opacity: 1 !important;
 }
 .ant-table-thead > tr > th {
-  padding-left: 16px !important;
+  /* 20px = 16px de handle (col-drag-handle width:16) + 4px de respiro al texto.
+     Antes era 16px y el handle se solapaba con el texto en columnas estrechas
+     (fechas), haciendo que pareciera que no se podía arrastrar. */
+  padding-left: 20px !important;
 }
 
 /* Resize handle: línea sutil 1px SIEMPRE visible (idle), se intensifica al hover. */

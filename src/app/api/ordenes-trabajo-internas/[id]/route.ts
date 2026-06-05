@@ -72,21 +72,60 @@ export async function PUT(req: NextRequest, { params }: Params) {
       if (k in body) data[k] = body[k] ? new Date(body[k]) : null;
     }
 
-    const usuarioActualiza = await getAuditUser(req);
-    if (usuarioActualiza) data.usuario_crea = data.usuario_crea ?? usuarioActualiza;
+    // NOTA: usuario_crea NO se toca en updates — es de la creación inicial.
+    // Cada edición se traza en OTHistorial (con el usuario que editó + diff).
+    const usuarioActualiza = (await getAuditUser(req)) ?? "sistema";
 
     data.version = { increment: 1 };
 
-    const updated = await prisma.ordenTrabajoInterna.update({
-      where: { id: otId },
-      data,
-      include: {
-        equipo: { select: { codigo: true, descripcion: true } },
-        tipo_ot_interna: true,
-        ot_status: true,
-        user_status: true,
-      },
+    const updated = await prisma.$transaction(async (tx) => {
+      // Snapshot previo para detectar qué campos cambiaron y describirlos.
+      const previo = await tx.ordenTrabajoInterna.findUnique({
+        where: { id: otId },
+      });
+      if (!previo) throw new Error("No encontrada");
+
+      const u = await tx.ordenTrabajoInterna.update({
+        where: { id: otId },
+        data,
+        include: {
+          equipo: { select: { codigo: true, descripcion: true } },
+          tipo_ot_interna: true,
+          ot_status: true,
+          user_status: true,
+        },
+      });
+
+      // Registrar en historial: lista de campos cambiados. Si no cambia nada
+      // útil (ej solo se hizo PATCH sin diff real), no creamos el registro.
+      const cambios: string[] = [];
+      for (const k of Object.keys(data)) {
+        if (k === "version") continue;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const antes = (previo as any)[k];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ahora = (data as any)[k];
+        const antesStr = antes instanceof Date ? antes.toISOString() : antes ?? "—";
+        const ahoraStr = ahora instanceof Date ? ahora.toISOString() : ahora ?? "—";
+        if (String(antesStr) !== String(ahoraStr)) {
+          cambios.push(`${k}: "${antesStr}" → "${ahoraStr}"`);
+        }
+      }
+      if (cambios.length > 0) {
+        await tx.oTHistorial.create({
+          data: {
+            orden_trabajo_interna_id: otId,
+            tipo_operacion: "EDICION",
+            descripcion: cambios.length === 1
+              ? `Editado: ${cambios[0]}`
+              : `Editados ${cambios.length} campos:\n${cambios.join("\n")}`,
+            usuario: usuarioActualiza,
+          },
+        });
+      }
+      return u;
     });
+
     return NextResponse.json({ data: updated });
   } catch (e) {
     return NextResponse.json(

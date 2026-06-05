@@ -47,6 +47,13 @@ export async function GET(req: NextRequest) {
           user_status: true,
           ot_status: true,
           recursos_status: true,
+          // Conteo de requerimientos (OTRepuesto) — para la columna "Reqs"
+          // de la tabla. Cuenta solo los activos (no anulados).
+          _count: {
+            select: {
+              repuestos: { where: { status_requerimiento_codigo: { not: "ANULADO" } } },
+            },
+          },
         },
         orderBy: { id: "desc" },
         skip: (page - 1) * limit,

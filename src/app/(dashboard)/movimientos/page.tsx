@@ -501,6 +501,10 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
   const [nroFactura, setNroFactura] = useState("");
   const [comentariosRec, setComentariosRec] = useState("");
   const [ubicacionRec, setUbicacionRec] = useState<string | undefined>();
+  // Zona seleccionada para "Aplicar a todos los items" (botón de atajo arriba).
+  // No persiste — solo es un buffer para que el usuario elija una zona y la
+  // copie a todos los slots de la tabla con un click.
+  const [zonaBulk, setZonaBulk] = useState<number | null>(null);
   const [ubicaciones, setUbicaciones] = useState<{ codigo: string; nombre: string }[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
@@ -1024,12 +1028,51 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                 </Col>
               </Row>
               <Row gutter={12}>
-                <Col xs={24} sm={12}>
+                <Col xs={24} sm={16}>
                   <Text strong style={{ fontSize: 12 }}>
-                    Ubicación física del material <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+                    Asignar zona a todos los items <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+                  </Text>
+                  <Space.Compact style={{ width: "100%" }}>
+                    <Select
+                      placeholder="Elegí una zona y aplicala a todos los items de la tabla"
+                      value={zonaBulk ?? undefined}
+                      onChange={(v) => setZonaBulk(v ?? null)}
+                      options={zonasAlmacen.map((z) => ({ value: z.id, label: `${z.codigo} — ${z.nombre}` }))}
+                      showSearch
+                      optionFilterProp="label"
+                      allowClear
+                      style={{ flex: 1 }}
+                    />
+                    <Button
+                      type="primary"
+                      disabled={zonaBulk == null}
+                      onClick={() => {
+                        // Aplica la zona elegida a TODOS los items que estén
+                        // siendo recibidos. Limpia las posiciones (cada zona tiene
+                        // sus propias posiciones — el usuario las elige por fila si
+                        // necesita ser más específico).
+                        const next: typeof ubicByMaterial = { ...ubicByMaterial };
+                        for (const it of previewItems) {
+                          const matKey = it.material_id ?? it.repuesto_id;
+                          next[matKey] = { zona_id: zonaBulk, posicion_id: null };
+                        }
+                        setUbicByMaterial(next);
+                        message.success(`Zona aplicada a ${previewItems.length} item(s).`);
+                      }}
+                    >
+                      Aplicar a todos
+                    </Button>
+                  </Space.Compact>
+                  <Text type="secondary" style={{ fontSize: 11 }}>
+                    Atajo para cuando toda la mercadería va al mismo almacén. Después podés ajustar items individuales en la tabla.
+                  </Text>
+                </Col>
+                <Col xs={24} sm={8}>
+                  <Text strong style={{ fontSize: 12 }}>
+                    Ubicación general (legacy) <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
                   </Text>
                   <Select
-                    placeholder="¿Dónde se guardó el material recibido?"
+                    placeholder="Ubicación a nivel OT"
                     value={ubicacionRec}
                     onChange={setUbicacionRec}
                     options={ubicaciones.map((u) => ({ value: u.codigo, label: `${u.codigo} — ${u.nombre}` }))}
@@ -1038,9 +1081,6 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                     allowClear
                     style={{ width: "100%" }}
                   />
-                  <Text type="secondary" style={{ fontSize: 11 }}>
-                    Opcional — cada item ya guarda su zona del almacén (HER / SUM / REP / STO) en la tabla de abajo. Este campo es solo para registrar una ubicación de almacén general a nivel OT.
-                  </Text>
                 </Col>
               </Row>
 
@@ -1252,6 +1292,11 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                         })}
                         placeholder="Zona"
                         size="small"
+                        // allowClear para corregir si el usuario seleccionó por
+                        // error. Al limpiar, la zona y la posición vuelven a null
+                        // (warning status indica que falta zona si se intenta
+                        // recibir el item).
+                        allowClear
                         style={{ width: "100%" }}
                         status={!u?.zona_id ? "warning" : undefined}
                         options={zonasAlmacen.map((z) => ({ value: z.id, label: z.codigo }))}

@@ -8,7 +8,7 @@ import {
 } from "antd";
 import {
   ToolOutlined, PlusOutlined, ReloadOutlined, SearchOutlined,
-  EditOutlined, DeleteOutlined, EyeOutlined, StopOutlined, UndoOutlined,
+  DeleteOutlined, EyeOutlined, StopOutlined, UndoOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { useSession } from "next-auth/react";
@@ -92,6 +92,8 @@ interface OTInternaRow {
   usuario_crea: string | null;
   version: number;
   equipo: { codigo: string; descripcion: string } | null;
+  // Conteo de requerimientos activos — viene de `_count.repuestos` del endpoint.
+  _count?: { repuestos: number };
   planta: { codigo: string; nombre: string } | null;
   tipo_ot_interna: { codigo: string; nombre: string } | null;
   prioridad_atencion: { codigo: string; nombre: string } | null;
@@ -132,6 +134,9 @@ export default function OrdenesTrabajoInternasPage() {
   // en el selector (1.3.1=HER, 1.3.2=MAQ, 1.3.3=VEH; resto: vacío).
   const areaTallerSel = Form.useWatch("area_taller", form);
   const tipoEquipoForm = tipoEquipoPorAreaTaller(areaTallerSel);
+  // Watch del equipo seleccionado — para filtrar el catálogo task_list por
+  // máquina (los preventivos típicos son específicos por máquina).
+  const equipoSel = Form.useWatch("equipo_codigo", form);
   // Tipo de OT interna seleccionado: si es correctiva no aplica Estrategia
   // ni Task list (esos campos son del flujo preventivo). El cálculo de
   // `esCorrectiva` se hace más abajo, después de declarar `tiposOTInterna`.
@@ -500,6 +505,30 @@ export default function OrdenesTrabajoInternasPage() {
       render: (v: string | null) => v ? dayjs(v).format("DD/MM/YY HH:mm") : "-",
     },
     {
+      // Conteo de requerimientos (OTRepuesto) activos de la OT — click abre el
+      // detalle directo en el tab Requerimientos. Mismo patrón que en OT externa
+      // pero a nivel de tabla principal (no en tabs).
+      key: "reqs", title: "Reqs", width: 80, align: "center",
+      sorter: (a: OTInternaRow, b: OTInternaRow) =>
+        (a._count?.repuestos ?? 0) - (b._count?.repuestos ?? 0),
+      render: (_: unknown, r: OTInternaRow) => {
+        const n = r._count?.repuestos ?? 0;
+        if (n === 0) return <Text type="secondary">—</Text>;
+        return (
+          <Tooltip title="Ver requerimientos en el detalle">
+            <a
+              onClick={(e) => {
+                e.stopPropagation();
+                router.push(`/ordenes-trabajo-internas/${r.id}?tab=requerimientos`);
+              }}
+            >
+              <Tag color="blue" style={{ margin: 0, cursor: "pointer" }}>{n}</Tag>
+            </a>
+          </Tooltip>
+        );
+      },
+    },
+    {
       // Fecha de creación de la OT (auto-setteada en el POST). Útil para auditar
       // y filtrar por antigüedad. Solo fecha + hora corta (HH:mm).
       key: "fecha_creacion", title: "F. Creación", dataIndex: "fecha_creacion", width: 130,
@@ -508,7 +537,11 @@ export default function OrdenesTrabajoInternasPage() {
       render: (v: string | null) => v ? dayjs(v).format("DD/MM/YY HH:mm") : <Text type="secondary">—</Text>,
     },
     {
-      key: "acciones", title: "", width: esAdmin ? 180 : 120, fixed: "right",
+      // Acciones: solo "Ver detalle" + (admin: activar/desactivar/eliminar).
+      // El botón "Editar" desde la grilla se quitó — la edición se hace
+      // desde el detalle de la OT para forzar contexto completo y reducir
+      // ediciones accidentales que dispararían historial.
+      key: "acciones", title: "", width: esAdmin ? 140 : 60, fixed: "right",
       render: (_: unknown, r: OTInternaRow) => (
         <Space size="small">
           <Tooltip title="Ver detalle">
@@ -518,9 +551,6 @@ export default function OrdenesTrabajoInternasPage() {
               icon={<EyeOutlined />}
               onClick={() => router.push(`/ordenes-trabajo-internas/${r.id}`)}
             />
-          </Tooltip>
-          <Tooltip title="Editar">
-            <Button size="small" type="text" icon={<EditOutlined />} onClick={() => openEditarModal(r)} />
           </Tooltip>
           {esAdmin && (r.activo ? (
             <Popconfirm
@@ -825,12 +855,20 @@ export default function OrdenesTrabajoInternasPage() {
                   <Form.Item
                     name="task_list"
                     label="Task list"
-                    tooltip="Catálogo importado del Excel de mantenimiento. Al elegir uno se auto-llena la descripción si está vacía."
+                    tooltip={
+                      equipoSel
+                        ? "Filtrado por el equipo seleccionado. Si querés ver todos, sacá el equipo."
+                        : "Catálogo importado del Excel de mantenimiento. Al elegir uno se auto-llena la descripción si está vacía."
+                    }
                   >
                     <Select
                       allowClear
                       showSearch
-                      placeholder="Buscar tarea (máquina, MP, descripción)"
+                      placeholder={
+                        equipoSel
+                          ? "Tareas del equipo seleccionado"
+                          : "Buscar tarea (máquina, MP, descripción)"
+                      }
                       optionFilterProp="label"
                       onChange={(value) => {
                         // Al elegir un task list, autocompletar la descripción si
@@ -843,10 +881,28 @@ export default function OrdenesTrabajoInternasPage() {
                           form.setFieldValue("descripcion", tl.descripcion);
                         }
                       }}
-                      options={taskLists.map((t) => ({
-                        value: labelDeTaskList(t),
-                        label: labelDeTaskList(t),
-                      }))}
+                      // Si hay un equipo seleccionado, filtramos los task lists
+                      // cuya `maquina_taller` matchea (case-insensitive, ignorando
+                      // espacios) con el código o descripción del equipo. Si no
+                      // hay match, devolvemos lista completa para no bloquear.
+                      options={(() => {
+                        const equipo = equipos.find((e) => e.codigo === equipoSel);
+                        if (!equipo) return taskLists.map((t) => ({
+                          value: labelDeTaskList(t),
+                          label: labelDeTaskList(t),
+                        }));
+                        const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+                        const objetivos = [norm(equipo.codigo), norm(equipo.descripcion)];
+                        const filtrados = taskLists.filter((t) => {
+                          const m = norm(t.maquina_taller);
+                          return objetivos.some((o) => m === o || m.includes(o) || o.includes(m));
+                        });
+                        const final = filtrados.length > 0 ? filtrados : taskLists;
+                        return final.map((t) => ({
+                          value: labelDeTaskList(t),
+                          label: labelDeTaskList(t),
+                        }));
+                      })()}
                     />
                   </Form.Item>
                 </Col>
