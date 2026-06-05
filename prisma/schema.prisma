@@ -1486,6 +1486,16 @@ model PlanificacionOT {
   // Marca de EMERGENCIA / correctiva. Independiente del `estado` de ejecución:
   // una tarea puede ser correctiva y a la vez estar en_proceso/pausado/realizado.
   es_correctivo        Boolean                  @default(false)
+  // LÍNEA BASE del plan: snapshot congelado de la planificación al PUBLICAR la
+  // semana. No se vuelve a pisar (solo se setea si está vacío, salvo "re-basar").
+  // Sirve para comparar Plan vs Real: si la tarea luego se mueve o entra un
+  // correctivo que empuja, estos valores conservan lo que se planificó originalmente.
+  fecha_inicio_base    DateTime?                @db.Timestamp(6)
+  fecha_fin_base       DateTime?                @db.Timestamp(6)
+  horas_estimadas_base Decimal?                 @db.Decimal(6, 2)
+  tecnico_base         String?                  @db.VarChar(100)
+  semana_base          String?                  @db.VarChar(10)
+  publicado_at         DateTime?                @db.Timestamp(6)
   version              Int                      @default(1)
   created_at           DateTime                 @default(now())
   updated_at           DateTime                 @updatedAt
