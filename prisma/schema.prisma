@@ -954,6 +954,8 @@ model OrdenTrabajo {
   id_viajero                  String?             @db.VarChar(100)
   guia_remision               String?             @db.VarChar(100)
   empresa_entrega             String?             @db.VarChar(200)
+  // Lugar de entrega — solo aplica a OT externas de BIEN (texto libre, opcional).
+  lugar_entrega               String?             @db.VarChar(200)
   fecha_recepcion             DateTime?           @db.Date
   pcr                         Decimal?            @db.Decimal(10, 2)
   horas                       Decimal?            @db.Decimal(10, 2)

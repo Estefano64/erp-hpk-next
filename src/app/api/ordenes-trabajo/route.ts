@@ -362,6 +362,8 @@ export async function POST(req: NextRequest) {
           id_viajero: esBienOServicio ? null : (body.id_viajero || null),
           guia_remision: esBienOServicio ? null : (body.guia_remision || null),
           empresa_entrega: esBienOServicio ? null : (body.empresa_entrega || null),
+          // Lugar de entrega: SOLO Bien (opcional).
+          lugar_entrega: esBien ? (body.lugar_entrega || null) : null,
           fecha_recepcion: esBienOServicio ? null : parseDateOnly(body.fecha_recepcion),
           pcr: esBienOServicio ? null : (body.pcr ?? null),
           horas: esBienOServicio ? null : (body.horas ?? null),

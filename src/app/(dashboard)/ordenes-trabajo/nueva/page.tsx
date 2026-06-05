@@ -301,6 +301,7 @@ export default function NuevaOTPage() {
         id_viajero: bloqueoBien ? null : (values.id_viajero || null),
         guia_remision: bloqueoBien ? null : (values.guia_remision || null),
         empresa_entrega: bloqueoBien ? null : (values.empresa_entrega || null),
+        lugar_entrega: esBien ? (values.lugar_entrega || null) : null,
         fecha_recepcion: bloqueoBien ? null : (values.fecha_recepcion ? values.fecha_recepcion.format("YYYY-MM-DD") : null),
         pcr: bloqueoBien ? null : (values.pcr ?? null),
         horas: bloqueoBien ? null : (values.horas ?? null),
@@ -573,6 +574,14 @@ export default function NuevaOTPage() {
                 </Form.Item>
               </Col>
             )}
+            {/* Lugar de entrega: solo Bien (texto libre, opcional). */}
+            {esBien && (
+              <Col xs={12} md={8}>
+                <Form.Item name="lugar_entrega" label="Lugar de entrega">
+                  <Input placeholder="Ej. Almacén mina, dirección…" />
+                </Form.Item>
+              </Col>
+            )}
             {!bloqueoBien && (
               <>
                 <Col xs={12} md={6}>
@@ -720,6 +729,19 @@ export default function NuevaOTPage() {
                 <Select showSearch optionFilterProp="label"
                   placeholder="Seleccionar"
                   options={prioridades.map((p) => ({ value: p.codigo, label: `${p.codigo} - ${p.nombre}` }))}
+                />
+              </Form.Item>
+            </Col>
+            {/* Cotización (monto + moneda): opcional al crear; obligatorio al cerrar. Todos los tipos. */}
+            <Col xs={12} md={5}>
+              <Form.Item name="monto_cotizacion" label="Monto cotización">
+                <InputNumber style={{ width: "100%" }} min={0} placeholder="0.00" />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={3}>
+              <Form.Item name="moneda_cotizacion_codigo" label="Moneda">
+                <Select showSearch optionFilterProp="label" allowClear placeholder="Moneda"
+                  options={monedas.map((m) => ({ value: m.codigo, label: m.codigo }))}
                 />
               </Form.Item>
             </Col>

@@ -106,6 +106,10 @@ export async function PUT(req: NextRequest, { params }: Params) {
       body.plaqueteo = null;
       body.wo_cliente = null;
     }
+    // Lugar de entrega: SOLO Bien. Si el tipo pasa a REP o SER, se anula.
+    if (body.tipo_codigo === "REP" || body.tipo_codigo === "SER") {
+      body.lugar_entrega = null;
+    }
 
     const usuario = (await getAuditUser(req)) ?? "sistema";
 
