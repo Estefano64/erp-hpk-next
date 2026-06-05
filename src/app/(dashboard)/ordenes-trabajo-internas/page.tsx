@@ -402,6 +402,17 @@ export default function OrdenesTrabajoInternasPage() {
       },
     },
     {
+      // Equipo/Maquinaria asociada — columna separada para que sea visible aún
+      // cuando el área del taller también está seteada (las OTs nuevas tienen
+      // ambos campos). Muestra el código del equipo con tooltip de descripción.
+      key: "equipo", title: "Equipo", width: 140, ellipsis: true,
+      ...filtroPorColumna<OTInternaRow>(rows, "equipo_codigo"),
+      render: (_: unknown, r: OTInternaRow) =>
+        r.equipo
+          ? <Tooltip title={r.equipo.descripcion}><b>{r.equipo.codigo}</b></Tooltip>
+          : <Text type="secondary">—</Text>,
+    },
+    {
       key: "descripcion", title: "Descripción", dataIndex: "descripcion", width: 260, ellipsis: true,
       render: (v: string | null) => v ?? "-",
     },
@@ -482,6 +493,14 @@ export default function OrdenesTrabajoInternasPage() {
     {
       key: "fecha_cierre", title: "Cierre", dataIndex: "fecha_cierre", width: 130,
       render: (v: string | null) => v ? dayjs(v).format("DD/MM/YY HH:mm") : "-",
+    },
+    {
+      // Fecha de creación de la OT (auto-setteada en el POST). Útil para auditar
+      // y filtrar por antigüedad. Solo fecha + hora corta (HH:mm).
+      key: "fecha_creacion", title: "F. Creación", dataIndex: "fecha_creacion", width: 130,
+      sorter: (a: OTInternaRow, b: OTInternaRow) =>
+        (a.fecha_creacion ?? "").localeCompare(b.fecha_creacion ?? ""),
+      render: (v: string | null) => v ? dayjs(v).format("DD/MM/YY HH:mm") : <Text type="secondary">—</Text>,
     },
     {
       key: "acciones", title: "", width: esAdmin ? 180 : 120, fixed: "right",
