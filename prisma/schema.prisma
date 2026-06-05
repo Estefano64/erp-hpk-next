@@ -671,6 +671,7 @@ model Material {
   tareas                Tarea[]
   movimientos           MovimientoInventario[]
   cotizaciones          CotizacionProveedor[]
+  task_list_items       TaskListItem[]
 
   @@map("material")
 }
@@ -1726,4 +1727,77 @@ model ReporteCorrectivo {
   @@index([estado])
   @@index([orden_trabajo_interna_id])
   @@map("reporte_correctivo")
+}
+
+// ── Task List de Mantenimiento del Taller ────────────────────────
+// Catálogo de tareas estándar de mantenimiento para las máquinas/equipos del
+// taller HPK. Cada TaskList es UNA tarea concreta (ej. "Limpieza de tanque
+// hidráulico") asignada a una máquina y a una categoría (MP1..MP4 = pautas
+// de mantenimiento preventivo). Sus TaskListItem son los repuestos / cargos
+// directos / servicios necesarios para ejecutar la tarea.
+//
+// Origen: Excels_HPK/tasklist_Mantenimiento.xlsx (Hoja 1 "Task List Materiales").
+// La importación es full-replace (borra todo + reinserta) — el Excel es la
+// fuente de verdad. Si se requiere edición manual en BD, exportar primero.
+model TaskList {
+  id                  Int      @id @default(autoincrement())
+  // Nombre libre de la máquina del taller, ej "Banco de Pruebas 1".
+  // No es FK a `equipo` porque el Excel no trae código y los nombres difieren
+  // (ej "Camioneta V9M-357" no está como tal en el catálogo de equipos).
+  // Si en el futuro se hace mapping, agregar equipo_codigo (FK opcional).
+  maquina_taller      String   @db.VarChar(150)
+  // Pauta de mantenimiento: MP1, MP2, MP3, MP4 (frecuencias distintas).
+  actividad_codigo    String   @db.VarChar(20)
+  // Descripción específica de la tarea, ej "Limpieza de tanque hidráulico...".
+  descripcion         String
+  // Responsable del task list (texto libre del Excel — "Angelo", "JV", etc).
+  usuario_responsable String?  @db.VarChar(100)
+  activo              Boolean  @default(true)
+  usuario_crea        String?  @db.VarChar(100)
+  usuario_actualiza   String?  @db.VarChar(100)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @default(now()) @updatedAt
+
+  items               TaskListItem[]
+
+  @@index([maquina_taller])
+  @@index([actividad_codigo])
+  @@map("task_list")
+}
+
+// Item individual de un TaskList — un material, cargo directo o servicio.
+// Tipo (MAC/CAD/SER) define cómo se procesa:
+//   - MAC: vinculable a Material catalogado vía material_codigo (puede ser NULL
+//     si el Excel no trae match; el caller usa ref_descripcion + np).
+//   - CAD: cargo directo sin stock (aceites, trapos, disolventes consumibles).
+//   - SER: servicio tercerizado (cromado, NDT, etc.).
+model TaskListItem {
+  id              Int       @id @default(autoincrement())
+  task_list_id    Int
+  // Orden del item dentro de la tarea (1, 2, 3...).
+  item            Int
+  tipo            String    @db.VarChar(10) // MAC | CAD | SER
+  // FK opcional a material catalogado. Solo tiene sentido si tipo=MAC y el NP
+  // matchea con un material existente.
+  material_codigo String?   @db.VarChar(50)
+  // Descripción humana del repuesto/cargo, ej "Aceite hidráulico", "SVC Cromado".
+  ref_descripcion String?
+  // Número de parte (DISOLVO 10, 158-2336, etc.) — distingue ítems con mismo
+  // ref_descripcion pero distinta marca/medida.
+  np              String?   @db.VarChar(150)
+  // Cantidad requerida.
+  requerimiento   Decimal?  @db.Decimal(12, 3)
+  // Unidad de medida (texto libre — el Excel usa "lt", "und", "kg", "cil", "kit"…).
+  um              String?   @db.VarChar(20)
+  // Notas adicionales (ej "se terceriza el mantenimiento").
+  texto           String?
+  // Precio referencial (solo presente para SER en el Excel original).
+  precio          Decimal?  @db.Decimal(15, 4)
+
+  task_list       TaskList  @relation(fields: [task_list_id], references: [id], onDelete: Cascade)
+  material        Material? @relation(fields: [material_codigo], references: [codigo])
+
+  @@index([task_list_id])
+  @@index([material_codigo])
+  @@map("task_list_item")
 }
