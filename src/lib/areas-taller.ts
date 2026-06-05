@@ -59,9 +59,8 @@ export function areaTallerLabel(value: string | null | undefined): string {
 }
 
 // Devuelve opciones agrupadas para usar con <Select>. Los grupos son las áreas
-// padre y dentro van las sub-áreas. Las áreas padre TAMBIÉN aparecen como
-// opción seleccionable (primera dentro de su grupo, marcada como "área
-// completa" para distinguirla de las sub-áreas).
+// padre y dentro van las sub-áreas. Si un padre no tiene sub-áreas (caso de
+// GERENCIA), el padre se incluye como única opción seleccionable de su grupo.
 export function areasTallerGrouped(): {
   label: string;
   options: { value: string; label: string }[];
@@ -71,10 +70,26 @@ export function areasTallerGrouped(): {
     const hijos = AREAS_TALLER.filter((a) => a.parent === p.value);
     return {
       label: p.label,
-      options: [
-        { value: p.value, label: `${p.label} (área completa)` },
-        ...hijos.map((h) => ({ value: h.value, label: h.label })),
-      ],
+      options: hijos.length > 0
+        ? hijos.map((h) => ({ value: h.value, label: h.label }))
+        : [{ value: p.value, label: p.label }],
     };
   });
+}
+
+// Códigos de sub-áreas de Mantenimiento usados para filtrar el selector de
+// equipos según el área del taller elegida.
+export const AREA_TALLER_EQUIPOS = "1.3.2";    // Sub-área "EQUIPOS" → tipo MAQ
+export const AREA_TALLER_VEHICULOS = "1.3.3";  // Sub-área "VEHÍCULOS" → tipo VEH
+
+// Devuelve el código de TipoEquipo aplicable a un área del taller, o null si
+// el área seleccionada no implica filtrar equipos. Solo MAQ y VEH habilitan
+// el selector — el resto (Herramientas, Infraestructura, áreas administrativas)
+// no tienen catálogo asociado en este flujo.
+export function tipoEquipoPorAreaTaller(
+  area: string | null | undefined,
+): "MAQ" | "VEH" | null {
+  if (area === AREA_TALLER_EQUIPOS) return "MAQ";
+  if (area === AREA_TALLER_VEHICULOS) return "VEH";
+  return null;
 }

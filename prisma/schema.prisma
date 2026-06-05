@@ -61,6 +61,7 @@ model Area {
   estrategias   Estrategia[]
   materiales    Material[]
   sub_areas     SubArea[]
+  reportes_correctivos ReporteCorrectivo[]
 
   @@map("area")
 }
@@ -736,6 +737,7 @@ model Equipo {
   estrategias          Estrategia[]
   trabajadores         Trabajador[]
   ordenes_trabajo_internas OrdenTrabajoInterna[]
+  reportes_correctivos ReporteCorrectivo[]
 
   @@map("equipo")
 }
@@ -1107,6 +1109,8 @@ model OrdenTrabajoInterna {
   adjuntos                  OtAdjunto[]
   historial                 OTHistorial[]
   repuestos                 OTRepuesto[]
+  // Reportes de mantenimiento correctivo que originaron esta OT (debería ser 0 o 1).
+  reportes_correctivos      ReporteCorrectivo[]
 
   @@index([equipo_codigo])
   @@index([tipo_ot_interna_codigo])
@@ -1663,4 +1667,63 @@ model EditLock {
   @@id([resource_type, resource_id])
   @@index([last_heartbeat])
   @@map("edit_lock")
+}
+
+// ── Reporte de Mantenimiento Correctivo (HPK-M-F-07) ─────────────
+// Formato físico de la empresa para reportar fallas y registrar el correctivo.
+// Flujo en tres etapas:
+//   1) REPORTADO  — alguien reporta la falla (detalle_falla + reportador).
+//   2) EN_PROCESO — el encargado de mantenimiento genera una OT interna
+//      correctiva desde acá (orden_trabajo_interna_id queda apuntando a esa
+//      OT). La OT sigue su flujo normal (requerimientos, ejecución).
+//   3) COMPLETADO — al terminar la OT, el técnico vuelve al correctivo y
+//      llena descripcion_correctivo + firmas.
+// El correlativo `numero` sigue el patrón NNNNYY (por año).
+model ReporteCorrectivo {
+  id                       Int       @id @default(autoincrement())
+  // Formato visual: RC-NNNN-YY. En BD se guarda NNNNYY (ej. 000126 = correlativo 1 del 2026).
+  numero                   Int?
+  anio                     Int?
+
+  equipo_codigo            String    @db.VarChar(50)
+  // Área snapshot al momento del reporte (el equipo podría cambiar de área después).
+  area_codigo              String    @db.VarChar(10)
+  fecha                    DateTime  @default(now()) @db.Date
+
+  // Etapa 1 — Reporte de falla
+  detalle_falla            String?
+  reportado_por            String?   @db.VarChar(150)
+  fecha_reporte            DateTime?
+
+  // Etapa 2 — OT interna correctiva generada desde este reporte.
+  // NULL hasta que el encargado de mantenimiento la genera.
+  orden_trabajo_interna_id Int?
+
+  // Etapa 3 — Mantenimiento correctivo ejecutado
+  descripcion_correctivo   String?
+  realizado_por            String?   @db.VarChar(150)
+  fecha_correctivo         DateTime?
+
+  // Responsable del área que firma como aprobador final del trabajo.
+  responsable_area         String?   @db.VarChar(150)
+
+  // REPORTADO = solo falla. EN_PROCESO = OT generada en curso. COMPLETADO = cerrado.
+  estado                   String    @default("REPORTADO") @db.VarChar(20)
+
+  // Soft-delete (anular). Mantiene historial sin borrar.
+  activo                   Boolean   @default(true)
+  usuario_crea             String?   @db.VarChar(100)
+  usuario_actualiza        String?   @db.VarChar(100)
+  created_at               DateTime  @default(now())
+  updated_at               DateTime  @default(now()) @updatedAt
+
+  equipo                   Equipo               @relation(fields: [equipo_codigo], references: [codigo])
+  area                     Area                 @relation(fields: [area_codigo], references: [codigo])
+  ot_interna               OrdenTrabajoInterna? @relation(fields: [orden_trabajo_interna_id], references: [id])
+
+  @@index([equipo_codigo])
+  @@index([anio])
+  @@index([estado])
+  @@index([orden_trabajo_interna_id])
+  @@map("reporte_correctivo")
 }

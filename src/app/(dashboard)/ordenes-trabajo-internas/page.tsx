@@ -26,7 +26,7 @@ import {
   filtroPorColumna,
   usePersistedState,
 } from "@/lib/tables";
-import { areasTallerGrouped, areaTallerLabel } from "@/lib/areas-taller";
+import { areasTallerGrouped, areaTallerLabel, tipoEquipoPorAreaTaller } from "@/lib/areas-taller";
 import { formatOtInternaCodigo } from "@/lib/ot-formato";
 
 const { Title, Text } = Typography;
@@ -94,6 +94,10 @@ export default function OrdenesTrabajoInternasPage() {
   // Eliminar / desactivar OTs internas es exclusivo del admin (destructivo).
   const esAdmin = ((session?.user as { roles?: string[] } | undefined)?.roles ?? []).includes("admin");
   const [form] = Form.useForm<FormValues>();
+  // El área del taller seleccionada determina qué tipos de equipo se cargan
+  // en el selector (1.3.1=HER, 1.3.2=MAQ, 1.3.3=VEH; resto: vacío).
+  const areaTallerSel = Form.useWatch("area_taller", form);
+  const tipoEquipoForm = tipoEquipoPorAreaTaller(areaTallerSel);
 
   // Estado
   const [rows, setRows] = useState<OTInternaRow[]>([]);
@@ -142,11 +146,8 @@ export default function OrdenesTrabajoInternasPage() {
   // Cargar catálogos una vez
   useEffect(() => {
     (async () => {
-      const [tRes, eRes, pRes, prRes, usRes, estRes, trRes] = await Promise.all([
+      const [tRes, pRes, prRes, usRes, estRes, trRes] = await Promise.all([
         fetch("/api/catalogos?tabla=tipoOTInterna"),
-        // tipo=MAQ → solo máquinas (excluye herramientas/instrumentos). Las OT
-        // internas se levantan contra máquinas del taller, no herramientas.
-        fetch("/api/equipos?limit=500&tipo=MAQ"),
         fetch("/api/catalogos?tabla=planta"),
         fetch("/api/catalogos?tabla=prioridadAtencion"),
         fetch("/api/catalogos?tabla=userStatus"),
@@ -156,7 +157,8 @@ export default function OrdenesTrabajoInternasPage() {
         fetch("/api/trabajadores?limit=200"),
       ]);
       if (tRes.ok) setTiposOTInterna((await tRes.json()).data ?? []);
-      if (eRes.ok) setEquipos((await eRes.json()).data ?? []);
+      // NOTA: los equipos se cargan dinámicamente según el área del taller
+      // elegida en el formulario (ver useEffect más abajo).
       if (pRes.ok) setPlantas((await pRes.json()).data ?? []);
       if (prRes.ok) setPrioridades((await prRes.json()).data ?? []);
       if (usRes.ok) setUserStatuses((await usRes.json()).data ?? []);
@@ -164,6 +166,27 @@ export default function OrdenesTrabajoInternasPage() {
       if (trRes.ok) setTrabajadores((await trRes.json()).data ?? []);
     })();
   }, []);
+
+  // Carga dinámica del catálogo de equipos según el área del taller elegida.
+  // Si el área no corresponde a un tipo (MAQ/VEH/HER), el selector queda vacío.
+  useEffect(() => {
+    if (!tipoEquipoForm) {
+      setEquipos([]);
+      return;
+    }
+    const ctrl = new AbortController();
+    (async () => {
+      try {
+        const res = await fetch(`/api/equipos?limit=500&tipo=${tipoEquipoForm}`, {
+          signal: ctrl.signal,
+        });
+        if (res.ok) setEquipos((await res.json()).data ?? []);
+      } catch {
+        // abortado
+      }
+    })();
+    return () => ctrl.abort();
+  }, [tipoEquipoForm]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -587,24 +610,39 @@ export default function OrdenesTrabajoInternasPage() {
                   showSearch
                   optionFilterProp="label"
                   options={areasTallerGrouped()}
+                  onChange={() => {
+                    // Al cambiar el área, el equipo previo queda inválido (es de
+                    // otro tipo o el área nueva no admite equipos). Lo limpiamos.
+                    form.setFieldValue("equipo_codigo", undefined);
+                  }}
                 />
               </Form.Item>
             </Col>
-            <Col xs={24} md={24}>
-              <Form.Item
-                name="equipo_codigo"
-                label="Equipo"
-                tooltip="Equipo (máquina) del taller al que aplica la OT interna. Solo se listan equipos tipo MAQ — las herramientas no aparecen."
-              >
-                <Select
-                  placeholder="Buscar equipo (código o descripción)"
-                  showSearch
-                  allowClear
-                  optionFilterProp="label"
-                  options={equipos.map((e) => ({ value: e.codigo, label: `${e.codigo} — ${e.descripcion}` }))}
-                />
-              </Form.Item>
-            </Col>
+            {tipoEquipoForm && (
+              <Col xs={24} md={24}>
+                <Form.Item
+                  name="equipo_codigo"
+                  label={tipoEquipoForm === "VEH" ? "Vehículo" : "Maquinaria"}
+                  tooltip={
+                    tipoEquipoForm === "VEH"
+                      ? "Vehículo del taller al que aplica la OT interna."
+                      : "Máquina del taller a la que aplica la OT interna."
+                  }
+                >
+                  <Select
+                    placeholder={
+                      tipoEquipoForm === "VEH"
+                        ? "Buscar vehículo (código o descripción)"
+                        : "Buscar máquina (código o descripción)"
+                    }
+                    showSearch
+                    allowClear
+                    optionFilterProp="label"
+                    options={equipos.map((e) => ({ value: e.codigo, label: `${e.codigo} — ${e.descripcion}` }))}
+                  />
+                </Form.Item>
+              </Col>
+            )}
             <Col span={24}>
               <Form.Item
                 name="descripcion"
