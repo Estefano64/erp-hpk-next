@@ -266,13 +266,17 @@ export default function ProgramacionSemanalPage() {
     setCargando(true);
     try {
       const params1 = new URLSearchParams({
-        limit: "500",
+        limit: "10000",
         desde: lunes.hour(0).minute(0).second(0).toISOString(),
         hasta: viernes.toISOString(),
       });
+      // `resAll` alimenta el pool de pendientes (sin fecha / sin semana). Debe traer
+      // TODAS las filas: ordena por ot_id desc, así que con un límite chico las OTs
+      // de ot_id bajo caían fuera del corte y sus tareas desaparecían del pool
+      // (no se veían en la grilla ni en pendientes). 10000 = tope de la API.
       const [resWeek, resAll] = await Promise.all([
         fetch(`/api/planificacion?${params1}`),
-        fetch(`/api/planificacion?limit=500`),
+        fetch(`/api/planificacion?limit=10000`),
       ]);
       // Una tarea cancelada no ocupa lugar: la sacamos de la grilla y del pool para
       // que su espacio quede libre y se pueda programar otra tarea encima (y para
@@ -550,6 +554,8 @@ export default function ProgramacionSemanalPage() {
     const filtradasIds = new Set(rowsFiltradas.map((r) => r.id));
     for (const t of rows) {
       if (t.id === taskId) continue;
+      // Una tarea cancelada libera su horario: no cuenta como choque.
+      if (t.estado === "cancelado") continue;
       // Soporta tareas con recurso multi (comma-separated por multi-personal).
       const recursoRaw = view === "equipo" ? t.maquina : t.tecnico;
       const recursos = splitTecnicos(recursoRaw);
@@ -695,18 +701,26 @@ export default function ProgramacionSemanalPage() {
     // la jornada 8–18 ni desborda al día siguiente).
     const finCalc = inicio ? calcularFin(inicio, horasPorPersona * qty, !!original.horas_extras) : null;
 
-    // Bloquear si la nueva duración haría chocar con otra tarea del mismo recurso.
-    if (inicio && finCalc) {
+    // Si la nueva duración pisa a la(s) siguiente(s) del recurso, empujamos la
+    // cola (cascada en el server). Solo bloqueamos si la que choca ya fue
+    // iniciada/realizada por el técnico (su horario es ejecución real y no se mueve).
+    // Excepción: una EMERGENCIA (correctiva) cae encima a propósito (el server
+    // corre cascadeEmergencia al reprogramar), así que no chequeamos choque acá.
+    let empujar = false;
+    if (inicio && finCalc && !original.es_correctivo) {
       const recurso = view === "equipo" ? original.maquina : original.tecnico;
       const choque = tareaSuperpuesta(id, inicio.getTime(), finCalc.getTime(), recurso);
       if (choque) {
-        const t = choque.task;
-        const cliente = t.orden_trabajo?.cliente?.nombre_comercial
-          ?? t.orden_trabajo?.cliente?.razon_social
-          ?? `OT ${t.orden_trabajo?.ot ?? "#?"}`;
-        const prefijoOculta = choque.oculta ? "[Tarea oculta por el filtro actual] " : "";
-        messageApi.error(`${prefijoOculta}No se puede agrandar: choca con ${cliente} — ${t.descripcion ?? t.operacion_codigo}`);
-        return;
+        if (haEmpezado(choque.task.estado)) {
+          const t = choque.task;
+          const cliente = t.orden_trabajo?.cliente?.nombre_comercial
+            ?? t.orden_trabajo?.cliente?.razon_social
+            ?? `OT ${t.orden_trabajo?.ot ?? "#?"}`;
+          const prefijoOculta = choque.oculta ? "[Tarea oculta por el filtro actual] " : "";
+          messageApi.error(`${prefijoOculta}No se puede agrandar: la siguiente (${cliente} — ${t.descripcion ?? t.operacion_codigo}) ya fue iniciada/realizada por el técnico.`);
+          return;
+        }
+        empujar = true;
       }
     }
 
@@ -718,6 +732,7 @@ export default function ProgramacionSemanalPage() {
         body: JSON.stringify({
           horas_estimadas: horasPorPersona,
           ...(finCalc ? { fecha_fin: finCalc.toISOString() } : {}),
+          ...(empujar ? { empujar: true } : {}),
         }),
       });
       if (res.status === 423) {
@@ -726,11 +741,13 @@ export default function ProgramacionSemanalPage() {
         fetchData();
         return;
       }
+      const j = await res.json().catch(() => null);
       if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        throw new Error(err?.error ?? "Error");
+        throw new Error(j?.error ?? "Error");
       }
-      messageApi.success(`Duración: ${horasPorPersona.toFixed(2)}h`);
+      const e = j?.push?.empujadas?.length ?? 0;
+      const p = j?.push?.alPool?.length ?? 0;
+      messageApi.success(`Duración: ${horasPorPersona.toFixed(2)}h${e ? ` · ${e} empujada(s).` : ""}${p ? ` ${p} al pool.` : ""}`);
       endSave();
       notifySync();
       fetchData();
@@ -738,6 +755,7 @@ export default function ProgramacionSemanalPage() {
       const msg = e instanceof Error ? e.message : "Error al redimensionar";
       endSave(msg);
       messageApi.error(msg);
+      fetchData();
     }
   }
 
@@ -848,7 +866,11 @@ export default function ProgramacionSemanalPage() {
   async function guardarCampoDetalle(patch: Record<string, unknown>, msg: string) {
     if (!selectedTask) return;
     const id = selectedTask.id;
-    const apply = (r: PlanRow): PlanRow => (r.id === id ? ({ ...r, ...patch } as PlanRow) : r);
+    // Los flags de control (empujar) no son campos de la tarea: no deben aplicarse
+    // al estado optimista local (solo van en el body del PUT).
+    const campos = { ...patch };
+    delete campos.empujar;
+    const apply = (r: PlanRow): PlanRow => (r.id === id ? ({ ...r, ...campos } as PlanRow) : r);
     setRows((prev) => prev.map(apply));
     setAllRows((prev) => prev.map(apply));
     setSelectedTask((s) => (s ? apply(s) : s));
@@ -859,8 +881,13 @@ export default function ProgramacionSemanalPage() {
         body: JSON.stringify(patch),
       });
       if (res.status === 423) { messageApi.error("Tarea cerrada (realizado), no editable."); endSave("cerrada"); fetchData(); return; }
-      if (!res.ok) { const e = await res.json().catch(() => null); throw new Error(e?.error ?? "Error"); }
-      messageApi.success(msg); endSave(); notifySync(); fetchData();
+      const j = await res.json().catch(() => null);
+      if (!res.ok) { throw new Error(j?.error ?? "Error"); }
+      // Si hubo cascada (empujar), avisamos cuántas se reacomodaron / al pool.
+      const e = j?.push?.empujadas?.length ?? 0;
+      const p = j?.push?.alPool?.length ?? 0;
+      const extra = `${e ? ` ${e} empujada(s).` : ""}${p ? ` ${p} al pool.` : ""}`;
+      messageApi.success(msg + extra); endSave(); notifySync(); fetchData();
     } catch (e) {
       const m = e instanceof Error ? e.message : "Error al guardar";
       endSave(m); messageApi.error(m); fetchData();
@@ -886,18 +913,33 @@ export default function ProgramacionSemanalPage() {
     const qty = Math.max(1, Number(selectedTask.qty_personal ?? 1));
     const inicio = selectedTask.fecha_inicio ? new Date(selectedTask.fecha_inicio) : null;
     const finCalc = inicio ? calcularFin(inicio, horasPorPersona * qty, !!selectedTask.horas_extras) : null;
-    // Igual que el resize: no permitir agrandar si choca con otra tarea del recurso.
-    if (inicio && finCalc) {
+    // Si al agrandar la tarea pisa a la(s) siguiente(s) del recurso, en vez de
+    // bloquear empujamos la cola (igual que el drag: persistMove). El server
+    // reacomoda las tareas del mismo operario; solo frena si choca con una
+    // máquina ocupada por OTRO operario (recurso compartido que no se mueve).
+    // Excepción: una EMERGENCIA (correctiva) cae encima a propósito; el server
+    // corre cascadeEmergencia al reprogramar, así que no chequeamos choque acá.
+    let empujar = false;
+    if (inicio && finCalc && !selectedTask.es_correctivo) {
       const recurso = view === "equipo" ? selectedTask.maquina : selectedTask.tecnico;
       const choque = tareaSuperpuesta(selectedTask.id, inicio.getTime(), finCalc.getTime(), recurso);
       if (choque) {
-        messageApi.error(`No se puede: la nueva duración choca con ${choque.task.orden_trabajo?.cliente?.nombre_comercial ?? choque.task.orden_trabajo?.cliente?.razon_social ?? `OT ${choque.task.orden_trabajo?.ot ?? "#?"}`} — ${choque.task.descripcion ?? choque.task.operacion_codigo}`);
-        setDurModal(selectedTask.horas_estimadas != null ? Number(selectedTask.horas_estimadas) : null);
-        return;
+        // Si la siguiente ya fue iniciada/pausada/realizada por el técnico, su
+        // horario es ejecución real y la cascada NO la mueve: bloqueamos.
+        if (haEmpezado(choque.task.estado)) {
+          messageApi.error(`No se puede agrandar: la siguiente tarea (${choque.task.descripcion ?? choque.task.operacion_codigo}) ya fue iniciada/realizada por el técnico.`);
+          setDurModal(selectedTask.horas_estimadas != null ? Number(selectedTask.horas_estimadas) : null);
+          return;
+        }
+        empujar = true;
       }
     }
     guardarCampoDetalle(
-      { horas_estimadas: horasPorPersona, ...(finCalc ? { fecha_fin: finCalc.toISOString() } : {}) },
+      {
+        horas_estimadas: horasPorPersona,
+        ...(finCalc ? { fecha_fin: finCalc.toISOString() } : {}),
+        ...(empujar ? { empujar: true } : {}),
+      },
       `Duración: ${horasPorPersona.toFixed(2)}h`,
     );
   }
