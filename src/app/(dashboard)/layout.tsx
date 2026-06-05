@@ -45,6 +45,7 @@ function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
   const configChildren: NonNullable<MenuProps["items"]> = [
     { key: "/configuracion-cotizacion", label: "Configuración cotización" },
     { key: "/catalogos", label: "Catálogos maestros" },
+    { key: "/configuracion/checklist", label: "Checklist de funcionalidades" },
   ];
   return [
     { key: "/dashboard", icon: <DashboardOutlined />, label: "Dashboard" },
