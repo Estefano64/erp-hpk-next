@@ -115,6 +115,8 @@ const OC_COLOR: Record<string, string> = {
 export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepcion, onUpdated }: Props) {
   const [rows, setRows] = useState<RequerimientoRow[]>([]);
   const [loading, setLoading] = useState(false);
+  // Evita doble "Generar desde template" (doble click / carga lenta).
+  const [aplicandoTpl, setAplicandoTpl] = useState(false);
   const [roles, setRoles] = useState<string[]>([]);
   const isAdmin = roles.includes("admin");
   const [messageApi, contextHolder] = message.useMessage();
@@ -431,6 +433,8 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
 
   // ── Aplicar template ──
   async function aplicarTemplate(estrategia: "replace_pending" | "keep_all" | "skip_if_any") {
+    if (aplicandoTpl) return; // re-entrada (doble click)
+    setAplicandoTpl(true);
     try {
       const res = await fetch(`/api/ordenes-trabajo/${otId}/requerimientos/aplicar-template`, {
         method: "POST",
@@ -452,6 +456,8 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
       onUpdated?.();
     } catch {
       messageApi.error("Error al aplicar template.");
+    } finally {
+      setAplicandoTpl(false);
     }
   }
 
@@ -1055,7 +1061,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
             <Button icon={<ReloadOutlined />} onClick={fetchData}>Refrescar</Button>
             {codRepCodigo && (
               <Tooltip title={`Copia los items del template del cod_rep ${codRepCodigo}`}>
-                <Button icon={<FileSyncOutlined />} onClick={abrirDialogTemplate}>
+                <Button icon={<FileSyncOutlined />} onClick={abrirDialogTemplate} loading={aplicandoTpl} disabled={aplicandoTpl}>
                   Generar desde template
                 </Button>
               </Tooltip>
