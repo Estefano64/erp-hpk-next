@@ -4,17 +4,21 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Typography, Card, Table, Tag, Space, Button, Row, Col, Statistic, Empty,
-  Modal, Form, Input, DatePicker, InputNumber, App, Tooltip, Alert,
+  Modal, Form, Input, DatePicker, InputNumber, App, Tooltip, Alert, Upload,
+  Divider, Spin, List,
 } from "antd";
 import {
   AuditOutlined, ReloadOutlined, FileDoneOutlined, EyeOutlined,
-  WarningOutlined, PaperClipOutlined, CheckCircleOutlined,
+  WarningOutlined, PaperClipOutlined, CheckCircleOutlined, DownloadOutlined,
+  UploadOutlined, FileTextOutlined, CarOutlined, CameraOutlined,
+  SolutionOutlined, FolderOpenOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
 import { formatDateOnly } from "@/lib/dates";
 import { useColumnasRedimensionables, STICKY_HEADER, paginacionEstandar } from "@/lib/tables";
+import { uploadToR2, openR2File } from "@/lib/r2-client";
 
 const { Title, Text } = Typography;
 
@@ -38,6 +42,34 @@ interface OTLista {
   faltantes: string[];
 }
 
+// ── Adjuntos del modal — ETAPAS y meta visual.
+interface AdjuntoCompleto {
+  id: number;
+  orden_trabajo_id: number;
+  etapa_codigo: string;
+  nombre_archivo: string;
+  r2_key: string;
+  tipo_mime: string;
+  tamano: number;
+  fecha_subida: string;
+}
+
+const ETAPAS_ADJ: Array<{ key: string; label: string; icon: React.ReactNode; color: string }> = [
+  { key: "recepcion",   label: "Recepción y GR cliente", icon: <CameraOutlined />,      color: "#1677ff" },
+  { key: "evaluacion",  label: "Evaluación",             icon: <FileTextOutlined />,    color: "#722ed1" },
+  { key: "cotizacion",  label: "Cotización",             icon: <FileTextOutlined />,    color: "#fa8c16" },
+  { key: "po_cliente",  label: "PO Cliente",             icon: <SolutionOutlined />,    color: "#13c2c2" },
+  { key: "termino",     label: "Término de reparación",  icon: <CheckCircleOutlined />, color: "#52c41a" },
+  { key: "despacho",    label: "Despacho y GR",          icon: <CarOutlined />,         color: "#eb2f96" },
+  { key: "facturacion", label: "Facturación",            icon: <FileTextOutlined />,    color: "#1d6f42" },
+];
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export default function FacturacionOTPage() {
   const { message: msg } = App.useApp();
   const router = useRouter();
@@ -54,6 +86,13 @@ export default function FacturacionOTPage() {
     monto?: number;
     observaciones?: string;
   }>();
+  // Adjuntos completos de la OT seleccionada (todas las etapas), cargados al
+  // abrir el modal. Independientes del campo `adjuntos` (que solo trae despacho
+  // + termino para el flag adjuntos_ok del listado).
+  const [adjuntos, setAdjuntos] = useState<AdjuntoCompleto[]>([]);
+  const [loadingAdj, setLoadingAdj] = useState(false);
+  // Subida en curso por etapa (para feedback visual del botón).
+  const [uploadingEtapa, setUploadingEtapa] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -70,11 +109,25 @@ export default function FacturacionOTPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const abrirModal = (ot: OTLista) => {
-    if (!ot.adjuntos_ok) {
-      msg.error(`No se puede facturar: faltan ${ot.faltantes.join(", ")}`);
-      return;
+  const fetchAdjuntos = useCallback(async (otId: number) => {
+    setLoadingAdj(true);
+    try {
+      const res = await fetch(`/api/ordenes-trabajo/${otId}/adjuntos`);
+      if (!res.ok) throw new Error("Error");
+      const json = await res.json();
+      setAdjuntos((json.data ?? []) as AdjuntoCompleto[]);
+    } catch {
+      msg.error("No se pudieron cargar los adjuntos");
+      setAdjuntos([]);
+    } finally {
+      setLoadingAdj(false);
     }
+  }, [msg]);
+
+  const abrirModal = (ot: OTLista) => {
+    // El bloqueo por adjuntos faltantes solo aplica si NO se ha facturado aún
+    // — la idea es que el modal sirva también para revisar adjuntos / subir
+    // los que faltan, no solo para registrar el número de factura.
     setOtSel(ot);
     form.resetFields();
     form.setFieldsValue({
@@ -82,7 +135,43 @@ export default function FacturacionOTPage() {
       fecha_facturacion: ot.fecha_facturacion ? dayjs(ot.fecha_facturacion) : dayjs(),
       monto: ot.monto_cotizacion != null ? Number(ot.monto_cotizacion) : undefined,
     });
+    setAdjuntos([]);
     setModalOpen(true);
+    void fetchAdjuntos(ot.id);
+  };
+
+  // Subida directa a R2 + registro en BD. Se usa para Factura PDF (etapa
+  // "facturacion") y Guía de remisión (etapa "despacho").
+  const handleUpload = async (file: File, etapa: string): Promise<boolean> => {
+    if (!otSel) return false;
+    setUploadingEtapa(etapa);
+    try {
+      const meta = await uploadToR2({
+        file,
+        uploadUrlEndpoint: `/api/ordenes-trabajo/${otSel.id}/adjuntos/upload-url`,
+        extra: { etapa },
+      });
+      const res = await fetch(`/api/ordenes-trabajo/${otSel.id}/adjuntos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...meta, etapa }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error ?? "No se pudo registrar el adjunto");
+      }
+      msg.success(`${file.name} subido (${etapa})`);
+      await fetchAdjuntos(otSel.id);
+      // El indicador "adjuntos_ok" del listado depende del backend — refrescar
+      // la grilla principal para que el botón "Facturar" se habilite.
+      fetchData();
+      return true;
+    } catch (e) {
+      msg.error(e instanceof Error ? e.message : "Error al subir archivo");
+      return false;
+    } finally {
+      setUploadingEtapa(null);
+    }
   };
 
   const handleGuardar = async () => {
@@ -187,15 +276,14 @@ export default function FacturacionOTPage() {
           <Tooltip title="Ver OT">
             <Button size="small" icon={<EyeOutlined />} onClick={() => router.push(`/ordenes-trabajo/${r.id}`)} />
           </Tooltip>
-          <Tooltip title={r.adjuntos_ok ? "" : `Faltan: ${r.faltantes.join(", ")}`}>
+          <Tooltip title={r.adjuntos_ok ? "Abrir factura + adjuntos" : `Adjuntos faltantes: ${r.faltantes.join(", ")}. Podés subirlos desde la ventana.`}>
             <Button
               size="small"
               type="primary"
               icon={<FileDoneOutlined />}
-              disabled={!r.adjuntos_ok}
               onClick={() => abrirModal(r)}
             >
-              {r.nro_factura ? "Editar factura" : "Facturar"}
+              {r.nro_factura ? "Editar factura" : (r.adjuntos_ok ? "Facturar" : "Adjuntar y facturar")}
             </Button>
           </Tooltip>
         </Space>
@@ -242,14 +330,16 @@ export default function FacturacionOTPage() {
       )}
 
       <Modal
-        title={otSel ? `Factura — ${otSel.ot ?? `OT #${otSel.id}`}` : ""}
+        title={otSel ? `Factura y adjuntos — ${otSel.ot ?? `OT #${otSel.id}`}` : ""}
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
         onOk={handleGuardar}
         okText={otSel?.nro_factura ? "Actualizar factura" : "Registrar factura"}
-        cancelText="Cancelar"
+        cancelText="Cerrar"
         confirmLoading={saving}
-        width={600}
+        okButtonProps={{ disabled: !!(otSel && !otSel.adjuntos_ok) }}
+        width={860}
+        destroyOnHidden
       >
         {otSel && (
           <div>
@@ -257,9 +347,19 @@ export default function FacturacionOTPage() {
               <div style={{ fontSize: 12 }}>
                 <b>Cliente:</b> {otSel.cliente ?? "—"}<br />
                 <b>Guía remisión:</b> {otSel.guia_entrega_salida ?? "—"} (entregada el {otSel.fecha_entrega ? formatDateOnly(otSel.fecha_entrega) : "—"})<br />
-                <b>Adjuntos:</b> {otSel.adjuntos.length} archivo(s)
               </div>
             </div>
+
+            {!otSel.adjuntos_ok && (
+              <Alert
+                showIcon
+                type="warning"
+                style={{ marginBottom: 12 }}
+                message="Faltan adjuntos para poder facturar"
+                description={`Faltantes: ${otSel.faltantes.join(", ")}. Subilos desde la sección "Subir archivo a esta OT" más abajo. Una vez completos, el botón "Registrar factura" se habilita.`}
+              />
+            )}
+
             <Form form={form} layout="vertical">
               <Row gutter={12}>
                 <Col span={12}>
@@ -288,6 +388,123 @@ export default function FacturacionOTPage() {
                 <Input.TextArea rows={2} maxLength={500} />
               </Form.Item>
             </Form>
+
+            <Divider titlePlacement="start">
+              <Space size={4}>
+                <UploadOutlined />
+                <span>Subir archivo a esta OT</span>
+              </Space>
+            </Divider>
+
+            <Space wrap style={{ marginBottom: 12 }}>
+              <Upload
+                accept="application/pdf,image/*"
+                showUploadList={false}
+                beforeUpload={(file) => {
+                  void handleUpload(file, "facturacion");
+                  return false;
+                }}
+                disabled={uploadingEtapa !== null}
+              >
+                <Button
+                  icon={<UploadOutlined />}
+                  type="primary"
+                  loading={uploadingEtapa === "facturacion"}
+                  style={{ background: "#1d6f42", borderColor: "#1d6f42" }}
+                >
+                  Subir factura (PDF)
+                </Button>
+              </Upload>
+              <Upload
+                accept="application/pdf,image/*"
+                showUploadList={false}
+                beforeUpload={(file) => {
+                  void handleUpload(file, "despacho");
+                  return false;
+                }}
+                disabled={uploadingEtapa !== null}
+              >
+                <Button
+                  icon={<UploadOutlined />}
+                  loading={uploadingEtapa === "despacho"}
+                >
+                  Subir guía de remisión
+                </Button>
+              </Upload>
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                La factura se guarda en la etapa <b>Facturación</b>. La guía firmada va a <b>Despacho</b> (la requiere el bloqueo de facturación).
+              </Text>
+            </Space>
+
+            <Divider titlePlacement="start">
+              <Space size={4}>
+                <FolderOpenOutlined />
+                <span>Adjuntos de la OT por categoría</span>
+              </Space>
+            </Divider>
+
+            {loadingAdj ? (
+              <div style={{ textAlign: "center", padding: 16 }}><Spin /></div>
+            ) : adjuntos.length === 0 ? (
+              <Empty description="Esta OT todavía no tiene adjuntos." />
+            ) : (
+              <div style={{ maxHeight: 320, overflowY: "auto" }}>
+                {ETAPAS_ADJ.map((et) => {
+                  const items = adjuntos.filter((a) => a.etapa_codigo === et.key);
+                  if (items.length === 0) return null;
+                  return (
+                    <div key={et.key} style={{ marginBottom: 12 }}>
+                      <div
+                        style={{
+                          display: "flex", alignItems: "center", gap: 8,
+                          padding: "6px 10px", background: brand.bgPage, borderRadius: 4,
+                          marginBottom: 4,
+                        }}
+                      >
+                        <span style={{ color: et.color }}>{et.icon}</span>
+                        <Text strong style={{ fontSize: 13 }}>{et.label}</Text>
+                        <Tag color="blue" style={{ marginLeft: "auto" }}>{items.length}</Tag>
+                      </div>
+                      <List<AdjuntoCompleto>
+                        size="small"
+                        bordered
+                        dataSource={items}
+                        renderItem={(a) => (
+                          <List.Item
+                            actions={[
+                              <Button
+                                key="dl"
+                                size="small"
+                                type="link"
+                                icon={<DownloadOutlined />}
+                                onClick={() =>
+                                  openR2File({
+                                    key: a.r2_key,
+                                    resource: "ot-adjunto",
+                                    resourceId: a.orden_trabajo_id,
+                                  }).catch((e) => msg.error(e instanceof Error ? e.message : "Error al descargar"))
+                                }
+                              >
+                                Descargar
+                              </Button>,
+                            ]}
+                          >
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: 12, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {a.nombre_archivo}
+                              </div>
+                              <div style={{ fontSize: 11, color: brand.textSecondary }}>
+                                {formatFileSize(a.tamano)} · {formatDateOnly(a.fecha_subida)}
+                              </div>
+                            </div>
+                          </List.Item>
+                        )}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </Modal>

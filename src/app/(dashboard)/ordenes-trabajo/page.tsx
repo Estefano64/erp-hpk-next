@@ -57,6 +57,7 @@ interface OTRecord {
   ot: number | null;
   activo: boolean;
   estrategia: boolean;
+  cantidad: number;
   tipo: string | null;
   tipo_codigo: string | null;
   tipo_ot: { codigo: string; nombre: string } | null;
@@ -375,6 +376,22 @@ export default function OrdenesTrabajoPage() {
       width: 100,
       sorter: (a, b) => (a.equipo_codigo ?? "").localeCompare(b.equipo_codigo ?? ""),
       ...filtroPorColumna(data, "equipo_codigo"),
+    },
+    {
+      key: "cantidad",
+      title: "Cant.",
+      dataIndex: "cantidad",
+      width: 70,
+      align: "right" as const,
+      sorter: (a, b) => Number(a.cantidad ?? 1) - Number(b.cantidad ?? 1),
+      render: (v: number | null) => {
+        const n = Number(v ?? 1);
+        // Resaltamos cantidades > 1 (típico de OT de Bienes con varias unidades)
+        // para que el operario las detecte sin abrir la OT.
+        return n > 1
+          ? <Tag color="blue" style={{ margin: 0, fontWeight: 600 }}>{n}</Tag>
+          : <span>{n}</span>;
+      },
     },
     {
       key: "descripcion",
@@ -775,6 +792,7 @@ export default function OrdenesTrabajoPage() {
               { label: "Cod. Rep", value: (r) => r.codigo_reparacion?.codigo ?? "" },
               { label: "Cod. Rep - Descripción", value: (r) => r.codigo_reparacion?.descripcion ?? "" },
               { label: "Equipo", value: (r) => r.equipo_codigo ?? "" },
+              { label: "Cantidad", value: (r) => r.cantidad ?? 1 },
               { label: "Fabricante", value: (r) => r.fabricante?.nombre ?? "" },
               { label: "Tipo (Cod. Rep)", value: (r) => r.tipo ?? "" },
               { label: "Tipo OT", value: (r) => r.tipo_ot?.nombre ?? r.tipo_codigo ?? "" },

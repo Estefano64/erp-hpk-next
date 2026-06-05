@@ -29,6 +29,11 @@ export async function GET(_req: NextRequest) {
         po_id: true,
         status_oc_codigo: true,
         material: { select: { codigo: true, descripcion: true, stock_actual: true, ubicacion: true } },
+        // Ubicación física donde se guardó al recepcionar la PO. Esta es la
+        // fuente de verdad para "dónde está el material" — `material.ubicacion`
+        // es un texto libre legacy que rara vez se llena.
+        almacen_zona: { select: { codigo: true, nombre: true } },
+        almacen_posicion: { select: { id: true, codigo: true } },
         compra: { select: { numero_po: true, status_oc_codigo: true } },
         orden_trabajo: {
           select: {

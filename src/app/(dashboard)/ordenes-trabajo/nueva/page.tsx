@@ -757,13 +757,11 @@ export default function NuevaOTPage() {
                 <Col xs={12} md={6}>
                   <Form.Item
                     name="fecha_requerimiento_cliente"
-                    label="Fecha Requerimiento Cliente"
+                    label="Fecha Requerimiento Cliente (opcional)"
                     dependencies={["fecha_recepcion"]}
                     rules={[
-                      // Obligatoria salvo Servicio (no aplica) o Contrato
-                      // (se calcula sola desde los días del contrato). En BIE
-                      // SÍ es requerida — el cliente la define manualmente.
-                      { required: !esServicio, message: "Requerido" },
+                      // Opcional — el dato no siempre viene en el viajero/guía.
+                      // Si se ingresa, debe ser >= fecha de recepción.
                       ({ getFieldValue }) => ({
                         validator(_, value) {
                           const recepcion = getFieldValue("fecha_recepcion");

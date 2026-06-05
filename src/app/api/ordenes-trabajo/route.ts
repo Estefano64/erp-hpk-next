@@ -266,16 +266,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Fecha de requerimiento del cliente obligatoria para REP y BIE (SER no
-    // la usa). En "Contrato" se calcula sola arriba; en el resto debe venir
-    // del form. Guard de servidor que respalda la validación UI.
+    // Fecha de requerimiento del cliente: AHORA OPCIONAL. El dato no siempre
+    // viene en el viajero/guía de remisión del cliente; antes era obligatoria
+    // para REP/BIE pero se relajó porque bloqueaba la creación legítima de OTs.
     const esServicio = body.tipo_codigo === "SER";
-    if (!esServicio && !fechaRequerimiento) {
-      return NextResponse.json(
-        { error: "La fecha de requerimiento del cliente es obligatoria." },
-        { status: 400 },
-      );
-    }
 
     // Calcular % PCR
     let porcentajePcr: number | null = null;
