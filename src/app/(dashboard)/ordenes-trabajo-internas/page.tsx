@@ -56,6 +56,7 @@ interface OTInternaRow {
   fecha_cierre: string | null;
   asignado_a: string | null;
   comentarios: string | null;
+  usuario_crea: string | null;
   version: number;
   equipo: { codigo: string; descripcion: string } | null;
   planta: { codigo: string; nombre: string } | null;
@@ -98,6 +99,10 @@ export default function OrdenesTrabajoInternasPage() {
   // en el selector (1.3.1=HER, 1.3.2=MAQ, 1.3.3=VEH; resto: vacío).
   const areaTallerSel = Form.useWatch("area_taller", form);
   const tipoEquipoForm = tipoEquipoPorAreaTaller(areaTallerSel);
+  // Tipo de OT interna seleccionado: si es correctiva no aplica Estrategia
+  // ni Task list (esos campos son del flujo preventivo). El cálculo de
+  // `esCorrectiva` se hace más abajo, después de declarar `tiposOTInterna`.
+  const tipoOTInternaSel = Form.useWatch("tipo_ot_interna_codigo", form);
 
   // Estado
   const [rows, setRows] = useState<OTInternaRow[]>([]);
@@ -116,6 +121,15 @@ export default function OrdenesTrabajoInternasPage() {
 
   // Catálogos
   const [tiposOTInterna, setTiposOTInterna] = useState<CatalogOption[]>([]);
+  // Es correctiva cuando el código o nombre del tipo contiene "correctiv".
+  // Necesita estar acá (después de declarar tiposOTInterna) porque depende
+  // del catálogo cargado para resolver el nombre desde el código.
+  const esCorrectiva = (() => {
+    const cod = (tipoOTInternaSel ?? "").toString().toUpperCase();
+    if (cod === "CORRECTIVA" || cod === "CORR") return true;
+    const nombre = tiposOTInterna.find((t) => t.codigo === tipoOTInternaSel)?.nombre ?? "";
+    return /correctiv/i.test(nombre);
+  })();
   const [equipos, setEquipos] = useState<EquipoOption[]>([]);
   const [plantas, setPlantas] = useState<CatalogOption[]>([]);
   const [prioridades, setPrioridades] = useState<CatalogOption[]>([]);
@@ -390,6 +404,11 @@ export default function OrdenesTrabajoInternasPage() {
       render: (v: string | null) => v ?? "-",
     },
     {
+      key: "usuario_crea", title: "Creado por", dataIndex: "usuario_crea", width: 150, ellipsis: true,
+      ...filtroPorColumna<OTInternaRow>(rows, "usuario_crea"),
+      render: (v: string | null) => v ?? <Text type="secondary">—</Text>,
+    },
+    {
       key: "comentarios", title: "Comentarios", dataIndex: "comentarios", width: 220, ellipsis: true,
       render: (v: string | null) => v
         ? <Tooltip title={v}><span>{v}</span></Tooltip>
@@ -596,6 +615,15 @@ export default function OrdenesTrabajoInternasPage() {
                 <Select showSearch optionFilterProp="label"
                   placeholder="Correctiva / Preventiva"
                   options={tiposOTInterna.map((t) => ({ value: t.codigo, label: t.nombre }))}
+                  onChange={(value) => {
+                    // Si se cambia a Correctiva, limpiar estrategia y task_list
+                    // (campos exclusivos del flujo preventivo).
+                    const nombre = tiposOTInterna.find((t) => t.codigo === value)?.nombre ?? "";
+                    const codUp = (value ?? "").toString().toUpperCase();
+                    if (codUp === "CORRECTIVA" || codUp === "CORR" || /correctiv/i.test(nombre)) {
+                      form.setFieldsValue({ estrategia_id: undefined, task_list: undefined });
+                    }
+                  }}
                 />
               </Form.Item>
             </Col>
@@ -701,26 +729,30 @@ export default function OrdenesTrabajoInternasPage() {
                 <DatePicker showTime format="DD/MM/YY HH:mm" style={{ width: "100%" }} />
               </Form.Item>
             </Col>
-            <Col xs={24} md={12}>
-              <Form.Item name="estrategia_id" label="Estrategia (opcional)">
-                <Select
-                  allowClear
-                  showSearch
-                  placeholder="Vincular a estrategia"
-                  optionFilterProp="label"
-                  options={estrategias.map((e) => ({ value: e.estrategia_id, label: `${e.codigo} — ${e.descripcion}` }))}
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={12}>
-              <Form.Item
-                name="task_list"
-                label="Task list (referencia libre)"
-                tooltip="Texto libre por ahora. En el futuro se vinculará al catálogo de Tarea."
-              >
-                <Input placeholder="MP1 · Cambio aceite trimestral" maxLength={200} />
-              </Form.Item>
-            </Col>
+            {!esCorrectiva && (
+              <>
+                <Col xs={24} md={12}>
+                  <Form.Item name="estrategia_id" label="Estrategia (opcional)">
+                    <Select
+                      allowClear
+                      showSearch
+                      placeholder="Vincular a estrategia"
+                      optionFilterProp="label"
+                      options={estrategias.map((e) => ({ value: e.estrategia_id, label: `${e.codigo} — ${e.descripcion}` }))}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    name="task_list"
+                    label="Task list (referencia libre)"
+                    tooltip="Texto libre por ahora. En el futuro se vinculará al catálogo de Tarea."
+                  >
+                    <Input placeholder="MP1 · Cambio aceite trimestral" maxLength={200} />
+                  </Form.Item>
+                </Col>
+              </>
+            )}
             <Col xs={24} md={12}>
               <Form.Item name="asignado_a" label="Asignado a">
                 <Select
