@@ -542,6 +542,15 @@ export default function EquiposPage() {
           <ExportarExcelButton<EquipoRecord>
             endpoint="/api/equipos"
             filename="Equipos"
+            // Respeta los filtros server-side activos en la tabla cuando el
+            // usuario marca "Usar filtros actuales de la tabla" en el modal.
+            endpointParams={{
+              search,
+              tipo: filterTipo,
+              area: filterArea,
+              status: filterStatus,
+              criticidad: filterCriticidad,
+            }}
             categoryFilters={[
               {
                 key: "tipo",

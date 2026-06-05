@@ -1101,3 +1101,62 @@ export function useRangoFechasPersistente(
   return { rango, setRango, limpiar, hayFiltro };
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// Filas filtradas por la tabla (para pasar a ExportarExcelButton)
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Helper para capturar las filas "actualmente visibles" en una `<Table>` —
+ * con búsqueda, filtros de columna y ordenamiento ya aplicados — y poder
+ * pasárselas a `<ExportarExcelButton currentRows={...}>`.
+ *
+ * Devuelve:
+ *  - `filtradas`: las filas que la tabla muestra después de filtros/sort.
+ *    Arranca igual a `rows`; se actualiza cada vez que el usuario cambia un
+ *    filtro de columna o un sort en la tabla.
+ *  - `onChange`: handler para `<Table onChange={...}>`. Si la tabla ya tiene
+ *    un onChange propio (ej. para persistir filtros), usar `composeOnChange`.
+ *
+ * Uso típico:
+ *   const { filtradas, onChange } = useTablaFiltrada(rows);
+ *   <Table dataSource={rows} onChange={onChange} ... />
+ *   <ExportarExcelButton currentRows={filtradas} ... />
+ *
+ * Si tu tabla ya tiene `onChange` para otra cosa, componer:
+ *   const { filtradas, captureFilteredRows } = useTablaFiltrada(rows);
+ *   <Table onChange={(p, f, s, ext) => {
+ *     captureFilteredRows(ext);
+ *     setColumnFilters(f);  // tu lógica existente
+ *   }} />
+ */
+export function useTablaFiltrada<T>(rows: readonly T[]) {
+  const [filtradas, setFiltradas] = useState<T[]>(rows as T[]);
+
+  // Si `rows` cambia (ej. refetch), reiniciar filtradas a la nueva fuente.
+  // AntD volverá a llamar onChange al render si hay filtros activos, así que
+  // este reset es seguro: se sobrescribirá inmediatamente con el resultado
+  // del filtro.
+  useEffect(() => {
+    setFiltradas(rows as T[]);
+  }, [rows]);
+
+  const captureFilteredRows = useCallback(
+    (ext: { currentDataSource: T[] }) => {
+      setFiltradas(ext.currentDataSource);
+    },
+    [],
+  );
+
+  // Conveniencia: handler completo para `onChange` cuando la tabla no necesita
+  // otra cosa más.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const onChange = useCallback(
+    (_p: unknown, _f: unknown, _s: unknown, ext: { currentDataSource: T[] }) => {
+      captureFilteredRows(ext);
+    },
+    [captureFilteredRows],
+  );
+
+  return { filtradas, onChange, captureFilteredRows };
+}
+

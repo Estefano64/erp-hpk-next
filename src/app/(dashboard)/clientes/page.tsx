@@ -298,6 +298,8 @@ export default function ClientesPage() {
           <ExportarExcelButton<ClienteRecord>
             endpoint="/api/clientes"
             filename="Clientes"
+            // Respeta el filtro de búsqueda activo en la tabla.
+            endpointParams={{ search }}
             columns={[
               { label: "Código", value: (r) => r.codigo },
               { label: "Razón social", value: (r) => r.razon_social },

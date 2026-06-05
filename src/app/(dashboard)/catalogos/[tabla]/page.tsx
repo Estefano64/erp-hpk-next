@@ -336,6 +336,9 @@ export default function CatalogoCrudPage() {
           <ExportarExcelButton<CatalogRow>
             endpoint={`/api/catalogos?tabla=${cfg.id}&incluirInactivos=1`}
             filename={cfg.label}
+            // Filtrado client-side: pasamos directamente las filas ya filtradas
+            // por búsqueda + showInactivos para respetar lo que el usuario ve.
+            currentRows={filtered}
             columns={cfg.fields.map((f) => ({
               label: f.label,
               value: (r) => {

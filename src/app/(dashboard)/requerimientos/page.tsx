@@ -106,7 +106,7 @@ interface ProveedorOpt { id: number; razon_social: string; ruc: string | null }
 interface UbicacionOpt { codigo: string; nombre: string }
 
 const TIPO_COLOR: Record<string, string> = { MAC: "blue", CAD: "orange", SER: "purple" };
-const REQ_COLOR: Record<string, string> = { SIN_APROBACION: "default", APROBADO: "success", DESAPROBADO: "error", ANULADO: "default" };
+const REQ_COLOR: Record<string, string> = { SIN_APROBACION: "default", APROBADO: "success", DESAPROBADO: "error", ANULADO: "default", CERRADO: "blue" };
 const COT_COLOR: Record<string, string> = { PEND_COT: "default", PEND_APROB: "processing", APROBADO: "success", COMPLETO: "success", ANULADO: "error" };
 const OC_COLOR: Record<string, string> = { PEND_OC: "default", PROCESO: "processing", ENTREGADO: "success", COMPLETO: "success", INCOMPLETO: "warning", ANULADO: "error", DEVOLUCION: "warning" };
 

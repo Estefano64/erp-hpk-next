@@ -78,6 +78,38 @@ interface Props<T> {
    * descargas. Default: `excel-export-${filename}`.
    */
   storageKey?: string;
+  /**
+   * Filas actualmente visibles en la tabla (después de aplicar búsqueda y
+   * filtros de columna de AntD). Si se pasa, aparece un checkbox "Usar filtros
+   * actuales de la tabla" en el modal; cuando está marcado, la descarga usa
+   * estas filas directamente en lugar de re-fetchear desde el endpoint. El
+   * caller debe pasar las filas filtradas (no solo la página visible) — lo más
+   * común es leerlas del callback `onChange` de AntD Table:
+   *   <Table onChange={(_, _, _, ext) => setFiltradas(ext.currentDataSource)} />
+   * o usar el helper `useTablaFiltrada` de `@/lib/tables`.
+   *
+   * IMPORTANTE: para tablas server-side paginadas, `currentRows` solo trae la
+   * página visible (típicamente 20 filas). En ese caso usar `endpointParams`
+   * en su lugar — el componente fetchea TODAS las páginas pasando esos
+   * filtros como query params al server.
+   */
+  currentRows?: T[];
+  /**
+   * Query params extra para agregar al endpoint cuando el usuario eligió
+   * "Usar filtros actuales de la tabla". Pensado para tablas server-side
+   * paginadas: el caller pasa acá los mismos filtros que envía a `fetchData`
+   * (search, estado, fecha, etc.) y la descarga los respeta server-side.
+   *
+   * Valores `undefined`, `null` o "" se omiten automáticamente.
+   *
+   * Ejemplo:
+   *   endpointParams={{ search, planta: filterPlanta, estado }}
+   *
+   * Si pasás esto Y `currentRows`, se prefiere `endpointParams` porque trae
+   * TODAS las filas filtradas (no solo la página visible). `currentRows`
+   * sigue sirviendo para mostrar el conteo en el checkbox.
+   */
+  endpointParams?: Record<string, string | number | boolean | null | undefined> | URLSearchParams;
   /** Texto del botón */
   children?: React.ReactNode;
 }
@@ -105,11 +137,17 @@ export function ExportarExcelButton<T>({
   dateFilter,
   categoryFilters,
   storageKey,
+  currentRows,
+  endpointParams,
   children,
 }: Props<T>) {
   const { message } = App.useApp();
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
+  // Si el caller pasó currentRows, por defecto descargamos esos (respeta los
+  // filtros que el usuario tiene aplicados en la tabla). El usuario puede
+  // desmarcar para forzar re-fetch desde el endpoint.
+  const [usarFiltrosTabla, setUsarFiltrosTabla] = useState(true);
 
   const persistKey = storageKey ?? `excel-export-${filename}`;
 
@@ -175,8 +213,8 @@ export function ExportarExcelButton<T>({
     }
   }
 
-  async function fetchAll(): Promise<T[]> {
-    // Construir query params extra a partir de los filtros server-side.
+  async function fetchAll(opts?: { incluirEndpointParams?: boolean }): Promise<T[]> {
+    // Construir query params extra a partir de los filtros del modal.
     const extraParams = new URLSearchParams();
     if (dateFilter?.paramNameDesde && desde) {
       extraParams.set(dateFilter.paramNameDesde, desde.format("YYYY-MM-DD"));
@@ -188,6 +226,22 @@ export function ExportarExcelButton<T>({
       const sel = catSelections[f.key] ?? [];
       if (f.paramName && sel.length > 0) {
         extraParams.set(f.paramName, sel.join(","));
+      }
+    }
+    // Si el caller pasó endpointParams y el usuario marcó "usar filtros de la
+    // tabla", agregamos esos como query params al endpoint (típico de tablas
+    // server-side paginadas: respetan los filtros que ya están aplicados).
+    if (opts?.incluirEndpointParams && endpointParams) {
+      if (endpointParams instanceof URLSearchParams) {
+        for (const [k, v] of endpointParams.entries()) {
+          if (v === "") continue;
+          extraParams.set(k, v);
+        }
+      } else {
+        for (const [k, v] of Object.entries(endpointParams)) {
+          if (v == null || v === "") continue;
+          extraParams.set(k, String(v));
+        }
       }
     }
     const extraStr = extraParams.toString();
@@ -237,10 +291,29 @@ export function ExportarExcelButton<T>({
     }
     setLoading(true);
     try {
-      const records = await fetchAll();
-      const filtrados = aplicarFiltrosCliente(records);
+      // Si el usuario marcó "Usar filtros actuales de la tabla":
+      //   - Si hay endpointParams → fetch al endpoint con esos params (trae
+      //     TODAS las filas que cumplen los filtros server-side, no solo la
+      //     página visible).
+      //   - Si no hay endpointParams pero hay currentRows → usar las filas
+      //     visibles directamente (caso tablas client-side).
+      // Si NO está marcado → fetch sin endpointParams + aplicar filtros del modal.
+      const usarFiltrosActivos = usarFiltrosTabla && (endpointParams != null || currentRows != null);
+      let filtrados: T[];
+      if (usarFiltrosActivos && endpointParams != null) {
+        // Server-side: el endpoint ya filtra; los filtros del modal se ignoran.
+        filtrados = await fetchAll({ incluirEndpointParams: true });
+      } else if (usarFiltrosActivos && currentRows != null) {
+        // Client-side: ya tenemos las filas filtradas en memoria.
+        filtrados = currentRows;
+      } else {
+        // Sin filtros de tabla — descarga "todo" con los filtros del modal.
+        filtrados = aplicarFiltrosCliente(await fetchAll());
+      }
       if (filtrados.length === 0) {
-        message.info("No hay registros que cumplan los filtros");
+        message.info(usarFiltrosActivos
+          ? "No hay registros que cumplan los filtros actuales de la tabla"
+          : "No hay registros que cumplan los filtros");
         return;
       }
       // Persistir selección actual para próxima descarga.
@@ -330,8 +403,66 @@ export function ExportarExcelButton<T>({
           }
         />
 
-        {/* Rango de fechas */}
-        {dateFilter && (
+        {/* Checkbox para descargar respetando los filtros activos de la tabla.
+            Aparece si el caller pasó currentRows o endpointParams. */}
+        {(currentRows != null || endpointParams != null) && (() => {
+          // Lista de filtros activos para mostrarlos al usuario.
+          const activos: string[] = [];
+          if (endpointParams) {
+            if (endpointParams instanceof URLSearchParams) {
+              for (const [k, v] of endpointParams.entries()) {
+                if (v === "") continue;
+                activos.push(`${k}=${v}`);
+              }
+            } else {
+              for (const [k, v] of Object.entries(endpointParams)) {
+                if (v == null || v === "") continue;
+                activos.push(`${k}=${v}`);
+              }
+            }
+          }
+          return (
+            <div style={{ marginBottom: spc.md, padding: spc.sm, background: "#f5f5f5", borderRadius: 4 }}>
+              <Checkbox
+                checked={usarFiltrosTabla}
+                onChange={(e) => setUsarFiltrosTabla(e.target.checked)}
+              >
+                <Text strong>Usar filtros actuales de la tabla</Text>
+                {currentRows != null && (
+                  <Tag color="blue" style={{ marginLeft: 6 }}>
+                    {currentRows.length} fila(s) visible(s)
+                  </Tag>
+                )}
+              </Checkbox>
+              <div style={{ marginTop: 4, marginLeft: 24 }}>
+                {usarFiltrosTabla ? (
+                  <>
+                    <Text type="secondary" style={{ fontSize: 11, display: "block" }}>
+                      {endpointParams != null
+                        ? "Se descargarán todas las filas que cumplen los filtros actuales (no solo la página visible). Los filtros de abajo no aplican."
+                        : "Se descargarán las filas visibles en la tabla (búsqueda + filtros de columna ya aplicados). Los filtros de abajo no aplican."}
+                    </Text>
+                    {activos.length > 0 && (
+                      <div style={{ marginTop: 4 }}>
+                        <Text style={{ fontSize: 11 }} type="secondary">Filtros activos: </Text>
+                        {activos.map((s) => (
+                          <Tag key={s} style={{ margin: "2px 4px 0 0", fontSize: 10 }}>{s}</Tag>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <Text type="secondary" style={{ fontSize: 11 }}>
+                    Se descargarán TODOS los registros del endpoint, aplicando los filtros que elijas abajo.
+                  </Text>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Rango de fechas — solo cuando NO usamos los filtros de la tabla */}
+        {!((currentRows != null || endpointParams != null) && usarFiltrosTabla) && dateFilter && (
           <Form layout="vertical" style={{ marginBottom: spc.sm }}>
             <Form.Item
               label={
@@ -367,8 +498,8 @@ export function ExportarExcelButton<T>({
           </Form>
         )}
 
-        {/* Categorías multi-select */}
-        {(categoryFilters ?? []).length > 0 && (
+        {/* Categorías multi-select — solo cuando NO usamos los filtros de la tabla */}
+        {!((currentRows != null || endpointParams != null) && usarFiltrosTabla) && (categoryFilters ?? []).length > 0 && (
           <div style={{ marginBottom: spc.md }}>
             {(categoryFilters ?? []).map((f) => {
               const sel = catSelections[f.key] ?? [];

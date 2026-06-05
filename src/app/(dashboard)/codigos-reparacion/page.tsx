@@ -371,6 +371,13 @@ export default function CodigosReparacionPage() {
           <ExportarExcelButton<CodRep>
             endpoint="/api/codigos-reparacion"
             filename="Codigos-Reparacion"
+            // Respeta los filtros server-side activos en la tabla.
+            endpointParams={{
+              search,
+              tipo: filterTipo,
+              flota: filterFlota,
+              fabricante: filterFab,
+            }}
             categoryFilters={[
               {
                 key: "tipo",
