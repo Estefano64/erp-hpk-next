@@ -8,7 +8,7 @@ import {
 } from "antd";
 import {
   ExportOutlined, ReloadOutlined, CheckCircleOutlined, WarningOutlined,
-  InboxOutlined, EyeOutlined,
+  InboxOutlined, EyeOutlined, SearchOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
@@ -33,6 +33,8 @@ interface Item {
   po_id: number | null;
   status_oc_codigo: string | null;
   material: { codigo: string; descripcion: string; stock_actual: number | string | null; ubicacion: string | null } | null;
+  almacen_zona: { codigo: string; nombre: string } | null;
+  almacen_posicion: { id: number; codigo: string } | null;
   compra: { numero_po: string; status_oc_codigo: string | null } | null;
   orden_trabajo: {
     id: number; ot: string | null;
@@ -65,6 +67,9 @@ export default function DespachosPage() {
   const [loading, setLoading] = useState(false);
   const [seleccionados, setSeleccionados] = useState<Record<number, number[]>>({}); // otId -> reqIds
   const [submitting, setSubmitting] = useState<number | null>(null);
+  // Búsqueda libre — filtra por OT, cliente, código reparación, código material,
+  // N° de parte (np en descripción) o descripción del item.
+  const [filtro, setFiltro] = useState("");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -135,11 +140,40 @@ export default function DespachosPage() {
     }
   };
 
-  const totalItems = grupos.reduce((s, g) => s + g.items.length, 0);
-  const totalConStock = grupos.reduce((s, g) => s + g.con_stock, 0);
-  const totalSinStock = grupos.reduce((s, g) => s + g.sin_stock, 0);
-  const otsCompletas = grupos.filter((g) => g.estado_ot === "completa").length;
-  const otsIncompletas = grupos.filter((g) => g.estado_ot === "incompleta").length;
+  // Filtrado client-side por el input de búsqueda. Si la OT matchea (por OT
+  // número o cliente), se conserva tal cual. Si solo matchean algunos items
+  // (código/np/descripción), conservamos la OT pero recortamos sus items.
+  const gruposFiltrados = (() => {
+    const term = filtro.trim().toLowerCase();
+    if (!term) return grupos;
+    return grupos
+      .map((g) => {
+        const otStr = `${g.ot ?? g.ot_id}`.toLowerCase();
+        const clienteStr = (g.cliente ?? "").toLowerCase();
+        const codRepStr = (g.codigo_reparacion ?? "").toLowerCase();
+        const otMatch =
+          otStr.includes(term) || clienteStr.includes(term) || codRepStr.includes(term);
+        const itemsMatch = g.items.filter((it) => {
+          const m = it.material;
+          const haystacks = [
+            m?.codigo ?? "",
+            m?.descripcion ?? "",
+            it.descripcion ?? "",
+            it.nro_req ?? "",
+          ].map((x) => x.toLowerCase());
+          return haystacks.some((h) => h.includes(term));
+        });
+        if (otMatch) return g;
+        if (itemsMatch.length === 0) return null;
+        return { ...g, items: itemsMatch };
+      })
+      .filter((x): x is GrupoOT => x != null);
+  })();
+
+  const totalConStock = gruposFiltrados.reduce((s, g) => s + g.con_stock, 0);
+  const totalSinStock = gruposFiltrados.reduce((s, g) => s + g.sin_stock, 0);
+  const otsCompletas = gruposFiltrados.filter((g) => g.estado_ot === "completa").length;
+  const otsIncompletas = gruposFiltrados.filter((g) => g.estado_ot === "incompleta").length;
 
   return (
     <div>
@@ -148,7 +182,17 @@ export default function DespachosPage() {
           <ExportOutlined style={{ marginRight: 8 }} />
           Despachos por OT
         </Title>
-        <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>Actualizar</Button>
+        <Space wrap>
+          <Input
+            placeholder="Buscar OT, cliente, código o N° parte..."
+            prefix={<SearchOutlined />}
+            value={filtro}
+            onChange={(e) => setFiltro(e.target.value)}
+            allowClear
+            style={{ width: 320 }}
+          />
+          <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>Actualizar</Button>
+        </Space>
       </div>
 
       <Alert
@@ -158,17 +202,17 @@ export default function DespachosPage() {
       />
 
       <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
-        <Col xs={12} md={4}><Card><Statistic title="OTs pendientes" value={grupos.length} prefix={<InboxOutlined style={{ color: brand.navy }} />} /></Card></Col>
+        <Col xs={12} md={4}><Card><Statistic title="OTs pendientes" value={gruposFiltrados.length} prefix={<InboxOutlined style={{ color: brand.navy }} />} /></Card></Col>
         <Col xs={12} md={5}><Card><Statistic title="OTs completas" value={otsCompletas} styles={{ content: { color: "#52c41a" } }} prefix={<CheckCircleOutlined style={{ color: "#52c41a" }} />} /></Card></Col>
         <Col xs={12} md={5}><Card><Statistic title="OTs incompletas" value={otsIncompletas} styles={{ content: { color: otsIncompletas > 0 ? "#fa8c16" : "#bfbfbf" } }} prefix={<WarningOutlined style={{ color: otsIncompletas > 0 ? "#fa8c16" : "#bfbfbf" }} />} /></Card></Col>
         <Col xs={12} md={5}><Card><Statistic title="Items listos" value={totalConStock} styles={{ content: { color: "#52c41a" } }} /></Card></Col>
         <Col xs={12} md={5}><Card><Statistic title="Items sin stock" value={totalSinStock} styles={{ content: { color: totalSinStock > 0 ? "#cf1322" : "#bfbfbf" } }} /></Card></Col>
       </Row>
 
-      {grupos.length === 0 && !loading ? (
-        <Empty description="No hay despachos pendientes." />
+      {gruposFiltrados.length === 0 && !loading ? (
+        <Empty description={filtro ? `Sin resultados para "${filtro}".` : "No hay despachos pendientes."} />
       ) : (
-        grupos.map((g) => <GrupoCard
+        gruposFiltrados.map((g) => <GrupoCard
           key={g.ot_id}
           grupo={g}
           seleccionados={seleccionados[g.ot_id] ?? []}
@@ -271,8 +315,21 @@ function GrupoCard({
       },
     },
     {
-      key: "ubicacion", title: "Ubicación", width: 110,
-      render: (_, r) => r.material?.ubicacion ? <Tag>{r.material.ubicacion}</Tag> : <Text type="secondary">—</Text>,
+      key: "ubicacion", title: "Ubicación", width: 140,
+      render: (_, r) => {
+        // Prioridad: zona/posición física (asignada al recepcionar la PO)
+        // > campo libre legacy en Material.ubicacion.
+        if (r.almacen_zona) {
+          const pos = r.almacen_posicion?.codigo;
+          return (
+            <Tag color="purple" style={{ margin: 0 }}>
+              {r.almacen_zona.codigo}{pos ? ` · ${pos}` : ""}
+            </Tag>
+          );
+        }
+        if (r.material?.ubicacion) return <Tag>{r.material.ubicacion}</Tag>;
+        return <Text type="secondary">—</Text>;
+      },
     },
     {
       key: "puede", title: "Puede despachar", width: 130, align: "center",

@@ -239,9 +239,7 @@ export async function POST(req: NextRequest) {
     let contratoDias: number | null = null;
     let fechaRequerimiento: Date | null = null;
 
-    // El contrato solo se "amarra" en Reparación. En BIE/SER, "Contrato" es solo
-    // texto en atención (fecha de requerimiento manual, sin derivar del contrato).
-    if (body.tipo_codigo === "REP" && body.atencion_reparacion_codigo === "Contrato" && body.id_cliente && body.id_cod_rep) {
+    if (body.atencion_reparacion_codigo === "Contrato" && body.id_cliente && body.id_cod_rep) {
       const contrato = await prisma.contrato.findFirst({
         where: {
           cliente_id: body.id_cliente,
@@ -268,17 +266,13 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Fecha de requerimiento del cliente obligatoria para REP, BIE y SER. En REP
-    // con "Contrato" se calcula sola arriba; en el resto debe venir del form.
-    // Guard de servidor que respalda la validación UI.
+    // Fecha de requerimiento del cliente: AHORA OPCIONAL. El dato no siempre
+    // viene en el viajero/guía de remisión del cliente; antes era obligatoria
+    // para REP/BIE pero se relajó porque bloqueaba la creación legítima de OTs.
     const esServicio = body.tipo_codigo === "SER";
+    // `esBien` viene de main — se usa abajo (~líneas 364-369) para anular campos que
+    // solo aplican a OT de Reparación. Se conserva tal cual de main al mergear.
     const esBien = body.tipo_codigo === "BIE";
-    if (!fechaRequerimiento) {
-      return NextResponse.json(
-        { error: "La fecha de requerimiento del cliente es obligatoria." },
-        { status: 400 },
-      );
-    }
 
     // Calcular % PCR
     let porcentajePcr: number | null = null;
@@ -353,15 +347,13 @@ export async function POST(req: NextRequest) {
           id_fabricante: idFabricante,
           cod_rep_flota: codRepFlota,
           cod_rep_posicion: codRepPosicion,
-          // Datos del Equipo (Equipo / N/S): REP y SER (no Bien).
-          equipo_codigo: esBien ? null : (body.equipo_codigo || null),
-          ns: esBien ? null : (body.ns || null),
-          // Plaqueteo y WO Cliente: REP y SER (no Bien). PO Cliente / PO Item: los
-          // tres tipos. ID Viajero / Guía / Empresa: solo REP.
-          plaqueteo: esBien ? null : (body.plaqueteo || null),
-          wo_cliente: esBien ? null : (body.wo_cliente || null),
+          equipo_codigo: body.equipo_codigo || null,
+          ns: body.ns || null,
+          // Plaqueteo / WO / PO Item / ID Viajero / Guía / Empresa: solo REP.
+          plaqueteo: esBienOServicio ? null : (body.plaqueteo || null),
+          wo_cliente: esBienOServicio ? null : (body.wo_cliente || null),
           po_cliente: body.po_cliente || null,
-          po_item: body.po_item || null,
+          po_item: esBienOServicio ? null : (body.po_item || null),
           id_viajero: esBienOServicio ? null : (body.id_viajero || null),
           guia_remision: esBienOServicio ? null : (body.guia_remision || null),
           empresa_entrega: esBienOServicio ? null : (body.empresa_entrega || null),
@@ -369,24 +361,22 @@ export async function POST(req: NextRequest) {
           pcr: esBienOServicio ? null : (body.pcr ?? null),
           horas: esBienOServicio ? null : (body.horas ?? null),
           porcentaje_pcr: esBienOServicio ? null : porcentajePcr,
-          // Garantía / Tipo Garantía / Atención: los tres tipos. Tipo Reparación:
-          // solo REP.
-          garantia_codigo: body.garantia_codigo || null,
-          atencion_reparacion_codigo: body.atencion_reparacion_codigo || null,
+          garantia_codigo: esBienOServicio ? null : (body.garantia_codigo || null),
+          // Atención Reparación: REP + BIE; nulo solo en SER.
+          atencion_reparacion_codigo: esServicio ? null : (body.atencion_reparacion_codigo || null),
           tipo_reparacion_codigo: esBienOServicio ? null : (body.tipo_reparacion_codigo || null),
-          tipo_garantia_codigo: tipoGarantiaCodigo,
+          tipo_garantia_codigo: esBienOServicio ? null : tipoGarantiaCodigo,
           prioridad_atencion_codigo: body.prioridad_atencion_codigo || null,
           contrato_dias: esBienOServicio ? null : contratoDias,
           base_metalica_codigo: esBienOServicio ? null : (body.base_metalica_codigo || null),
           comentarios: body.comentarios || null,
           monto_cotizacion: body.monto_cotizacion != null && body.monto_cotizacion !== "" ? body.monto_cotizacion : null,
           moneda_cotizacion_codigo: body.moneda_cotizacion_codigo || null,
-          // Fecha Requerimiento Cliente: los tres tipos.
-          fecha_requerimiento_cliente: fechaRequerimiento,
+          // Fecha Requerimiento Cliente: REP + BIE; null solo en SER.
+          fecha_requerimiento_cliente: esServicio ? null : fechaRequerimiento,
           ot_status_codigo: "Abierta",
           recursos_status_codigo: "En revision procesos",
-          // Taller status no aplica a Servicio.
-          taller_status_codigo: esServicio ? null : "Pdt Evaluación",
+          taller_status_codigo: "Pdt Evaluación",
           usuario_crea: usuarioCrea,
         },
         include: {
@@ -460,7 +450,6 @@ export async function POST(req: NextRequest) {
         });
         if (tareas.length > 0) {
           const { nextNroReqExterna, pickDescripcionFromTarea, pickCantidadFromTarea } = await import("@/lib/requerimientos");
-          type MatLookup = import("@/lib/requerimientos").MaterialLookup;
           await prisma.$transaction(async (tx) => {
             const nroReq = await nextNroReqExterna(tx, created.id);
 
@@ -470,16 +459,10 @@ export async function POST(req: NextRequest) {
             const materiales = codigosMat.length > 0
               ? await tx.material.findMany({
                   where: { codigo: { in: codigosMat } },
-                  select: { material_id: true, codigo: true, descripcion: true, np: true, unidad_medida_codigo: true, fabricante_codigo: true, fabricante: { select: { nombre: true } } },
+                  select: { material_id: true, codigo: true, descripcion: true, unidad_medida_codigo: true, fabricante_codigo: true },
                 })
               : [];
-            const matByCodigo = new Map<string, MatLookup>(
-              materiales.map((m) => [m.codigo, {
-                codigo: m.codigo, descripcion: m.descripcion, np: m.np,
-                fabricante_codigo: m.fabricante_codigo, fabricante_nombre: m.fabricante?.nombre ?? null,
-                unidad_medida_codigo: m.unidad_medida_codigo, material_id: m.material_id,
-              }]),
-            );
+            const matByCodigo = new Map(materiales.map((m) => [m.codigo, m]));
 
             // Pre-cargar Servicios para los SER con servicio_codigo asignado.
             const codigosSvc = [...new Set(tareas.filter((t) => t.servicio_codigo).map((t) => t.servicio_codigo!))];
