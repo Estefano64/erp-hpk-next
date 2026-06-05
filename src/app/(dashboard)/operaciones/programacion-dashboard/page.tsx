@@ -19,6 +19,7 @@ import {
   ColorPicker,
   Tabs,
   App,
+  Segmented,
 } from "antd";
 import {
   AppstoreOutlined,
@@ -34,7 +35,7 @@ import {
 import type { ColumnsType, ColumnGroupType, ColumnType } from "antd/es/table/interface";
 import dayjs from "dayjs";
 import Link from "next/link";
-import { brand } from "@/lib/theme";
+import { brand, radius, shadow, space } from "@/lib/theme";
 import { useResponsive } from "@/lib/responsive";
 import {
   useColumnasOcultas,
@@ -127,6 +128,53 @@ function abreviarEstado(codigo: string | null): string {
   return c.slice(0, 3);
 }
 
+// Estado "global" de la OT derivado del progreso de tareas (para KPIs / filtros).
+function estadoGlobalOT(o: OTRow): "sin_empezar" | "en_proceso" | "terminada" {
+  if (o.progreso.total === 0 || o.progreso.realizadas === 0) return "sin_empezar";
+  if (o.progreso.realizadas >= o.progreso.total) return "terminada";
+  return "en_proceso";
+}
+// Atrasada = tiene fecha de entrega vencida y NO está terminada.
+function otAtrasada(o: OTRow): boolean {
+  if (!o.fecha_entrega) return false;
+  if (o.progreso.total > 0 && o.progreso.realizadas >= o.progreso.total) return false;
+  return dayjs(o.fecha_entrega).isBefore(dayjs(), "day");
+}
+// ¿Tiene alguna operación tercerizada?
+function otTieneTercero(o: OTRow): boolean {
+  for (const k in o.plan) { if (o.plan[k]?.externo) return true; }
+  return false;
+}
+
+type QuickFilter = "todas" | "sin_empezar" | "en_proceso" | "terminada" | "atrasadas" | "terceros";
+
+// Tarjeta KPI clickable que además actúa de filtro rápido (rec. 1 + 3).
+function Kpi({ label, value, color, active, onClick }: {
+  label: string; value: React.ReactNode; color?: string; active?: boolean; onClick?: () => void;
+}) {
+  const c = color ?? brand.navy;
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        cursor: onClick ? "pointer" : "default",
+        background: active ? c : brand.white,
+        border: `1px solid ${active ? c : brand.border}`,
+        borderRadius: radius.md,
+        padding: "6px 14px",
+        minWidth: 92,
+        lineHeight: 1.15,
+        boxShadow: shadow.sm,
+        transition: "all .15s",
+        flex: "0 0 auto",
+      }}
+    >
+      <div style={{ fontSize: 11, color: active ? "rgba(255,255,255,0.85)" : brand.textSecondary }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 700, color: active ? brand.white : c }}>{value}</div>
+    </div>
+  );
+}
+
 export default function ProgramacionDashboardPage() {
   const [loading, setLoading] = useState(false);
   const [componentes, setComponentes] = useState<ComponenteCat[]>([]);
@@ -137,6 +185,18 @@ export default function ProgramacionDashboardPage() {
   const [pageSize, setPageSize] = useState(50);
   const [search, setSearch] = useState("");
   const [filtroComponente, setFiltroComponente] = useState<string | null>(null);
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>("todas");
+  const [leyendaVisible, setLeyendaVisible] = useState(true);
+  const [densidad, setDensidad] = useState<"compacto" | "comodo">("compacto");
+  // Componentes (grupos de columnas) colapsados → muestran una sola columna resumen.
+  const [gruposColapsados, setGruposColapsados] = useState<Set<string>>(new Set());
+  const toggleGrupo = useCallback((cod: string) => {
+    setGruposColapsados((prev) => {
+      const next = new Set(prev);
+      if (next.has(cod)) next.delete(cod); else next.add(cod);
+      return next;
+    });
+  }, []);
   const [detalle, setDetalle] = useState<OTRow | null>(null);
   const { ocultas, setOcultas } = useColumnasOcultas("programacion-dashboard-cols-v1");
   // Vista configurable: lista de operacion_codigos ocultos (persistida en localStorage).
@@ -251,6 +311,46 @@ export default function ProgramacionDashboardPage() {
     );
   }, [ots, search]);
 
+  // KPIs sobre el set buscado (no el quickFilter, para que sean estables).
+  const kpis = useMemo(() => {
+    let sinEmpezar = 0, enProceso = 0, terminadas = 0, atrasadas = 0, terceros = 0;
+    let totTareas = 0, totReal = 0;
+    for (const o of otsFiltradas) {
+      const e = estadoGlobalOT(o);
+      if (e === "sin_empezar") sinEmpezar++; else if (e === "en_proceso") enProceso++; else terminadas++;
+      if (otAtrasada(o)) atrasadas++;
+      if (otTieneTercero(o)) terceros++;
+      totTareas += o.progreso.total; totReal += o.progreso.realizadas;
+    }
+    return {
+      activas: otsFiltradas.length,
+      avance: totTareas > 0 ? Math.round((totReal / totTareas) * 100) : 0,
+      sinEmpezar, enProceso, terminadas, atrasadas, terceros,
+    };
+  }, [otsFiltradas]);
+
+  // Lista visible = búsqueda + quickFilter, ordenada por urgencia
+  // (atrasadas primero, luego prioridad, luego fecha de entrega).
+  const otsVisibles = useMemo(() => {
+    const filtradas = otsFiltradas.filter((o) => {
+      switch (quickFilter) {
+        case "sin_empezar": return estadoGlobalOT(o) === "sin_empezar";
+        case "en_proceso": return estadoGlobalOT(o) === "en_proceso";
+        case "terminada": return estadoGlobalOT(o) === "terminada";
+        case "atrasadas": return otAtrasada(o);
+        case "terceros": return otTieneTercero(o);
+        default: return true;
+      }
+    });
+    return [...filtradas].sort((a, b) => {
+      const atrA = otAtrasada(a) ? 0 : 1, atrB = otAtrasada(b) ? 0 : 1;
+      if (atrA !== atrB) return atrA - atrB;
+      const pa = a.prioridad_nivel ?? 99, pb = b.prioridad_nivel ?? 99;
+      if (pa !== pb) return pa - pb;
+      return (a.fecha_entrega ?? "9999").localeCompare(b.fecha_entrega ?? "9999");
+    });
+  }, [otsFiltradas, quickFilter]);
+
   // Agrupar operaciones por componente para construir las columnas anidadas
   const opsOcultasSet = useMemo(() => new Set(opsOcultas), [opsOcultas]);
   const operacionesPorComponente = useMemo(() => {
@@ -302,8 +402,9 @@ export default function ProgramacionDashboardPage() {
       key: "ot",
       title: "HP&K",
       dataIndex: "ot",
-      width: 110,
+      width: 90,
       align: "left",
+      fixed: "left",
       sorter: (a, b) => Number(a.ot ?? 0) - Number(b.ot ?? 0),
       ...filtroPorColumna(otsFiltradas, "ot"),
       render: (v: number | null, r) => (
@@ -431,6 +532,35 @@ export default function ProgramacionDashboardPage() {
       if (ops.length === 0) continue;
       const compColor = colorDeComponente(comp);
 
+      // Grupo COLAPSADO: una sola columna-resumen (realizadas/total de sus ops).
+      if (gruposColapsados.has(comp.codigo)) {
+        cols.push({
+          key: `comp-${comp.codigo}-collapsed`,
+          width: 48,
+          align: "center" as const,
+          title: (
+            <div
+              onClick={() => toggleGrupo(comp.codigo)}
+              title={`Expandir ${comp.nombre}`}
+              style={{ cursor: "pointer", fontWeight: 700, color: brand.white, fontSize: 10, background: compColor, padding: "4px 2px", borderRadius: 4, writingMode: "vertical-rl", transform: "rotate(180deg)", whiteSpace: "nowrap" }}
+            >
+              ▸ {comp.nombre}
+            </div>
+          ),
+          render: (_: unknown, r: OTRow) => {
+            let tot = 0, ok = 0;
+            for (const op of ops) {
+              const key = `${comp.codigo.trim().toUpperCase()}__${op.codigo.trim().toUpperCase()}`;
+              const cell = r.plan[key];
+              if (cell?.estado) { tot++; if (String(cell.estado).toLowerCase() === "realizado") ok++; }
+            }
+            if (tot === 0) return <span style={{ color: "#bbb", fontSize: 10 }}>—</span>;
+            return <span style={{ fontSize: 10, fontWeight: 700, color: ok >= tot ? brand.success : brand.textSecondary }}>{ok}/{tot}</span>;
+          },
+        } as ColumnType<OTRow>);
+        continue;
+      }
+
       // Separar por clasificación
       const opsSTD = ops.filter((o) => (o.clasificacion ?? "STD").toUpperCase() === "STD");
       const opsNSTD = ops.filter((o) => (o.clasificacion ?? "").toUpperCase() === "NO_STD");
@@ -483,17 +613,21 @@ export default function ProgramacionDashboardPage() {
       const groupCol: ColumnGroupType<OTRow> = {
         key: `comp-${comp.codigo}`,
         title: (
-          <div style={{
-            fontWeight: 700,
-            color: brand.white,
-            fontSize: 11,
-            letterSpacing: 0.5,
-            background: compColor,
-            padding: "4px 8px",
-            borderRadius: 4,
-            display: "inline-block",
-          }}>
-            {comp.nombre}
+          <div
+            onClick={() => toggleGrupo(comp.codigo)}
+            title={`Colapsar ${comp.nombre}`}
+            style={{
+              cursor: "pointer",
+              fontWeight: 700,
+              color: brand.white,
+              fontSize: 11,
+              letterSpacing: 0.5,
+              background: compColor,
+              padding: "4px 8px",
+              borderRadius: 4,
+              display: "inline-block",
+            }}>
+            {comp.nombre} <span style={{ opacity: 0.85 }}>▾</span>
           </div>
         ),
         children: subgrupos.length > 0 ? subgrupos : [],
@@ -501,7 +635,7 @@ export default function ProgramacionDashboardPage() {
       cols.push(groupCol);
     }
     return cols;
-  }, [componentesOrdenados, operacionesPorComponente, estados, colorDeEstado]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [componentesOrdenados, operacionesPorComponente, estados, colorDeEstado, gruposColapsados, toggleGrupo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const columns: ColumnsType<OTRow> = [...infoColumns, ...operacionColumns];
 
@@ -547,45 +681,68 @@ export default function ProgramacionDashboardPage() {
           >
             Configurar vista{opsOcultas.length > 0 ? ` (${opsOcultas.length} ocultas)` : ""}
           </Button>
-          <Tooltip
-            title={
-              <div style={{ fontSize: 11 }}>
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>Leyenda de estados</div>
-                {estados.map((e) => (
-                  <div key={e.codigo} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-                    <span style={{ display: "inline-block", width: 16, height: 12, borderRadius: 2, background: colorDeEstado(e.codigo) }} />
-                    <span><b>{abreviarEstado(e.codigo)}</b> — {e.nombre}</span>
-                  </div>
-                ))}
-                <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.2)" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{
-                      display: "inline-block", width: 16, height: 12, borderRadius: 2, background: "#8c8c8c",
-                      backgroundImage: "repeating-linear-gradient(45deg, rgba(255,255,255,0.35) 0 3px, transparent 3px 6px)",
-                      boxShadow: "inset 0 0 0 1px #FAAD14",
-                    }} />
-                    <span>🤝 Trabajo a tercero</span>
-                  </div>
-                </div>
-              </div>
-            }
-            placement="bottomLeft"
+          <Button
+            icon={<BgColorsOutlined />}
+            type={leyendaVisible ? "primary" : "default"}
+            onClick={() => setLeyendaVisible((v) => !v)}
           >
-            <Button icon={<BgColorsOutlined />}>Leyenda</Button>
-          </Tooltip>
+            Leyenda
+          </Button>
+          <Segmented
+            size="small"
+            value={densidad}
+            onChange={(v) => setDensidad(v as "compacto" | "comodo")}
+            options={[{ label: "Compacto", value: "compacto" }, { label: "Cómodo", value: "comodo" }]}
+          />
+          {gruposColapsados.size > 0 && (
+            <Button onClick={() => setGruposColapsados(new Set())}>
+              Expandir grupos ({gruposColapsados.size})
+            </Button>
+          )}
           <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>
             Refrescar
           </Button>
         </Space>
       </Card>
 
-      {otsFiltradas.length === 0 && !loading ? (
-        <Empty description="No hay OTs activas." />
+      {/* ── KPIs (también filtran la matriz) ── */}
+      <div style={{ display: "flex", gap: space.sm, flexWrap: "wrap", marginBottom: space.sm }}>
+        <Kpi label="OTs activas" value={kpis.activas} active={quickFilter === "todas"} onClick={() => setQuickFilter("todas")} />
+        <Kpi label="Avance global" value={`${kpis.avance}%`} color={brand.cyan} />
+        <Kpi label="Sin empezar" value={kpis.sinEmpezar} color={brand.warning} active={quickFilter === "sin_empezar"} onClick={() => setQuickFilter((q) => q === "sin_empezar" ? "todas" : "sin_empezar")} />
+        <Kpi label="En proceso" value={kpis.enProceso} color="#FA8C16" active={quickFilter === "en_proceso"} onClick={() => setQuickFilter((q) => q === "en_proceso" ? "todas" : "en_proceso")} />
+        <Kpi label="Terminadas" value={kpis.terminadas} color={brand.success} active={quickFilter === "terminada"} onClick={() => setQuickFilter((q) => q === "terminada" ? "todas" : "terminada")} />
+        <Kpi label="Atrasadas" value={kpis.atrasadas} color={brand.error} active={quickFilter === "atrasadas"} onClick={() => setQuickFilter((q) => q === "atrasadas" ? "todas" : "atrasadas")} />
+        <Kpi label="A tercero 🤝" value={kpis.terceros} color={brand.navy} active={quickFilter === "terceros"} onClick={() => setQuickFilter((q) => q === "terceros" ? "todas" : "terceros")} />
+      </div>
+
+      {/* ── Leyenda de estados (visible/colapsable) ── */}
+      {leyendaVisible && (
+        <Card size="small" style={{ marginBottom: space.sm }} styles={{ body: { padding: "6px 12px" } }}>
+          <Space wrap size={14}>
+            <Text style={{ fontSize: 11, fontWeight: 600, color: brand.textSecondary }}>Estados:</Text>
+            {estados.map((e) => (
+              <span key={e.codigo} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11 }}>
+                <span style={{ display: "inline-block", width: 18, height: 13, borderRadius: 2, background: colorDeEstado(e.codigo), color: brand.white, fontSize: 8, fontWeight: 700, textAlign: "center", lineHeight: "13px" }}>{abreviarEstado(e.codigo)}</span>
+                {e.nombre}
+              </span>
+            ))}
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11 }}>
+              <span style={{ display: "inline-block", width: 18, height: 13, borderRadius: 2, background: brand.textSecondary, backgroundImage: "repeating-linear-gradient(45deg, rgba(255,255,255,0.35) 0 3px, transparent 3px 6px)", boxShadow: `inset 0 0 0 1px ${brand.warning}` }} />
+              🤝 Trabajo a tercero
+            </span>
+          </Space>
+        </Card>
+      )}
+
+      {otsVisibles.length === 0 && !loading ? (
+        <Empty description={quickFilter === "todas" ? "No hay OTs activas." : "No hay OTs que coincidan con el filtro."} />
       ) : (
         <TablaProgramacion
           columns={visibleColumns(columns, ocultas)}
-          data={otsFiltradas}
+          data={otsVisibles}
           loading={loading}
+          densidad={densidad}
           onRowClick={(r) => setDetalle(r)}
           page={page}
           pageSize={pageSize}
@@ -884,9 +1041,10 @@ function ConfigurarVistaDrawer({
 }
 
 function TablaProgramacion({
-  columns, data, loading, onRowClick, page, pageSize, onPageChange,
+  columns, data, loading, densidad, onRowClick, page, pageSize, onPageChange,
 }: {
   columns: ColumnsType<OTRow>; data: OTRow[]; loading: boolean;
+  densidad: "compacto" | "comodo";
   onRowClick: (r: OTRow) => void;
   page: number;
   pageSize: number;
@@ -897,25 +1055,34 @@ function TablaProgramacion({
   );
   return (
     <TableDragWrapper>
-      <Table<OTRow>
-        rowKey="id"
-        size="small"
-        columns={columnas}
-        components={components}
-        dataSource={data}
-        loading={loading}
-        bordered
-        sticky={STICKY_HEADER}
-        scroll={{ x: "max-content", y: "calc(100vh - 210px)" }}
-        pagination={paginacionEstandar({
-          current: page,
-          pageSize,
-          total: data.length,
-          onChange: onPageChange,
-          label: "OTs",
-        })}
-        onRow={(r) => ({ onClick: () => onRowClick(r), style: { cursor: "pointer" } })}
-      />
+      <div className="pdash-tabla">
+        <Table<OTRow>
+          rowKey="id"
+          size={densidad === "comodo" ? "middle" : "small"}
+          columns={columnas}
+          components={components}
+          dataSource={data}
+          loading={loading}
+          bordered
+          sticky={STICKY_HEADER}
+          scroll={{ x: "max-content", y: "calc(100vh - 280px)" }}
+          rowClassName={(r, idx) => `${idx % 2 === 1 ? "pdash-zebra" : ""} ${otAtrasada(r) ? "pdash-overdue" : ""}`.trim()}
+          pagination={paginacionEstandar({
+            current: page,
+            pageSize,
+            total: data.length,
+            onChange: onPageChange,
+            label: "OTs",
+          })}
+          onRow={(r) => ({ onClick: () => onRowClick(r), style: { cursor: "pointer" } })}
+        />
+      </div>
+      <style jsx global>{`
+        .pdash-tabla .pdash-zebra > td { background: #FAFBFC; }
+        .pdash-tabla .pdash-overdue > td:first-child { box-shadow: inset 3px 0 0 ${brand.error}; }
+        .pdash-tabla .pdash-overdue > td { background: rgba(207, 19, 34, 0.04); }
+        .pdash-tabla .ant-table-tbody > tr:hover > td { background: rgba(17, 160, 182, 0.10) !important; }
+      `}</style>
     </TableDragWrapper>
   );
 }
