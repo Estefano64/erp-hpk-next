@@ -76,6 +76,22 @@ function splitTecnicos(s: string | null | undefined): string[] {
   return splitRecursos(s);
 }
 
+// Colores EXACTOS de los bloques del Gantt — DEBEN coincidir con el CSS
+// `.psg-task-block` de abajo. Los bloques NO usan los presets de antd tal cual:
+// remapean preset→hex (ej. volcano = morado) y pisan por estado (en_proceso,
+// cancelado). La leyenda usa este mismo helper para que coincida con los bloques.
+const BLOQUE_PRESET_HEX: Record<string, string> = {
+  warning: "#FA8C16", processing: "#1677FF", success: "#52C41A", volcano: "#B855E5", error: "#F5222D",
+};
+const BLOQUE_ESTADO_HEX: Record<string, string> = {
+  en_proceso: "#13C2C2", cancelado: "#8c8c8c",
+};
+function colorBloque(estado: string | null, ecolor: string | null): string {
+  if (estado && BLOQUE_ESTADO_HEX[estado]) return BLOQUE_ESTADO_HEX[estado];
+  if (ecolor && BLOQUE_PRESET_HEX[ecolor]) return BLOQUE_PRESET_HEX[ecolor];
+  return "#8c8c8c"; // fondo base del bloque
+}
+
 const JORNADA_INICIO = 8;
 const JORNADA_FIN = 20;            // grid visible hasta las 20:00 para incluir horas extras
 const HORAS_DIA = JORNADA_FIN - JORNADA_INICIO; // 12
@@ -1606,9 +1622,15 @@ export default function ProgramacionSemanalPage() {
                     <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
                       {estadosCat.map((e) => (
                         <div key={e.codigo} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <Tag color={e.color ?? "default"} style={{ margin: 0, minWidth: 90, textAlign: "center" }}>
+                          <span style={{
+                            display: "inline-block", minWidth: 90, textAlign: "center",
+                            padding: "1px 8px", borderRadius: 4,
+                            background: colorBloque(e.codigo, e.color), color: brand.white,
+                            fontSize: 11, fontWeight: 600,
+                            opacity: e.codigo === "cancelado" ? 0.5 : 1,
+                          }}>
                             {e.nombre}
-                          </Tag>
+                          </span>
                           <span style={{ color: brand.textSecondary, fontSize: 11 }}>{e.codigo}</span>
                         </div>
                       ))}
