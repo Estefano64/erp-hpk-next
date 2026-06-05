@@ -589,7 +589,7 @@ export default function CorrectivosPage() {
               </Form.Item>
               <Row gutter={12}>
                 <Col xs={24} md={12}>
-                  <Form.Item name="area_taller" label="Área del taller (opcional)">
+                  <Form.Item name="area_taller" label="Área asignada (opcional)">
                     <Select
                       placeholder="Elegí un área o sub-área"
                       showSearch

@@ -407,7 +407,7 @@ function DetalleTab({ ot, editing, form, catalogos }: {
       <Card size="small">
         <Descriptions column={{ xs: 1, sm: 2, md: 3 }} bordered size="small">
           <Descriptions.Item label="Tipo">{ot.tipo_ot_interna?.nombre ?? "—"}</Descriptions.Item>
-          <Descriptions.Item label="Área del taller">
+          <Descriptions.Item label="Área asignada">
             {ot.area_taller ? areaTallerLabel(ot.area_taller) : "—"}
           </Descriptions.Item>
           <Descriptions.Item label="Equipo">
@@ -454,7 +454,7 @@ function DetalleTab({ ot, editing, form, catalogos }: {
             </Form.Item>
           </Col>
           <Col xs={24} md={16}>
-            <Form.Item name="area_taller" label="Área del taller" rules={[{ required: true }]}>
+            <Form.Item name="area_taller" label="Área asignada" rules={[{ required: true }]}>
               <Select
                 placeholder="Elegí un área o sub-área"
                 showSearch
