@@ -595,11 +595,11 @@ export default function OrdenesTrabajoInternasPage() {
                 name="equipo_codigo"
                 label="Equipo"
                 tooltip="Equipo (máquina) del taller al que aplica la OT interna. Solo se listan equipos tipo MAQ — las herramientas no aparecen."
-                rules={[{ required: true, message: "Seleccioná el equipo" }]}
               >
                 <Select
                   placeholder="Buscar equipo (código o descripción)"
                   showSearch
+                  allowClear
                   optionFilterProp="label"
                   options={equipos.map((e) => ({ value: e.codigo, label: `${e.codigo} — ${e.descripcion}` }))}
                 />
