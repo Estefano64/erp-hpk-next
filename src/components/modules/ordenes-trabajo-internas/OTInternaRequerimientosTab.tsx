@@ -868,7 +868,7 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
                     onChange={(nv) => updateDraft(row.key, { unidad_medida: nv })}
                     options={unidades.map((u) => ({
                       value: u.codigo,
-                      label: `${u.codigo} — ${u.nombre}`,
+                      label: u.codigo,
                     }))}
                   />
                 ),
