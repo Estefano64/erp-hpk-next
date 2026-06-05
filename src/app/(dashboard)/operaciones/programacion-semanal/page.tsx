@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Typography, Button, Space, Tag, Card, Modal, Descriptions, Tooltip, message, Empty, DatePicker, Collapse, Segmented, Slider, Alert, Popover, Divider, Select, Popconfirm, Switch, Input, InputNumber,
+  Typography, Button, Space, Tag, Card, Modal, Descriptions, Tooltip, message, Empty, DatePicker, Collapse, Segmented, Slider, Alert, Popover, Divider, Select, Popconfirm, Switch, Input, InputNumber, Skeleton,
 } from "antd";
 import {
   CalendarOutlined, LeftOutlined, RightOutlined, UserOutlined, ToolOutlined, AimOutlined,
@@ -90,6 +90,19 @@ function colorBloque(estado: string | null, ecolor: string | null): string {
   if (estado && BLOQUE_ESTADO_HEX[estado]) return BLOQUE_ESTADO_HEX[estado];
   if (ecolor && BLOQUE_PRESET_HEX[ecolor]) return BLOQUE_PRESET_HEX[ecolor];
   return "#8c8c8c"; // fondo base del bloque
+}
+
+// Glifo por estado (accesibilidad: no depender solo del color).
+function glifoEstado(estado: string | null): string {
+  switch (estado) {
+    case "realizado": return "✓";
+    case "en_proceso": return "▶";
+    case "pausado": return "⏸";
+    case "programado": return "•";
+    case "cancelado": return "✕";
+    case "abierto": return "○";
+    default: return "";
+  }
 }
 
 const JORNADA_INICIO = 8;
@@ -180,6 +193,7 @@ export default function ProgramacionSemanalPage() {
   const lock = useEditLock("programacion-semanal", 1, currentUser);
   const [editMode, setEditMode] = useState(false);
   const [lunes, setLunes] = useState<Dayjs>(() => dayjs().startOf("isoWeek"));
+  const [cargando, setCargando] = useState(true);
   // Operarios es la vista principal (ahí se asigna); Equipos es solo lectura.
   const [view, setView] = useState<"equipo" | "operario">("operario");
   const [filtroEquipos, setFiltroEquipos] = useState<string[]>([]);
@@ -234,6 +248,7 @@ export default function ProgramacionSemanalPage() {
   } | null>(null);
   const [messageApi, contextHolder] = message.useMessage();
   const { screens } = useResponsive();
+  const isMobile = !screens.md;
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const stripsRef = useRef<Map<string, HTMLElement>>(new Map());
 
@@ -244,21 +259,26 @@ export default function ProgramacionSemanalPage() {
   const semanaActual = useMemo(() => semanaCodigo(lunes), [lunes]);
 
   const fetchData = useCallback(async () => {
-    const params1 = new URLSearchParams({
-      limit: "500",
-      desde: lunes.hour(0).minute(0).second(0).toISOString(),
-      hasta: viernes.toISOString(),
-    });
-    const [resWeek, resAll] = await Promise.all([
-      fetch(`/api/planificacion?${params1}`),
-      fetch(`/api/planificacion?limit=500`),
-    ]);
-    // Una tarea cancelada no ocupa lugar: la sacamos de la grilla y del pool para
-    // que su espacio quede libre y se pueda programar otra tarea encima (y para
-    // que no dispare falsos choques en la detección de superposición).
-    const sinCanceladas = (arr: PlanRow[]) => arr.filter((r) => r.estado !== "cancelado");
-    if (resWeek.ok) setRows(sinCanceladas((await resWeek.json()).data ?? []));
-    if (resAll.ok) setAllRows(sinCanceladas((await resAll.json()).data ?? []));
+    setCargando(true);
+    try {
+      const params1 = new URLSearchParams({
+        limit: "500",
+        desde: lunes.hour(0).minute(0).second(0).toISOString(),
+        hasta: viernes.toISOString(),
+      });
+      const [resWeek, resAll] = await Promise.all([
+        fetch(`/api/planificacion?${params1}`),
+        fetch(`/api/planificacion?limit=500`),
+      ]);
+      // Una tarea cancelada no ocupa lugar: la sacamos de la grilla y del pool para
+      // que su espacio quede libre y se pueda programar otra tarea encima (y para
+      // que no dispare falsos choques en la detección de superposición).
+      const sinCanceladas = (arr: PlanRow[]) => arr.filter((r) => r.estado !== "cancelado");
+      if (resWeek.ok) setRows(sinCanceladas((await resWeek.json()).data ?? []));
+      if (resAll.ok) setAllRows(sinCanceladas((await resAll.json()).data ?? []));
+    } finally {
+      setCargando(false);
+    }
   }, [lunes, viernes]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -368,14 +388,22 @@ export default function ProgramacionSemanalPage() {
   // Pendientes (pools) mostrados: aplican el filtro por recurso (salvo "Ver todas")
   // y la búsqueda libre del pool.
   const filtrarPendientes = hayFiltro && !verTodasPendientes;
+  // Ordena el pool por prioridad (nivel 1 = más urgente) y luego por OT, para que
+  // lo más urgente de agendar quede arriba.
+  const ordenarPool = useCallback((l: PlanRow[]) => [...l].sort((a, b) => {
+    const pa = a.orden_trabajo?.prioridad_atencion?.nivel ?? 99;
+    const pb = b.orden_trabajo?.prioridad_atencion?.nivel ?? 99;
+    if (pa !== pb) return pa - pb;
+    return Number(a.orden_trabajo?.ot ?? 0) - Number(b.orden_trabajo?.ot ?? 0);
+  }), []);
   const sinSemanaMostrar = useMemo(() => {
     const l = filtrarPendientes ? sinSemanaLista.filter(pasaFiltroRecurso) : sinSemanaLista;
-    return l.filter(pasaBusquedaPool);
-  }, [sinSemanaLista, filtrarPendientes, pasaFiltroRecurso, pasaBusquedaPool]);
+    return ordenarPool(l.filter(pasaBusquedaPool));
+  }, [sinSemanaLista, filtrarPendientes, pasaFiltroRecurso, pasaBusquedaPool, ordenarPool]);
   const sinFechaMostrar = useMemo(() => {
     const l = filtrarPendientes ? sinFechaListaSemana.filter(pasaFiltroRecurso) : sinFechaListaSemana;
-    return l.filter(pasaBusquedaPool);
-  }, [sinFechaListaSemana, filtrarPendientes, pasaFiltroRecurso, pasaBusquedaPool]);
+    return ordenarPool(l.filter(pasaBusquedaPool));
+  }, [sinFechaListaSemana, filtrarPendientes, pasaFiltroRecurso, pasaBusquedaPool, ordenarPool]);
 
   // ── Agrupación por recurso ──
   const recursos = useMemo(() => {
@@ -1336,7 +1364,7 @@ export default function ProgramacionSemanalPage() {
           {/* Franja de almuerzo dentro del bloque (si lo cruza) */}
           {renderLunchOverlayInBlock(visibleIni, visibleFin, startPx)}
           <div className="psg-task-title" style={{ paddingLeft: continuaDeAntes ? 14 : 0, paddingRight: continuaDespues ? 14 : 0 }}>
-            {r.es_correctivo && "🚨 "}{r.orden_trabajo?.ot ? `OT-${r.orden_trabajo.ot}` : "S/OT"}
+            {r.es_correctivo && "🚨 "}{glifoEstado(r.estado) && <span style={{ opacity: 0.95, marginRight: 3 }}>{glifoEstado(r.estado)}</span>}{r.orden_trabajo?.ot ? `OT-${r.orden_trabajo.ot}` : "S/OT"}
             {hasConflict && <WarningFilled style={{ marginLeft: 4 }} />}
           </div>
           <div className="psg-task-sub" style={{ paddingLeft: continuaDeAntes ? 14 : 0, paddingRight: continuaDespues ? 14 : 0 }}>{r.componente} — {r.descripcion}</div>
@@ -1428,6 +1456,62 @@ export default function ProgramacionSemanalPage() {
             ? <Tag color="warning" style={{ margin: 0, fontSize: 10, lineHeight: "16px" }}>sin duración</Tag>
             : <span>{horas.toFixed(1)}h</span>}
         </div>
+      </div>
+    );
+  }
+
+  // ── Fallback MOBILE: el Gantt no es usable en celular. Vista read-only por
+  //    recurso → tareas de la semana (hora + estado), tap abre la OT. ──
+  if (isMobile) {
+    return (
+      <div style={{ padding: 8 }}>
+        <Card size="small" style={{ marginBottom: 8 }} styles={{ body: { padding: "8px 12px" } }}>
+          <Space wrap size={6}>
+            <Button shape="circle" size="small" icon={<LeftOutlined />} onClick={() => setLunes((m) => m.subtract(1, "week"))} />
+            <strong style={{ fontSize: 13 }}>Semana {lunes.isoWeek()} · {lunes.isoWeekYear()}</strong>
+            <Button shape="circle" size="small" icon={<RightOutlined />} onClick={() => setLunes((m) => m.add(1, "week"))} />
+            <Button size="small" icon={<AimOutlined />} onClick={() => setLunes(dayjs().startOf("isoWeek"))}>Hoy</Button>
+            <Segmented
+              size="small" value={view}
+              onChange={(v) => setView(v as "equipo" | "operario")}
+              options={[{ value: "operario", icon: <UserOutlined /> }, { value: "equipo", icon: <ToolOutlined /> }]}
+            />
+          </Space>
+        </Card>
+        {cargando && rows.length === 0 ? (
+          <Skeleton active />
+        ) : recursos.length === 0 ? (
+          <Empty description="Sin recursos." />
+        ) : (
+          recursos.map((res) => {
+            const tasks = (tareasPorRecurso.get(res.key) ?? []).slice().sort((a, b) => (a.fecha_inicio ?? "").localeCompare(b.fecha_inicio ?? ""));
+            return (
+              <Card key={res.key} size="small" title={res.label} style={{ marginBottom: 8 }} styles={{ body: { padding: 8 } }}>
+                {tasks.length === 0 ? (
+                  <span style={{ fontSize: 12, color: brand.textSecondary }}>Sin tareas esta semana.</span>
+                ) : tasks.map((t) => (
+                  <div
+                    key={t.id}
+                    onClick={() => router.push(`/ordenes-trabajo/${t.ot_id}`)}
+                    style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 4px", borderBottom: `1px solid ${brand.border}`, cursor: "pointer" }}
+                  >
+                    <span style={{ flexShrink: 0, width: 22, height: 22, borderRadius: 4, background: colorBloque(t.estado, estadoColor(t.estado)), color: brand.white, fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", opacity: t.estado === "cancelado" ? 0.5 : 1 }}>
+                      {t.es_correctivo ? "🚨" : glifoEstado(t.estado) || "•"}
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        OT-{t.orden_trabajo?.ot ?? t.ot_id} · {t.componente} — {t.descripcion}
+                      </div>
+                      <div style={{ fontSize: 11, color: brand.textSecondary }}>
+                        {t.fecha_inicio ? diaEs(dayjs(t.fecha_inicio), true) : "sin hora"} · {estadoNombre(t.estado)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </Card>
+            );
+          })
+        )}
       </div>
     );
   }
@@ -1542,7 +1626,28 @@ export default function ProgramacionSemanalPage() {
         <StatCard label="Tareas programadas" value={stats.total} color={brand.navy} />
         <StatCard label="Con fecha asignada" value={stats.conFecha} color={brand.success} />
         <StatCard label="Sin fecha" value={stats.sinFecha} color={brand.warning} />
-        <StatCard label="Conflictos" value={stats.conflictos} color={brand.error} />
+        {stats.conflictos > 0 ? (
+          <Popover
+            trigger="click"
+            placement="bottom"
+            title={<span><WarningFilled style={{ color: brand.error, marginRight: 6 }} />Conflictos de horario</span>}
+            content={
+              <div style={{ maxWidth: 340, maxHeight: 300, overflowY: "auto" }}>
+                {rows.filter((r) => conflictos.has(r.id)).map((r) => (
+                  <div key={r.id} onClick={() => setSelectedTask(r)}
+                    style={{ cursor: "pointer", padding: "5px 4px", borderBottom: `1px solid ${brand.border}`, fontSize: 12 }}>
+                    <strong>OT-{r.orden_trabajo?.ot ?? r.ot_id}</strong> · {r.componente} — {r.descripcion}
+                    <div style={{ fontSize: 11, color: brand.textSecondary }}>{r.tecnico ?? r.maquina ?? "—"}</div>
+                  </div>
+                ))}
+              </div>
+            }
+          >
+            <div style={{ cursor: "pointer" }}><StatCard label="Conflictos" value={stats.conflictos} color={brand.error} /></div>
+          </Popover>
+        ) : (
+          <StatCard label="Conflictos" value={stats.conflictos} color={brand.error} />
+        )}
         <StatCard label="Sin semana asignada" value={stats.sinSemana} color={brand.textSecondary} />
       </div>
 
@@ -1703,8 +1808,44 @@ export default function ProgramacionSemanalPage() {
         </div>
       </Card>
 
+      {/* Leyenda de estados SIEMPRE visible (coincide con el color de los bloques) */}
+      {estadosCat.length > 0 && (
+        <Card size="small" style={{ marginBottom: 8 }} styles={{ body: { padding: "5px 12px" } }}>
+          <Space wrap size={12}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: brand.textSecondary }}>Leyenda:</span>
+            {estadosCat.map((e) => (
+              <span key={e.codigo} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
+                <span style={{ display: "inline-block", width: 16, height: 12, borderRadius: 2, background: colorBloque(e.codigo, e.color), opacity: e.codigo === "cancelado" ? 0.5 : 1 }} />
+                {e.nombre}
+              </span>
+            ))}
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
+              <span style={{ display: "inline-block", width: 16, height: 12, borderRadius: 2, background: "#8c8c8c", backgroundImage: "repeating-linear-gradient(45deg, rgba(255,255,255,0.35) 0 3px, transparent 3px 6px)", boxShadow: `inset 0 0 0 1px ${brand.warning}` }} />
+              🤝 Tercero
+            </span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
+              <WarningFilled style={{ color: brand.error, fontSize: 12 }} /> Conflicto
+            </span>
+          </Space>
+        </Card>
+      )}
+
+      {/* Banner de modo edición (otros usuarios no pueden editar mientras tanto) */}
+      {editMode && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 8 }}
+          message="Estás en modo edición — los demás solo pueden visualizar hasta que salgas."
+          action={<Button size="small" danger onClick={toggleEditMode}>Salir de edición</Button>}
+        />
+      )}
+
       {/* Gantt */}
       <Card styles={{ body: { padding: 0 } }} style={{ overflow: "hidden" }}>
+        {cargando && rows.length === 0 && allRows.length === 0 ? (
+          <Skeleton active title={false} paragraph={{ rows: 8 }} style={{ padding: 24 }} />
+        ) : (
         <div
           className="psg-gantt-wrap"
           ref={timelineRef}
@@ -1720,9 +1861,11 @@ export default function ProgramacionSemanalPage() {
           <div className="psg-row psg-header-row">
             <div className="psg-resource-cell">Recurso</div>
             <div className="psg-timeline-header">
-              {days.map((d, i) => (
-                <div key={i} className="psg-day-header" style={{ width: dayPx, minWidth: dayPx }}>
-                  <div className="psg-day-label">{diaEs(d)}</div>
+              {days.map((d, i) => {
+                const esHoy = d.isSame(dayjs(), "day");
+                return (
+                <div key={i} className={`psg-day-header${esHoy ? " psg-day-today" : ""}`} style={{ width: dayPx, minWidth: dayPx }}>
+                  <div className="psg-day-label">{diaEs(d)}{esHoy ? " · HOY" : ""}</div>
                   <div className="psg-hour-row" style={{ position: "relative" }}>
                     {Array.from({ length: HORAS_DIA }, (_, h) => {
                       const hour = JORNADA_INICIO + h;
@@ -1746,7 +1889,8 @@ export default function ProgramacionSemanalPage() {
                     />
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -1860,6 +2004,7 @@ export default function ProgramacionSemanalPage() {
             })
           )}
         </div>
+        )}
       </Card>
 
       {/* Buscador del pool de pendientes (parte / cilindro / OT / descripción). */}
@@ -2246,6 +2391,8 @@ export default function ProgramacionSemanalPage() {
           border-right: 1px solid ${brand.border};
         }
         .psg-day-header:last-child { border-right: none; }
+        .psg-day-today { background: ${brand.cyan}0d; }
+        .psg-day-today .psg-day-label { color: ${brand.cyan}; background: ${brand.cyan}1a; border-bottom: 2px solid ${brand.cyan}; }
         .psg-day-label {
           padding: 8px;
           text-align: center;
