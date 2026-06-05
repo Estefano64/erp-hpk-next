@@ -392,6 +392,11 @@ export default function PlanificacionPage() {
         next.trabajo_manual = null;
         next.nueva_operacion_nombre = null;
       }
+      // Si bajó el QTY, recortamos los operarios asignados para no superar el cupo.
+      if (patch.qty !== undefined) {
+        const tecs = splitRecursos(next.tecnico);
+        if (tecs.length > next.qty) next.tecnico = joinRecursos(tecs.slice(0, next.qty));
+      }
       return next;
     }));
   }
@@ -1838,16 +1843,19 @@ export default function PlanificacionPage() {
         ]}
       >
         <div style={{ maxHeight: "65vh", overflowY: "auto", paddingRight: 4 }}>
-          {draftRows.map((d) => {
+          {draftRows.map((d, idx) => {
             const opsFila = opsParaFila(d);
             const libre = usaTextoLibrePara(d);
             const lbl: React.CSSProperties = { fontSize: 11, color: brand.textSecondary, marginBottom: 2 };
             return (
-              <div key={d.id} style={{ border: `1px solid ${brand.border}`, borderRadius: 8, padding: 12, marginBottom: 12, position: "relative" }}>
+              <div key={d.id} style={{ border: `1px solid ${brand.border}`, borderRadius: 8, padding: 12, marginBottom: 12 }}>
                 {draftRows.length > 1 && (
-                  <Tooltip title="Quitar esta tarea">
-                    <Button size="small" type="text" danger icon={<CloseOutlined />} onClick={() => removeDraft(d.id)} style={{ position: "absolute", top: 4, right: 4 }} />
-                  </Tooltip>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <Typography.Text strong style={{ fontSize: 12 }}>Tarea {idx + 1}</Typography.Text>
+                    <Tooltip title="Quitar esta tarea">
+                      <Button size="small" type="text" danger icon={<CloseOutlined />} onClick={() => removeDraft(d.id)} />
+                    </Tooltip>
+                  </div>
                 )}
                 <Row gutter={[10, 8]}>
                   <Col xs={24} sm={8} md={5}>
@@ -1889,18 +1897,38 @@ export default function PlanificacionPage() {
                     )}
                   </Col>
                   <Col xs={24} sm={12} md={6}>
-                    <div style={lbl}>Operario</div>
-                    <Select showSearch allowClear style={{ width: "100%" }} size="small" placeholder="Sin asignar"
-                      value={d.tecnico ?? undefined}
-                      onChange={(nombre) => {
-                        const patch: Partial<DraftPlan> = { tecnico: (nombre as string | undefined) ?? null };
-                        if (nombre && !d.equipo) {
-                          const t = trabajadores.find((x) => x.nombre === nombre);
-                          if (t?.equipo_codigo) patch.equipo = t.equipo_codigo;
-                        }
-                        updateDraft(d.id, patch);
-                      }}
-                      options={trabajadores.map((t) => ({ value: t.nombre, label: t.nombre }))} optionFilterProp="label" />
+                    <div style={lbl}>Operario{d.qty > 1 ? ` (hasta ${d.qty})` : ""}</div>
+                    {d.qty > 1 ? (
+                      <Select mode="multiple" showSearch allowClear style={{ width: "100%" }} size="small"
+                        placeholder={`Hasta ${d.qty} operarios`}
+                        maxTagCount="responsive"
+                        value={splitRecursos(d.tecnico)}
+                        onChange={(arr) => {
+                          const sel = (arr as string[]).slice(0, d.qty);
+                          const patch: Partial<DraftPlan> = { tecnico: joinRecursos(sel) };
+                          // Autocompletar equipo con el primer operario que tenga uno (si aún no hay)
+                          if (sel.length > 0 && !d.equipo) {
+                            for (const nombre of sel) {
+                              const t = trabajadores.find((x) => x.nombre === nombre);
+                              if (t?.equipo_codigo) { patch.equipo = t.equipo_codigo; break; }
+                            }
+                          }
+                          updateDraft(d.id, patch);
+                        }}
+                        options={trabajadores.map((t) => ({ value: t.nombre, label: t.nombre }))} optionFilterProp="label" />
+                    ) : (
+                      <Select showSearch allowClear style={{ width: "100%" }} size="small" placeholder="Sin asignar"
+                        value={d.tecnico ?? undefined}
+                        onChange={(nombre) => {
+                          const patch: Partial<DraftPlan> = { tecnico: (nombre as string | undefined) ?? null };
+                          if (nombre && !d.equipo) {
+                            const t = trabajadores.find((x) => x.nombre === nombre);
+                            if (t?.equipo_codigo) patch.equipo = t.equipo_codigo;
+                          }
+                          updateDraft(d.id, patch);
+                        }}
+                        options={trabajadores.map((t) => ({ value: t.nombre, label: t.nombre }))} optionFilterProp="label" />
+                    )}
                   </Col>
                   <Col xs={24} sm={12} md={6}>
                     <div style={lbl}>Equipo</div>

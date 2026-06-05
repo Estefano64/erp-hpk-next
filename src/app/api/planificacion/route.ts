@@ -168,6 +168,7 @@ export async function POST(req: NextRequest) {
         descripcion: trabajo,
         tipo_reparacion: d.tipo_reparacion ?? null,
         orden,
+        qty_personal: d.qty,
         horas_estimadas: d.horas_estimadas ?? null,
         maquina: d.maquina ?? null,
         tecnico: d.tecnico ?? null,
