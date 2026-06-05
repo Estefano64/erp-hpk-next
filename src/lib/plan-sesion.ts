@@ -1,13 +1,34 @@
 // Helpers compartidos para los endpoints iniciar/pausar/finalizar de tareas de
 // planificación. Suma duraciones de las sesiones cerradas y devuelve las horas
-// reales acumuladas. Convierte ms → horas con 2 decimales.
+// reales acumuladas.
 
-export function sumarHorasReales(sesiones: { inicio: Date; fin: Date | null }[]): number {
-  let ms = 0;
+import { horasHabilesEntre } from "./planification-hours";
+
+// Horas de JORNADA trabajadas en un conjunto de sesiones (jornada 8–18, sin
+// almuerzo, L–V). Las PAUSAS quedan fuera porque cierran la sesión (la suma es
+// por sesión). El tiempo fuera de jornada (noche / fin de semana) NO se cuenta:
+// si el técnico se olvidó de marcar su fin de día, la jornada igual lo acota (y
+// el planner puede ajustar la Dur. real a mano si hace falta).
+export function horasHabilesDeSesiones(sesiones: { inicio: Date; fin: Date | null }[]): number {
+  let h = 0;
   for (const s of sesiones) {
-    if (s.fin) ms += s.fin.getTime() - s.inicio.getTime();
+    if (s.fin) h += horasHabilesEntre(s.inicio, s.fin);
   }
-  return Math.round((ms / 36e5) * 100) / 100;
+  return Math.round(h * 100) / 100;
+}
+
+// Duración REAL de UNA tarea = horas hábiles de sus sesiones + Horas Extra (HE),
+// si la tarea está marcada como HE. La HE es trabajo fuera de jornada, así que se
+// suma como la cantidad de HE (igual que HH = estimada × qty + HE, pero del lado real).
+export function duracionRealTarea(
+  sesiones: { inicio: Date; fin: Date | null }[],
+  esHE: boolean,
+  // Prisma entrega horas_extras_qty como Decimal; aceptamos cualquier numérico.
+  horasExtrasQty: number | string | { toString(): string } | null | undefined,
+): number {
+  const base = horasHabilesDeSesiones(sesiones);
+  const he = esHE ? Math.max(0, Number(horasExtrasQty ?? 0)) : 0;
+  return Math.round((base + he) * 100) / 100;
 }
 
 // ── Estado POR TÉCNICO derivado de las sesiones ──────────────────────────────

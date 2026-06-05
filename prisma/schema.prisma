@@ -1477,11 +1477,30 @@ model PlanificacionOT {
   status_tarea         StatusTarea?             @relation(fields: [estado], references: [codigo])
   capturas             PlanificacionOTCaptura[]
   sesiones             PlanificacionOTSesion[]
+  adjuntos             PlanificacionOTAdjunto[]
 
   @@index([ot_id])
   @@index([operacion_cod_rep_id])
   @@index([estado])
   @@map("planificacion_ot")
+}
+
+// Adjuntos (fotos / documentos) que sube el técnico al pausar o finalizar una
+// tarea, junto al comentario. Mismo patrón R2 que OTRepuestoAdjunto: la columna
+// guarda solo la object key; el acceso es siempre vía presigned URL.
+model PlanificacionOTAdjunto {
+  id                  Int             @id @default(autoincrement())
+  planificacion_ot_id Int
+  nombre_archivo      String          @db.VarChar(255)
+  r2_key              String          @db.VarChar(500)
+  tipo_mime           String          @db.VarChar(100)
+  tamano              Int
+  usuario_sube        String?         @db.VarChar(100)
+  fecha_subida        DateTime        @default(now())
+  planificacion_ot    PlanificacionOT @relation(fields: [planificacion_ot_id], references: [id], onDelete: Cascade)
+
+  @@index([planificacion_ot_id])
+  @@map("planificacion_ot_adjunto")
 }
 
 enum TipoCaptura {

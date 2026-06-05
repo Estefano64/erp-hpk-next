@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { sumarHorasReales, rollupEstadoTarea } from "@/lib/plan-sesion";
+import { duracionRealTarea, rollupEstadoTarea } from "@/lib/plan-sesion";
 import { splitRecursos } from "@/lib/recursos";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -48,8 +48,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       where: { planificacion_ot_id: planId },
       select: { tecnico: true, inicio: true, fin: true, cierre: true },
     });
-    const horas = sumarHorasReales(todas);
-    const plan = await prisma.planificacionOT.findUnique({ where: { id: planId }, select: { tecnico: true, observaciones: true } });
+    const plan = await prisma.planificacionOT.findUnique({ where: { id: planId }, select: { tecnico: true, observaciones: true, horas_extras: true, horas_extras_qty: true } });
+    const horas = duracionRealTarea(todas, !!plan?.horas_extras, plan?.horas_extras_qty);
     const estadoTarea = rollupEstadoTarea(splitRecursos(plan?.tecnico), todas);
 
     // Observaciones del técnico (acumulativas): se anexan a las existentes.

@@ -5,7 +5,7 @@ import isoWeek from "dayjs/plugin/isoWeek";
 import { prisma } from "@/lib/prisma";
 import { calcularFinEstimado, normalizarAInicioHabil } from "@/lib/planification-hours";
 import { splitRecursos } from "@/lib/recursos";
-import { cascadeEmergencia } from "@/lib/emergencia-cascade";
+import { cascadeEmergencia, cascadeReprogramar } from "@/lib/emergencia-cascade";
 
 dayjs.extend(isoWeek);
 
@@ -26,6 +26,13 @@ const UpdateSchema = z.object({
   observaciones: z.string().trim().optional().nullable(),
   comentario: z.string().trim().optional().nullable(),
   semana_plan: z.string().trim().optional().nullable(),
+  // Cambiar la Parte/Tarea de una tarea existente (desde el detalle de OT). Son
+  // campos "virtuales": se resuelven a las columnas componente/operacion_codigo/
+  // descripcion antes del update (no se mandan tal cual a Prisma).
+  componente_codigo: z.string().trim().optional(),
+  operacion_reparacion_codigo: z.string().trim().optional().nullable(),
+  trabajo: z.string().trim().optional(),
+  tipo_reparacion: z.string().trim().optional().nullable(),
   qty_personal: z.coerce.number().int().min(1).optional(),
   horas_extras: z.boolean().optional(),
   horas_extras_qty: z.coerce.number().min(0).optional().nullable(),
@@ -36,6 +43,10 @@ const UpdateSchema = z.object({
   // Si true, salta el anti-solape de servidor (el multi-move ya valida el grupo
   // entero en el cliente; sus PUTs paralelos verían posiciones viejas si no).
   omitirAntisolape: z.boolean().optional(),
+  // Si true: "empujar al soltar". En vez de bloquear por choque de OPERARIO,
+  // ubica la tarea y empuja a las siguientes del operario (no toca terminadas /
+  // en proceso). El choque de MÁQUINA sí sigue bloqueando (recurso compartido).
+  empujar: z.boolean().optional(),
 });
 
 function toDate(s: string | null | undefined): Date | null {
@@ -86,9 +97,13 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       // ── Bloquear edición si estado = realizado ──
       const isRealizado = current.estado === "realizado";
       const intentaEditar = Object.keys(input).some((k) => k !== "forzarEdicion" && input[k as keyof typeof input] !== undefined);
-      const soloRevertirEstado = Object.keys(input).filter((k) => k !== "forzarEdicion").length === 1
+      const camposReales = Object.keys(input).filter((k) => !["forzarEdicion", "omitirAntisolape", "empujar"].includes(k));
+      const soloRevertirEstado = camposReales.length === 1
         && input.estado !== undefined && input.estado !== "realizado";
-      if (isRealizado && intentaEditar && !input.forzarEdicion && !soloRevertirEstado) {
+      // El planner puede REGULARIZAR la duración real de una tarea ya terminada
+      // (caso del técnico que se olvidó de marcar su fin de jornada).
+      const soloHorasReales = camposReales.length === 1 && input.horas_reales !== undefined;
+      if (isRealizado && intentaEditar && !input.forzarEdicion && !soloRevertirEstado && !soloHorasReales) {
         throw Object.assign(
           new Error("Tarea en estado 'realizado' no puede editarse. Cambiá el estado primero o usá forzarEdicion=true."),
           { code: "REALIZADO_LOCKED" },
@@ -98,12 +113,49 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       // ── Construir patch base ──
       const data: Record<string, unknown> = {};
       const dateFields = new Set(["fecha_inicio", "fecha_fin", "fecha_inicio_real", "fecha_fin_real"]);
+      // Flags de control + campos virtuales: NO son columnas de la BD, no deben ir
+      // al update de Prisma. Los virtuales (componente_codigo/operacion_reparacion_
+      // codigo/trabajo) se resuelven aparte a componente/operacion_codigo/descripcion.
+      const flagsControl = new Set([
+        "forzarEdicion", "omitirAntisolape", "empujar",
+        "componente_codigo", "operacion_reparacion_codigo", "trabajo",
+      ]);
       for (const k of Object.keys(input) as Array<keyof typeof input>) {
-        if (k === "forzarEdicion") continue;
+        if (flagsControl.has(k as string)) continue;
         const v = input[k];
         if (v === undefined) continue;
         if (dateFields.has(k as string)) data[k] = toDate(v as string | null);
         else data[k] = v;
+      }
+
+      // ── Cambio de Parte/Tarea (resolver campos virtuales → columnas) ──
+      if (input.componente_codigo !== undefined) {
+        data.componente = input.componente_codigo || "General";
+      }
+      const cambiaTarea = input.operacion_reparacion_codigo !== undefined || input.trabajo !== undefined;
+      if (cambiaTarea) {
+        if (input.operacion_reparacion_codigo) {
+          const op = await tx.operacionReparacion.findUnique({
+            where: { codigo: input.operacion_reparacion_codigo },
+            select: { codigo: true, nombre: true },
+          });
+          if (!op) {
+            throw Object.assign(
+              new Error(`Operación ${input.operacion_reparacion_codigo} no existe`),
+              { code: "OP_NOT_FOUND" },
+            );
+          }
+          data.operacion_codigo = op.codigo;
+          data.descripcion = input.trabajo?.trim() || op.nombre;
+        } else if (input.trabajo?.trim()) {
+          // Texto libre (operación no estándar sin código de catálogo).
+          const txt = input.trabajo.trim();
+          data.operacion_codigo = txt.slice(0, 20);
+          data.descripcion = txt;
+        }
+        // Al reemplazar la operación, la tarea deja de corresponder al item del
+        // template: soltamos el link para no dejar referencia inconsistente.
+        data.operacion_cod_rep_id = null;
       }
 
       // ── Tarea ya iniciada por el técnico: no se reprograma ──
@@ -112,9 +164,13 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       // los endpoints iniciar/pausar/finalizar. `forzarEdicion` lo permite (revertir).
       const iniciada = current.estado === "en_proceso" || current.estado === "pausado";
       const reprograma = "fecha_inicio" in data || "fecha_fin" in data || "semana_plan" in data;
-      if (iniciada && reprograma && !input.forzarEdicion) {
+      // Tarea ya iniciada: se permite AJUSTAR LA DURACIÓN estimada (recalcula el
+      // fin), pero NO moverla — cambiar su inicio/semana se bloquea, porque su
+      // arranque ya es ejecución real. `forzarEdicion` lo permite (revertir).
+      const mueveInicio = "fecha_inicio" in data || "semana_plan" in data;
+      if (iniciada && mueveInicio && !input.forzarEdicion) {
         throw Object.assign(
-          new Error("La tarea ya fue iniciada por el técnico; no se puede reprogramar."),
+          new Error("La tarea ya fue iniciada por el técnico; no se puede mover (sí ajustar la duración)."),
           { code: "INICIADA_LOCKED" },
         );
       }
@@ -175,8 +231,9 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       const finalTec = (data.tecnico !== undefined ? data.tecnico : current.tecnico) as string | null;
       const finalMaq = (data.maquina !== undefined ? data.maquina : current.maquina) as string | null;
       if (reprograma && finalIni && finalFin && !current.es_correctivo && !input.forzarEdicion && !input.omitirAntisolape) {
-        const recursosT = [...splitRecursos(finalTec), ...splitRecursos(finalMaq)];
-        if (recursosT.length) {
+        const misTec = splitRecursos(finalTec);
+        const misMaq = splitRecursos(finalMaq);
+        if (misTec.length || misMaq.length) {
           const otras = await tx.planificacionOT.findMany({
             where: {
               id: { not: planId },
@@ -187,13 +244,37 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
             },
             select: { tecnico: true, maquina: true, descripcion: true, orden_trabajo: { select: { ot: true } } },
           });
-          const choque = otras.find((o) => {
-            const recO = [...splitRecursos(o.tecnico), ...splitRecursos(o.maquina)];
-            return recursosT.some((rt) => recO.includes(rt));
-          });
+          // Distinguimos si el choque es por OPERARIO o por MÁQUINA (la máquina de
+          // soldar es un recurso compartido: dos operarios no pueden usarla a la
+          // vez). Reportamos el recurso exacto + con quién para que se entienda.
+          let choque: typeof otras[number] | null = null;
+          let tipo: "máquina" | "operario" | null = null;
+          let recursoComun = "";
+          for (const o of otras) {
+            const comparteOperario = misTec.some((t) => splitRecursos(o.tecnico).includes(t));
+            if (input.empujar) {
+              // Con "empujar": las tareas del MISMO operario se reacomodan en la
+              // cascada, así que no bloquean (ni por operario ni por su máquina —
+              // que dejará de solapar al moverse). Solo frena un choque de máquina
+              // con OTRO operario, cuyas tareas no podemos mover.
+              if (comparteOperario) continue;
+              const maqComun = misMaq.find((m) => splitRecursos(o.maquina).includes(m));
+              if (maqComun) { choque = o; tipo = "máquina"; recursoComun = maqComun; break; }
+              continue;
+            }
+            // Sin "empujar": bloquea por máquina o por operario (recurso compartido).
+            const maqComun = misMaq.find((m) => splitRecursos(o.maquina).includes(m));
+            if (maqComun) { choque = o; tipo = "máquina"; recursoComun = maqComun; break; }
+            const tecComun = misTec.find((t) => splitRecursos(o.tecnico).includes(t));
+            if (tecComun) { choque = o; tipo = "operario"; recursoComun = tecComun; break; }
+          }
           if (choque) {
+            const detalleOT = `OT ${choque.orden_trabajo?.ot ?? "?"} — ${choque.descripcion ?? ""}`;
+            const quien = tipo === "máquina"
+              ? `la máquina ${recursoComun} ya está ocupada por ${choque.tecnico ?? "otro operario"}`
+              : `el operario ${recursoComun} ya tiene otra tarea`;
             throw Object.assign(
-              new Error(`No se puede ubicar acá: se superpone con otra tarea del mismo recurso (OT ${choque.orden_trabajo?.ot ?? "?"} — ${choque.descripcion ?? ""}).`),
+              new Error(`No se puede ubicar acá: ${quien} en ese horario (${detalleOT}).`),
               { code: "OVERLAP" },
             );
           }
@@ -233,8 +314,13 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       // (nuevo) operario — desde CUALQUIER vía (Gantt, Planificación, OT), no solo
       // el botón 🚨. Así la reprogramación no "deja de funcionar" al reasignarla.
       const tecnicoCambia = "tecnico" in data || "maquina" in data;
+      let push: { empujadas: number[]; alPool: number[] } | null = null;
       if (updated.es_correctivo && (reprograma || tecnicoCambia)) {
         await cascadeEmergencia(tx, planId);
+      } else if (input.empujar && reprograma) {
+        // "Empujar al soltar": ubicada la tarea, empujamos a las siguientes del
+        // operario (sin marcar correctiva, sin tocar terminadas/en proceso).
+        push = await cascadeReprogramar(tx, planId, { marcarCorrectivo: false, cruzarDias: true });
       }
 
       // Al cancelar (o finalizar) una tarea, cerrar cualquier sesión abierta para
@@ -245,10 +331,10 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
           data: { fin: new Date(), cierre: estadoFinal === "cancelado" ? "cancelado" : "finalizado" },
         });
       }
-      return updated;
+      return { updated, push };
     });
 
-    return NextResponse.json({ data: result });
+    return NextResponse.json({ data: result.updated, push: result.push });
   } catch (error: unknown) {
     const err = error as { code?: string; message?: string };
     if (err?.code === "NOT_FOUND") return NextResponse.json({ error: "No encontrado" }, { status: 404 });
@@ -256,6 +342,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     if (err?.code === "INICIADA_LOCKED") return NextResponse.json({ error: err.message }, { status: 423 });
     if (err?.code === "OVERLAP") return NextResponse.json({ error: err.message }, { status: 409 });
     if (err?.code === "HE_INVALID") return NextResponse.json({ error: err.message }, { status: 400 });
+    if (err?.code === "OP_NOT_FOUND") return NextResponse.json({ error: err.message }, { status: 400 });
     if ((err as { code?: string })?.code === "P2025") return NextResponse.json({ error: "No encontrado" }, { status: 404 });
     console.error("PUT /api/planificacion/[id] error:", error);
     return NextResponse.json({ error: "Error al actualizar" }, { status: 500 });

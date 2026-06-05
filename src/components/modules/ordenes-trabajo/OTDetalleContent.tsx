@@ -98,7 +98,7 @@ interface OTDetalle {
   descripcion: string | null;
   tipo: string | null;
   // Cantidad de unidades de la OT (REP/BIE/SER). Default 1.
-  cantidad?: number | null;
+  cantidad: number | null;
   np: string | null;
   cod_rep_flota: string | null;
   cod_rep_posicion: string | null;
@@ -327,6 +327,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
       wo_cliente: ot.wo_cliente,
       po_cliente: ot.po_cliente,
       po_item: ot.po_item,
+      cantidad: ot.cantidad,
       id_viajero: ot.id_viajero,
       guia_remision: ot.guia_remision,
       empresa_entrega: ot.empresa_entrega,
@@ -435,9 +436,11 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
       }
     }
 
-    if (payload.garantia_codigo === "Si") {
-      payload.tipo_garantia_codigo = "Por definir";
-    }
+    // Tipo de garantía coherente con el check (igual que en "nueva OT"): con
+    // garantía se conserva lo elegido; sin garantía queda "NA".
+    payload.tipo_garantia_codigo = payload.garantia_codigo === "Si"
+      ? (payload.tipo_garantia_codigo || null)
+      : "NA";
 
     const pcr = Number(payload.pcr);
     const horas = Number(payload.horas);
@@ -1116,6 +1119,9 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                   }
                 />
               </Col>
+              {bloqueoBien && (
+                <Col xs={12} md={3}><Field label="Cantidad" value={ot.cantidad} /></Col>
+              )}
             </Row>
           ) : (
             <Row gutter={[16, 12]}>
@@ -1150,12 +1156,15 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                 <Checkbox checked={editData.garantia_codigo === "Si"}
                   onChange={(e) => {
                     setField("garantia_codigo", e.target.checked ? "Si" : "No");
-                    if (e.target.checked) setField("tipo_garantia_codigo", "Por definir");
+                    // Como en "nueva OT": al marcar, se habilita el desplegable (sin
+                    // valor, para elegir); al desmarcar, el tipo queda como "NA".
+                    setField("tipo_garantia_codigo", e.target.checked ? null : "NA");
                   }}>Sí</Checkbox>
               </Col>
               <Col xs={12} md={6}>
                 <FieldLabel>Tipo Garantía</FieldLabel>
-                <Select showSearch optionFilterProp="label" style={{ width: "100%" }} disabled={isGarantia}
+                <Select showSearch optionFilterProp="label" style={{ width: "100%" }} disabled={!isGarantia}
+                  placeholder={isGarantia ? "Seleccionar" : "NA"}
                   value={editData.tipo_garantia_codigo as string}
                   onChange={(v) => setField("tipo_garantia_codigo", v)}
                   options={tipoGarantias.map((t) => ({ value: t.codigo, label: t.nombre }))} />
@@ -1194,6 +1203,14 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                   />
                 </Space.Compact>
               </Col>
+              {bloqueoBien && (
+                <Col xs={8} md={3}>
+                  <FieldLabel>Cantidad</FieldLabel>
+                  <InputNumber min={1} step={1} style={{ width: "100%" }}
+                    value={editData.cantidad as number ?? undefined}
+                    onChange={(v) => setField("cantidad", v)} />
+                </Col>
+              )}
             </Row>
           )}
         </Card>
@@ -1287,6 +1304,12 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                 {" · "}{formatDateOnly(ot.fecha_actualizacion)}
               </>
             )}
+          </div>
+          <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, marginTop: 2 }}>
+            Cilindro: {ot?.codigo_reparacion?.descripcion ?? "-"}
+            &nbsp;|&nbsp; N/P: {ot?.np ?? "-"}
+            &nbsp;|&nbsp; Flota: {ot?.cod_rep_flota ?? "-"}
+            &nbsp;|&nbsp; Cliente: {ot?.cliente?.nombre_comercial ?? ot?.cliente?.razon_social ?? "-"}
           </div>
         </div>
         {headerActions}

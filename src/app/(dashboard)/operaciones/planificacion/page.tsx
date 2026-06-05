@@ -297,6 +297,26 @@ export default function PlanificacionPage() {
     }
   }, [editMode, messageApi, notifySync, fetchData]);
 
+  // Reabrir una tarea que un técnico finalizó por error (acción extraordinaria,
+  // solo planner/admin — el endpoint lo valida). Da vuelta las sesiones
+  // "finalizado" → "pausa": la tarea vuelve a "pausado", conservando el tiempo.
+  const reabrirTarea = useCallback(async (id: number) => {
+    if (!editMode) {
+      messageApi.warning("Activá Modo Edición para reabrir tareas.");
+      return;
+    }
+    try {
+      const res = await fetch(`/api/planificacion/${id}/reabrir`, { method: "POST" });
+      const j = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(j?.error ?? "Error");
+      messageApi.success("Tarea reabierta: quedó en Pausado. El técnico puede retomarla.");
+      notifySync();
+      fetchData();
+    } catch (e) {
+      messageApi.error(e instanceof Error ? e.message : "Error al reabrir");
+    }
+  }, [editMode, messageApi, notifySync, fetchData]);
+
   useEffect(() => {
     (async () => {
       const anioActual = new Date().getFullYear() % 100; // ej. 26 → solo OTs del año
@@ -415,6 +435,8 @@ export default function PlanificacionPage() {
         setRows((prev) => prev.map((r) => r.id === id ? { ...r, ...patch } : r));
       }
       notifySync();
+      // Si el cambio empujó a otras tareas (cascada), refrescar para verlas movidas.
+      if (patch.empujar) fetchData();
     } catch (e) {
       messageApi.error(e instanceof Error ? e.message : "Error al guardar");
       // Refrescar desde la BD para que el optimistic update no quede desincronizado.
@@ -1143,7 +1165,10 @@ export default function PlanificacionPage() {
           style={{ width: "100%" }}
           onChange={(v) => {
             const patch = recalcularFin(r, { horas_estimadas: v == null ? null : String(v) });
-            updateField(r.id, patch as Record<string, unknown>);
+            // Cambiar la duración recalcula el fin y empuja a las siguientes del
+            // operario (se permite incluso en tareas en proceso/pausadas; mover sí
+            // queda bloqueado en el server).
+            updateField(r.id, { ...(patch as Record<string, unknown>), empujar: true });
           }}
         />
       ),
@@ -1168,10 +1193,12 @@ export default function PlanificacionPage() {
               if (!(qtyActual > 0)) patch.horas_extras_qty = "1";
               updateField(r.id, patch);
             } else {
-              // Al desmarcar: HE=false + limpiar Qty HE + recalcular Fin.
-              const patch = recalcularFin({ ...r, horas_extras: false }, { horas_extras: false });
-              (patch as Record<string, unknown>).horas_extras_qty = null;
-              updateField(r.id, patch as Record<string, unknown>);
+              // Al desmarcar HE: la tarea ya no vive en la banda vespertina, así que
+              // vuelve al POOL (sin fecha) para reprogramarla en jornada 8–18. Si en
+              // cambio recalculáramos el fin en su lugar, sobre un carril lleno
+              // chocaría y el anti-solape no dejaría desmarcar.
+              messageApi.info("Quitada de horas extra: volvió al pool para reprogramarla en jornada.");
+              updateField(r.id, { horas_extras: false, horas_extras_qty: null, fecha_inicio: null, fecha_fin: null });
             }
           }}
         />
@@ -1280,14 +1307,23 @@ export default function PlanificacionPage() {
         : <span style={{ color: brand.textSecondary }}>—</span>,
     },
     {
-      title: "Dur. Real", key: "dur_real", width: 80, align: "right",
-      render: (_, r) => {
-        if (r.fecha_inicio_real && r.fecha_fin_real) {
-          const h = dayjs(r.fecha_fin_real).diff(dayjs(r.fecha_inicio_real), "minute") / 60;
-          return <strong>{h.toFixed(2)}</strong>;
-        }
-        return <span style={{ color: brand.textSecondary }}>—</span>;
-      },
+      // Duración REAL = horas trabajadas guardadas en la tarea (descuenta almuerzo
+      // y pausas; no recorta el fin de jornada). Editable por el planner para
+      // regularizar olvidos de marcado (sesión que quedó abierta toda la noche).
+      title: "Dur. Real", key: "horas_reales", width: 95, align: "right",
+      render: (_, r) => (
+        <Tooltip title="Duración real (horas trabajadas) = el equivalente real de 'Dur. (hrs)' estimada. Editable para regularizar olvidos de marcado del fin de jornada.">
+          <InputNumber
+            value={r.horas_reales != null ? Number(r.horas_reales) : undefined}
+            min={0}
+            step={0.25}
+            size="small"
+            style={{ width: "100%" }}
+            placeholder="—"
+            onChange={(v) => updateField(r.id, { horas_reales: v == null ? null : v })}
+          />
+        </Tooltip>
+      ),
     },
     {
       title: "Estado", key: "estado", width: 168,
@@ -1321,6 +1357,19 @@ export default function PlanificacionPage() {
             <Tooltip title="Emergencia (correctiva)">
               <Button danger size="small" type="primary" style={{ cursor: "default" }}>🚨</Button>
             </Tooltip>
+          )}
+          {r.estado === "realizado" && (
+            <Popconfirm
+              title="Reabrir tarea finalizada"
+              description="Acción extraordinaria: la tarea vuelve a 'Pausado' y el técnico podrá retomarla. Se conserva el tiempo trabajado y queda registrado en el historial."
+              okText="Reabrir"
+              cancelText="Cancelar"
+              onConfirm={() => reabrirTarea(r.id)}
+            >
+              <Tooltip title="Reabrir tarea finalizada">
+                <Button size="small" icon={<UndoOutlined />} disabled={!editMode} />
+              </Tooltip>
+            </Popconfirm>
           )}
         </Space.Compact>
       ),

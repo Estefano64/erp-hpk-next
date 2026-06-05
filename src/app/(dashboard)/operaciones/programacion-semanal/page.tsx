@@ -21,6 +21,7 @@ import { splitRecursos } from "@/lib/recursos";
 import { useTabSync } from "@/lib/useTabSync";
 import { useSession } from "next-auth/react";
 import { useEditLock } from "@/lib/useEditLock";
+import TareaAdjuntosLista from "@/components/TareaAdjuntosLista";
 
 dayjs.extend(isoWeek);
 dayjs.locale("es");
@@ -35,6 +36,9 @@ interface PlanRow {
   horas_estimadas: string | null;
   fecha_inicio: string | null;
   fecha_fin: string | null;
+  fecha_inicio_real: string | null;
+  fecha_fin_real: string | null;
+  horas_reales: string | null;
   tecnico: string | null;
   maquina: string | null;
   estado: string | null;
@@ -226,8 +230,12 @@ export default function ProgramacionSemanalPage() {
       fetch(`/api/planificacion?${params1}`),
       fetch(`/api/planificacion?limit=500`),
     ]);
-    if (resWeek.ok) setRows((await resWeek.json()).data ?? []);
-    if (resAll.ok) setAllRows((await resAll.json()).data ?? []);
+    // Una tarea cancelada no ocupa lugar: la sacamos de la grilla y del pool para
+    // que su espacio quede libre y se pueda programar otra tarea encima (y para
+    // que no dispare falsos choques en la detección de superposición).
+    const sinCanceladas = (arr: PlanRow[]) => arr.filter((r) => r.estado !== "cancelado");
+    if (resWeek.ok) setRows(sinCanceladas((await resWeek.json()).data ?? []));
+    if (resAll.ok) setAllRows(sinCanceladas((await resAll.json()).data ?? []));
   }, [lunes, viernes]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -522,50 +530,41 @@ export default function ProgramacionSemanalPage() {
     const dur = horasFaltantes ? 1 : durRaw;
     const qty = Math.max(1, Number(original.qty_personal ?? 1));
 
-    // ¿Cae en la banda de horas extra (≥ 18:00)? Lo decidimos ANTES de calcular
-    // el fin: las HE son tiempo de reloj continuo (no se normalizan a la jornada
-    // 8–18 ni desbordan al día siguiente).
+    // HORAS EXTRA: solo se cargan desde Planificación. En Programación Semanal el
+    // drag NUNCA crea HE — solo se programa en jornada 8–18. Si la tarea YA era HE
+    // (marcada en Planificación), se preserva su flag y su posición de reloj
+    // continuo; si no, se normaliza a jornada (un drop ≥18:00 cae al sgte día 8:00).
+    const esHE = !!original.horas_extras;
     const inicioHoraDec = nuevoInicio.hour() + nuevoInicio.minute() / 60;
-    const enBandaHE = inicioHoraDec >= 18;
-
-    // Para tareas normales, normalizamos el inicio igual que el servidor (almuerzo
-    // → 13:30, antes de las 8 → 8:00). Así el bloque queda donde realmente se
-    // guardará y no "salta" tras recargar. Las HE quedan donde se soltaron.
-    const inicioReal = enBandaHE ? nuevoInicio : dayjs(normalizarAInicioHabil(nuevoInicio.toDate()));
-    const fin = calcularFin(inicioReal.toDate(), dur * qty, enBandaHE);
+    if (!esHE && inicioHoraDec >= 18) {
+      messageApi.info("Las horas extra se cargan desde Planificación. La tarea se ubicó en jornada (8–18).");
+    }
+    const inicioReal = esHE ? nuevoInicio : dayjs(normalizarAInicioHabil(nuevoInicio.toDate()));
+    const fin = calcularFin(inicioReal.toDate(), dur * qty, esHE);
 
     // Bloquear si choca con otra tarea del mismo recurso.
     const recursoDestino = nuevoRecurso !== undefined
       ? nuevoRecurso
       : (view === "equipo" ? original.maquina : original.tecnico);
+    // Choque de OPERARIO: en vez de bloquear, "empujamos" a las siguientes del
+    // operario (el server hace la cascada; no toca terminadas / en proceso). El
+    // choque de MÁQUINA lo sigue frenando el server (recurso compartido).
     const choque = esEmergencia ? null : tareaSuperpuesta(id, inicioReal.toDate().getTime(), fin.getTime(), recursoDestino);
-    if (choque) {
-      const t = choque.task;
-      const cliente = t.orden_trabajo?.cliente?.nombre_comercial
-        ?? t.orden_trabajo?.cliente?.razon_social
-        ?? `OT ${t.orden_trabajo?.ot ?? "#?"}`;
-      const prefijoOculta = choque.oculta ? "[Tarea oculta por el filtro actual] " : "";
-      messageApi.error(`${prefijoOculta}No se puede mover acá: choca con ${cliente} — ${t.descripcion ?? t.operacion_codigo}`);
-      return;
-    }
+    const empujando = !!choque && !esEmergencia;
 
-    // Si el bloque cae en la franja de horas extras (>= 18:00, que el grid
-    // muestra hasta las 20:00), lo marcamos como HE para que el server no
-    // recalcule su fin con la jornada normal (su jornada termina 18:00).
+    // No tocamos horas_extras desde acá: si la tarea ya era HE, el server conserva
+    // su flag (y no recalcula el fin); si no, queda como tarea normal de jornada.
     const patch: Record<string, unknown> = {
       fecha_inicio: inicioReal.toISOString(),
       fecha_fin: fin.toISOString(),
       semana_plan: semanaCodigo(inicioReal),
     };
     if (horasFaltantes) patch.horas_estimadas = 1;
-    if (enBandaHE) {
-      patch.horas_extras = true;
-      patch.horas_extras_qty = Math.max(0.5, dur * qty);
-    }
     if (nuevoRecurso !== undefined) {
       if (view === "equipo") patch.maquina = nuevoRecurso;
       else patch.tecnico = nuevoRecurso;
     }
+    if (empujando) patch.empujar = true;
 
     // Optimista: actualizo inmediatamente la UI
     const updated: Partial<PlanRow> = {
@@ -574,10 +573,6 @@ export default function ProgramacionSemanalPage() {
       semana_plan: semanaCodigo(inicioReal),
     };
     if (horasFaltantes) updated.horas_estimadas = "1";
-    if (enBandaHE) {
-      updated.horas_extras = true;
-      updated.horas_extras_qty = Math.max(0.5, dur * qty);
-    }
     if (nuevoRecurso !== undefined) {
       if (view === "equipo") updated.maquina = nuevoRecurso;
       else updated.tecnico = nuevoRecurso;
@@ -606,12 +601,20 @@ export default function ProgramacionSemanalPage() {
         fetchData();
         return;
       }
-      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Error");
+      const j = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(j?.error ?? "Error");
       endSave();
       notifySync();
-      // Si es emergencia, el servidor ya reacomodó el día del operario en el mismo
-      // PUT (cascade). Refrescamos para ver las tareas empujadas.
-      if (esEmergencia) fetchData();
+      // Emergencia o "empujar": el servidor reacomodó el día del operario en el
+      // mismo PUT (cascade). Refrescamos para ver las tareas empujadas.
+      if (esEmergencia || empujando) fetchData();
+      if (empujando) {
+        const e = j?.push?.empujadas?.length ?? 0;
+        const p = j?.push?.alPool?.length ?? 0;
+        messageApi.success(
+          `Tarea ubicada.${e ? ` ${e} empujada(s).` : ""}${p ? ` ${p} al pool.` : ""}`,
+        );
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Error al reprogramar";
       endSave(msg);
@@ -803,42 +806,44 @@ export default function ProgramacionSemanalPage() {
       messageApi.warning("Activá Modo Edición para mover tareas.");
       return;
     }
-    interface Slot { id: number; ini: number; fin: number; recurso: string }
+    interface Slot { id: number; ini: number; fin: number; recurso: string; he: boolean }
     const idsGrupo = new Set<number>([baseId, ...offsets.map((o) => o.id)]);
+
+    // Encadenado por recurso: en vez de mover el grupo "rígido" (mismo delta, que
+    // se rompe al cruzar el almuerzo/jornada y hace chocar las tareas entre sí),
+    // ubicamos las tareas de cada recurso en orden; si una se montaría sobre la
+    // anterior (porque el almuerzo estira su fin), la corremos justo después. Así
+    // "mover juntos" siempre funciona y se ajusta solo. Las HE quedan en su lugar.
+    const items = [
+      { id: baseId, offsetMin: 0, recurso: baseRecurso },
+      ...offsets.map((o) => ({ id: o.id, offsetMin: o.offsetMin, recurso: o.recurso ?? baseRecurso })),
+    ];
+    const porRecurso = new Map<string, typeof items>();
+    for (const it of items) {
+      if (!porRecurso.has(it.recurso)) porRecurso.set(it.recurso, []);
+      porRecurso.get(it.recurso)!.push(it);
+    }
     const slots: Slot[] = [];
-
-    function calcSlot(id: number, ini: Dayjs, recurso: string): Slot | null {
-      const t = rows.find((r) => r.id === id) ?? allRows.find((r) => r.id === id);
-      if (!t) return null;
-      const durRaw = Number(t.horas_estimadas);
-      const dur = Number.isFinite(durRaw) && durRaw > 0 ? durRaw : 1;
-      const qty = Math.max(1, Number(t.qty_personal ?? 1));
-      const enBandaHE = (ini.hour() + ini.minute() / 60) >= 18;
-      const iniReal = enBandaHE ? ini : dayjs(normalizarAInicioHabil(ini.toDate()));
-      const fin = calcularFin(iniReal.toDate(), dur * qty, enBandaHE);
-      return { id, ini: iniReal.toDate().getTime(), fin: fin.getTime(), recurso };
-    }
-
-    const baseSlot = calcSlot(baseId, baseInicio, baseRecurso);
-    if (baseSlot) slots.push(baseSlot);
-    for (const o of offsets) {
-      const ini = baseInicio.add(o.offsetMin, "minute");
-      const slot = calcSlot(o.id, ini, o.recurso ?? baseRecurso);
-      if (slot) slots.push(slot);
-    }
-
-    // (1) Choque interno: tareas del grupo entre sí, mismo recurso, intervalos solapan.
-    for (let i = 0; i < slots.length; i++) {
-      for (let j = i + 1; j < slots.length; j++) {
-        const a = slots[i]; const b = slots[j];
-        const recA = splitTecnicos(a.recurso);
-        const recB = splitTecnicos(b.recurso);
-        const compartenRecurso = recA.some((r) => recB.includes(r));
-        if (!compartenRecurso) continue;
-        if (a.ini < b.fin && b.ini < a.fin) {
-          messageApi.error(`Las tareas seleccionadas se superponen entre sí — no se puede mover el grupo así.`);
-          return;
+    for (const lista of porRecurso.values()) {
+      lista.sort((a, b) => a.offsetMin - b.offsetMin);
+      let cursorMs: number | null = null;
+      for (const it of lista) {
+        const t = rows.find((r) => r.id === it.id) ?? allRows.find((r) => r.id === it.id);
+        if (!t) continue;
+        const durRaw = Number(t.horas_estimadas);
+        const dur = Number.isFinite(durRaw) && durRaw > 0 ? durRaw : 1;
+        const qty = Math.max(1, Number(t.qty_personal ?? 1));
+        const esHE = !!t.horas_extras; // el multi-move nunca crea HE; solo preserva.
+        let iniDj = baseInicio.add(it.offsetMin, "minute");
+        if (!esHE) {
+          // No arrancar antes del fin de la tarea previa del mismo recurso (evita
+          // solape interno) y normalizar a jornada (cruza al sgte día si hace falta).
+          if (cursorMs != null && iniDj.toDate().getTime() < cursorMs) iniDj = dayjs(cursorMs);
+          iniDj = dayjs(normalizarAInicioHabil(iniDj.toDate()));
         }
+        const fin = calcularFin(iniDj.toDate(), dur * qty, esHE);
+        slots.push({ id: it.id, ini: iniDj.toDate().getTime(), fin: fin.getTime(), recurso: it.recurso, he: esHE });
+        cursorMs = fin.getTime();
       }
     }
 
@@ -868,10 +873,8 @@ export default function ProgramacionSemanalPage() {
     beginSave();
     const reqs: Promise<unknown>[] = [];
     for (const s of slots) {
-      // Franja HE (>= 18:00): marcar como horas_extras para que el server no la
-      // normalice al día siguiente y el bloque no desaparezca de la semana.
-      const sIni = dayjs(s.ini);
-      const sHE = (sIni.hour() + sIni.minute() / 60) >= 18;
+      // Solo preservamos HE si la tarea YA era HE (creada en Planificación); el
+      // multi-move nunca crea HE.
       reqs.push(
         fetch(`/api/planificacion/${s.id}`, {
           method: "PUT",
@@ -881,7 +884,7 @@ export default function ProgramacionSemanalPage() {
             fecha_fin: new Date(s.fin).toISOString(),
             semana_plan: semanaCodigo(dayjs(s.ini)),
             ...(view === "equipo" ? { maquina: s.recurso } : { tecnico: s.recurso }),
-            ...(sHE ? { horas_extras: true, horas_extras_qty: Math.max(0.5, (s.fin - s.ini) / 3600000) } : {}),
+            ...(s.he ? { horas_extras: true, horas_extras_qty: Math.max(0.5, (s.fin - s.ini) / 3600000) } : {}),
             // El grupo ya se validó en el cliente; evitamos falsos positivos del
             // anti-solape de servidor por las posiciones viejas en PUTs paralelos.
             omitirAntisolape: true,
@@ -1007,35 +1010,12 @@ export default function ProgramacionSemanalPage() {
     return { row: foundRow, date: null };
   }, [lunes, hourPx]);
 
-  // Detector de conflicto durante drag (en vivo). Maneja recursos multi-personal
-  // (e.g., maquina = "TR-01,TR-02") usando splitTecnicos en lugar de igualdad
-  // de string. Antes ese caso pasaba como "no choca" aunque sí solapaba.
-  const dragConflict = useMemo(() => {
-    if (!drag || !drag.snappedDate || !drag.targetRow) return false;
-    const original = rows.find((r) => r.id === drag.taskId) ?? allRows.find((r) => r.id === drag.taskId);
-    if (!original) return false;
-    // Las emergencias (correctivas) SÍ pueden caer encima de otras: al soltarlas
-    // empujan a las demás. No marcamos conflicto para no bloquear el drop.
-    if (original.es_correctivo) return false;
-    const dur = Number(original.horas_estimadas ?? 1);
-    const qty = Math.max(1, Number(original.qty_personal ?? 1));
-    const enBandaHE = (drag.snappedDate.hour() + drag.snappedDate.minute() / 60) >= 18;
-    const inicioReal = enBandaHE ? drag.snappedDate : dayjs(normalizarAInicioHabil(drag.snappedDate.toDate()));
-    const ini = inicioReal.toDate().getTime();
-    const fin = calcularFin(inicioReal.toDate(), dur * qty, enBandaHE).getTime();
-    const target = drag.targetRow;
-    for (const t of rows) {
-      if (t.id === drag.taskId) continue;
-      const recursoRaw = view === "equipo" ? t.maquina : t.tecnico;
-      const recursos = splitTecnicos(recursoRaw);
-      if (!recursos.includes(target)) continue;
-      if (!t.fecha_inicio || !t.fecha_fin) continue;
-      const oIni = new Date(t.fecha_inicio).getTime();
-      const oFin = new Date(t.fecha_fin).getTime();
-      if (ini < oFin && fin > oIni) return true;
-    }
-    return false;
-  }, [drag, rows, allRows, view]);
+  // Antes el drag marcaba en rojo (conflicto) cuando se soltaba sobre otra tarea
+  // del mismo operario. Ahora ese caso NO bloquea: al soltar se empuja a las
+  // siguientes (ver persistMove → empujar). Los choques de MÁQUINA (recurso
+  // compartido) los valida el servidor al guardar. Por eso ya no marcamos
+  // conflicto en vivo durante el drag.
+  const dragConflict = false;
 
   // Listeners globales para mover/soltar + atajos teclado + auto-scroll
   useEffect(() => {
@@ -2005,6 +1985,7 @@ export default function ProgramacionSemanalPage() {
         width={modalWidth(screens, 680)}
       >
         {selectedTask && (
+          <>
           <Descriptions column={1} size="small">
             <Descriptions.Item label="OT">{selectedTask.orden_trabajo?.ot ?? `#${selectedTask.ot_id}`}</Descriptions.Item>
             <Descriptions.Item label="Cliente">{selectedTask.orden_trabajo?.cliente?.nombre_comercial ?? selectedTask.orden_trabajo?.cliente?.razon_social ?? "-"}</Descriptions.Item>
@@ -2027,6 +2008,9 @@ export default function ProgramacionSemanalPage() {
             <Descriptions.Item label="Inicio">{selectedTask.fecha_inicio ? dayjs(selectedTask.fecha_inicio).format("DD/MM/YY HH:mm") : "—"}</Descriptions.Item>
             <Descriptions.Item label="Fin">{selectedTask.fecha_fin ? dayjs(selectedTask.fecha_fin).format("DD/MM/YY HH:mm") : "—"}</Descriptions.Item>
             <Descriptions.Item label="Duración">{Number(selectedTask.horas_estimadas ?? 0).toFixed(1)}h · Qty {selectedTask.qty_personal ?? 1}</Descriptions.Item>
+            <Descriptions.Item label="Inicio real">{selectedTask.fecha_inicio_real ? dayjs(selectedTask.fecha_inicio_real).format("DD/MM/YY HH:mm") : "—"}</Descriptions.Item>
+            <Descriptions.Item label="Fin real">{selectedTask.fecha_fin_real ? dayjs(selectedTask.fecha_fin_real).format("DD/MM/YY HH:mm") : "—"}</Descriptions.Item>
+            <Descriptions.Item label="Duración real">{selectedTask.horas_reales != null ? `${Number(selectedTask.horas_reales).toFixed(2)}h` : "—"}</Descriptions.Item>
             <Descriptions.Item label="Estado"><Tag color={estadoColor(selectedTask.estado)}>{estadoNombre(selectedTask.estado)}</Tag></Descriptions.Item>
             {conflictos.has(selectedTask.id) && (
               <Descriptions.Item label="">
@@ -2034,6 +2018,10 @@ export default function ProgramacionSemanalPage() {
               </Descriptions.Item>
             )}
           </Descriptions>
+          <div style={{ marginTop: 8 }}>
+            <TareaAdjuntosLista taskId={selectedTask.id} />
+          </div>
+          </>
         )}
       </Modal>
 

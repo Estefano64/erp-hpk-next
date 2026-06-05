@@ -270,6 +270,9 @@ export async function POST(req: NextRequest) {
     // viene en el viajero/guía de remisión del cliente; antes era obligatoria
     // para REP/BIE pero se relajó porque bloqueaba la creación legítima de OTs.
     const esServicio = body.tipo_codigo === "SER";
+    // `esBien` viene de main — se usa abajo (~líneas 364-369) para anular campos que
+    // solo aplican a OT de Reparación. Se conserva tal cual de main al mergear.
+    const esBien = body.tipo_codigo === "BIE";
 
     // Calcular % PCR
     let porcentajePcr: number | null = null;

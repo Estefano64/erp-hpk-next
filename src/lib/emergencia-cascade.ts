@@ -12,19 +12,32 @@ function semanaCodigo(d: Date): string {
 }
 
 // Reacomodo por EMERGENCIA (correctiva): marca la tarea como correctiva y empuja
-// las tareas del MISMO día y operario(s) que arrancan en/después de ella (o se
-// solapan). Las que no entran en el día van al pool. SOLO mueve lo que NO empezó
-// (sin sesiones). Punto único de verdad: lo usan el endpoint /emergencia y el PUT
-// (al mover/reasignar una emergencia desde cualquier vista).
+// las del mismo día/operario. Wrapper sobre cascadeReprogramar.
 export async function cascadeEmergencia(
   tx: Prisma.TransactionClient,
   planId: number,
 ): Promise<{ empujadas: number[]; alPool: number[] }> {
+  return cascadeReprogramar(tx, planId, { marcarCorrectivo: true });
+}
+
+// Reacomodo: empuja las tareas del MISMO día y operario(s) que arrancan en/después
+// de la tarea `planId` (o se solapan). Las que no entran en el día van al pool.
+// SOLO mueve lo que NO empezó (sin sesiones) ni está terminado. Lo usan:
+//   - emergencia (marcarCorrectivo: true)
+//   - "empujar al soltar" en el drag normal (marcarCorrectivo: false)
+export async function cascadeReprogramar(
+  tx: Prisma.TransactionClient,
+  planId: number,
+  // cruzarDias: si una tarea empujada no entra en el día, en vez de mandarla al
+  // pool se sigue ubicando en el siguiente día hábil (encadena hacia adelante).
+  // Lo usa el "empujar al soltar". La emergencia deja cruzarDias=false (overflow
+  // al pool, su comportamiento histórico).
+  opts: { marcarCorrectivo: boolean; cruzarDias?: boolean },
+): Promise<{ empujadas: number[]; alPool: number[] }> {
   const T = await tx.planificacionOT.findUnique({ where: { id: planId } });
   if (!T) return { empujadas: [], alPool: [] };
 
-  // Marca correctiva (idempotente) sin tocar el estado de ejecución.
-  if (!T.es_correctivo) {
+  if (opts.marcarCorrectivo && !T.es_correctivo) {
     await tx.planificacionOT.update({ where: { id: planId }, data: { es_correctivo: true } });
   }
 
@@ -46,7 +59,9 @@ export async function cascadeEmergencia(
       id: { not: planId },
       tecnico: { not: null },
       es_correctivo: false,
-      fecha_inicio: { gte: diaIni, lte: diaFin },
+      // cruzarDias: tomamos también las de días siguientes para re-encadenarlas
+      // (así "empujar" desplaza toda la cola del operario, no solo el día).
+      fecha_inicio: opts.cruzarDias ? { gte: diaIni } : { gte: diaIni, lte: diaFin },
       estado: { notIn: ["cancelado", "realizado"] },
     },
     orderBy: { fecha_inicio: "asc" },
@@ -75,7 +90,9 @@ export async function cascadeEmergencia(
 
   for (const c of aReprogramar) {
     const inicioHabil = normalizarAInicioHabil(cursor);
-    if (!dayjs(inicioHabil).isSame(dia, "day")) {
+    // Sin cruzarDias (emergencia): lo que no entra en el día va al pool.
+    // Con cruzarDias (empujar): se sigue ubicando en el siguiente día hábil.
+    if (!opts.cruzarDias && !dayjs(inicioHabil).isSame(dia, "day")) {
       await tx.planificacionOT.update({ where: { id: c.id }, data: { fecha_inicio: null, fecha_fin: null } });
       alPool.push(c.id);
       continue;

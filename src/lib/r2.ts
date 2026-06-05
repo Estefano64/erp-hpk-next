@@ -77,6 +77,13 @@ export const R2Keys = {
   otEvaluacion: (otCodigo: string) => `ordenes-trabajo/${sanitize(otCodigo)}/evaluaciones`,
   requerimientoAdjunto: (otCodigo: string, reqId: number) =>
     `ordenes-trabajo/${sanitize(otCodigo)}/requerimientos/${reqId}`,
+  // Adjuntos del técnico al pausar/finalizar una tarea de planificación.
+  // Si la tarea pertenece a una OT cuelga de ella; si es de APOYO (sin OT),
+  // va a un namespace paralelo.
+  planificacionAdjunto: (otCodigo: string, planId: number) =>
+    `ordenes-trabajo/${sanitize(otCodigo)}/planificacion/${planId}`,
+  planificacionSueltaAdjunto: (planId: number) =>
+    `planificacion-sueltas/${planId}`,
   compraGuia: (otCodigo: string, ocCodigo: string) =>
     `ordenes-trabajo/${sanitize(otCodigo)}/compras/${sanitize(ocCodigo)}/guia`,
   compraFactura: (otCodigo: string, ocCodigo: string) =>
