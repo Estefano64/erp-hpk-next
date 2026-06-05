@@ -8,7 +8,7 @@ import {
   CalendarOutlined, LeftOutlined, RightOutlined, UserOutlined, ToolOutlined, AimOutlined,
   SettingOutlined, RollbackOutlined, UnorderedListOutlined, WarningFilled, ZoomInOutlined, ZoomOutOutlined,
   PrinterOutlined, BgColorsOutlined, FilterOutlined, ClearOutlined,
-  LoadingOutlined, CheckCircleFilled, CloseCircleFilled, EyeOutlined, SearchOutlined,
+  LoadingOutlined, CheckCircleFilled, CloseCircleFilled, EyeOutlined, SearchOutlined, ClockCircleOutlined,
 } from "@ant-design/icons";
 import dayjs, { Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
@@ -196,6 +196,10 @@ export default function ProgramacionSemanalPage() {
   const [cargando, setCargando] = useState(true);
   // Operarios es la vista principal (ahí se asigna); Equipos es solo lectura.
   const [view, setView] = useState<"equipo" | "operario">("operario");
+  // Plan = bloques con tamaño planificado (editable). Real = bloques con tamaño
+  // de EJECUCIÓN real (inicio_real → fin real / ahora si está en proceso); en
+  // este modo el Gantt es solo lectura (la realidad no se arrastra).
+  const [vistaTiempo, setVistaTiempo] = useState<"plan" | "real">("plan");
   const [filtroEquipos, setFiltroEquipos] = useState<string[]>([]);
   const [filtroOperarios, setFiltroOperarios] = useState<string[]>([]);
   // Por defecto el filtro de arriba también aplica a los pendientes de abajo.
@@ -483,7 +487,8 @@ export default function ProgramacionSemanalPage() {
   const [ahoraTick, setAhoraTick] = useState<Dayjs | null>(null);
   useEffect(() => {
     setAhoraTick(dayjs());
-    const id = setInterval(() => setAhoraTick(dayjs()), 60_000);
+    // 30s: en modo Real los bloques "en proceso" crecen en vivo hasta esta marca.
+    const id = setInterval(() => setAhoraTick(dayjs()), 30_000);
     return () => clearInterval(id);
   }, []);
 
@@ -1273,8 +1278,28 @@ export default function ProgramacionSemanalPage() {
 
   function renderTaskBlock(r: PlanRow, recurso: string) {
     if (!r.fecha_inicio || !r.fecha_fin) return null;
-    const ini = dayjs(r.fecha_inicio);
-    const fin = dayjs(r.fecha_fin);
+    const planIni = dayjs(r.fecha_inicio);
+    const planFin = dayjs(r.fecha_fin);
+    const realMode = vistaTiempo === "real";
+    const empezada = haEmpezado(r.estado);
+    // Modo Real: el bloque refleja la EJECUCIÓN (inicio_real → fin real / ahora si
+    // está en proceso). Si la tarea no empezó, cae al plan (queda atenuado).
+    let ini = planIni;
+    let fin = planFin;
+    if (realMode && empezada && r.fecha_inicio_real) {
+      ini = dayjs(r.fecha_inicio_real);
+      if (r.estado === "en_proceso") {
+        fin = ahoraTick ?? dayjs(); // crece en vivo
+      } else if (r.estado === "realizado" && r.fecha_fin_real) {
+        fin = dayjs(r.fecha_fin_real);
+      } else {
+        // pausado (o realizado sin fin_real): proyectar por horas reales hábiles.
+        const hr = Number(r.horas_reales ?? 0);
+        fin = hr > 0 ? dayjs(calcularFin(ini.toDate(), hr, !!r.horas_extras)) : ini.add(30, "minute");
+      }
+      if (!fin.isAfter(ini)) fin = ini.add(15, "minute"); // guard tamaño mínimo
+    }
+    const realPendiente = realMode && !empezada; // en Real, todavía es solo plan
     // Bordes de la semana visible (lunes 8:00 → viernes 18:00)
     const semanaIni = lunes.hour(JORNADA_INICIO).minute(0).second(0).millisecond(0);
     const semanaFin = lunes.add(4, "day").hour(JORNADA_FIN).minute(0).second(0).millisecond(0);
@@ -1303,8 +1328,10 @@ export default function ProgramacionSemanalPage() {
             <div>{r.componente} — {r.operacion_codigo} {r.descripcion}</div>
             {r.orden_trabajo?.descripcion && <div>Descripción: {r.orden_trabajo.descripcion}</div>}
             <div>Flota: {flotaDe(r)}</div>
-            <div>{ini.format("DD/MM HH:mm")} → {fin.format("DD/MM HH:mm")}</div>
-            <div>Duración: {Number(r.horas_estimadas ?? 0).toFixed(1)}h{r.qty_personal && r.qty_personal > 1 ? ` × ${r.qty_personal} pers.` : ""}</div>
+            <div>📋 Plan: {planIni.format("DD/MM HH:mm")} → {planFin.format("DD/MM HH:mm")} · {Number(r.horas_estimadas ?? 0).toFixed(1)}h{r.qty_personal && r.qty_personal > 1 ? ` × ${r.qty_personal} pers.` : ""}</div>
+            {empezada && r.fecha_inicio_real && (
+              <div>⏱ Real: {dayjs(r.fecha_inicio_real).format("DD/MM HH:mm")} → {r.fecha_fin_real ? dayjs(r.fecha_fin_real).format("DD/MM HH:mm") : (r.estado === "en_proceso" ? "en curso" : "—")}{r.horas_reales != null ? ` · ${Number(r.horas_reales).toFixed(1)}h` : ""}</div>
+            )}
             <div>Estado: {estadoNombre(r.estado)}</div>
             {hasConflict && <div style={{ color: brand.error }}>⚠ Conflicto</div>}
           </div>
@@ -1317,6 +1344,8 @@ export default function ProgramacionSemanalPage() {
             if (t.classList.contains("psg-resize-handle")) return;
             // Shift+Click NO inicia drag, solo toggle selección
             if (e.shiftKey) return;
+            // Modo Real = solo lectura (la ejecución no se reprograma arrastrando).
+            if (realMode) return;
             // Solo bloqueamos el drag si la tarea EMPIEZA en una semana anterior
             // (su inicio no está visible, no sabríamos reubicarla). Las que se
             // desbordan hacia adelante (continuaDespues) SÍ se pueden mover —
@@ -1348,6 +1377,7 @@ export default function ProgramacionSemanalPage() {
           data-pub={r.publicado ? "1" : "0"}
           data-conflict={hasConflict ? "1" : "0"}
           data-externo={r.trabajo_externo ? "1" : "0"}
+          data-realpending={realPendiente ? "1" : "0"}
         >
           {/* Indicador de continuación desde semana anterior */}
           {continuaDeAntes && (
@@ -1377,7 +1407,7 @@ export default function ProgramacionSemanalPage() {
           {/* Resize handle: solo en vista Operarios (Equipos es solo lectura),
               si la tarea NO continúa a la próxima semana y NO está publicada
               (publicada = plan congelado). */}
-          {!continuaDespues && view !== "equipo" && !r.publicado && !haEmpezado(r.estado) && (
+          {!realMode && !continuaDespues && view !== "equipo" && !r.publicado && !haEmpezado(r.estado) && (
             <div
               className="psg-resize-handle"
               onMouseDown={(e) => {
@@ -1479,6 +1509,11 @@ export default function ProgramacionSemanalPage() {
               onChange={(v) => setView(v as "equipo" | "operario")}
               options={[{ value: "operario", icon: <UserOutlined /> }, { value: "equipo", icon: <ToolOutlined /> }]}
             />
+            <Segmented
+              size="small" value={vistaTiempo}
+              onChange={(v) => setVistaTiempo(v as "plan" | "real")}
+              options={[{ value: "plan", label: "Plan" }, { value: "real", label: "Real" }]}
+            />
           </Space>
         </Card>
         {cargando && rows.length === 0 ? (
@@ -1507,6 +1542,9 @@ export default function ProgramacionSemanalPage() {
                       </div>
                       <div style={{ fontSize: 11, color: brand.textSecondary }}>
                         {t.fecha_inicio ? diaEs(dayjs(t.fecha_inicio), true) : "sin hora"} · {estadoNombre(t.estado)}
+                        {vistaTiempo === "real" && haEmpezado(t.estado) && t.horas_reales != null && (
+                          <> · ⏱ {Number(t.horas_reales).toFixed(1)}h real{t.horas_estimadas != null ? ` / ${Number(t.horas_estimadas).toFixed(1)}h plan` : ""}</>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1573,7 +1611,7 @@ export default function ProgramacionSemanalPage() {
               }
               return <Tag icon={<CheckCircleFilled />} color="default" style={{ fontWeight: 400, color: brand.textSecondary }}>Sincronizado</Tag>;
             })()}
-            {view === "equipo" ? (
+            {view === "equipo" || vistaTiempo === "real" ? (
               <Tag icon={<EyeOutlined />} color="default" style={{ fontWeight: 500 }}>Solo visualización</Tag>
             ) : (
               <Button
@@ -1618,6 +1656,21 @@ export default function ProgramacionSemanalPage() {
                 { value: "equipo", icon: <ToolOutlined />, label: "Equipos" },
               ]}
             />
+            <Tooltip title={vistaTiempo === "real" ? "Mostrando ejecución real (tamaño según horas reales, en vivo). Solo lectura." : "Mostrando el plan (editable)."}>
+              <Segmented
+                value={vistaTiempo}
+                onChange={(v) => {
+                  const nuevo = v as "plan" | "real";
+                  setVistaTiempo(nuevo);
+                  // Real es solo lectura: si veníamos editando, salimos y soltamos el lock.
+                  if (nuevo === "real" && editMode) { setEditMode(false); void lock.release(); }
+                }}
+                options={[
+                  { value: "plan", icon: <CalendarOutlined />, label: "Plan" },
+                  { value: "real", icon: <ClockCircleOutlined />, label: "Real" },
+                ]}
+              />
+            </Tooltip>
             <Button icon={<UnorderedListOutlined />} onClick={() => router.push("/operaciones/planificacion")}>Planificación</Button>
             <Button icon={<RollbackOutlined />} onClick={() => router.back()}>Volver</Button>
           </Space>
@@ -2481,6 +2534,9 @@ export default function ProgramacionSemanalPage() {
           font-size: 9px; opacity: 0.9; pointer-events: none; z-index: 2;
         }
         .psg-task-block[data-conflict="1"] { outline: 2px solid #ff4d4f; }
+        /* Modo Real: la tarea aún no empezó → es solo plan. Atenuada + borde punteado
+           para distinguirla de la ejecución real. */
+        .psg-task-block[data-realpending="1"] { opacity: 0.4; outline: 1px dashed rgba(255,255,255,0.7); }
 
         /* Trabajo derivado a tercero: stripes diagonales + borde dorado para distinguir. */
         .psg-task-block[data-externo="1"] {
