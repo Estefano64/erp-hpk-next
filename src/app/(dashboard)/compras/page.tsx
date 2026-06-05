@@ -31,6 +31,9 @@ import {
   ShoppingCartOutlined,
   ClockCircleOutlined,
   CheckCircleOutlined,
+  WarningOutlined,
+  HourglassOutlined,
+  ExclamationCircleOutlined,
   InfoCircleOutlined,
   FilePdfOutlined,
   FileExcelOutlined,
@@ -224,7 +227,32 @@ export default function ComprasPage() {
   // KPIs
   const pendientes = data.filter((c) => c.estado === "Pendiente").length;
   const enProceso = data.filter((c) => c.estado === "En Proceso" || c.estado === "Aprobado").length;
-  const recibidas = data.filter((c) => c.estado === "Recibido").length;
+  // "Faltan por llegar": cualquier OC que NO esté recibida ni anulada (es decir,
+  // toda OC con material en camino o esperando aprobación). Cubre Pendiente,
+  // En Proceso, Aprobado, Incompleto.
+  const ESTADOS_LLEGADOS = new Set(["Recibido", "Completo", "Anulado"]);
+  const faltanLlegar = data.filter((c) => !ESTADOS_LLEGADOS.has(c.estado)).length;
+  // "Próximos a llegar": OC no recibida con fecha de entrega esperada dentro
+  // de los próximos 7 días (incluye hoy). Para que aparezca, la fecha debe
+  // existir y no estar vencida.
+  const hoy = dayjs().startOf("day");
+  const limiteProximo = hoy.add(7, "day").endOf("day");
+  const proximosLlegar = data.filter((c) => {
+    if (ESTADOS_LLEGADOS.has(c.estado)) return false;
+    if (!c.fecha_entrega_esperada) return false;
+    const f = dayjs(c.fecha_entrega_esperada);
+    if (!f.isValid()) return false;
+    return !f.isBefore(hoy) && !f.isAfter(limiteProximo);
+  }).length;
+  // "Vencidos": OC no recibida cuya fecha de entrega esperada ya pasó (anterior
+  // a hoy). Estos son los que generan alerta — el proveedor se demoró.
+  const vencidos = data.filter((c) => {
+    if (ESTADOS_LLEGADOS.has(c.estado)) return false;
+    if (!c.fecha_entrega_esperada) return false;
+    const f = dayjs(c.fecha_entrega_esperada);
+    if (!f.isValid()) return false;
+    return f.isBefore(hoy);
+  }).length;
   // Suma del valor total sin IGV (= subtotal). El usuario pidió ver montos
   // sin IGV en este listado.
   const totalValor = data.reduce((s, c) => s + Number(c.subtotal || 0), 0);
@@ -589,7 +617,7 @@ export default function ComprasPage() {
     <>
       {/* KPI Cards */}
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-        <Col xs={12} md={6}>
+        <Col xs={12} md={8} lg={4}>
           <Card styles={{ body: { padding: 16 } }}>
             <Statistic
               title="Pendientes"
@@ -599,7 +627,7 @@ export default function ComprasPage() {
             />
           </Card>
         </Col>
-        <Col xs={12} md={6}>
+        <Col xs={12} md={8} lg={4}>
           <Card styles={{ body: { padding: 16 } }}>
             <Statistic
               title="En Proceso"
@@ -609,17 +637,52 @@ export default function ComprasPage() {
             />
           </Card>
         </Col>
-        <Col xs={12} md={6}>
-          <Card styles={{ body: { padding: 16 } }}>
+        <Col xs={12} md={8} lg={4}>
+          <Card
+            styles={{ body: { padding: 16 } }}
+            title={null}
+          >
             <Statistic
-              title="Recibidas"
-              value={recibidas}
-              prefix={<CheckCircleOutlined style={{ color: "#52c41a" }} />}
-              styles={{ content: { color: "#52c41a" } }}
+              title={
+                <Tooltip title="OCs no recibidas con fecha de entrega esperada dentro de los próximos 7 días.">
+                  <span>Próximos a llegar</span>
+                </Tooltip>
+              }
+              value={proximosLlegar}
+              prefix={<HourglassOutlined style={{ color: "#1677ff" }} />}
+              styles={{ content: { color: "#1677ff" } }}
             />
           </Card>
         </Col>
-        <Col xs={12} md={6}>
+        <Col xs={12} md={8} lg={4}>
+          <Card styles={{ body: { padding: 16 } }}>
+            <Statistic
+              title={
+                <Tooltip title="OCs no recibidas cuya fecha de entrega esperada ya pasó. El proveedor está demorado.">
+                  <span>Vencidos</span>
+                </Tooltip>
+              }
+              value={vencidos}
+              prefix={<ExclamationCircleOutlined style={{ color: vencidos > 0 ? brand.error : "#bfbfbf" }} />}
+              styles={{ content: { color: vencidos > 0 ? brand.error : "#bfbfbf", fontWeight: vencidos > 0 ? 600 : undefined } }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} md={8} lg={4}>
+          <Card styles={{ body: { padding: 16 } }}>
+            <Statistic
+              title={
+                <Tooltip title="Total de OCs que aún no fueron recibidas (Pendiente + Aprobado + En Proceso + Incompleto).">
+                  <span>Faltan por llegar</span>
+                </Tooltip>
+              }
+              value={faltanLlegar}
+              prefix={<WarningOutlined style={{ color: "#fa8c16" }} />}
+              styles={{ content: { color: "#fa8c16" } }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} md={8} lg={4}>
           <Card styles={{ body: { padding: 16 } }}>
             <Statistic
               title="Valor total (sin IGV)"
