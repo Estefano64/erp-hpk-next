@@ -41,6 +41,7 @@ interface PlanRow {
   horas_reales: string | null;
   tecnico: string | null;
   maquina: string | null;
+  comentario: string | null;
   estado: string | null;
   version: number;
   qty_personal: number | null;
@@ -1255,8 +1256,9 @@ export default function ProgramacionSemanalPage() {
         title={
           <div>
             <div><strong>OT {r.orden_trabajo?.ot ?? r.ot_id}</strong></div>
-            <div>{r.operacion_codigo} — {r.descripcion}</div>
-            <div>Cliente: {r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "—"}</div>
+            <div>{r.componente} — {r.operacion_codigo} {r.descripcion}</div>
+            {r.orden_trabajo?.descripcion && <div>Descripción: {r.orden_trabajo.descripcion}</div>}
+            <div>Flota: {flotaDe(r)}</div>
             <div>{ini.format("DD/MM HH:mm")} → {fin.format("DD/MM HH:mm")}</div>
             <div>Duración: {Number(r.horas_estimadas ?? 0).toFixed(1)}h{r.qty_personal && r.qty_personal > 1 ? ` × ${r.qty_personal} pers.` : ""}</div>
             <div>Estado: {estadoNombre(r.estado)}</div>
@@ -1318,10 +1320,13 @@ export default function ProgramacionSemanalPage() {
           {/* Franja de almuerzo dentro del bloque (si lo cruza) */}
           {renderLunchOverlayInBlock(visibleIni, visibleFin, startPx)}
           <div className="psg-task-title" style={{ paddingLeft: continuaDeAntes ? 14 : 0, paddingRight: continuaDespues ? 14 : 0 }}>
-            {r.es_correctivo && "🚨 "}{r.orden_trabajo?.ot ? `OT-${r.orden_trabajo.ot}` : "S/OT"} {r.operacion_codigo}
+            {r.es_correctivo && "🚨 "}{r.orden_trabajo?.ot ? `OT-${r.orden_trabajo.ot}` : "S/OT"}
             {hasConflict && <WarningFilled style={{ marginLeft: 4 }} />}
           </div>
-          <div className="psg-task-sub" style={{ paddingLeft: continuaDeAntes ? 14 : 0, paddingRight: continuaDespues ? 14 : 0 }}>{r.descripcion}</div>
+          <div className="psg-task-sub" style={{ paddingLeft: continuaDeAntes ? 14 : 0, paddingRight: continuaDespues ? 14 : 0 }}>{r.componente} — {r.descripcion}</div>
+          {r.comentario && (
+            <div className="psg-task-cmt" style={{ paddingLeft: continuaDeAntes ? 14 : 0, paddingRight: continuaDespues ? 14 : 0 }}>💬 {r.comentario}</div>
+          )}
           {/* Resize handle: solo en vista Operarios (Equipos es solo lectura),
               si la tarea NO continúa a la próxima semana y NO está publicada
               (publicada = plan congelado). */}
@@ -1943,8 +1948,9 @@ export default function ProgramacionSemanalPage() {
                 const t = rows.find((r) => r.id === drag.taskId) ?? allRows.find((r) => r.id === drag.taskId);
                 return (
                   <>
-                    <div className="psg-task-title">OT-{t?.orden_trabajo?.ot ?? t?.ot_id} {t?.operacion_codigo}</div>
-                    <div className="psg-task-sub">{t?.descripcion}</div>
+                    <div className="psg-task-title">OT-{t?.orden_trabajo?.ot ?? t?.ot_id}</div>
+                    <div className="psg-task-sub">{t?.componente} — {t?.descripcion}</div>
+                    {t?.comentario && <div className="psg-task-cmt">💬 {t.comentario}</div>}
                   </>
                 );
               })()}
@@ -2510,6 +2516,10 @@ export default function ProgramacionSemanalPage() {
         }
         .psg-task-sub {
           font-size: 10px; opacity: 0.95;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .psg-task-cmt {
+          font-size: 10px; opacity: 0.9; font-style: italic;
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
 
