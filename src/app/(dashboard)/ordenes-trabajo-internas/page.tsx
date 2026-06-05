@@ -402,14 +402,13 @@ export default function OrdenesTrabajoInternasPage() {
       },
     },
     {
-      // Equipo/Maquinaria asociada — columna separada para que sea visible aún
-      // cuando el área del taller también está seteada (las OTs nuevas tienen
-      // ambos campos). Muestra el código del equipo con tooltip de descripción.
-      key: "equipo", title: "Equipo", width: 140, ellipsis: true,
+      // Equipo/Maquinaria asociada — muestra el nombre (descripción) del equipo;
+      // el código queda en el tooltip al hacer hover para auditoría.
+      key: "equipo", title: "Equipo", width: 220, ellipsis: true,
       ...filtroPorColumna<OTInternaRow>(rows, "equipo_codigo"),
       render: (_: unknown, r: OTInternaRow) =>
         r.equipo
-          ? <Tooltip title={r.equipo.descripcion}><b>{r.equipo.codigo}</b></Tooltip>
+          ? <Tooltip title={r.equipo.codigo}><span>{r.equipo.descripcion}</span></Tooltip>
           : <Text type="secondary">—</Text>,
     },
     {
@@ -417,8 +416,11 @@ export default function OrdenesTrabajoInternasPage() {
       render: (v: string | null) => v ?? "-",
     },
     {
-      key: "planta", title: "Planta", width: 90,
-      render: (_: unknown, r: OTInternaRow) => r.planta?.codigo ?? "-",
+      key: "planta", title: "Planta", width: 130,
+      render: (_: unknown, r: OTInternaRow) =>
+        r.planta
+          ? <Tooltip title={r.planta.codigo}><span>{r.planta.nombre}</span></Tooltip>
+          : "-",
     },
     {
       key: "prioridad", title: "Prio.", width: 70, align: "center",
@@ -467,8 +469,11 @@ export default function OrdenesTrabajoInternasPage() {
         : "-",
     },
     {
-      key: "estrategia", title: "Estrategia", width: 130,
-      render: (_: unknown, r: OTInternaRow) => r.estrategia?.codigo ?? "-",
+      key: "estrategia", title: "Estrategia", width: 200, ellipsis: true,
+      render: (_: unknown, r: OTInternaRow) =>
+        r.estrategia
+          ? <Tooltip title={r.estrategia.codigo}><span>{r.estrategia.descripcion}</span></Tooltip>
+          : "-",
     },
     {
       key: "task_list", title: "Task list", dataIndex: "task_list", width: 200, ellipsis: true,

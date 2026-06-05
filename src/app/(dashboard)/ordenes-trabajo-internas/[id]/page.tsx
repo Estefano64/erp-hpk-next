@@ -400,9 +400,12 @@ function DetalleTab({ ot, editing, form, catalogos }: {
         <Descriptions column={{ xs: 1, sm: 2, md: 3 }} bordered size="small">
           <Descriptions.Item label="Tipo">{ot.tipo_ot_interna?.nombre ?? "—"}</Descriptions.Item>
           <Descriptions.Item label="Área del taller">
-            {ot.area_taller
-              ? areaTallerLabel(ot.area_taller)
-              : ot.equipo ? `${ot.equipo.codigo} — ${ot.equipo.descripcion}` : "—"}
+            {ot.area_taller ? areaTallerLabel(ot.area_taller) : "—"}
+          </Descriptions.Item>
+          <Descriptions.Item label="Equipo">
+            {ot.equipo
+              ? <span><b>{ot.equipo.descripcion}</b> <span style={{ color: brand.textSecondary }}>({ot.equipo.codigo})</span></span>
+              : "—"}
           </Descriptions.Item>
           <Descriptions.Item label="Planta">{ot.planta?.nombre ?? "—"}</Descriptions.Item>
           <Descriptions.Item label="Prioridad">{ot.prioridad_atencion?.nombre ?? "—"}</Descriptions.Item>
