@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   Alert, Button, Card, Tag, Space, Spin, Tabs, Row, Col, Form, Input, Select,
@@ -90,6 +90,14 @@ const PRIORIDAD_COLOR: Record<string, string> = {
 export default function OTInternaDetallePage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  // Tab inicial: lee `?tab=` del URL — permite linkear directo a un tab
+  // (ej. desde la columna "Reqs" de la tabla principal → ?tab=requerimientos).
+  const searchParams = useSearchParams();
+  const tabInicial = (() => {
+    const t = searchParams.get("tab");
+    const validos = new Set(["detalle", "tareas", "requerimientos", "costos", "adjuntos", "historial"]);
+    return t && validos.has(t) ? t : "detalle";
+  })();
   const { message } = App.useApp();
   const otId = Number(params?.id);
   const [form] = Form.useForm<EditValues>();
@@ -336,7 +344,7 @@ export default function OTInternaDetallePage() {
       )}
 
       <Tabs
-        defaultActiveKey="detalle"
+        defaultActiveKey={tabInicial}
         items={[
           {
             key: "detalle",

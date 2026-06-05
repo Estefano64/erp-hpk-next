@@ -453,15 +453,18 @@ function SortableResizableTitle(props: SortableResizableTitleProps) {
         left: 0,
         top: 0,
         bottom: 0,
-        width: 14,
-        zIndex: 2,
+        width: 16,
+        zIndex: 3,
         cursor: sort.isDragging ? "grabbing" : "grab",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        color: "rgba(0,0,0,0.25)",
+        color: "rgba(0,0,0,0.35)",
         fontSize: 11,
-        opacity: 0,
+        // Opacidad baja idle (era 0 = invisible). 0.25 es suficiente para que
+        // se vea el handle en columnas estrechas como fechas. Sube a 1 al hover
+        // del header via CSS global.
+        opacity: 0.25,
         transition: "opacity 0.15s",
       }}
       className="col-drag-handle"
