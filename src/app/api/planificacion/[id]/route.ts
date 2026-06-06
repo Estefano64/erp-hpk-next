@@ -26,6 +26,10 @@ const UpdateSchema = z.object({
   observaciones: z.string().trim().optional().nullable(),
   comentario: z.string().trim().optional().nullable(),
   semana_plan: z.string().trim().optional().nullable(),
+  // Volver una tarea a borrador (publicado=false). Publicar/reabrir en lote se hace
+  // por /publicar; acá se permite limpiar el flag al re-ubicar una tarea del pool
+  // que lo arrastraba sin agenda (ver persistMove en Programación Semanal).
+  publicado: z.boolean().optional(),
   // Cambiar la Parte/Tarea de una tarea existente (desde el detalle de OT). Son
   // campos "virtuales": se resuelven a las columnas componente/operacion_codigo/
   // descripcion antes del update (no se mandan tal cual a Prisma).

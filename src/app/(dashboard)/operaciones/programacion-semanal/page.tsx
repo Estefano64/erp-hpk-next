@@ -644,6 +644,10 @@ export default function ProgramacionSemanalPage() {
       else patch.tecnico = nuevoRecurso;
     }
     if (empujando) patch.empujar = true;
+    // Si la tarea venía del pool con el flag `publicado` colgado (sin agenda), al
+    // ubicarla pasa a ser borrador: el planner la republica cuando termine.
+    const reseteaPublicado = !!original.publicado && !original.fecha_inicio;
+    if (reseteaPublicado) patch.publicado = false;
 
     // Optimista: actualizo inmediatamente la UI
     const updated: Partial<PlanRow> = {
@@ -652,6 +656,7 @@ export default function ProgramacionSemanalPage() {
       semana_plan: semanaCodigo(inicioReal),
     };
     if (horasFaltantes) updated.horas_estimadas = "1";
+    if (reseteaPublicado) updated.publicado = false;
     if (nuevoRecurso !== undefined) {
       if (view === "equipo") updated.maquina = nuevoRecurso;
       else updated.tecnico = nuevoRecurso;
@@ -1125,9 +1130,14 @@ export default function ProgramacionSemanalPage() {
     // (la máquina sale del operario). Acá solo se visualiza la carga.
     if (view === "equipo") return;
     if (e.button !== 0) return; // solo click izquierdo
-    // Tarea publicada = plan congelado: no se mueve hasta reabrir la semana.
+    // Tarea publicada Y AGENDADA = plan congelado: no se mueve hasta reabrir la
+    // semana. Una tarea del pool (sin fecha) no es un plan congelado aunque arrastre
+    // el flag `publicado` (p.ej. quedó colgado de una importación): se puede asignar
+    // —y al asignarla se vuelve borrador (ver persistMove)—. Si no, una tarea
+    // publicada sin semana queda atascada: no se puede mover ni reabrir (no aparece
+    // en ningún carril semanal donde esté el botón Reabrir).
     const tDrag = rows.find((r) => r.id === taskId) ?? allRows.find((r) => r.id === taskId);
-    if (tDrag?.publicado) {
+    if (tDrag?.publicado && tDrag?.fecha_inicio) {
       messageApi.info("Tarea publicada. Reabrí la semana del operario para moverla.");
       return;
     }
