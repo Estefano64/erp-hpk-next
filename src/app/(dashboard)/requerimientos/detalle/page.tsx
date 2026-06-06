@@ -408,7 +408,14 @@ function RequerimientosDetalleInner() {
     // Filtro rapido
     if (filtroRapido === "listos_oc") {
       // Items APROBADOS aún sin OC, listos para crear orden de compra.
-      rows = rows.filter((r) => r.status_req === "APROBADO" && r.po_id == null);
+      // Excluye los que ya salieron del stock (CONSUMIDO_ALMACEN) — ya no
+      // necesitan OC, fueron entregados desde almacén interno.
+      rows = rows.filter(
+        (r) =>
+          r.status_req === "APROBADO" &&
+          r.po_id == null &&
+          r.status_oc !== "CONSUMIDO_ALMACEN",
+      );
     } else if (filtroRapido === "en_oc") {
       rows = rows.filter((r) => r.po_id != null);
     }

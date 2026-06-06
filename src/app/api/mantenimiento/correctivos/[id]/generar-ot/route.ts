@@ -54,12 +54,17 @@ export async function POST(
     // Resolver el código del tipo de OT interna "Correctiva". Buscamos por
     // nombre para no depender de un código fijo (cada deploy puede tener
     // un código distinto). Si no existe, devolvemos error claro.
+    // El tipo "correctivo" se renombró a "No estratégica" en el catálogo.
+    // Buscamos primero por el código actual (NO_ESTRATEGICA), después por los
+    // viejos (CORRECTIVA / CORR) por compat con deploys que no migraron.
     const tipoCorrectiva = await prisma.tipoOTInterna.findFirst({
       where: {
         activo: true,
         OR: [
+          { codigo: { equals: "NO_ESTRATEGICA", mode: "insensitive" } },
           { codigo: { equals: "CORRECTIVA", mode: "insensitive" } },
           { codigo: { equals: "CORR", mode: "insensitive" } },
+          { nombre: { contains: "no estrat", mode: "insensitive" } },
           { nombre: { contains: "correctiv", mode: "insensitive" } },
         ],
       },
@@ -67,7 +72,7 @@ export async function POST(
     });
     if (!tipoCorrectiva) {
       return NextResponse.json(
-        { error: "No se encontró el tipo de OT interna 'Correctiva' en el catálogo" },
+        { error: "No se encontró el tipo de OT interna 'No estratégica' (antes 'Correctiva') en el catálogo" },
         { status: 500 },
       );
     }

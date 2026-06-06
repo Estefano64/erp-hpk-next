@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
     // nextNumeroOTInterna) para serializar generaciones concurrentes.
     const created = await prisma.$transaction(async (tx) => {
       const ot = await nextNumeroOTInterna(tx);
-      return tx.ordenTrabajoInterna.create({
+      const nueva = await tx.ordenTrabajoInterna.create({
         data: {
           ot,
           anio: ot % 100,
@@ -119,6 +119,7 @@ export async function POST(req: NextRequest) {
           recursos_status_codigo: body.recursos_status_codigo || "En revision procesos",
           asignado_a: body.asignado_a || null,
           comentarios: body.comentarios || null,
+          solicitud_mantenimiento: body.solicitud_mantenimiento === true,
         },
         include: {
           equipo: { select: { codigo: true, descripcion: true } },
@@ -128,6 +129,17 @@ export async function POST(req: NextRequest) {
           recursos_status: true,
         },
       });
+
+      // Registro inicial en historial. Mismo patrón que OT externa.
+      await tx.oTHistorial.create({
+        data: {
+          orden_trabajo_interna_id: nueva.id,
+          tipo_operacion: "CREACION",
+          descripcion: `OT interna creada: ${nueva.descripcion?.slice(0, 100) ?? ""}`,
+          usuario: usuarioCrea,
+        },
+      });
+      return nueva;
     });
 
     return NextResponse.json({ data: created }, { status: 201 });

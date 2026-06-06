@@ -201,7 +201,13 @@ export default function OrdenesTrabajoPage() {
   // Paginación server-side: los filtros de columna y el orden se mandan al
   // server. `columnFilters` = estado de filtros de la tabla (key → valores),
   // `sorter` = columna+orden activos, `facets` = opciones de los dropdowns enum.
-  const [columnFilters, setColumnFilters] = usePersistedState<Record<string, Key[] | null>>("ot-list-column-filters", {});
+  // Default inicial: filtrar por OT Status "Abierta" — el usuario casi siempre
+  // entra para trabajar con OTs activas. Si después aplica/quita filtros, su
+  // selección queda persistida y se respeta en la próxima entrada.
+  const [columnFilters, setColumnFilters] = usePersistedState<Record<string, Key[] | null>>(
+    "ot-list-column-filters",
+    { ot_status: ["Abierta"] },
+  );
   // Sort NO se persiste (decisión: F5 vuelve al sort default).
   const [sorter, setSorter] = useState<{ field: string | null; order: "ascend" | "descend" | null }>({ field: null, order: null });
   const [facets, setFacets] = useState<Record<string, { value: string; text: string }[]>>({});

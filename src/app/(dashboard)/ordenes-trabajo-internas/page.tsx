@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   Typography, Table, Button, Input, Select, Space, Tag, Modal, Form,
-  Row, Col, Card, App, DatePicker, Popconfirm, Tooltip, Switch,
+  Row, Col, Card, App, DatePicker, Popconfirm, Tooltip, Switch, Checkbox,
 } from "antd";
 import {
   ToolOutlined, PlusOutlined, ReloadOutlined, SearchOutlined,
@@ -89,6 +89,9 @@ interface OTInternaRow {
   fecha_cierre: string | null;
   asignado_a: string | null;
   comentarios: string | null;
+  // Flag para diferenciar las OTs que nacieron de una solicitud de mantenimiento
+  // (un operativo pidió intervención) vs OTs creadas por planificación regular.
+  solicitud_mantenimiento: boolean;
   usuario_crea: string | null;
   version: number;
   equipo: { codigo: string; descripcion: string } | null;
@@ -116,6 +119,7 @@ interface FormValues {
   user_status_codigo?: string;
   asignado_a?: string;
   comentarios?: string;
+  solicitud_mantenimiento?: boolean;
   fecha_inicio_plan?: Dayjs | null;
   fecha_fin_plan?: Dayjs | null;
 }
@@ -137,6 +141,13 @@ export default function OrdenesTrabajoInternasPage() {
   // Watch del equipo seleccionado — para filtrar el catálogo task_list por
   // máquina (los preventivos típicos son específicos por máquina).
   const equipoSel = Form.useWatch("equipo_codigo", form);
+  // Watch del check "solicitud de mantenimiento" — al togglearlo cambia el
+  // user_status automático y el bloqueo de fechas pasadas en planificación.
+  const solicitudMttoSel = Form.useWatch("solicitud_mantenimiento", form);
+  // Watch de fecha_inicio_plan — para que el DatePicker de fin no permita
+  // elegir una fecha anterior al inicio.
+  const inicioPlanSel = Form.useWatch("fecha_inicio_plan", form);
+  // `bloquearFechasPasadas` se computa más abajo, después de declarar `editing`.
   // Tipo de OT interna seleccionado: si es correctiva no aplica Estrategia
   // ni Task list (esos campos son del flujo preventivo). El cálculo de
   // `esCorrectiva` se hace más abajo, después de declarar `tiposOTInterna`.
@@ -153,20 +164,37 @@ export default function OrdenesTrabajoInternasPage() {
   const [search, setSearch] = usePersistedState<string>("oti-list-search", "");
   const [filterTipo, setFilterTipo] = usePersistedState<string | undefined>("oti-list-tipo", undefined);
   const [filterEquipo, setFilterEquipo] = usePersistedState<string | undefined>("oti-list-equipo", undefined);
+  // Filtro de OT Status — default "Abierta" (el usuario casi siempre entra a
+  // trabajar con OTs activas). Su selección se persiste, así que si lo cambia
+  // a otra cosa, en la próxima entrada se respeta lo que dejó.
+  const [otStatusFilter, setOtStatusFilter] = usePersistedState<string[] | null>(
+    "oti-list-ot-status-filter",
+    ["Abierta"],
+  );
   const [saving, setSaving] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<OTInternaRow | null>(null);
+  // Derivación: ¿el estado al guardar va a ser PLANIFICADO o PROGRAMADO/REPROGRAMADO?
+  // En ese caso bloqueamos fechas pasadas. EN_REVISION (solicitud) permite fechas
+  // pasadas porque el operativo puede estar registrando una falla que ya empezó.
+  const bloquearFechasPasadas = !solicitudMttoSel
+    || editing?.user_status?.codigo === "PROGRAMADO"
+    || editing?.user_status?.codigo === "REPROGRAMADO";
 
   // Catálogos
   const [tiposOTInterna, setTiposOTInterna] = useState<CatalogOption[]>([]);
   // Es correctiva cuando el código o nombre del tipo contiene "correctiv".
   // Necesita estar acá (después de declarar tiposOTInterna) porque depende
   // del catálogo cargado para resolver el nombre desde el código.
+  // El flujo "no estratégico" (antes "correctivo") es lo que el negocio llama
+  // así porque NO tiene estrategia ni task_list — son OTs improvisadas que se
+  // crean para resolver una falla. Aceptamos los códigos viejos por compat con
+  // deploys que no migraron y por el flujo correctivo de mantenimiento.
   const esCorrectiva = (() => {
     const cod = (tipoOTInternaSel ?? "").toString().toUpperCase();
-    if (cod === "CORRECTIVA" || cod === "CORR") return true;
+    if (cod === "NO_ESTRATEGICA" || cod === "CORRECTIVA" || cod === "CORR") return true;
     const nombre = tiposOTInterna.find((t) => t.codigo === tipoOTInternaSel)?.nombre ?? "";
-    return /correctiv/i.test(nombre);
+    return /correctiv|no\s*estrat[ée]g/i.test(nombre);
   })();
   const [equipos, setEquipos] = useState<EquipoOption[]>([]);
   const [plantas, setPlantas] = useState<CatalogOption[]>([]);
@@ -293,6 +321,7 @@ export default function OrdenesTrabajoInternasPage() {
       user_status_codigo: row.user_status?.codigo,
       asignado_a: row.asignado_a ?? undefined,
       comentarios: row.comentarios ?? undefined,
+      solicitud_mantenimiento: row.solicitud_mantenimiento,
       fecha_inicio_plan: row.fecha_inicio_plan ? dayjs(row.fecha_inicio_plan) : null,
       fecha_fin_plan: row.fecha_fin_plan ? dayjs(row.fecha_fin_plan) : null,
     });
@@ -303,8 +332,25 @@ export default function OrdenesTrabajoInternasPage() {
     try {
       const values = await form.validateFields();
       setSaving(true);
+
+      // Auto-asignación del User Status (ya no se muestra en el form):
+      //   - solicitud_mantenimiento = true → EN_REVISION
+      //   - solicitud_mantenimiento = false → PLANIFICADO
+      // Al editar, respetamos estados avanzados (PROGRAMADO/REPROGRAMADO) que
+      // vienen de otros flujos (planificación) — no los sobreescribimos por
+      // cambiar el check.
+      const checkSol = values.solicitud_mantenimiento === true;
+      const statusAuto = checkSol ? "EN_REVISION" : "PLANIFICADO";
+      const estadoActual = editing?.user_status?.codigo;
+      const userStatusFinal = !editing
+        ? statusAuto
+        : (estadoActual === "PROGRAMADO" || estadoActual === "REPROGRAMADO")
+          ? estadoActual // no tocamos estados avanzados
+          : statusAuto;
+
       const payload = {
         ...values,
+        user_status_codigo: userStatusFinal,
         fecha_inicio_plan: values.fecha_inicio_plan ? values.fecha_inicio_plan.toISOString() : null,
         fecha_fin_plan: values.fecha_fin_plan ? values.fecha_fin_plan.toISOString() : null,
         ...(editing ? { version: editing.version } : {}),
@@ -391,7 +437,13 @@ export default function OrdenesTrabajoInternasPage() {
       render: (_: unknown, r: OTInternaRow) => {
         const t = r.tipo_ot_interna?.codigo;
         if (!t) return "-";
-        const color = t === "PREVENTIVA" ? "blue" : "orange";
+        // Color por tipo:
+        //   ESTRATEGICA (antes PREVENTIVA) → azul
+        //   NO_ESTRATEGICA (antes CORRECTIVA) → naranja
+        // Aceptamos los códigos viejos por compat.
+        const color = t === "ESTRATEGICA" || t === "PREVENTIVA"
+          ? "blue"
+          : "orange";
         return <Tag color={color}>{r.tipo_ot_interna?.nombre}</Tag>;
       },
     },
@@ -448,6 +500,18 @@ export default function OrdenesTrabajoInternasPage() {
     },
     {
       key: "ot_status", title: "OT Status", width: 110,
+      // Filtros derivados de los valores únicos cargados (que vienen del
+      // catálogo OtStatus vía include en el endpoint). Por defecto seleccionado
+      // "Abierta" — ver `otStatusFilter` arriba.
+      filters: [...new Set(rows.map((r) => r.ot_status?.codigo).filter(Boolean) as string[])]
+        .sort()
+        .map((c) => {
+          const nombre = rows.find((r) => r.ot_status?.codigo === c)?.ot_status?.nombre ?? c;
+          return { text: nombre, value: c };
+        }),
+      filterMultiple: true,
+      filteredValue: otStatusFilter,
+      onFilter: (value, r) => r.ot_status?.codigo === value,
       render: (_: unknown, r: OTInternaRow) => r.ot_status?.nombre
         ? <Tag color={r.ot_status.codigo === "Abierta" ? "processing" : r.ot_status.codigo === "Cerrada" ? "success" : "default"}>
             {r.ot_status.nombre}
@@ -466,6 +530,24 @@ export default function OrdenesTrabajoInternasPage() {
       key: "usuario_crea", title: "Creado por", dataIndex: "usuario_crea", width: 150, ellipsis: true,
       ...filtroPorColumna<OTInternaRow>(rows, "usuario_crea"),
       render: (v: string | null) => v ?? <Text type="secondary">—</Text>,
+    },
+    {
+      // Flag "Solicitud de mantenimiento": filtrable Sí/No. Tag verde si está
+      // marcado, dash si no. Permite ver de un vistazo qué OTs nacieron de una
+      // solicitud externa (no de planificación).
+      key: "solicitud_mantenimiento", title: "Solicitud Mtto", width: 130, align: "center",
+      filters: [
+        { text: "Sí — solicitudes", value: "true" },
+        { text: "No — planificadas", value: "false" },
+      ],
+      filterMultiple: false,
+      onFilter: (value, r) => String(!!r.solicitud_mantenimiento) === String(value),
+      sorter: (a: OTInternaRow, b: OTInternaRow) =>
+        Number(b.solicitud_mantenimiento) - Number(a.solicitud_mantenimiento),
+      render: (_: unknown, r: OTInternaRow) =>
+        r.solicitud_mantenimiento
+          ? <Tag color="green">Sí</Tag>
+          : <Text type="secondary">—</Text>,
     },
     {
       key: "comentarios", title: "Comentarios", dataIndex: "comentarios", width: 220, ellipsis: true,
@@ -678,6 +760,12 @@ export default function OrdenesTrabajoInternasPage() {
             },
             style: { cursor: "pointer" },
           })}
+          // Capturamos el cambio del filtro ot_status para persistirlo. Otros
+          // filtros (in-memory de AntD) no necesitan estado controlado.
+          onChange={(_p, filters) => {
+            const next = filters?.ot_status ?? null;
+            setOtStatusFilter(next as string[] | null);
+          }}
           pagination={paginacionEstandar({
             current: page,
             pageSize,
@@ -708,14 +796,15 @@ export default function OrdenesTrabajoInternasPage() {
                 rules={[{ required: true, message: "Requerido" }]}
               >
                 <Select showSearch optionFilterProp="label"
-                  placeholder="Correctiva / Preventiva"
+                  placeholder="Estratégica / No estratégica"
                   options={tiposOTInterna.map((t) => ({ value: t.codigo, label: t.nombre }))}
                   onChange={(value) => {
-                    // Si se cambia a Correctiva, limpiar estrategia y task_list
-                    // (campos exclusivos del flujo preventivo).
+                    // Si se cambia a "No estratégica" (antes "Correctiva"),
+                    // limpiar estrategia y task_list (campos exclusivos del
+                    // flujo estratégico/preventivo). Aceptamos códigos viejos.
                     const nombre = tiposOTInterna.find((t) => t.codigo === value)?.nombre ?? "";
                     const codUp = (value ?? "").toString().toUpperCase();
-                    if (codUp === "CORRECTIVA" || codUp === "CORR" || /correctiv/i.test(nombre)) {
+                    if (codUp === "NO_ESTRATEGICA" || codUp === "CORRECTIVA" || codUp === "CORR" || /correctiv|no\s*estrat[ée]g/i.test(nombre)) {
                       form.setFieldsValue({ estrategia_id: undefined, task_list: undefined });
                     }
                   }}
@@ -819,23 +908,48 @@ export default function OrdenesTrabajoInternasPage() {
                 </Form.Item>
               </Col>
             )}
-            <Col xs={12} md={6}>
-              <Form.Item name="user_status_codigo" label="User Status">
-                <Select showSearch optionFilterProp="label"
-                  allowClear
-                  placeholder="Opcional"
-                  options={userStatuses.map((u) => ({ value: u.codigo, label: u.nombre }))}
+            {/* User Status NO se muestra al usuario — se asigna automáticamente:
+                 - PLANIFICADO si la OT no es solicitud de mantenimiento
+                 - EN_REVISION si lo es
+                El estado avanzado (PROGRAMADO / REPROGRAMADO) se respeta al editar. */}
+            <Col xs={12} md={12}>
+              <Form.Item name="fecha_inicio_plan" label="Inicio planificado">
+                <DatePicker
+                  showTime
+                  format="DD/MM/YY HH:mm"
+                  style={{ width: "100%" }}
+                  // Bloqueo de fechas pasadas: aplica cuando la OT quedará en
+                  // PLANIFICADO/PROGRAMADO/REPROGRAMADO. No aplica si está en
+                  // EN_REVISION (solicitud de mantenimiento) — esas pueden
+                  // requerir registrar fechas reales de inicio aunque sean
+                  // pasadas. `disabledDate` recibe Dayjs.
+                  disabledDate={(current) => bloquearFechasPasadas
+                    ? current && current.isBefore(dayjs().startOf("day"))
+                    : false
+                  }
                 />
               </Form.Item>
             </Col>
             <Col xs={12} md={12}>
-              <Form.Item name="fecha_inicio_plan" label="Inicio planificado">
-                <DatePicker showTime format="DD/MM/YY HH:mm" style={{ width: "100%" }} />
-              </Form.Item>
-            </Col>
-            <Col xs={12} md={12}>
               <Form.Item name="fecha_fin_plan" label="Fin planificado">
-                <DatePicker showTime format="DD/MM/YY HH:mm" style={{ width: "100%" }} />
+                <DatePicker
+                  showTime
+                  format="DD/MM/YY HH:mm"
+                  style={{ width: "100%" }}
+                  disabledDate={(current) => {
+                    if (!current) return false;
+                    // No permitir fin antes del inicio (si hay inicio seteado).
+                    if (inicioPlanSel && current.isBefore(inicioPlanSel.startOf("day"))) {
+                      return true;
+                    }
+                    // Si la OT termina en estado planificado/programado, tampoco
+                    // permitir fechas pasadas.
+                    if (bloquearFechasPasadas && current.isBefore(dayjs().startOf("day"))) {
+                      return true;
+                    }
+                    return false;
+                  }}
+                />
               </Form.Item>
             </Col>
             {!esCorrectiva && (
@@ -925,6 +1039,19 @@ export default function OrdenesTrabajoInternasPage() {
             <Col span={24}>
               <Form.Item name="comentarios" label="Comentarios">
                 <Input.TextArea rows={3} maxLength={2000} placeholder="Notas / instrucciones / contexto adicional" />
+              </Form.Item>
+            </Col>
+            <Col span={24}>
+              {/* Flag para marcar OTs que nacen de una solicitud de mantenimiento
+                  (un operativo pide intervención). Sirve para filtrar después en
+                  la tabla. valuePropName="checked" porque es un Checkbox. */}
+              <Form.Item name="solicitud_mantenimiento" valuePropName="checked" noStyle>
+                <Checkbox>
+                  Solicitud de mantenimiento{" "}
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    (marcala si esta OT nace de una solicitud externa, no de planificación)
+                  </Text>
+                </Checkbox>
               </Form.Item>
             </Col>
           </Row>
