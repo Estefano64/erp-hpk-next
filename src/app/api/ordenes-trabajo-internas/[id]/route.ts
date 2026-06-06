@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getAuditUser, isAdmin } from "@/lib/audit";
+import { getAuditUser, isAdmin, auditOTInternaChange, AUDIT_OT_INTERNA_SELECT_FIELDS } from "@/lib/audit";
 import { deleteObject } from "@/lib/r2-helpers";
 
 type Params = { params: Promise<{ id: string }> };
@@ -79,9 +79,11 @@ export async function PUT(req: NextRequest, { params }: Params) {
     data.version = { increment: 1 };
 
     const updated = await prisma.$transaction(async (tx) => {
-      // Snapshot previo para detectar qué campos cambiaron y describirlos.
+      // Snapshot previo CON LOS MISMOS CAMPOS auditados. Tenemos que pedirlos
+      // ANTES del update para diff. Usamos un select expandido con version+id.
       const previo = await tx.ordenTrabajoInterna.findUnique({
         where: { id: otId },
+        select: { id: true, version: true, ...AUDIT_OT_INTERNA_SELECT_FIELDS },
       });
       if (!previo) throw new Error("No encontrada");
 
@@ -96,33 +98,15 @@ export async function PUT(req: NextRequest, { params }: Params) {
         },
       });
 
-      // Registrar en historial: lista de campos cambiados. Si no cambia nada
-      // útil (ej solo se hizo PATCH sin diff real), no creamos el registro.
-      const cambios: string[] = [];
-      for (const k of Object.keys(data)) {
-        if (k === "version") continue;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const antes = (previo as any)[k];
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const ahora = (data as any)[k];
-        const antesStr = antes instanceof Date ? antes.toISOString() : antes ?? "—";
-        const ahoraStr = ahora instanceof Date ? ahora.toISOString() : ahora ?? "—";
-        if (String(antesStr) !== String(ahoraStr)) {
-          cambios.push(`${k}: "${antesStr}" → "${ahoraStr}"`);
-        }
-      }
-      if (cambios.length > 0) {
-        await tx.oTHistorial.create({
-          data: {
-            orden_trabajo_interna_id: otId,
-            tipo_operacion: "EDICION",
-            descripcion: cambios.length === 1
-              ? `Editado: ${cambios[0]}`
-              : `Editados ${cambios.length} campos:\n${cambios.join("\n")}`,
-            usuario: usuarioActualiza,
-          },
-        });
-      }
+      // Audit estructurado: un registro de historial por cada campo que cambió,
+      // con descripción legible "Campo: antes → ahora". Mismo patrón que OT externa.
+      await auditOTInternaChange(
+        tx,
+        otId,
+        previo as unknown as Record<string, unknown>,
+        u as unknown as Record<string, unknown>,
+        usuarioActualiza,
+      );
       return u;
     });
 

@@ -164,6 +164,13 @@ export default function OrdenesTrabajoInternasPage() {
   const [search, setSearch] = usePersistedState<string>("oti-list-search", "");
   const [filterTipo, setFilterTipo] = usePersistedState<string | undefined>("oti-list-tipo", undefined);
   const [filterEquipo, setFilterEquipo] = usePersistedState<string | undefined>("oti-list-equipo", undefined);
+  // Filtro de OT Status — default "Abierta" (el usuario casi siempre entra a
+  // trabajar con OTs activas). Su selección se persiste, así que si lo cambia
+  // a otra cosa, en la próxima entrada se respeta lo que dejó.
+  const [otStatusFilter, setOtStatusFilter] = usePersistedState<string[] | null>(
+    "oti-list-ot-status-filter",
+    ["Abierta"],
+  );
   const [saving, setSaving] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<OTInternaRow | null>(null);
@@ -493,6 +500,18 @@ export default function OrdenesTrabajoInternasPage() {
     },
     {
       key: "ot_status", title: "OT Status", width: 110,
+      // Filtros derivados de los valores únicos cargados (que vienen del
+      // catálogo OtStatus vía include en el endpoint). Por defecto seleccionado
+      // "Abierta" — ver `otStatusFilter` arriba.
+      filters: [...new Set(rows.map((r) => r.ot_status?.codigo).filter(Boolean) as string[])]
+        .sort()
+        .map((c) => {
+          const nombre = rows.find((r) => r.ot_status?.codigo === c)?.ot_status?.nombre ?? c;
+          return { text: nombre, value: c };
+        }),
+      filterMultiple: true,
+      filteredValue: otStatusFilter,
+      onFilter: (value, r) => r.ot_status?.codigo === value,
       render: (_: unknown, r: OTInternaRow) => r.ot_status?.nombre
         ? <Tag color={r.ot_status.codigo === "Abierta" ? "processing" : r.ot_status.codigo === "Cerrada" ? "success" : "default"}>
             {r.ot_status.nombre}
@@ -741,6 +760,12 @@ export default function OrdenesTrabajoInternasPage() {
             },
             style: { cursor: "pointer" },
           })}
+          // Capturamos el cambio del filtro ot_status para persistirlo. Otros
+          // filtros (in-memory de AntD) no necesitan estado controlado.
+          onChange={(_p, filters) => {
+            const next = filters?.ot_status ?? null;
+            setOtStatusFilter(next as string[] | null);
+          }}
           pagination={paginacionEstandar({
             current: page,
             pageSize,
