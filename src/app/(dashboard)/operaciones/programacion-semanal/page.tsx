@@ -2050,16 +2050,34 @@ export default function ProgramacionSemanalPage() {
                       // para siempre y "Reabrir" nunca aparecía.
                       const tasksSemana = tasks.filter(perteneceASemana);
                       if (tasksSemana.length === 0) return null;
-                      const pub = tasksSemana.every((t) => t.publicado);
+                      // Estado mixto: parte publicado / parte borrador (p.ej. se
+                      // publicó la semana y luego se agregaron tareas, o una quedó
+                      // publicada suelta). Antes el toggle era todo-o-nada y solo
+                      // ofrecía "Reabrir" si TODAS estaban publicadas; en mezcla
+                      // mostraba "Publicar" y dejaba trabada la tarea publicada (no
+                      // se podía reabrir ni sacar). Ahora: si hay alguna publicada
+                      // siempre se puede "Reabrir", y en mezcla se ofrecen ambas.
+                      const todasPub = tasksSemana.every((t) => t.publicado);
+                      const algunaPub = tasksSemana.some((t) => t.publicado);
+                      const mixta = algunaPub && !todasPub;
                       return (
                         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
-                          <Tag color={pub ? "success" : "default"} style={{ fontSize: 9, margin: 0, lineHeight: "14px" }}>
-                            {pub ? "Publicada" : "Borrador"}
+                          <Tag color={todasPub ? "success" : mixta ? "warning" : "default"} style={{ fontSize: 9, margin: 0, lineHeight: "14px" }}>
+                            {todasPub ? "Publicada" : mixta ? "Parcial" : "Borrador"}
                           </Tag>
                           {editMode && (
-                            <a style={{ fontSize: 10 }} onClick={() => publicarSemana(res.key, !pub)}>
-                              {pub ? "Reabrir" : "Publicar"}
-                            </a>
+                            <>
+                              {!todasPub && (
+                                <a style={{ fontSize: 10 }} onClick={() => publicarSemana(res.key, true)}>
+                                  Publicar
+                                </a>
+                              )}
+                              {algunaPub && (
+                                <a style={{ fontSize: 10 }} onClick={() => publicarSemana(res.key, false)}>
+                                  Reabrir
+                                </a>
+                              )}
+                            </>
                           )}
                         </div>
                       );
