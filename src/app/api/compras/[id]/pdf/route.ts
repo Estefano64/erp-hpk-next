@@ -20,7 +20,16 @@ export async function GET(_req: NextRequest, { params }: Params) {
         orden_trabajo: { select: { ot: true, tipo_codigo: true } },
         ot_repuestos: {
           include: {
-            material: { select: { codigo: true, descripcion: true, np: true, unidad_medida_codigo: true } },
+            // `fabricante.nombre` se usa solo en este endpoint para limpiar la
+            // descripción del PDF: si la `descripcion` del material termina con
+            // ", {fabricante}", se quita ese sufijo (decisión del user — el
+            // dato sigue intacto en la BD, solo cambia el render de la OC).
+            material: {
+              select: {
+                codigo: true, descripcion: true, np: true, unidad_medida_codigo: true,
+                fabricante: { select: { nombre: true } },
+              },
+            },
             orden_trabajo: { select: { ot: true, tipo_codigo: true } },
             // Para OCs derivadas de OT interna — el header de la plantilla
             // debe mostrar el código OIXXXXYY y el área del taller.
@@ -43,6 +52,20 @@ export async function GET(_req: NextRequest, { params }: Params) {
     const fmtDate = (d: Date | string | null | undefined) => {
       if (!d) return "";
       return new Date(d).toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "numeric" });
+    };
+
+    // Limpia la descripción del material para la plantilla de OC: si termina
+    // con ", {fabricante}" (insensible a mayúsculas/espacios), quita ese
+    // sufijo. La descripción almacenada en BD suele tener formato
+    // "{nombre}, {N/P}, {FABRICANTE}" — en la OC el fabricante es ruido
+    // visual (no aporta al proveedor que recibe el documento). NO modifica
+    // la BD, solo el render del HTML.
+    const quitarFabricanteDeDesc = (desc: string, fab?: string | null) => {
+      const d = desc.trim();
+      const f = (fab ?? "").trim();
+      if (!f) return d;
+      const re = new RegExp(`\\s*,\\s*${f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`, "i");
+      return d.replace(re, "").trim();
     };
 
     const items = compra.ot_repuestos as typeof compra.ot_repuestos;
@@ -130,7 +153,8 @@ export async function GET(_req: NextRequest, { params }: Params) {
     const MIN_ROWS = Math.max(5, items.length);
     const itemsRows: string[] = [];
     items.forEach((r: Item, idx: number) => {
-      const descripcion = r.material?.descripcion ?? r.descripcion ?? r.texto ?? "";
+      const descCruda = r.material?.descripcion ?? r.descripcion ?? r.texto ?? "";
+      const descripcion = quitarFabricanteDeDesc(descCruda, r.material?.fabricante?.nombre);
       const codigo = r.material?.codigo ?? r.material_codigo ?? "";
       const np = r.material?.np ?? "";
       const um = r.material?.unidad_medida_codigo ?? r.unidad_medida ?? "UN";

@@ -4,7 +4,12 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { parseDateOnly } from "@/lib/dates";
 
-const ESTADOS_VALIDOS = ["BORRADOR", "COMPLETADA", "PENDIENTE_APROBACION", "APROBADA", "RECHAZADA"] as const;
+// Flujo de la hoja de evaluación:
+//   BORRADOR ──[solicitar]──▶ PENDIENTE_APROBACION ──[aprobar/rechazar]──▶ APROBADA / RECHAZADA
+//                                                      [reabrir]──▶ BORRADOR
+// El estado "COMPLETADA" se eliminó (era un intermedio confuso entre BORRADOR
+// y PENDIENTE_APROBACION). Los registros antiguos se migraron a BORRADOR.
+const ESTADOS_VALIDOS = ["BORRADOR", "PENDIENTE_APROBACION", "APROBADA", "RECHAZADA"] as const;
 
 // GET — listar evaluaciones (filtro por ot_id + paginación)
 export async function GET(req: NextRequest) {
@@ -68,8 +73,12 @@ export async function POST(req: NextRequest) {
       orderBy: { updatedAt: "desc" },
     });
 
-    const data = {
-      ot_id: d.ot_id,
+    // Campos comunes a create + update. El `estado` se trata aparte:
+    //   - En create: usa el body o cae a "BORRADOR".
+    //   - En update: NO se toca — el estado solo se modifica por las acciones
+    //     del endpoint /revision (solicitar/aprobar/rechazar/reabrir). Guardar
+    //     ediciones de campos no debería retroceder un estado avanzado.
+    const dataComun = {
       modelo_evaluacion: d.modelo_evaluacion,
       sistema_medicion: d.sistema_medicion || "Metrico",
       fecha_evaluacion: parseDateOnly(d.fecha_evaluacion),
@@ -78,12 +87,16 @@ export async function POST(req: NextRequest) {
       datos_formulario: (d.datos_formulario ?? {}) as Prisma.InputJsonValue,
       resultado_general: d.resultado_general || null,
       recomendaciones_general: d.recomendaciones_general || null,
-      estado: d.estado ?? "BORRADOR",
     };
 
     const record = existing
-      ? await prisma.evaluacionTecnica.update({ where: { id: existing.id }, data })
-      : await prisma.evaluacionTecnica.create({ data });
+      ? await prisma.evaluacionTecnica.update({
+          where: { id: existing.id },
+          data: dataComun,
+        })
+      : await prisma.evaluacionTecnica.create({
+          data: { ...dataComun, ot_id: d.ot_id, estado: d.estado ?? "BORRADOR" },
+        });
 
     return NextResponse.json({ data: record }, { status: existing ? 200 : 201 });
   } catch (error) {

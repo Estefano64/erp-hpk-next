@@ -28,7 +28,6 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   ClockCircleOutlined,
-  FileDoneOutlined,
   SendOutlined,
   EditOutlined,
 } from "@ant-design/icons";
@@ -83,7 +82,6 @@ interface Evaluacion {
 
 const estadoColor: Record<string, string> = {
   BORRADOR: "default",
-  COMPLETADA: "blue",
   PENDIENTE_APROBACION: "gold",
   APROBADA: "green",
   RECHAZADA: "red",
@@ -91,7 +89,6 @@ const estadoColor: Record<string, string> = {
 
 const estadoLabel: Record<string, string> = {
   BORRADOR: "Borrador",
-  COMPLETADA: "Completada",
   PENDIENTE_APROBACION: "Pendiente Aprobación",
   APROBADA: "Aprobada",
   RECHAZADA: "Rechazada",
@@ -99,7 +96,6 @@ const estadoLabel: Record<string, string> = {
 
 const estadoIcon: Record<string, React.ReactNode> = {
   BORRADOR: <EditOutlined />,
-  COMPLETADA: <FileDoneOutlined />,
   PENDIENTE_APROBACION: <ClockCircleOutlined />,
   APROBADA: <CheckCircleOutlined />,
   RECHAZADA: <CloseCircleOutlined />,
@@ -242,7 +238,6 @@ export default function EvaluacionesPage() {
       width: 180,
       filters: [
         { text: "Borrador", value: "BORRADOR" },
-        { text: "Completada", value: "COMPLETADA" },
         { text: "Pendiente Aprobación", value: "PENDIENTE_APROBACION" },
         { text: "Aprobada", value: "APROBADA" },
         { text: "Rechazada", value: "RECHAZADA" },
@@ -331,7 +326,7 @@ export default function EvaluacionesPage() {
               onClick={() => router.push(`/ordenes-trabajo/${r.ot_id}/evaluacion`)}
             />
           </Tooltip>
-          {(r.estado === "BORRADOR" || r.estado === "COMPLETADA" || r.estado === "RECHAZADA") && (
+          {(r.estado === "BORRADOR" || r.estado === "RECHAZADA") && (
             <Tooltip title="Enviar a revisión">
               <Button
                 type="text"
@@ -473,7 +468,6 @@ export default function EvaluacionesPage() {
           options={[
             { value: "__all", label: "Todos" },
             { value: "BORRADOR", label: "Borrador" },
-            { value: "COMPLETADA", label: "Completada" },
             { value: "PENDIENTE_APROBACION", label: "Pendiente Aprobación" },
             { value: "APROBADA", label: "Aprobada" },
             { value: "RECHAZADA", label: "Rechazada" },
