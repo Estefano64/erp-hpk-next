@@ -100,6 +100,10 @@ interface OTRecord {
   base_metalica: { nombre: string } | null;
   usuario_crea: string | null;
   fecha_creacion: string | null;
+  // Cotización — monto + divisa. Antes era export-only; ahora aparece en la
+  // tabla como columna "Monto Cotizado" (decisión del usuario).
+  monto_cotizacion: string | number | null;
+  moneda_cotizacion_codigo: string | null;
   // Estado de la hoja de evaluación técnica (último registro). null = sin
   // evaluación todavía.
   evaluaciones_tecnicas?: { estado: string }[];
@@ -117,7 +121,8 @@ interface OTRecordExport extends OTRecord {
   nro_informe_evaluacion?: string | null;
   fecha_cotizacion?: string | null;
   nro_cotizacion?: string | null;
-  monto_cotizacion?: string | number | null;
+  // monto_cotizacion ya está en OTRecord — se muestra como columna y también
+  // va al export sin requerir ?export=1.
   fecha_aprobacion?: string | null;
   fecha_entrega?: string | null;
   cumplimiento?: string | null;
@@ -141,10 +146,12 @@ const prioridadColor: Record<string, string> = {
 };
 
 // Color e etiqueta para el icono / tag del estado de la hoja de evaluación.
-// Estados reales: BORRADOR, COMPLETADA, PENDIENTE_APROBACION, APROBADA, RECHAZADA.
+// Estados reales: BORRADOR, PENDIENTE_APROBACION, APROBADA, RECHAZADA.
+// (COMPLETADA fue eliminado del flujo — antes era un intermedio entre BORRADOR
+//  y PENDIENTE_APROBACION; ahora "guardar" deja la evaluación en BORRADOR y se
+//  pasa directo a PENDIENTE_APROBACION al solicitar revisión.)
 const EVAL_META: Record<string, { color: string; label: string; tag: string }> = {
   BORRADOR: { color: "#FAAD14", label: "Borrador", tag: "warning" },          // amarillo
-  COMPLETADA: { color: "#13C2C2", label: "Completada (lista)", tag: "cyan" }, // celeste
   PENDIENTE_APROBACION: { color: "#1677FF", label: "Pendiente aprobación", tag: "processing" },
   APROBADA: { color: "#52C41A", label: "Aprobada", tag: "success" },          // verde
   RECHAZADA: { color: "#cf1322", label: "Rechazada", tag: "error" },
@@ -525,6 +532,22 @@ export default function OrdenesTrabajoPage() {
       render: (_: unknown, r: OTRecord) => {
         const conPo = (r.adjuntos?.length ?? 0) > 0;
         return <Tag color={conPo ? "green" : "orange"}>{conPo ? "Con PO" : "Pdt de PO"}</Tag>;
+      },
+    },
+    {
+      key: "monto_cotizado",
+      title: "Monto Cotizado",
+      dataIndex: "monto_cotizacion",
+      width: 140,
+      align: "right",
+      sorter: (a, b) => Number(a.monto_cotizacion ?? 0) - Number(b.monto_cotizacion ?? 0),
+      render: (_: unknown, r: OTRecord) => {
+        if (r.monto_cotizacion == null || r.monto_cotizacion === "") return "-";
+        const n = Number(r.monto_cotizacion);
+        if (!Number.isFinite(n)) return "-";
+        const cur = r.moneda_cotizacion_codigo ?? "";
+        const monto = n.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return cur ? `${cur} ${monto}` : monto;
       },
     },
     // ── Columnas opcionales (ocultas por default) ──

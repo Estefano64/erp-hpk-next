@@ -33,7 +33,6 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   EditOutlined,
-  FileDoneOutlined,
   ClockCircleOutlined,
 } from "@ant-design/icons";
 import type { UploadFile } from "antd/es/upload/interface";
@@ -112,7 +111,6 @@ interface Evaluacion {
 
 const estadoColorPage: Record<string, string> = {
   BORRADOR: "default",
-  COMPLETADA: "blue",
   PENDIENTE_APROBACION: "gold",
   APROBADA: "green",
   RECHAZADA: "red",
@@ -120,7 +118,6 @@ const estadoColorPage: Record<string, string> = {
 
 const estadoLabelPage: Record<string, string> = {
   BORRADOR: "Borrador",
-  COMPLETADA: "Completada",
   PENDIENTE_APROBACION: "Pendiente Aprobación",
   APROBADA: "Aprobada",
   RECHAZADA: "Rechazada",
@@ -128,7 +125,6 @@ const estadoLabelPage: Record<string, string> = {
 
 const estadoIconPage: Record<string, React.ReactNode> = {
   BORRADOR: <EditOutlined />,
-  COMPLETADA: <FileDoneOutlined />,
   PENDIENTE_APROBACION: <ClockCircleOutlined />,
   APROBADA: <CheckCircleOutlined />,
   RECHAZADA: <CloseCircleOutlined />,
@@ -309,7 +305,9 @@ export default function EvaluacionPage() {
         datos_formulario: datosFormulario,
         resultado_general: values.resultado_general || null,
         recomendaciones_general: values.recomendaciones_general || null,
-        estado: "COMPLETADA",
+        // No mandamos `estado` — el API preserva el estado actual en update
+        // (BORRADOR por defecto al crear). El estado solo cambia vía las
+        // acciones "solicitar/aprobar/rechazar/reabrir" (endpoint /revision).
       };
 
       const url = evaluacion?.id
@@ -442,8 +440,8 @@ export default function EvaluacionPage() {
 
   // Permisos segun estado
   const estado = evaluacion?.estado || "BORRADOR";
-  const puedeEditar = ["BORRADOR", "COMPLETADA", "RECHAZADA"].includes(estado);
-  const puedeSolicitar = ["BORRADOR", "COMPLETADA", "RECHAZADA"].includes(estado) && !!evaluacion?.id;
+  const puedeEditar = ["BORRADOR", "RECHAZADA"].includes(estado);
+  const puedeSolicitar = ["BORRADOR", "RECHAZADA"].includes(estado) && !!evaluacion?.id;
   const puedeAprobarRechazar = estado === "PENDIENTE_APROBACION";
   const puedeReabrir = ["APROBADA", "RECHAZADA"].includes(estado);
 

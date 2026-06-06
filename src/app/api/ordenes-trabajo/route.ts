@@ -20,9 +20,13 @@ export async function GET(req: NextRequest) {
     // Campos escalares que SOLO usa el export (históricos importados del Excel).
     // La tabla del listado no los muestra, así que los omitimos cuando no es
     // export — con 3000+ OTs aligera bastante la respuesta.
+    //
+    // Excepción: monto_cotizacion sí sale en la tabla (columna "Monto Cotizado")
+    // — por eso no va en este omit, junto con moneda_cotizacion_codigo (que
+    // viene en el include) para mostrar la divisa al lado del monto.
     const omitExportOnly = {
       fecha_evaluacion: true, evaluador: true, nro_informe_evaluacion: true,
-      fecha_cotizacion: true, nro_cotizacion: true, monto_cotizacion: true,
+      fecha_cotizacion: true, nro_cotizacion: true,
       fecha_aprobacion: true, fecha_entrega: true, cumplimiento: true,
       dias_proceso: true, dias_en_taller: true, nro_factura: true, fecha_facturacion: true,
     } as const;

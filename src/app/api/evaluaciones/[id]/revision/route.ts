@@ -27,7 +27,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     switch (accion) {
       case "solicitar":
-        if (!["BORRADOR", "COMPLETADA", "RECHAZADA"].includes(evalActual.estado)) {
+        if (!["BORRADOR", "RECHAZADA"].includes(evalActual.estado)) {
           return NextResponse.json(
             { error: `No se puede solicitar revision desde estado ${evalActual.estado}` },
             { status: 400 }

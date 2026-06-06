@@ -262,7 +262,7 @@ async function main() {
 
   // ── 5. EVALUACIONES TÉCNICAS (8) ───────────────────────────
   console.log("\n🔍 Creando 8 Evaluaciones Técnicas...");
-  const estadosEval = ["BORRADOR", "COMPLETADA", "PENDIENTE_APROBACION", "APROBADA", "RECHAZADA"];
+  const estadosEval = ["BORRADOR", "PENDIENTE_APROBACION", "APROBADA", "RECHAZADA"];
   const modelosEvalCodes = ["cil_vastago_simple", "cil_pivotado", "cil_doble_vastago", "cil_telescopico", "acum_embolo", "acum_vejiga", "rueda_delantera"];
   let evalsCreadas = 0;
   for (let i = 0; i < 8; i++) {
