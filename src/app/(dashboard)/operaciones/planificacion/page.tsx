@@ -168,6 +168,22 @@ interface EquipoOpt { codigo: string; descripcion: string }
 
 interface StatusTareaOpt { codigo: string; nombre: string; color: string | null; orden: number | null }
 
+// "Estado general" (macro): agrupa los estados puntuales para filtrar más arriba.
+//   Abierto      → tareas activas (sin terminar ni anular)
+//   Cerrado      → ejecutadas (realizado)
+//   No ejecutado → anuladas (cancelado)
+// El filtro se manda al server como lista `estados` (ver /api/planificacion).
+const MACRO_ESTADO: Record<string, string[]> = {
+  abierto: ["abierto", "programado", "en_proceso", "pausado", "correctivo"],
+  cerrado: ["realizado"],
+  no_ejecutado: ["cancelado"],
+};
+const MACRO_ESTADO_OPTS = [
+  { value: "abierto", label: "Abierto" },
+  { value: "cerrado", label: "Cerrado" },
+  { value: "no_ejecutado", label: "No ejecutado" },
+];
+
 // Fila del form multi-tarea de "Nueva tarea" (calca del de OT + campos extra).
 interface DraftPlan {
   id: string; // uuid local
@@ -225,6 +241,7 @@ export default function PlanificacionPage() {
   const [search, setSearch] = useState("");
   const [filterSemana, setFilterSemana] = useState<string | undefined>();
   const [filterEstado, setFilterEstado] = useState<string | undefined>();
+  const [filterMacroEstado, setFilterMacroEstado] = useState<string | undefined>();
   const [filterTecnico, setFilterTecnico] = useState<string | undefined>();
   const [filterMaquina, setFilterMaquina] = useState<string | undefined>();
 
@@ -286,6 +303,7 @@ export default function PlanificacionPage() {
     if (search) params.set("search", search);
     if (filterSemana) params.set("semana", filterSemana);
     if (filterEstado) params.set("estado", filterEstado);
+    if (filterMacroEstado) params.set("estados", (MACRO_ESTADO[filterMacroEstado] ?? []).join(","));
     if (filterTecnico) params.set("tecnico", filterTecnico);
     if (filterMaquina) params.set("maquina", filterMaquina);
     const res = await fetch(`/api/planificacion?${params}`);
@@ -295,7 +313,7 @@ export default function PlanificacionPage() {
       setTotal(json.total ?? 0);
     }
     setLoading(false);
-  }, [search, filterSemana, filterEstado, filterTecnico, filterMaquina]);
+  }, [search, filterSemana, filterEstado, filterMacroEstado, filterTecnico, filterMaquina]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
   const notifySync = useTabSync("planificacion", fetchData);
@@ -1632,6 +1650,13 @@ export default function PlanificacionPage() {
               filterOption={(i, o) => (o?.label as string).toLowerCase().includes(i.toLowerCase())}
             />
           </Col>
+          <Col xs={12} md={4}>
+            <Select placeholder="Estado general" allowClear style={{ width: "100%" }}
+              value={filterMacroEstado}
+              onChange={setFilterMacroEstado}
+              options={MACRO_ESTADO_OPTS}
+            />
+          </Col>
           <Col xs={12} md={3}>
             <Select showSearch optionFilterProp="label" placeholder="Estado" allowClear style={{ width: "100%" }}
               value={filterEstado}
@@ -1662,6 +1687,7 @@ export default function PlanificacionPage() {
           <Col xs={24} md={3}>
             <Button icon={<ReloadOutlined />} onClick={() => {
               setSearch(""); setFilterSemana(undefined); setFilterEstado(undefined);
+              setFilterMacroEstado(undefined);
               setFilterTecnico(undefined); setFilterMaquina(undefined);
             }} block>Limpiar</Button>
           </Col>
