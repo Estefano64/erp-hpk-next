@@ -49,7 +49,55 @@ body {
 .ant-table-thead > tr > th {
   overflow: hidden;
   text-overflow: ellipsis;
+  /* Layout 2-filas en headers: nombre arriba, controles (sort + filter) abajo.
+     Alineamos al top para que el título quede visualmente en la fila superior
+     incluso cuando la columna NO tiene sort/filter (texto plano). */
+  vertical-align: top !important;
 }
+
+/* ── Headers en dos filas: NOMBRE arriba / SORT+FILTER abajo ─────────────
+   El wrapper .ant-table-column-sorters de AntD agrupa el título y la flecha
+   de orden en una sola fila inline. Lo forzamos a column para que la flecha
+   quede DEBAJO del título. El ícono de filtro (.ant-table-filter-trigger-
+   container) es un sibling de ese wrapper y por default va absolute a la
+   derecha del cell — lo bajamos a inline-flow para que aparezca también
+   en la fila inferior, al lado de la flecha de orden.
+
+   Resultado visual:
+       [Nombre de la columna]
+       [↕ sort]  [▾ filtro]
+*/
+.ant-table-thead > tr > th .ant-table-column-sorters {
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  gap: 4px;
+}
+.ant-table-thead > tr > th .ant-table-column-sorter {
+  /* Reset del margin-left que AntD pone para alinear horizontalmente. Ahora
+     la flecha va en su propia línea, sin margin. */
+  margin-left: 0 !important;
+  margin-top: 0 !important;
+}
+/* Filter trigger: sacar el position:absolute de AntD así fluye en línea
+   con el contenido del header. Se vuelve un elemento más después del
+   wrapper .ant-table-column-sorters → cae en su propia "fila" debajo. */
+.ant-table-thead > tr > th .ant-table-filter-trigger-container {
+  position: static !important;
+  display: inline-block;
+  margin-left: 0;
+  /* Pequeño push hacia abajo para que NO se pegue al sort arrow cuando hay
+     ambos. Para cells sin sort queda al lado del título — ok. */
+  margin-top: 2px;
+}
+.ant-table-thead > tr > th .ant-table-filter-trigger {
+  margin: 0 !important;
+}
+/* Cuando la cell tiene SORT pero NO filter, no hacemos nada extra (el
+   wrapper ya tiene el sort abajo). Cuando tiene SORT + FILTER, queremos que
+   el ícono de filtro quede inline a la derecha del sort arrow.
+   El sorters wrapper (block-flex column) ocupa su ancho natural; el filter
+   container es inline-block siguiente — ambos pueden caer en líneas distintas
+   si la columna es estrecha, lo cual es aceptable. */
 
 /* Drag handle de columna: aparece al hacer hover sobre el header. */
 .ant-table-thead > tr > th:hover .col-drag-handle {
