@@ -83,6 +83,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
       nro_guia: r.nro_guia,
       tipo_pago: r.tipo_pago,
       dias_credito: r.dias_credito,
+      aplica_igv: r.aplica_igv,
       guia_key: r.guia_key,
       guia_nombre: r.guia_nombre,
       guia_fecha_subida: r.guia_fecha_subida,

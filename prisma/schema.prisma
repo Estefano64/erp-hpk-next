@@ -1185,6 +1185,11 @@ model Compra {
   subtotal               Decimal         @default(0) @db.Decimal(12, 2)
   descuento              Decimal         @default(0) @db.Decimal(12, 2)
   impuesto               Decimal         @default(0) @db.Decimal(12, 2)
+  // Flag por-OC: cuando es false, el IGV no se calcula (impuesto se persiste
+  // como 0). Útil para compras exoneradas (importaciones, servicios sin IGV,
+  // proveedores no domiciliados, etc.). Default true para mantener el
+  // comportamiento histórico — las OCs viejas no cambian.
+  aplica_igv             Boolean         @default(true)
   otros                  Decimal         @default(0) @db.Decimal(12, 2)
   total                  Decimal         @default(0) @db.Decimal(12, 2)
   moneda_codigo          String?         @db.VarChar(10)
