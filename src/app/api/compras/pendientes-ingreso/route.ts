@@ -11,6 +11,14 @@ import { prisma } from "@/lib/prisma";
 // material_id, ej. items CAD como "Barra Cromada D 40x450"). En ese caso los
 // items vienen de `ot_repuestos` en vez de `compra_detalle`. La UI los recibe
 // con `repuesto_id` para que la API de recepción los matchee.
+//
+// 2026-06 fix: el código anterior tenía un bug — solo cargaba items de
+// `ot_repuestos` cuando `compra_detalle` estaba VACÍO (caso ALL-free). En OCs
+// MIXTAS (ej. 6 items con material + 1 item CAD libre), los items libres
+// quedaban invisibles. Ahora combinamos: CompraDetalle para items con material
+// + OTRepuesto SOLO para items free (material_id IS NULL) que no tienen
+// equivalente en CompraDetalle. Así cubrimos las 3 combinaciones: all-mat,
+// all-free, mixed.
 export async function GET() {
   try {
     const compras = await prisma.compra.findMany({
@@ -64,26 +72,27 @@ export async function GET() {
           })
           .filter((it) => it.cantidad > 0);
 
-        // Caso 2: si NO hay detalles pero sí hay ot_repuestos (items free),
-        // los listamos como fuente alternativa. Cada uno se identifica por
-        // su `repuesto_id` para que el API de recepción lo matchee directamente.
-        const itemsRepuestos = itemsDetalles.length === 0
-          ? c.ot_repuestos
-            .map((r: R) => {
-              const pendiente = Number(r.cantidad) - Number(r.cantidad_recibida ?? 0);
-              return {
-                id: r.id,
-                repuesto_id: r.id,
-                material_id: r.material_id as number | null,
-                codigo: r.material_codigo ?? null,
-                descripcion: r.descripcion ?? null,
-                unidad_medida: r.unidad_medida ?? "und",
-                cantidad: pendiente,
-                precio_unitario: r.precio_unitario != null ? Number(r.precio_unitario) : null,
-              };
-            })
-            .filter((it) => it.cantidad > 0)
-          : [];
+        // Caso 2: items FREE (material_id IS NULL en OTRepuesto). Estos no
+        // generan CompraDetalle al crear la OC, así que se cargan de
+        // ot_repuestos. Cada uno se identifica por `repuesto_id` para que la
+        // API de recepción lo matchee directamente. SE INCLUYEN SIEMPRE
+        // (estén o no presentes los CompraDetalle).
+        const itemsRepuestosFree = c.ot_repuestos
+          .filter((r: R) => r.material_id == null)
+          .map((r: R) => {
+            const pendiente = Number(r.cantidad) - Number(r.cantidad_recibida ?? 0);
+            return {
+              id: r.id,
+              repuesto_id: r.id,
+              material_id: null as number | null,
+              codigo: r.material_codigo ?? null,
+              descripcion: r.descripcion ?? null,
+              unidad_medida: r.unidad_medida ?? "und",
+              cantidad: pendiente,
+              precio_unitario: r.precio_unitario != null ? Number(r.precio_unitario) : null,
+            };
+          })
+          .filter((it) => it.cantidad > 0);
 
         return {
           id: c.id,
@@ -102,7 +111,9 @@ export async function GET() {
           guia_nombre: c.guia_nombre ?? null,
           factura_key: c.factura_key ?? null,
           factura_nombre: c.factura_nombre ?? null,
-          items: itemsDetalles.length > 0 ? itemsDetalles : itemsRepuestos,
+          // Combinar: items con material (CompraDetalle) + items free (OTRepuesto sin material_id).
+          // Cubre OCs all-mat, all-free, y MIXTAS (que antes perdían los free).
+          items: [...itemsDetalles, ...itemsRepuestosFree],
         };
       })
       // OCs sin items pendientes no aparecen (probablemente ya recibidas).
