@@ -901,7 +901,12 @@ export function useColumnasRedimensionables<T>(
     if (orderKey) try { localStorage.removeItem(orderKey); } catch { /* ignore */ }
   }, [orderKey]);
 
-  return { columnas: columnasRedim, components, resetAnchos, TableDragWrapper };
+  // Orden ACTUAL (post-hidratación) — útil para que las exportaciones a
+  // Excel respeten el layout del usuario. Si el usuario nunca reordenó,
+  // devolvemos null para que el caller use el orden original.
+  const ordenActual: string[] | null = orden;
+
+  return { columnas: columnasRedim, components, resetAnchos, TableDragWrapper, orden: ordenActual };
 }
 
 // ───────────────────────────────────────────────────────────────────────────

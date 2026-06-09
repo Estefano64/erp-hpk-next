@@ -30,6 +30,7 @@ import {
 } from "@/lib/tables";
 import { areasTallerGrouped, areaTallerLabel, tipoEquipoPorAreaTaller } from "@/lib/areas-taller";
 import { formatOtInternaCodigo } from "@/lib/ot-formato";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
 const { Title, Text } = Typography;
 
@@ -96,7 +97,16 @@ interface OTInternaRow {
   version: number;
   equipo: { codigo: string; descripcion: string } | null;
   // Conteo de requerimientos activos — viene de `_count.repuestos` del endpoint.
+  // `_count.repuestos` = cantidad de ITEMS (cada OTRepuesto cuenta como uno).
+  // `n_reqs_distintos`  = cantidad de nro_req únicos (un req puede tener N items).
   _count?: { repuestos: number };
+  n_reqs_distintos?: number;
+  // Totales de costo agrupados por moneda. Calculados en el endpoint a
+  // partir de los OTRepuesto activos. {} si no hay datos para esa categoría.
+  //   costo_real      = SUM(cantidad_recibida × precio_unitario)
+  //   costo_estimado  = SUM(pendiente × precio_unitario) si el req está en proceso
+  costo_real_por_moneda?: Record<string, number>;
+  costo_estimado_por_moneda?: Record<string, number>;
   planta: { codigo: string; nombre: string } | null;
   tipo_ot_interna: { codigo: string; nombre: string } | null;
   prioridad_atencion: { codigo: string; nombre: string } | null;
@@ -433,7 +443,17 @@ export default function OrdenesTrabajoInternasPage() {
     },
     {
       key: "tipo", title: "Tipo", width: 110,
-      ...filtroPorColumna(rows, "tipo_ot_interna" as never),
+      // Filter manual — antes usaba filtroPorColumna sobre el objeto
+      // tipo_ot_interna y stringificaba como "[object Object]". Ahora
+      // derivamos {nombre, codigo} de los rows y filtramos por código.
+      filters: [...new Set(rows.map((r) => r.tipo_ot_interna?.codigo).filter(Boolean) as string[])]
+        .sort()
+        .map((c) => {
+          const nombre = rows.find((r) => r.tipo_ot_interna?.codigo === c)?.tipo_ot_interna?.nombre ?? c;
+          return { text: nombre, value: c };
+        }),
+      filterMultiple: true,
+      onFilter: (value, r) => r.tipo_ot_interna?.codigo === value,
       render: (_: unknown, r: OTInternaRow) => {
         const t = r.tipo_ot_interna?.codigo;
         if (!t) return "-";
@@ -449,6 +469,13 @@ export default function OrdenesTrabajoInternasPage() {
     },
     {
       key: "area_taller", title: "Área asignada", width: 200, ellipsis: true,
+      // Filter por código de área del taller — texto leíble en el dropdown.
+      filters: [...new Set(rows.map((r) => r.area_taller).filter(Boolean) as string[])]
+        .sort()
+        .map((c) => ({ text: areaTallerLabel(c), value: c })),
+      filterSearch: true,
+      filterMultiple: true,
+      onFilter: (value, r) => r.area_taller === value,
       render: (_: unknown, r: OTInternaRow) => {
         // Prioridad: área del taller (campo nuevo). Si no, fallback a equipo legacy.
         if (r.area_taller) return <span>{areaTallerLabel(r.area_taller)}</span>;
@@ -462,7 +489,22 @@ export default function OrdenesTrabajoInternasPage() {
       // Equipo/Maquinaria asociada — muestra el nombre (descripción) del equipo;
       // el código queda en el tooltip al hacer hover para auditoría.
       key: "equipo", title: "Equipo", width: 220, ellipsis: true,
-      ...filtroPorColumna<OTInternaRow>(rows, "equipo_codigo"),
+      // Filter manual — antes mostraba el código del equipo (cosa ABC-001-XYZ)
+      // pero la columna muestra la descripción, así que era inconsistente.
+      // Ahora las opciones del filtro muestran "descripción (codigo)" y el
+      // filtro real sigue siendo por código (único en BD).
+      filters: [...new Set(rows.map((r) => r.equipo_codigo).filter(Boolean) as string[])]
+        .sort()
+        .map((c) => {
+          const eq = rows.find((r) => r.equipo_codigo === c)?.equipo;
+          return {
+            text: eq?.descripcion ? `${eq.descripcion} (${c})` : c,
+            value: c,
+          };
+        }),
+      filterSearch: true,
+      filterMultiple: true,
+      onFilter: (value, r) => r.equipo_codigo === value,
       render: (_: unknown, r: OTInternaRow) =>
         r.equipo
           ? <Tooltip title={r.equipo.codigo}><span>{r.equipo.descripcion}</span></Tooltip>
@@ -474,6 +516,15 @@ export default function OrdenesTrabajoInternasPage() {
     },
     {
       key: "planta", title: "Planta", width: 130,
+      // Filter por código de planta — texto leíble (nombre) en el dropdown.
+      filters: [...new Set(rows.map((r) => r.planta?.codigo).filter(Boolean) as string[])]
+        .sort()
+        .map((c) => {
+          const nombre = rows.find((r) => r.planta?.codigo === c)?.planta?.nombre ?? c;
+          return { text: nombre, value: c };
+        }),
+      filterMultiple: true,
+      onFilter: (value, r) => r.planta?.codigo === value,
       render: (_: unknown, r: OTInternaRow) =>
         r.planta
           ? <Tooltip title={r.planta.codigo}><span>{r.planta.nombre}</span></Tooltip>
@@ -481,6 +532,11 @@ export default function OrdenesTrabajoInternasPage() {
     },
     {
       key: "prioridad", title: "Prio.", width: 70, align: "center",
+      filters: [...new Set(rows.map((r) => r.prioridad_atencion?.codigo).filter(Boolean) as string[])]
+        .sort()
+        .map((c) => ({ text: `Prio ${c}`, value: c })),
+      filterMultiple: true,
+      onFilter: (value, r) => r.prioridad_atencion?.codigo === value,
       render: (_: unknown, r: OTInternaRow) => {
         const p = r.prioridad_atencion?.codigo;
         if (!p) return "-";
@@ -494,6 +550,14 @@ export default function OrdenesTrabajoInternasPage() {
     },
     {
       key: "user_status", title: "User Status", width: 130,
+      filters: [...new Set(rows.map((r) => r.user_status?.codigo).filter(Boolean) as string[])]
+        .sort()
+        .map((c) => {
+          const nombre = rows.find((r) => r.user_status?.codigo === c)?.user_status?.nombre ?? c;
+          return { text: nombre, value: c };
+        }),
+      filterMultiple: true,
+      onFilter: (value, r) => r.user_status?.codigo === value,
       render: (_: unknown, r: OTInternaRow) => r.user_status?.nombre
         ? <Tag>{r.user_status.nombre}</Tag>
         : "-",
@@ -520,10 +584,19 @@ export default function OrdenesTrabajoInternasPage() {
     },
     {
       key: "recursos_status", title: "Recursos Status", width: 150,
+      filters: [...new Set(rows.map((r) => r.recursos_status?.codigo).filter(Boolean) as string[])]
+        .sort()
+        .map((c) => {
+          const nombre = rows.find((r) => r.recursos_status?.codigo === c)?.recursos_status?.nombre ?? c;
+          return { text: nombre, value: c };
+        }),
+      filterMultiple: true,
+      onFilter: (value, r) => r.recursos_status?.codigo === value,
       render: (_: unknown, r: OTInternaRow) => r.recursos_status?.nombre ?? "-",
     },
     {
       key: "asignado_a", title: "Asignado a", dataIndex: "asignado_a", width: 160, ellipsis: true,
+      ...filtroPorColumna<OTInternaRow>(rows, "asignado_a"),
       render: (v: string | null) => v ?? "-",
     },
     {
@@ -587,26 +660,74 @@ export default function OrdenesTrabajoInternasPage() {
       render: (v: string | null) => v ? dayjs(v).format("DD/MM/YY HH:mm") : "-",
     },
     {
-      // Conteo de requerimientos (OTRepuesto) activos de la OT — click abre el
-      // detalle directo en el tab Requerimientos. Mismo patrón que en OT externa
-      // pero a nivel de tabla principal (no en tabs).
-      key: "reqs", title: "Reqs", width: 80, align: "center",
+      // Conteo de requerimientos. Muestra "X reqs / Y items" donde X = nro_req
+      // únicos y Y = total de items. Click abre el detalle en el tab
+      // Requerimientos. El sorter usa cantidad de items (más útil que reqs).
+      key: "reqs", title: "Reqs / Items", width: 110, align: "center",
       sorter: (a: OTInternaRow, b: OTInternaRow) =>
         (a._count?.repuestos ?? 0) - (b._count?.repuestos ?? 0),
       render: (_: unknown, r: OTInternaRow) => {
-        const n = r._count?.repuestos ?? 0;
-        if (n === 0) return <Text type="secondary">—</Text>;
+        const items = r._count?.repuestos ?? 0;
+        const reqs = r.n_reqs_distintos ?? 0;
+        if (items === 0) return <Text type="secondary">—</Text>;
         return (
-          <Tooltip title="Ver requerimientos en el detalle">
+          <Tooltip title={`${reqs} requerimiento(s) · ${items} item(s) — click para ver en detalle`}>
             <a
               onClick={(e) => {
                 e.stopPropagation();
                 router.push(`/ordenes-trabajo-internas/${r.id}?tab=requerimientos`);
               }}
             >
-              <Tag color="blue" style={{ margin: 0, cursor: "pointer" }}>{n}</Tag>
+              <Tag color="blue" style={{ margin: 0, cursor: "pointer" }}>
+                {reqs} reqs / {items} items
+              </Tag>
             </a>
           </Tooltip>
+        );
+      },
+    },
+    {
+      // Costo REAL (ejecutado): SUM(cantidad_recibida × precio_unitario) por
+      // moneda. Si hay varias monedas (mezcla USD+PEN) mostramos ambas
+      // separadas por " · ". El sorter usa la suma sin convertir (informativo).
+      key: "costo_real", title: "Costo Real", width: 140, align: "right",
+      sorter: (a: OTInternaRow, b: OTInternaRow) => {
+        const sumA = Object.values(a.costo_real_por_moneda ?? {}).reduce((s, n) => s + n, 0);
+        const sumB = Object.values(b.costo_real_por_moneda ?? {}).reduce((s, n) => s + n, 0);
+        return sumA - sumB;
+      },
+      render: (_: unknown, r: OTInternaRow) => {
+        const por = r.costo_real_por_moneda ?? {};
+        const entries = Object.entries(por).filter(([, n]) => n > 0);
+        if (entries.length === 0) return <Text type="secondary">—</Text>;
+        return (
+          <span style={{ color: brand.success ?? "#52c41a", fontWeight: 600, fontSize: 12 }}>
+            {entries
+              .map(([m, n]) => `${m} ${n.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+              .join(" · ")}
+          </span>
+        );
+      },
+    },
+    {
+      // Costo ESTIMADO (proyectado): SUM(pendiente × precio_unitario) por
+      // moneda, solo de items en proceso (APROBADO o con OC vigente).
+      key: "costo_estimado", title: "Costo Estimado", width: 140, align: "right",
+      sorter: (a: OTInternaRow, b: OTInternaRow) => {
+        const sumA = Object.values(a.costo_estimado_por_moneda ?? {}).reduce((s, n) => s + n, 0);
+        const sumB = Object.values(b.costo_estimado_por_moneda ?? {}).reduce((s, n) => s + n, 0);
+        return sumA - sumB;
+      },
+      render: (_: unknown, r: OTInternaRow) => {
+        const por = r.costo_estimado_por_moneda ?? {};
+        const entries = Object.entries(por).filter(([, n]) => n > 0);
+        if (entries.length === 0) return <Text type="secondary">—</Text>;
+        return (
+          <span style={{ color: brand.cyan, fontWeight: 600, fontSize: 12 }}>
+            {entries
+              .map(([m, n]) => `${m} ${n.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+              .join(" · ")}
+          </span>
         );
       },
     },
@@ -661,7 +782,7 @@ export default function OrdenesTrabajoInternasPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [page, pageSize, rows, esAdmin]);
 
-  const { columnas, components, resetAnchos, TableDragWrapper } =
+  const { columnas, components, resetAnchos, TableDragWrapper, orden: ordenColumnas } =
     useColumnasRedimensionables<OTInternaRow>(baseColumns, "ot-internas-cols-widths-v1", { data: rows });
 
   return (
@@ -678,6 +799,42 @@ export default function OrdenesTrabajoInternasPage() {
         </div>
         <Space>
           <Button icon={<ReloadOutlined />} onClick={fetchData} />
+          {/* Export Excel — usa las MISMAS keys que las columnas de la tabla
+              para que "Respetar layout actual de la tabla" pueda matchearlas. */}
+          <ExportarExcelButton<OTInternaRow>
+            endpoint="/api/ordenes-trabajo-internas"
+            filename="OTs-Internas"
+            sheetName="OTs Internas"
+            tablaLayout={{ orden: ordenColumnas ?? undefined, ocultas }}
+            columns={[
+              { key: "ot", label: "OT", value: (r) => r.ot != null ? formatOtInternaCodigo(r.ot) : "" },
+              { key: "tipo", label: "Tipo", value: (r) => r.tipo_ot_interna?.nombre ?? "" },
+              { key: "area_taller", label: "Área asignada", value: (r) => r.area_taller ? areaTallerLabel(r.area_taller) : "" },
+              { key: "equipo", label: "Equipo", value: (r) => r.equipo?.descripcion ?? r.equipo_codigo ?? "" },
+              { key: "descripcion", label: "Descripción", value: (r) => r.descripcion ?? "" },
+              { key: "planta", label: "Planta", value: (r) => r.planta?.nombre ?? "" },
+              { key: "prioridad", label: "Prio.", value: (r) => r.prioridad_atencion?.codigo ?? "" },
+              { key: "semana_revision", label: "Semana Revisión", value: (r) => r.semana_revision ?? "" },
+              { key: "user_status", label: "User Status", value: (r) => r.user_status?.nombre ?? "" },
+              { key: "ot_status", label: "OT Status", value: (r) => r.ot_status?.nombre ?? "" },
+              { key: "recursos_status", label: "Recursos Status", value: (r) => r.recursos_status?.nombre ?? "" },
+              { key: "asignado_a", label: "Asignado a", value: (r) => r.asignado_a ?? "" },
+              { key: "usuario_crea", label: "Creado por", value: (r) => r.usuario_crea ?? "" },
+              { key: "solicitud_mantenimiento", label: "Solicitud Mtto", value: (r) => r.solicitud_mantenimiento ? "Sí" : "No" },
+              { key: "comentarios", label: "Comentarios", value: (r) => r.comentarios ?? "" },
+              { key: "estrategia", label: "Estrategia", value: (r) => r.estrategia ? `${r.estrategia.codigo} — ${r.estrategia.descripcion}` : "" },
+              { key: "task_list", label: "Task List", value: (r) => r.task_list ?? "" },
+              { key: "fecha_inicio_plan", label: "Inicio Plan", value: (r) => r.fecha_inicio_plan ? dayjs(r.fecha_inicio_plan).format("DD/MM/YYYY HH:mm") : "" },
+              { key: "fecha_fin_plan", label: "Fin Plan", value: (r) => r.fecha_fin_plan ? dayjs(r.fecha_fin_plan).format("DD/MM/YYYY HH:mm") : "" },
+              { key: "fecha_inicio_real", label: "Inicio Real", value: (r) => r.fecha_inicio_real ? dayjs(r.fecha_inicio_real).format("DD/MM/YYYY HH:mm") : "" },
+              { key: "fecha_fin_real", label: "Fin Real", value: (r) => r.fecha_fin_real ? dayjs(r.fecha_fin_real).format("DD/MM/YYYY HH:mm") : "" },
+              { key: "fecha_cierre", label: "Cierre", value: (r) => r.fecha_cierre ? dayjs(r.fecha_cierre).format("DD/MM/YYYY HH:mm") : "" },
+              { key: "reqs", label: "Reqs / Items", value: (r) => `${r.n_reqs_distintos ?? 0} reqs / ${r._count?.repuestos ?? 0} items` },
+              { key: "costo_real", label: "Costo Real", value: (r) => Object.entries(r.costo_real_por_moneda ?? {}).filter(([, n]) => n > 0).map(([m, n]) => `${m} ${Number(n).toFixed(2)}`).join(" · ") },
+              { key: "costo_estimado", label: "Costo Estimado", value: (r) => Object.entries(r.costo_estimado_por_moneda ?? {}).filter(([, n]) => n > 0).map(([m, n]) => `${m} ${Number(n).toFixed(2)}`).join(" · ") },
+              { key: "fecha_creacion", label: "F. Creación", value: (r) => r.fecha_creacion ? dayjs(r.fecha_creacion).format("DD/MM/YYYY HH:mm") : "" },
+            ]}
+          />
           <Button type="primary" icon={<PlusOutlined />} onClick={openNuevoModal}>
             Nueva OT Interna
           </Button>

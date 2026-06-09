@@ -4,8 +4,8 @@
 //   - Si Compra.ot_id != null: R2Keys.compraGuia(otCodigo, numero_po)
 //   - Si Compra.ot_id == null: R2Keys.compraSueltaGuia(numero_po)  (compra sin OT)
 //
-// Regla de negocio preservada: no permite subir factura si la compra no tiene
-// guía registrada todavía.
+// Decisión del user (2026-06): se removió la regla que bloqueaba la presigned
+// URL de factura si la compra no tenía guía. El orden de subida es libre.
 import { NextResponse, type NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
@@ -31,22 +31,13 @@ export async function POST(req: NextRequest, { params }: Params) {
 
   const compra = await prisma.compra.findUnique({
     where: { id: compraId },
-    select: { id: true, numero_po: true, ot_id: true, guia_key: true },
+    select: { id: true, numero_po: true, ot_id: true },
   });
   if (!compra) {
     return NextResponse.json({ error: "Compra no encontrada" }, { status: 404 });
   }
 
-  // Bloquea factura sin guía (mismo invariante que el endpoint de registro).
-  if (tipo === "factura" && !compra.guia_key) {
-    return NextResponse.json(
-      {
-        error: "No se puede subir factura: primero cargá la guía de remisión del proveedor.",
-        falta: "guia",
-      },
-      { status: 400 },
-    );
-  }
+  // (Antes había un gate factura-sin-guía. Removido — el orden es libre.)
 
   // Si la compra está ligada a una OT, validar acceso a la OT.
   // Si no, solo exigir sesión activa (compras-sueltas/...).

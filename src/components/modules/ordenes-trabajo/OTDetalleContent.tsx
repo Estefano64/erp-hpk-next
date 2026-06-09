@@ -47,6 +47,7 @@ import OTTareasTab from "./OTTareasTab";
 import OTHistorialTab from "./OTHistorialTab";
 import OTRequerimientosTab from "./OTRequerimientosTab";
 import OTCostosTab from "./OTCostosTab";
+import { DescargarOTExcelButton } from "@/components/DescargarOTExcelButton";
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -681,6 +682,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
 
         {/* ── Barra de acciones ── */}
         <div className="ot-print-hide" style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 16 }}>
+          {ot && <DescargarOTExcelButton otId={ot.id} tipo="externa" />}
           <Button
             icon={<PrinterOutlined />}
             onClick={() => {

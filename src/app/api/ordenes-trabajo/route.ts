@@ -21,14 +21,19 @@ export async function GET(req: NextRequest) {
     // La tabla del listado no los muestra, así que los omitimos cuando no es
     // export — con 3000+ OTs aligera bastante la respuesta.
     //
-    // Excepción: monto_cotizacion sí sale en la tabla (columna "Monto Cotizado")
-    // — por eso no va en este omit, junto con moneda_cotizacion_codigo (que
-    // viene en el include) para mostrar la divisa al lado del monto.
+    // Excepción: estos campos SÍ salen en la tabla como columnas opcionales
+    // (la lista creció con el pedido del user de mostrar el ciclo evaluación
+    // → cotización → aprobación → facturación). El resto sigue siendo
+    // export-only para aligerar el payload del listado.
+    //   Salen en listado: monto_cotizacion, fecha_evaluacion, evaluador,
+    //   fecha_cotizacion, fecha_aprobacion, fecha_facturacion, dias_en_taller,
+    //   fecha_aprobacion_evaluacion, evaluacion_aprobado_por,
+    //   reparacion_externa, vendor_externo (campos nuevos).
     const omitExportOnly = {
-      fecha_evaluacion: true, evaluador: true, nro_informe_evaluacion: true,
-      fecha_cotizacion: true, nro_cotizacion: true,
-      fecha_aprobacion: true, fecha_entrega: true, cumplimiento: true,
-      dias_proceso: true, dias_en_taller: true, nro_factura: true, fecha_facturacion: true,
+      nro_informe_evaluacion: true,
+      nro_cotizacion: true,
+      fecha_entrega: true, cumplimiento: true,
+      dias_proceso: true, nro_factura: true,
     } as const;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -352,6 +357,7 @@ export async function POST(req: NextRequest) {
           cod_rep_flota: codRepFlota,
           cod_rep_posicion: codRepPosicion,
           equipo_codigo: body.equipo_codigo || null,
+          material_codigo: body.material_codigo || null,
           ns: body.ns || null,
           // Plaqueteo / WO / PO Item / ID Viajero / Guía / Empresa: solo REP.
           plaqueteo: esBienOServicio ? null : (body.plaqueteo || null),

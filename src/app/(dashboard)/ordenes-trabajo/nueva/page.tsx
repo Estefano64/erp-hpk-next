@@ -38,6 +38,11 @@ interface FabricanteOption {
   nombre: string;
 }
 
+interface MaterialOption {
+  codigo: string;
+  descripcion: string;
+}
+
 interface ClienteOption {
   cliente_id: number;
   codigo: string;
@@ -78,6 +83,10 @@ export default function NuevaOTPage() {
   const [fabricantes, setFabricantes] = useState<FabricanteOption[]>([]);
   const [posiciones, setPosiciones] = useState<CatalogOption[]>([]);
   const [monedas, setMonedas] = useState<CatalogOption[]>([]);
+  // Materiales para el Select "Código de Material" en la sección Datos.
+  // Cargados una sola vez con límite alto (~2k materiales). El Select
+  // permite búsqueda por código y descripción.
+  const [materiales, setMateriales] = useState<MaterialOption[]>([]);
 
   // Estado del form para lógica condicional
   const [estrategia, setEstrategia] = useState(false);
@@ -108,7 +117,7 @@ export default function NuevaOTPage() {
 
   useEffect(() => {
     async function loadCatalogs() {
-      const [cliRes, crRes, tipoRepRes, atencionRes, prioRes, tipoGarRes, tipoCRRes, fabRes, posRes, tipoOTRes, monRes] = await Promise.all([
+      const [cliRes, crRes, tipoRepRes, atencionRes, prioRes, tipoGarRes, tipoCRRes, fabRes, posRes, tipoOTRes, monRes, matRes] = await Promise.all([
         fetch("/api/clientes?limit=100"),
         fetch("/api/codigos-reparacion?limit=500"),
         fetch("/api/catalogos?tabla=tipoReparacion"),
@@ -120,6 +129,7 @@ export default function NuevaOTPage() {
         fetch("/api/catalogos?tabla=posicion"),
         fetch("/api/catalogos?tabla=tipoOT"),
         fetch("/api/catalogos?tabla=moneda"),
+        fetch("/api/materiales?limit=2000"),
       ]);
       if (cliRes.ok) setClientes((await cliRes.json()).data ?? []);
       if (crRes.ok) setCodReps((await crRes.json()).data ?? []);
@@ -132,6 +142,7 @@ export default function NuevaOTPage() {
       if (posRes.ok) setPosiciones((await posRes.json()).data ?? []);
       if (tipoOTRes.ok) setTiposOT((await tipoOTRes.json()).data ?? []);
       if (monRes.ok) setMonedas((await monRes.json()).data ?? []);
+      if (matRes.ok) setMateriales((await matRes.json()).data ?? []);
     }
     loadCatalogs();
   }, []);
@@ -290,6 +301,7 @@ export default function NuevaOTPage() {
         cod_rep_flota: estrategia ? null : (values.cod_rep_flota || null),
         cod_rep_posicion: estrategia ? null : (values.cod_rep_posicion || null),
         equipo_codigo: values.equipo_codigo || null,
+        material_codigo: values.material_codigo || null,
         ns: values.ns || null,
         // Plaqueteo / WO Cliente / PO Item / ID Viajero / Guía / Empresa /
         // Fecha Recepción / PCR / Horas: solo aplican a Reparación. En BIE
@@ -506,7 +518,7 @@ export default function NuevaOTPage() {
                 </Form.Item>
               </Col>
               <Col xs={12} md={8}>
-                <Form.Item name="cod_rep_flota" label="Flota">
+                <Form.Item name="cod_rep_flota" label="Flota" rules={[{ required: true, message: "Requerido" }]}>
                   <Input placeholder="Ej. 980E" />
                 </Form.Item>
               </Col>
@@ -528,12 +540,28 @@ export default function NuevaOTPage() {
           )}
         </Card>
 
-        {/* ── SECCIÓN: Datos del equipo ── */}
-        <Card title="Datos del Equipo" style={{ marginBottom: 16 }} styles={{ body: { paddingBottom: 0 } }}>
+        {/* ── SECCIÓN: Datos ── (antes "Datos del Equipo")
+            Agregamos un Select de "Código de Material" para vincular la OT
+            a un material catalogado opcional. Sirve para trazabilidad cuando
+            el equipo reparado es también un material en stock. */}
+        <Card title="Datos" style={{ marginBottom: 16 }} styles={{ body: { paddingBottom: 0 } }}>
           <Row gutter={16}>
             <Col xs={12} md={6}>
               <Form.Item name="equipo_codigo" label="Equipo">
                 <Input placeholder="Ej: SH001" />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={6}>
+              <Form.Item name="material_codigo" label="Código de Material">
+                <Select
+                  showSearch allowClear
+                  placeholder="Buscar material..."
+                  optionFilterProp="label"
+                  options={materiales.map((m) => ({
+                    value: m.codigo,
+                    label: `${m.codigo} — ${m.descripcion}`,
+                  }))}
+                />
               </Form.Item>
             </Col>
             <Col xs={12} md={6}>
@@ -576,17 +604,29 @@ export default function NuevaOTPage() {
             {!bloqueoBien && (
               <>
                 <Col xs={12} md={6}>
-                  <Form.Item name="id_viajero" label="ID Viajero">
+                  <Form.Item
+                    name="id_viajero"
+                    label="ID Viajero"
+                    rules={[{ required: true, message: "Requerido" }]}
+                  >
                     <Input />
                   </Form.Item>
                 </Col>
                 <Col xs={12} md={6}>
-                  <Form.Item name="guia_remision" label="Guía Remisión (llegada)">
+                  <Form.Item
+                    name="guia_remision"
+                    label="Guía Remisión (llegada)"
+                    rules={[{ required: true, message: "Requerido" }]}
+                  >
                     <Input />
                   </Form.Item>
                 </Col>
                 <Col xs={12} md={8}>
-                  <Form.Item name="empresa_entrega" label="Empresa que entrega">
+                  <Form.Item
+                    name="empresa_entrega"
+                    label="Empresa que entrega"
+                    rules={[{ required: true, message: "Requerido" }]}
+                  >
                     <Input />
                   </Form.Item>
                 </Col>
@@ -757,10 +797,10 @@ export default function NuevaOTPage() {
                 <Col xs={12} md={6}>
                   <Form.Item
                     name="fecha_requerimiento_cliente"
-                    label="Fecha Requerimiento Cliente (opcional)"
+                    label="Fecha Requerimiento Cliente"
                     dependencies={["fecha_recepcion"]}
                     rules={[
-                      // Opcional — el dato no siempre viene en el viajero/guía.
+                      { required: true, message: "Requerido" },
                       // Si se ingresa, debe ser >= fecha de recepción.
                       ({ getFieldValue }) => ({
                         validator(_, value) {

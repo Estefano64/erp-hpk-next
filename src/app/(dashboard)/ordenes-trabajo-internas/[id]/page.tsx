@@ -20,6 +20,7 @@ import OTInternaAdjuntosTab from "@/components/modules/ordenes-trabajo-internas/
 import OTInternaRequerimientosTab from "@/components/modules/ordenes-trabajo-internas/OTInternaRequerimientosTab";
 import OTInternaHistorialTab from "@/components/modules/ordenes-trabajo-internas/OTInternaHistorialTab";
 import OTCostosTab from "@/components/modules/ordenes-trabajo/OTCostosTab";
+import { DescargarOTExcelButton } from "@/components/DescargarOTExcelButton";
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -109,6 +110,13 @@ export default function OTInternaDetallePage() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Resumen de costos (real + estimado) para mostrar en el header. Se llena
+  // con una llamada al endpoint /costos en mount — el cálculo es liviano
+  // porque OT interna no tiene HH ni OCs joinables pesadas.
+  const [costosResumen, setCostosResumen] = useState<{
+    real: Record<string, number>;
+    estimado: Record<string, number>;
+  } | null>(null);
   useUnsavedChangesWarning(editing, "Estás editando esta OT interna. ¿Salir sin guardar?", `ot-interna-${otId}`);
 
   // Catálogos
@@ -157,6 +165,26 @@ export default function OTInternaDetallePage() {
     if (!Number.isFinite(otId) || otId <= 0) return;
     fetchOt();
   }, [otId, fetchOt]);
+
+  // Cargar costos en mount — solo lectura para mostrar en el header.
+  // El tab Costos hace su propia carga, no compartimos estado para no
+  // acoplar. Si el costo cambia mientras se está editando otra cosa, el
+  // header puede quedar desactualizado hasta refresh (aceptable).
+  useEffect(() => {
+    if (!Number.isFinite(otId) || otId <= 0) return;
+    fetch(`/api/ordenes-trabajo-internas/${otId}/costos`)
+      .then(async (r) => {
+        if (!r.ok) return;
+        const j = await r.json();
+        const d = j.data;
+        if (!d) return;
+        setCostosResumen({
+          real: d.ejecutado?.total_por_moneda ?? {},
+          estimado: d.proyectado?.total_por_moneda ?? {},
+        });
+      })
+      .catch(() => { /* sin costos no rompemos el detalle */ });
+  }, [otId]);
 
   useEffect(() => {
     (async () => {
@@ -305,6 +333,34 @@ export default function OTInternaDetallePage() {
             <div style={{ fontSize: 12, opacity: 0.9, marginTop: 4 }}>
               {ot.equipo ? `${ot.equipo.codigo} — ${ot.equipo.descripcion}` : "Sin equipo asignado"}
             </div>
+            {costosResumen && (() => {
+              // Resumen de costos en el header. Si todo es 0 no mostramos
+              // nada para no agregar ruido visual.
+              const fmtMonedas = (m: Record<string, number>) => {
+                const e = Object.entries(m).filter(([, n]) => n > 0);
+                if (e.length === 0) return null;
+                return e
+                  .map(([cur, n]) => `${cur} ${n.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+                  .join(" · ");
+              };
+              const real = fmtMonedas(costosResumen.real);
+              const estimado = fmtMonedas(costosResumen.estimado);
+              if (!real && !estimado) return null;
+              return (
+                <div style={{ fontSize: 12, opacity: 0.95, marginTop: 6 }}>
+                  {real && (
+                    <Tag color="success" style={{ marginRight: 6 }}>
+                      Costo real: {real}
+                    </Tag>
+                  )}
+                  {estimado && (
+                    <Tag color="processing" style={{ marginRight: 6 }}>
+                      Costo estimado: {estimado}
+                    </Tag>
+                  )}
+                </div>
+              );
+            })()}
           </div>
           <Space>
             {!editing ? (
@@ -327,6 +383,7 @@ export default function OTInternaDetallePage() {
                 </Button>
               </>
             )}
+            <DescargarOTExcelButton otId={ot.id} tipo="interna" />
             <Button
               icon={<ArrowLeftOutlined />}
               onClick={() => router.push("/ordenes-trabajo-internas")}
