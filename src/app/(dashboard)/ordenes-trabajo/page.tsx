@@ -104,6 +104,25 @@ interface OTRecord {
   // tabla como columna "Monto Cotizado" (decisión del usuario).
   monto_cotizacion: string | number | null;
   moneda_cotizacion_codigo: string | null;
+  // Tracking de evaluación + tiempo en taller (campos históricos). Antes
+  // solo iban al export — ahora aparecen como columnas opcionales en la
+  // tabla (ocultas por default; el usuario las habilita desde "Columnas").
+  fecha_evaluacion?: string | null;
+  evaluador?: string | null;
+  // Aprobación INTERNA de la evaluación (distinta de fecha_aprobacion, que
+  // es la aprobación del CLIENTE sobre la cotización).
+  fecha_aprobacion_evaluacion?: string | null;
+  evaluacion_aprobado_por?: string | null;
+  fecha_cotizacion?: string | null;
+  fecha_aprobacion?: string | null;
+  fecha_facturacion?: string | null;
+  // Reparación en vendor externo (boolean + nombre del proveedor).
+  reparacion_externa?: boolean;
+  vendor_externo?: string | null;
+  // Característica del cilindro (ESTANDAR / NO_ESTANDAR / null) — dato
+  // importado del Excel "Data_data". Independiente de tipo_reparacion.
+  caracteristica_cilindro?: string | null;
+  dias_en_taller?: number | null;
   // Estado de la hoja de evaluación técnica (último registro). null = sin
   // evaluación todavía.
   evaluaciones_tecnicas?: { estado: string }[];
@@ -113,23 +132,17 @@ interface OTRecord {
 }
 
 // Campos extra que la API devuelve y van al Excel pero no se renderizan en la
-// tabla. Son principalmente los campos históricos importados desde el Excel
-// de logística (fecha_evaluacion, monto_cotizacion, etc.).
+// tabla. Los que ya tienen columna propia (fecha_evaluacion, evaluador,
+// fecha_cotizacion, fecha_aprobacion, fecha_facturacion, dias_en_taller,
+// reparacion_externa, vendor_externo) ya están en OTRecord; acá quedan solo
+// los export-only puros.
 interface OTRecordExport extends OTRecord {
-  fecha_evaluacion?: string | null;
-  evaluador?: string | null;
   nro_informe_evaluacion?: string | null;
-  fecha_cotizacion?: string | null;
   nro_cotizacion?: string | null;
-  // monto_cotizacion ya está en OTRecord — se muestra como columna y también
-  // va al export sin requerir ?export=1.
-  fecha_aprobacion?: string | null;
   fecha_entrega?: string | null;
   cumplimiento?: string | null;
   dias_proceso?: number | null;
-  dias_en_taller?: number | null;
   nro_factura?: string | null;
-  fecha_facturacion?: string | null;
 }
 
 const otStatusColor: Record<string, string> = {
@@ -231,6 +244,15 @@ export default function OrdenesTrabajoPage() {
     "usuario_crea", "fecha_creacion",
     "pcr", "horas", "contrato_dias",
     "fecha_requerimiento_cliente", "fecha_reprogramada",
+    // Bloque "ciclo evaluación → cotización → aprobación → facturación":
+    // ocultas por default (son muchas columnas; el usuario las activa
+    // desde el botón "Columnas" cuando hace análisis).
+    "fecha_evaluacion", "evaluador", "fecha_aprobacion_evaluacion",
+    "evaluacion_aprobado_por", "fecha_cotizacion",
+    "caracteristica_cilindro",
+    "reparacion_externa", "vendor_externo",
+    "fecha_aprobacion", "fecha_facturacion",
+    "dias_en_taller",
     "atencion_reparacion", "tipo_reparacion", "garantia", "tipo_garantia", "base_metalica",
     "comentarios",
   ]);
@@ -385,8 +407,8 @@ export default function OrdenesTrabajoPage() {
     },
     {
       key: "codigo_reparacion",
-      title: "Cod. Rep",
-      width: 120,
+      title: "Código Reparación",
+      width: 140,
       ellipsis: true,
       sorter: (a, b) => (a.codigo_reparacion?.codigo ?? "").localeCompare(b.codigo_reparacion?.codigo ?? ""),
       filters: [...new Set(data.map((r) => r.codigo_reparacion?.codigo).filter(Boolean) as string[])]
@@ -405,9 +427,9 @@ export default function OrdenesTrabajoPage() {
     },
     {
       key: "cantidad",
-      title: "Cant.",
+      title: "Cantidad",
       dataIndex: "cantidad",
-      width: 70,
+      width: 90,
       align: "right" as const,
       sorter: (a, b) => Number(a.cantidad ?? 1) - Number(b.cantidad ?? 1),
       render: (v: number | null) => {
@@ -430,9 +452,9 @@ export default function OrdenesTrabajoPage() {
     },
     {
       key: "fecha_recepcion",
-      title: "Recepción",
+      title: "Fecha Recepción",
       dataIndex: "fecha_recepcion",
-      width: 110,
+      width: 130,
       sorter: (a, b) => (a.fecha_recepcion ?? "").localeCompare(b.fecha_recepcion ?? ""),
       render: (v: string | null) => formatDateOnly(v),
     },
@@ -558,7 +580,7 @@ export default function OrdenesTrabajoPage() {
       render: (_: unknown, r: OTRecord) => r.tipo_ot?.nombre ?? r.tipo_codigo ?? "-",
     },
     {
-      key: "tipo", title: "Tipo (Cod. Rep)", dataIndex: "tipo", width: 120,
+      key: "tipo", title: "Tipo (Código Reparación)", dataIndex: "tipo", width: 180,
       ...filtroPorColumna(data, "tipo"),
       render: (v: string | null) => v ?? "-",
     },
@@ -610,12 +632,12 @@ export default function OrdenesTrabajoPage() {
       render: (v: string | null) => v ?? "-",
     },
     {
-      key: "guia_remision", title: "Guía Rem.", dataIndex: "guia_remision", width: 120,
+      key: "guia_remision", title: "Guía Remisión", dataIndex: "guia_remision", width: 140,
       ...filtroPorColumna(data, "guia_remision"),
       render: (v: string | null) => v ?? "-",
     },
     {
-      key: "empresa_entrega", title: "Empresa entrega", dataIndex: "empresa_entrega", width: 160, ellipsis: true,
+      key: "empresa_entrega", title: "Empresa que entrega", dataIndex: "empresa_entrega", width: 180, ellipsis: true,
       ...filtroPorColumna(data, "empresa_entrega"),
       render: (v: string | null) => v ?? "-",
     },
@@ -635,17 +657,101 @@ export default function OrdenesTrabajoPage() {
       render: (v: number | null) => v != null ? `${v} d` : "-",
     },
     {
-      key: "fecha_requerimiento_cliente", title: "F. Req. Cliente", dataIndex: "fecha_requerimiento_cliente", width: 120,
+      key: "fecha_requerimiento_cliente", title: "Fecha Requerimiento Cliente", dataIndex: "fecha_requerimiento_cliente", width: 180,
       sorter: (a, b) => (a.fecha_requerimiento_cliente ?? "").localeCompare(b.fecha_requerimiento_cliente ?? ""),
       render: (v: string | null) => formatDateOnly(v),
     },
     {
-      key: "fecha_reprogramada", title: "F. Reprogramada", dataIndex: "fecha_reprogramada", width: 130,
+      key: "fecha_reprogramada", title: "Fecha Reprogramada", dataIndex: "fecha_reprogramada", width: 150,
       sorter: (a, b) => (a.fecha_reprogramada ?? "").localeCompare(b.fecha_reprogramada ?? ""),
       render: (v: string | null) => formatDateOnly(v),
     },
     {
-      key: "fecha_creacion", title: "F. Creación", dataIndex: "fecha_creacion", width: 140,
+      // Fecha en que se completó la evaluación técnica.
+      key: "fecha_evaluacion", title: "Fecha Evaluación", dataIndex: "fecha_evaluacion", width: 140,
+      sorter: (a, b) => (a.fecha_evaluacion ?? "").localeCompare(b.fecha_evaluacion ?? ""),
+      render: (v: string | null | undefined) => formatDateOnly(v ?? null),
+    },
+    {
+      // Persona que hizo la evaluación.
+      key: "evaluador", title: "Evaluador", dataIndex: "evaluador", width: 160, ellipsis: true,
+      ...filtroPorColumna(data, "evaluador" as never),
+      render: (v: string | null | undefined) => v ?? "-",
+    },
+    {
+      // Fecha en que se APROBÓ INTERNAMENTE la evaluación (firma del supervisor).
+      // Distinto de fecha_aprobacion, que es la aprobación del CLIENTE sobre cotización.
+      key: "fecha_aprobacion_evaluacion", title: "Fecha Aprobación Evaluación", dataIndex: "fecha_aprobacion_evaluacion", width: 200,
+      sorter: (a, b) => (a.fecha_aprobacion_evaluacion ?? "").localeCompare(b.fecha_aprobacion_evaluacion ?? ""),
+      render: (v: string | null | undefined) => formatDateOnly(v ?? null),
+    },
+    {
+      // Persona que aprobó internamente la evaluación técnica.
+      key: "evaluacion_aprobado_por", title: "Evaluación Aprobado Por", dataIndex: "evaluacion_aprobado_por", width: 180, ellipsis: true,
+      ...filtroPorColumna(data, "evaluacion_aprobado_por" as never),
+      render: (v: string | null | undefined) => v ?? "-",
+    },
+    {
+      // Fecha de cotización (cuando se cotizó al cliente).
+      key: "fecha_cotizacion", title: "Fecha Cotización", dataIndex: "fecha_cotizacion", width: 140,
+      sorter: (a, b) => (a.fecha_cotizacion ?? "").localeCompare(b.fecha_cotizacion ?? ""),
+      render: (v: string | null | undefined) => formatDateOnly(v ?? null),
+    },
+    {
+      // Característica del cilindro — ESTANDAR / NO_ESTANDAR / "—" cuando
+      // no hay dato. Independiente del Tipo de Reparación (catálogo).
+      key: "caracteristica_cilindro", title: "Característica Cilindro", dataIndex: "caracteristica_cilindro", width: 170,
+      filters: [
+        { text: "ESTANDAR", value: "ESTANDAR" },
+        { text: "NO ESTANDAR", value: "NO_ESTANDAR" },
+        { text: "(vacío)", value: "__vacio__" },
+      ],
+      filterMultiple: true,
+      onFilter: (value, r) => value === "__vacio__" ? !r.caracteristica_cilindro : r.caracteristica_cilindro === value,
+      render: (v: string | null | undefined) => {
+        if (!v) return <span style={{ color: "#8c8c8c" }}>—</span>;
+        const label = v === "NO_ESTANDAR" ? "NO ESTANDAR" : v;
+        return <Tag color={v === "ESTANDAR" ? "blue" : "purple"}>{label}</Tag>;
+      },
+    },
+    {
+      // Flag: la reparación se hace en taller externo (no HP&K).
+      key: "reparacion_externa", title: "Reparación Externa", width: 130, align: "center",
+      filters: [{ text: "Sí", value: "true" }, { text: "No", value: "false" }],
+      filterMultiple: false,
+      onFilter: (value, r) => String(!!r.reparacion_externa) === String(value),
+      sorter: (a, b) => Number(!!b.reparacion_externa) - Number(!!a.reparacion_externa),
+      render: (_: unknown, r: OTRecord) =>
+        r.reparacion_externa ? <Tag color="orange">Sí</Tag> : <span style={{ color: "#8c8c8c" }}>—</span>,
+    },
+    {
+      // Nombre del proveedor externo (cuando aplica).
+      key: "vendor_externo", title: "Vendor Externo", dataIndex: "vendor_externo", width: 160, ellipsis: true,
+      ...filtroPorColumna(data, "vendor_externo" as never),
+      render: (v: string | null | undefined) => v ?? "-",
+    },
+    {
+      // Fecha en que el CLIENTE aprobó la cotización (distinta de
+      // fecha_aprobacion_evaluacion que es la aprobación interna).
+      key: "fecha_aprobacion", title: "Fecha Aprobación", dataIndex: "fecha_aprobacion", width: 150,
+      sorter: (a, b) => (a.fecha_aprobacion ?? "").localeCompare(b.fecha_aprobacion ?? ""),
+      render: (v: string | null | undefined) => formatDateOnly(v ?? null),
+    },
+    {
+      // Fecha de facturación al cliente.
+      key: "fecha_facturacion", title: "Fecha Facturación", dataIndex: "fecha_facturacion", width: 150,
+      sorter: (a, b) => (a.fecha_facturacion ?? "").localeCompare(b.fecha_facturacion ?? ""),
+      render: (v: string | null | undefined) => formatDateOnly(v ?? null),
+    },
+    {
+      // Días totales que el componente lleva en taller (se calcula al cerrar la OT).
+      // Igual que arriba: viene del campo histórico de la BD.
+      key: "dias_en_taller", title: "Días en taller", dataIndex: "dias_en_taller", width: 120, align: "right",
+      sorter: (a, b) => (a.dias_en_taller ?? 0) - (b.dias_en_taller ?? 0),
+      render: (v: number | null | undefined) => v != null ? `${v} d` : "-",
+    },
+    {
+      key: "fecha_creacion", title: "Fecha Creación", dataIndex: "fecha_creacion", width: 160,
       sorter: (a, b) => (a.fecha_creacion ?? "").localeCompare(b.fecha_creacion ?? ""),
       render: (v: string | null) => v ? dayjs(v).format("DD/MM/YY HH:mm") : "-",
     },
@@ -655,14 +761,14 @@ export default function OrdenesTrabajoPage() {
       render: (v: string | null) => v ?? "-",
     },
     {
-      key: "atencion_reparacion", title: "Atención Rep.", width: 140, ellipsis: true,
+      key: "atencion_reparacion", title: "Atención Reparación", width: 170, ellipsis: true,
       filters: [...new Set(data.map((r) => r.atencion_reparacion?.nombre).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
       filterSearch: true,
       onFilter: (value, r) => r.atencion_reparacion?.nombre === value,
       render: (_: unknown, r: OTRecord) => r.atencion_reparacion?.nombre ?? "-",
     },
     {
-      key: "tipo_reparacion", title: "Tipo Rep.", width: 120,
+      key: "tipo_reparacion", title: "Tipo Reparación", width: 150,
       filters: [...new Set(data.map((r) => r.tipo_reparacion?.nombre).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
       filterSearch: true,
       onFilter: (value, r) => r.tipo_reparacion?.nombre === value,
@@ -791,7 +897,7 @@ export default function OrdenesTrabajoPage() {
     return c;
   });
 
-  const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper, orden: ordenColumnas } =
     useColumnasRedimensionables<OTRecord>(serverColumns, "ot-list-cols-widths-v1", { data });
 
   return (
@@ -823,6 +929,11 @@ export default function OrdenesTrabajoPage() {
             // descarga envía estos mismos filtros server-side al endpoint y
             // recibe TODAS las filas que cumplen (no solo la página visible).
             endpointParams={filtrosServer}
+            // Layout actual de la tabla (orden + columnas ocultas). Sólo aplica
+            // a columnas del export cuya `key` coincide con la `key` de la
+            // tabla — el resto (datos históricos como evaluación/cotización)
+            // queda al final cuando "respetar layout" está activo.
+            tablaLayout={{ orden: ordenColumnas ?? undefined, ocultas }}
             dateFilter={{
               label: "Fecha de recepción",
               paramNameDesde: "fecha_recepcion_desde",
@@ -841,45 +952,48 @@ export default function OrdenesTrabajoPage() {
               },
             ]}
             columns={[
+              // Keys que matchean con las de la tabla → respetan layout cuando el
+              // usuario activa el checkbox. Las columnas "histórico" sin match
+              // (Evaluación, Cotización, etc.) van al final con su orden original.
               // Prefijo V/S según tipo (Bien/Servicio). Reparación queda como número puro.
-              { label: "OT", value: (r) => formatOtCodigo(r.ot, r.tipo_ot?.codigo ?? r.tipo_codigo, "") },
-              { label: "Cliente", value: (r) => r.cliente?.nombre_comercial ?? r.cliente?.razon_social ?? "" },
-              { label: "Cod. Rep", value: (r) => r.codigo_reparacion?.codigo ?? "" },
-              { label: "Cod. Rep - Descripción", value: (r) => r.codigo_reparacion?.descripcion ?? "" },
-              { label: "Equipo", value: (r) => r.equipo_codigo ?? "" },
-              { label: "Cantidad", value: (r) => r.cantidad ?? 1 },
-              { label: "Fabricante", value: (r) => r.fabricante?.nombre ?? "" },
-              { label: "Tipo (Cod. Rep)", value: (r) => r.tipo ?? "" },
-              { label: "Tipo OT", value: (r) => r.tipo_ot?.nombre ?? r.tipo_codigo ?? "" },
-              { label: "N/P", value: (r) => r.np ?? "" },
-              { label: "NS", value: (r) => r.ns ?? "" },
-              { label: "Flota", value: (r) => r.cod_rep_flota ?? "" },
-              { label: "Posición", value: (r) => r.cod_rep_posicion ?? "" },
-              { label: "Plaqueteo", value: (r) => r.plaqueteo ?? "" },
-              { label: "Descripción", value: (r) => r.descripcion ?? "" },
-              { label: "WO Cliente", value: (r) => r.wo_cliente ?? "" },
-              { label: "PO Cliente", value: (r) => r.po_cliente ?? "" },
-              { label: "PO Item", value: (r) => r.po_item ?? "" },
-              { label: "ID Viajero", value: (r) => r.id_viajero ?? "" },
-              { label: "Guía Remisión", value: (r) => r.guia_remision ?? "" },
-              { label: "Empresa entrega", value: (r) => r.empresa_entrega ?? "" },
-              { label: "Fecha Recepción", value: (r) => formatDateOnly(r.fecha_recepcion) ?? "" },
-              { label: "F. Req. Cliente", value: (r) => formatDateOnly(r.fecha_requerimiento_cliente) ?? "" },
-              { label: "F. Reprogramada", value: (r) => formatDateOnly(r.fecha_reprogramada) ?? "" },
-              { label: "PCR", value: (r) => r.pcr ?? "" },
-              { label: "Horas", value: (r) => r.horas ?? "" },
-              { label: "% PCR", value: (r) => r.porcentaje_pcr ?? "" },
-              { label: "Días contrato", value: (r) => r.contrato_dias ?? "" },
-              { label: "Prioridad", value: (r) => r.prioridad_atencion?.nombre ?? "" },
-              { label: "Atención Rep.", value: (r) => r.atencion_reparacion?.nombre ?? "" },
-              { label: "Tipo Rep.", value: (r) => r.tipo_reparacion?.nombre ?? "" },
-              { label: "OT Status", value: (r) => r.ot_status?.nombre ?? r.ot_status_codigo ?? "" },
-              { label: "Recursos Status", value: (r) => r.recursos_status?.nombre ?? r.recursos_status_codigo ?? "" },
-              { label: "Taller Status", value: (r) => r.taller_status?.nombre ?? r.taller_status_codigo ?? "" },
-              { label: "Garantía", value: (r) => r.garantia?.nombre ?? "" },
-              { label: "Tipo Garantía", value: (r) => r.tipo_garantia?.nombre ?? "" },
-              { label: "Base Metálica", value: (r) => r.base_metalica?.nombre ?? "" },
-              { label: "Comentarios", value: (r) => r.comentarios ?? "" },
+              { key: "ot", label: "OT", value: (r) => formatOtCodigo(r.ot, r.tipo_ot?.codigo ?? r.tipo_codigo, "") },
+              { key: "cliente", label: "Cliente", value: (r) => r.cliente?.nombre_comercial ?? r.cliente?.razon_social ?? "" },
+              { key: "codigo_reparacion", label: "Cod. Rep", value: (r) => r.codigo_reparacion?.codigo ?? "" },
+              { key: "codigo_reparacion_desc", label: "Cod. Rep - Descripción", value: (r) => r.codigo_reparacion?.descripcion ?? "" },
+              { key: "equipo_codigo", label: "Equipo", value: (r) => r.equipo_codigo ?? "" },
+              { key: "cantidad", label: "Cantidad", value: (r) => r.cantidad ?? 1 },
+              { key: "fabricante", label: "Fabricante", value: (r) => r.fabricante?.nombre ?? "" },
+              { key: "tipo", label: "Tipo (Cod. Rep)", value: (r) => r.tipo ?? "" },
+              { key: "tipo_ot", label: "Tipo OT", value: (r) => r.tipo_ot?.nombre ?? r.tipo_codigo ?? "" },
+              { key: "np", label: "N/P", value: (r) => r.np ?? "" },
+              { key: "ns", label: "NS", value: (r) => r.ns ?? "" },
+              { key: "cod_rep_flota", label: "Flota", value: (r) => r.cod_rep_flota ?? "" },
+              { key: "cod_rep_posicion", label: "Posición", value: (r) => r.cod_rep_posicion ?? "" },
+              { key: "plaqueteo", label: "Plaqueteo", value: (r) => r.plaqueteo ?? "" },
+              { key: "descripcion", label: "Descripción", value: (r) => r.descripcion ?? "" },
+              { key: "wo_cliente", label: "WO Cliente", value: (r) => r.wo_cliente ?? "" },
+              { key: "po_cliente", label: "PO Cliente", value: (r) => r.po_cliente ?? "" },
+              { key: "po_item", label: "PO Item", value: (r) => r.po_item ?? "" },
+              { key: "id_viajero", label: "ID Viajero", value: (r) => r.id_viajero ?? "" },
+              { key: "guia_remision", label: "Guía Remisión", value: (r) => r.guia_remision ?? "" },
+              { key: "empresa_entrega", label: "Empresa entrega", value: (r) => r.empresa_entrega ?? "" },
+              { key: "fecha_recepcion", label: "Fecha Recepción", value: (r) => formatDateOnly(r.fecha_recepcion) ?? "" },
+              { key: "fecha_requerimiento_cliente", label: "F. Req. Cliente", value: (r) => formatDateOnly(r.fecha_requerimiento_cliente) ?? "" },
+              { key: "fecha_reprogramada", label: "F. Reprogramada", value: (r) => formatDateOnly(r.fecha_reprogramada) ?? "" },
+              { key: "pcr", label: "PCR", value: (r) => r.pcr ?? "" },
+              { key: "horas", label: "Horas", value: (r) => r.horas ?? "" },
+              { key: "porcentaje_pcr", label: "% PCR", value: (r) => r.porcentaje_pcr ?? "" },
+              { key: "contrato_dias", label: "Días contrato", value: (r) => r.contrato_dias ?? "" },
+              { key: "prioridad_atencion", label: "Prioridad", value: (r) => r.prioridad_atencion?.nombre ?? "" },
+              { key: "atencion_reparacion", label: "Atención Rep.", value: (r) => r.atencion_reparacion?.nombre ?? "" },
+              { key: "tipo_reparacion", label: "Tipo Rep.", value: (r) => r.tipo_reparacion?.nombre ?? "" },
+              { key: "ot_status", label: "OT Status", value: (r) => r.ot_status?.nombre ?? r.ot_status_codigo ?? "" },
+              { key: "recursos_status", label: "Recursos Status", value: (r) => r.recursos_status?.nombre ?? r.recursos_status_codigo ?? "" },
+              { key: "taller_status", label: "Taller Status", value: (r) => r.taller_status?.nombre ?? r.taller_status_codigo ?? "" },
+              { key: "garantia", label: "Garantía", value: (r) => r.garantia?.nombre ?? "" },
+              { key: "tipo_garantia", label: "Tipo Garantía", value: (r) => r.tipo_garantia?.nombre ?? "" },
+              { key: "base_metalica", label: "Base metálica", value: (r) => r.base_metalica?.nombre ?? "" },
+              { key: "comentarios", label: "Comentarios", value: (r) => r.comentarios ?? "" },
               // Histórico (importado del Excel)
               { label: "Fecha Evaluación", value: (r) => formatDateOnly(r.fecha_evaluacion ?? null) ?? "" },
               { label: "Evaluador", value: (r) => r.evaluador ?? "" },

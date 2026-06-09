@@ -4,7 +4,10 @@
 // El cliente subió antes a R2 via /api/r2/upload-url con
 //   resource = "compra-guia" | "compra-factura".
 //
-// Regla de negocio preservada: no se acepta factura si la compra no tiene guía.
+// Decisión del user (2026-06): se removió la regla que bloqueaba subir factura
+// sin guía. Algunos proveedores entregan factura antes que la guía, o nunca
+// emiten guía formal (servicios). Ahora ambos archivos son independientes —
+// el orden de subida es libre.
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
@@ -41,15 +44,9 @@ export async function POST(req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Compra no encontrada" }, { status: 404 });
     }
 
-    if (tipo === "factura" && !compra.guia_key) {
-      return NextResponse.json(
-        {
-          error: "No se puede subir factura: primero cargá la guía de remisión del proveedor.",
-          falta: "guia",
-        },
-        { status: 400 },
-      );
-    }
+    // (Antes había un gate: si tipo==="factura" y compra.guia_key==null →
+    //  bloqueaba con 400. Removido por decisión del user — guía y factura son
+    //  independientes; el orden de subida es libre.)
 
     let body: unknown;
     try {

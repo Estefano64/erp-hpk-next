@@ -62,7 +62,87 @@ export async function GET(req: NextRequest) {
       prisma.ordenTrabajoInterna.count({ where }),
     ]);
 
-    return NextResponse.json({ data, total, page });
+    // ── Agregaciones por OT (página actual) ──────────────────────────────
+    // Una sola query con los repuestos NO anulados de las OTs visibles para:
+    //   - n_reqs_distintos: cuántos `nro_req` únicos tiene cada OT
+    //   - costo_real_por_moneda:     SUM(cantidad_recibida × precio_unitario)
+    //   - costo_estimado_por_moneda: SUM(pendiente × precio_unitario) con filtro
+    //     de items que aún están en proceso (APROBADO o con OC vigente).
+    // El cálculo replica la lógica simplificada de src/lib/costos-ot.ts pero
+    // sin tocar OCs ni HH (HH no aplica a OT interna; OCs ya se reflejan vía
+    // cantidad_recibida en cada repuesto).
+    const otIds = data.map((o) => o.id);
+    type AggMap = Map<number, {
+      reqs: Set<string>;
+      real: Map<string, number>;
+      estimado: Map<string, number>;
+    }>;
+    const agg: AggMap = new Map();
+    if (otIds.length > 0) {
+      const reqs = await prisma.oTRepuesto.findMany({
+        where: {
+          orden_trabajo_interna_id: { in: otIds },
+          status_requerimiento_codigo: { not: "ANULADO" },
+        },
+        select: {
+          orden_trabajo_interna_id: true,
+          nro_req: true,
+          cantidad: true,
+          cantidad_recibida: true,
+          precio_unitario: true,
+          moneda: true,
+          status_requerimiento_codigo: true,
+          status_oc_codigo: true,
+        },
+      });
+      const num = (v: unknown): number => {
+        if (v == null) return 0;
+        if (typeof v === "object" && v !== null && "toNumber" in v) {
+          // Prisma.Decimal
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return (v as any).toNumber();
+        }
+        const n = Number(v);
+        return Number.isFinite(n) ? n : 0;
+      };
+      for (const r of reqs) {
+        if (r.orden_trabajo_interna_id == null) continue;
+        const entry = agg.get(r.orden_trabajo_interna_id) ?? {
+          reqs: new Set<string>(),
+          real: new Map<string, number>(),
+          estimado: new Map<string, number>(),
+        };
+        if (r.nro_req) entry.reqs.add(r.nro_req);
+        const moneda = r.moneda ?? "USD";
+        const cantidad = num(r.cantidad);
+        const recibido = num(r.cantidad_recibida);
+        const precio = num(r.precio_unitario);
+        const subReal = recibido * precio;
+        const pendiente = Math.max(cantidad - recibido, 0);
+        const enProceso =
+          r.status_requerimiento_codigo === "APROBADO"
+          || (r.status_oc_codigo != null && r.status_oc_codigo !== "ANULADO");
+        const subEst = enProceso ? pendiente * precio : 0;
+        if (subReal > 0) entry.real.set(moneda, (entry.real.get(moneda) ?? 0) + subReal);
+        if (subEst > 0) entry.estimado.set(moneda, (entry.estimado.get(moneda) ?? 0) + subEst);
+        agg.set(r.orden_trabajo_interna_id, entry);
+      }
+    }
+
+    // Adjunto los agregados a cada fila como campos planos para que el front
+    // pueda mostrarlos sin lógica extra. Si la OT no tiene repuestos los
+    // valores son 0 / objeto vacío (no null) para simplificar tipado.
+    const enriched = data.map((o) => {
+      const a = agg.get(o.id);
+      return {
+        ...o,
+        n_reqs_distintos: a?.reqs.size ?? 0,
+        costo_real_por_moneda: a ? Object.fromEntries(a.real) : {},
+        costo_estimado_por_moneda: a ? Object.fromEntries(a.estimado) : {},
+      };
+    });
+
+    return NextResponse.json({ data: enriched, total, page });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Error" },

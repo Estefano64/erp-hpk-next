@@ -110,6 +110,23 @@ interface Props<T> {
    * sigue sirviendo para mostrar el conteo en el checkbox.
    */
   endpointParams?: Record<string, string | number | boolean | null | undefined> | URLSearchParams;
+  /**
+   * Layout actual de la tabla — para que el Excel salga con las mismas
+   * columnas visibles y en el mismo orden que el usuario tiene configurado.
+   * Cuando se pasa, aparece un checkbox "Respetar layout actual de la tabla"
+   * en el modal (activo por default). Cuando está activo:
+   *   - Solo se exportan columnas cuya `key` NO está en `ocultas`.
+   *   - El orden de las columnas en el .xlsx sigue `orden` (las que no
+   *     aparecen en `orden` van al final con el orden original).
+   * El caller debe asegurarse de que las `key` de los `ExportColumn` coincidan
+   * con las `key` de las columnas de AntD para que el match funcione.
+   */
+  tablaLayout?: {
+    /** Orden actual de columnas (keys). Las no listadas van al final. */
+    orden?: string[];
+    /** Keys ocultas. Se excluyen del export cuando el checkbox está activo. */
+    ocultas?: string[];
+  };
   /** Texto del botón */
   children?: React.ReactNode;
 }
@@ -139,6 +156,7 @@ export function ExportarExcelButton<T>({
   storageKey,
   currentRows,
   endpointParams,
+  tablaLayout,
   children,
 }: Props<T>) {
   const { message } = App.useApp();
@@ -148,6 +166,10 @@ export function ExportarExcelButton<T>({
   // filtros que el usuario tiene aplicados en la tabla). El usuario puede
   // desmarcar para forzar re-fetch desde el endpoint.
   const [usarFiltrosTabla, setUsarFiltrosTabla] = useState(true);
+  // Cuando el caller pasó `tablaLayout`, el .xlsx respeta orden + visibilidad
+  // de la tabla por default. El usuario puede desmarcar para volver al orden
+  // original definido en `columns`.
+  const [respetarLayout, setRespetarLayout] = useState(true);
 
   const persistKey = storageKey ?? `excel-export-${filename}`;
 
@@ -320,7 +342,35 @@ export function ExportarExcelButton<T>({
       persistir({ cols: selectedCols, cats: catSelections });
 
       // Conservar el orden original de columnas (no el orden en que el usuario las marcó).
-      const colsParaExport = columns.filter((c) => selectedCols.includes(colKey(c)));
+      // Si tablaLayout está activo: respetar orden + ocultas de la tabla.
+      // El user puede tener columnas seleccionadas en el modal que la tabla tenga
+      // ocultas; cuando "respetar layout" está ON, las ocultas SE EXCLUYEN incluso
+      // si fueron marcadas. Es lo que el usuario espera ("descargá lo que veo").
+      let colsParaExport: ExportColumn<T>[];
+      if (tablaLayout && respetarLayout) {
+        const ocultasSet = new Set(tablaLayout.ocultas ?? []);
+        const ordenArr = tablaLayout.orden ?? [];
+        const ordenIdx = new Map<string, number>();
+        ordenArr.forEach((k, i) => ordenIdx.set(k, i));
+        const filtradas = columns.filter((c) => {
+          const k = colKey(c);
+          if (ocultasSet.has(k)) return false;
+          if (!selectedCols.includes(k)) return false;
+          return true;
+        });
+        // Sort: las que están en `orden` van primero en ese orden; las que no
+        // están van al final manteniendo su orden original (estable).
+        filtradas.sort((a, b) => {
+          const ka = colKey(a);
+          const kb = colKey(b);
+          const ia = ordenIdx.has(ka) ? ordenIdx.get(ka)! : Number.MAX_SAFE_INTEGER;
+          const ib = ordenIdx.has(kb) ? ordenIdx.get(kb)! : Number.MAX_SAFE_INTEGER;
+          return ia - ib;
+        });
+        colsParaExport = filtradas;
+      } else {
+        colsParaExport = columns.filter((c) => selectedCols.includes(colKey(c)));
+      }
 
       const XLSX = await import("xlsx");
       const rows = filtrados.map((r) => {
@@ -402,6 +452,31 @@ export function ExportarExcelButton<T>({
             </span>
           }
         />
+
+        {/* Checkbox para respetar el layout de la tabla (orden + ocultas).
+            Aparece solo si el caller pasó tablaLayout. */}
+        {tablaLayout && (
+          <div style={{ marginBottom: spc.md, padding: spc.sm, background: "#f5f5f5", borderRadius: 4 }}>
+            <Checkbox
+              checked={respetarLayout}
+              onChange={(e) => setRespetarLayout(e.target.checked)}
+            >
+              <Text strong>Respetar layout actual de la tabla</Text>
+              {(tablaLayout.ocultas?.length ?? 0) > 0 && (
+                <Tag color="orange" style={{ marginLeft: 6 }}>
+                  {tablaLayout.ocultas?.length} ocultas
+                </Tag>
+              )}
+            </Checkbox>
+            <div style={{ marginTop: 4, marginLeft: 24 }}>
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                {respetarLayout
+                  ? "Las columnas saldrán en el orden que tenés en la tabla; las ocultas se excluyen aunque estén marcadas abajo."
+                  : "Se ignora el layout: usás la selección y orden original de columnas."}
+              </Text>
+            </div>
+          </div>
+        )}
 
         {/* Checkbox para descargar respetando los filtros activos de la tabla.
             Aparece si el caller pasó currentRows o endpointParams. */}

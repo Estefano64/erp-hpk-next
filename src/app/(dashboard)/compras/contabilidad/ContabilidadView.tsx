@@ -285,7 +285,7 @@ export default function ContabilidadView({
       </div>
       <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 12 }}>
         Revisá la OC con su OT asociada. Desde cada fila podés <b>descargar</b>, <b>subir</b> o <b>reemplazar</b> la guía de remisión y la factura.
-        Recordá: la factura solo se puede subir después de cargar la guía.
+        Guía y factura son independientes — podés subir cualquiera primero.
       </Text>
 
       <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>

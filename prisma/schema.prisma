@@ -672,6 +672,11 @@ model Material {
   movimientos           MovimientoInventario[]
   cotizaciones          CotizacionProveedor[]
   task_list_items       TaskListItem[]
+  // OTs externas que tienen este material como referencia directa (opcional;
+  // distinto de OTRepuesto que vincula items específicos al material). Se
+  // usa cuando el usuario quiere etiquetar el material asociado al equipo
+  // al crear la OT — para trazabilidad de stock/cargos.
+  ordenes_trabajo       OrdenTrabajo[]         @relation("OTMaterialEquipo")
 
   @@map("material")
 }
@@ -946,6 +951,11 @@ model OrdenTrabajo {
   cod_rep_flota               String?             @db.VarChar(100)
   cod_rep_posicion            String?             @db.VarChar(100)
   equipo_codigo               String?             @db.VarChar(100)
+  // Código de material del catálogo (opcional). Permite vincular la OT a un
+  // material específico para trazabilidad (ej. cuando se reporta el bien que
+  // se está reparando). FK a Material.codigo con onDelete: SetNull para que
+  // si el material se borra, la OT no caiga en cascada.
+  material_codigo             String?             @db.VarChar(50)
   ns                          String?             @db.VarChar(100)
   plaqueteo                   String?             @db.VarChar(100)
   wo_cliente                  String?             @db.VarChar(100)
@@ -983,10 +993,27 @@ model OrdenTrabajo {
   nro_informe_evaluacion      String?             @db.VarChar(100)
   fecha_entrega_informe       DateTime?           @db.Date
   dias_evaluacion             Int?
+  // Tracking de la APROBACIÓN INTERNA de la evaluación técnica (distinto de
+  // `fecha_aprobacion`, que es la aprobación del CLIENTE sobre la cotización).
+  // Se usa cuando el supervisor firma la hoja de evaluación antes de enviarla
+  // al cliente para cotizar.
+  fecha_aprobacion_evaluacion DateTime?           @db.Date
+  evaluacion_aprobado_por     String?             @db.VarChar(150)
   reparacion_cil              String?             @db.VarChar(10)
   reparacion_vas              String?             @db.VarChar(10)
   reparacion_tapa             String?             @db.VarChar(10)
   reparacion_piston           String?             @db.VarChar(10)
+  // Característica del cilindro / componente — viene del Excel "Data_data"
+  // como ESTANDAR / NO_ESTANDAR. Se guarda separado de `tipo_reparacion_codigo`
+  // (que es el catálogo Eval&Lim/General/Parcial/Vestido) porque son dos
+  // dimensiones distintas: una es la PIEZA, la otra es el TIPO DE TRABAJO.
+  // Acepta null para OTs que no tienen el dato.
+  caracteristica_cilindro     String?             @db.VarChar(30)
+  // Flag: la reparación se hace en un taller externo (no HP&K). Cuando es
+  // true, `vendor_externo` lleva el nombre del proveedor que ejecuta el
+  // trabajo. Default false (la mayoría de OTs se hacen in-house).
+  reparacion_externa          Boolean             @default(false)
+  vendor_externo              String?             @db.VarChar(150)
   nro_cotizacion              String?             @db.VarChar(100)
   monto_cotizacion            Decimal?            @db.Decimal(15, 2)
   moneda_cotizacion_codigo    String?             @db.VarChar(10)
@@ -1039,6 +1066,7 @@ model OrdenTrabajo {
   tipo_ot                     TipoOT?             @relation(fields: [tipo_codigo], references: [codigo])
   tipo_reparacion             TipoReparacion?     @relation(fields: [tipo_reparacion_codigo], references: [codigo])
   moneda_cotizacion           Moneda?             @relation("MonedaCotizacion", fields: [moneda_cotizacion_codigo], references: [codigo])
+  material                    Material?           @relation("OTMaterialEquipo", fields: [material_codigo], references: [codigo], onDelete: SetNull)
   adjuntos                    OtAdjunto[]
   historial                   OTHistorial[]
   repuestos                   OTRepuesto[]
