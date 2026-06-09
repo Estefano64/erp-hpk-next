@@ -142,6 +142,22 @@ interface OTDetalle {
   monto_cotizacion: number | string | null;
   moneda_cotizacion_codigo: string | null;
   moneda_cotizacion: { codigo: string; nombre: string } | null;
+  // Fechas del ciclo Evaluación → Cotización → Aprobación → Facturación.
+  // Antes solo iban al export — ahora se editan también desde el detalle vía
+  // la sección "Fechas Relevantes".
+  fecha_evaluacion: string | null;
+  evaluador: string | null;
+  fecha_aprobacion_evaluacion: string | null;
+  evaluacion_aprobado_por: string | null;
+  fecha_cotizacion: string | null;
+  fecha_aprobacion: string | null;
+  fecha_facturacion: string | null;
+  fecha_entrega: string | null;
+  // Característica del cilindro (ESTANDAR / NO_ESTANDAR) — del Excel Data_data.
+  caracteristica_cilindro: string | null;
+  // Reparación en vendor externo.
+  reparacion_externa: boolean;
+  vendor_externo: string | null;
 }
 
 interface Props {
@@ -227,6 +243,9 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   const tiposCodRepRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=tipoCodRep");
   const fabricantesRes = useCachedFetch<Wrapped<FabricanteOption>>("/api/catalogos?tabla=fabricante");
   const posicionesRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=posicion");
+  // Proveedores para el Select de "Vendor Externo" — reusa la tabla proveedor
+  // existente (decisión del user, evita crear nuevo catálogo).
+  const proveedoresRes = useCachedFetch<Wrapped<{ id: number; razon_social: string; nombre_comercial: string | null }>>("/api/proveedores?limit=500");
 
   const otStatuses = otStatusesRes?.data ?? [];
   const recursosStatuses = recursosStatusesRes?.data ?? [];
@@ -242,6 +261,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   const tiposCodRep = tiposCodRepRes?.data ?? [];
   const fabricantes = fabricantesRes?.data ?? [];
   const posiciones = posicionesRes?.data ?? [];
+  const proveedores = proveedoresRes?.data ?? [];
 
   const fetchOT = useCallback(async () => {
     if (!otId) return;
@@ -343,6 +363,21 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
       base_metalica_codigo: ot.base_metalica_codigo,
       monto_cotizacion: ot.monto_cotizacion != null ? Number(ot.monto_cotizacion) : null,
       moneda_cotizacion_codigo: ot.moneda_cotizacion_codigo,
+      // Fechas Relevantes + Trabajo Externo (sección nueva).
+      fecha_evaluacion: ot.fecha_evaluacion,
+      evaluador: ot.evaluador,
+      fecha_aprobacion_evaluacion: ot.fecha_aprobacion_evaluacion,
+      evaluacion_aprobado_por: ot.evaluacion_aprobado_por,
+      fecha_cotizacion: ot.fecha_cotizacion,
+      fecha_aprobacion: ot.fecha_aprobacion,
+      fecha_facturacion: ot.fecha_facturacion,
+      fecha_entrega: ot.fecha_entrega,
+      // Default explícito a false para reparacion_externa cuando viene null
+      // (OTs viejas creadas antes de que existiera el campo) — la sugerencia
+      // del user es que arranque en "No".
+      reparacion_externa: ot.reparacion_externa ?? false,
+      vendor_externo: ot.vendor_externo,
+      caracteristica_cilindro: ot.caracteristica_cilindro,
     });
     setEditing(true);
   }
@@ -842,6 +877,21 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                 <Col xs={12} md={6}><Field label="Equipo" value={ot.equipo_codigo} /></Col>
                 <Col xs={12} md={6}><Field label="N/S" value={ot.ns} /></Col>
               </Row>
+              {/* Plaqueteo al lado de N/S — antes vivía en "Documentos y
+                  Logística"; el user pidió pegarlo a N/S porque son del cilindro
+                  físico. También sumamos "Característica" (ESTANDAR / NO_ESTANDAR)
+                  acá porque es info del componente, no de logística. */}
+              <Row gutter={[16, 4]}>
+                <Col xs={12} md={6}><Field label="Plaqueteo" value={ot.plaqueteo} /></Col>
+                <Col xs={12} md={6}>
+                  <Field
+                    label="Característica Cilindro"
+                    value={ot.caracteristica_cilindro
+                      ? (ot.caracteristica_cilindro === "NO_ESTANDAR" ? "NO ESTANDAR" : ot.caracteristica_cilindro)
+                      : null}
+                  />
+                </Col>
+              </Row>
             </>
           ) : (
             <>
@@ -984,7 +1034,15 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
               <Row gutter={[16, 4]}>
                 <Col xs={12} md={6}><Field label="Empresa que entrega" value={ot.empresa_entrega} /></Col>
                 <Col xs={12} md={6}><Field label="Fecha Recepción" value={fmtDate(ot.fecha_recepcion)} /></Col>
-                <Col xs={12} md={6}><Field label="Plaqueteo" value={ot.plaqueteo} /></Col>
+                {/* Prioridad subió acá (al lado de la fecha de requerimiento)
+                    — antes vivía abajo en "Tipo Reparación y Garantía". */}
+                <Col xs={12} md={6}>
+                  <Field
+                    label="Prioridad"
+                    value={ot.prioridad_atencion ? `${ot.prioridad_atencion.codigo} - ${ot.prioridad_atencion.nombre}` : null}
+                  />
+                </Col>
+                <Col xs={12} md={6}><Field label="Fecha Req. Cliente" value={fmtDate(ot.fecha_requerimiento_cliente)} /></Col>
               </Row>
             </>
           ) : (
@@ -1106,7 +1164,8 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
             <Row gutter={[16, 4]}>
               <Col xs={12} md={4}><Field label="Atención" value={ot.atencion_reparacion?.nombre} /></Col>
               <Col xs={12} md={4}><Field label="Tipo Reparación" value={ot.tipo_reparacion?.nombre} /></Col>
-              <Col xs={12} md={4}><Field label="Prioridad" value={ot.prioridad_atencion ? `${ot.prioridad_atencion.codigo} - ${ot.prioridad_atencion.nombre}` : null} /></Col>
+              {/* Prioridad se movió arriba (al bloque "Documentos y Logística"
+                  al lado de Fecha Requerimiento Cliente) — pedido del user. */}
               <Col xs={12} md={3}><Field label="Garantía" value={ot.garantia_codigo} /></Col>
               <Col xs={12} md={4}><Field label="Tipo Garantía" value={ot.tipo_garantia?.nombre} /></Col>
               <Col xs={12} md={3}><Field label="Base Metálica" value={ot.base_metalica_codigo} /></Col>
@@ -1214,6 +1273,138 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                 </Col>
               )}
             </Row>
+          )}
+        </Card>
+
+        {/* ── Fechas Relevantes + Trabajo Externo ─────────────────────
+            Pedido del user: agrupar las fechas del ciclo (eval/cotiz/aprob)
+            y los datos de reparación externa en una sección dedicada. La
+            fecha de cotización + aprobación + facturación + entrega son
+            obligatorias al cerrar la OT (la validación está en el PUT API). */}
+        <Card
+          size="small"
+          styles={{ body: { padding: 16 } }}
+          style={{ marginBottom: 16, borderColor: brand.border }}
+        >
+          <SectionTitle>Fechas Relevantes y Trabajo Externo</SectionTitle>
+          {!editing ? (
+            <>
+              <Row gutter={[16, 4]}>
+                <Col xs={12} md={6}><Field label="Fecha Evaluación" value={fmtDate(ot.fecha_evaluacion)} /></Col>
+                <Col xs={12} md={6}><Field label="Evaluador" value={ot.evaluador} /></Col>
+                <Col xs={12} md={6}><Field label="Fecha Aprobación Evaluación" value={fmtDate(ot.fecha_aprobacion_evaluacion)} /></Col>
+                <Col xs={12} md={6}><Field label="Aprobado por" value={ot.evaluacion_aprobado_por} /></Col>
+              </Row>
+              <Row gutter={[16, 4]}>
+                <Col xs={12} md={6}><Field label="Fecha Cotización" value={fmtDate(ot.fecha_cotizacion)} /></Col>
+                <Col xs={12} md={6}><Field label="Fecha Aprobación (cliente)" value={fmtDate(ot.fecha_aprobacion)} /></Col>
+                <Col xs={12} md={6}><Field label="Fecha Entrega" value={fmtDate(ot.fecha_entrega)} /></Col>
+                <Col xs={12} md={6}><Field label="Fecha Facturación" value={fmtDate(ot.fecha_facturacion)} /></Col>
+              </Row>
+              <Divider style={{ margin: "12px 0" }} />
+              <Row gutter={[16, 4]}>
+                <Col xs={12} md={6}><Field label="Reparación Externa" value={ot.reparacion_externa ? "Sí" : "No"} /></Col>
+                <Col xs={12} md={6}><Field label="Vendor Externo" value={ot.vendor_externo} /></Col>
+              </Row>
+            </>
+          ) : (
+            <>
+              <Row gutter={[16, 12]}>
+                <Col xs={12} md={6}>
+                  <FieldLabel>Fecha Evaluación</FieldLabel>
+                  <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY"
+                    value={editData.fecha_evaluacion ? dayjs(String(editData.fecha_evaluacion).slice(0, 10)) : null}
+                    onChange={(d) => setField("fecha_evaluacion", d ? d.format("YYYY-MM-DD") : null)} />
+                </Col>
+                <Col xs={12} md={6}>
+                  <FieldLabel>Evaluador</FieldLabel>
+                  <Input value={(editData.evaluador as string) ?? ""} onChange={(e) => setField("evaluador", e.target.value)} />
+                </Col>
+                <Col xs={12} md={6}>
+                  <FieldLabel>Fecha Aprobación Evaluación</FieldLabel>
+                  <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY"
+                    value={editData.fecha_aprobacion_evaluacion ? dayjs(String(editData.fecha_aprobacion_evaluacion).slice(0, 10)) : null}
+                    onChange={(d) => setField("fecha_aprobacion_evaluacion", d ? d.format("YYYY-MM-DD") : null)} />
+                </Col>
+                <Col xs={12} md={6}>
+                  <FieldLabel>Aprobado por</FieldLabel>
+                  <Input value={(editData.evaluacion_aprobado_por as string) ?? ""} onChange={(e) => setField("evaluacion_aprobado_por", e.target.value)} />
+                </Col>
+              </Row>
+              <Row gutter={[16, 12]} style={{ marginTop: 8 }}>
+                <Col xs={12} md={6}>
+                  <FieldLabel>Fecha Cotización</FieldLabel>
+                  <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY"
+                    value={editData.fecha_cotizacion ? dayjs(String(editData.fecha_cotizacion).slice(0, 10)) : null}
+                    onChange={(d) => setField("fecha_cotizacion", d ? d.format("YYYY-MM-DD") : null)} />
+                </Col>
+                <Col xs={12} md={6}>
+                  <FieldLabel>Fecha Aprobación (cliente)</FieldLabel>
+                  <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY"
+                    value={editData.fecha_aprobacion ? dayjs(String(editData.fecha_aprobacion).slice(0, 10)) : null}
+                    onChange={(d) => setField("fecha_aprobacion", d ? d.format("YYYY-MM-DD") : null)} />
+                </Col>
+                <Col xs={12} md={6}>
+                  <FieldLabel>Fecha Entrega</FieldLabel>
+                  <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY"
+                    value={editData.fecha_entrega ? dayjs(String(editData.fecha_entrega).slice(0, 10)) : null}
+                    onChange={(d) => setField("fecha_entrega", d ? d.format("YYYY-MM-DD") : null)} />
+                </Col>
+                <Col xs={12} md={6}>
+                  <FieldLabel>Fecha Facturación</FieldLabel>
+                  <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY"
+                    value={editData.fecha_facturacion ? dayjs(String(editData.fecha_facturacion).slice(0, 10)) : null}
+                    onChange={(d) => setField("fecha_facturacion", d ? d.format("YYYY-MM-DD") : null)} />
+                </Col>
+              </Row>
+              <Divider style={{ margin: "12px 0" }} />
+              <Row gutter={[16, 12]}>
+                <Col xs={12} md={6}>
+                  <FieldLabel>Reparación Externa</FieldLabel>
+                  <Checkbox
+                    checked={editData.reparacion_externa as boolean}
+                    onChange={(e) => {
+                      setField("reparacion_externa", e.target.checked);
+                      // Si desmarca, limpia el vendor externo (no aplica).
+                      if (!e.target.checked) setField("vendor_externo", null);
+                    }}
+                  >Sí</Checkbox>
+                </Col>
+                <Col xs={12} md={12}>
+                  <FieldLabel>Vendor Externo</FieldLabel>
+                  <Select
+                    showSearch optionFilterProp="label" allowClear
+                    placeholder={editData.reparacion_externa ? "Seleccionar proveedor externo" : "Marcar 'Reparación Externa' primero"}
+                    disabled={!editData.reparacion_externa}
+                    style={{ width: "100%" }}
+                    // Guarda como string (razon_social) para compat con el VARCHAR
+                    // actual del schema. El user pidió reusar la tabla proveedor
+                    // como fuente del Select, pero sin migrar a FK.
+                    value={(editData.vendor_externo as string) ?? undefined}
+                    onChange={(v) => setField("vendor_externo", v ?? null)}
+                    options={proveedores.map((p) => ({
+                      value: p.razon_social,
+                      label: p.nombre_comercial ? `${p.nombre_comercial} — ${p.razon_social}` : p.razon_social,
+                    }))}
+                  />
+                </Col>
+              </Row>
+              <Row gutter={[16, 12]} style={{ marginTop: 8 }}>
+                <Col xs={12} md={6}>
+                  <FieldLabel>Característica Cilindro</FieldLabel>
+                  <Select
+                    allowClear style={{ width: "100%" }}
+                    placeholder="—"
+                    value={(editData.caracteristica_cilindro as string) ?? undefined}
+                    onChange={(v) => setField("caracteristica_cilindro", v ?? null)}
+                    options={[
+                      { value: "ESTANDAR", label: "ESTANDAR" },
+                      { value: "NO_ESTANDAR", label: "NO ESTANDAR" },
+                    ]}
+                  />
+                </Col>
+              </Row>
+            </>
           )}
         </Card>
 

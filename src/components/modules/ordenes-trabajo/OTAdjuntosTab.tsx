@@ -85,7 +85,7 @@ const ETAPAS = [
   },
   {
     key: "despacho",
-    label: "Despacho y GR",
+    label: "Guía de Remisión Despacho",
     icon: <CarOutlined />,
     description: "Fotos y documentos del despacho del componente reparado — incluye guía de remisión al cliente",
   },

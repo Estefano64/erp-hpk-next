@@ -111,11 +111,58 @@ export async function PUT(req: NextRequest, { params }: Params) {
     const result = await prisma.$transaction(async (tx) => {
       const before = await tx.ordenTrabajo.findUnique({
         where: { id: Number(id) },
-        select: { version: true, ...AUDIT_OT_SELECT_FIELDS },
+        select: {
+          version: true,
+          ...AUDIT_OT_SELECT_FIELDS,
+          // Fechas que se exigen para cerrar — necesarias para validar el
+          // gate de "cerrar OT" mezclando body + valores actuales.
+          fecha_recepcion: true,
+          fecha_evaluacion: true,
+          fecha_aprobacion_evaluacion: true,
+          fecha_cotizacion: true,
+          fecha_aprobacion: true,
+          fecha_entrega: true,
+          fecha_facturacion: true,
+        },
       });
 
       if (!before) {
         return { conflict: false, notFound: true } as const;
+      }
+
+      // Gate: para CERRAR la OT (ot_status_codigo → "Cerrada") todas las
+      // fechas del ciclo deben estar cargadas. Se chequea el valor FINAL
+      // (body si viene, sino el actual en BD). Pedido del user: bloquear
+      // cierre incompleto para asegurar trazabilidad completa del flujo.
+      if (body.ot_status_codigo === "Cerrada") {
+        const beforeRec = before as Record<string, unknown>;
+        type FechaKey =
+          | "fecha_recepcion" | "fecha_evaluacion" | "fecha_aprobacion_evaluacion"
+          | "fecha_cotizacion" | "fecha_aprobacion" | "fecha_entrega" | "fecha_facturacion";
+        const FECHAS_REQUERIDAS_CIERRE: Array<{ key: FechaKey; label: string }> = [
+          { key: "fecha_recepcion", label: "Fecha Recepción" },
+          { key: "fecha_evaluacion", label: "Fecha Evaluación" },
+          { key: "fecha_aprobacion_evaluacion", label: "Fecha Aprobación Evaluación" },
+          { key: "fecha_cotizacion", label: "Fecha Cotización" },
+          { key: "fecha_aprobacion", label: "Fecha Aprobación (cliente)" },
+          { key: "fecha_entrega", label: "Fecha Entrega" },
+          { key: "fecha_facturacion", label: "Fecha Facturación" },
+        ];
+        const faltantes = FECHAS_REQUERIDAS_CIERRE
+          .filter(({ key }) => {
+            // Si el body trae el campo: usa su valor (incluso si es null = se está borrando).
+            // Si no viene en el body: usa el valor actual en BD.
+            const valor = key in body ? body[key] : beforeRec[key];
+            return valor == null;
+          })
+          .map(({ label }) => label);
+        if (faltantes.length > 0) {
+          return {
+            conflict: false,
+            closeBlocked: true,
+            faltantes,
+          } as const;
+        }
       }
 
       // OT cerrada — solo se permite reabrir (cambiar ot_status_codigo).
@@ -170,6 +217,15 @@ export async function PUT(req: NextRequest, { params }: Params) {
       return NextResponse.json(
         { error: "La OT está Cerrada. Reabrila primero (cambiar OT Status) antes de editar otros campos." },
         { status: 403 },
+      );
+    }
+    if ("closeBlocked" in result && result.closeBlocked) {
+      return NextResponse.json(
+        {
+          error: `No se puede cerrar la OT — faltan fechas: ${result.faltantes.join(", ")}. Completalas antes de cambiar el estado a Cerrada.`,
+          faltantes: result.faltantes,
+        },
+        { status: 400 },
       );
     }
     if (result.conflict) {
