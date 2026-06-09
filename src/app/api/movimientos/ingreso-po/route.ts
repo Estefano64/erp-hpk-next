@@ -346,13 +346,21 @@ export async function POST(req: NextRequest) {
         : null;
 
       // Calcula el código de recursos status según las OCs vinculadas a una OT.
+      // Códigos válidos del catálogo recursos_status (verificados en BD):
+      //   "Recursos completos"      → todas las OCs vinculadas a la OT están
+      //                               ENTREGADO o COMPLETO.
+      //   "Recursos en recepción"   → al menos una OC sigue parcial/pendiente
+      //                               (la OC actual está siendo recepcionada).
+      // Antes este código devolvía "Recursos entregados", que NO existe en el
+      // catálogo → la FK orden_trabajo_recursos_status_codigo_fkey rompía y
+      // toda la transacción de recepción se rollbackeaba.
       async function calcularRecursosStatus(where: Record<string, unknown>): Promise<string> {
         const reqs = await tx.oTRepuesto.findMany({
           where: { ...where, po_id: { not: null } },
           select: { po_id: true },
         });
         const poIds = [...new Set(reqs.map((r) => r.po_id).filter((x): x is number => x != null))];
-        if (poIds.length === 0) return "Recursos entregados";
+        if (poIds.length === 0) return "Recursos en recepción";
         const comprasOT = await tx.compra.findMany({
           where: { id: { in: poIds } },
           select: { status_oc_codigo: true },
@@ -360,7 +368,7 @@ export async function POST(req: NextRequest) {
         const todasEntregadas = comprasOT.every(
           (c) => c.status_oc_codigo === "ENTREGADO" || c.status_oc_codigo === "COMPLETO",
         );
-        return todasEntregadas ? "Recursos completos" : "Recursos entregados";
+        return todasEntregadas ? "Recursos completos" : "Recursos en recepción";
       }
 
       for (const otId of otIds) {
