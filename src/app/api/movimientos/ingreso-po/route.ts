@@ -55,6 +55,13 @@ export async function POST(req: NextRequest) {
     }
     const d = parsed.data;
 
+    // Timeouts ampliados — la recepción puede tocar muchos items y por cada
+    // uno: detalles findMany + material findUnique + movimientoInventario
+    // create + material update + recalcularCostoPromedio + repuesto update.
+    // Con el default de 5s, OCs grandes (10+ items) caen en
+    // "Transaction not found... refers to an old closed transaction".
+    //   timeout: 60s  → tiempo máximo de la transacción una vez iniciada
+    //   maxWait: 10s  → tiempo máximo esperando un slot del pool
     const result = await prisma.$transaction(async (tx) => {
       const compra = await tx.compra.findUnique({
         where: { id: d.po_id },
@@ -380,7 +387,7 @@ export async function POST(req: NextRequest) {
       }
 
       return { numero_po: compra.numero_po, nuevo_estado: nuevoEstado, movimientos: movimientosCreados };
-    });
+    }, { timeout: 60_000, maxWait: 10_000 });
 
     return NextResponse.json(
       {
