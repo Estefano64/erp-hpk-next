@@ -29,6 +29,8 @@ const Schema = z.object({
   numero_req: z.string().trim().max(50).nullable().optional(),
   tipo_pago: z.string().trim().max(30).nullable().optional(),
   dias_credito: z.coerce.number().int().min(0).max(365).nullable().optional(),
+  // Flag: cuando false, no se calcula IGV (impuesto=0). Para OCs exoneradas.
+  aplica_igv: z.boolean().optional(),
 });
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -47,7 +49,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Validación", detail: parsed.error.flatten() }, { status: 400 });
     }
-    const { items, deleteIds, descuento, otros, numero_req, tipo_pago, dias_credito } = parsed.data;
+    const { items, deleteIds, descuento, otros, numero_req, tipo_pago, dias_credito, aplica_igv } = parsed.data;
 
     const result = await prisma.$transaction(async (tx) => {
       const compra = await tx.compra.findUnique({
@@ -144,8 +146,13 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
         ? new Prisma.Decimal(otros)
         : new Prisma.Decimal(compra.otros);
       // IGV se recalcula sobre la base afectada por el descuento (práctica estándar).
+      // Si la OC está marcada como exonerada (aplica_igv=false, ya sea por el
+      // payload o por el valor persistido), el IGV se fuerza a 0.
+      const aplicaIgvEfectivo = aplica_igv !== undefined ? aplica_igv : compra.aplica_igv;
       const baseImponible = subtotal.minus(descuentoDec);
-      const impuesto = baseImponible.gt(0) ? baseImponible.mul(IGV_PCT) : new Prisma.Decimal(0);
+      const impuesto = aplicaIgvEfectivo && baseImponible.gt(0)
+        ? baseImponible.mul(IGV_PCT)
+        : new Prisma.Decimal(0);
       const total = baseImponible.plus(impuesto).plus(otrosDec);
       await tx.compra.update({
         where: { id: compraId },
@@ -155,6 +162,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
           impuesto,
           otros: otrosDec,
           total,
+          ...(aplica_igv !== undefined ? { aplica_igv } : {}),
           ...(numero_req !== undefined ? { numero_req: numero_req || null } : {}),
           ...(tipo_pago !== undefined ? { tipo_pago: tipo_pago || null } : {}),
           ...(dias_credito !== undefined

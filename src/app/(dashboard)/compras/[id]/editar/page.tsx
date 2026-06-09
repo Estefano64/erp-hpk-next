@@ -56,6 +56,7 @@ interface CompraData {
   otros: number | string | null;
   tipo_pago: string | null;
   dias_credito: number | null;
+  aplica_igv: boolean;
   ot_repuestos: Array<{
     id: number;
     material_id: number | null;
@@ -101,6 +102,10 @@ export default function EditarOCPage() {
   // queden como precios sin IGV (formato esperado por la plantilla PDF de OC).
   // No persiste — es solo un helper de captura por sesión de edición.
   const [preciosConIgv, setPreciosConIgv] = useState<boolean>(false);
+  // Flag por-OC: cuando false, la OC es exonerada de IGV. SÍ persiste (campo
+  // aplica_igv en la BD) y afecta el cálculo del total y el render del PDF.
+  const [aplicaIgv, setAplicaIgv] = useState<boolean>(true);
+  const [originalAplicaIgv, setOriginalAplicaIgv] = useState<boolean>(true);
   const [messageApi, contextHolder] = message.useMessage();
 
   const fetchCompra = useCallback(async () => {
@@ -146,6 +151,11 @@ export default function EditarOCPage() {
       setDiasCredito(c.dias_credito ?? null);
       setOriginalTipoPago(c.tipo_pago ?? null);
       setOriginalDiasCredito(c.dias_credito ?? null);
+      // aplica_igv puede ser undefined si la respuesta es de antes de la
+      // migración → asumimos true (comportamiento histórico).
+      const aig = c.aplica_igv ?? true;
+      setAplicaIgv(aig);
+      setOriginalAplicaIgv(aig);
     } catch (e) {
       messageApi.error(e instanceof Error ? e.message : "Error");
     } finally {
@@ -197,12 +207,13 @@ export default function EditarOCPage() {
   const hayCambios = useMemo(() =>
     tipoPago !== originalTipoPago ||
     diasCredito !== originalDiasCredito ||
+    aplicaIgv !== originalAplicaIgv ||
     JSON.stringify(visibleRows) !== originalRowsHash
     || rows.some((r) => r._deleted && r.id != null)
     || descuento !== originalDescuento
     || otros !== originalOtros
     || numeroReq !== originalNumeroReq,
-  [visibleRows, originalRowsHash, rows, descuento, originalDescuento, otros, originalOtros, numeroReq, originalNumeroReq, tipoPago, originalTipoPago, diasCredito, originalDiasCredito]);
+  [visibleRows, originalRowsHash, rows, descuento, originalDescuento, otros, originalOtros, numeroReq, originalNumeroReq, tipoPago, originalTipoPago, diasCredito, originalDiasCredito, aplicaIgv, originalAplicaIgv]);
 
   useUnsavedChangesWarning(hayCambios, "Hay cambios sin guardar en la OC.", `compra-editar-${params?.id ?? "?"}`);
 
@@ -213,11 +224,12 @@ export default function EditarOCPage() {
     const subtotal = preciosConIgv ? sumaIngresada / 1.18 : sumaIngresada;
     // Convención HP&K: descuento aplica al subtotal, IGV se calcula sobre la base
     // ya descontada, "otros" se suma al final.
+    // Si la OC está marcada como "Sin IGV" (aplicaIgv=false) el impuesto es 0.
     const baseImponible = Math.max(0, subtotal - descuento);
-    const igv = baseImponible * 0.18;
+    const igv = aplicaIgv ? baseImponible * 0.18 : 0;
     const total = baseImponible + igv + otros;
     return { sumaIngresada, subtotal, descuento, igv, otros, total };
-  }, [visibleRows, descuento, otros, preciosConIgv]);
+  }, [visibleRows, descuento, otros, preciosConIgv, aplicaIgv]);
 
   const handleGuardar = async () => {
     if (!compra) return;
@@ -249,6 +261,7 @@ export default function EditarOCPage() {
         numero_req: numeroReq.trim() || null,
         tipo_pago: tipoPago,
         dias_credito: tipoPago === "CONTADO" ? 0 : (diasCredito ?? null),
+        aplica_igv: aplicaIgv,
       };
       const res = await fetch(`/api/compras/${compraId}/items`, {
         method: "PATCH",
@@ -457,7 +470,33 @@ export default function EditarOCPage() {
             </Space>
           </Col>
         </Row>
-        {/* Fila 2: forma de pago. Misma lógica que el modal de detalle:
+        {/* Fila 2: flag "Aplicar IGV" (persiste por-OC). Cuando está OFF, la
+            OC es exonerada: el cálculo del total no suma el 18% y el PDF
+            omite la línea de IGV. */}
+        <Row gutter={12} align="middle" style={{ marginTop: 10 }}>
+          <Col xs={24} md={12}>
+            <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 2 }}>
+              <Tooltip title="Cuando está ACTIVADO, el total incluye IGV (18%) — comportamiento estándar. Cuando está DESACTIVADO, la OC es EXONERADA de IGV: el cálculo no suma el 18% y la plantilla PDF omite la línea de IGV. Útil para importaciones, servicios sin IGV o proveedores no domiciliados.">
+                Aplicar IGV a esta OC
+              </Tooltip>
+            </div>
+            <Space>
+              <Switch
+                checked={aplicaIgv}
+                onChange={(v) => setAplicaIgv(v)}
+                checkedChildren="Con IGV"
+                unCheckedChildren="Sin IGV"
+              />
+              <Text type={aplicaIgv ? "secondary" : "warning"} style={{ fontSize: 11 }}>
+                {aplicaIgv
+                  ? "Estándar: IGV 18% se suma al total"
+                  : "EXONERADA: sin IGV — el total NO incluye el 18%"}
+              </Text>
+            </Space>
+          </Col>
+        </Row>
+
+        {/* Fila 3: forma de pago. Misma lógica que el modal de detalle:
             Días solo aplica cuando tipo_pago = CREDITO. */}
         <Row gutter={12} align="middle" style={{ marginTop: 10 }}>
           <Col xs={24} md={8}>
@@ -525,7 +564,13 @@ export default function EditarOCPage() {
             />
           </Col>
           <Col xs={12} md={4}>
-            <Statistic title="IGV (18%)" value={totales.igv} precision={2} prefix={compra.moneda} />
+            <Statistic
+              title={aplicaIgv ? "IGV (18%)" : "IGV"}
+              value={totales.igv}
+              precision={2}
+              prefix={compra.moneda}
+              suffix={aplicaIgv ? undefined : <Tag color="orange" style={{ marginLeft: 4 }}>Exonerado</Tag>}
+            />
           </Col>
           <Col xs={12} md={4}>
             <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 2 }}>Otros</div>

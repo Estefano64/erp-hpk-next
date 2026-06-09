@@ -74,6 +74,10 @@ export async function GET(_req: NextRequest, { params }: Params) {
     const descuento = Number(compra.descuento || 0);
     const igv = Number(compra.impuesto || 0);
     const total = Number(compra.total || 0);
+    // Si la OC está marcada como exonerada de IGV, no mostramos la línea de
+    // IGV en la tabla de totales. Default true para compatibilidad con OCs
+    // viejas (cuando el campo no existía).
+    const aplicaIgv = compra.aplica_igv ?? true;
     const moneda = compra.moneda?.codigo || compra.moneda_codigo || "USD";
     const monedaLabel = moneda === "USD" ? "DOLARES" : moneda === "SOL" || moneda === "PEN" ? "SOLES" : moneda;
     // Códigos de OT formateados (V/S/REP para externas, OI para internas).
@@ -400,10 +404,15 @@ export async function GET(_req: NextRequest, { params }: Params) {
       <td class="lbl">Descuento</td>
       <td class="val">${moneda} ${descuento.toFixed(2)}</td>
     </tr>
+    ${aplicaIgv ? `
     <tr>
       <td class="lbl">IGV (18%)</td>
       <td class="val">${moneda} ${igv.toFixed(2)}</td>
-    </tr>
+    </tr>` : `
+    <tr>
+      <td class="lbl">IGV</td>
+      <td class="val"><i>Exonerado</i></td>
+    </tr>`}
     <tr class="total-row">
       <td class="lbl" style="color:#fff">TOTAL</td>
       <td class="val">${moneda} ${total.toFixed(2)}</td>
