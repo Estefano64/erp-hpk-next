@@ -47,16 +47,49 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         const rep = await tx.oTRepuesto.findUnique({ where: { id: reqId } });
         if (!rep) { errores.push({ id: reqId, error: "No encontrado" }); continue; }
         if (rep.ot_id !== otId) { errores.push({ id: reqId, error: "Pertenece a otra OT" }); continue; }
-        if (!rep.material_id) { errores.push({ id: reqId, error: "Sin material vinculado" }); continue; }
         if (rep.status_requerimiento_codigo !== "APROBADO") { errores.push({ id: reqId, error: "No está APROBADO" }); continue; }
-
-        const material = await tx.material.findUnique({ where: { material_id: rep.material_id } });
-        if (!material) { errores.push({ id: reqId, error: "Material no encontrado" }); continue; }
 
         const cantTotal = new Prisma.Decimal(rep.cantidad);
         const yaDespachado = new Prisma.Decimal(rep.cantidad_recibida ?? 0);
         const pendiente = cantTotal.minus(yaDespachado);
         if (pendiente.lte(0)) { errores.push({ id: reqId, error: "Ya despachado completo" }); continue; }
+
+        // Items FREE (sin material_id): se despachan directo a la OT sin
+        // tocar stock ni MovimientoInventario (no hay material catálogo). La
+        // cantidad "ya recibida" debe venir desde la OC asociada — si la OC
+        // todavía no se recibió, no hay nada para despachar.
+        if (!rep.material_id) {
+          // El "stock disponible" para un item free es lo que llegó vía OC
+          // menos lo ya despachado a la OT. Como reusamos cantidad_recibida
+          // para ambas cosas, asumimos que si pendiente > 0 hay para despachar
+          // (la OC ya fue recibida total o parcialmente).
+          // Si la OC no se recibió, status_oc del rep no sería ENTREGADO o
+          // INCOMPLETO y cantidad_recibida=0 → pendiente=cantTotal pero el
+          // user en la UI no podría seleccionarlo (el listado lo marca
+          // "sin OC recibida"). Acá igual lo procesamos: despachar=pendiente.
+          const aDespachar = pendiente;
+          const nuevaDespachada = yaDespachado.plus(aDespachar);
+          const quedaCompleto = nuevaDespachada.gte(cantTotal);
+          const obsPrev = rep.observaciones ? `${rep.observaciones}\n` : "";
+          const etiqueta = quedaCompleto ? "completo" : `parcial (${aDespachar} de ${pendiente} pendiente)`;
+          await tx.oTRepuesto.update({
+            where: { id: rep.id },
+            data: {
+              status_oc_codigo: quedaCompleto ? "ENTREGADO" : "INCOMPLETO",
+              cantidad_recibida: nuevaDespachada,
+              fecha_entrega_real: quedaCompleto ? fechaDespacho : rep.fecha_entrega_real,
+              fecha_salida_almacen: fechaDespacho,
+              observaciones: `${obsPrev}Despacho a OT (item free, sin stock) el ${fechaDespacho.toLocaleDateString("es-PE")} — ${etiqueta} (${usuario})${personaRecibe ? ` — recibe: ${personaRecibe}` : ""}${comentariosBulk ? ` · ${comentariosBulk}` : ""}`,
+            },
+          });
+          if (quedaCompleto) ok.push(rep.id);
+          else parciales.push(rep.id);
+          continue;
+        }
+
+        // ─── Items MAC (con material catálogo): flujo normal ──────────
+        const material = await tx.material.findUnique({ where: { material_id: rep.material_id } });
+        if (!material) { errores.push({ id: reqId, error: "Material no encontrado" }); continue; }
 
         const stock = new Prisma.Decimal(material.stock_actual ?? 0);
         if (stock.lte(0)) {

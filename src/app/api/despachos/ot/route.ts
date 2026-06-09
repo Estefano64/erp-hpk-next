@@ -2,18 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 // GET /api/despachos/ot
-// Lista OTs con requerimientos APROBADOS y material vinculado que están pendientes
-// de entrega a la OT (aún no ENTREGADO). Incluye tanto:
-//   - Items sin OC (material que ya estaba en almacén / stock directo).
-//   - Items con OC: aparecen apenas se aprueba la OC; el estado de la PO indica
-//     si el material ya llegó al almacén (recepcionado) o sigue por llegar.
-// Para cada item se calcula la cantidad pendiente y si hay stock para despacharla.
+// Lista OTs con requerimientos APROBADOS pendientes de entrega a la OT (aún
+// no ENTREGADO). Incluye:
+//   - Items con material (MAC): aparecen con su stock y si ya hay para despachar.
+//   - Items SIN material (CAD/free): se despachan directo a la OT, sin pasar
+//     por stock (no hay catálogo). "Puede despachar" cuando ya se recibió la
+//     OC (cantidad_recibida > 0). 2026-06 fix: antes el filtro
+//     `material_id: { not: null }` excluía estos items y desaparecían del
+//     listado de despachos.
+//   - Items sin OC: material que ya estaba en almacén / stock directo.
 export async function GET(_req: NextRequest) {
   try {
     const items = await prisma.oTRepuesto.findMany({
       where: {
         status_requerimiento_codigo: "APROBADO",
-        material_id: { not: null },
+        // Removido `material_id: { not: null }` — los items free (CAD) tienen
+        // material_id NULL pero igual deben aparecer para despacho a la OT.
         status_oc_codigo: { notIn: ["ENTREGADO", "ANULADO"] },
       },
       select: {
@@ -55,16 +59,25 @@ export async function GET(_req: NextRequest) {
         const cantTotal = Number(it.cantidad);
         const yaDespachado = Number(it.cantidad_recibida ?? 0);
         const cantPendiente = Math.max(0, cantTotal - yaDespachado);
+        const esFree = it.material_id == null;
         const stockMat = Number(it.material?.stock_actual ?? 0);
-        const puedeDespachar = cantPendiente > 0 && stockMat >= cantPendiente;
-        // El material "llegó" si no necesitaba OC (po_id null y hay stock) o si
-        // la PO asociada fue recepcionada (ENTREGADO / INCOMPLETO / COMPLETO).
         const poStatus = it.compra?.status_oc_codigo ?? null;
         const poRecibida = it.po_id == null
           ? stockMat > 0
           : poStatus === "ENTREGADO" || poStatus === "INCOMPLETO" || poStatus === "COMPLETO";
+        // Lógica de "puede despachar" según el tipo de item:
+        //   - MAC (con material): hay stock suficiente en almacén.
+        //   - FREE (sin material): la OC asociada ya fue recibida (la cantidad
+        //     pendiente se entrega directo a la OT, no hay stock que chequear).
+        //     Sin OC el item free no tiene sentido (no hay de dónde despachar).
+        const puedeDespachar = cantPendiente > 0 && (
+          esFree
+            ? poRecibida
+            : stockMat >= cantPendiente
+        );
         return {
           ...it,
+          _es_free: esFree,
           _cant_pendiente: cantPendiente,
           _puede_despachar: puedeDespachar,
           _po_status: poStatus,
