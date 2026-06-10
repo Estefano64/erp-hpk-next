@@ -28,6 +28,7 @@ import customParseFormat from "dayjs/plugin/customParseFormat";
 import { brand } from "@/lib/theme";
 import { calcularFinEstimado, calcularHH } from "@/lib/planification-hours";
 import { splitRecursos, joinRecursos } from "@/lib/recursos";
+import { motivoPausa } from "@/lib/motivos-pausa";
 import { useTabSync } from "@/lib/useTabSync";
 import { useSession } from "next-auth/react";
 import { useEditLock } from "@/lib/useEditLock";
@@ -262,7 +263,7 @@ export default function PlanificacionPage() {
   // Modal de historial de ejecución
   const [histOpen, setHistOpen] = useState(false);
   const [histLoading, setHistLoading] = useState(false);
-  const [histData, setHistData] = useState<{ es_correctivo?: boolean; observaciones?: string | null; sesiones?: { id: number; tecnico: string; inicio: string; fin: string | null; cierre: string | null; comentario: string | null }[] } | null>(null);
+  const [histData, setHistData] = useState<{ es_correctivo?: boolean; observaciones?: string | null; sesiones?: { id: number; tecnico: string; inicio: string; fin: string | null; cierre: string | null; comentario: string | null; motivo_pausa?: string | null }[] } | null>(null);
   const [histTarea, setHistTarea] = useState<PlanRow | null>(null);
   const [savingId, setSavingId] = useState<number | null>(null);
   const [autoSave, setAutoSave] = useState(true);
@@ -1405,24 +1406,64 @@ export default function PlanificacionPage() {
       },
     },
     {
+      // REGULARIZACIÓN: editable si la tarea tiene ejecución (el técnico marcó
+      // tarde / olvidó el cronómetro — "empecé 16:30"). Mismo criterio que el
+      // modal Detalle del Gantt; el server solo acepta campos de ejecución real.
       key: "fecha_inicio_real",
-      title: "Inicio Real", dataIndex: "fecha_inicio_real", width: 110,
+      title: "Inicio Real", dataIndex: "fecha_inicio_real", width: 140,
       sorter: (a, b) => (a.fecha_inicio_real || "").localeCompare(b.fecha_inicio_real || ""),
       filters: inicioRealValores, filterSearch: true,
       onFilter: (value, r) => r.fecha_inicio_real === value,
-      render: (v: string | null) => v
-        ? <span style={{ fontSize: 11, color: brand.success }}>{dayjs(v).format("DD/MM HH:mm")}</span>
-        : <span style={{ color: brand.textSecondary }}>—</span>,
+      render: (v: string | null, r) => {
+        const empezada = ["en_proceso", "pausado", "realizado"].includes(r.estado ?? "");
+        if (empezada && v) {
+          return (
+            <Tooltip title="Regularizar inicio real (técnico que marcó tarde)">
+              <DatePicker
+                size="small"
+                showTime={{ format: "HH:mm" }}
+                format="DD/MM HH:mm"
+                allowClear={false}
+                value={dayjs(v)}
+                style={{ width: "100%" }}
+                onChange={(d: Dayjs | null) => d && updateField(r.id, { fecha_inicio_real: d.toISOString() })}
+              />
+            </Tooltip>
+          );
+        }
+        return v
+          ? <span style={{ fontSize: 11, color: brand.success }}>{dayjs(v).format("DD/MM HH:mm")}</span>
+          : <span style={{ color: brand.textSecondary }}>—</span>;
+      },
     },
     {
+      // Fin real: regularizable solo cuando la tarea ya está REALIZADA (en
+      // curso/pausada lo maneja el cronómetro del técnico).
       key: "fecha_fin_real",
-      title: "Fin Real", dataIndex: "fecha_fin_real", width: 110,
+      title: "Fin Real", dataIndex: "fecha_fin_real", width: 140,
       sorter: (a, b) => (a.fecha_fin_real || "").localeCompare(b.fecha_fin_real || ""),
       filters: finRealValores, filterSearch: true,
       onFilter: (value, r) => r.fecha_fin_real === value,
-      render: (v: string | null) => v
-        ? <span style={{ fontSize: 11, color: brand.success }}>{dayjs(v).format("DD/MM HH:mm")}</span>
-        : <span style={{ color: brand.textSecondary }}>—</span>,
+      render: (v: string | null, r) => {
+        if (r.estado === "realizado" && v) {
+          return (
+            <Tooltip title="Regularizar fin real (técnico que olvidó finalizar a tiempo)">
+              <DatePicker
+                size="small"
+                showTime={{ format: "HH:mm" }}
+                format="DD/MM HH:mm"
+                allowClear={false}
+                value={dayjs(v)}
+                style={{ width: "100%" }}
+                onChange={(d: Dayjs | null) => d && updateField(r.id, { fecha_fin_real: d.toISOString() })}
+              />
+            </Tooltip>
+          );
+        }
+        return v
+          ? <span style={{ fontSize: 11, color: brand.success }}>{dayjs(v).format("DD/MM HH:mm")}</span>
+          : <span style={{ color: brand.textSecondary }}>—</span>;
+      },
     },
     {
       // Duración REAL = horas trabajadas guardadas en la tarea (descuenta almuerzo
@@ -2067,11 +2108,13 @@ export default function PlanificacionPage() {
                 if (s.fin) {
                   const label = s.cierre === "finalizado" ? "Terminó" : s.cierre === "cancelado" ? "Canceló" : "Pausó";
                   const color = s.cierre === "finalizado" ? "green" : s.cierre === "cancelado" ? "red" : "orange";
+                  const motivo = motivoPausa(s.motivo_pausa);
                   out.push({
                     color,
                     children: (
                       <span>
                         {label} <b>{fmt(s.fin)}</b>
+                        {motivo && <Tag color={motivo.color} style={{ marginLeft: 6, fontSize: 10, lineHeight: "16px" }}>{motivo.label}</Tag>}
                         {s.comentario ? <> — <i>“{s.comentario}”</i></> : ""}
                       </span>
                     ),
