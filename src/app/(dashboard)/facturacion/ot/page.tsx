@@ -19,6 +19,7 @@ import { brand } from "@/lib/theme";
 import { formatDateOnly } from "@/lib/dates";
 import { useColumnasRedimensionables, STICKY_HEADER, paginacionEstandar } from "@/lib/tables";
 import { uploadToR2, openR2File } from "@/lib/r2-client";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
 const { Title, Text } = Typography;
 
@@ -298,7 +299,31 @@ export default function FacturacionOTPage() {
           <AuditOutlined style={{ marginRight: 8 }} />
           Facturación de OTs (mina)
         </Title>
-        <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>Actualizar</Button>
+        <Space wrap>
+          <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>Actualizar</Button>
+          {/* La tabla no tiene búsqueda ni filtros de columna: el endpoint
+              devuelve exactamente lo que se ve (OTs Entregado/Cobranza). */}
+          <ExportarExcelButton<OTLista>
+            endpoint="/api/facturacion/ot"
+            filename="Facturacion-OT"
+            columns={[
+              { key: "ot", label: "OT", value: (r) => r.ot ?? `#${r.id}` },
+              { key: "cliente", label: "Cliente", value: (r) => r.cliente ?? "" },
+              { key: "codrep", label: "Código reparable", value: (r) => r.codigo_reparacion ?? "" },
+              { key: "ns", label: "N° Serie", value: (r) => r.ns ?? "" },
+              { key: "wo", label: "WO Cliente", value: (r) => r.wo_cliente ?? "" },
+              { key: "po", label: "PO Cliente", value: (r) => r.po_cliente ?? "" },
+              { key: "guia", label: "Guía", value: (r) => r.guia_entrega_salida ?? "" },
+              {
+                key: "adjuntos", label: "Adjuntos",
+                value: (r) => r.adjuntos_ok ? `OK (${r.adjuntos.length})` : `Faltan: ${r.faltantes.join(", ")}`,
+              },
+              { key: "fact", label: "N° Factura", value: (r) => r.nro_factura ?? "Pendiente" },
+              { key: "fecha_fact", label: "F. Facturación", value: (r) => r.fecha_facturacion ? formatDateOnly(r.fecha_facturacion) : "" },
+              { key: "monto", label: "Monto", value: (r) => r.monto_cotizacion != null ? Number(r.monto_cotizacion) : "" },
+            ]}
+          />
+        </Space>
       </div>
 
       <Alert

@@ -18,7 +18,9 @@ import {
   numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE,
   useColumnasOcultas, ColumnasToggleButton, visibleColumns,
   filtroPorColumna, useColumnasRedimensionables, STICKY_HEADER,
+  useTablaFiltrada,
 } from "@/lib/tables";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
 const { Title, Text } = Typography;
 
@@ -136,6 +138,10 @@ export default function NoCatalogadosPage() {
       r.codigo.toLowerCase().includes(q) ||
       r.descripcion.toLowerCase().includes(q));
   }, [rows, search]);
+
+  // Filas visibles después de búsqueda + filtros de columna de AntD — para
+  // que el export respete exactamente lo que el usuario ve.
+  const { filtradas: filasExport, onChange: onTablaChange } = useTablaFiltrada(filtradas);
 
   const crearMaterial = async () => {
     try {
@@ -277,6 +283,25 @@ export default function NoCatalogadosPage() {
         <Space wrap>
           <Input placeholder="Buscar código o descripción…" prefix={<SearchOutlined />} allowClear value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 320 }} />
           <ColumnasToggleButton<MatRow> columns={columns} ocultas={ocultas} setOcultas={setOcultas} obligatorias={["codigo", "stock_actual", "acciones"]} />
+          <ExportarExcelButton<MatRow>
+            endpoint="/api/no-catalogados"
+            // El endpoint no pagina (devuelve todo de una): limit alto para
+            // que el fetch corte en la primera página.
+            limit={50000}
+            filename="MaterialesNoCatalogados"
+            sheetName="No catalogados"
+            currentRows={filasExport}
+            tablaLayout={{ ocultas }}
+            columns={[
+              { key: "codigo", label: "Código", value: (r) => r.codigo },
+              { key: "descripcion", label: "Descripción", value: (r) => r.descripcion },
+              { key: "unidad_medida", label: "UM", value: (r) => r.unidad_medida },
+              { key: "stock_actual", label: "Stock", value: (r) => r.stock_actual },
+              { key: "ubicacion_nombre", label: "Ubicación", value: (r) => r.ubicacion_nombre ?? "" },
+              { key: "observaciones", label: "Observaciones", value: (r) => r.observaciones ?? "" },
+              { key: "movimientos_count", label: "Movimientos", value: (r) => r.movimientos_count },
+            ]}
+          />
         </Space>
       </Card>
 
@@ -291,6 +316,7 @@ export default function NoCatalogadosPage() {
           loading={loading}
           sticky={STICKY_HEADER}
           scroll={{ x: "max-content" }}
+          onChange={onTablaChange}
           pagination={paginacionEstandar({ current: page, pageSize, total: filtradas.length, onChange: (p, s) => { setPage(p); setPageSize(s); }, label: "materiales" })}
         />
       )}

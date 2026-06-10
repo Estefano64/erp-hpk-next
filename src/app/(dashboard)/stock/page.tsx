@@ -29,7 +29,6 @@ import {
   CheckCircleOutlined,
   FileDoneOutlined,
   InfoCircleOutlined,
-  FileExcelOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
@@ -44,7 +43,7 @@ import {
   useColumnasRedimensionables,
 } from "@/lib/tables";
 import { EditableCell } from "@/components/EditableCell";
-import dayjs from "dayjs";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
 
 const { Title } = Typography;
@@ -473,47 +472,6 @@ export default function StockPage() {
   const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
   useColumnasRedimensionables<StockItem>(columns, "stock-list-cols-widths-v1", { data: displayData });
 
-  const exportarStockExcel = async () => {
-    try {
-      const XLSX = await import("xlsx");
-      const dataset = vistaActual ?? displayData;
-      if (dataset.length === 0) {
-        message.warning("No hay datos para exportar con los filtros actuales.");
-        return;
-      }
-      const rows = dataset.map((m) => ({
-        Alerta: m.alerta,
-        Código: m.codigo,
-        Descripción: m.descripcion,
-        "N/P": m.np ?? "",
-        Stock: m.stock_actual,
-        UM: m.unidad_medida ?? "",
-        "En POs": m.cantidad_en_po,
-        "POs Pendientes": m.pos_pendientes.join(", "),
-        "En REQ": m.cantidad_en_req,
-        "REQs Pendientes": m.reqs_pendientes.join(", "),
-        "Stock Disponible": m.stock_proyectado,
-        "Pto. Reposición": m.punto_reposicion,
-        Máximo: m.stock_maximo,
-        "Por Solicitar": m.por_solicitar,
-        Almacén: m.almacen ?? "",
-        Ubicación: m.ubicacion ?? "",
-        Fabricante: m.fabricante ?? "",
-        Categoría: m.categoria ?? "",
-        "Precio Último": m.precio ?? "",
-        Moneda: m.moneda ?? "",
-        "Valor Total": m.valor_total,
-      }));
-      const ws = XLSX.utils.json_to_sheet(rows);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Stock");
-      XLSX.writeFile(wb, `Stock-${dayjs().format("YYYYMMDD-HHmm")}.xlsx`);
-      message.success("Excel descargado");
-    } catch {
-      message.error("Error al exportar Excel");
-    }
-  };
-
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
@@ -529,13 +487,42 @@ export default function StockPage() {
             obligatorias={["__num", "codigo", "descripcion"]}
           />
           <Button onClick={resetAnchos}>Restablecer anchos</Button>
-          <Button
-            icon={<FileExcelOutlined />}
-            onClick={exportarStockExcel}
-            style={{ background: "#1d6f42", color: brand.white, borderColor: "#1d6f42" }}
-          >
-            Descargar Excel
-          </Button>
+          <ExportarExcelButton<StockItem>
+            endpoint="/api/stock"
+            // El endpoint no pagina (devuelve todo de una): limit alto para
+            // que el fetch corte en la primera página.
+            limit={50000}
+            filename="Stock"
+            sheetName="Stock"
+            // Respeta toggle de origen + búsqueda + filtros de columna.
+            // Ojo: si el user desmarca "usar filtros", el endpoint solo trae
+            // el catálogo (los no catalogados viven en /api/no-catalogados).
+            currentRows={vistaActual ?? displayData}
+            tablaLayout={{ ocultas }}
+            columns={[
+              { key: "alerta", label: "Alerta", value: (r) => r.alerta },
+              { key: "codigo", label: "Código", value: (r) => r.codigo },
+              { key: "descripcion", label: "Descripción", value: (r) => r.descripcion },
+              { key: "np", label: "N/P", value: (r) => r.np ?? "" },
+              { key: "stock_actual", label: "Stock", value: (r) => r.stock_actual },
+              { key: "stock_proyectado", label: "Disponible", value: (r) => r.stock_proyectado },
+              { key: "unidad_medida", label: "UM", value: (r) => r.unidad_medida ?? "" },
+              { key: "cantidad_en_po", label: "En POs", value: (r) => r.cantidad_en_po },
+              { key: "pos_pendientes", label: "POs Pendientes", value: (r) => r.pos_pendientes.join(", ") },
+              { key: "cantidad_en_req", label: "En REQ", value: (r) => r.cantidad_en_req },
+              { key: "reqs_pendientes", label: "REQs Pendientes", value: (r) => r.reqs_pendientes.join(", ") },
+              { key: "punto_reposicion", label: "Pto. Repo", value: (r) => r.punto_reposicion },
+              { key: "stock_maximo", label: "Máximo", value: (r) => r.stock_maximo },
+              { key: "por_solicitar", label: "Por Solicitar", value: (r) => r.por_solicitar },
+              { key: "almacen", label: "Almacén", value: (r) => r.almacen ?? "" },
+              { key: "ubicacion", label: "Ubicación", value: (r) => r.ubicacion ?? "" },
+              { key: "fabricante", label: "Fabricante", value: (r) => r.fabricante ?? "" },
+              { key: "categoria", label: "Categoría", value: (r) => r.categoria ?? "" },
+              { key: "precio", label: "Precio Último", value: (r) => r.precio ?? "" },
+              { key: "moneda", label: "Moneda", value: (r) => r.moneda ?? "" },
+              { key: "valor_total", label: "Valor Total", value: (r) => r.valor_total },
+            ]}
+          />
         </Space>
       </div>
 

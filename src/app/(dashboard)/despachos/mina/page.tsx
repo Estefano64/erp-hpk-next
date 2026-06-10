@@ -18,6 +18,7 @@ import { brand } from "@/lib/theme";
 import { formatDateOnly } from "@/lib/dates";
 import { uploadToR2 } from "@/lib/r2-client";
 import { useColumnasRedimensionables, STICKY_HEADER } from "@/lib/tables";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
 const { Title, Text } = Typography;
 
@@ -228,7 +229,28 @@ export default function DespachoMinaPage() {
           <ExportOutlined style={{ marginRight: 8 }} />
           Despacho a mina — Guía de remisión por OT
         </Title>
-        <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>Actualizar</Button>
+        <Space wrap>
+          <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>Actualizar</Button>
+          {/* La tabla no tiene búsqueda ni filtros de columna: el endpoint
+              devuelve exactamente lo que se ve (OTs en estado Terminado). */}
+          <ExportarExcelButton<OTLista>
+            endpoint="/api/despachos/mina"
+            filename="Despachos-mina"
+            columns={[
+              { key: "ot", label: "OT", value: (r) => r.ot ?? `#${r.id}` },
+              { key: "cliente", label: "Cliente", value: (r) => r.cliente ?? "" },
+              { key: "codrep", label: "Código reparable", value: (r) => r.codigo_reparacion ?? "" },
+              { key: "ns", label: "N° Serie", value: (r) => r.ns ?? "" },
+              { key: "wo", label: "WO Cliente", value: (r) => r.wo_cliente ?? "" },
+              { key: "po", label: "PO Cliente", value: (r) => r.po_cliente ?? "" },
+              { key: "items", label: "Items entreg.", value: (r) => r.items_count },
+              { key: "fecha_recepcion", label: "F. Recepción", value: (r) => r.fecha_recepcion ? formatDateOnly(r.fecha_recepcion) : "" },
+              { key: "guia", label: "N° Guía remisión", value: (r) => r.guia_entrega_salida ?? "Pendiente" },
+              { key: "fecha_entrega", label: "F. Entrega", value: (r) => r.fecha_entrega ? formatDateOnly(r.fecha_entrega) : "" },
+              { key: "adjuntos", label: "Archivos", value: (r) => r.adjuntos_despacho.length },
+            ]}
+          />
+        </Space>
       </div>
 
       <Card style={{ marginBottom: 12, background: "#f6ffed", borderColor: "#b7eb8f" }}>

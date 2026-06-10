@@ -10,7 +10,7 @@ import {
 import {
   SearchOutlined, ReloadOutlined, CheckOutlined, CloseOutlined, StopOutlined,
   EditOutlined, FileAddOutlined, InboxOutlined, SendOutlined,
-  FileExcelOutlined, ClockCircleOutlined,
+  ClockCircleOutlined,
   InfoCircleOutlined, EyeOutlined, UnorderedListOutlined,
   TruckOutlined, DollarOutlined,
 } from "@ant-design/icons";
@@ -25,6 +25,7 @@ import { useCachedFetch } from "@/lib/useCachedFetch";
 import { formatDateOnly, formatDateOnlyShort } from "@/lib/dates";
 import { formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
 import { R2FileLink } from "@/components/R2FileLink";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import {
   numeracionColumn,
   paginacionEstandar,
@@ -567,53 +568,6 @@ export default function RequerimientosPage() {
     }
   }
 
-  // ── Export Excel ──
-  // Respeta TODOS los filtros visibles: si el user filtró por columna en la
-  // tabla, `vistaActual` tiene los grupos visibles; sino caemos a
-  // `gruposFiltrados` (rangos de fecha aplicados). Aplanamos los items.
-  // No usamos useCallback porque `gruposFiltrados` está declarado más abajo
-  // (temporal dead zone si lo metemos en deps array eagerly).
-  const exportarExcel = async () => {
-    try {
-      const XLSX = await import("xlsx");
-      const baseGroups = vistaActual ?? gruposFiltrados;
-      const dataset = baseGroups.flatMap((g) => g.items);
-      if (dataset.length === 0) {
-        messageApi.warning("No hay datos para exportar con los filtros actuales.");
-        return;
-      }
-      const data = dataset.map((r) => ({
-        OT: r.orden_trabajo?.ot ?? "",
-        "Estado REQ": r.status_requerimiento?.nombre ?? r.status_requerimiento_codigo ?? "",
-        "Estado OC": r.status_oc?.nombre ?? r.status_oc_codigo ?? "",
-        "Nro REQ": r.nro_req ?? "",
-        Item: r.item_req ?? "",
-        Tipo: r.tipo_codigo,
-        Código: r.material?.codigo ?? r.material_codigo ?? "",
-        Material: r.material?.descripcion ?? r.descripcion ?? "",
-        Cantidad: Number(r.cantidad),
-        UM: r.unidad_medida ?? r.material?.unidad_medida_codigo ?? "",
-        Stock: r.material ? Number(r.material.stock_actual ?? 0) : "",
-        Cliente: r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "",
-        "P. Unit": r.precio_unitario != null ? Number(r.precio_unitario) : "",
-        Moneda: r.moneda ?? "",
-        Subtotal: r.precio_unitario != null ? Number(r.precio_unitario) * Number(r.cantidad) : "",
-        "Nro OC": r.compra?.numero_po ?? "",
-        Proveedor: r.proveedor?.razon_social ?? "",
-        "F. Solicitud": r.fecha_solicitud ? formatDateOnly(r.fecha_solicitud) : "",
-        "F. Requerida": r.fecha_requerida ? formatDateOnly(r.fecha_requerida) : "",
-        "F. Entrega": r.fecha_entrega_esperada ? formatDateOnly(r.fecha_entrega_esperada) : "",
-      }));
-      const ws = XLSX.utils.json_to_sheet(data);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Requerimientos");
-      XLSX.writeFile(wb, `Requerimientos-${dayjs().format("YYYYMMDD-HHmm")}.xlsx`);
-      messageApi.success("Excel descargado");
-    } catch {
-      messageApi.error("Error al exportar Excel");
-    }
-  };
-
   // ── Agrupación por nro_req ──
   // Cada grupo es un "Requerimiento" (header) con N items adentro.
   interface GrupoReq {
@@ -752,6 +706,13 @@ export default function RequerimientosPage() {
   // Reset vistaActual cuando cambian los grupos base — el Table reaplica
   // sus filtros de columna sobre el nuevo dataset y vuelve a llamar onChange.
   useEffect(() => { setVistaActual(null); }, [gruposFiltrados]);
+
+  // Items visibles aplanados (filtros server-side + rangos + filtros de
+  // columna de la tabla ya aplicados) — fuente del export a Excel.
+  const itemsVisibles = useMemo(() => {
+    const base: readonly { items: RequerimientoRow[] }[] = vistaActual ?? gruposFiltrados;
+    return base.flatMap((g) => g.items);
+  }, [vistaActual, gruposFiltrados]);
 
   // Helper local: filtros únicos sobre una proyección arbitraria (rutas anidadas).
   function filtroProyectado(
@@ -1311,13 +1272,42 @@ export default function RequerimientosPage() {
           Requerimientos
         </Title>
         <Space>
-          <Button
-            icon={<FileExcelOutlined />}
-            onClick={exportarExcel}
-            style={{ background: "#1d6f42", color: brand.white, borderColor: "#1d6f42" }}
-          >
-            Descargar Excel
-          </Button>
+          {/* La tabla baja todo el dataset (limit 10000) y filtra client-side,
+              así que `itemsVisibles` ya respeta búsqueda, rangos y filtros de
+              columna; el export aplana los items de los grupos visibles. */}
+          <ExportarExcelButton<RequerimientoRow>
+            endpoint="/api/requerimientos"
+            filename="Requerimientos"
+            sheetName="Requerimientos"
+            currentRows={itemsVisibles}
+            columns={[
+              {
+                label: "OT",
+                value: (r) => r.orden_trabajo?.ot != null
+                  ? formatOtCodigo(r.orden_trabajo.ot, r.orden_trabajo.tipo_codigo, "")
+                  : formatOtInternaCodigo(r.orden_trabajo_interna?.ot, ""),
+              },
+              { label: "Estado REQ", value: (r) => r.status_requerimiento?.nombre ?? r.status_requerimiento_codigo ?? "" },
+              { label: "Estado OC", value: (r) => r.status_oc?.nombre ?? r.status_oc_codigo ?? "" },
+              { label: "Nro REQ", value: (r) => r.nro_req ?? "" },
+              { label: "Item", value: (r) => r.item_req ?? "" },
+              { label: "Tipo", value: (r) => r.tipo_codigo },
+              { label: "Código", value: (r) => r.material?.codigo ?? r.material_codigo ?? "" },
+              { label: "Material", value: (r) => r.material?.descripcion ?? r.descripcion ?? "" },
+              { label: "Cantidad", value: (r) => Number(r.cantidad) },
+              { label: "UM", value: (r) => r.unidad_medida ?? r.material?.unidad_medida_codigo ?? "" },
+              { label: "Stock", value: (r) => r.material ? Number(r.material.stock_actual ?? 0) : "" },
+              { label: "Cliente", value: (r) => r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "" },
+              { label: "P. Unit", value: (r) => r.precio_unitario != null ? Number(r.precio_unitario) : "" },
+              { label: "Moneda", value: (r) => r.moneda ?? "" },
+              { label: "Subtotal", value: (r) => r.precio_unitario != null ? Number(r.precio_unitario) * Number(r.cantidad) : "" },
+              { label: "Nro OC", value: (r) => r.compra?.numero_po ?? "" },
+              { label: "Proveedor", value: (r) => r.proveedor?.razon_social ?? "" },
+              { label: "F. Solicitud", value: (r) => r.fecha_solicitud ? formatDateOnly(r.fecha_solicitud) : "" },
+              { label: "F. Requerida", value: (r) => r.fecha_requerida ? formatDateOnly(r.fecha_requerida) : "" },
+              { label: "F. Entrega", value: (r) => r.fecha_entrega_esperada ? formatDateOnly(r.fecha_entrega_esperada) : "" },
+            ]}
+          />
           <ColumnasToggleButton<GrupoReq>
             columns={groupColumns}
             ocultas={ocultas}

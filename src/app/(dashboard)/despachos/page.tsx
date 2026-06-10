@@ -17,6 +17,7 @@ import {
   numeracionColumn, useColumnasOcultas, ColumnasToggleButton, visibleColumns,
   filtroPorColumna, STICKY_HEADER, useColumnasRedimensionables,
 } from "@/lib/tables";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
 const { Title, Text } = Typography;
 
@@ -170,6 +171,10 @@ export default function DespachosPage() {
       .filter((x): x is GrupoOT => x != null);
   })();
 
+  // Items planos de los grupos ya filtrados — para la exportación a Excel
+  // (cada item trae su orden_trabajo con cliente/código reparación).
+  const itemsFiltrados = gruposFiltrados.flatMap((g) => g.items);
+
   const totalConStock = gruposFiltrados.reduce((s, g) => s + g.con_stock, 0);
   const totalSinStock = gruposFiltrados.reduce((s, g) => s + g.sin_stock, 0);
   const otsCompletas = gruposFiltrados.filter((g) => g.estado_ot === "completa").length;
@@ -192,6 +197,38 @@ export default function DespachosPage() {
             style={{ width: 320 }}
           />
           <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>Actualizar</Button>
+          {/* El endpoint agrupa por OT (no devuelve items planos), así que la
+              descarga usa las filas planas ya filtradas por la búsqueda. */}
+          <ExportarExcelButton<Item>
+            endpoint="/api/despachos/ot"
+            filename="Despachos-pendientes"
+            currentRows={itemsFiltrados}
+            columns={[
+              { key: "ot", label: "OT", value: (r) => r.orden_trabajo?.ot ?? `#${r.ot_id}` },
+              { key: "cliente", label: "Cliente", value: (r) => r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "" },
+              { key: "codrep", label: "Código reparación", value: (r) => r.orden_trabajo?.codigo_reparacion?.codigo ?? "" },
+              { key: "nro_req", label: "Req / Item", value: (r) => `${r.nro_req ?? "—"}/${r.item_req ?? "—"}` },
+              { key: "codigo", label: "Código", value: (r) => r.material?.codigo ?? "" },
+              { key: "desc", label: "Descripción", value: (r) => r.material?.descripcion ?? r.descripcion ?? "" },
+              { key: "cantidad", label: "Pedido", value: (r) => Number(r.cantidad) },
+              { key: "unidad", label: "Unidad", value: (r) => r.unidad_medida ?? "" },
+              { key: "pendiente", label: "Pendiente", value: (r) => r._cant_pendiente },
+              { key: "stock", label: "Stock alm.", value: (r) => Number(r.material?.stock_actual ?? 0) },
+              {
+                key: "origen", label: "Origen / PO",
+                value: (r) => !r.po_id
+                  ? "Stock directo"
+                  : `${r.compra?.numero_po ?? `PO#${r.po_id}`} ${r._po_recibida ? "(recibida)" : "(por llegar)"}`,
+              },
+              {
+                key: "ubicacion", label: "Ubicación",
+                value: (r) => r.almacen_zona
+                  ? `${r.almacen_zona.codigo}${r.almacen_posicion ? ` · ${r.almacen_posicion.codigo}` : ""}`
+                  : (r.material?.ubicacion ?? ""),
+              },
+              { key: "puede", label: "Puede despachar", value: (r) => r._puede_despachar ? "Sí" : "No" },
+            ]}
+          />
         </Space>
       </div>
 

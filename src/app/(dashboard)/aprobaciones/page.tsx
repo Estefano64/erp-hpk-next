@@ -20,8 +20,9 @@ import { brand } from "@/lib/theme";
 import {
   numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE,
   useColumnasOcultas, ColumnasToggleButton, visibleColumns, filtroPorColumna,
-  useColumnasRedimensionables,
+  useColumnasRedimensionables, useTablaFiltrada,
 } from "@/lib/tables";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import { useCachedFetch } from "@/lib/useCachedFetch";
 
 import { formatDateOnly, formatDateOnlyShort } from "@/lib/dates";
@@ -733,9 +734,15 @@ export default function AceptacionesPage() {
   }
 
   // ── Columnas: OCs pendientes ────────────────────────────────────────
-  const ocs = data?.ocs_pendientes ?? [];
-  const reqs = data?.reqs_pendientes ?? [];
+  // Memoizados para que useTablaFiltrada no se reinicie en cada render
+  // (el `?? []` crearía una referencia nueva cuando data aún es null).
+  const ocs = useMemo(() => data?.ocs_pendientes ?? [], [data]);
+  const reqs = useMemo(() => data?.reqs_pendientes ?? [], [data]);
   const historial = data?.historial ?? [];
+
+  // Filas visibles tras los filtros de columna de cada tabla — para el export.
+  const { filtradas: ocsFiltradas, onChange: onChangeTablaOC } = useTablaFiltrada(ocs);
+  const { filtradas: reqsFiltradas, onChange: onChangeTablaRQ } = useTablaFiltrada(reqs);
 
   const ocColumns: ColumnsType<OCPendiente> = [
     numeracionColumn<OCPendiente>({ current: pageOC, pageSize }),
@@ -1245,6 +1252,25 @@ export default function AceptacionesPage() {
                           setOcultas={setOcultasOC}
                           obligatorias={["__num", "numero_po", "acciones"]}
                         />
+                        {/* El endpoint /api/aprobaciones no devuelve { data }, así que
+                            la descarga usa las filas ya filtradas en la tabla. */}
+                        <ExportarExcelButton<OCPendiente>
+                          endpoint="/api/aprobaciones"
+                          filename="OCs-pendientes"
+                          currentRows={ocsFiltradas}
+                          tablaLayout={{ ocultas: ocultasOC }}
+                          columns={[
+                            { key: "numero_po", label: "Nro OC", value: (o) => o.numero_po },
+                            { key: "proveedor", label: "Proveedor", value: (o) => o.proveedor?.razon_social ?? "" },
+                            { key: "ot", label: "OT", value: (o) => o.orden_trabajo?.ot ?? "" },
+                            { key: "items", label: "Items", value: (o) => o.ot_repuestos.length || o.detalles.length },
+                            { key: "total", label: "Total", value: (o) => Number(o.total) },
+                            { key: "moneda", label: "Moneda", value: (o) => o.moneda_codigo ?? "USD" },
+                            { key: "fecha_solicitud", label: "F. Solicitud", value: (o) => formatDateOnlyShort(o.fecha_solicitud) },
+                            { key: "fecha_entrega", label: "F. Entrega Esp.", value: (o) => o.fecha_entrega_esperada ? formatDateOnlyShort(o.fecha_entrega_esperada) : "" },
+                            { key: "usuario", label: "Solicita", value: (o) => o.usuario_solicita },
+                          ]}
+                        />
                         <Button onClick={resetOcAnchos}>Restablecer anchos</Button>
                       </Space>
                     }
@@ -1272,6 +1298,7 @@ export default function AceptacionesPage() {
                           })}
                           scroll={{ x: 1100 }}
                           sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+                          onChange={onChangeTablaOC}
                         />
                       </OcDragWrapper>
                     )}
@@ -1318,6 +1345,33 @@ export default function AceptacionesPage() {
                           setOcultas={setOcultasRQ}
                           obligatorias={["__num", "nro_req", "acciones"]}
                         />
+                        {/* Igual que en OCs: la descarga usa las filas filtradas de la tabla. */}
+                        <ExportarExcelButton<ReqPendiente>
+                          endpoint="/api/aprobaciones"
+                          filename="Requerimientos-pendientes"
+                          currentRows={reqsFiltradas}
+                          tablaLayout={{ ocultas: ocultasRQ }}
+                          columns={[
+                            { key: "nro_req", label: "Nro Req / Item", value: (r) => `${r.nro_req ?? "—"}/${r.item_req ?? "—"}` },
+                            { key: "tipo", label: "Tipo", value: (r) => r.tipo_codigo ?? "" },
+                            { key: "ot", label: "OT", value: (r) => r.orden_trabajo?.ot ?? "" },
+                            { key: "cliente", label: "Mina / Cliente", value: (r) => r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "" },
+                            { key: "flota", label: "Flota", value: (r) => r.orden_trabajo?.cod_rep_flota ?? "" },
+                            { key: "descripcion_ot", label: "Descripción OT", value: (r) => r.orden_trabajo?.descripcion ?? "" },
+                            { key: "cod_material", label: "Código material", value: (r) => r.material?.codigo ?? "" },
+                            { key: "descripcion", label: "Material / Descripción", value: (r) => r.material?.descripcion ?? r.descripcion ?? "" },
+                            { key: "cantidad", label: "Cant.", value: (r) => Number(r.cantidad) },
+                            { key: "um", label: "UM", value: (r) => r.unidad_medida ?? "" },
+                            { key: "stock", label: "Stock", value: (r) => r.material?.stock_actual != null ? Number(r.material.stock_actual) : "" },
+                            { key: "precio_cat", label: "P. catálogo", value: (r) => r.material?.precio != null ? Number(r.material.precio) : "" },
+                            { key: "total_estimado", label: "P. Estimado Total", value: (r) => r.material?.precio != null ? Number(r.material.precio) * Number(r.cantidad) : "" },
+                            { key: "moneda", label: "Moneda", value: (r) => r.material?.moneda_codigo ?? "USD" },
+                            { key: "fecha_solicitud", label: "F. Solicitud", value: (r) => formatDateOnlyShort(r.fecha_solicitud) },
+                            { key: "fecha_requerida", label: "F. Requerida", value: (r) => r.fecha_requerida ? formatDateOnlyShort(r.fecha_requerida) : "" },
+                            { key: "usuario", label: "Solicita", value: (r) => r.usuario_solicita },
+                            { key: "observaciones", label: "Observaciones", value: (r) => r.observaciones ?? "" },
+                          ]}
+                        />
                         <Button onClick={resetRqAnchos}>Restablecer anchos</Button>
                       </Space>
                     }
@@ -1345,6 +1399,7 @@ export default function AceptacionesPage() {
                           })}
                           scroll={{ x: 1300 }}
                           sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+                          onChange={onChangeTablaRQ}
                         />
                       </RqDragWrapper>
                     )}

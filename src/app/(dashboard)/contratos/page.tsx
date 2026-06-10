@@ -42,6 +42,7 @@ import {
   dentroDeRango,
   useColumnasRedimensionables,
 } from "@/lib/tables";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import dayjs from "dayjs";
 
 import { formatDateOnly } from "@/lib/dates";
@@ -304,6 +305,25 @@ export default function ContratosPage() {
             obligatorias={["__num", "codigo", "acciones"]}
           />
           <Button onClick={resetAnchos}>Restablecer anchos</Button>
+          <ExportarExcelButton<ContratoRecord>
+            endpoint="/api/contratos"
+            filename="Contratos"
+            // Respeta los filtros server-side activos (búsqueda + cliente).
+            endpointParams={{ search, cliente: filterCliente }}
+            tablaLayout={{ ocultas }}
+            columns={[
+              { key: "codigo", label: "Código", value: (r) => r.codigo },
+              { key: "cliente_id", label: "Cliente", value: (r) => r.cliente?.nombre_comercial ?? r.cliente?.razon_social ?? "" },
+              {
+                key: "cod_rep_id", label: "Cód. Reparable",
+                value: (r) => r.codigo_reparacion ? `${r.codigo_reparacion.codigo} - ${r.codigo_reparacion.descripcion}` : "",
+              },
+              { key: "fecha_inicio", label: "Inicio", value: (r) => formatDateOnly(r.fecha_inicio) },
+              { key: "fecha_termino", label: "Término", value: (r) => formatDateOnly(r.fecha_termino) },
+              { key: "dias_reparacion", label: "Días Rep.", value: (r) => r.dias_reparacion },
+              { key: "precio", label: "Precio", value: (r) => Number(r.precio) },
+            ]}
+          />
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nuevo</Button>
         </Space>
       </div>

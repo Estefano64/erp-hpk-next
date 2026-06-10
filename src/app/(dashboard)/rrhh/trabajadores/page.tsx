@@ -20,8 +20,9 @@ import { formatDateOnly } from "@/lib/dates";
 import {
   numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE,
   useColumnasOcultas, ColumnasToggleButton, visibleColumns, filtroPorColumna,
-  useColumnasRedimensionables,
+  useColumnasRedimensionables, useTablaFiltrada,
 } from "@/lib/tables";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import { useResponsive } from "@/lib/responsive";
 
 dayjs.extend(isoWeek);
@@ -177,6 +178,9 @@ export default function TrabajadoresPage() {
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
   const { ocultas, setOcultas } = useColumnasOcultas("trabajadores-list-cols-v1");
   const [equipos, setEquipos] = useState<EquipoOpt[]>([]);
+  // Filas visibles tras los filtros de columna de la tabla — `rows` ya viene
+  // filtrado server-side por búsqueda/área/activos, así que esto captura todo.
+  const { filtradas, onChange: onTablaChange } = useTablaFiltrada(rows);
 
   // Modal crear/editar
   const [modalOpen, setModalOpen] = useState(false);
@@ -761,6 +765,39 @@ export default function TrabajadoresPage() {
             setOcultas={setOcultas}
             obligatorias={["__num", "nombre", "acciones"]}
           />
+          <ExportarExcelButton<Trabajador>
+            endpoint="/api/trabajadores"
+            filename="Trabajadores"
+            currentRows={filtradas}
+            tablaLayout={{ ocultas }}
+            columns={[
+              { key: "nombre", label: "Nombre", value: (r) => r.nombre },
+              { key: "dni", label: "DNI", value: (r) => r.dni ?? "" },
+              { key: "area", label: "Área", value: (r) => r.area },
+              { key: "puesto", label: "Cargo / Puesto", value: (r) => r.puesto },
+              {
+                key: "equipo", label: "Máquina asignada",
+                value: (r) => r.equipo ? `${r.equipo.descripcion} — ${r.equipo.codigo}` : "",
+              },
+              {
+                key: "costo_hh", label: "Costo H.H.",
+                value: (r) => r.costo_hora_hombre != null ? Number(r.costo_hora_hombre) : "",
+              },
+              {
+                key: "costo_he", label: "Costo H.E.",
+                value: (r) => r.costo_hora_extra != null ? Number(r.costo_hora_extra) : "",
+              },
+              {
+                key: "cuenta", label: "Cuenta",
+                value: (r) => {
+                  const u = usuariosByTrabajador[r.trabajador_id];
+                  if (!u) return "Sin cuenta";
+                  return `${u.codigoEmpleado}${u.roles.length > 0 ? ` (${u.roles.join(", ")})` : ""}`;
+                },
+              },
+              { key: "activo", label: "Activo", value: (r) => r.activo ? "Sí" : "No" },
+            ]}
+          />
         </Space>
       </Card>
 
@@ -772,6 +809,7 @@ export default function TrabajadoresPage() {
           dataSource={rows}
           loading={loading}
           size="small"
+          onChange={onTablaChange}
           pagination={paginacionEstandar({
             current: page, pageSize, total: rows.length,
             onChange: (p, s) => { setPage(p); setPageSize(s); },

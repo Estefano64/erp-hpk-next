@@ -36,7 +36,6 @@ import {
   ExclamationCircleOutlined,
   InfoCircleOutlined,
   FilePdfOutlined,
-  FileExcelOutlined,
   MessageOutlined,
   CheckOutlined,
 } from "@ant-design/icons";
@@ -59,8 +58,9 @@ import { Popover, Divider } from "antd";
 import { brand } from "@/lib/theme";
 import dayjs from "dayjs";
 import CompraDetalleModal from "@/components/modules/compras/CompraDetalleModal";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
-import { formatDateOnly } from "@/lib/dates";
+import { formatDateOnly, formatDateOnlyShort } from "@/lib/dates";
 const { Title, Text } = Typography;
 
 interface Compra {
@@ -272,42 +272,6 @@ export default function ComprasPage() {
   // Reset cuando cambian datos o rangos: el Table reaplica filtros sobre el
   // nuevo dataset y vuelve a avisarnos vía onChange.
   useEffect(() => { setVistaActual(null); }, [filasMostradas]);
-
-  const exportarExcel = async () => {
-    try {
-      const XLSX = await import("xlsx");
-      const dataset = vistaActual ?? filasMostradas;
-      if (dataset.length === 0) {
-        message.warning("No hay datos para exportar con los filtros actuales.");
-        return;
-      }
-      const rows = dataset.map((c) => ({
-        "Nro OC": c.numero_po,
-        Estado: c.estado,
-        Proveedor: c.proveedor_nombre ?? "",
-        Almacén: c.almacen_nombre ?? "",
-        "F. Solicitud": c.fecha_solicitud ? formatDateOnly(c.fecha_solicitud) : "",
-        "F. Entrega Esp.": c.fecha_entrega_esperada ? formatDateOnly(c.fecha_entrega_esperada) : "",
-        "F. Entrega Real": c.fecha_entrega_real ? formatDateOnly(c.fecha_entrega_real) : "",
-        Items: c.cantidad_items,
-        Subtotal: Number(c.subtotal),
-        IGV: Number(c.impuesto),
-        Total: Number(c.total),
-        Moneda: c.moneda,
-        "Nro Guía": c.nro_guia ?? "",
-        "Nro Factura": c.nro_factura ?? "",
-        Comentarios: c.observaciones ?? "",
-        Usuario: c.usuario_solicita ?? "",
-      }));
-      const ws = XLSX.utils.json_to_sheet(rows);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Compras");
-      XLSX.writeFile(wb, `Compras-${dayjs().format("YYYYMMDD-HHmm")}.xlsx`);
-      message.success("Excel descargado");
-    } catch {
-      message.error("Error al exportar Excel");
-    }
-  };
 
   // Valores unicos para filtros
   const valoresUnicos = (campo: keyof Compra) => {
@@ -777,13 +741,43 @@ export default function ComprasPage() {
             obligatorias={["__num", "numero_po", "acciones"]}
           />
           <Button onClick={resetAnchos}>Restablecer anchos</Button>
-          <Button
-            icon={<FileExcelOutlined />}
-            onClick={exportarExcel}
-            style={{ background: "#1d6f42", color: brand.white, borderColor: "#1d6f42" }}
-          >
-            Descargar Excel
-          </Button>
+          <ExportarExcelButton<Compra>
+            endpoint="/api/compras"
+            // El endpoint no pagina (devuelve todo de una): con limit alto el
+            // loop de descarga corta en la primera respuesta.
+            limit={50000}
+            filename="Compras"
+            // Respeta TODOS los filtros activos: búsqueda + estado (ya vienen
+            // aplicados server-side en `data`), rangos de fecha y filtros de
+            // columna (capturados en vistaActual por el Table.onChange).
+            currentRows={vistaActual ?? filasMostradas}
+            tablaLayout={{ ocultas }}
+            columns={[
+              { key: "numero_po", label: "Nro OC", value: (r) => r.numero_po },
+              { key: "nombre", label: "Nombre OC", value: (r) => r.nombre ?? "" },
+              { key: "estado", label: "Estado", value: (r) => r.estado },
+              { key: "proveedor_nombre", label: "Proveedor", value: (r) => r.proveedor_nombre ?? "" },
+              { key: "almacen_nombre", label: "Almacén", value: (r) => r.almacen_nombre ?? "" },
+              { key: "fecha_solicitud", label: "F. Solicitud", value: (r) => r.fecha_solicitud ? formatDateOnly(r.fecha_solicitud) : "" },
+              { key: "fecha_req_creacion", label: "Creación REQ", value: (r) => r.fecha_req_creacion ? formatDateOnlyShort(r.fecha_req_creacion) : "" },
+              { key: "fecha_oc_creacion", label: "Creación OC", value: (r) => r.fecha_oc_creacion ? dayjs(r.fecha_oc_creacion).format("DD/MM/YY HH:mm") : "" },
+              { key: "fecha_entrega_esperada", label: "F. Entrega Esp.", value: (r) => r.fecha_entrega_esperada ? formatDateOnly(r.fecha_entrega_esperada) : "" },
+              { key: "cantidad_items", label: "Items", value: (r) => r.cantidad_items },
+              { key: "pu_sin_igv", label: "PU (sin IGV)", value: (r) => r.cantidad_items > 0 ? Number((Number(r.subtotal) / r.cantidad_items).toFixed(2)) : 0 },
+              { key: "total_sin_igv", label: "Total (sin IGV)", value: (r) => Number(r.subtotal) },
+              { key: "nro_guia", label: "Guía", value: (r) => r.nro_guia ?? "" },
+              { key: "nro_factura", label: "Factura", value: (r) => r.nro_factura ?? "" },
+              { key: "observaciones", label: "Comentarios", value: (r) => r.observaciones ?? "" },
+              { key: "usuario_solicita", label: "Usuario", value: (r) => r.usuario_solicita ?? "" },
+              { key: "numero_req", label: "Nro Req.", value: (r) => r.numero_req ?? "" },
+              { key: "ot_numero", label: "OT", value: (r) => r.ot_numero ?? "" },
+              { key: "fecha_entrega_real", label: "F. Entrega real", value: (r) => r.fecha_entrega_real ? formatDateOnly(r.fecha_entrega_real) : "" },
+              { key: "impuesto", label: "Impuesto", value: (r) => r.impuesto != null ? Number(r.impuesto) : "" },
+              { key: "moneda", label: "Moneda", value: (r) => r.moneda ?? "" },
+              // No es columna de la tabla, pero el export anterior la incluía.
+              { key: "total_con_igv", label: "Total (con IGV)", value: (r) => Number(r.total), defaultSelected: false },
+            ]}
+          />
           <Button
             icon={<UnorderedListOutlined />}
             onClick={() => router.push("/requerimientos")}

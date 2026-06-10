@@ -25,7 +25,9 @@ import { useSession } from "next-auth/react";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import { EditableCell } from "@/components/EditableCell";
-import { filtroPorColumna, useColumnasRedimensionables, STICKY_HEADER, paginacionEstandar } from "@/lib/tables";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
+import { filtroPorColumna, useColumnasRedimensionables, STICKY_HEADER, paginacionEstandar, useTablaFiltrada } from "@/lib/tables";
+import { formatDateOnly } from "@/lib/dates";
 
 const { Title, Text } = Typography;
 
@@ -119,6 +121,8 @@ function TabCatalogo() {
       (s.np ?? "").toLowerCase().includes(q),
     );
   }, [suministros, search]);
+  // Filas visibles después de filtros de columna del Table (para el export Excel).
+  const { filtradas: vistaTabla, onChange: capturarFiltros } = useTablaFiltrada(filtrados);
 
   const guardarUbicacion = async (materialId: number, nueva: string | null) => {
     const res = await fetch(`/api/materiales/${materialId}`, {
@@ -198,6 +202,29 @@ function TabCatalogo() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12, gap: 8 }}>
+        <ExportarExcelButton<StockItem>
+          // OJO: /api/stock devuelve TODO el stock (no solo suministros) y no
+          // pagina; con el checkbox "usar filtros de la tabla" (default) se
+          // exporta lo visible (solo suministros + búsqueda + filtros de columna).
+          endpoint="/api/stock"
+          limit={50000}
+          filename="Suministros"
+          currentRows={vistaTabla}
+          columns={[
+            { label: "Estado", value: (r) => r.alerta === "SIN" ? "Sin stock" : r.alerta === "BAJO" ? "Bajo" : r.alerta === "EXCESO" ? "Exceso" : "OK" },
+            { label: "Código", value: (r) => r.codigo },
+            { label: "Descripción", value: (r) => r.descripcion },
+            { label: "N/P", value: (r) => r.np ?? "" },
+            { label: "Stock", value: (r) => r.stock_actual },
+            { label: "UM", value: (r) => r.unidad_medida ?? "" },
+            { label: "Pto. Repo", value: (r) => r.punto_reposicion > 0 ? r.punto_reposicion : "" },
+            { label: "Máximo", value: (r) => r.stock_maximo > 0 ? r.stock_maximo : "" },
+            { label: "Ubicación", value: (r) => r.ubicacion ?? "" },
+            { label: "Fabricante", value: (r) => r.fabricante ?? "" },
+            { label: "Precio Último", value: (r) => r.precio != null ? Number(r.precio) : "" },
+            { label: "Moneda", value: (r) => r.moneda ?? "" },
+          ]}
+        />
         <Tooltip title="Ir a movimientos para registrar entrada/salida con más opciones">
           <Button icon={<ArrowDownOutlined />} onClick={() => router.push("/movimientos")}>
             Movimientos
@@ -269,6 +296,7 @@ function TabCatalogo() {
             columns={columns} data={filtrados} loading={loading}
             page={page} pageSize={pageSize}
             onPageChange={(p, s) => { setPage(p); setPageSize(s); }}
+            onTableChange={capturarFiltros}
           />
         </Card>
       )}
@@ -277,10 +305,12 @@ function TabCatalogo() {
 }
 
 function TablaSuministros({
-  columns, data, loading, page, pageSize, onPageChange,
+  columns, data, loading, page, pageSize, onPageChange, onTableChange,
 }: {
   columns: ColumnsType<StockItem>; data: StockItem[]; loading: boolean;
   page: number; pageSize: number; onPageChange: (p: number, s: number) => void;
+  /** Captura las filas visibles tras filtros de columna (export Excel). */
+  onTableChange?: (p: unknown, f: unknown, s: unknown, ext: { currentDataSource: StockItem[] }) => void;
 }) {
   const { columnas, components, TableDragWrapper } = useColumnasRedimensionables<StockItem>(
     columns, "suministros-v1", { data },
@@ -295,6 +325,7 @@ function TablaSuministros({
           onChange: onPageChange, label: "suministro(s)",
         })}
         scroll={{ x: 1200 }} sticky={STICKY_HEADER}
+        onChange={onTableChange}
       />
     </TableDragWrapper>
   );
@@ -495,6 +526,26 @@ function TabEntregas() {
           {rows.length} entrega(s) registrada(s)
         </Text>
         <Space>
+          <ExportarExcelButton<EntregaRow>
+            // OJO: el endpoint devuelve todas las SALIDAs (no solo suministros);
+            // con el checkbox "usar filtros de la tabla" (default) se exportan
+            // las entregas visibles (ya filtradas a suministros en el cliente).
+            endpoint="/api/movimientos?tipo=SALIDA"
+            filename="Entregas-suministros"
+            sheetName="Entregas"
+            currentRows={rows}
+            columns={[
+              { label: "Fecha", value: (r) => r.fecha_movimiento ? formatDateOnly(r.fecha_movimiento) : "" },
+              { label: "Código", value: (r) => r.material_codigo ?? "" },
+              { label: "Suministro", value: (r) => r.material_nombre ?? "" },
+              { label: "Cant.", value: (r) => Number(r.cantidad) },
+              { label: "UM", value: (r) => r.unidad_medida ?? "" },
+              { label: "Entregado a", value: (r) => r.persona_recibe ?? "" },
+              { label: "OT / Documento", value: (r) => r.documento_referencia ?? "" },
+              { label: "Observaciones", value: (r) => r.observacion ?? "" },
+              { label: "Registró", value: (r) => r.usuario },
+            ]}
+          />
           <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>Actualizar</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={openNuevo}>Nueva entrega</Button>
         </Space>

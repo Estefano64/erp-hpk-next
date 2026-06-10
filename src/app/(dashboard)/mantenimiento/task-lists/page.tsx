@@ -21,7 +21,9 @@ import {
   useColumnasRedimensionables,
   filtroPorColumna,
   usePersistedState,
+  useTablaFiltrada,
 } from "@/lib/tables";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
 const { Title, Text } = Typography;
 const { Dragger } = Upload;
@@ -210,6 +212,10 @@ export default function TaskListsPage() {
     [rows],
   );
 
+  // Filas visibles tras los filtros de columna — `rows` ya viene filtrado
+  // server-side por búsqueda/máquina/actividad, así que esto captura todo.
+  const { filtradas, captureFilteredRows } = useTablaFiltrada(rows);
+
   const { ocultas, setOcultas } = useColumnasOcultas("task-lists-cols-ocultas", []);
   const { columnas, components, TableDragWrapper } = useColumnasRedimensionables(
     allColumns,
@@ -335,6 +341,19 @@ export default function TaskListsPage() {
                 ocultas={ocultas}
                 setOcultas={setOcultas}
               />
+              <ExportarExcelButton<TaskListRow>
+                endpoint="/api/mantenimiento/task-lists"
+                filename="TaskLists"
+                currentRows={filtradas}
+                tablaLayout={{ ocultas }}
+                columns={[
+                  { key: "maquina_taller", label: "Máquina del taller", value: (r) => r.maquina_taller },
+                  { key: "actividad_codigo", label: "Actividad", value: (r) => r.actividad_codigo },
+                  { key: "descripcion", label: "Descripción de la tarea", value: (r) => r.descripcion },
+                  { key: "usuario_responsable", label: "Responsable", value: (r) => r.usuario_responsable ?? "" },
+                  { key: "items_count", label: "Ítems", value: (r) => r.items.length },
+                ]}
+              />
             </Space>
           </Col>
         </Row>
@@ -360,9 +379,11 @@ export default function TaskListsPage() {
             onChange: (p, s) => { setPage(p); setPageSize(s); },
             label: "task lists",
           })}
-          onChange={(_p, filters) =>
-            setColumnFilters(filters as Record<string, (string | number | boolean | null)[] | null>)
-          }
+          onChange={(_p, filters, _s, extra) => {
+            // Capturar las filas filtradas para la exportación a Excel.
+            captureFilteredRows(extra);
+            setColumnFilters(filters as Record<string, (string | number | boolean | null)[] | null>);
+          }}
         />
       </TableDragWrapper>
 

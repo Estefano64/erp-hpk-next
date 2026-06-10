@@ -16,7 +16,8 @@ import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import { uploadToR2 } from "@/lib/r2-client";
 import { R2Image } from "@/components/R2Image";
-import { numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE, useColumnasRedimensionables } from "@/lib/tables";
+import { numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE, useColumnasRedimensionables, useTablaFiltrada } from "@/lib/tables";
+import { ExportarExcelButton, type ExportColumn } from "@/components/ExportarExcelButton";
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -287,6 +288,25 @@ export default function TicketsPage() {
     columns, "tickets-v1", { data: rows },
   );
 
+  // Filas visibles tras los filtros de columna de AntD (para exportar a Excel).
+  const { filtradas, onChange: onTablaChange } = useTablaFiltrada(rows);
+
+  // Columnas del export espejando la tabla (las de gestión solo para admin).
+  const exportColumns: ExportColumn<Ticket>[] = [
+    { label: "Nro", value: (t) => t.id },
+    { label: "Estado", value: (t) => ESTADO_TAG[t.estado]?.label ?? t.estado },
+    { label: "Descripción", value: (t) => t.descripcion },
+    { label: "Captura", value: (t) => (t.captura_key ? "Sí" : "No") },
+    ...(esAdmin
+      ? ([
+          { label: "Creado por", value: (t) => t.creado_por },
+          { label: "Asignado a", value: (t) => t.asignado_a ?? "" },
+        ] satisfies ExportColumn<Ticket>[])
+      : []),
+    { label: "Creado", value: (t) => dayjs(t.created_at).format("DD/MM/YY HH:mm") },
+    { label: "Resuelto", value: (t) => (t.fecha_resolucion ? dayjs(t.fecha_resolucion).format("DD/MM/YY HH:mm") : "") },
+  ];
+
   return (
     <div>
       <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -300,6 +320,14 @@ export default function TicketsPage() {
           </Text>
         </div>
         <Space>
+          <ExportarExcelButton<Ticket>
+            endpoint="/api/tickets"
+            filename="Tickets"
+            // estado aplica server-side; el filtro de columna, client-side.
+            endpointParams={{ estado: filterEstado }}
+            currentRows={filtradas}
+            columns={exportColumns}
+          />
           <Button icon={<ReloadOutlined />} onClick={fetchData} />
           <Button type="primary" icon={<PlusOutlined />} onClick={openNuevo}>
             Nuevo ticket
@@ -327,6 +355,7 @@ export default function TicketsPage() {
           components={components}
           dataSource={rows}
           loading={loading}
+          onChange={onTablaChange}
           size="small"
           scroll={{ x: 1400 }}
           sticky={{ offsetHeader: 56, offsetScroll: 0 }}
