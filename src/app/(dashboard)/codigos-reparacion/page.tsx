@@ -416,7 +416,9 @@ export default function CodigosReparacionPage() {
               { label: "Precio", value: (r) => r.precio != null ? Number(r.precio) : "" },
               { label: "Moneda", value: (r) => r.moneda_codigo ?? "" },
             ]}
-          />
+          >
+            Descargar Códigos
+          </ExportarExcelButton>
           <ExportarExcelButton<{
             tarea_id: number;
             cod_rep_codigo: string | null;
