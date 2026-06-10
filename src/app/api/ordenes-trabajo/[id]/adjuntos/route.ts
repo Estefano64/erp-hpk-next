@@ -62,7 +62,13 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const ot = await prisma.ordenTrabajo.findUnique({
       where: { id: otId },
-      select: { id: true, ot: true },
+      select: {
+        id: true, ot: true,
+        // Fechas del flujo comercial: al subir el primer documento de una etapa
+        // se autocompletan si están vacías (ver más abajo).
+        fecha_cotizacion: true, fecha_generacion_po: true, fecha_aprobacion: true,
+        fecha_despacho: true, fecha_facturacion: true,
+      },
     });
     if (!ot) {
       return NextResponse.json({ error: "OT no encontrada" }, { status: 404 });
@@ -133,6 +139,25 @@ export async function POST(req: NextRequest, { params }: Params) {
         usuario: usuario ?? "sistema",
       },
     });
+
+    // Subir el documento de una etapa comercial AUTOCOMPLETA su fecha en la OT
+    // si está vacía — así "Fechas Relevantes" refleja lo que pasa en Adjuntos
+    // sin depender de que alguien tipee la fecha a mano. Nunca pisa una fecha
+    // ya cargada (se puede ajustar después desde el propio tab o Editar OT).
+    // La PO del cliente implica cotización aprobada → completa ambas fechas.
+    const FECHAS_POR_ETAPA: Record<string, ("fecha_cotizacion" | "fecha_generacion_po" | "fecha_aprobacion" | "fecha_despacho" | "fecha_facturacion")[]> = {
+      cotizacion: ["fecha_cotizacion"],
+      po_cliente: ["fecha_generacion_po", "fecha_aprobacion"],
+      despacho: ["fecha_despacho"],
+      facturacion: ["fecha_facturacion"],
+    };
+    const fechasData: Record<string, Date> = {};
+    for (const campo of FECHAS_POR_ETAPA[etapa] ?? []) {
+      if (!ot[campo]) fechasData[campo] = new Date();
+    }
+    if (Object.keys(fechasData).length > 0) {
+      await prisma.ordenTrabajo.update({ where: { id: otId }, data: fechasData });
+    }
 
     return NextResponse.json({ data: adjunto }, { status: 201 });
   } catch (error) {
