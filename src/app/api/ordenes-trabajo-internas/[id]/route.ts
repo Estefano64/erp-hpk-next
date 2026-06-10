@@ -55,7 +55,15 @@ export async function PUT(req: NextRequest, { params }: Params) {
       }
     }
 
-    // Lista blanca de campos editables.
+    // Defensa explícita: `usuario_crea` JAMÁS debe modificarse en un update.
+    // Es la persona que creó la OT y la auditoría depende de eso. Aunque el
+    // frontend nunca debería mandarlo, lo borramos del body antes de procesar
+    // para garantizarlo a nivel del API (defense in depth).
+    delete body.usuario_crea;
+    delete body.fecha_creacion;
+
+    // Lista blanca de campos editables. `usuario_crea` y `fecha_creacion`
+    // QUEDAN FUERA INTENCIONALMENTE — son inmutables post-creación.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data: any = {};
     const editable = [
@@ -72,8 +80,8 @@ export async function PUT(req: NextRequest, { params }: Params) {
       if (k in body) data[k] = body[k] ? new Date(body[k]) : null;
     }
 
-    // NOTA: usuario_crea NO se toca en updates — es de la creación inicial.
     // Cada edición se traza en OTHistorial (con el usuario que editó + diff).
+    // El "quién editó" se conserva en el historial, NO en la fila principal.
     const usuarioActualiza = (await getAuditUser(req)) ?? "sistema";
 
     data.version = { increment: 1 };

@@ -27,14 +27,15 @@ export async function POST(req: NextRequest) {
   }
 
   // Verifica que la key no esté ya asociada a ningún registro.
-  const [otAdj, reqAdj, compraG, compraF, evalI] = await Promise.all([
+  const [otAdj, reqAdj, compraG, compraF, compraP, evalI] = await Promise.all([
     prisma.otAdjunto.findFirst({ where: { r2_key: key }, select: { id: true } }),
     prisma.oTRepuestoAdjunto.findFirst({ where: { r2_key: key }, select: { id: true } }),
     prisma.compra.findFirst({ where: { guia_key: key }, select: { id: true } }),
     prisma.compra.findFirst({ where: { factura_key: key }, select: { id: true } }),
+    prisma.compra.findFirst({ where: { pago_key: key }, select: { id: true } }),
     prisma.evaluacionTecnica.findFirst({ where: { informe_key: key }, select: { id: true } }),
   ]);
-  if (otAdj || reqAdj || compraG || compraF || evalI) {
+  if (otAdj || reqAdj || compraG || compraF || compraP || evalI) {
     return NextResponse.json(
       { error: "La key está referenciada en BD. Usar el endpoint del módulo." },
       { status: 409 },

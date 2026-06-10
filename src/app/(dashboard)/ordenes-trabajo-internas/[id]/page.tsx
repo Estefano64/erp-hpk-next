@@ -5,12 +5,13 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   Alert, Button, Card, Tag, Space, Spin, Tabs, Row, Col, Form, Input, Select,
-  DatePicker, App, Typography, Descriptions,
+  DatePicker, App, Typography, Tooltip, Modal,
 } from "antd";
 import { useEditLock } from "@/lib/useEditLock";
 import { useUnsavedChangesWarning } from "@/lib/unsaved-changes";
 import {
   ArrowLeftOutlined, EditOutlined, SaveOutlined, CloseOutlined, ToolOutlined,
+  ThunderboltOutlined,
 } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
@@ -52,6 +53,16 @@ interface OTInternaDetalle {
   fecha_cierre: string | null;
   usuario_crea: string | null;
   version: number;
+  // Flag: la OT nació de una solicitud de mantenimiento operativa (no de
+  // planificación). Default false.
+  solicitud_mantenimiento: boolean;
+  // Aprobación manual de la OT (flujo BORRADOR → SIN_APROBACION → APROBADA/RECHAZADA).
+  aprobacion_status_codigo: string | null;
+  fecha_envio_aprobacion: string | null;
+  usuario_envia_aprobacion: string | null;
+  fecha_aprobacion: string | null;
+  usuario_aprueba: string | null;
+  comentario_aprobacion: string | null;
   equipo: { codigo: string; descripcion: string } | null;
   planta: { codigo: string; nombre: string } | null;
   tipo_ot_interna: { codigo: string; nombre: string } | null;
@@ -88,6 +99,24 @@ const PRIORIDAD_COLOR: Record<string, string> = {
   "1": "red", "2": "orange", "3": "default", "E": "volcano",
 };
 
+// Mapeo del aprobacion_status_codigo a color/label para el Tag del header.
+const APROBACION_META: Record<string, { color: string; label: string }> = {
+  BORRADOR: { color: "default", label: "Borrador" },
+  SIN_APROBACION: { color: "orange", label: "Pendiente aprobación" },
+  APROBADA: { color: "green", label: "Aprobada" },
+  RECHAZADA: { color: "red", label: "Rechazada" },
+};
+
+const ACCION_META: Record<
+  "enviar" | "aprobar" | "rechazar" | "reabrir",
+  { titulo: string; ok: string; comentarioRequerido: boolean; danger?: boolean }
+> = {
+  enviar: { titulo: "Enviar OT a aprobación", ok: "Enviar", comentarioRequerido: false },
+  aprobar: { titulo: "Aprobar OT", ok: "Aprobar", comentarioRequerido: false },
+  rechazar: { titulo: "Rechazar OT", ok: "Rechazar", comentarioRequerido: true, danger: true },
+  reabrir: { titulo: "Reabrir OT a borrador", ok: "Reabrir", comentarioRequerido: false },
+};
+
 export default function OTInternaDetallePage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -110,6 +139,13 @@ export default function OTInternaDetallePage() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Flujo de aprobación: modal abierto + acción objetivo + textarea de comentario.
+  // Mantenemos un único modal y cambiamos el copy/severidad según la acción.
+  const [aprobacionModal, setAprobacionModal] = useState<{
+    accion: "enviar" | "aprobar" | "rechazar" | "reabrir";
+  } | null>(null);
+  const [aprobacionComentario, setAprobacionComentario] = useState("");
+  const [aprobacionSaving, setAprobacionSaving] = useState(false);
   // Resumen de costos (real + estimado) para mostrar en el header. Se llena
   // con una llamada al endpoint /costos en mount — el cálculo es liviano
   // porque OT interna no tiene HH ni OCs joinables pesadas.
@@ -253,7 +289,7 @@ export default function OTInternaDetallePage() {
     try {
       const values = await form.validateFields();
       setSaving(true);
-      const payload = {
+      const payload: Record<string, unknown> = {
         ...values,
         fecha_inicio_plan: values.fecha_inicio_plan ? values.fecha_inicio_plan.toISOString() : null,
         fecha_fin_plan: values.fecha_fin_plan ? values.fecha_fin_plan.toISOString() : null,
@@ -262,6 +298,12 @@ export default function OTInternaDetallePage() {
         fecha_cierre: values.fecha_cierre ? values.fecha_cierre.toISOString() : null,
         version: ot.version,
       };
+      // Defensa explícita: `usuario_crea` es inmutable. Si por cualquier razón
+      // futura el form llegara a tener un input con ese name (no debería), lo
+      // descartamos acá antes de enviar. El backend ya lo borra también — esto
+      // es defensa en profundidad.
+      delete payload.usuario_crea;
+      delete payload.fecha_creacion;
       const res = await fetch(`/api/ordenes-trabajo-internas/${otId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -285,6 +327,38 @@ export default function OTInternaDetallePage() {
   function cancelEditing() {
     setEditing(false);
     void lock.release();
+  }
+
+  function abrirAprobacion(accion: "enviar" | "aprobar" | "rechazar" | "reabrir") {
+    setAprobacionComentario("");
+    setAprobacionModal({ accion });
+  }
+
+  async function confirmarAprobacion() {
+    if (!aprobacionModal) return;
+    const meta = ACCION_META[aprobacionModal.accion];
+    const comentario = aprobacionComentario.trim();
+    if (meta.comentarioRequerido && !comentario) {
+      message.error("El comentario es obligatorio para rechazar.");
+      return;
+    }
+    setAprobacionSaving(true);
+    try {
+      const res = await fetch(`/api/ordenes-trabajo-internas/${otId}/aprobacion`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accion: aprobacionModal.accion, comentario }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error ?? "Error en la transición");
+      message.success(`${meta.titulo} — ok`);
+      setAprobacionModal(null);
+      fetchOt();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "Error");
+    } finally {
+      setAprobacionSaving(false);
+    }
   }
 
   if (!Number.isFinite(otId) || otId <= 0) {
@@ -329,6 +403,11 @@ export default function OTInternaDetallePage() {
                   Prio {ot.prioridad_atencion.codigo}
                 </Tag>
               )}
+              {(() => {
+                const code = ot.aprobacion_status_codigo ?? "BORRADOR";
+                const meta = APROBACION_META[code] ?? APROBACION_META.BORRADOR;
+                return <Tag color={meta.color}>{meta.label}</Tag>;
+              })()}
             </Space>
             <div style={{ fontSize: 12, opacity: 0.9, marginTop: 4 }}>
               {ot.equipo ? `${ot.equipo.codigo} — ${ot.equipo.descripcion}` : "Sin equipo asignado"}
@@ -362,7 +441,38 @@ export default function OTInternaDetallePage() {
               );
             })()}
           </div>
-          <Space>
+          <Space wrap>
+            {(() => {
+              const code = ot.aprobacion_status_codigo ?? "BORRADOR";
+              const btnStyle = { background: "rgba(255,255,255,0.18)", border: "none", color: brand.white };
+              if (code === "BORRADOR" || code === "RECHAZADA") {
+                return (
+                  <Button onClick={() => abrirAprobacion("enviar")} style={btnStyle}>
+                    Enviar a aprobación
+                  </Button>
+                );
+              }
+              if (code === "SIN_APROBACION") {
+                return (
+                  <>
+                    <Button type="primary" onClick={() => abrirAprobacion("aprobar")}>
+                      Aprobar
+                    </Button>
+                    <Button danger onClick={() => abrirAprobacion("rechazar")}>
+                      Rechazar
+                    </Button>
+                  </>
+                );
+              }
+              if (code === "APROBADA") {
+                return (
+                  <Button onClick={() => abrirAprobacion("reabrir")} style={btnStyle}>
+                    Reabrir
+                  </Button>
+                );
+              }
+              return null;
+            })()}
             {!editing ? (
               <Button
                 icon={<EditOutlined />}
@@ -400,7 +510,7 @@ export default function OTInternaDetallePage() {
           type="warning"
           showIcon
           style={{ marginBottom: 16 }}
-          message={`${lock.lockedBy} está editando esta OT`}
+          title={`${lock.lockedBy} está editando esta OT`}
           description="Solo podés ver hasta que termine. Si se quedó colgado el lock se libera solo a los 3 minutos."
         />
       )}
@@ -447,12 +557,87 @@ export default function OTInternaDetallePage() {
           },
         ]}
       />
+
+      <Modal
+        title={aprobacionModal ? ACCION_META[aprobacionModal.accion].titulo : ""}
+        open={!!aprobacionModal}
+        onCancel={() => (aprobacionSaving ? null : setAprobacionModal(null))}
+        onOk={confirmarAprobacion}
+        confirmLoading={aprobacionSaving}
+        okText={aprobacionModal ? ACCION_META[aprobacionModal.accion].ok : "OK"}
+        okButtonProps={{ danger: aprobacionModal?.accion === "rechazar" }}
+        destroyOnHidden
+      >
+        {aprobacionModal && (
+          <>
+            <Paragraph style={{ marginBottom: 12 }}>
+              {aprobacionModal.accion === "enviar" && "La OT pasará a SIN_APROBACION y otro usuario deberá aprobarla o rechazarla."}
+              {aprobacionModal.accion === "aprobar" && "La OT quedará APROBADA y podrá ejecutarse."}
+              {aprobacionModal.accion === "rechazar" && "La OT quedará RECHAZADA. El creador podrá corregir y reenviar. El comentario es obligatorio."}
+              {aprobacionModal.accion === "reabrir" && "La OT volverá a BORRADOR y deberá enviarse nuevamente a aprobación."}
+            </Paragraph>
+            <FieldLabel>
+              Comentario {ACCION_META[aprobacionModal.accion].comentarioRequerido && <Text type="danger">*</Text>}
+            </FieldLabel>
+            <TextArea
+              rows={4}
+              maxLength={500}
+              value={aprobacionComentario}
+              onChange={(e) => setAprobacionComentario(e.target.value)}
+              placeholder={
+                aprobacionModal.accion === "rechazar"
+                  ? "Indicá el motivo del rechazo…"
+                  : "Comentario opcional"
+              }
+            />
+          </>
+        )}
+      </Modal>
     </div>
   );
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// Tab Detalle
+// Helpers de presentación — espejan los de OTDetalleContent.tsx (OT externa)
+// para mantener consistencia visual entre ambos detalles.
+// ───────────────────────────────────────────────────────────────────────────
+function Field({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div style={{ marginBottom: 4 }}>
+      <Text type="secondary" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.3 }}>
+        {label}
+      </Text>
+      <div style={{ fontSize: 14, color: "rgba(0,0,0,0.85)", lineHeight: 1.3, marginTop: 1 }}>
+        {value == null || value === "" ? <span style={{ color: "#bfbfbf" }}>—</span> : value}
+      </div>
+    </div>
+  );
+}
+
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <Text type="secondary" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.3, display: "block", marginBottom: 4 }}>
+      {children}
+    </Text>
+  );
+}
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, paddingBottom: 8, borderBottom: `1px solid ${brand.border}` }}>
+      <span style={{ fontSize: 13, fontWeight: 600, color: brand.navy, letterSpacing: 0.2 }}>{children}</span>
+    </div>
+  );
+}
+
+const fmtFecha = (d: string | null | undefined) => (d ? dayjs(d).format("DD/MM/YYYY HH:mm") : null);
+const fmtFechaSolo = (d: string | null | undefined) => (d ? dayjs(d).format("DD/MM/YYYY") : null);
+
+// ───────────────────────────────────────────────────────────────────────────
+// Tab Detalle — refactor 2026-06: pasamos de un único Descriptions a varios
+// Cards con secciones (Identificación / Estados y Asignación / Planificación /
+// Fechas / Comentarios). Mismo estilo visual que el detalle de OT externa
+// (OTDetalleContent.tsx) para consistencia entre ambos módulos.
 // ───────────────────────────────────────────────────────────────────────────
 function DetalleTab({ ot, editing, form, catalogos }: {
   ot: OTInternaDetalle;
@@ -464,187 +649,390 @@ function DetalleTab({ ot, editing, form, catalogos }: {
     recursosStatuses: CatalogOption[]; estrategias: EstrategiaOption[]; trabajadores: TrabajadorOpt[];
   };
 }) {
+  const cardStyle = { marginBottom: 16, borderColor: brand.border };
+  const cardBody = { body: { padding: 16 } };
+
   if (!editing) {
     return (
-      <Card size="small">
-        <Descriptions column={{ xs: 1, sm: 2, md: 3 }} bordered size="small">
-          <Descriptions.Item label="Tipo">{ot.tipo_ot_interna?.nombre ?? "—"}</Descriptions.Item>
-          <Descriptions.Item label="Área asignada">
-            {ot.area_taller ? areaTallerLabel(ot.area_taller) : "—"}
-          </Descriptions.Item>
-          <Descriptions.Item label="Equipo">
-            {ot.equipo
-              ? <span><b>{ot.equipo.descripcion}</b> <span style={{ color: brand.textSecondary }}>({ot.equipo.codigo})</span></span>
-              : "—"}
-          </Descriptions.Item>
-          <Descriptions.Item label="Planta">{ot.planta?.nombre ?? "—"}</Descriptions.Item>
-          <Descriptions.Item label="Prioridad">{ot.prioridad_atencion?.nombre ?? "—"}</Descriptions.Item>
-          <Descriptions.Item label="Semana revisión">{ot.semana_revision ?? "—"}</Descriptions.Item>
-          <Descriptions.Item label="Asignado a">{ot.asignado_a ?? "—"}</Descriptions.Item>
-          <Descriptions.Item label="OT Status">{ot.ot_status?.nombre ?? "—"}</Descriptions.Item>
-          <Descriptions.Item label="User Status">{ot.user_status?.nombre ?? "—"}</Descriptions.Item>
-          <Descriptions.Item label="Recursos Status">{ot.recursos_status?.nombre ?? "—"}</Descriptions.Item>
-          <Descriptions.Item label="Inicio planificado">{ot.fecha_inicio_plan ? dayjs(ot.fecha_inicio_plan).format("DD/MM/YY HH:mm") : "—"}</Descriptions.Item>
-          <Descriptions.Item label="Fin planificado">{ot.fecha_fin_plan ? dayjs(ot.fecha_fin_plan).format("DD/MM/YY HH:mm") : "—"}</Descriptions.Item>
-          <Descriptions.Item label="Inicio real">{ot.fecha_inicio_real ? dayjs(ot.fecha_inicio_real).format("DD/MM/YY HH:mm") : "—"}</Descriptions.Item>
-          <Descriptions.Item label="Fin real">{ot.fecha_fin_real ? dayjs(ot.fecha_fin_real).format("DD/MM/YY HH:mm") : "—"}</Descriptions.Item>
-          <Descriptions.Item label="Cierre">{ot.fecha_cierre ? dayjs(ot.fecha_cierre).format("DD/MM/YY HH:mm") : "—"}</Descriptions.Item>
-          <Descriptions.Item label="Estrategia">{ot.estrategia ? `${ot.estrategia.codigo}` : "—"}</Descriptions.Item>
-          <Descriptions.Item label="Descripción" span={3}>
-            <Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap" }}>{ot.descripcion ?? "—"}</Paragraph>
-          </Descriptions.Item>
-          <Descriptions.Item label="Comentarios" span={3}>
-            <Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap" }}>{ot.comentarios ?? "—"}</Paragraph>
-          </Descriptions.Item>
-        </Descriptions>
-        <div style={{ marginTop: 12, fontSize: 11, color: brand.textSecondary }}>
-          Creada por <b>{ot.usuario_crea ?? "—"}</b>
-          {ot.fecha_creacion && <> · {dayjs(ot.fecha_creacion).format("DD/MM/YYYY HH:mm")}</>}
-          {" · "}v{ot.version}
+      <div>
+        {/* ── Identificación ───────────────────────────────────────── */}
+        <Card size="small" styles={cardBody} style={cardStyle}>
+          <SectionTitle>Identificación</SectionTitle>
+          <Row gutter={[16, 4]}>
+            <Col xs={12} md={6}><Field label="Nro OT" value={formatOtInternaCodigo(ot.ot)} /></Col>
+            <Col xs={12} md={6}><Field label="Tipo" value={ot.tipo_ot_interna?.nombre} /></Col>
+            <Col xs={12} md={6}><Field label="Área asignada" value={ot.area_taller ? areaTallerLabel(ot.area_taller) : null} /></Col>
+            <Col xs={12} md={6}><Field label="Planta" value={ot.planta?.nombre} /></Col>
+          </Row>
+          <Row gutter={[16, 4]}>
+            <Col xs={24} md={12}>
+              <Field
+                label="Equipo"
+                value={ot.equipo
+                  ? <span><b>{ot.equipo.descripcion}</b> <span style={{ color: brand.textSecondary }}>({ot.equipo.codigo})</span></span>
+                  : null}
+              />
+            </Col>
+            <Col xs={12} md={6}><Field label="Prioridad" value={ot.prioridad_atencion?.nombre} /></Col>
+            <Col xs={12} md={6}><Field label="Solicitud Mtto" value={ot.solicitud_mantenimiento ? "Sí" : "No"} /></Col>
+          </Row>
+          <Row gutter={[16, 4]}>
+            <Col span={24}>
+              <Field
+                label="Descripción"
+                value={ot.descripcion
+                  ? <Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap", fontSize: 14 }}>{ot.descripcion}</Paragraph>
+                  : null}
+              />
+            </Col>
+          </Row>
+        </Card>
+
+        {/* ── Estados y Asignación ─────────────────────────────────── */}
+        <Card size="small" styles={cardBody} style={cardStyle}>
+          <SectionTitle>Estados y Asignación</SectionTitle>
+          <Row gutter={[16, 4]}>
+            <Col xs={12} md={6}>
+              <Field
+                label="OT Status"
+                value={ot.ot_status?.nombre
+                  ? <Tag color={ot.ot_status.codigo === "Abierta" ? "processing" : ot.ot_status.codigo === "Cerrada" ? "success" : "default"}>{ot.ot_status.nombre}</Tag>
+                  : null}
+              />
+            </Col>
+            <Col xs={12} md={6}>
+              <Field
+                label="User Status"
+                value={ot.user_status?.nombre ? <Tag>{ot.user_status.nombre}</Tag> : null}
+              />
+            </Col>
+            <Col xs={12} md={6}><Field label="Recursos Status" value={ot.recursos_status?.nombre} /></Col>
+            <Col xs={12} md={6}><Field label="Asignado a" value={ot.asignado_a} /></Col>
+          </Row>
+        </Card>
+
+        {/* ── Planificación ────────────────────────────────────────── */}
+        <Card size="small" styles={cardBody} style={cardStyle}>
+          <SectionTitle>Planificación</SectionTitle>
+          <Row gutter={[16, 4]}>
+            <Col xs={12} md={6}><Field label="Semana revisión" value={ot.semana_revision} /></Col>
+            <Col xs={12} md={6}>
+              <Field
+                label="Estrategia"
+                value={ot.estrategia ? `${ot.estrategia.codigo}${ot.estrategia.descripcion ? ` — ${ot.estrategia.descripcion}` : ""}` : null}
+              />
+            </Col>
+            <Col xs={24} md={12}>
+              <Field
+                label="Task list"
+                value={ot.task_list
+                  ? <span style={{ fontSize: 13 }}>{ot.task_list.length > 100 ? `${ot.task_list.slice(0, 100)}…` : ot.task_list}</span>
+                  : null}
+              />
+            </Col>
+          </Row>
+        </Card>
+
+        {/* ── Fechas ───────────────────────────────────────────────── */}
+        <Card size="small" styles={cardBody} style={cardStyle}>
+          <SectionTitle>Fechas</SectionTitle>
+          <Row gutter={[16, 4]}>
+            <Col xs={12} md={6}><Field label="Inicio Planificado" value={fmtFecha(ot.fecha_inicio_plan)} /></Col>
+            <Col xs={12} md={6}><Field label="Fin Planificado" value={fmtFecha(ot.fecha_fin_plan)} /></Col>
+            <Col xs={12} md={6}><Field label="Inicio Real" value={fmtFecha(ot.fecha_inicio_real)} /></Col>
+            <Col xs={12} md={6}><Field label="Fin Real" value={fmtFecha(ot.fecha_fin_real)} /></Col>
+          </Row>
+          <Row gutter={[16, 4]}>
+            <Col xs={12} md={6}><Field label="Cierre" value={fmtFecha(ot.fecha_cierre)} /></Col>
+          </Row>
+        </Card>
+
+        {/* ── Comentarios (solo si tiene contenido) ───────────────── */}
+        {ot.comentarios && (
+          <Card size="small" styles={cardBody} style={cardStyle}>
+            <SectionTitle>Comentarios</SectionTitle>
+            <Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap", fontSize: 14 }}>
+              {ot.comentarios}
+            </Paragraph>
+          </Card>
+        )}
+
+        {/* ── Footer de auditoría ──────────────────────────────────── */}
+        <div style={{
+          marginTop: 8, padding: "10px 16px", background: "#FAFAFA",
+          border: `1px solid ${brand.border}`, borderRadius: 6, fontSize: 11,
+          color: "rgba(0,0,0,0.55)", display: "flex", gap: 24, flexWrap: "wrap",
+        }}>
+          <div>
+            <span style={{ color: "#888" }}>Creada por:</span>{" "}
+            <b style={{ color: brand.navy }}>{ot.usuario_crea ?? "—"}</b>
+            {ot.fecha_creacion && (
+              <>
+                {" · "}<span style={{ color: "#888" }}>el</span>{" "}
+                <b>{fmtFechaSolo(ot.fecha_creacion)}</b>
+              </>
+            )}
+          </div>
+          <div>
+            <span style={{ color: "#888" }}>Versión:</span>{" "}
+            <b>v{ot.version}</b>
+          </div>
         </div>
-      </Card>
+      </div>
     );
   }
 
+  // ── Vista EDICIÓN — mismas secciones, pero con inputs editables ──
   return (
-    <Card size="small">
-      <Form form={form} layout="vertical">
-        <Row gutter={16}>
+    <Form form={form} layout="vertical">
+      {/* Identificación */}
+      <Card size="small" styles={cardBody} style={cardStyle}>
+        <SectionTitle>Identificación</SectionTitle>
+        <Row gutter={[16, 12]}>
           <Col xs={24} md={8}>
-            <Form.Item name="tipo_ot_interna_codigo" label="Tipo" rules={[{ required: true }]}>
+            <Form.Item name="tipo_ot_interna_codigo" label="Tipo" rules={[{ required: true }]} style={{ marginBottom: 0 }}>
               <Select showSearch optionFilterProp="label" options={catalogos.tipos.map((t) => ({ value: t.codigo, label: t.nombre }))} />
             </Form.Item>
           </Col>
           <Col xs={24} md={16}>
-            <Form.Item name="area_taller" label="Área asignada" rules={[{ required: true }]}>
-              <Select
-                placeholder="Elegí un área o sub-área"
-                showSearch
-                optionFilterProp="label"
-                options={areasTallerGrouped()}
-              />
+            <Form.Item name="area_taller" label="Área asignada" rules={[{ required: true }]} style={{ marginBottom: 0 }}>
+              <Select placeholder="Elegí un área o sub-área" showSearch optionFilterProp="label" options={areasTallerGrouped()} />
             </Form.Item>
           </Col>
-          <Col span={24}>
-            <Form.Item
-              name="equipo_codigo"
-              label="Equipo (opcional)"
-              tooltip="Si la OT es para un equipo específico del taller, seleccionalo."
-            >
+          <Col xs={24} md={16}>
+            <Form.Item name="equipo_codigo" label="Equipo (opcional)" tooltip="Si la OT es para un equipo específico del taller, seleccionalo." style={{ marginBottom: 0 }}>
               <Select
                 placeholder="Buscar equipo (código o descripción)"
-                showSearch
-                allowClear
-                optionFilterProp="label"
+                showSearch allowClear optionFilterProp="label"
                 options={catalogos.equipos.map((e) => ({ value: e.codigo, label: `${e.codigo} — ${e.descripcion}` }))}
               />
             </Form.Item>
           </Col>
-          <Col span={24}>
-            <Form.Item name="descripcion" label="Descripción" rules={[{ required: true }]}>
-              <TextArea rows={2} maxLength={500} />
-            </Form.Item>
-          </Col>
-          <Col xs={12} md={6}>
-            <Form.Item name="planta_codigo" label="Planta">
+          <Col xs={12} md={4}>
+            <Form.Item name="planta_codigo" label="Planta" style={{ marginBottom: 0 }}>
               <Select showSearch optionFilterProp="label" allowClear options={catalogos.plantas.map((p) => ({ value: p.codigo, label: p.nombre }))} />
             </Form.Item>
           </Col>
-          <Col xs={12} md={6}>
-            <Form.Item name="prioridad_atencion_codigo" label="Prioridad">
+          <Col xs={12} md={4}>
+            <Form.Item name="prioridad_atencion_codigo" label="Prioridad" style={{ marginBottom: 0 }}>
               <Select showSearch optionFilterProp="label" allowClear options={catalogos.prioridades.map((p) => ({ value: p.codigo, label: p.nombre }))} />
             </Form.Item>
           </Col>
-          <Col xs={12} md={6}>
-            <Form.Item name="semana_revision" label="Semana revisión">
-              <Input placeholder="2026W18" maxLength={10} />
+          <Col span={24}>
+            <Form.Item name="descripcion" label="Descripción" rules={[{ required: true }]} style={{ marginBottom: 0 }}>
+              <TextArea rows={2} maxLength={500} />
             </Form.Item>
           </Col>
-          <Col xs={12} md={6}>
-            <Form.Item name="asignado_a" label="Asignado a">
-              <Select
-                allowClear
-                showSearch
-                optionFilterProp="label"
-                options={catalogos.trabajadores.map((t) => ({ value: t.nombre, label: `${t.nombre} — ${t.area}` }))}
-              />
-            </Form.Item>
-          </Col>
+        </Row>
+      </Card>
+
+      {/* Estados y Asignación */}
+      <Card size="small" styles={cardBody} style={cardStyle}>
+        <SectionTitle>Estados y Asignación</SectionTitle>
+        <Row gutter={[16, 12]}>
           <Col xs={24} md={8}>
-            <Form.Item name="ot_status_codigo" label="OT Status">
+            <Form.Item name="ot_status_codigo" label="OT Status" style={{ marginBottom: 0 }}>
               <Select showSearch optionFilterProp="label" options={catalogos.otStatuses.map((s) => ({ value: s.codigo, label: s.nombre }))} />
             </Form.Item>
           </Col>
           <Col xs={24} md={8}>
-            <Form.Item name="user_status_codigo" label="User Status">
+            <Form.Item name="user_status_codigo" label="User Status" style={{ marginBottom: 0 }}>
               <Select showSearch optionFilterProp="label" allowClear options={catalogos.userStatuses.map((s) => ({ value: s.codigo, label: s.nombre }))} />
             </Form.Item>
           </Col>
           <Col xs={24} md={8}>
-            <Form.Item name="recursos_status_codigo" label="Recursos Status">
+            <Form.Item name="recursos_status_codigo" label="Recursos Status" style={{ marginBottom: 0 }}>
               <Select showSearch optionFilterProp="label" allowClear options={catalogos.recursosStatuses.map((s) => ({ value: s.codigo, label: s.nombre }))} />
             </Form.Item>
           </Col>
-          <Col xs={12} md={6}>
-            <Form.Item name="fecha_inicio_plan" label="Inicio plan">
-              <DatePicker showTime format="DD/MM/YY HH:mm" style={{ width: "100%" }} />
-            </Form.Item>
-          </Col>
-          <Col xs={12} md={6}>
-            <Form.Item name="fecha_fin_plan" label="Fin plan">
-              <DatePicker showTime format="DD/MM/YY HH:mm" style={{ width: "100%" }} />
-            </Form.Item>
-          </Col>
-          <Col xs={12} md={6}>
-            <Form.Item name="fecha_inicio_real" label="Inicio real">
-              <DatePicker showTime format="DD/MM/YY HH:mm" style={{ width: "100%" }} />
-            </Form.Item>
-          </Col>
-          <Col xs={12} md={6}>
-            <Form.Item name="fecha_fin_real" label="Fin real">
-              <DatePicker showTime format="DD/MM/YY HH:mm" style={{ width: "100%" }} />
-            </Form.Item>
-          </Col>
           <Col xs={24} md={12}>
-            <Form.Item name="fecha_cierre" label="Cierre">
-              <DatePicker showTime format="DD/MM/YY HH:mm" style={{ width: "100%" }} />
-            </Form.Item>
-          </Col>
-          <Col xs={24} md={12}>
-            <Form.Item name="estrategia_id" label="Estrategia">
+            <Form.Item name="asignado_a" label="Asignado a" style={{ marginBottom: 0 }}>
               <Select
-                allowClear
-                showSearch
-                optionFilterProp="label"
+                allowClear showSearch optionFilterProp="label"
+                options={catalogos.trabajadores.map((t) => ({ value: t.nombre, label: `${t.nombre} — ${t.area}` }))}
+              />
+            </Form.Item>
+          </Col>
+        </Row>
+      </Card>
+
+      {/* Planificación */}
+      <Card size="small" styles={cardBody} style={cardStyle}>
+        <SectionTitle>Planificación</SectionTitle>
+        <Row gutter={[16, 12]}>
+          <Col xs={12} md={6}>
+            <Form.Item name="semana_revision" label="Semana revisión" style={{ marginBottom: 0 }}>
+              <Input placeholder="2026W18" maxLength={10} />
+            </Form.Item>
+          </Col>
+          <Col xs={24} md={12}>
+            <Form.Item name="estrategia_id" label="Estrategia" style={{ marginBottom: 0 }}>
+              <Select
+                allowClear showSearch optionFilterProp="label"
                 options={catalogos.estrategias.map((e) => ({ value: e.estrategia_id, label: `${e.codigo} — ${e.descripcion}` }))}
               />
             </Form.Item>
           </Col>
-          <Col span={24}>
-            <Form.Item name="comentarios" label="Comentarios">
-              <TextArea rows={3} maxLength={2000} />
+        </Row>
+      </Card>
+
+      {/* Fechas */}
+      <Card size="small" styles={cardBody} style={cardStyle}>
+        <SectionTitle>Fechas</SectionTitle>
+        <Row gutter={[16, 12]}>
+          <Col xs={12} md={6}>
+            <Form.Item name="fecha_inicio_plan" label="Inicio Planificado" style={{ marginBottom: 0 }}>
+              <DatePicker showTime format="DD/MM/YY HH:mm" style={{ width: "100%" }} />
+            </Form.Item>
+          </Col>
+          <Col xs={12} md={6}>
+            <Form.Item name="fecha_fin_plan" label="Fin Planificado" style={{ marginBottom: 0 }}>
+              <DatePicker showTime format="DD/MM/YY HH:mm" style={{ width: "100%" }} />
+            </Form.Item>
+          </Col>
+          <Col xs={12} md={6}>
+            <Form.Item name="fecha_inicio_real" label="Inicio Real" style={{ marginBottom: 0 }}>
+              <DatePicker showTime format="DD/MM/YY HH:mm" style={{ width: "100%" }} />
+            </Form.Item>
+          </Col>
+          <Col xs={12} md={6}>
+            <Form.Item name="fecha_fin_real" label="Fin Real" style={{ marginBottom: 0 }}>
+              <DatePicker showTime format="DD/MM/YY HH:mm" style={{ width: "100%" }} />
+            </Form.Item>
+          </Col>
+          <Col xs={12} md={6}>
+            <Form.Item name="fecha_cierre" label="Cierre" style={{ marginBottom: 0 }}>
+              <DatePicker showTime format="DD/MM/YY HH:mm" style={{ width: "100%" }} />
             </Form.Item>
           </Col>
         </Row>
-      </Form>
-    </Card>
+      </Card>
+
+      {/* Comentarios */}
+      <Card size="small" styles={cardBody} style={cardStyle}>
+        <SectionTitle>Comentarios</SectionTitle>
+        <Form.Item name="comentarios" style={{ marginBottom: 0 }}>
+          <TextArea rows={3} maxLength={2000} />
+        </Form.Item>
+      </Card>
+    </Form>
   );
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// Tab Tareas — por ahora solo el campo task_list (texto libre)
+// Tab Tareas
+//
+// Muestra el campo `task_list` (texto libre) + botón "Aplicar Task List"
+// que pre-pobla el textarea con las descripciones del task list del catálogo
+// (filtradas por equipo + estrategia PM con cascada acumulativa).
+//
+// El botón solo aparece cuando estás en modo edición Y la OT tiene equipo +
+// estrategia PM1/PM2/PM3/PM4. El click consulta el endpoint preview-tasklist,
+// y si el textarea ya tiene contenido pregunta vía modal qué hacer (reemplazar /
+// agregar al final / cancelar).
 // ───────────────────────────────────────────────────────────────────────────
 function TareasTab({ ot, editing, form }: {
   ot: OTInternaDetalle;
   editing: boolean;
   form: ReturnType<typeof Form.useForm<EditValues>>[0];
 }) {
+  const { message, modal } = App.useApp();
+  const [aplicando, setAplicando] = useState(false);
+
+  // Habilitar el botón solo si hay equipo + estrategia PMx en la OT.
+  const estrCodigo = ot.estrategia?.codigo;
+  const esPM = !!estrCodigo && /^PM[1-4]$/.test(estrCodigo);
+  const puedeAplicar = !!ot.equipo_codigo && esPM;
+
+  async function fetchPreview(): Promise<{ task_list_text: string; cascada: string[] } | null> {
+    try {
+      const res = await fetch(`/api/ordenes-trabajo-internas/${ot.id}/tareas/preview-tasklist`);
+      const j = await res.json();
+      if (!res.ok) {
+        message.error(j.error ?? "Error al consultar task list");
+        return null;
+      }
+      if (!j.task_list_text || j.task_list_text.length === 0) {
+        message.info(`No hay tareas en el catálogo para equipo ${j.equipo_codigo} con cascada ${j.cascada.join("+")}.`);
+        return null;
+      }
+      return j;
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "Error");
+      return null;
+    }
+  }
+
+  function aplicarAlTextarea(nuevoTexto: string, modo: "replace" | "append") {
+    const actual = (form.getFieldValue("task_list") as string | undefined) ?? "";
+    let resultado: string;
+    if (modo === "replace" || actual.trim() === "") {
+      resultado = nuevoTexto;
+    } else {
+      resultado = `${actual.replace(/\s+$/, "")}\n${nuevoTexto}`;
+    }
+    form.setFieldValue("task_list", resultado);
+    message.success(`Task list aplicado (${modo === "replace" ? "reemplazado" : "agregado al final"}).`);
+  }
+
+  async function handleAplicar() {
+    if (!puedeAplicar) return;
+    setAplicando(true);
+    try {
+      const data = await fetchPreview();
+      if (!data) return;
+
+      const actual = (form.getFieldValue("task_list") as string | undefined) ?? "";
+      // Si el textarea está vacío, aplicar directamente sin modal.
+      if (actual.trim() === "") {
+        aplicarAlTextarea(data.task_list_text, "replace");
+        return;
+      }
+
+      // Hay contenido — modal con 3 opciones (Reemplazar / Agregar al final / Cancelar).
+      modal.confirm({
+        title: `Aplicar Task List ${estrCodigo}`,
+        content: (
+          <div>
+            <p style={{ marginBottom: 8 }}>
+              El campo Task List ya tiene contenido. ¿Cómo aplicamos las{" "}
+              <b>{data.task_list_text.split("\n").length} tarea(s)</b> del task list
+              ({data.cascada.join(" + ")})?
+            </p>
+            <p style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 0 }}>
+              <b>Reemplazar</b>: borra lo que hay y pone solo el task list nuevo.<br />
+              <b>Agregar</b>: deja el contenido actual y agrega las tareas del task list al final.
+            </p>
+          </div>
+        ),
+        okText: "Reemplazar",
+        cancelText: "Cancelar",
+        okButtonProps: { danger: true },
+        footer: (_, { OkBtn, CancelBtn }) => (
+          <Space>
+            <CancelBtn />
+            <Button onClick={() => {
+              aplicarAlTextarea(data.task_list_text, "append");
+              Modal.destroyAll();
+            }}>
+              Agregar al final
+            </Button>
+            <OkBtn />
+          </Space>
+        ),
+        onOk: () => aplicarAlTextarea(data.task_list_text, "replace"),
+      });
+    } finally {
+      setAplicando(false);
+    }
+  }
+
+  // Vista NO edición: solo muestra el task_list actual.
   if (!editing) {
     return (
       <Card size="small">
         <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 8 }}>
-          Lista de tareas / actividades a realizar en esta OT. Referencia libre a tareas del
-          catálogo (ej. &quot;MP1 · Cambio aceite trimestral&quot;).
+          Lista de tareas / actividades a realizar en esta OT.
         </Text>
         <Paragraph style={{ whiteSpace: "pre-wrap", minHeight: 80, background: brand.bgPage, padding: 12, borderRadius: 4 }}>
           {ot.task_list || "Sin tareas definidas. Hacé click en Editar para agregar."}
@@ -653,11 +1041,40 @@ function TareasTab({ ot, editing, form }: {
     );
   }
 
+  // Vista EDICIÓN: textarea + botón "Aplicar Task List".
   return (
     <Card size="small">
       <Form form={form} layout="vertical">
-        <Form.Item name="task_list" label="Task list (referencia libre)" tooltip="Una tarea por línea. En el futuro se vinculará al catálogo de Tarea.">
-          <TextArea rows={10} maxLength={5000} placeholder={"MP1 · Cambio aceite trimestral\nMP2 · Limpieza filtros\n..."} />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8, gap: 12, flexWrap: "wrap" }}>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            Una tarea por línea. Podés escribirlas a mano o aplicar el task list del equipo + estrategia PM.
+          </Text>
+          <Tooltip
+            title={
+              !ot.equipo_codigo
+                ? "La OT no tiene equipo asignado — el task list se filtra por equipo."
+                : !esPM
+                  ? `La estrategia "${estrCodigo ?? "(sin asignar)"}" no es PM1/PM2/PM3/PM4. Asigna una en el tab Detalle.`
+                  : `Trae las tareas del catálogo del equipo ${ot.equipo_codigo} con cascada ${estrCodigo}`
+            }
+          >
+            <Button
+              icon={<ThunderboltOutlined />}
+              onClick={handleAplicar}
+              loading={aplicando}
+              disabled={!puedeAplicar}
+              style={{
+                background: puedeAplicar ? brand.success ?? "#52c41a" : undefined,
+                borderColor: puedeAplicar ? brand.success ?? "#52c41a" : undefined,
+                color: puedeAplicar ? "#fff" : undefined,
+              }}
+            >
+              Aplicar Task List{esPM ? ` (${estrCodigo})` : ""}
+            </Button>
+          </Tooltip>
+        </div>
+        <Form.Item name="task_list" label="Task list" style={{ marginBottom: 0 }}>
+          <TextArea rows={12} maxLength={5000} placeholder={"[PM1] Limpieza de tanque hidráulico...\n[PM1] Cambio de filtros...\n[PM2] Inspección de mangueras..."} />
         </Form.Item>
       </Form>
     </Card>

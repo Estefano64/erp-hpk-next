@@ -41,6 +41,9 @@ interface CompraRow {
   guia_nombre: string | null;
   factura_key: string | null;
   factura_nombre: string | null;
+  pago_key: string | null;
+  pago_nombre: string | null;
+  tipo_pago: string | null;
 }
 
 export type FiltroDocs = "todos" | "con_factura" | "sin_factura" | "con_guia" | "sin_guia";
@@ -110,8 +113,14 @@ export default function ContabilidadView({
     return { total: rows.length, conFactura, conGuia, sinFactura };
   }, [rows]);
 
-  // Subir guía/factura: presigned R2 → registrar en /api/compras/[id]/guia.
-  const subirArchivo = async (compraId: number, tipo: "guia" | "factura", file: File) => {
+  // Subir guía/factura/pago: presigned R2 → registrar en /api/compras/[id]/guia.
+  type TipoArchivo = "guia" | "factura" | "pago";
+  const ETIQUETA_TIPO: Record<TipoArchivo, string> = {
+    guia: "Guía",
+    factura: "Factura",
+    pago: "Comprobante de pago",
+  };
+  const subirArchivo = async (compraId: number, tipo: TipoArchivo, file: File) => {
     const slotId = `${compraId}-${tipo}`;
     setUploadingId(slotId);
     try {
@@ -126,7 +135,7 @@ export default function ContabilidadView({
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Error al registrar archivo");
-      message.success(`${tipo === "guia" ? "Guía" : "Factura"} subida`);
+      message.success(`${ETIQUETA_TIPO[tipo]} subida`);
       fetchData();
     } catch (err: unknown) {
       message.error(err instanceof Error ? err.message : "Error al subir archivo");
@@ -135,7 +144,7 @@ export default function ContabilidadView({
     }
   };
 
-  const eliminarArchivo = async (compraId: number, tipo: "guia" | "factura") => {
+  const eliminarArchivo = async (compraId: number, tipo: TipoArchivo) => {
     try {
       const res = await fetch(`/api/compras/${compraId}/guia?tipo=${tipo}`, { method: "DELETE" });
       const json = await res.json();
@@ -151,8 +160,8 @@ export default function ContabilidadView({
     r2Key: string | null,
     nombre: string | null,
     label: string,
-    tipo: "guia" | "factura",
-    resource: "compra-guia" | "compra-factura",
+    tipo: TipoArchivo,
+    resource: "compra-guia" | "compra-factura" | "compra-pago",
     compraId: number,
   ) => {
     const slotId = `${compraId}-${tipo}`;
@@ -263,6 +272,22 @@ export default function ContabilidadView({
     {
       key: "factura", title: "Archivo Factura", width: 260, align: "left",
       render: (_v, r) => archivoCell(r.factura_key, r.factura_nombre, "factura", "factura", "compra-factura", r.id),
+    },
+    {
+      key: "pago", title: "Comprobante Pago", width: 260, align: "left",
+      render: (_v, r) => {
+        // Solo aplica a OCs CONTADO o TRANSFERENCIA. Para CRÉDITO se muestra
+        // marcador para que la columna no quede ambigua.
+        const aplica = r.tipo_pago === "CONTADO" || r.tipo_pago === "TRANSFERENCIA";
+        if (!aplica) {
+          return (
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              {r.tipo_pago === "CREDITO" ? "N/A (crédito)" : "—"}
+            </Text>
+          );
+        }
+        return archivoCell(r.pago_key, r.pago_nombre, "comprobante de pago", "pago", "compra-pago", r.id);
+      },
     },
     {
       key: "fecha_entrega_real", title: "F. Recepción", dataIndex: "fecha_entrega_real", width: 110, align: "center",

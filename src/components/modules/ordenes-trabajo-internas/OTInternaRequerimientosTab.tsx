@@ -21,6 +21,7 @@ import dayjs from "dayjs";
 import {
   PlusOutlined, ReloadOutlined, SendOutlined, DeleteOutlined,
   CloseCircleOutlined, EditOutlined, PaperClipOutlined, CalendarOutlined,
+  ThunderboltOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
@@ -83,6 +84,30 @@ interface DraftItem {
   fecha_requerida?: dayjs.Dayjs | null;
 }
 
+// Conversión entre unidades equivalentes. Hoy solo cilindro ↔ galón
+// (1 cil = 55 gal — combustibles, lubricantes en HPK). El factor es
+// `from → to`: factor 55 significa "1 unidad de FROM = 55 unidades de TO".
+// Se usa para:
+//   - mostrar el equivalente al lado de la cantidad y del precio unitario,
+//   - autoescalar el precio cuando la UM elegida en el draft difiere de la
+//     UM con la que viene cotizado el material en catálogo.
+const CONVERSION_FACTORES: Record<string, Record<string, number>> = {
+  cil: { gl: 55 },
+  gl: { cil: 1 / 55 },
+};
+
+function factorEntreUM(from: string | null | undefined, to: string | null | undefined): number | null {
+  const a = (from ?? "").toLowerCase();
+  const b = (to ?? "").toLowerCase();
+  if (!a || !b || a === b) return null;
+  return CONVERSION_FACTORES[a]?.[b] ?? null;
+}
+
+// Formatea un número con hasta 4 decimales, sin ceros a la derecha.
+function fmtCant(n: number): string {
+  return Number(n.toFixed(4)).toLocaleString("es-PE", { maximumFractionDigits: 4 });
+}
+
 const REQ_COLOR: Record<string, string> = {
   BORRADOR: "default",
   SIN_APROBACION: "orange",
@@ -112,6 +137,12 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
   // Catálogo de unidades de medida — para el Select de "Unidad" en el modal
   // multi-item. Se carga lazy al abrir el modal por primera vez.
   const [unidades, setUnidades] = useState<{ codigo: string; nombre: string }[]>([]);
+  // Info de la OT (equipo + estrategia) — necesaria para habilitar el botón
+  // "Aplicar Task List". Se carga junto con los requerimientos. Si no hay
+  // equipo o si la estrategia no es PM1/PM2/PM3/PM4, el botón queda deshabilitado.
+  const [otInfo, setOtInfo] = useState<{ equipo_codigo: string | null; estrategia_pm: string | null }>({ equipo_codigo: null, estrategia_pm: null });
+  // Loading del aplicar-tasklist (independiente del fetch general).
+  const [aplicandoTaskList, setAplicandoTaskList] = useState(false);
 
   // ── Modal "Nuevo requerimiento" (multi-item) ──────────────────────────
   const [modalOpen, setModalOpen] = useState(false);
@@ -140,6 +171,84 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
   }, [otInternaId, message]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Cargar info de la OT para saber si tiene equipo + estrategia PM válida.
+  // Una sola vez al montar; si cambia la OT externamente (editan estrategia
+  // en otro tab) el usuario tendrá que refrescar — el costo de polling no
+  // se justifica.
+  useEffect(() => {
+    fetch(`/api/ordenes-trabajo-internas/${otInternaId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (!j?.data) return;
+        const estCodigo: string | undefined = j.data.estrategia?.codigo;
+        const esPM = estCodigo && /^PM[1-4]$/.test(estCodigo);
+        setOtInfo({
+          equipo_codigo: j.data.equipo_codigo ?? null,
+          estrategia_pm: esPM ? estCodigo : null,
+        });
+      })
+      .catch(() => { /* silently fail — el botón queda deshabilitado */ });
+  }, [otInternaId]);
+
+  // Aplicar Task List — abre un modal de confirmación que pregunta qué hacer
+  // con los requerimientos existentes (replace_pending por default).
+  async function aplicarTaskList() {
+    if (!otInfo.equipo_codigo || !otInfo.estrategia_pm) return;
+    modal.confirm({
+      title: `Aplicar Task List ${otInfo.estrategia_pm}`,
+      content: (
+        <div>
+          <p style={{ marginBottom: 8 }}>
+            Se van a copiar los items del Task List del equipo <b>{otInfo.equipo_codigo}</b> con
+            cascada acumulativa para <b>{otInfo.estrategia_pm}</b>:
+          </p>
+          <ul style={{ marginTop: 0, paddingLeft: 20 }}>
+            {otInfo.estrategia_pm === "PM1" && <li>Solo items de PM1</li>}
+            {otInfo.estrategia_pm === "PM2" && <li>Items de PM1 + PM2</li>}
+            {otInfo.estrategia_pm === "PM3" && <li>Items de PM1 + PM2 + PM3</li>}
+            {otInfo.estrategia_pm === "PM4" && <li>Items de PM1 + PM2 + PM3 + PM4</li>}
+          </ul>
+          <p style={{ marginTop: 8, fontSize: 12, color: brand.textSecondary }}>
+            Los items en <b>BORRADOR/SIN_APROBACION</b> sin OC se reemplazarán. Los aprobados o con OC vinculada quedan intactos.
+          </p>
+        </div>
+      ),
+      okText: "Aplicar",
+      cancelText: "Cancelar",
+      okButtonProps: { type: "primary" },
+      onOk: async () => {
+        setAplicandoTaskList(true);
+        try {
+          const res = await fetch(
+            `/api/ordenes-trabajo-internas/${otInternaId}/requerimientos/aplicar-tasklist`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ estrategia: "replace_pending" }),
+            },
+          );
+          const j = await res.json();
+          if (!res.ok) throw new Error(j.error ?? "Error al aplicar task list");
+          if (j.skipped) {
+            message.info(`Ya hay ${j.existentes} requerimiento(s); no se aplicó task list.`);
+          } else {
+            const partes = [
+              `${j.creados} item(s) creados`,
+              j.eliminados ? `${j.eliminados} pendientes reemplazados` : null,
+              `req ${j.nro_req}`,
+            ].filter(Boolean).join(" · ");
+            message.success(`Task list aplicado: ${partes}`);
+          }
+          fetchData();
+        } catch (e) {
+          message.error(e instanceof Error ? e.message : "Error");
+        } finally {
+          setAplicandoTaskList(false);
+        }
+      },
+    });
+  }
 
   // Catálogo de unidades — se carga al mount (solo 23 entradas, peso bajo) para
   // que esté disponible tanto en el modal "Nuevo requerimiento" como en la
@@ -278,19 +387,42 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
       // Auto-completar descripción / unidad / fabricante / precio desde el
       // material si MAC. El precio es obligatorio en req de OT interna; si el
       // catálogo lo tiene, se preselecciona — el user puede sobreescribir.
-      if (patch.material_codigo && next.tipo_codigo === "MAC") {
-        const mat = materiales.find((m) => m.codigo === patch.material_codigo);
-        if (mat) {
-          if (!next.descripcion) next.descripcion = mat.descripcion;
-          if (!next.unidad_medida || next.unidad_medida === "und") {
-            next.unidad_medida = mat.unidad_medida_codigo ?? "und";
-          }
-          if (!next.fabricante_codigo && mat.fabricante_codigo) {
-            next.fabricante_codigo = mat.fabricante_codigo;
-          }
-          if (next.precio_unitario == null && mat.precio != null && Number(mat.precio) > 0) {
-            next.precio_unitario = Number(mat.precio);
-            next.moneda = next.moneda ?? mat.moneda_codigo ?? "USD";
+      const mat =
+        next.tipo_codigo === "MAC" && next.material_codigo
+          ? materiales.find((m) => m.codigo === next.material_codigo)
+          : null;
+      if (patch.material_codigo && next.tipo_codigo === "MAC" && mat) {
+        if (!next.descripcion) next.descripcion = mat.descripcion;
+        if (!next.unidad_medida || next.unidad_medida === "und") {
+          next.unidad_medida = mat.unidad_medida_codigo ?? "und";
+        }
+        if (!next.fabricante_codigo && mat.fabricante_codigo) {
+          next.fabricante_codigo = mat.fabricante_codigo;
+        }
+        if (next.precio_unitario == null && mat.precio != null && Number(mat.precio) > 0) {
+          next.precio_unitario = Number(mat.precio);
+          next.moneda = next.moneda ?? mat.moneda_codigo ?? "USD";
+        }
+      }
+      // Re-escalar precio cuando el usuario cambia la UM (o cuando recién
+      // se eligió un material y la UM elegida en el draft difiere de la del
+      // catálogo). Solo si hay un factor conocido en CONVERSION_FACTORES.
+      //
+      // Ej: material cotizado en gl a USD 10. User elige UM=cil → precio
+      // pasa a USD 550/cil (10 × 55). User cambia de cil a gl → vuelve a 10.
+      if (mat && mat.unidad_medida_codigo && next.unidad_medida) {
+        const matPrecio = mat.precio != null ? Number(mat.precio) : null;
+        if (matPrecio != null && matPrecio > 0) {
+          const factor = factorEntreUM(mat.unidad_medida_codigo, next.unidad_medida);
+          if (factor != null) {
+            // precio en la UM del draft = precio catálogo × (1 / factor)
+            // factor "from(mat) → to(draft)" mide cuántas unidades de draft
+            // hay en 1 unidad de mat, así que el precio se divide por factor.
+            next.precio_unitario = Number((matPrecio / factor).toFixed(4));
+          } else if (mat.unidad_medida_codigo === next.unidad_medida) {
+            // misma UM — si el user no lo tocó manualmente lo restauramos
+            // (solo cuando viene de un cambio de UM, no cuando ya está bien).
+            if (patch.unidad_medida) next.precio_unitario = matPrecio;
           }
         }
       }
@@ -537,7 +669,21 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
             </Space>
           );
         }
-        return `${Number(r.cantidad).toLocaleString()} ${r.unidad_medida ?? ""}`;
+        const um = r.unidad_medida ?? "";
+        const cant = Number(r.cantidad);
+        const equiv = um === "cil"
+          ? `≈ ${fmtCant(cant * 55)} gl`
+          : um === "gl"
+            ? `≈ ${fmtCant(cant / 55)} cil`
+            : null;
+        return (
+          <div style={{ lineHeight: 1.15 }}>
+            {cant.toLocaleString()} {um}
+            {equiv && (
+              <div style={{ fontSize: 10, color: "rgba(0,0,0,0.45)" }}>{equiv}</div>
+            )}
+          </div>
+        );
       },
     },
     {
@@ -681,6 +827,32 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
         <Button type="primary" icon={<PlusOutlined />} onClick={openNuevo}>
           Nuevo requerimiento
         </Button>
+        {/* Aplicar Task List — botón verde con rayo. Solo habilitado cuando
+            la OT tiene equipo + estrategia PM1/PM2/PM3/PM4. El tooltip
+            explica por qué está deshabilitado si falta alguno. */}
+        <Tooltip
+          title={
+            !otInfo.equipo_codigo
+              ? "La OT no tiene equipo asignado — el task list se filtra por equipo."
+              : !otInfo.estrategia_pm
+                ? "La estrategia debe ser PM1, PM2, PM3 o PM4. Asignala en el tab Detalle."
+                : `Genera los requerimientos del Task List del equipo ${otInfo.equipo_codigo} con cascada ${otInfo.estrategia_pm}`
+          }
+        >
+          <Button
+            icon={<ThunderboltOutlined />}
+            onClick={aplicarTaskList}
+            loading={aplicandoTaskList}
+            disabled={!otInfo.equipo_codigo || !otInfo.estrategia_pm}
+            style={{
+              background: otInfo.equipo_codigo && otInfo.estrategia_pm ? brand.success ?? "#52c41a" : undefined,
+              borderColor: otInfo.equipo_codigo && otInfo.estrategia_pm ? brand.success ?? "#52c41a" : undefined,
+              color: otInfo.equipo_codigo && otInfo.estrategia_pm ? "#fff" : undefined,
+            }}
+          >
+            Aplicar Task List{otInfo.estrategia_pm ? ` (${otInfo.estrategia_pm})` : ""}
+          </Button>
+        </Tooltip>
         <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>
           Refrescar
         </Button>
@@ -844,16 +1016,32 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
                 ),
               },
               {
-                title: "Cant.", dataIndex: "cantidad", width: 90,
-                render: (v: number, row) => (
-                  <InputNumber
-                    size="small"
-                    value={v}
-                    min={0.01}
-                    style={{ width: 70 }}
-                    onChange={(nv) => updateDraft(row.key, { cantidad: nv ?? 1 })}
-                  />
-                ),
+                title: "Cant.", dataIndex: "cantidad", width: 110,
+                render: (v: number, row) => {
+                  // Si UM es cilindro o galón, mostramos el equivalente debajo
+                  // (factor 55). Le evita al user calcular mentalmente.
+                  const factor = row.unidad_medida === "cil"
+                    ? { to: "gl", value: Number(v ?? 0) * 55 }
+                    : row.unidad_medida === "gl"
+                      ? { to: "cil", value: Number(v ?? 0) / 55 }
+                      : null;
+                  return (
+                    <div>
+                      <InputNumber
+                        size="small"
+                        value={v}
+                        min={0.01}
+                        style={{ width: 90 }}
+                        onChange={(nv) => updateDraft(row.key, { cantidad: nv ?? 1 })}
+                      />
+                      {factor && Number(v ?? 0) > 0 && (
+                        <div style={{ fontSize: 10, color: "rgba(0,0,0,0.45)", marginTop: 2 }}>
+                          ≈ {fmtCant(factor.value)} {factor.to}
+                        </div>
+                      )}
+                    </div>
+                  );
+                },
               },
               {
                 title: "Unidad", dataIndex: "unidad_medida", width: 130,
@@ -876,32 +1064,52 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
               {
                 // Precio unitario — obligatorio para TODOS los tipos.
                 // MAC auto-rellena desde el catálogo del material (si tiene
-                // precio); SER y CAD lo ingresa el usuario.
+                // precio); SER y CAD lo ingresa el usuario. Cuando la UM del
+                // draft es cil/gl, mostramos el precio equivalente en la otra
+                // unidad (factor 55) para que el user vea el costo por galón.
                 title: <span>Precio unitario <Text type="danger">*</Text></span>,
-                dataIndex: "precio_unitario", width: 180,
-                render: (v: number | undefined, row) => (
-                  <Space size={2}>
-                    <InputNumber
-                      size="small"
-                      value={v}
-                      min={0}
-                      step={0.01}
-                      placeholder="0.00"
-                      style={{ width: 90 }}
-                      onChange={(nv) => updateDraft(row.key, { precio_unitario: nv ?? undefined })}
-                    />
-                    <Select showSearch optionFilterProp="label"
-                      size="small"
-                      value={row.moneda ?? "USD"}
-                      style={{ width: 70 }}
-                      onChange={(nv) => updateDraft(row.key, { moneda: nv })}
-                      options={[
-                        { value: "USD", label: "USD" },
-                        { value: "SOL", label: "SOL" },
-                      ]}
-                    />
-                  </Space>
-                ),
+                dataIndex: "precio_unitario", width: 200,
+                render: (v: number | undefined, row) => {
+                  const pu = v != null ? Number(v) : null;
+                  const equiv =
+                    pu != null && pu > 0
+                      ? row.unidad_medida === "cil"
+                        ? { to: "gl", value: pu / 55 }
+                        : row.unidad_medida === "gl"
+                          ? { to: "cil", value: pu * 55 }
+                          : null
+                      : null;
+                  return (
+                    <div>
+                      <Space size={2}>
+                        <InputNumber
+                          size="small"
+                          value={v}
+                          min={0}
+                          step={0.01}
+                          placeholder="0.00"
+                          style={{ width: 90 }}
+                          onChange={(nv) => updateDraft(row.key, { precio_unitario: nv ?? undefined })}
+                        />
+                        <Select showSearch optionFilterProp="label"
+                          size="small"
+                          value={row.moneda ?? "USD"}
+                          style={{ width: 70 }}
+                          onChange={(nv) => updateDraft(row.key, { moneda: nv })}
+                          options={[
+                            { value: "USD", label: "USD" },
+                            { value: "SOL", label: "SOL" },
+                          ]}
+                        />
+                      </Space>
+                      {equiv && (
+                        <div style={{ fontSize: 10, color: "rgba(0,0,0,0.45)", marginTop: 2 }}>
+                          ≈ {row.moneda ?? "USD"} {fmtCant(equiv.value)}/{equiv.to}
+                        </div>
+                      )}
+                    </div>
+                  );
+                },
               },
               {
                 // Precio total — calculado en vivo (cantidad × precio_unitario).

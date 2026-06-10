@@ -91,7 +91,7 @@ function LoginContent() {
             showIcon
             closable
             style={{ marginBottom: 16 }}
-            message="Tu sesión expiró por inactividad"
+            title="Tu sesión expiró por inactividad"
             description="Volvé a ingresar para continuar."
           />
         )}

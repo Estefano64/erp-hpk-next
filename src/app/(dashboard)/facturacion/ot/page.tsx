@@ -355,7 +355,7 @@ export default function FacturacionOTPage() {
                 showIcon
                 type="warning"
                 style={{ marginBottom: 12 }}
-                message="Faltan adjuntos para poder facturar"
+                title="Faltan adjuntos para poder facturar"
                 description={`Faltantes: ${otSel.faltantes.join(", ")}. Subilos desde la sección "Subir archivo a esta OT" más abajo. Una vez completos, el botón "Registrar factura" se habilita.`}
               />
             )}

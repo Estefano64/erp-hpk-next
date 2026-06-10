@@ -994,7 +994,7 @@ function HallazgosCatalogo({
                       <Alert
                         type="warning"
                         showIcon
-                        message="Falta cargar las medidas de Flexión (B/C/D) en la tabla de Flexión/Cromo arriba."
+                        title="Falta cargar las medidas de Flexión (B/C/D) en la tabla de Flexión/Cromo arriba."
                         style={{ marginTop: 4, marginBottom: 8, fontSize: 11, padding: "4px 8px" }}
                       />
                     )}

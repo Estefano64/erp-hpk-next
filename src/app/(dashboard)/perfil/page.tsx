@@ -223,7 +223,7 @@ export default function PerfilPage() {
             </Descriptions.Item>
           </Descriptions>
         ) : (
-          <Alert type="warning" message="No se pudo cargar tu información" showIcon />
+          <Alert type="warning" title="No se pudo cargar tu información" showIcon />
         )}
       </Card>
 
@@ -315,7 +315,7 @@ export default function PerfilPage() {
               type="info"
               showIcon
               style={{ marginBottom: spc.md }}
-              message="Reseteo de soporte (sin contraseña actual)"
+              title="Reseteo de soporte (sin contraseña actual)"
               description="Esta acción NO requiere la contraseña previa del usuario. Es para casos en que la olvidó. El nuevo valor reemplaza al anterior; comunicalo por un canal seguro y pedile que lo cambie desde su propio perfil."
             />
 
@@ -353,7 +353,7 @@ export default function PerfilPage() {
                   type="warning"
                   showIcon
                   style={{ marginBottom: spc.md }}
-                  message={
+                  title={
                     <span>
                       Vas a resetear la contraseña de{" "}
                       <Text strong>{usuarioSelObj.nombre}</Text> (

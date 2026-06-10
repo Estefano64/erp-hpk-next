@@ -5,7 +5,7 @@
 //   const lock = useEditLock("ot-externa", otId);
 //   ...
 //   if (!lock.canEdit && lock.lockedBy) {
-//     <Alert type="warning" message={`Editando: ${lock.lockedBy}`} />
+//     <Alert type="warning" title={`Editando: ${lock.lockedBy}`} />
 //   }
 //   <Button disabled={!lock.canEdit} onClick={async () => {
 //     const ok = await lock.acquire();

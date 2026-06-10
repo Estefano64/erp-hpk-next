@@ -744,6 +744,7 @@ model Equipo {
   trabajadores         Trabajador[]
   ordenes_trabajo_internas OrdenTrabajoInterna[]
   reportes_correctivos ReporteCorrectivo[]
+  task_lists           TaskList[]
 
   @@map("equipo")
 }
@@ -1119,6 +1120,19 @@ model OrdenTrabajoInterna {
   // (un usuario operativo pide intervención) vs OTs creadas por planificación.
   // Sirve para filtrar/auditar en la lista. Default false = OT regular.
   solicitud_mantenimiento   Boolean            @default(false)
+  // ── Aprobación de la OT (flujo manual: el creador marca "enviar a aprobación",
+  // un aprobador acepta o rechaza). Estados:
+  //   BORRADOR        → estado inicial (creador puede editar libremente)
+  //   SIN_APROBACION  → enviada, esperando decisión del aprobador
+  //   APROBADA        → aprobada, ya puede ejecutarse
+  //   RECHAZADA       → rechazada — el creador puede corregir y reenviar
+  // Espejo del patrón ya existente en OTRepuesto/Compra, pero a nivel OT.
+  aprobacion_status_codigo  String?            @default("BORRADOR") @db.VarChar(20)
+  fecha_envio_aprobacion    DateTime?          @db.Timestamp(3)
+  usuario_envia_aprobacion  String?            @db.VarChar(150)
+  fecha_aprobacion          DateTime?          @db.Timestamp(3)
+  usuario_aprueba           String?            @db.VarChar(150)
+  comentario_aprobacion     String?            @db.VarChar(500)
   version                   Int                @default(1)
   estrategia                Estrategia?        @relation(fields: [estrategia_id], references: [estrategia_id])
   equipo                    Equipo?            @relation(fields: [equipo_codigo], references: [codigo])
@@ -1206,6 +1220,18 @@ model Compra {
   // proveedores no domiciliados, etc.). Default true para mantener el
   // comportamiento histórico — las OCs viejas no cambian.
   aplica_igv             Boolean         @default(true)
+  // Flag: la OC funciona como un "almacén abierto" — el material no se
+  // recibe de una vez sino que se va consumiendo durante un período. Los
+  // precios quedan congelados (no se recalculan al consumir). Pensado para
+  // OCs tipo Quellaveco: el cliente provee material y HP&K lo va descontando
+  // del stock al usarlo en OTs.
+  // Cuando es true: cantidad = stock total acordado, cantidad_recibida =
+  // lo ya consumido, pendiente = stock disponible.
+  es_almacen_abierto     Boolean         @default(false)
+  // Fecha de expiración del "almacén abierto". Después de esta fecha la
+  // OC no se puede seguir consumiendo (el cliente debe enviar una nueva).
+  // Solo relevante cuando es_almacen_abierto = true; null en OCs normales.
+  fecha_expiracion       DateTime?       @db.Date
   otros                  Decimal         @default(0) @db.Decimal(12, 2)
   total                  Decimal         @default(0) @db.Decimal(12, 2)
   moneda_codigo          String?         @db.VarChar(10)
@@ -1233,6 +1259,15 @@ model Compra {
   factura_mime           String?         @db.VarChar(100)
   factura_tamano         Int?
   factura_fecha_subida   DateTime?
+  // Adjunto de COMPROBANTE DE PAGO en R2 (voucher, boleta, transferencia).
+  // Solo aplica visualmente cuando tipo_pago = "CONTADO" o "TRANSFERENCIA";
+  // para CRÉDITO no se carga (el pago no se hace en el momento). Por simetría
+  // con guia/factura, espejamos los 5 campos.
+  pago_key               String?         @db.VarChar(500)
+  pago_nombre            String?         @db.VarChar(300)
+  pago_mime              String?         @db.VarChar(100)
+  pago_tamano            Int?
+  pago_fecha_subida      DateTime?
   observaciones          String?
   usuario_solicita       String          @db.VarChar(100)
   usuario_aprueba        String?         @db.VarChar(100)
@@ -1769,11 +1804,15 @@ model ReporteCorrectivo {
 model TaskList {
   id                  Int      @id @default(autoincrement())
   // Nombre libre de la máquina del taller, ej "Banco de Pruebas 1".
-  // No es FK a `equipo` porque el Excel no trae código y los nombres difieren
-  // (ej "Camioneta V9M-357" no está como tal en el catálogo de equipos).
-  // Si en el futuro se hace mapping, agregar equipo_codigo (FK opcional).
+  // Mantenido por compat — el matching real es por `equipo_codigo` (FK).
   maquina_taller      String   @db.VarChar(150)
-  // Pauta de mantenimiento: MP1, MP2, MP3, MP4 (frecuencias distintas).
+  // FK a Equipo (2026-06): el TaskList vive amarrado a un equipo del taller.
+  // Permite que al crear una OT interna con equipo + estrategia PM, se
+  // resuelvan los task lists aplicables vía join. ON DELETE SET NULL evita
+  // perder los task lists si se desactiva un equipo.
+  equipo_codigo       String?  @db.VarChar(50)
+  // Pauta de mantenimiento: PM1, PM2, PM3, PM4 (frecuencias distintas).
+  // El Excel también trae MP1-4 (typos) — el import los normaliza a PM*.
   actividad_codigo    String   @db.VarChar(20)
   // Descripción específica de la tarea, ej "Limpieza de tanque hidráulico...".
   descripcion         String
@@ -1786,8 +1825,10 @@ model TaskList {
   updated_at          DateTime @default(now()) @updatedAt
 
   items               TaskListItem[]
+  equipo              Equipo?  @relation(fields: [equipo_codigo], references: [codigo], onDelete: SetNull, onUpdate: Cascade)
 
   @@index([maquina_taller])
+  @@index([equipo_codigo])
   @@index([actividad_codigo])
   @@map("task_list")
 }

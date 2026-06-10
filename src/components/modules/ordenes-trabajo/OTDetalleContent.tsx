@@ -698,7 +698,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
       type="warning"
       showIcon
       style={{ marginBottom: 16 }}
-      message={`${lock.lockedBy} está editando esta OT`}
+      title={`${lock.lockedBy} está editando esta OT`}
       description="Solo podés ver hasta que termine. Si se quedó colgado el lock se libera solo a los 3 minutos."
     />
   );

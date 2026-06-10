@@ -1502,7 +1502,7 @@ export default function PlanificacionPage() {
         <Alert
           type="warning"
           showIcon
-          message={`${lock.lockedBy} está editando la planificación`}
+          title={`${lock.lockedBy} está editando la planificación`}
           description="Solo podés ver hasta que termine. Si se quedó colgado el lock se libera solo a los 3 minutos."
           style={{ marginBottom: 12 }}
         />

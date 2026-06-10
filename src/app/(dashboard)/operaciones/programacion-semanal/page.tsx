@@ -1341,7 +1341,7 @@ export default function ProgramacionSemanalPage() {
         <Alert
           type="warning"
           showIcon
-          message={`${lock.lockedBy} está editando la programación semanal`}
+          title={`${lock.lockedBy} está editando la programación semanal`}
           description="Solo podés ver hasta que termine. Si se quedó colgado el lock se libera solo a los 3 minutos."
           style={{ marginBottom: 12 }}
         />
