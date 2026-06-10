@@ -97,6 +97,37 @@ interface Props {
   onUpdated?: () => void;
 }
 
+// ── Conversión entre unidades equivalentes (regla de OTs internas) ──
+// Hoy solo cilindro ↔ galón (1 cil = 55 gal — combustibles/lubricantes HPK).
+// Se usa para: mostrar el equivalente al lado de la cantidad y del precio, y
+// re-escalar el precio referencial cuando la UM elegida en el draft difiere de
+// la UM con la que el material está cotizado en catálogo.
+const CONVERSION_FACTORES: Record<string, Record<string, number>> = {
+  cil: { gl: 55 },
+  gl: { cil: 1 / 55 },
+};
+
+// Factor "from → to": 55 significa "1 unidad de FROM = 55 unidades de TO".
+function factorEntreUM(from: string | null | undefined, to: string | null | undefined): number | null {
+  const a = (from ?? "").toLowerCase();
+  const b = (to ?? "").toLowerCase();
+  if (!a || !b || a === b) return null;
+  return CONVERSION_FACTORES[a]?.[b] ?? null;
+}
+
+// Equivalencia de una UM convertible: a qué unidad se traduce y con qué factor.
+function equivalenteUM(um: string | null | undefined): { to: string; factor: number } | null {
+  const u = (um ?? "").toLowerCase();
+  if (u === "cil") return { to: "gl", factor: 55 };
+  if (u === "gl") return { to: "cil", factor: 1 / 55 };
+  return null;
+}
+
+// Formatea un número con hasta 4 decimales, sin ceros a la derecha.
+function fmtCant(n: number): string {
+  return Number(n.toFixed(4)).toLocaleString("es-PE", { maximumFractionDigits: 4 });
+}
+
 const TIPO_COLOR: Record<string, string> = { MAC: "blue", CAD: "orange", SER: "purple" };
 const REQ_COLOR: Record<string, string> = {
   BORRADOR: "warning",
@@ -298,6 +329,26 @@ export default function OTInternaRequerimientosTab({ otInternaId, onUpdated }: P
         const s = servicios.find((x) => x.codigo === patch.servicio_codigo);
         if (s) {
           next.descripcion = s.nombre;
+        }
+      }
+      // Conversión cil ↔ gl (factor 55): si la UM elegida difiere de la UM del
+      // catálogo del material, escalamos el precio referencial a la UM elegida
+      // (ej. material cotizado en gl a USD 10 → con UM=cil pasa a USD 550/cil).
+      // Sin esto, el precio de catálogo (por gl) no correspondería a la cantidad
+      // en cilindros y el subtotal saldría 55 veces menor. Si la UM vuelve a la
+      // del catálogo, se limpia el precio para que lo resuelva el catálogo.
+      if (next.tipo_codigo === "MAC" && next.material_codigo) {
+        const m2 = materiales.find((x) => x.codigo === next.material_codigo);
+        const matPrecio = m2?.precio != null ? Number(m2.precio) : null;
+        if (m2?.unidad_medida_codigo && next.unidad_medida && matPrecio != null && matPrecio > 0) {
+          const factor = factorEntreUM(m2.unidad_medida_codigo, next.unidad_medida);
+          if (factor != null) {
+            next.precio_unitario = Number((matPrecio / factor).toFixed(4));
+            next.moneda = next.moneda ?? (m2.moneda_codigo === "SOL" ? "SOL" : "USD");
+          } else if (patch.unidad_medida && m2.unidad_medida_codigo === next.unidad_medida) {
+            // Volvió a la UM del catálogo → el precio vuelve a resolverse por catálogo.
+            next.precio_unitario = undefined;
+          }
         }
       }
       return next;
@@ -805,7 +856,21 @@ export default function OTInternaRequerimientosTab({ otInternaId, onUpdated }: P
         .sort((a, b) => a - b).map((v) => ({ text: String(v), value: String(v) })),
       filterSearch: true,
       onFilter: (value, r) => String(Number(r.cantidad)) === value,
-      render: (_, r) => Number(r.cantidad).toLocaleString(),
+      render: (_, r) => {
+        // cil/gl: mostrar el equivalente debajo (factor 55).
+        const eq = equivalenteUM(r.unidad_medida);
+        const cant = Number(r.cantidad);
+        return (
+          <div style={{ lineHeight: 1.15 }}>
+            {cant.toLocaleString()}
+            {eq && cant > 0 && (
+              <div style={{ fontSize: 10, color: "rgba(0,0,0,0.45)" }}>
+                ≈ {fmtCant(cant * eq.factor)} {eq.to}
+              </div>
+            )}
+          </div>
+        );
+      },
     },
     {
       title: "P. Unit.", key: "precio_unit", width: 110, align: "right",
@@ -1229,14 +1294,25 @@ export default function OTInternaRequerimientosTab({ otInternaId, onUpdated }: P
               },
               {
                 title: "Cant. *", key: "cant", width: 80, align: "right",
-                render: (_: unknown, r: DraftItem) => (
-                  <InputNumber
-                    size="small" style={{ width: "100%" }}
-                    min={0.01} step={1}
-                    value={r.cantidad}
-                    onChange={(v) => actualizarDraftItem(r.id, { cantidad: Number(v ?? 0) })}
-                  />
-                ),
+                render: (_: unknown, r: DraftItem) => {
+                  // cil/gl: equivalente debajo (factor 55) para no calcular mentalmente.
+                  const eq = equivalenteUM(r.unidad_medida);
+                  return (
+                    <div>
+                      <InputNumber
+                        size="small" style={{ width: "100%" }}
+                        min={0.01} step={1}
+                        value={r.cantidad}
+                        onChange={(v) => actualizarDraftItem(r.id, { cantidad: Number(v ?? 0) })}
+                      />
+                      {eq && Number(r.cantidad ?? 0) > 0 && (
+                        <div style={{ fontSize: 10, color: "rgba(0,0,0,0.45)", marginTop: 2 }}>
+                          ≈ {fmtCant(Number(r.cantidad) * eq.factor)} {eq.to}
+                        </div>
+                      )}
+                    </div>
+                  );
+                },
               },
               {
                 title: "U.M.", key: "um", width: 110,
@@ -1266,35 +1342,55 @@ export default function OTInternaRequerimientosTab({ otInternaId, onUpdated }: P
                   const mat = r.tipo_codigo === "MAC" && r.material_codigo
                     ? materiales.find((m) => m.codigo === r.material_codigo)
                     : null;
-                  if (mat?.precio) {
+                  const eq = equivalenteUM(r.unidad_medida);
+                  // Read-only del catálogo SOLO si no hay precio propio en el
+                  // draft: la conversión cil↔gl setea precio_unitario escalado y
+                  // debe verse (y guardarse) ese, no el del catálogo.
+                  if (mat?.precio && r.precio_unitario == null) {
                     return (
                       <Tooltip title="Precio del catálogo de material">
-                        <Text style={{ fontSize: 12 }}>
-                          {Number(mat.precio).toFixed(2)} {mat.moneda_codigo ?? "USD"}
-                        </Text>
+                        <div>
+                          <Text style={{ fontSize: 12 }}>
+                            {Number(mat.precio).toFixed(2)} {mat.moneda_codigo ?? "USD"}
+                          </Text>
+                          {eq && (
+                            <div style={{ fontSize: 10, color: "rgba(0,0,0,0.45)" }}>
+                              ≈ {mat.moneda_codigo ?? "USD"} {fmtCant(Number(mat.precio) / eq.factor)}/{eq.to}
+                            </div>
+                          )}
+                        </div>
                       </Tooltip>
                     );
                   }
-                  // Input editable: SER, CAD, o MAC sin precio en catálogo.
+                  // Input editable: SER, CAD, MAC sin precio en catálogo, o MAC
+                  // con precio re-escalado por conversión de UM.
+                  const pu = r.precio_unitario != null ? Number(r.precio_unitario) : null;
                   return (
-                    <Space.Compact style={{ width: "100%" }}>
-                      <InputNumber
-                        size="small" style={{ width: 80 }}
-                        min={0} step={0.01}
-                        placeholder="0.00"
-                        value={r.precio_unitario}
-                        onChange={(v) => actualizarDraftItem(r.id, { precio_unitario: v == null ? undefined : Number(v) })}
-                      />
-                      <Select showSearch optionFilterProp="label"
-                        size="small" style={{ width: 70 }}
-                        value={r.moneda ?? "USD"}
-                        onChange={(v) => actualizarDraftItem(r.id, { moneda: v })}
-                        options={[
-                          { value: "USD", label: "USD" },
-                          { value: "SOL", label: "SOL" },
-                        ]}
-                      />
-                    </Space.Compact>
+                    <div>
+                      <Space.Compact style={{ width: "100%" }}>
+                        <InputNumber
+                          size="small" style={{ width: 80 }}
+                          min={0} step={0.01}
+                          placeholder="0.00"
+                          value={r.precio_unitario}
+                          onChange={(v) => actualizarDraftItem(r.id, { precio_unitario: v == null ? undefined : Number(v) })}
+                        />
+                        <Select showSearch optionFilterProp="label"
+                          size="small" style={{ width: 70 }}
+                          value={r.moneda ?? "USD"}
+                          onChange={(v) => actualizarDraftItem(r.id, { moneda: v })}
+                          options={[
+                            { value: "USD", label: "USD" },
+                            { value: "SOL", label: "SOL" },
+                          ]}
+                        />
+                      </Space.Compact>
+                      {eq && pu != null && pu > 0 && (
+                        <div style={{ fontSize: 10, color: "rgba(0,0,0,0.45)", marginTop: 2 }}>
+                          ≈ {r.moneda ?? "USD"} {fmtCant(pu / eq.factor)}/{eq.to}
+                        </div>
+                      )}
+                    </div>
                   );
                 },
               },
