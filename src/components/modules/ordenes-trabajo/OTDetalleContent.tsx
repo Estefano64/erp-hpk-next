@@ -40,7 +40,7 @@ import {
 } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
 import dayjs from "dayjs";
-import { formatDateOnly } from "@/lib/dates";
+import { formatDateOnly, dateOnlyLocal } from "@/lib/dates";
 import { formatOtCodigo } from "@/lib/ot-formato";
 import OTAdjuntosTab from "./OTAdjuntosTab";
 import OTTareasTab from "./OTTareasTab";
@@ -478,6 +478,14 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
     if (!ot) return false;
     const payload: Record<string, unknown> = { ...editData };
 
+    // Campos de evaluación: son SOLO LECTURA en el form (se completan solos
+    // desde la hoja de evaluación al "Enviar a revisión" / "Aprobar"). Los
+    // sacamos del payload para que un guardado manual de la OT nunca los pise.
+    delete payload.evaluador;
+    delete payload.fecha_evaluacion;
+    delete payload.evaluacion_aprobado_por;
+    delete payload.fecha_aprobacion_evaluacion;
+
     if (payload.id_cod_rep && payload.id_cod_rep !== ot.id_cod_rep) {
       const codRep = codReps.find((cr) => cr.cod_rep_id === payload.id_cod_rep);
       if (codRep) {
@@ -696,7 +704,10 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
     }
     const fechaReqEf = ot.fecha_reprogramada ?? ot.fecha_requerimiento_cliente;
     if (fechaReqEf && ot.ot_status_codigo !== "Cerrada") {
-      const diasRestantes = dayjs(fechaReqEf).startOf("day").diff(dayjs().startOf("day"), "day");
+      // dateOnlyLocal: la fecha viene como medianoche UTC; parseada directo con
+      // dayjs caía a las 19:00 del día ANTERIOR en Lima, y una OT que vence HOY
+      // salía "vencida hace 1 día".
+      const diasRestantes = dayjs(dateOnlyLocal(fechaReqEf)).diff(dayjs().startOf("day"), "day");
       if (diasRestantes < 0) {
         validaciones.push({
           type: "error",
@@ -826,6 +837,14 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                 placeholder={bloqueoBien ? "No aplica" : undefined}
                 options={tallerStatuses.map((s) => ({ value: s.codigo, label: s.nombre }))}
               />
+            </Col>
+            <Col xs={12} md={6}>
+              {/* Prioridad arriba de todo (pedido del equipo): antes había que
+                  scrollear hasta "Documentos y Logística" para verla. */}
+              <FieldLabel>Prioridad</FieldLabel>
+              <div style={{ fontWeight: 600, fontSize: 14 }}>
+                {ot?.prioridad_atencion ? `${ot.prioridad_atencion.codigo} - ${ot.prioridad_atencion.nombre}` : "—"}
+              </div>
             </Col>
             <Col xs={12} md={6}>
               <FieldLabel>Fecha Req. Cliente</FieldLabel>
@@ -1074,14 +1093,8 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
               <Row gutter={[16, 4]}>
                 <Col xs={12} md={6}><Field label="Empresa que entrega" value={ot.empresa_entrega} /></Col>
                 <Col xs={12} md={6}><Field label="Fecha Recepción" value={fmtDate(ot.fecha_recepcion)} /></Col>
-                {/* Prioridad subió acá (al lado de la fecha de requerimiento)
-                    — antes vivía abajo en "Tipo Reparación y Garantía". */}
-                <Col xs={12} md={6}>
-                  <Field
-                    label="Prioridad"
-                    value={ot.prioridad_atencion ? `${ot.prioridad_atencion.codigo} - ${ot.prioridad_atencion.nombre}` : null}
-                  />
-                </Col>
+                {/* Prioridad se movió al bloque de arriba "Estados y Fecha
+                    Requerimiento" (pedido del equipo: verla sin scrollear). */}
                 <Col xs={12} md={6}><Field label="Fecha Req. Cliente" value={fmtDate(ot.fecha_requerimiento_cliente)} /></Col>
               </Row>
               {/* Despacho / recepción del cliente (flujo comercial-logístico que llegó desde main). */}
@@ -1360,27 +1373,18 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
             </>
           ) : (
             <>
+              {/* Evaluación: estos 4 campos NO se editan a mano — se completan
+                  automáticamente desde la hoja de evaluación: el evaluador y su
+                  fecha al "Enviar a revisión", y el aprobador y su fecha al
+                  "Aprobar". Se muestran de solo lectura para evitar pisar el dato. */}
+              <Text type="secondary" italic style={{ fontSize: 12, display: "block", marginBottom: 8 }}>
+                Estos datos se completan solos desde la hoja de evaluación (solo lectura).
+              </Text>
               <Row gutter={[16, 12]}>
-                <Col xs={12} md={6}>
-                  <FieldLabel>Fecha Evaluación</FieldLabel>
-                  <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY"
-                    value={editData.fecha_evaluacion ? dayjs(String(editData.fecha_evaluacion).slice(0, 10)) : null}
-                    onChange={(d) => setField("fecha_evaluacion", d ? d.format("YYYY-MM-DD") : null)} />
-                </Col>
-                <Col xs={12} md={6}>
-                  <FieldLabel>Evaluador</FieldLabel>
-                  <Input value={(editData.evaluador as string) ?? ""} onChange={(e) => setField("evaluador", e.target.value)} />
-                </Col>
-                <Col xs={12} md={6}>
-                  <FieldLabel>Fecha Aprobación Evaluación</FieldLabel>
-                  <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY"
-                    value={editData.fecha_aprobacion_evaluacion ? dayjs(String(editData.fecha_aprobacion_evaluacion).slice(0, 10)) : null}
-                    onChange={(d) => setField("fecha_aprobacion_evaluacion", d ? d.format("YYYY-MM-DD") : null)} />
-                </Col>
-                <Col xs={12} md={6}>
-                  <FieldLabel>Aprobado por</FieldLabel>
-                  <Input value={(editData.evaluacion_aprobado_por as string) ?? ""} onChange={(e) => setField("evaluacion_aprobado_por", e.target.value)} />
-                </Col>
+                <Col xs={12} md={6}><Field label="Fecha Evaluación" value={fmtDate(ot.fecha_evaluacion)} /></Col>
+                <Col xs={12} md={6}><Field label="Evaluador" value={ot.evaluador} /></Col>
+                <Col xs={12} md={6}><Field label="Fecha Aprobación Evaluación" value={fmtDate(ot.fecha_aprobacion_evaluacion)} /></Col>
+                <Col xs={12} md={6}><Field label="Aprobado por" value={ot.evaluacion_aprobado_por} /></Col>
               </Row>
               <Row gutter={[16, 12]} style={{ marginTop: 8 }}>
                 <Col xs={12} md={6}>

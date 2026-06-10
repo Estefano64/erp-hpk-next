@@ -527,11 +527,11 @@ export default function EquiposPage() {
   return (
     <div>
       {contextHolder}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
         <Title level={3} style={{ margin: 0 }}>
           Equipos y Herramientas
         </Title>
-        <Space>
+        <Space wrap>
           <ColumnasToggleButton<EquipoRecord>
             columns={columns}
             ocultas={ocultas}
@@ -725,119 +725,119 @@ export default function EquiposPage() {
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           <Row gutter={16}>
-            <Col span={6}>
+            <Col xs={12} md={6}>
               <Form.Item name="codigo" label="Código" rules={[{ required: true, message: "Requerido" }]}>
                 <Input placeholder="MAQ001" disabled={!!editing} />
               </Form.Item>
             </Col>
-            <Col span={18}>
+            <Col xs={24} md={18}>
               <Form.Item name="descripcion" label="Descripción" rules={[{ required: true, message: "Requerido" }]}>
                 <Input />
               </Form.Item>
             </Col>
 
-            <Col span={6}>
+            <Col xs={12} md={6}>
               <Form.Item name="status_codigo" label="Estado" rules={[{ required: true, message: "Requerido" }]} initialValue="OPE">
                 <Select showSearch optionFilterProp="label" options={statuses.map((s) => ({ value: s.codigo, label: `${s.codigo} - ${s.nombre}` }))} />
               </Form.Item>
             </Col>
-            <Col span={6}>
+            <Col xs={12} md={6}>
               <Form.Item name="tipo_codigo" label="Tipo" rules={[{ required: true, message: "Requerido" }]}>
                 <Select showSearch optionFilterProp="label" options={tipos.map((t) => ({ value: t.codigo, label: `${t.codigo} - ${t.nombre}` }))} />
               </Form.Item>
             </Col>
-            <Col span={6}>
+            <Col xs={12} md={6}>
               <Form.Item name="area_codigo" label="Área" rules={[{ required: true, message: "Requerido" }]}>
                 <Select showSearch optionFilterProp="label" options={areas.map((a) => ({ value: a.codigo, label: `${a.codigo} - ${a.nombre}` }))} />
               </Form.Item>
             </Col>
-            <Col span={6}>
+            <Col xs={12} md={6}>
               <Form.Item name="sub_area_codigo" label="Sub Área">
                 <Select showSearch optionFilterProp="label" allowClear options={subAreas.map((s) => ({ value: s.codigo, label: `${s.codigo} - ${s.nombre}` }))} />
               </Form.Item>
             </Col>
 
-            <Col span={6}>
+            <Col xs={12} md={6}>
               <Form.Item name="planta_codigo" label="Planta" rules={[{ required: true, message: "Requerido" }]}>
                 <Select showSearch optionFilterProp="label" options={plantas.map((p) => ({ value: p.codigo, label: `${p.codigo} - ${p.nombre}` }))} />
               </Form.Item>
             </Col>
-            <Col span={6}>
+            <Col xs={12} md={6}>
               <Form.Item name="fabricante_codigo" label="Fabricante">
                 <Select allowClear showSearch optionFilterProp="label"
                   options={fabricantes.map((f) => ({ value: f.codigo, label: f.nombre }))} />
               </Form.Item>
             </Col>
-            <Col span={6}>
+            <Col xs={12} md={6}>
               <Form.Item name="modelo" label="Modelo">
                 <Input />
               </Form.Item>
             </Col>
-            <Col span={6}>
+            <Col xs={12} md={6}>
               <Form.Item name="numero_serie" label="N/S (Serie)">
                 <Input />
               </Form.Item>
             </Col>
 
-            <Col span={6}>
+            <Col xs={12} md={6}>
               <Form.Item name="numero_parte" label="N/P (Parte)">
                 <Input />
               </Form.Item>
             </Col>
-            <Col span={6}>
+            <Col xs={12} md={6}>
               <Form.Item name="capacidad" label="Capacidad">
                 <Input />
               </Form.Item>
             </Col>
-            <Col span={6}>
+            <Col xs={12} md={6}>
               <Form.Item name="unidad_medida_codigo" label="Und. Medida">
                 <Select showSearch optionFilterProp="label" allowClear options={unidades.map((u) => ({ value: u.codigo, label: `${u.codigo} - ${u.nombre}` }))} />
               </Form.Item>
             </Col>
-            <Col span={6}>
+            <Col xs={12} md={6}>
               <Form.Item name="criticidad_codigo" label="Criticidad">
                 <Select showSearch optionFilterProp="label" allowClear options={criticidades.map((c) => ({ value: c.codigo, label: `${c.codigo} - ${c.nombre}` }))} />
               </Form.Item>
             </Col>
 
-            <Col span={6}>
+            <Col xs={12} md={6}>
               <Form.Item name="fecha_inicio" label="Año de Inicio">
                 <DatePicker picker="year" style={{ width: "100%" }} />
               </Form.Item>
             </Col>
-            <Col span={6}>
+            <Col xs={12} md={6}>
               <Form.Item name="fecha_fabricacion" label="Año de Fabricación">
                 <DatePicker picker="year" style={{ width: "100%" }} />
               </Form.Item>
             </Col>
-            <Col span={6}>
+            <Col xs={12} md={6}>
               <Form.Item name="precio" label="Precio">
                 <InputNumber style={{ width: "100%" }} min={0} precision={2} />
               </Form.Item>
             </Col>
-            <Col span={6}>
+            <Col xs={12} md={6}>
               <Form.Item name="moneda_codigo" label="Moneda" initialValue="USD">
                 <Select showSearch optionFilterProp="label" allowClear options={monedas.map((m) => ({ value: m.codigo, label: `${m.codigo} - ${m.nombre}` }))} />
               </Form.Item>
             </Col>
 
-            <Col span={4}>
+            <Col xs={12} md={4}>
               <Form.Item name="cantidad" label="Cantidad" initialValue={1}>
                 <InputNumber style={{ width: "100%" }} min={1} />
               </Form.Item>
             </Col>
-            <Col span={5}>
+            <Col xs={12} md={5}>
               <Form.Item name="ubicacion_codigo" label="Ubicación">
                 <Select allowClear showSearch optionFilterProp="label"
                   options={ubicaciones.map((u) => ({ value: u.codigo, label: `${u.codigo} - ${u.nombre}` }))} />
               </Form.Item>
             </Col>
-            <Col span={5}>
+            <Col xs={12} md={5}>
               <Form.Item name="usuario_responsable" label="Responsable">
                 <Input />
               </Form.Item>
             </Col>
-            <Col span={10}>
+            <Col xs={24} md={10}>
               <Form.Item name="observaciones" label="Observaciones">
                 <TextArea rows={2} />
               </Form.Item>

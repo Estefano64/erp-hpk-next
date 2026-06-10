@@ -43,6 +43,7 @@ import {
   useColumnasRedimensionables,
 } from "@/lib/tables";
 import { brand } from "@/lib/theme";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 import { formatDateOnly } from "@/lib/dates";
@@ -208,6 +209,7 @@ const FIXED_FILTERS: Record<string, { text: string; value: string }[]> = {
 export default function OrdenesTrabajoPage() {
   const router = useRouter();
   const { message, modal } = App.useApp();
+  const { screens } = useResponsive();
   const { data: session } = useSession();
   // Eliminar / desactivar OTs es exclusivo del admin (operación destructiva).
   const esAdmin = ((session?.user as { roles?: string[] } | undefined)?.roles ?? []).includes("admin");
@@ -236,9 +238,10 @@ export default function OrdenesTrabajoPage() {
   const [aniosSel, setAniosSel] = usePersistedState<number[]>("ot-list-anios", [new Date().getFullYear() % 100]);
   // Admin: ver también las OTs desactivadas (para reactivarlas).
   const [verInactivas, setVerInactivas] = usePersistedState<boolean>("ot-list-ver-inactivas", false);
-  // v2: nuevas columnas opcionales (tipo, NP, flota, posición, fabricante, garantía, base metálica, etc.)
-  // ocultas por default — el usuario las habilita desde el botón "Columnas".
-  const { ocultas, setOcultas } = useColumnasOcultas("ordenes-trabajo-list-cols-v2", [
+  // v3: "evaluador" y "fecha_evaluacion" pasan a VISIBLES por default (pedido
+  // del equipo: ver quién hizo la hoja de evaluación y cuándo, sin configurar).
+  // El bump v2→v3 resetea una vez la preferencia de columnas guardada.
+  const { ocultas, setOcultas } = useColumnasOcultas("ordenes-trabajo-list-cols-v3", [
     "tipo", "np", "cod_rep_flota", "fabricante",
     "plaqueteo", "wo_cliente", "po_cliente", "po_item", "id_viajero", "guia_remision", "empresa_entrega",
     "usuario_crea", "fecha_creacion",
@@ -247,7 +250,7 @@ export default function OrdenesTrabajoPage() {
     // Bloque "ciclo evaluación → cotización → aprobación → facturación":
     // ocultas por default (son muchas columnas; el usuario las activa
     // desde el botón "Columnas" cuando hace análisis).
-    "fecha_evaluacion", "evaluador", "fecha_aprobacion_evaluacion",
+    "fecha_aprobacion_evaluacion",
     "evaluacion_aprobado_por", "fecha_cotizacion",
     "caracteristica_cilindro",
     "reparacion_externa", "vendor_externo",
@@ -331,7 +334,7 @@ export default function OrdenesTrabajoPage() {
       okText: "Eliminar todo",
       okButtonProps: { danger: true },
       cancelText: "Cancelar",
-      width: 520,
+      width: modalWidth(screens, 520),
       content: (
         <div style={{ fontSize: 13 }}>
           Esto borra <b>permanentemente</b> la OT y <b>todo lo relacionado</b>:
@@ -902,9 +905,9 @@ export default function OrdenesTrabajoPage() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
         <Title level={3} style={{ margin: 0 }}>Órdenes de Trabajo</Title>
-        <Space>
+        <Space wrap>
           <Tooltip title="Refrescar el listado preservando filtros, paginación y ancho de columnas (sin recargar la página).">
             <Button
               icon={<ReloadOutlined />}
@@ -1021,7 +1024,7 @@ export default function OrdenesTrabajoPage() {
       {/* Filtro rápido por tipo de OT (sincronizado con el filtro de columna
           `tipo_ot`). "Todas" limpia ese filtro. */}
       <Segmented
-        style={{ marginBottom: 12 }}
+        style={{ marginBottom: 12, maxWidth: "100%", overflowX: "auto" }}
         value={(columnFilters.tipo_ot?.[0] as string) || "todas"}
         onChange={(v) => {
           setColumnFilters((prev) => {

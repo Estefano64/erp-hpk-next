@@ -70,9 +70,9 @@ export async function PUT(req: NextRequest, { params }: Params) {
     // Formatear fechas si vienen como string
     const dateFields = [
       "fecha_recepcion", "fecha_requerimiento_cliente", "fecha_reprogramada",
-      "fecha_evaluacion", "fecha_entrega_informe", "fecha_cotizacion",
-      "fecha_aprobacion", "fecha_llegada_repuestos", "fecha_entrega",
-      "fecha_facturacion", "fecha_req_1", "fecha_req_2",
+      "fecha_evaluacion", "fecha_aprobacion_evaluacion", "fecha_entrega_informe",
+      "fecha_cotizacion", "fecha_aprobacion", "fecha_llegada_repuestos",
+      "fecha_entrega", "fecha_facturacion", "fecha_req_1", "fecha_req_2",
       "fecha_generacion_po", "fecha_despacho",
     ];
     for (const field of dateFields) {

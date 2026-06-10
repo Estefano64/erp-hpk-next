@@ -14,6 +14,7 @@ import isoWeek from "dayjs/plugin/isoWeek";
 import { brand } from "@/lib/theme";
 import { formatDateOnly } from "@/lib/dates";
 import { paginacionEstandar } from "@/lib/tables";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
 dayjs.extend(isoWeek);
 
@@ -156,7 +157,36 @@ export default function MisTareasPage() {
           <ToolOutlined style={{ marginRight: 8 }} />
           Mis Tareas
         </Title>
-        <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>Actualizar</Button>
+        <Space>
+          <ExportarExcelButton<TareaHist>
+            endpoint="/api/mi-trabajo/historico"
+            // El endpoint capea limit en 500; con el default (1000) el paginado
+            // interno cortaría en la primera página.
+            limit={500}
+            filename="MisTareas"
+            // Mismos filtros server-side que fetchData (sin page/limit).
+            endpointParams={{
+              estado,
+              search,
+              fecha_desde: semana ? semana.startOf("isoWeek").format("YYYY-MM-DD") : undefined,
+              fecha_hasta: semana ? semana.endOf("isoWeek").format("YYYY-MM-DD") + "T23:59:59" : undefined,
+            }}
+            currentRows={data}
+            columns={[
+              { label: "OT", value: (r) => r.orden_trabajo?.ot ?? `#${r.ot_id}` },
+              { label: "Componente", value: (r) => r.componente || "" },
+              { label: "Operación", value: (r) => r.operacion_codigo || "" },
+              { label: "Descripción", value: (r) => r.descripcion || "" },
+              { label: "Estado", value: (r) => r.status_tarea?.nombre ?? r.estado ?? "" },
+              { label: "Inicio real", value: (r) => r.fecha_inicio_real ? formatDateOnly(r.fecha_inicio_real) : "" },
+              { label: "Fin real", value: (r) => r.fecha_fin_real ? formatDateOnly(r.fecha_fin_real) : "" },
+              { label: "H. est.", value: (r) => r.horas_estimadas != null ? Number(r.horas_estimadas) : "" },
+              { label: "H. real", value: (r) => r.horas_reales != null ? Number(r.horas_reales) : "" },
+              { label: "Efic. (%)", value: (r) => eficiencia(r.horas_estimadas, r.horas_reales) ?? "" },
+            ]}
+          />
+          <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>Actualizar</Button>
+        </Space>
       </div>
 
       <Row gutter={12} style={{ marginBottom: 12 }}>

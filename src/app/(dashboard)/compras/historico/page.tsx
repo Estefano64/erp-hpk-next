@@ -431,7 +431,7 @@ export default function HistoricoComprasPage() {
               placeholder="Buscar código, N° parte, descripción, marca…"
               prefix={<SearchOutlined />} allowClear
               value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
-              style={{ width: 360 }}
+              style={{ width: 360, maxWidth: "100%" }}
             />
             <ColumnasToggleButton<MatRow>
               columns={infoCols}

@@ -37,6 +37,27 @@ export function formatDateOnly(v: string | Date | null | undefined): string {
   return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
+/**
+ * Fecha "solo día" para COMPARAR sin corrimiento de zona horaria: toma la parte
+ * de fecha (YYYY-MM-DD) del valor y la devuelve como medianoche LOCAL.
+ *
+ * Por qué: estas columnas se guardan como medianoche UTC ("...T00:00:00.000Z").
+ * Miradas desde Lima (UTC-5) con `dayjs(v)` caen a las 19:00 del DÍA ANTERIOR,
+ * y una OT que vence HOY aparecía "vencida hace 1 día".
+ */
+export function dateOnlyLocal(v: string | Date | null | undefined): Date | null {
+  if (!v) return null;
+  if (v instanceof Date) {
+    // Un Date de estas columnas viene de medianoche UTC: las partes UTC
+    // conservan el día original (las locales ya estarían corridas).
+    return new Date(v.getUTCFullYear(), v.getUTCMonth(), v.getUTCDate());
+  }
+  const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
 /** Igual que formatDateOnly pero con año de 2 dígitos (DD/MM/YY). */
 export function formatDateOnlyShort(v: string | Date | null | undefined): string {
   const full = formatDateOnly(v);

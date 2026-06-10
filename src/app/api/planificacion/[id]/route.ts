@@ -107,13 +107,16 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       const camposReales = Object.keys(input).filter((k) => !["forzarEdicion", "omitirAntisolape", "empujar"].includes(k));
       const soloRevertirEstado = camposReales.length === 1
         && input.estado !== undefined && input.estado !== "realizado";
-      // El planner puede REGULARIZAR la duración real de una tarea ya terminada
-      // (caso del técnico que se olvidó de marcar su fin de jornada).
-      const soloHorasReales = camposReales.length === 1 && input.horas_reales !== undefined;
+      // El planner puede REGULARIZAR la ejecución real de una tarea ya terminada
+      // (técnico que marcó tarde, olvidó iniciar/pausar, o trabajó sin sistema):
+      // inicio real, fin real y/o horas reales — solo esos campos, nada del plan.
+      const CAMPOS_EJECUCION = ["fecha_inicio_real", "fecha_fin_real", "horas_reales"];
+      const soloEjecucionReal = camposReales.length >= 1
+        && camposReales.every((k) => CAMPOS_EJECUCION.includes(k));
       // Dejar un comentario es una nota informativa: se permite aunque la tarea ya
       // esté realizada (no toca la planificación ni la ejecución).
       const soloComentario = camposReales.length === 1 && input.comentario !== undefined;
-      if (isRealizado && intentaEditar && !input.forzarEdicion && !soloRevertirEstado && !soloHorasReales && !soloComentario) {
+      if (isRealizado && intentaEditar && !input.forzarEdicion && !soloRevertirEstado && !soloEjecucionReal && !soloComentario) {
         throw Object.assign(
           new Error("Tarea en estado 'realizado' no puede editarse. Cambiá el estado primero o usá forzarEdicion=true."),
           { code: "REALIZADO_LOCKED" },

@@ -2,17 +2,64 @@
 // planificación. Suma duraciones de las sesiones cerradas y devuelve las horas
 // reales acumuladas.
 
-import { horasHabilesEntre } from "./planification-hours";
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc";
+import timezone from "dayjs/plugin/timezone";
 
-// Horas de JORNADA trabajadas en un conjunto de sesiones (jornada 8–18, sin
-// almuerzo, L–V). Las PAUSAS quedan fuera porque cierran la sesión (la suma es
-// por sesión). El tiempo fuera de jornada (noche / fin de semana) NO se cuenta:
-// si el técnico se olvidó de marcar su fin de día, la jornada igual lo acota (y
-// el planner puede ajustar la Dur. real a mano si hace falta).
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
+const TZ = "America/Lima";
+
+// Ventana de CONTEO del tiempo real: más ancha que la jornada (8–18) a pedido
+// del equipo (2026-06-10): quien arranca minutos antes de las 8 o se queda un
+// rato después de las 18 lo suma como hora NORMAL (no es HE). El tope
+// 07:00–20:00 L–V sigue protegiendo contra sesiones olvidadas (la noche y el
+// fin de semana no cuentan; el planner regulariza la Dur. real si hace falta).
+const CONTEO_INI_MIN = 7 * 60;
+const CONTEO_FIN_MIN = 20 * 60;
+const ALM_INI_MIN = 12 * 60 + 30;
+const ALM_FIN_MIN = 13 * 60 + 30;
+
+/**
+ * Tiempo REAL trabajado entre dos instantes (hora de Perú):
+ *  - cuenta dentro de la ventana 07:00–20:00, L–V (reloj corrido, sin recortar
+ *    el "antes de las 8 / después de las 18" — eso es hora normal acá);
+ *  - descuenta el almuerzo (12:30–13:30) SOLO si la sesión cubre la ventana
+ *    completa (trabajó "de corrido"). Si el técnico pausó dentro de esa franja
+ *    —p.ej. un día que el almuerzo se corre a 13:00— él ya manejó el descanso
+ *    con su pausa y no se le descuenta nada extra (sin doble descuento).
+ */
+export function horasRealesEntre(inicio: Date, fin: Date): number {
+  if (fin.getTime() <= inicio.getTime()) return 0;
+  let totalMin = 0;
+  let dia = dayjs(inicio).tz(TZ).startOf("day");
+  const finDj = dayjs(fin).tz(TZ);
+  let guard = 0;
+  while (dia.isBefore(finDj) && guard++ < 120) {
+    const dow = dia.day();
+    if (dow !== 0 && dow !== 6) {
+      const vIni = dia.add(CONTEO_INI_MIN, "minute").valueOf();
+      const vFin = dia.add(CONTEO_FIN_MIN, "minute").valueOf();
+      const segIni = Math.max(inicio.getTime(), vIni);
+      const segFin = Math.min(fin.getTime(), vFin);
+      if (segFin > segIni) totalMin += (segFin - segIni) / 60000;
+      const aIni = dia.add(ALM_INI_MIN, "minute").valueOf();
+      const aFin = dia.add(ALM_FIN_MIN, "minute").valueOf();
+      if (inicio.getTime() <= aIni && fin.getTime() >= aFin) totalMin -= 60;
+    }
+    dia = dia.add(1, "day");
+  }
+  return Math.max(0, Math.round((totalMin / 60) * 100) / 100);
+}
+
+// Horas trabajadas en un conjunto de sesiones (ventana 07–20, almuerzo
+// descontado solo si se trabajó de corrido — ver horasRealesEntre). Las PAUSAS
+// quedan fuera porque cierran la sesión (la suma es por sesión).
 export function horasHabilesDeSesiones(sesiones: { inicio: Date; fin: Date | null }[]): number {
   let h = 0;
   for (const s of sesiones) {
-    if (s.fin) h += horasHabilesEntre(s.inicio, s.fin);
+    if (s.fin) h += horasRealesEntre(s.inicio, s.fin);
   }
   return Math.round(h * 100) / 100;
 }

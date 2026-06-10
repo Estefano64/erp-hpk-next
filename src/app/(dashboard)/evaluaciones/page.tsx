@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
@@ -46,7 +46,9 @@ import {
   RangoFechasFiltro,
   dentroDeRango,
   useColumnasRedimensionables,
+  useTablaFiltrada,
 } from "@/lib/tables";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import dayjs from "dayjs";
 
 import { formatDateOnly } from "@/lib/dates";
@@ -147,8 +149,8 @@ export default function EvaluacionesPage() {
     fetchData();
   }, [fetchData]);
 
-  // Filtrar datos
-  const filtered = data.filter((ev) => {
+  // Filtrar datos (memoizado: useTablaFiltrada necesita identidad estable)
+  const filtered = useMemo(() => data.filter((ev) => {
     if (filtroEstado && ev.estado !== filtroEstado) return false;
     if (!dentroDeRango(ev, "fecha_evaluacion", rangoEval)) return false;
     if (!search) return true;
@@ -159,7 +161,10 @@ export default function EvaluacionesPage() {
       (ev.evaluado_por || "").toLowerCase().includes(lc) ||
       (ev.modelo_evaluacion || "").toLowerCase().includes(lc)
     );
-  });
+  }), [data, filtroEstado, rangoEval, search]);
+
+  // Filas visibles tras los filtros de columna de AntD (para exportar a Excel).
+  const { filtradas, onChange: onTablaChange } = useTablaFiltrada(filtered);
 
   // KPIs
   const kpis = {
@@ -374,12 +379,12 @@ export default function EvaluacionesPage() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
         <Title level={3} style={{ margin: 0 }}>
           <ExperimentOutlined style={{ color: brand.cyan, marginRight: 8 }} />
           Hojas de Evaluación
         </Title>
-        <Space>
+        <Space wrap>
           <ColumnasToggleButton<Evaluacion>
             columns={columns}
             ocultas={ocultas}
@@ -387,6 +392,25 @@ export default function EvaluacionesPage() {
             obligatorias={["__num", "ot", "acciones"]}
           />
           <Button onClick={resetAnchos}>Restablecer anchos</Button>
+          <ExportarExcelButton<Evaluacion>
+            endpoint="/api/evaluaciones"
+            filename="Evaluaciones"
+            // La tabla filtra todo client-side (búsqueda, estado, rango y
+            // filtros de columna): exportamos las filas ya filtradas.
+            currentRows={filtradas}
+            tablaLayout={{ ocultas }}
+            columns={[
+              { key: "ot", label: "OT", value: (r) => r.orden_trabajo?.ot ?? "" },
+              { key: "estado", label: "Estado", value: (r) => estadoLabel[r.estado] || r.estado },
+              { key: "modelo_evaluacion", label: "Tipo Cilindro", value: (r) => r.modelo_evaluacion },
+              { key: "evaluado_por", label: "Evaluado por", value: (r) => r.evaluado_por ?? "" },
+              { key: "fecha_evaluacion", label: "F. Evaluación", value: (r) => (r.fecha_evaluacion ? formatDateOnly(r.fecha_evaluacion) : "") },
+              { key: "solicitado_revision_por", label: "Solicitada por", value: (r) => r.solicitado_revision_por ?? "" },
+              { key: "revisado_por", label: "Revisada por", value: (r) => r.revisado_por ?? "" },
+              { key: "fecha_revision", label: "F. Revisión", value: (r) => (r.fecha_revision ? formatDateOnly(r.fecha_revision) : "") },
+              { key: "informe_nombre", label: "Informe", value: (r) => (r.informe_nombre ? "Sí" : "No") },
+            ]}
+          />
         </Space>
       </div>
 
@@ -505,6 +529,7 @@ export default function EvaluacionesPage() {
           components={tableComponents}
           dataSource={filtered}
           loading={loading}
+          onChange={onTablaChange}
           pagination={paginacionEstandar({
             current: page,
             pageSize,

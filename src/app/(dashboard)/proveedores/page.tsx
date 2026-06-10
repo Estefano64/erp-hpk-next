@@ -267,9 +267,9 @@ export default function ProveedoresPage() {
   return (
     <div>
       {contextHolder}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
         <Title level={3} style={{ margin: 0 }}>Proveedores</Title>
-        <Space>
+        <Space wrap>
           <ColumnasToggleButton<ProveedorRecord>
             columns={columns}
             ocultas={ocultas}
@@ -394,7 +394,7 @@ export default function ProveedoresPage() {
           requiredMark
         >
           <Row gutter={16}>
-            <Col span={8}>
+            <Col xs={24} sm={8}>
               <Form.Item
                 name="ruc"
                 label="RUC"
@@ -410,7 +410,7 @@ export default function ProveedoresPage() {
                 />
               </Form.Item>
             </Col>
-            <Col span={16}>
+            <Col xs={24} sm={16}>
               <Form.Item name="razon_social" label="Razón Social" rules={[{ required: true, message: "Razón social obligatoria" }]}>
                 <Input placeholder="Ej. Repuestos Industriales SAC" />
               </Form.Item>
@@ -428,17 +428,17 @@ export default function ProveedoresPage() {
                 <Input />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col xs={24} sm={8}>
               <Form.Item name="contacto" label="Contacto Principal">
                 <Input />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col xs={12} sm={8}>
               <Form.Item name="telefono" label="Teléfono">
                 <Input />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col xs={12} sm={8}>
               <Form.Item name="email" label="Email" rules={[{ type: "email", message: "Email inválido" }]}>
                 <Input />
               </Form.Item>

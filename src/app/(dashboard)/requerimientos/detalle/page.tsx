@@ -877,7 +877,7 @@ function RequerimientosDetalleInner() {
       okText: opts.okText,
       okButtonProps: opts.danger ? { danger: true } : undefined,
       cancelText: "Cancelar",
-      width: 460,
+      width: modalWidth(screens, 460),
       onOk: async () => {
         const txt = texto.trim();
         try {
@@ -1560,7 +1560,7 @@ function RequerimientosDetalleInner() {
         Volver a Requerimientos
       </Button>
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
         <div>
           <Title level={3} style={{ margin: 0 }}>
             Detalle de Requerimientos
@@ -1569,7 +1569,7 @@ function RequerimientosDetalleInner() {
             {filteredData.length} items de {new Set(filteredData.map((r) => r.ot_id)).size} OT(s)
           </Text>
         </div>
-        <Space>
+        <Space wrap>
           <Popover
             content={contenidoColumnas}
             title={
@@ -1860,6 +1860,7 @@ function RequerimientosDetalleInner() {
             rowKey="id"
             dataSource={selectedRecords}
             pagination={false}
+            scroll={{ x: 600 }}
             style={{ marginTop: 6 }}
             columns={[
               {
@@ -2146,15 +2147,15 @@ function RequerimientosDetalleInner() {
         {modalDividir && (
           <div>
             <Card size="small" style={{ background: brand.bgPage, marginBottom: 12 }}>
-              <Row gutter={16}>
-                <Col span={12}>
+              <Row gutter={[16, 8]}>
+                <Col xs={24} sm={12}>
                   <Text type="secondary" style={{ fontSize: 12 }}>Descripción</Text>
                   <div style={{ fontWeight: 600 }}>{modalDividir.material_nombre || modalDividir.descripcion}</div>
                 </Col>
-                <Col span={6}>
+                <Col xs={12} sm={6}>
                   <Statistic title="Cantidad Original" value={Number(modalDividir.cantidad)} />
                 </Col>
-                <Col span={6}>
+                <Col xs={12} sm={6}>
                   <Statistic
                     title="Suma Actual"
                     value={partesDividir.reduce((s, p) => s + Number(p || 0), 0)}
