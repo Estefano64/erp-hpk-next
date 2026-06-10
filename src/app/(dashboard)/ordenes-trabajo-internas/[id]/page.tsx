@@ -28,7 +28,7 @@ const { TextArea } = Input;
 
 interface CatalogOption { codigo: string; nombre: string }
 interface EquipoOption { codigo: string; descripcion: string }
-interface EstrategiaOption { estrategia_id: number; codigo: string; descripcion: string; equipo_codigo: string | null }
+interface EstrategiaOption { estrategia_id: number; codigo: string; descripcion: string; equipo_codigo: string | null; actividad_codigo: string | null }
 interface TrabajadorOpt { nombre: string; area: string; puesto: string }
 
 interface OTInternaDetalle {
@@ -621,9 +621,17 @@ function EstrategiaSelect({
   estrategias: EstrategiaOption[];
 }) {
   const equipoCodigo = Form.useWatch("equipo_codigo", form);
+  // Solo PMs (PM1..PM4) del equipo. Antes se mostraban TODAS las estrategias
+  // del equipo y la lista quedaba demasiado larga.
   const filtradas = !equipoCodigo
     ? []
-    : estrategias.filter((e) => e.equipo_codigo === equipoCodigo);
+    : estrategias
+        .filter((e) => e.equipo_codigo === equipoCodigo)
+        .filter((e) => {
+          const cod = (e.codigo ?? "").toUpperCase();
+          const act = (e.actividad_codigo ?? "").toUpperCase();
+          return /^PM[1-4]$/.test(cod) || /^PM[1-4]$/.test(act);
+        });
   return (
     <Form.Item name="estrategia_id" label="Estrategia" style={{ marginBottom: 0 }}>
       <Select
@@ -631,8 +639,8 @@ function EstrategiaSelect({
         placeholder={!equipoCodigo
           ? "Elegí un equipo primero"
           : filtradas.length === 0
-            ? "Este equipo no tiene estrategias cargadas"
-            : "Seleccionar PM"}
+            ? "Este equipo no tiene PMs cargados"
+            : "Elegí PM1 / PM2 / PM3 / PM4"}
         options={filtradas.map((e) => ({ value: e.estrategia_id, label: `${e.codigo} — ${e.descripcion}` }))}
       />
     </Form.Item>

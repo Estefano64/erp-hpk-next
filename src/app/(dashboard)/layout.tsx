@@ -67,7 +67,6 @@ function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
           children: [
             { key: "/operaciones/planificacion", label: "Planificación" },
             { key: "/operaciones/programacion-semanal", label: "Programación semanal" },
-            { key: "/operaciones/programacion-semanal-internas", label: "Programación semanal (Internas)" },
             { key: "/operaciones/programacion-dashboard", label: "Dashboard Planificación" },
           ],
         },
