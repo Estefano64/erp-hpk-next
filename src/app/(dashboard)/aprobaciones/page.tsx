@@ -583,38 +583,70 @@ export default function AceptacionesPage() {
 
   function bulkAceptarOC() {
     if (selOcs.length === 0) return;
+    // Mismo set de 3 campos que el modal individual; se aplican a TODAS las
+    // OCs del lote por igual (auditoría: cada OC recibe el mismo trío).
+    let descripcion = "";
+    let detalle = "";
     let comentario = "";
     modal.confirm({
       title: `Aceptar ${selOcs.length} OC(s)`,
       content: (
-        <div style={{ marginTop: 8 }}>
-          <Text style={{ fontSize: 12 }}>
-            Comentario <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+        <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            Los 3 campos son opcionales y se aplican a TODAS las OCs del lote.
           </Text>
-          <Text type="secondary" style={{ fontSize: 11, display: "block" }}>
-            Si lo dejás, se aplica a todas las OCs del lote.
-          </Text>
-          <Input.TextArea
-            rows={3}
-            maxLength={500}
-            showCount
-            placeholder="Ej: aprobadas tras revisión semanal"
-            onChange={(e) => { comentario = e.target.value; }}
-            style={{ marginTop: 8 }}
-          />
+          <div>
+            <Text style={{ fontSize: 12 }}>
+              Descripción <Text type="secondary" style={{ fontWeight: 400 }}>(opcional, ≤300)</Text>
+            </Text>
+            <Input
+              maxLength={300}
+              placeholder="Resumen breve aplicable a todas"
+              onChange={(e) => { descripcion = e.target.value; }}
+              style={{ marginTop: 4 }}
+            />
+          </div>
+          <div>
+            <Text style={{ fontSize: 12 }}>
+              Detalle <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+            </Text>
+            <Input.TextArea
+              rows={3}
+              placeholder="Motivo, contexto, instrucciones…"
+              onChange={(e) => { detalle = e.target.value; }}
+              style={{ marginTop: 4 }}
+            />
+          </div>
+          <div>
+            <Text style={{ fontSize: 12 }}>
+              Comentario <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+            </Text>
+            <Input.TextArea
+              rows={2}
+              maxLength={500}
+              showCount
+              placeholder="Ej: aprobadas tras revisión semanal"
+              onChange={(e) => { comentario = e.target.value; }}
+              style={{ marginTop: 4 }}
+            />
+          </div>
         </div>
       ),
       okText: "Aceptar todas",
       cancelText: "Cancelar",
-      width: 480,
+      width: 520,
       onOk: async () => {
-        const txt = comentario.trim();
+        const body = JSON.stringify({
+          comentario: comentario.trim() || null,
+          descripcion: descripcion.trim() || null,
+          detalle: detalle.trim() || null,
+        });
         let ok = 0, errs = 0;
         for (const id of selOcs) {
           const res = await fetch(`/api/compras/${id}/aceptar`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ comentario: txt || null }),
+            body,
           });
           if (res.ok) ok++; else errs++;
         }
@@ -894,15 +926,19 @@ export default function AceptacionesPage() {
       key: "acciones", title: "Acciones", width: 220, fixed: "right", align: "center",
       render: (_, o) => (
         <Space size={4}>
-          <Tooltip title="Aprobar OC (pasa a En Proceso)">
-            <Popconfirm
-              title={`¿Aprobar OC ${o.numero_po}?`}
-              description="La OC pasará a En Proceso y se registrará tu usuario como aprobador."
-              onConfirm={() => aceptarOC(o.id, o.numero_po)}
-              okText="Aprobar" cancelText="Cancelar"
+          <Tooltip title="Aprobar OC (pasa a En Proceso) — abre el modal con Descripción / Detalle / Comentario">
+            {/* Antes había un Popconfirm de "sí/no" antes de abrir el modal.
+                Eliminado a pedido del user: clic directo abre el modal de
+                aceptación con los 3 campos (descripción + detalle + comentario)
+                que sirven como confirmación + auditoría en un solo paso. */}
+            <Button
+              type="primary"
+              size="small"
+              icon={<CheckOutlined />}
+              onClick={() => aceptarOC(o.id, o.numero_po)}
             >
-              <Button type="primary" size="small" icon={<CheckOutlined />}>Aprobar</Button>
-            </Popconfirm>
+              Aprobar
+            </Button>
           </Tooltip>
           <Tooltip title="Rechazar OC (la anula)">
             <Button
@@ -1340,15 +1376,17 @@ export default function AceptacionesPage() {
                           </Tag>
                         )}
                         {selOcs.length > 0 && (
-                          <Popconfirm
-                            title={`¿Aprobar ${selOcs.length} OC(s) seleccionada(s)?`}
-                            onConfirm={bulkAceptarOC}
-                            okText="Aprobar" cancelText="Cancelar"
+                          // Sin Popconfirm intermedio — `bulkAceptarOC` ya
+                          // abre el modal con los 3 campos (descripción +
+                          // detalle + comentario) que sirve de confirmación.
+                          <Button
+                            type="primary"
+                            icon={<CheckOutlined />}
+                            size="small"
+                            onClick={bulkAceptarOC}
                           >
-                            <Button type="primary" icon={<CheckOutlined />} size="small">
-                              Aprobar seleccionadas ({selOcs.length})
-                            </Button>
-                          </Popconfirm>
+                            Aprobar seleccionadas ({selOcs.length})
+                          </Button>
                         )}
                         {selOcs.length > 0 && (
                           <Button danger icon={<CloseOutlined />} size="small" onClick={bulkAnularOC}>

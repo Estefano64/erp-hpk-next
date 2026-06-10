@@ -67,7 +67,7 @@ function isoWeekParse(s: string | null | undefined): Dayjs | null {
 
 interface CatalogOption { codigo: string; nombre: string }
 interface EquipoOption { codigo: string; descripcion: string }
-interface EstrategiaOption { estrategia_id: number; codigo: string; descripcion: string }
+interface EstrategiaOption { estrategia_id: number; codigo: string; descripcion: string; equipo_codigo: string | null; actividad_codigo: string | null }
 
 interface OTInternaRow {
   id: number;
@@ -1119,12 +1119,34 @@ export default function OrdenesTrabajoInternasPage() {
               <>
                 <Col xs={24} md={12}>
                   <Form.Item name="estrategia_id" label="Estrategia (opcional)">
+                    {/* Solo PMs (PM1/PM2/PM3/PM4) del equipo seleccionado.
+                        Pedido del user: la dropdown ya no muestra TODA la
+                        tabla de estrategias — quedan únicamente los niveles
+                        PM correspondientes al equipo de la OT. Si no hay
+                        equipo elegido todavía, se ve placeholder explicativo. */}
                     <Select
                       allowClear
                       showSearch
-                      placeholder="Vincular a estrategia"
+                      placeholder={equipoSel
+                        ? "Elegí PM1 / PM2 / PM3 / PM4"
+                        : "Elegí un equipo primero"}
                       optionFilterProp="label"
-                      options={estrategias.map((e) => ({ value: e.estrategia_id, label: `${e.codigo} — ${e.descripcion}` }))}
+                      disabled={!equipoSel}
+                      options={estrategias
+                        .filter((e) => {
+                          if (!equipoSel) return false;
+                          if (e.equipo_codigo !== equipoSel) return false;
+                          // Aceptamos como "PM" tanto el codigo (PM1..PM4)
+                          // como el actividad_codigo (algunos seeds lo guardan
+                          // ahí). Hacemos uppercase para evitar discrepancias.
+                          const cod = (e.codigo ?? "").toUpperCase();
+                          const act = (e.actividad_codigo ?? "").toUpperCase();
+                          return /^PM[1-4]$/.test(cod) || /^PM[1-4]$/.test(act);
+                        })
+                        .map((e) => ({
+                          value: e.estrategia_id,
+                          label: `${e.codigo} — ${e.descripcion}`,
+                        }))}
                     />
                   </Form.Item>
                 </Col>
