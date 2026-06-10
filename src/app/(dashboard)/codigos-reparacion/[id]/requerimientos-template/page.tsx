@@ -681,8 +681,8 @@ export default function TemplateRequerimientosPage() {
                 />
               </Form.Item>
             </Col>
-            {/* Responsive Col (xs/sm) viene de main; label sin "(opcional)"
-                viene de HEAD (decisión del user: quitar opcional de labels). */}
+            {/* Col responsive (xs full + sm 1/3); label sin "(opcional)"
+                (decisión del user: quitar opcional de todos los labels). */}
             <Col xs={12} sm={8}>
               <Form.Item name="precio" label="Precio">
                 <InputNumber min={0} step={0.01} style={{ width: "100%" }} />

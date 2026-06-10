@@ -1176,10 +1176,12 @@ export default function OTInternaRequerimientosTab({ otInternaId, onUpdated }: P
       )}
 
       {/* ── Draft inline: nuevo requerimiento con múltiples items ──
-          Resuelto a favor de `main` (patrón Card inline con `draftOpen`).
-          El resto del archivo ya referencia `abrirDraft`/`cerrarDraft`/
-          `actualizarDraftItem` y `draftAppendToNroReq`, así que el wrapper
-          Modal de HEAD quedaba inconsistente y rompía referencias. */}
+          Resuelto a favor del patrón Card inline (`draftOpen` + `cerrarDraft`).
+          El resto del archivo referencia `abrirDraft`/`cerrarDraft`/
+          `actualizarDraftItem` y `draftAppendToNroReq`; el wrapper Modal
+          alternativo usaba `setDraftNroReq` que no está declarado y rompía
+          el archivo. Mantenemos Card también porque hay un `</Card>` + `)}`
+          de cierre al final de esta sección. */}
       {draftOpen && (
         <Card
           size="small"
