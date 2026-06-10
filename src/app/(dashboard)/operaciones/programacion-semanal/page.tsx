@@ -44,6 +44,7 @@ interface PlanRow {
   tecnico: string | null;
   maquina: string | null;
   comentario: string | null;
+  observaciones: string | null; // notas que deja el técnico al pausar/terminar
   estado: string | null;
   version: number;
   qty_personal: number | null;
@@ -1554,6 +1555,33 @@ export default function ProgramacionSemanalPage() {
     const widthPx = resizing?.id === r.id ? Math.max(20, resizeWidth) : baseWidth;
     const color = estadoColor(r.estado);
     const hasConflict = conflictos.has(r.id);
+
+    // ── Barra de ejecución en SEMANA PLANIFICADA (solo visualización) ──
+    // Sobre la foto del plan se dibuja DÓNDE ocurrió la ejecución real: la
+    // comparación "plan enviado vs realidad" se ve en el mismo carril. (En
+    // Semana real no hace falta: ahí el propio bloque ya muestra lo real.)
+    let execBar: { left: number; width: number } | null = null;
+    if (enviadoMode && empezada && r.fecha_inicio_real) {
+      const eIni = dayjs(r.fecha_inicio_real);
+      let eFin: Dayjs;
+      if (r.estado === "en_proceso") {
+        eFin = ahoraTick ?? dayjs(); // crece en vivo
+      } else if (r.estado === "realizado" && r.fecha_fin_real) {
+        eFin = dayjs(r.fecha_fin_real);
+      } else {
+        // pausado (o realizado sin fin_real): proyectar por horas reales hábiles.
+        const hr = Number(r.horas_reales ?? 0);
+        eFin = hr > 0 ? dayjs(calcularFin(eIni.toDate(), hr, !!r.horas_extras)) : eIni.add(30, "minute");
+      }
+      if (!eFin.isAfter(eIni)) eFin = eIni.add(15, "minute");
+      const eIniC = eIni.isBefore(semanaIni) ? semanaIni : eIni;
+      const eFinC = eFin.isAfter(semanaFin) ? semanaFin : eFin;
+      if (eFinC.isAfter(eIniC)) {
+        const exStart = eIniC.diff(lunes, "day") * dayPx + (hourDecimal(eIniC) - JORNADA_INICIO) * hourPx;
+        const exEnd = eFinC.diff(lunes, "day") * dayPx + (hourDecimal(eFinC) - JORNADA_INICIO) * hourPx;
+        execBar = { left: exStart, width: Math.max(6, exEnd - exStart) };
+      }
+    }
     return (
       <Fragment key={r.id}>
       <Tooltip
@@ -1570,6 +1598,9 @@ export default function ProgramacionSemanalPage() {
             <div>Estado: {estadoNombre(r.estado)}</div>
             {ventanaReal && (
               <div style={{ opacity: 0.9 }}>⏱ El bloque muestra el horario REAL (la tarea ya fue iniciada); el plan original queda arriba.</div>
+            )}
+            {r.observaciones && (
+              <div style={{ color: "#13C2C2" }}>🗒 Nota del técnico: {r.observaciones}</div>
             )}
             {enviadoMode && r.publicado_at && (
               <div>📌 Foto del plan enviado el {dayjs(r.publicado_at).format("DD/MM HH:mm")}</div>
@@ -1652,6 +1683,11 @@ export default function ProgramacionSemanalPage() {
             // Bloque angosto: el comentario no entra legible → badge (texto en el tooltip).
             <span className="psg-task-cmt-badge" title={r.comentario}>💬</span>
           ))}
+          {/* Nota del técnico (pausar/terminar): marcador visible; el texto va
+              en el tooltip y en el modal Detalle. */}
+          {r.observaciones && (
+            <span className="psg-task-cmt-badge" style={{ right: r.comentario ? 16 : 3 }} title={`Nota del técnico: ${r.observaciones}`}>🗒</span>
+          )}
           {/* Resize handle: solo en Semana real + vista Operarios (Enviado /
               Ejecución / Equipos son solo lectura), si la tarea NO continúa a la
               próxima semana y NO está enviada (enviada = plan congelado). */}
@@ -1669,6 +1705,14 @@ export default function ProgramacionSemanalPage() {
           )}
         </div>
       </Tooltip>
+      {/* Barra de ejecución real sobre la foto (no intercepta el mouse). */}
+      {execBar && (
+        <div
+          className="psg-exec-bar"
+          data-estado={r.estado ?? ""}
+          style={{ left: execBar.left, width: execBar.width }}
+        />
+      )}
       </Fragment>
     );
   }
@@ -2223,6 +2267,13 @@ export default function ProgramacionSemanalPage() {
               ⏱ Tarea iniciada: el bloque muestra su horario REAL (terminó antes ⇒ bloque más corto)
             </span>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
+              <span style={{ display: "inline-block", width: 16, height: 6, borderRadius: 3, background: "#13C2C2", boxShadow: "0 0 0 1px rgba(0,0,0,0.15)" }} />
+              En Semana planificada: barrita = ejecución real sobre la foto
+            </span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
+              🗒 Nota del técnico (texto en el tooltip / detalle)
+            </span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
               <span style={{ fontWeight: 800 }}>↷</span> Distinto al enviado
               <span style={{ fontWeight: 800, marginLeft: 6 }}>＋</span> Fuera del plan enviado
             </span>
@@ -2721,6 +2772,11 @@ export default function ProgramacionSemanalPage() {
             <Descriptions.Item label="Fin real">{selectedTask.fecha_fin_real ? dayjs(selectedTask.fecha_fin_real).format("DD/MM/YY HH:mm") : "—"}</Descriptions.Item>
             <Descriptions.Item label="Duración real">{selectedTask.horas_reales != null ? `${Number(selectedTask.horas_reales).toFixed(2)}h` : "—"}</Descriptions.Item>
             <Descriptions.Item label="Estado"><Tag color={estadoColor(selectedTask.estado)}>{estadoNombre(selectedTask.estado)}</Tag></Descriptions.Item>
+            {selectedTask.observaciones && (
+              <Descriptions.Item label="Nota del técnico">
+                <span style={{ whiteSpace: "pre-wrap" }}>🗒 {selectedTask.observaciones}</span>
+              </Descriptions.Item>
+            )}
             <Descriptions.Item label="Comentario">
               {editMode ? (
                 <Input.TextArea
@@ -3143,6 +3199,19 @@ export default function ProgramacionSemanalPage() {
           position: absolute; bottom: 1px; right: 3px;
           font-size: 9px; opacity: 0.85; pointer-events: none; line-height: 1;
         }
+        /* Barra de ejecución real sobre la foto (vista Semana planificada). */
+        .psg-exec-bar {
+          position: absolute;
+          bottom: 2px;
+          height: 7px;
+          border-radius: 3px;
+          pointer-events: none;
+          z-index: 2;
+          background: #13C2C2;
+          box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.85);
+        }
+        .psg-exec-bar[data-estado="realizado"] { background: #52C41A; }
+        .psg-exec-bar[data-estado="pausado"] { background: #FA8C16; }
 
         .psg-pool {
           display: grid;

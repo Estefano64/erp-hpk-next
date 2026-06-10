@@ -65,9 +65,10 @@ export default function AyudaProgramacionSemanal({ open, onClose }: { open: bool
             label: <span><BgColorsOutlined /> Vistas y símbolos del Gantt</span>,
             children: (
               <div style={{ fontSize: 13, display: "grid", gap: 6 }}>
-                <div><PushpinOutlined /> <strong>Semana planificada</strong>: la foto, solo lectura. <strong>Semana real</strong>: el plan vivo, editable.</div>
-                <div><strong>↷</strong> = la tarea está distinta a la foto (la moviste o cambió de operario). <strong>＋</strong> = fuera del plan enviado (agregada después).</div>
+                <div><PushpinOutlined /> <strong>Semana planificada</strong>: la foto, solo lectura. Sobre cada tarea iniciada se dibuja una <strong>barrita</strong> con su ejecución real (cyan en proceso, verde terminada, naranja pausada): plan enviado vs realidad en el mismo carril.</div>
+                <div><strong>Semana real</strong>: el plan vivo, editable. <strong>↷</strong> = la tarea está distinta a la foto (la moviste o cambió de operario). <strong>＋</strong> = fuera del plan enviado (agregada después).</div>
                 <div><strong>⏱ Tarea iniciada</strong>: su bloque muestra el horario REAL — si el técnico terminó antes, el bloque se acorta y ves el espacio libre del operario al instante (en proceso crece en vivo). Las iniciadas no se arrastran.</div>
+                <div><strong>🗒</strong> = el técnico dejó una nota al pausar/terminar (el texto se ve pasando el mouse o en el detalle de la tarea).</div>
                 <div>Glifos: ▶ en proceso · ⏸ pausada · ✓ realizada · • programada · ○ abierta · 🚨 emergencia · 🤝 tercero.</div>
                 <div>Franja gris = almuerzo (12:30–13:30, no cuenta) · línea roja = ahora · flechas en el borde = la tarea sigue en otra semana.</div>
                 <div>La barra de carga del operario descuenta lo terminado por sus horas reales.</div>

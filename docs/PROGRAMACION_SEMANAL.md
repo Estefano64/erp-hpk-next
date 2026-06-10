@@ -40,7 +40,10 @@ re-enviar (salvo "Re-enviar", ver §5).
 Selector del header:
 
 - **Semana planificada** 📌 — la foto. Solo lectura, sin pools. Si una tarea se
-  movió después a otra semana, acá se ve donde estaba al enviarse.
+  movió después a otra semana, acá se ve donde estaba al enviarse. Sobre cada
+  tarea iniciada se dibuja una **barrita de ejecución real** (cyan = en proceso,
+  verde = terminada, naranja = pausada): la comparación plan enviado vs realidad
+  se ve en el mismo carril.
 - **Semana real** — el plan vivo (editable). Además muestra:
   - **Tareas iniciadas con su horario REAL en el propio bloque**: el bloque va
     de `inicio_real` al fin real (terminada), hasta "ahora" (en proceso, crece
@@ -57,7 +60,9 @@ Selector del header:
 
 Otras señales: 🚨 emergencia · glifos de estado (▶ en proceso, ⏸ pausada,
 ✓ realizada, • programada, ○ abierta) · franja gris = almuerzo · línea roja =
-ahora · flechas en el borde del bloque = la tarea continúa de/hacia otra semana.
+ahora · flechas en el borde del bloque = la tarea continúa de/hacia otra semana
+· 💬 comentario del planner · 🗒 nota del técnico (dejada al pausar/terminar;
+texto en el tooltip y en el modal Detalle).
 
 ## 4. Reglas de programación
 
