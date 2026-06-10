@@ -24,10 +24,15 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!Number.isFinite(compraId)) {
       return NextResponse.json({ error: "ID inválido" }, { status: 400 });
     }
-    // Comentario opcional al aceptar una OC. Si viene texto se persiste en
-    // el historial; si no, la acción se registra sin comentario.
+    // Campos opcionales al aceptar una OC:
+    //   - descripcion: resumen corto (≤300, etiqueta en listados)
+    //   - detalle:     texto largo (motivo, instrucciones, contexto)
+    //   - comentario:  nota breve (≤500, la que ya existía)
+    // Si vienen valores se persisten en la fila + se incluyen en el historial.
     const body = await req.json().catch(() => ({}));
     const comentario = typeof body?.comentario === "string" ? body.comentario.trim() : "";
+    const descripcion = typeof body?.descripcion === "string" ? body.descripcion.trim().slice(0, 300) : "";
+    const detalle = typeof body?.detalle === "string" ? body.detalle.trim() : "";
 
     const result = await prisma.$transaction(async (tx) => {
       const compra = await tx.compra.findUnique({
@@ -64,10 +69,12 @@ export async function POST(req: NextRequest, { params }: Params) {
         data: {
           status_oc_codigo: "PROCESO",
           usuario_aprueba: usuario,
-          // Persistimos el comentario también en la fila de la OC (no solo en
-          // OTHistorial) — la UI lo muestra en /requerimientos/detalle sin
+          // Persistimos los 3 campos también en la fila de la OC (no solo en
+          // OTHistorial) — la UI los muestra en /requerimientos/detalle sin
           // tener que parsear el JSON del historial.
           comentario_aprobacion: comentario || null,
+          descripcion_aprobacion: descripcion || null,
+          detalle_aprobacion: detalle || null,
         },
       });
 
@@ -89,10 +96,22 @@ export async function POST(req: NextRequest, { params }: Params) {
         select: { orden_trabajo_interna_id: true },
         distinct: ["orden_trabajo_interna_id"],
       });
-      const descripcionHist = comentario
-        ? `OC ${compra.numero_po} aceptada por ${usuario} — ${comentario}`
+      const piezasHist = [
+        descripcion ? `Desc: ${descripcion}` : null,
+        detalle ? `Detalle: ${detalle}` : null,
+        comentario || null,
+      ].filter(Boolean);
+      const descripcionHist = piezasHist.length > 0
+        ? `OC ${compra.numero_po} aceptada por ${usuario} — ${piezasHist.join(" · ")}`
         : `OC ${compra.numero_po} aceptada por ${usuario}`;
-      const datosAdicionalesHist = JSON.stringify({ po_id: compraId, numero_po: compra.numero_po, accion: "ACEPTAR_OC", comentario: comentario || null });
+      const datosAdicionalesHist = JSON.stringify({
+        po_id: compraId,
+        numero_po: compra.numero_po,
+        accion: "ACEPTAR_OC",
+        comentario: comentario || null,
+        descripcion: descripcion || null,
+        detalle: detalle || null,
+      });
       for (const { ot_id } of otsExternasAfectadas) {
         if (ot_id == null) continue;
         await tx.oTHistorial.create({

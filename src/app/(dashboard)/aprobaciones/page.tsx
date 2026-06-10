@@ -92,6 +92,11 @@ interface ReqPendiente {
   material: { codigo: string; descripcion: string; precio: number | string | null; moneda_codigo: string | null; stock_actual: number | string | null } | null;
   status_requerimiento: { codigo: string; nombre: string } | null;
   adjuntos?: { id: number; nombre_archivo: string; r2_key: string; tamano: number }[];
+  // Si el req ya está pegado a una OC (po_id != null), mostramos un tag
+  // "Con PO 4504XXX" para que el aprobador sepa que ya hay compra emitida.
+  po_id?: number | null;
+  nro_oc?: string | null;
+  compra?: { id: number; numero_po: string; status_oc_codigo: string | null } | null;
 }
 interface HistorialItem {
   tipo: "OC" | "RQ";
@@ -138,6 +143,11 @@ export default function AceptacionesPage() {
   const [aprobarPrecio, setAprobarPrecio] = useState<number | null>(null);
   const [aprobarMoneda, setAprobarMoneda] = useState<string>("USD");
   const [aprobarComentario, setAprobarComentario] = useState<string>("");
+  // 3 campos en la aprobación: descripción corta + detalle largo + comentario.
+  // El usuario pidió separar el contexto en piezas para tener una etiqueta
+  // resumida en listados (descripcion) y un texto largo opcional (detalle).
+  const [aprobarDescripcion, setAprobarDescripcion] = useState<string>("");
+  const [aprobarDetalle, setAprobarDetalle] = useState<string>("");
   // Archivos a adjuntar al req durante la aprobación (capturas, cotizaciones,
   // notas escaneadas). Se suben a R2 DESPUÉS de que el req se apruebe OK.
   const [aprobarArchivos, setAprobarArchivos] = useState<UploadFile[]>([]);
@@ -184,39 +194,73 @@ export default function AceptacionesPage() {
 
   // ── Acciones individuales ────────────────────────────────────────────
   function aceptarOC(id: number, numero_po: string) {
-    // Comentario OPCIONAL. Igual mostramos el modal para que el aprobador
-    // pueda dejar nota si quiere.
+    // Tres campos opcionales: descripcion (corta), detalle (largo), comentario.
+    // El modal usa refs locales por simplicidad (Modal.confirm no maneja
+    // estado React fácilmente).
+    let descripcion = "";
+    let detalle = "";
     let comentario = "";
     modal.confirm({
       title: `Aceptar OC ${numero_po}`,
       content: (
-        <div style={{ marginTop: 8 }}>
-          <Text style={{ fontSize: 12 }}>
-            Comentario <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
-          </Text>
-          <Input.TextArea
-            rows={3}
-            maxLength={500}
-            showCount
-            placeholder="Ej: aprobada con descuento negociado vía email"
-            onChange={(e) => { comentario = e.target.value; }}
-            style={{ marginTop: 8 }}
-          />
+        <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+          <div>
+            <Text style={{ fontSize: 12 }}>
+              Descripción <Text type="secondary" style={{ fontWeight: 400 }}>(opcional, ≤300)</Text>
+            </Text>
+            <Input
+              maxLength={300}
+              placeholder="Resumen breve de la decisión"
+              onChange={(e) => { descripcion = e.target.value; }}
+              style={{ marginTop: 4 }}
+            />
+          </div>
+          <div>
+            <Text style={{ fontSize: 12 }}>
+              Detalle <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+            </Text>
+            <Input.TextArea
+              rows={3}
+              placeholder="Motivo, contexto, instrucciones…"
+              onChange={(e) => { detalle = e.target.value; }}
+              style={{ marginTop: 4 }}
+            />
+          </div>
+          <div>
+            <Text style={{ fontSize: 12 }}>
+              Comentario <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+            </Text>
+            <Input.TextArea
+              rows={2}
+              maxLength={500}
+              showCount
+              placeholder="Ej: aprobada con descuento negociado vía email"
+              onChange={(e) => { comentario = e.target.value; }}
+              style={{ marginTop: 4 }}
+            />
+          </div>
         </div>
       ),
       okText: "Aceptar OC",
       cancelText: "Cancelar",
-      width: 480,
-      onOk: () => doAceptarOC(id, numero_po, comentario),
+      width: 520,
+      onOk: () => doAceptarOC(id, numero_po, comentario, descripcion, detalle),
     });
   }
-  async function doAceptarOC(id: number, numero_po: string, comentario: string) {
+  async function doAceptarOC(
+    id: number, numero_po: string,
+    comentario: string, descripcion: string, detalle: string,
+  ) {
     try {
       const txt = comentario.trim();
       const res = await fetch(`/api/compras/${id}/aceptar`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ comentario: txt || null }),
+        body: JSON.stringify({
+          comentario: txt || null,
+          descripcion: descripcion.trim() || null,
+          detalle: detalle.trim() || null,
+        }),
       });
       const j = await res.json().catch(() => null);
       if (!res.ok) throw new Error(j?.error ?? "Error al aceptar OC");
@@ -230,41 +274,74 @@ export default function AceptacionesPage() {
   // Distinto de aceptar: marca la OC como ANULADO, propaga a los OTRepuestos
   // vinculados, y registra el motivo en OTHistorial de cada OT afectada.
   function anularOC(id: number, numero_po: string) {
+    let descripcion = "";
+    let detalle = "";
     let motivo = "";
     modal.confirm({
       title: `Rechazar OC ${numero_po}`,
       content: (
-        <div style={{ marginTop: 8 }}>
-          <Text style={{ fontSize: 12 }}>
-            Motivo <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
-          </Text>
+        <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
           <Text type="secondary" style={{ fontSize: 11, display: "block" }}>
             La OC pasará a ANULADA. Los items vinculados también quedan anulados.
           </Text>
-          <Input.TextArea
-            rows={3}
-            maxLength={500}
-            showCount
-            placeholder="Ej: precio incorrecto, proveedor cancelado, etc."
-            onChange={(e) => { motivo = e.target.value; }}
-            style={{ marginTop: 8 }}
-          />
+          <div>
+            <Text style={{ fontSize: 12 }}>
+              Descripción <Text type="secondary" style={{ fontWeight: 400 }}>(opcional, ≤300)</Text>
+            </Text>
+            <Input
+              maxLength={300}
+              placeholder="Resumen breve del rechazo"
+              onChange={(e) => { descripcion = e.target.value; }}
+              style={{ marginTop: 4 }}
+            />
+          </div>
+          <div>
+            <Text style={{ fontSize: 12 }}>
+              Detalle <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+            </Text>
+            <Input.TextArea
+              rows={3}
+              placeholder="Contexto, acciones a tomar, próximos pasos…"
+              onChange={(e) => { detalle = e.target.value; }}
+              style={{ marginTop: 4 }}
+            />
+          </div>
+          <div>
+            <Text style={{ fontSize: 12 }}>
+              Motivo <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+            </Text>
+            <Input.TextArea
+              rows={2}
+              maxLength={500}
+              showCount
+              placeholder="Ej: precio incorrecto, proveedor cancelado, etc."
+              onChange={(e) => { motivo = e.target.value; }}
+              style={{ marginTop: 4 }}
+            />
+          </div>
         </div>
       ),
       okText: "Rechazar OC",
       okButtonProps: { danger: true },
       cancelText: "Cancelar",
-      width: 480,
-      onOk: () => doAnularOC(id, numero_po, motivo),
+      width: 520,
+      onOk: () => doAnularOC(id, numero_po, motivo, descripcion, detalle),
     });
   }
-  async function doAnularOC(id: number, numero_po: string, motivo: string) {
+  async function doAnularOC(
+    id: number, numero_po: string,
+    motivo: string, descripcion: string, detalle: string,
+  ) {
     try {
       const txt = motivo.trim();
       const res = await fetch(`/api/compras/${id}/anular`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ motivo: txt || null }),
+        body: JSON.stringify({
+          motivo: txt || null,
+          descripcion: descripcion.trim() || null,
+          detalle: detalle.trim() || null,
+        }),
       });
       const j = await res.json().catch(() => null);
       if (!res.ok) throw new Error(j?.error ?? "Error al rechazar OC");
@@ -304,6 +381,8 @@ export default function AceptacionesPage() {
     setAprobarPrecio(precioActual);
     setAprobarMoneda(r.moneda ?? r.material?.moneda_codigo ?? "USD");
     setAprobarComentario("");
+    setAprobarDescripcion("");
+    setAprobarDetalle("");
     setAprobarArchivos([]);
   }
 
@@ -315,13 +394,17 @@ export default function AceptacionesPage() {
       const ref = `${aprobarModalReq.nro_req ?? "—"}/${aprobarModalReq.item_req ?? "—"}`;
       // Construimos el body con lo que tenga valor — todo es opcional al
       // server, pero solo mandamos las claves que el usuario completó.
-      const body: { precio_estimado?: number; moneda?: string; comentario?: string } = {};
+      const body: { precio_estimado?: number; moneda?: string; comentario?: string; descripcion?: string; detalle?: string } = {};
       if (aprobarPrecio != null && aprobarPrecio >= 0) {
         body.precio_estimado = aprobarPrecio;
         body.moneda = aprobarMoneda;
       }
       const com = aprobarComentario.trim();
       if (com.length > 0) body.comentario = com;
+      const desc = aprobarDescripcion.trim();
+      if (desc.length > 0) body.descripcion = desc;
+      const det = aprobarDetalle.trim();
+      if (det.length > 0) body.detalle = det;
       await aprobarReq(reqId, ref, Object.keys(body).length > 0 ? body : undefined);
 
       // Después de aprobar OK, subir cualquier archivo adjunto vía R2 +
@@ -892,6 +975,32 @@ export default function AceptacionesPage() {
       render: (_, r) => r.orden_trabajo?.cod_rep_flota
         ? <Tag color="geekblue" style={{ margin: 0 }}>{r.orden_trabajo.cod_rep_flota}</Tag>
         : <Text type="secondary">—</Text>,
+    },
+    {
+      // El aprobador necesita saber si el req ya está pegado a una OC: si
+      // sí, la aprobación es solo formal (la compra ya está emitida).
+      key: "po", title: "OC", width: 140, align: "center",
+      filters: [
+        { text: "Con OC", value: "con" },
+        { text: "Sin OC", value: "sin" },
+      ],
+      onFilter: (value, r) => (value === "con") === !!(r.compra?.numero_po ?? r.nro_oc),
+      render: (_, r) => {
+        const numero = r.compra?.numero_po ?? r.nro_oc;
+        if (!numero) {
+          return <Tag style={{ margin: 0 }} color="default">Sin OC</Tag>;
+        }
+        const status = r.compra?.status_oc_codigo ?? null;
+        const color = status === "ENTREGADO" || status === "COMPLETO"
+          ? "green" : status === "ANULADO" ? "red" : "blue";
+        return (
+          <Tooltip title={status ? `Estado: ${status}` : "Compra emitida"}>
+            <Tag color={color} style={{ margin: 0, fontFamily: "monospace" }}>
+              {numero}
+            </Tag>
+          </Tooltip>
+        );
+      },
     },
     {
       key: "descripcion_ot", title: "Descripción OT", width: 220, ellipsis: true,
@@ -1476,6 +1585,28 @@ export default function AceptacionesPage() {
               <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>
                 Si lo dejás vacío, se aprueba sin tocar el precio actual del item.
               </div>
+            </div>
+            <div>
+              <Text strong style={{ display: "block", marginBottom: 4 }}>
+                Descripción <Text type="secondary" style={{ fontWeight: 400 }}>(opcional, ≤300)</Text>
+              </Text>
+              <Input
+                maxLength={300}
+                placeholder="Resumen breve para identificar la decisión en listados"
+                value={aprobarDescripcion}
+                onChange={(e) => setAprobarDescripcion(e.target.value)}
+              />
+            </div>
+            <div>
+              <Text strong style={{ display: "block", marginBottom: 4 }}>
+                Detalle <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+              </Text>
+              <Input.TextArea
+                rows={4}
+                placeholder="Motivo, contexto, instrucciones para logística o el técnico…"
+                value={aprobarDetalle}
+                onChange={(e) => setAprobarDetalle(e.target.value)}
+              />
             </div>
             <div>
               <Text strong style={{ display: "block", marginBottom: 4 }}>

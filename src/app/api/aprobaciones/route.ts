@@ -79,6 +79,11 @@ export async function GET(req: NextRequest) {
           material: { select: { codigo: true, descripcion: true, precio: true, moneda_codigo: true, stock_actual: true } },
           status_requerimiento: { select: { codigo: true, nombre: true } },
           adjuntos: { select: { id: true, nombre_archivo: true, r2_key: true, tamano: true } },
+          // El aprobador suele querer ver si el item ya está pegado a una OC
+          // (po_id != null). Si lo está, el req se aprueba pero ya no hay
+          // que cotizar; queda como auditoría. Incluimos los datos básicos
+          // de la OC para mostrar un tag en la grilla.
+          compra: { select: { id: true, numero_po: true, status_oc_codigo: true } },
         },
         orderBy: [{ fecha_solicitud: "desc" }, { id: "desc" }],
         take: 500,

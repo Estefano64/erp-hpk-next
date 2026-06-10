@@ -32,10 +32,18 @@ export async function POST(req: NextRequest) {
   const ids = Array.isArray(body.ids)
     ? (body.ids as unknown[]).filter((x): x is number => typeof x === "number" && Number.isFinite(x) && x > 0)
     : null;
-  // Comentario / recomendación OPCIONAL del aprobador. Si viene, se guarda
-  // en cada item del lote (mismo texto) y se appendea al historial.
-  const comentario = typeof body.comentario === "string"
-    ? (body.comentario.trim().slice(0, 500) || null)
+  // Tres campos opcionales del aprobador: comentario (≤500), descripción
+  // (≤300, etiqueta corta), detalle (texto largo). Se aplican igual a todos
+  // los items del lote.
+  const bodyAny = body as { comentario?: unknown; descripcion?: unknown; detalle?: unknown };
+  const comentario = typeof bodyAny.comentario === "string"
+    ? (bodyAny.comentario.trim().slice(0, 500) || null)
+    : null;
+  const descripcionAprob = typeof bodyAny.descripcion === "string"
+    ? (bodyAny.descripcion.trim().slice(0, 300) || null)
+    : null;
+  const detalleAprob = typeof bodyAny.detalle === "string"
+    ? (bodyAny.detalle.trim() || null)
     : null;
 
   if (!nroReq && (!ids || ids.length === 0)) {
@@ -72,10 +80,12 @@ export async function POST(req: NextRequest) {
           usuario_aprueba: usuario,
           fecha_aprobacion: new Date(),
           status_cotizacion_codigo: "PEND_COT", // arranca flujo de cotización
-          // El mismo comentario aplica a todos los items del lote. Si no
-          // vino, se mantiene null (no se borra uno previo accidentalmente
-          // porque solo aprobamos items en estado SIN_APROBACION).
+          // Los 3 campos aplican a todos los items del lote. Si no vinieron,
+          // se mantienen null (no se borra uno previo accidentalmente porque
+          // solo aprobamos items en estado SIN_APROBACION).
           comentario_aprobacion: comentario,
+          descripcion_aprobacion: descripcionAprob,
+          detalle_aprobacion: detalleAprob,
         },
       });
 

@@ -477,8 +477,8 @@ export default function NuevaOTPage() {
               style={{ marginBottom: 16 }}
             >
               <Descriptions.Item label="Tipo">{selectedCodRep.tipo?.nombre ?? "-"}</Descriptions.Item>
-              <Descriptions.Item label="N/P">
-                <Form.Item name="np" noStyle>
+              <Descriptions.Item label={<>N/P <Text type="danger">*</Text></>}>
+                <Form.Item name="np" noStyle rules={[{ required: true, message: "Requerido" }]}>
                   <Input size="small" placeholder={selectedCodRep.np ?? "—"} style={{ minWidth: 140 }} />
                 </Form.Item>
               </Descriptions.Item>
@@ -500,7 +500,7 @@ export default function NuevaOTPage() {
                 </Form.Item>
               </Col>
               <Col xs={12} md={8}>
-                <Form.Item name="np" label="N/P">
+                <Form.Item name="np" label="N/P" rules={[{ required: true, message: "Requerido" }]}>
                   <Input placeholder="Ej. 219-2540" />
                 </Form.Item>
               </Col>
@@ -548,7 +548,11 @@ export default function NuevaOTPage() {
         <Card title="Datos" style={{ marginBottom: 16 }} styles={{ body: { paddingBottom: 0 } }}>
           <Row gutter={16}>
             <Col xs={12} md={6}>
-              <Form.Item name="equipo_codigo" label="Equipo">
+              <Form.Item
+                name="equipo_codigo"
+                label="Equipo"
+                rules={[{ required: true, message: "Requerido" }]}
+              >
                 <Input placeholder="Ej: SH001" />
               </Form.Item>
             </Col>
