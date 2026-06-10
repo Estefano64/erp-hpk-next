@@ -23,7 +23,10 @@ import {
   useColumnasRedimensionables,
   filtroPorColumna,
   usePersistedState,
+  useTablaFiltrada,
 } from "@/lib/tables";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
+import { formatDateOnly } from "@/lib/dates";
 import { formatReporteCorrectivoCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
 import { areasTallerGrouped } from "@/lib/areas-taller";
 
@@ -420,6 +423,10 @@ export default function CorrectivosPage() {
     [rows, columnFilters, router],
   );
 
+  // Filas visibles tras los filtros de columna — `rows` ya viene filtrado
+  // server-side por búsqueda/estado, así que esto captura todos los filtros.
+  const { filtradas, captureFilteredRows } = useTablaFiltrada(rows);
+
   const { ocultas, setOcultas } = useColumnasOcultas("correctivos-cols-ocultas", []);
   const { columnas, components, TableDragWrapper } = useColumnasRedimensionables(
     allColumns,
@@ -477,6 +484,29 @@ export default function CorrectivosPage() {
                 ocultas={ocultas}
                 setOcultas={setOcultas}
               />
+              <ExportarExcelButton<CorrectivoRow>
+                endpoint="/api/mantenimiento/correctivos"
+                filename="Correctivos"
+                currentRows={filtradas}
+                tablaLayout={{ ocultas }}
+                columns={[
+                  { key: "codigo", label: "Reporte", value: (r) => formatReporteCorrectivoCodigo(r.numero, r.anio) },
+                  { key: "estado", label: "Estado", value: (r) => ESTADOS[r.estado]?.label ?? r.estado },
+                  { key: "equipo_codigo", label: "Cód. Equipo", value: (r) => r.equipo_codigo },
+                  { key: "equipo_descripcion", label: "Equipo", value: (r) => r.equipo?.descripcion ?? "" },
+                  { key: "area_codigo", label: "Área", value: (r) => r.area?.nombre ?? r.area_codigo },
+                  { key: "detalle_falla", label: "Detalle de Falla", value: (r) => r.detalle_falla ?? "" },
+                  {
+                    key: "ot_interna", label: "OT Interna",
+                    value: (r) => r.ot_interna?.ot ? formatOtInternaCodigo(r.ot_interna.ot) : "",
+                  },
+                  { key: "ot_estado", label: "Estado OT", value: (r) => r.ot_interna?.ot_status?.nombre ?? "" },
+                  { key: "reportado_por", label: "Reportado por", value: (r) => r.reportado_por ?? "" },
+                  { key: "fecha", label: "Fecha", value: (r) => r.fecha ? formatDateOnly(r.fecha) : "" },
+                  { key: "realizado_por", label: "Realizado por", value: (r) => r.realizado_por ?? "" },
+                  { key: "fecha_correctivo", label: "Fecha cierre", value: (r) => r.fecha_correctivo ? formatDateOnly(r.fecha_correctivo) : "" },
+                ]}
+              />
             </Space>
           </Col>
         </Row>
@@ -498,9 +528,11 @@ export default function CorrectivosPage() {
             onChange: (p, s) => { setPage(p); setPageSize(s); },
             label: "reportes",
           })}
-          onChange={(_p, filters) =>
-            setColumnFilters(filters as Record<string, (string | number | boolean | null)[] | null>)
-          }
+          onChange={(_p, filters, _s, extra) => {
+            // Capturar las filas filtradas para la exportación a Excel.
+            captureFilteredRows(extra);
+            setColumnFilters(filters as Record<string, (string | number | boolean | null)[] | null>);
+          }}
         />
       </TableDragWrapper>
 
@@ -629,11 +661,11 @@ export default function CorrectivosPage() {
           <>
             <Card size="small" style={{ marginBottom: 12 }}>
               <Row gutter={12}>
-                <Col span={12}>
+                <Col xs={24} md={12}>
                   <Text type="secondary">Equipo:</Text>{" "}
                   <Text strong>{cerrarTarget.equipo_codigo}</Text>
                 </Col>
-                <Col span={12}>
+                <Col xs={24} md={12}>
                   <Text type="secondary">OT vinculada:</Text>{" "}
                   {cerrarTarget.ot_interna?.ot ? (
                     <Tag color="blue">{formatOtInternaCodigo(cerrarTarget.ot_interna.ot)}</Tag>

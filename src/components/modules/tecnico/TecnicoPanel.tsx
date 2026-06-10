@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Typography, Card, Row, Col, Table, Tag, Button, Statistic, Empty, Space, App, Tooltip, Segmented, Modal, Input, Upload,
+  Typography, Card, Row, Col, Table, Tag, Button, Statistic, Empty, Space, App, Tooltip, Segmented, Modal, Input, Upload, Radio, Spin,
 } from "antd";
 import {
   PlayCircleOutlined, PauseCircleOutlined, CheckCircleOutlined,
   ClockCircleOutlined, ReloadOutlined, FireOutlined, LineChartOutlined,
   LeftOutlined, RightOutlined, DownOutlined, UpOutlined,
-  PaperClipOutlined, DeleteOutlined,
+  PaperClipOutlined, DeleteOutlined, FileTextOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { type Dayjs } from "dayjs";
@@ -16,6 +16,12 @@ import isoWeek from "dayjs/plugin/isoWeek";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import { uploadToR2 } from "@/lib/r2-client";
+import { MOTIVOS_PAUSA, MOTIVO_CAMBIO_TAREA } from "@/lib/motivos-pausa";
+import dynamic from "next/dynamic";
+
+// Formulario de evaluación en diferido: es un componente grande y solo se usa
+// si el técnico abre "Ver hoja de evaluación" (solo lectura).
+const EvaluacionFormulario = dynamic(() => import("@/components/modules/evaluacion/EvaluacionFormulario"), { ssr: false });
 import TareaAdjuntosLista from "@/components/TareaAdjuntosLista";
 
 // Tipos de archivo aceptados al pausar/finalizar (fotos + documentos).
@@ -57,6 +63,9 @@ interface TareaPlan {
   comentario: string | null;      // comentario del planner → técnico
   observaciones: string | null;   // observaciones de ejecución del técnico
   orden_trabajo: OTLite | null;
+  // Hoja de evaluación APROBADA de la OT (si aplica): el técnico puede verla
+  // en solo lectura. null = sin OT, sin hoja, o la hoja no está aprobada.
+  evaluacion_aprobada_id?: number | null;
   // Estado del técnico logueado en esta tarea (derivado de sus sesiones).
   // Independiente del estado global de la tarea (que es multi-técnico).
   miEstado?: "sin_empezar" | "en_proceso" | "pausado" | "realizado";
@@ -77,6 +86,21 @@ interface SesionEnCurso {
   operacion: string;
   horas_estimadas: number;
   horas_reales_previas: number;
+  es_horas_extras?: boolean;
+}
+
+// ¿"Ahora" cuenta para el cronómetro? Ventana de conteo 07:00–20:00 L–V (más
+// ancha que la jornada: los minutos antes de las 8 / después de las 18 corren
+// como hora normal). Durante el almuerzo (12:30–13:30) el tick se congela: si
+// el técnico trabaja de corrido esa hora se descuenta al guardar; si pausa
+// (almuerzo corrido de horario), el guardado le devuelve lo trabajado.
+function enVentanaConteo(d: Date): boolean {
+  const dow = d.getDay();
+  if (dow === 0 || dow === 6) return false;
+  const min = d.getHours() * 60 + d.getMinutes();
+  if (min < 7 * 60 || min >= 20 * 60) return false;
+  if (min >= 12 * 60 + 30 && min < 13 * 60 + 30) return false;
+  return true;
 }
 interface Rendimiento {
   totalProgramadas: number;
@@ -182,23 +206,31 @@ export default function TecnicoPanel() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Tick del cronómetro cada segundo si hay sesión en curso.
+  // Tick del cronómetro cada segundo si hay sesión en curso. Solo avanza en
+  // tiempo HÁBIL (se congela en el almuerzo y fuera de jornada — igual que las
+  // horas reales que se guardan), salvo tareas de horas extra.
   useEffect(() => {
     if (!data?.sesionEnCurso) return;
-    const handle = window.setInterval(() => setSecondsTick((s) => s + 1), 1000);
+    const esHE = !!data.sesionEnCurso.es_horas_extras;
+    const handle = window.setInterval(() => {
+      if (esHE || enVentanaConteo(new Date())) setSecondsTick((s) => s + 1);
+    }, 1000);
     return () => window.clearInterval(handle);
   }, [data?.sesionEnCurso]);
 
   // Reset del tick cuando cambia la sesión.
   useEffect(() => { setSecondsTick(0); }, [data?.sesionEnCurso?.sesion_id]);
 
-  async function accion(taskId: number, accion: "iniciar" | "pausar" | "finalizar", observaciones?: string): Promise<boolean> {
+  async function accion(taskId: number, accion: "iniciar" | "pausar" | "finalizar", observaciones?: string, motivo?: string): Promise<boolean> {
     setAccionLoading(taskId);
     try {
       const r = await fetch(`/api/planificacion/${taskId}/${accion}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(observaciones ? { observaciones } : {}),
+        body: JSON.stringify({
+          ...(observaciones ? { observaciones } : {}),
+          ...(motivo ? { motivo } : {}),
+        }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.error ?? `Error al ${accion}`);
@@ -227,7 +259,9 @@ export default function TecnicoPanel() {
         cancelText: "Cancelar",
         okButtonProps: { danger: true },
         onOk: async () => {
-          const ok = await accion(enCurso.planificacion_ot_id, "pausar");
+          // Motivo automático: pausó para arrancar otra tarea (no pasa por el
+          // modal de motivos).
+          const ok = await accion(enCurso.planificacion_ot_id, "pausar", undefined, MOTIVO_CAMBIO_TAREA.codigo);
           if (ok) await accion(r.id, "iniciar");
         },
       });
@@ -236,14 +270,58 @@ export default function TecnicoPanel() {
     accion(r.id, "iniciar");
   }
 
+  // ── Ver hoja de evaluación de la OT (solo lectura, solo APROBADAS) ──
+  interface EvalView {
+    id: number;
+    modelo_evaluacion: string;
+    sistema_medicion: string;
+    datos_formulario: Record<string, unknown>;
+    fecha_evaluacion: string | null;
+    evaluado_por: string | null;
+    supervisor: string | null;
+    resultado_general: string | null;
+    recomendaciones_general: string | null;
+    estado: string;
+    orden_trabajo?: { ot: number | null; np: string | null; descripcion: string | null; cod_rep_flota: string | null } | null;
+  }
+  const [evalOpen, setEvalOpen] = useState(false);
+  const [evalLoading, setEvalLoading] = useState(false);
+  const [evalData, setEvalData] = useState<EvalView | null>(null);
+  async function abrirEvaluacion(evaluacionId: number) {
+    setEvalOpen(true);
+    setEvalLoading(true);
+    setEvalData(null);
+    try {
+      const res = await fetch(`/api/evaluaciones/${evaluacionId}`);
+      const j = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(j?.error ?? "Error al cargar la evaluación");
+      // Defensa: el panel solo ofrece hojas aprobadas, pero igual validamos acá.
+      if (j?.data?.estado !== "APROBADA") {
+        message.info("La hoja de evaluación todavía no está aprobada.");
+        setEvalOpen(false);
+        return;
+      }
+      setEvalData(j.data as EvalView);
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "Error al cargar la evaluación");
+      setEvalOpen(false);
+    } finally {
+      setEvalLoading(false);
+    }
+  }
+
   // Modal para que el técnico deje observaciones + adjunte archivos/fotos al pausar/finalizar.
   type AdjuntoObs = { id: number; nombre_archivo: string; r2_key: string; tipo_mime: string };
   const [obsModal, setObsModal] = useState<{ taskId: number; accion: "pausar" | "finalizar" } | null>(null);
   const [obsText, setObsText] = useState("");
+  // Motivo categorizado de la pausa — OBLIGATORIO al pausar (es lo que vuelve
+  // agregable el "por qué se paró": apoyo, montacarga, falta material, etc.).
+  const [obsMotivo, setObsMotivo] = useState<string | null>(null);
   const [obsAdjuntos, setObsAdjuntos] = useState<AdjuntoObs[]>([]);
   const [obsSubiendo, setObsSubiendo] = useState(false);
   function abrirObs(taskId: number, acc: "pausar" | "finalizar") {
     setObsText("");
+    setObsMotivo(null);
     setObsAdjuntos([]);
     setObsModal({ taskId, accion: acc });
   }
@@ -290,8 +368,12 @@ export default function TecnicoPanel() {
   async function confirmarObs() {
     if (!obsModal) return;
     const { taskId, accion: acc } = obsModal;
+    if (acc === "pausar" && !obsMotivo) {
+      message.warning("Elegí el motivo de la pausa.");
+      return;
+    }
     cerrarObs();
-    await accion(taskId, acc, obsText.trim() || undefined);
+    await accion(taskId, acc, obsText.trim() || undefined, acc === "pausar" ? (obsMotivo ?? undefined) : undefined);
   }
 
   const sesionActivaSegundos = useMemo(() => {
@@ -443,6 +525,18 @@ export default function TecnicoPanel() {
             <div style={{ fontSize: 12, whiteSpace: "pre-wrap" }}>{r.observaciones}</div>
           </div>
         )}
+        {/* Hoja de evaluación de la OT (si aplica y está APROBADA): solo lectura. */}
+        {r.evaluacion_aprobada_id != null && (
+          <div style={{ marginTop: 10 }}>
+            <Button
+              size="small"
+              icon={<FileTextOutlined />}
+              onClick={() => abrirEvaluacion(r.evaluacion_aprobada_id!)}
+            >
+              Ver hoja de evaluación
+            </Button>
+          </div>
+        )}
         <div style={{ marginTop: 10 }}>
           <TareaAdjuntosLista taskId={r.id} />
         </div>
@@ -586,6 +680,13 @@ export default function TecnicoPanel() {
                 Acumulado previo: {data.sesionEnCurso.horas_reales_previas.toFixed(2)}h /
                 estimado {data.sesionEnCurso.horas_estimadas.toFixed(1)}h
               </Text>
+              {!data.sesionEnCurso.es_horas_extras && (
+                <div>
+                  <Text type="secondary" style={{ fontSize: 11 }}>
+                    🍽 Si trabajás de corrido, el almuerzo (12:30–13:30) se descuenta solo — no hace falta pausar.
+                  </Text>
+                </div>
+              )}
             </Col>
             <Col xs={24} sm={12} md="auto">
               <Space orientation={isMobile ? "horizontal" : "vertical"} style={{ width: "100%" }}>
@@ -697,6 +798,67 @@ export default function TecnicoPanel() {
         </Col>
       </Row>
 
+      {/* Hoja de evaluación de la OT — SOLO LECTURA, solo hojas APROBADAS. */}
+      <Modal
+        open={evalOpen}
+        onCancel={() => { setEvalOpen(false); setEvalData(null); }}
+        footer={<Button onClick={() => { setEvalOpen(false); setEvalData(null); }}>Cerrar</Button>}
+        width={modalWidth(screens, 1100)}
+        title={evalData?.orden_trabajo?.ot ? `Hoja de evaluación — OT ${evalData.orden_trabajo.ot}` : "Hoja de evaluación"}
+        destroyOnHidden
+      >
+        {evalLoading || !evalData ? (
+          <div style={{ textAlign: "center", padding: 48 }}><Spin /></div>
+        ) : (
+          <div>
+            <Row gutter={[12, 8]} style={{ marginBottom: 12 }}>
+              <Col xs={12} md={6}>
+                <Text type="secondary" style={{ fontSize: 11, display: "block" }}>Evaluado por</Text>
+                <div style={{ fontSize: 12 }}>{evalData.evaluado_por ?? "—"}</div>
+              </Col>
+              <Col xs={12} md={6}>
+                <Text type="secondary" style={{ fontSize: 11, display: "block" }}>Fecha evaluación</Text>
+                <div style={{ fontSize: 12 }}>{evalData.fecha_evaluacion ? dayjs(String(evalData.fecha_evaluacion).slice(0, 10)).format("DD/MM/YYYY") : "—"}</div>
+              </Col>
+              <Col xs={12} md={6}>
+                <Text type="secondary" style={{ fontSize: 11, display: "block" }}>Supervisor</Text>
+                <div style={{ fontSize: 12 }}>{evalData.supervisor ?? "—"}</div>
+              </Col>
+              <Col xs={12} md={6}>
+                <Text type="secondary" style={{ fontSize: 11, display: "block" }}>Estado</Text>
+                <Tag color="success" style={{ margin: 0 }}>Aprobada</Tag>
+              </Col>
+            </Row>
+            <EvaluacionFormulario
+              modelo={evalData.modelo_evaluacion}
+              sistemaMedicion={evalData.sistema_medicion}
+              datos={evalData.datos_formulario ?? {}}
+              onChange={() => { /* solo lectura */ }}
+              readonly
+              np={evalData.orden_trabajo?.np ?? null}
+              descripcionCilindro={evalData.orden_trabajo?.descripcion ?? null}
+              modeloCilindro={evalData.orden_trabajo?.cod_rep_flota ?? null}
+            />
+            {(evalData.resultado_general || evalData.recomendaciones_general) && (
+              <Card size="small" style={{ marginTop: 12 }} title="Resultado y recomendaciones">
+                {evalData.resultado_general && (
+                  <div style={{ marginBottom: 8 }}>
+                    <Text type="secondary" style={{ fontSize: 11, display: "block" }}>Resultado general</Text>
+                    <div style={{ fontSize: 12, whiteSpace: "pre-wrap" }}>{evalData.resultado_general}</div>
+                  </div>
+                )}
+                {evalData.recomendaciones_general && (
+                  <div>
+                    <Text type="secondary" style={{ fontSize: 11, display: "block" }}>Recomendaciones</Text>
+                    <div style={{ fontSize: 12, whiteSpace: "pre-wrap" }}>{evalData.recomendaciones_general}</div>
+                  </div>
+                )}
+              </Card>
+            )}
+          </div>
+        )}
+      </Modal>
+
       {/* Observaciones del técnico al pausar / finalizar (opcional). */}
       <Modal
         open={!!obsModal}
@@ -706,9 +868,35 @@ export default function TecnicoPanel() {
         cancelText="Cancelar"
         onOk={confirmarObs}
         onCancel={cerrarObs}
-        okButtonProps={{ disabled: obsSubiendo }}
+        okButtonProps={{ disabled: obsSubiendo || (obsModal?.accion === "pausar" && !obsMotivo) }}
         confirmLoading={obsModal ? accionLoading === obsModal.taskId : false}
       >
+        {/* Motivo de la pausa (obligatorio): convierte el "por qué se paró" en
+            data agregable para el planner (apoyos, montacarga, falta material…). */}
+        {obsModal?.accion === "pausar" && (
+          <div style={{ marginBottom: 12 }}>
+            <Text strong style={{ fontSize: 13 }}>¿Por qué pausás? <Text type="danger">*</Text></Text>
+            <Radio.Group
+              value={obsMotivo}
+              onChange={(e) => setObsMotivo(e.target.value)}
+              style={{ width: "100%", marginTop: 6 }}
+            >
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                {MOTIVOS_PAUSA.map((m) => (
+                  <Radio key={m.codigo} value={m.codigo} style={{ fontSize: 13 }}>
+                    {m.label}
+                  </Radio>
+                ))}
+              </div>
+            </Radio.Group>
+            {obsMotivo === "ALMUERZO" && (
+              <Text type="secondary" style={{ fontSize: 11, display: "block", marginTop: 4 }}>
+                🍽 Dato: no hace falta pausar por almuerzo — se descuenta 1h sola, aunque ese día
+                el almuerzo se corra de horario. Pausá solo si tu almuerzo dura más o menos de 1 hora.
+              </Text>
+            )}
+          </div>
+        )}
         <Text type="secondary" style={{ fontSize: 12 }}>
           Podés dejar una observación de lo que hiciste (opcional). Se guarda en la tarea.
         </Text>

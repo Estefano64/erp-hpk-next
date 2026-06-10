@@ -42,6 +42,7 @@ import {
   dentroDeRango,
   useColumnasRedimensionables,
 } from "@/lib/tables";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import dayjs from "dayjs";
 
 import { formatDateOnly } from "@/lib/dates";
@@ -294,9 +295,9 @@ export default function ContratosPage() {
   return (
     <div>
       {contextHolder}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
         <Title level={3} style={{ margin: 0 }}>Contratos</Title>
-        <Space>
+        <Space wrap>
           <ColumnasToggleButton<ContratoRecord>
             columns={columns}
             ocultas={ocultas}
@@ -304,6 +305,25 @@ export default function ContratosPage() {
             obligatorias={["__num", "codigo", "acciones"]}
           />
           <Button onClick={resetAnchos}>Restablecer anchos</Button>
+          <ExportarExcelButton<ContratoRecord>
+            endpoint="/api/contratos"
+            filename="Contratos"
+            // Respeta los filtros server-side activos (búsqueda + cliente).
+            endpointParams={{ search, cliente: filterCliente }}
+            tablaLayout={{ ocultas }}
+            columns={[
+              { key: "codigo", label: "Código", value: (r) => r.codigo },
+              { key: "cliente_id", label: "Cliente", value: (r) => r.cliente?.nombre_comercial ?? r.cliente?.razon_social ?? "" },
+              {
+                key: "cod_rep_id", label: "Cód. Reparable",
+                value: (r) => r.codigo_reparacion ? `${r.codigo_reparacion.codigo} - ${r.codigo_reparacion.descripcion}` : "",
+              },
+              { key: "fecha_inicio", label: "Inicio", value: (r) => formatDateOnly(r.fecha_inicio) },
+              { key: "fecha_termino", label: "Término", value: (r) => formatDateOnly(r.fecha_termino) },
+              { key: "dias_reparacion", label: "Días Rep.", value: (r) => r.dias_reparacion },
+              { key: "precio", label: "Precio", value: (r) => Number(r.precio) },
+            ]}
+          />
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nuevo</Button>
         </Space>
       </div>
@@ -377,12 +397,12 @@ export default function ContratosPage() {
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           <Row gutter={16}>
-            <Col span={8}>
+            <Col xs={24} sm={8}>
               <Form.Item name="codigo" label="Código" rules={[{ required: true, message: "Requerido" }]}>
                 <Input />
               </Form.Item>
             </Col>
-            <Col span={16}>
+            <Col xs={24} sm={16}>
               <Form.Item name="cliente_id" label="Cliente" rules={[{ required: true, message: "Requerido" }]}>
                 <Select
                   showSearch
@@ -407,22 +427,22 @@ export default function ContratosPage() {
                 />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col xs={12} sm={8}>
               <Form.Item name="fecha_inicio" label="Fecha Inicio" rules={[{ required: true, message: "Requerido" }]}>
                 <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col xs={12} sm={8}>
               <Form.Item name="fecha_termino" label="Fecha Término" rules={[{ required: true, message: "Requerido" }]}>
                 <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col xs={12} sm={8}>
               <Form.Item name="dias_reparacion" label="Días Reparación" rules={[{ required: true, message: "Requerido" }]}>
                 <InputNumber style={{ width: "100%" }} min={1} />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col xs={12} sm={8}>
               <Form.Item name="precio" label="Precio (USD)" rules={[{ required: true, message: "Requerido" }]}>
                 <InputNumber style={{ width: "100%" }} min={0} precision={2} />
               </Form.Item>

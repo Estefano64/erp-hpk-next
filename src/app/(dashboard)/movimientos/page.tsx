@@ -41,7 +41,6 @@ import {
   FileDoneOutlined,
   InfoCircleOutlined,
   SwapOutlined,
-  FileExcelOutlined,
   UploadOutlined,
   DeleteOutlined,
   PaperClipOutlined,
@@ -64,6 +63,7 @@ import { useResponsive, modalWidth } from "@/lib/responsive";
 import dayjs, { Dayjs } from "dayjs";
 
 import { formatDateOnly } from "@/lib/dates";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import { uploadToR2 } from "@/lib/r2-client";
 import { R2FileLink } from "@/components/R2FileLink";
 const { Title, Text } = Typography;
@@ -230,36 +230,6 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
   // sus filtros de columna sobre el nuevo data y vuelve a llamar onChange.
   useEffect(() => { setVistaActual(null); }, [data, search]);
 
-  const exportarMovExcel = async () => {
-    try {
-      const XLSX = await import("xlsx");
-      const dataset = vistaActual ?? filtered;
-      if (dataset.length === 0) {
-        message.warning("No hay datos para exportar con los filtros actuales.");
-        return;
-      }
-      const rows = dataset.map((m) => ({
-        Fecha: formatDateOnly(m.fecha_movimiento),
-        Tipo: m.tipo_movimiento,
-        Código: m.material_codigo ?? "",
-        Material: m.material_nombre ?? "",
-        Cantidad: Number(m.cantidad),
-        UM: m.unidad_medida ?? "",
-        "Stock Final": m.stock_actual ?? "",
-        "Documento Ref.": m.documento_referencia ?? "",
-        Usuario: m.usuario,
-        Observación: m.observacion ?? "",
-      }));
-      const ws = XLSX.utils.json_to_sheet(rows);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Movimientos");
-      XLSX.writeFile(wb, `Movimientos-${dayjs().format("YYYYMMDD-HHmm")}.xlsx`);
-      message.success("Excel descargado");
-    } catch (e) {
-      message.error("Error al exportar Excel");
-    }
-  };
-
   const columns: ColumnsType<Movimiento> = [
     numeracionColumn<Movimiento>(),
     {
@@ -422,19 +392,52 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
             </Button>
           </Col>
           <Col xs={12} sm={6} md={4}>
-            <Button
-              icon={<FileExcelOutlined />}
-              onClick={exportarMovExcel}
-              block
-              style={{ background: "#1d6f42", color: brand.white, borderColor: "#1d6f42" }}
-            >
-              Descargar Excel
-            </Button>
+            <ExportarExcelButton<Movimiento>
+              endpoint="/api/movimientos"
+              // El endpoint no pagina (devuelve hasta 500 de una): limit alto
+              // para que el fetch corte en la primera página.
+              limit={50000}
+              filename="Movimientos"
+              sheetName="Movimientos"
+              // Respeta búsqueda + tipo/rango + filtros de columna de la tabla.
+              currentRows={vistaActual ?? filtered}
+              tablaLayout={{ ocultas }}
+              // Filtros del modal (cuando NO se usan los de la tabla): el
+              // endpoint acepta tipo/desde/hasta como query params.
+              dateFilter={{ paramNameDesde: "desde", paramNameHasta: "hasta" }}
+              categoryFilters={[{
+                key: "tipo",
+                label: "Tipo de movimiento",
+                // Client-side: el endpoint solo acepta UN tipo exacto (no CSV),
+                // así que el multi-select se aplica sobre lo descargado.
+                predicate: (r, sel) => sel.includes(r.tipo_movimiento),
+                options: [
+                  { value: "ENTRADA", label: "Entrada" },
+                  { value: "SALIDA", label: "Salida" },
+                  { value: "AJUSTE", label: "Ajuste" },
+                ],
+              }]}
+              columns={[
+                { key: "fecha_movimiento", label: "Fecha", value: (r) => formatDateOnly(r.fecha_movimiento) },
+                { key: "tipo_movimiento", label: "Tipo", value: (r) => r.tipo_movimiento },
+                { key: "material_codigo", label: "Código", value: (r) => r.material_codigo ?? "" },
+                { key: "material_nombre", label: "Material", value: (r) => r.material_nombre ?? "" },
+                { key: "cantidad", label: "Cantidad", value: (r) => Number(r.cantidad) },
+                { key: "unidad_medida", label: "UM", value: (r) => r.unidad_medida ?? "" },
+                { key: "precio_unitario", label: "Precio Unit.", value: (r) => r.precio_unitario ?? "" },
+                { key: "costo_total", label: "Costo Total", value: (r) => r.costo_total ?? "" },
+                { key: "moneda", label: "Moneda", value: (r) => r.moneda ?? "" },
+                { key: "stock_actual", label: "Stock Final", value: (r) => r.stock_actual ?? "" },
+                { key: "documento_referencia", label: "Documento Ref.", value: (r) => r.documento_referencia ?? "" },
+                { key: "usuario", label: "Usuario", value: (r) => r.usuario },
+                { key: "observacion", label: "Observación", value: (r) => r.observacion ?? "" },
+              ]}
+            />
           </Col>
         </Row>
       </Card>
 
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
         <ColumnasToggleButton<Movimiento>
           columns={columns}
           ocultas={ocultas}
@@ -905,7 +908,7 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
       )}
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
-        <Space>
+        <Space wrap>
           <RangoFechasFiltro
             label="Fecha entrega esperada"
             value={rangoEntrega}
@@ -932,7 +935,7 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
             Recibir seleccionados ({selectedItemIds.length})
           </Button>
         </Space>
-        <Space>
+        <Space wrap>
           <ColumnasToggleButton<ItemFila>
             columns={columnasItems}
             ocultas={ingresoOcultas}
@@ -990,10 +993,10 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
         {poSeleccionada && (
           <>
             <Card size="small" style={{ background: brand.bgPage, marginBottom: 12 }}>
-              <Row gutter={16}>
-                <Col span={8}><Text type="secondary">Proveedor:</Text> <b>{poSeleccionada.proveedor_nombre}</b></Col>
-                <Col span={8}><Text type="secondary">Almacén destino:</Text> <b>{poSeleccionada.almacen_nombre}</b></Col>
-                <Col span={8}><Text type="secondary">Total OC:</Text> <b style={{ color: brand.navy }}>{poSeleccionada.moneda} {Number(poSeleccionada.total).toFixed(2)}</b></Col>
+              <Row gutter={[16, 4]}>
+                <Col xs={24} sm={8}><Text type="secondary">Proveedor:</Text> <b>{poSeleccionada.proveedor_nombre}</b></Col>
+                <Col xs={24} sm={8}><Text type="secondary">Almacén destino:</Text> <b>{poSeleccionada.almacen_nombre}</b></Col>
+                <Col xs={24} sm={8}><Text type="secondary">Total OC:</Text> <b style={{ color: brand.navy }}>{poSeleccionada.moneda} {Number(poSeleccionada.total).toFixed(2)}</b></Col>
               </Row>
             </Card>
 

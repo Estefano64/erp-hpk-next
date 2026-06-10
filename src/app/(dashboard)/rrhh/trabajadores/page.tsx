@@ -20,9 +20,10 @@ import { formatDateOnly } from "@/lib/dates";
 import {
   numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE,
   useColumnasOcultas, ColumnasToggleButton, visibleColumns, filtroPorColumna,
-  useColumnasRedimensionables,
+  useColumnasRedimensionables, useTablaFiltrada,
 } from "@/lib/tables";
-import { useResponsive } from "@/lib/responsive";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 
 dayjs.extend(isoWeek);
 
@@ -167,7 +168,7 @@ function eficienciaColorVista(pct: number | null): string {
 
 export default function TrabajadoresPage() {
   const { message, modal } = App.useApp();
-  const { isMobile } = useResponsive();
+  const { isMobile, screens } = useResponsive();
   const [rows, setRows] = useState<Trabajador[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -177,6 +178,9 @@ export default function TrabajadoresPage() {
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
   const { ocultas, setOcultas } = useColumnasOcultas("trabajadores-list-cols-v1");
   const [equipos, setEquipos] = useState<EquipoOpt[]>([]);
+  // Filas visibles tras los filtros de columna de la tabla — `rows` ya viene
+  // filtrado server-side por búsqueda/área/activos, así que esto captura todo.
+  const { filtradas, onChange: onTablaChange } = useTablaFiltrada(rows);
 
   // Modal crear/editar
   const [modalOpen, setModalOpen] = useState(false);
@@ -717,12 +721,12 @@ export default function TrabajadoresPage() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
         <Title level={3} style={{ margin: 0 }}>
           <TeamOutlined style={{ marginRight: 8 }} />
           Trabajadores
         </Title>
-        <Space>
+        <Space wrap>
           <Tooltip title="Ver lo que un técnico vería en su sesión (por DNI). Solo lectura.">
             <Button icon={<EyeOutlined />} onClick={() => abrirVista()}>Ver vista de técnico</Button>
           </Tooltip>
@@ -761,6 +765,39 @@ export default function TrabajadoresPage() {
             setOcultas={setOcultas}
             obligatorias={["__num", "nombre", "acciones"]}
           />
+          <ExportarExcelButton<Trabajador>
+            endpoint="/api/trabajadores"
+            filename="Trabajadores"
+            currentRows={filtradas}
+            tablaLayout={{ ocultas }}
+            columns={[
+              { key: "nombre", label: "Nombre", value: (r) => r.nombre },
+              { key: "dni", label: "DNI", value: (r) => r.dni ?? "" },
+              { key: "area", label: "Área", value: (r) => r.area },
+              { key: "puesto", label: "Cargo / Puesto", value: (r) => r.puesto },
+              {
+                key: "equipo", label: "Máquina asignada",
+                value: (r) => r.equipo ? `${r.equipo.descripcion} — ${r.equipo.codigo}` : "",
+              },
+              {
+                key: "costo_hh", label: "Costo H.H.",
+                value: (r) => r.costo_hora_hombre != null ? Number(r.costo_hora_hombre) : "",
+              },
+              {
+                key: "costo_he", label: "Costo H.E.",
+                value: (r) => r.costo_hora_extra != null ? Number(r.costo_hora_extra) : "",
+              },
+              {
+                key: "cuenta", label: "Cuenta",
+                value: (r) => {
+                  const u = usuariosByTrabajador[r.trabajador_id];
+                  if (!u) return "Sin cuenta";
+                  return `${u.codigoEmpleado}${u.roles.length > 0 ? ` (${u.roles.join(", ")})` : ""}`;
+                },
+              },
+              { key: "activo", label: "Activo", value: (r) => r.activo ? "Sí" : "No" },
+            ]}
+          />
         </Space>
       </Card>
 
@@ -772,6 +809,7 @@ export default function TrabajadoresPage() {
           dataSource={rows}
           loading={loading}
           size="small"
+          onChange={onTablaChange}
           pagination={paginacionEstandar({
             current: page, pageSize, total: rows.length,
             onChange: (p, s) => { setPage(p); setPageSize(s); },
@@ -790,7 +828,7 @@ export default function TrabajadoresPage() {
         onOk={handleSave}
         confirmLoading={saving}
         okText="Guardar" cancelText="Cancelar"
-        width={620}
+        width={modalWidth(screens, 620)}
         destroyOnHidden
       >
         <Form form={form} layout="vertical">
@@ -850,10 +888,10 @@ export default function TrabajadoresPage() {
         open={cuentaModalOpen}
         onCancel={() => setCuentaModalOpen(false)}
         confirmLoading={cuentaSaving}
-        width={560}
+        width={modalWidth(screens, 560)}
         destroyOnHidden
         footer={
-          <Space>
+          <Space wrap>
             {cuentaUsuario && (
               <Button danger icon={<DisconnectOutlined />} onClick={desvincularCuenta} loading={cuentaSaving}>
                 Desvincular

@@ -28,11 +28,13 @@ import customParseFormat from "dayjs/plugin/customParseFormat";
 import { brand } from "@/lib/theme";
 import { calcularFinEstimado, calcularHH } from "@/lib/planification-hours";
 import { splitRecursos, joinRecursos } from "@/lib/recursos";
+import { motivoPausa } from "@/lib/motivos-pausa";
 import { useTabSync } from "@/lib/useTabSync";
 import { useSession } from "next-auth/react";
 import { useEditLock } from "@/lib/useEditLock";
 
 import { formatDateOnlyShort } from "@/lib/dates";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 dayjs.extend(isoWeek);
 // Necesario para que dayjs(text, format, strict) acepte nuestros formatos cortos
 // como "D/M HH:mm", "D-M", etc. Sin esto, los parseos strict fallan silenciosamente.
@@ -241,7 +243,10 @@ export default function PlanificacionPage() {
   const [search, setSearch] = useState("");
   const [filterSemana, setFilterSemana] = useState<string | undefined>();
   const [filterEstado, setFilterEstado] = useState<string | undefined>();
-  const [filterMacroEstado, setFilterMacroEstado] = useState<string | undefined>();
+  // Por defecto solo se cargan las tareas con estado general "Abierto" (activas:
+  // sin terminar ni anular) — es lo que el planner trabaja a diario. Para ver
+  // cerradas/no ejecutadas se cambia el filtro o se limpia.
+  const [filterMacroEstado, setFilterMacroEstado] = useState<string | undefined>("abierto");
   const [filterTecnico, setFilterTecnico] = useState<string | undefined>();
   const [filterMaquina, setFilterMaquina] = useState<string | undefined>();
 
@@ -258,7 +263,7 @@ export default function PlanificacionPage() {
   // Modal de historial de ejecución
   const [histOpen, setHistOpen] = useState(false);
   const [histLoading, setHistLoading] = useState(false);
-  const [histData, setHistData] = useState<{ es_correctivo?: boolean; observaciones?: string | null; sesiones?: { id: number; tecnico: string; inicio: string; fin: string | null; cierre: string | null; comentario: string | null }[] } | null>(null);
+  const [histData, setHistData] = useState<{ es_correctivo?: boolean; observaciones?: string | null; sesiones?: { id: number; tecnico: string; inicio: string; fin: string | null; cierre: string | null; comentario: string | null; motivo_pausa?: string | null }[] } | null>(null);
   const [histTarea, setHistTarea] = useState<PlanRow | null>(null);
   const [savingId, setSavingId] = useState<number | null>(null);
   const [autoSave, setAutoSave] = useState(true);
@@ -1401,24 +1406,64 @@ export default function PlanificacionPage() {
       },
     },
     {
+      // REGULARIZACIÓN: editable si la tarea tiene ejecución (el técnico marcó
+      // tarde / olvidó el cronómetro — "empecé 16:30"). Mismo criterio que el
+      // modal Detalle del Gantt; el server solo acepta campos de ejecución real.
       key: "fecha_inicio_real",
-      title: "Inicio Real", dataIndex: "fecha_inicio_real", width: 110,
+      title: "Inicio Real", dataIndex: "fecha_inicio_real", width: 140,
       sorter: (a, b) => (a.fecha_inicio_real || "").localeCompare(b.fecha_inicio_real || ""),
       filters: inicioRealValores, filterSearch: true,
       onFilter: (value, r) => r.fecha_inicio_real === value,
-      render: (v: string | null) => v
-        ? <span style={{ fontSize: 11, color: brand.success }}>{dayjs(v).format("DD/MM HH:mm")}</span>
-        : <span style={{ color: brand.textSecondary }}>—</span>,
+      render: (v: string | null, r) => {
+        const empezada = ["en_proceso", "pausado", "realizado"].includes(r.estado ?? "");
+        if (empezada && v) {
+          return (
+            <Tooltip title="Regularizar inicio real (técnico que marcó tarde)">
+              <DatePicker
+                size="small"
+                showTime={{ format: "HH:mm" }}
+                format="DD/MM HH:mm"
+                allowClear={false}
+                value={dayjs(v)}
+                style={{ width: "100%" }}
+                onChange={(d: Dayjs | null) => d && updateField(r.id, { fecha_inicio_real: d.toISOString() })}
+              />
+            </Tooltip>
+          );
+        }
+        return v
+          ? <span style={{ fontSize: 11, color: brand.success }}>{dayjs(v).format("DD/MM HH:mm")}</span>
+          : <span style={{ color: brand.textSecondary }}>—</span>;
+      },
     },
     {
+      // Fin real: regularizable solo cuando la tarea ya está REALIZADA (en
+      // curso/pausada lo maneja el cronómetro del técnico).
       key: "fecha_fin_real",
-      title: "Fin Real", dataIndex: "fecha_fin_real", width: 110,
+      title: "Fin Real", dataIndex: "fecha_fin_real", width: 140,
       sorter: (a, b) => (a.fecha_fin_real || "").localeCompare(b.fecha_fin_real || ""),
       filters: finRealValores, filterSearch: true,
       onFilter: (value, r) => r.fecha_fin_real === value,
-      render: (v: string | null) => v
-        ? <span style={{ fontSize: 11, color: brand.success }}>{dayjs(v).format("DD/MM HH:mm")}</span>
-        : <span style={{ color: brand.textSecondary }}>—</span>,
+      render: (v: string | null, r) => {
+        if (r.estado === "realizado" && v) {
+          return (
+            <Tooltip title="Regularizar fin real (técnico que olvidó finalizar a tiempo)">
+              <DatePicker
+                size="small"
+                showTime={{ format: "HH:mm" }}
+                format="DD/MM HH:mm"
+                allowClear={false}
+                value={dayjs(v)}
+                style={{ width: "100%" }}
+                onChange={(d: Dayjs | null) => d && updateField(r.id, { fecha_fin_real: d.toISOString() })}
+              />
+            </Tooltip>
+          );
+        }
+        return v
+          ? <span style={{ fontSize: 11, color: brand.success }}>{dayjs(v).format("DD/MM HH:mm")}</span>
+          : <span style={{ color: brand.textSecondary }}>—</span>;
+      },
     },
     {
       // Duración REAL = horas trabajadas guardadas en la tarea (descuenta almuerzo
@@ -1606,6 +1651,52 @@ export default function PlanificacionPage() {
             obligatorias={["__num", "ot", "descripcion"]}
           />
           <Button onClick={resetAnchos}>Restablecer anchos</Button>
+          {/* Exporta respetando los filtros server-side activos (búsqueda, semana,
+              estado general/puntual, operario, equipo): baja TODO lo que los
+              cumple, no solo la página visible. */}
+          <ExportarExcelButton<PlanRow>
+            endpoint="/api/planificacion"
+            filename="Planificacion"
+            endpointParams={{
+              search,
+              semana: filterSemana,
+              estado: filterEstado,
+              estados: filterMacroEstado ? (MACRO_ESTADO[filterMacroEstado] ?? []).join(",") : undefined,
+              tecnico: filterTecnico,
+              maquina: filterMaquina,
+            }}
+            tablaLayout={{ ocultas }}
+            columns={[
+              { key: "ot", label: "OT", value: (r) => r.orden_trabajo?.ot ?? "" },
+              { key: "cliente", label: "Cliente", value: (r) => r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "" },
+              { key: "flota", label: "Flota", value: (r) => r.orden_trabajo?.codigo_reparacion?.flota?.codigo ?? r.orden_trabajo?.cod_rep_flota ?? "" },
+              { key: "otDesc", label: "Descripción OT", value: (r) => r.orden_trabajo?.descripcion ?? "" },
+              { key: "recep", label: "F. Recepción", value: (r) => r.orden_trabajo?.fecha_recepcion ? formatDateOnlyShort(r.orden_trabajo.fecha_recepcion) : "" },
+              { key: "prior", label: "Prioridad", value: (r) => r.orden_trabajo?.prioridad_atencion?.nombre ?? "" },
+              { key: "taller", label: "Taller Status", value: (r) => r.orden_trabajo?.taller_status?.nombre ?? "" },
+              { key: "orden", label: "N°", value: (r) => r.orden },
+              { key: "componente", label: "Parte", value: (r) => r.componente },
+              { key: "descripcion", label: "Tarea", value: (r) => `${r.operacion_codigo} — ${r.descripcion}` },
+              { key: "comentario", label: "Comentario", value: (r) => r.comentario ?? "" },
+              { label: "Nota del técnico", value: (r) => r.observaciones ?? "" },
+              { key: "semana", label: "Semana", value: (r) => r.semana_plan ?? "" },
+              { key: "tecnico", label: "Operario", value: (r) => r.tecnico ?? "" },
+              { key: "maquina", label: "Equipo", value: (r) => r.maquina ?? "" },
+              { key: "inicio", label: "Inicio Est.", value: (r) => r.fecha_inicio ? dayjs(r.fecha_inicio).format("DD/MM/YY HH:mm") : "" },
+              { key: "dur", label: "Dur. (hrs)", value: (r) => r.horas_estimadas != null ? Number(r.horas_estimadas) : "" },
+              { key: "he", label: "HE", value: (r) => r.horas_extras ? "Sí" : "No" },
+              { key: "qtyhe", label: "Qty HE", value: (r) => r.horas_extras_qty != null ? Number(r.horas_extras_qty) : "" },
+              { key: "fin", label: "Fin Est.", value: (r) => r.fecha_fin ? dayjs(r.fecha_fin).format("DD/MM/YY HH:mm") : "" },
+              { key: "qty", label: "Qty", value: (r) => r.qty_personal ?? 1 },
+              { key: "hh", label: "HH", value: (r) => calcularHH({ duracionHrs: Number(r.horas_estimadas ?? 0), qtyPersonal: r.qty_personal ?? 1, horasExtras: r.horas_extras ?? false, horasExtrasQty: r.horas_extras_qty != null ? Number(r.horas_extras_qty) : 0 }) },
+              { key: "fecha_inicio_real", label: "Inicio Real", value: (r) => r.fecha_inicio_real ? dayjs(r.fecha_inicio_real).format("DD/MM/YY HH:mm") : "" },
+              { key: "fecha_fin_real", label: "Fin Real", value: (r) => r.fecha_fin_real ? dayjs(r.fecha_fin_real).format("DD/MM/YY HH:mm") : "" },
+              { key: "horas_reales", label: "Dur. Real (hrs)", value: (r) => r.horas_reales != null ? Number(r.horas_reales) : "" },
+              { key: "estado", label: "Estado", value: (r) => estados.find((e) => e.codigo === r.estado)?.nombre ?? r.estado ?? "" },
+              { label: "Correctiva", value: (r) => (r.es_correctivo ? "Sí" : "No"), defaultSelected: false },
+              { label: "Trabajo externo", value: (r) => (r.trabajo_externo ? "Sí" : "No"), defaultSelected: false },
+            ]}
+          />
           <span style={{ fontSize: 12, color: brand.textSecondary }}>
             {total} tareas {savingId ? " · guardando…" : ""}
           </span>
@@ -2017,11 +2108,13 @@ export default function PlanificacionPage() {
                 if (s.fin) {
                   const label = s.cierre === "finalizado" ? "Terminó" : s.cierre === "cancelado" ? "Canceló" : "Pausó";
                   const color = s.cierre === "finalizado" ? "green" : s.cierre === "cancelado" ? "red" : "orange";
+                  const motivo = motivoPausa(s.motivo_pausa);
                   out.push({
                     color,
                     children: (
                       <span>
                         {label} <b>{fmt(s.fin)}</b>
+                        {motivo && <Tag color={motivo.color} style={{ marginLeft: 6, fontSize: 10, lineHeight: "16px" }}>{motivo.label}</Tag>}
                         {s.comentario ? <> — <i>“{s.comentario}”</i></> : ""}
                       </span>
                     ),

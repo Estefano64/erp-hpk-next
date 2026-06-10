@@ -537,7 +537,7 @@ export default function TemplateRequerimientosPage() {
   return (
     <div>
       {contextHolder}
-      <Space style={{ marginBottom: 16 }}>
+      <Space wrap style={{ marginBottom: 16 }}>
         <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/codigos-reparacion")}>Volver</Button>
         <Title level={3} style={{ margin: 0 }}>
           <InboxOutlined style={{ marginRight: 8 }} />
@@ -554,7 +554,7 @@ export default function TemplateRequerimientosPage() {
       />
 
       <Card size="small" style={{ marginBottom: 16 }}>
-        <Row gutter={24} align="middle">
+        <Row gutter={[24, 12]} align="middle">
           <Col flex="auto">
             <div style={{ fontWeight: 500 }}>{codRep.descripcion}</div>
             <Text type="secondary" style={{ fontSize: 12 }}>NP: {codRep.np ?? "-"}</Text>
@@ -666,12 +666,12 @@ export default function TemplateRequerimientosPage() {
           </Form.Item>
 
           <Row gutter={12}>
-            <Col span={8}>
+            <Col xs={12} sm={8}>
               <Form.Item name="requerimiento" label="Cantidad" rules={[{ required: true }]}>
                 <InputNumber min={0.01} step={1} style={{ width: "100%" }} />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col xs={12} sm={8}>
               <Form.Item name="fabricante_codigo" label="Fabricante">
                 <Select
                   showSearch allowClear
@@ -681,7 +681,9 @@ export default function TemplateRequerimientosPage() {
                 />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            {/* Responsive Col (xs/sm) viene de main; label sin "(opcional)"
+                viene de HEAD (decisión del user: quitar opcional de labels). */}
+            <Col xs={12} sm={8}>
               <Form.Item name="precio" label="Precio">
                 <InputNumber min={0} step={0.01} style={{ width: "100%" }} />
               </Form.Item>

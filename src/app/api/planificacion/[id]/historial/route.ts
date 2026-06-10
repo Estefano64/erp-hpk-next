@@ -19,7 +19,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
     const sesiones = await prisma.planificacionOTSesion.findMany({
       where: { planificacion_ot_id: planId },
       orderBy: { inicio: "asc" },
-      select: { id: true, tecnico: true, inicio: true, fin: true, cierre: true, comentario: true },
+      select: { id: true, tecnico: true, inicio: true, fin: true, cierre: true, comentario: true, motivo_pausa: true },
     });
 
     return NextResponse.json({

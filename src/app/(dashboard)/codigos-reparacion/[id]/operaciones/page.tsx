@@ -417,7 +417,7 @@ export default function OperacionesCodRepPage() {
   return (
     <div>
       {contextHolder}
-      <Space style={{ marginBottom: 16 }}>
+      <Space wrap style={{ marginBottom: 16 }}>
         <Button icon={<ArrowLeftOutlined />} onClick={() => router.push("/codigos-reparacion")}>Volver</Button>
         <Typography.Title level={3} style={{ margin: 0 }}>
           Operaciones <Tag color={brand.navy} style={{ marginLeft: 8 }}>{codRep.codigo}</Tag>
@@ -433,7 +433,7 @@ export default function OperacionesCodRepPage() {
       />
 
       <Card size="small" style={{ marginBottom: 16 }}>
-        <Row gutter={24} align="middle">
+        <Row gutter={[24, 12]} align="middle">
           <Col flex="auto">
             <div style={{ fontWeight: 500 }}>{codRep.descripcion}</div>
             <div style={{ fontSize: 12, color: brand.textSecondary }}>NP: {codRep.np ?? "-"}</div>
@@ -513,9 +513,9 @@ export default function OperacionesCodRepPage() {
             <Input.TextArea rows={2} maxLength={200} />
           </Form.Item>
           <Row gutter={12}>
-            <Col span={8}><Form.Item name="qty" label="Qty"><InputNumber min={1} style={{ width: "100%" }} /></Form.Item></Col>
-            <Col span={8}><Form.Item name="horas" label="Horas"><InputNumber min={0} step={0.5} style={{ width: "100%" }} /></Form.Item></Col>
-            <Col span={8}><Form.Item name="hh" label="HH"><InputNumber min={0} step={0.5} style={{ width: "100%" }} /></Form.Item></Col>
+            <Col xs={12} sm={8}><Form.Item name="qty" label="Qty"><InputNumber min={1} style={{ width: "100%" }} /></Form.Item></Col>
+            <Col xs={12} sm={8}><Form.Item name="horas" label="Horas"><InputNumber min={0} step={0.5} style={{ width: "100%" }} /></Form.Item></Col>
+            <Col xs={12} sm={8}><Form.Item name="hh" label="HH"><InputNumber min={0} step={0.5} style={{ width: "100%" }} /></Form.Item></Col>
           </Row>
         </Form>
       </Modal>

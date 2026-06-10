@@ -30,6 +30,10 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
 
     const data: Record<string, unknown> = {};
+    // Espejo a la cabecera de la OT (campos de solo lectura en "Editar OT").
+    // Se completa progresivamente: al enviar a revisión ya se sabe quién
+    // evaluó; al aprobar ya se sabe quién aprobó.
+    let otSync: Record<string, unknown> | null = null;
     const now = new Date();
 
     switch (accion) {
@@ -64,6 +68,15 @@ export async function POST(req: NextRequest, { params }: Params) {
         data.revisado_por = usuario;
         data.fecha_revision = now;
         data.comentarios_revision = comentarioTrim || null;
+        // La evaluación queda FINALIZADA al aprobarse → espejar a la cabecera de
+        // la OT los 4 campos de una vez: quién evaluó + su fecha (de la hoja) y
+        // quién aprobó + la fecha de aprobación (ahora).
+        otSync = {
+          evaluador: evalActual.evaluado_por,
+          fecha_evaluacion: evalActual.fecha_evaluacion ?? now,
+          evaluacion_aprobado_por: usuario,
+          fecha_aprobacion_evaluacion: now,
+        };
         break;
 
       case "rechazar":
@@ -95,9 +108,17 @@ export async function POST(req: NextRequest, { params }: Params) {
         return NextResponse.json({ error: "Accion no valida" }, { status: 400 });
     }
 
-    const updated = await prisma.evaluacionTecnica.update({
-      where: { id: Number(id) },
-      data,
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.evaluacionTecnica.update({
+        where: { id: Number(id) },
+        data,
+      });
+      // Espejo a la cabecera de la OT (Evaluador/Aprobado por + fechas). Estos
+      // campos son de solo lectura en "Editar OT": la hoja es la fuente de verdad.
+      if (otSync) {
+        await tx.ordenTrabajo.update({ where: { id: evalActual.ot_id }, data: otSync });
+      }
+      return u;
     });
 
     return NextResponse.json({ data: updated });

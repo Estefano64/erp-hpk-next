@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { duracionRealTarea, rollupEstadoTarea } from "@/lib/plan-sesion";
 import { splitRecursos } from "@/lib/recursos";
+import { esMotivoPausaValido, motivoPausa } from "@/lib/motivos-pausa";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -14,6 +15,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     const body = await req.json().catch(() => ({})) as Record<string, unknown>;
     const obs = typeof body.observaciones === "string" ? body.observaciones.trim() : "";
+    // Motivo categorizado de la pausa (catálogo fijo). Opcional para no romper
+    // clientes viejos; el panel del técnico lo manda siempre.
+    const motivo = esMotivoPausaValido(body.motivo) ? body.motivo : null;
     const session = await getServerSession(authOptions);
     if (!session?.user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     const userId = Number((session.user as { id?: string }).id);
@@ -39,7 +43,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const now = new Date();
     await prisma.planificacionOTSesion.update({
       where: { id: abierta.id },
-      data: { fin: now, cierre: "pausa", comentario: obs || null },
+      data: { fin: now, cierre: "pausa", comentario: obs || null, motivo_pausa: motivo },
     });
 
     // Recalcular horas reales + estado rollup. Si otro técnico sigue activo, la
@@ -53,9 +57,13 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const estadoTarea = rollupEstadoTarea(splitRecursos(plan?.tecnico), todas);
 
     // Observaciones del técnico (acumulativas): se anexan a las existentes.
+    // El motivo categorizado se antepone como [Etiqueta] para que el rollup
+    // (tooltip del Gantt, modal Detalle) muestre la causa sin abrir el historial.
+    const labelMotivo = motivoPausa(motivo)?.label;
+    const linea = labelMotivo ? (obs ? `[${labelMotivo}] ${obs}` : `[${labelMotivo}]`) : obs;
     let observaciones: string | undefined;
-    if (obs) {
-      observaciones = plan?.observaciones ? `${plan.observaciones}\n${obs}` : obs;
+    if (linea) {
+      observaciones = plan?.observaciones ? `${plan.observaciones}\n${linea}` : linea;
     }
 
     await prisma.planificacionOT.update({

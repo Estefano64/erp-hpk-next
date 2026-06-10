@@ -6,7 +6,7 @@ import utc from "dayjs/plugin/utc";
 import timezone from "dayjs/plugin/timezone";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { horasHabilesDeSesiones, duracionRealTarea, estadoTecnico, type EstadoTecnico } from "@/lib/plan-sesion";
+import { horasHabilesDeSesiones, horasRealesEntre, duracionRealTarea, estadoTecnico, type EstadoTecnico } from "@/lib/plan-sesion";
 
 dayjs.extend(isoWeek);
 dayjs.extend(utc);
@@ -87,7 +87,7 @@ export async function GET(req: Request) {
         planificacion_ot: {
           select: {
             id: true, descripcion: true, ot_id: true, componente: true, operacion_codigo: true,
-            horas_estimadas: true, horas_reales: true,
+            horas_estimadas: true, horas_reales: true, horas_extras: true,
             orden_trabajo: { select: { ot: true } },
           },
         },
@@ -157,6 +157,24 @@ export async function GET(req: Request) {
       miEstadoPorTarea.set(id, estadoTecnico(misSesiones.filter((s) => s.planificacion_ot_id === id)));
     }
 
+    // Hoja de evaluación APROBADA de la OT de cada tarea (si aplica): el técnico
+    // puede VERLA en solo lectura desde su panel. Solo se exponen APROBADAS —
+    // borradores / pendientes / rechazadas no. Tareas sin OT no aplican.
+    const otIdsEval = [...new Set(
+      [...tareasHoy, ...tareasSemana].map((t) => t.ot_id).filter((v): v is number => v != null),
+    )];
+    const evalsAprobadas = otIdsEval.length
+      ? await prisma.evaluacionTecnica.findMany({
+          where: { ot_id: { in: otIdsEval }, estado: "APROBADA" },
+          select: { id: true, ot_id: true },
+          orderBy: { id: "desc" }, // si hubiera más de una, gana la más reciente
+        })
+      : [];
+    const evalPorOt = new Map<number, number>();
+    for (const e of evalsAprobadas) {
+      if (!evalPorOt.has(e.ot_id)) evalPorOt.set(e.ot_id, e.id);
+    }
+
     // Mapa código de equipo → nombre, para mostrar el NOMBRE de la máquina (no el
     // código) en el dashboard del técnico.
     const equiposCat = await prisma.equipo.findMany({ select: { codigo: true, descripcion: true } });
@@ -166,11 +184,12 @@ export async function GET(req: Request) {
       return maq.split("|").map((c) => nombreEquipo.get(c.trim()) ?? c.trim()).filter(Boolean).join(" | ");
     };
 
-    const conMiEstado = <T extends { id: number; maquina?: string | null }>(arr: T[]) =>
+    const conMiEstado = <T extends { id: number; maquina?: string | null; ot_id?: number | null }>(arr: T[]) =>
       arr.map((t) => ({
         ...t,
         miEstado: miEstadoPorTarea.get(t.id) ?? "sin_empezar" as EstadoTecnico,
         maquina_nombre: maquinaNombre(t.maquina),
+        evaluacion_aprobada_id: t.ot_id != null ? (evalPorOt.get(t.ot_id) ?? null) : null,
       }));
 
     // Horas reales del técnico logueado en un conjunto de tareas (sus sesiones).
@@ -274,9 +293,18 @@ export async function GET(req: Request) {
       operacion: string;
       horas_estimadas: number;
       horas_reales_previas: number;
+      es_horas_extras: boolean;
     } | null = null;
     if (sesionAbierta) {
-      const transcurridoMs = Date.now() - sesionAbierta.inicio.getTime();
+      // El cronómetro cuenta igual que las horas reales que se van a guardar
+      // (ventana 07–20 L–V; almuerzo descontado solo si trabaja de corrido).
+      // Así el técnico ve que no hace falta pausar para almorzar, y los minutos
+      // antes de las 8 / después de las 18 sí le corren (hora normal, no HE).
+      // Excepción: tarea de HORAS EXTRA (vive fuera de jornada) → reloj de pared.
+      const esHE = !!sesionAbierta.planificacion_ot.horas_extras;
+      const transcurridoMs = esHE
+        ? Date.now() - sesionAbierta.inicio.getTime()
+        : horasRealesEntre(sesionAbierta.inicio, new Date()) * 3_600_000;
       const planSesiones = await prisma.planificacionOTSesion.findMany({
         where: {
           planificacion_ot_id: sesionAbierta.planificacion_ot_id,
@@ -295,6 +323,7 @@ export async function GET(req: Request) {
         operacion: sesionAbierta.planificacion_ot.operacion_codigo,
         horas_estimadas: Number(sesionAbierta.planificacion_ot.horas_estimadas ?? 0),
         horas_reales_previas: horasHabilesDeSesiones(planSesiones),
+        es_horas_extras: !!sesionAbierta.planificacion_ot.horas_extras,
       };
     }
 

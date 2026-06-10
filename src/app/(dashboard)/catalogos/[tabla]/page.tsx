@@ -21,6 +21,7 @@ import {
   paginacionEstandar,
 } from "@/lib/tables";
 import { brand } from "@/lib/theme";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 import { catalogosById, type FieldDef } from "@/lib/catalogos-config";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
@@ -48,6 +49,7 @@ export default function CatalogoCrudPage() {
   const [fkOptions, setFkOptions] = useState<Record<string, { value: string; label: string }[]>>({});
   const [form] = Form.useForm();
   const [messageApi, contextHolder] = message.useMessage();
+  const { screens } = useResponsive();
   const { ocultas, setOcultas } = useColumnasOcultas(`catalogo-${tabla}-cols-v1`);
 
   const fetchData = useCallback(async () => {
@@ -324,7 +326,7 @@ export default function CatalogoCrudPage() {
             <Text type="secondary" style={{ fontSize: 12 }}>{cfg.description}</Text>
           )}
         </div>
-        <Space>
+        <Space wrap>
           <ColumnasToggleButton<CatalogRow>
             columns={allColumns}
             ocultas={ocultas}
@@ -400,6 +402,7 @@ export default function CatalogoCrudPage() {
         confirmLoading={saving}
         okText="Guardar"
         cancelText="Cancelar"
+        width={modalWidth(screens, 520)}
         destroyOnHidden
       >
         <Form form={form} layout="vertical" onFinish={handleSave}>

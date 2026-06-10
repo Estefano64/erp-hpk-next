@@ -17,8 +17,9 @@ import { formatDateOnly } from "@/lib/dates";
 import {
   numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE,
   useColumnasOcultas, ColumnasToggleButton, visibleColumns, filtroPorColumna,
-  STICKY_HEADER, useColumnasRedimensionables,
+  STICKY_HEADER, useColumnasRedimensionables, useTablaFiltrada,
 } from "@/lib/tables";
+import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
 const { Title, Text } = Typography;
 
@@ -210,6 +211,9 @@ function TabCatalogo() {
   const { columnas: columnsResizable, components: tableComponents } =
     useColumnasRedimensionables<Herramienta>(columns, "herramientas-catalogo-cols-widths-v1");
 
+  // Filas visibles tras los filtros de columna de AntD (para exportar a Excel).
+  const { filtradas, onChange: onTablaChange } = useTablaFiltrada(data);
+
   return (
     <>
       <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
@@ -229,15 +233,40 @@ function TabCatalogo() {
         </Row>
       </Card>
 
-      <Card size="small" extra={<ColumnasToggleButton<Herramienta> columns={columns} ocultas={ocultas} setOcultas={setOcultas} obligatorias={["__num", "codigo", "acciones"]} />}>
+      <Card
+        size="small"
+        extra={
+          <Space>
+            <ColumnasToggleButton<Herramienta> columns={columns} ocultas={ocultas} setOcultas={setOcultas} obligatorias={["__num", "codigo", "acciones"]} />
+            <ExportarExcelButton<Herramienta>
+              endpoint="/api/herramientas"
+              filename="Herramientas"
+              // search aplica server-side; los filtros de columna, client-side.
+              endpointParams={{ search }}
+              currentRows={filtradas}
+              tablaLayout={{ ocultas }}
+              columns={[
+                { key: "codigo", label: "Código", value: (h) => h.codigo },
+                { key: "nombre", label: "Nombre", value: (h) => h.nombre },
+                { key: "stock", label: "Stock", value: (h) => h.stock },
+                { key: "asignadas", label: "Asignadas", value: (h) => h.asignadas },
+                { key: "disponibles", label: "Disponibles", value: (h) => h.stock - h.asignadas },
+                { key: "estado", label: "Estado", value: (h) => h.estado },
+              ]}
+            />
+          </Space>
+        }
+      >
         <Table<Herramienta>
           rowKey="id"
           columns={visibleColumns(columnsResizable, ocultas)}
           components={tableComponents}
           dataSource={data}
           loading={loading}
+          onChange={onTablaChange}
           size="small"
           sticky={STICKY_HEADER}
+          scroll={{ x: 900 }}
           pagination={paginacionEstandar({
             current: page, pageSize, total: data.length,
             onChange: (p, s) => { setPage(p); setPageSize(s); },
@@ -264,17 +293,17 @@ function TabCatalogo() {
             <Input placeholder="Llave de impacto 3/4" />
           </Form.Item>
           <Row gutter={12}>
-            <Col span={8}>
+            <Col xs={12} md={8}>
               <Form.Item name="stock" label="Stock" rules={[{ required: true }]}>
                 <InputNumber min={0} style={{ width: "100%" }} />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col xs={12} md={8}>
               <Form.Item name="asignadas" label="Asignadas">
                 <InputNumber min={0} style={{ width: "100%" }} disabled />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col xs={24} md={8}>
               <Form.Item name="estado" label="Estado">
                 <Select showSearch optionFilterProp="label" options={["Disponible", "Mantenimiento", "Inactiva", "Reservada"].map((v) => ({ value: v, label: v }))} />
               </Form.Item>
@@ -512,6 +541,9 @@ function TabPrestamos() {
   const { columnas: columnsResizable, components: tableComponents } =
     useColumnasRedimensionables<Prestamo>(columns, "herramientas-prestamos-cols-widths-v1");
 
+  // Filas visibles tras los filtros de columna de AntD (para exportar a Excel).
+  const { filtradas, onChange: onTablaChange } = useTablaFiltrada(data);
+
   return (
     <>
       <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
@@ -535,7 +567,33 @@ function TabPrestamos() {
         </Row>
       </Card>
 
-      <Card size="small" extra={<ColumnasToggleButton<Prestamo> columns={columns} ocultas={ocultas} setOcultas={setOcultas} obligatorias={["__num", "estado", "herramienta", "acciones"]} />}>
+      <Card
+        size="small"
+        extra={
+          <Space>
+            <ColumnasToggleButton<Prestamo> columns={columns} ocultas={ocultas} setOcultas={setOcultas} obligatorias={["__num", "estado", "herramienta", "acciones"]} />
+            <ExportarExcelButton<Prestamo>
+              endpoint="/api/prestamos-herramientas"
+              filename="Prestamos-Herramientas"
+              // estado aplica server-side; los filtros de columna, client-side.
+              endpointParams={{ estado: filtroEstado }}
+              currentRows={filtradas}
+              tablaLayout={{ ocultas }}
+              columns={[
+                { key: "estado", label: "Estado", value: (p) => p.estado },
+                { key: "herramienta", label: "Herramienta", value: (p) => (p.herramienta ? `${p.herramienta.codigo} — ${p.herramienta.nombre}` : "") },
+                { key: "cantidad", label: "Cant.", value: (p) => p.cantidad },
+                { key: "prestado_a", label: "Prestado a", value: (p) => p.prestado_a },
+                { key: "ot", label: "OT", value: (p) => p.orden_trabajo?.ot ?? "" },
+                { key: "fecha_entrega", label: "F. Entrega", value: (p) => formatDateOnly(p.fecha_entrega) },
+                { key: "fecha_devolucion_prevista", label: "F. Devol. Prevista", value: (p) => (p.fecha_devolucion_prevista ? formatDateOnly(p.fecha_devolucion_prevista) : "") },
+                { key: "fecha_devolucion_real", label: "F. Devol. Real", value: (p) => (p.fecha_devolucion_real ? formatDateOnly(p.fecha_devolucion_real) : "") },
+                { key: "usuario_entrega", label: "Entrega (usr.)", value: (p) => p.usuario_entrega },
+              ]}
+            />
+          </Space>
+        }
+      >
         {data.length === 0 ? (
           <Empty description="Sin préstamos." />
         ) : (
@@ -545,6 +603,7 @@ function TabPrestamos() {
             components={tableComponents}
             dataSource={data}
             loading={loading}
+            onChange={onTablaChange}
             size="small"
             sticky={STICKY_HEADER}
             scroll={{ x: 1500 }}
@@ -582,12 +641,12 @@ function TabPrestamos() {
             />
           </Form.Item>
           <Row gutter={12}>
-            <Col span={8}>
+            <Col xs={24} md={8}>
               <Form.Item name="cantidad" label="Cantidad" rules={[{ required: true }]}>
                 <InputNumber min={1} style={{ width: "100%" }} />
               </Form.Item>
             </Col>
-            <Col span={16}>
+            <Col xs={24} md={16}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <Text style={{ fontSize: 13, fontWeight: 500 }}>
                   Prestado a {!destinoExterno && <span style={{ color: brand.error }}>*</span>}
@@ -649,12 +708,12 @@ function TabPrestamos() {
             />
           </Form.Item>
           <Row gutter={12}>
-            <Col span={12}>
+            <Col xs={24} md={12}>
               <Form.Item name="fecha_entrega" label="Fecha entrega" rules={[{ required: true }]}>
                 <DatePicker format="DD/MM/YYYY" style={{ width: "100%" }} />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col xs={24} md={12}>
               <Form.Item name="fecha_devolucion_prevista" label="Devolución prevista">
                 <DatePicker format="DD/MM/YYYY" style={{ width: "100%" }} />
               </Form.Item>
