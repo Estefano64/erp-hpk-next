@@ -1175,30 +1175,33 @@ export default function OTInternaRequerimientosTab({ otInternaId, onUpdated }: P
         />
       )}
 
-      {/* ── Modal multi-item ── */}
-      <Modal
-        title="Nuevo requerimiento"
-        open={modalOpen}
-        onCancel={() => setModalOpen(false)}
-        onOk={handleCrear}
-        confirmLoading={saving}
-        okText={`Crear (${draftItems.length} item${draftItems.length === 1 ? "" : "s"})`}
-        cancelText="Cancelar"
-        width={modalWidth(screens, 1100)}
-        destroyOnHidden
-      >
-        <Space orientation="vertical" style={{ width: "100%" }} size="small">
-          <Form layout="inline">
-            <Form.Item label="Agregar a req existente">
-              <Input
-                placeholder="Código existente (ej. 390626-1)"
-                value={draftNroReq}
-                onChange={(e) => setDraftNroReq(e.target.value)}
-                style={{ width: 240 }}
-              />
-            </Form.Item>
-          </Form>
-
+      {/* ── Draft inline: nuevo requerimiento con múltiples items ──
+          Resuelto a favor del patrón Card inline (`draftOpen` + `cerrarDraft`).
+          El resto del archivo referencia `abrirDraft`/`cerrarDraft`/
+          `actualizarDraftItem` y `draftAppendToNroReq`; el wrapper Modal
+          alternativo usaba `setDraftNroReq` que no está declarado y rompía
+          el archivo. Mantenemos Card también porque hay un `</Card>` + `)}`
+          de cierre al final de esta sección. */}
+      {draftOpen && (
+        <Card
+          size="small"
+          style={{ marginBottom: 16, borderColor: brand.cyan, background: "#F0FAFB" }}
+          styles={{ body: { padding: 16 } }}
+          title={
+            <Space>
+              <span style={{ fontWeight: 600 }}>
+                {draftAppendToNroReq ? `Agregar items a ${draftAppendToNroReq}` : "Nuevo Requerimiento"}
+              </span>
+              <Tag color="orange">BORRADOR</Tag>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                ({draftItems.length} item{draftItems.length !== 1 ? "s" : ""})
+              </Text>
+            </Space>
+          }
+          extra={
+            <Button size="small" type="text" icon={<CloseOutlined />} onClick={cerrarDraft} aria-label="Cerrar" />
+          }
+        >
           <Table
             dataSource={draftItems}
             rowKey="id"
