@@ -247,6 +247,11 @@ export default function ProgramacionSemanalPage() {
   useEffect(() => {
     setComentarioModal(selectedTask?.comentario ?? "");
   }, [selectedTask]);
+  // Duración REAL en edición (regularización; se guarda al salir del campo).
+  const [durRealModal, setDurRealModal] = useState<number | null>(null);
+  useEffect(() => {
+    setDurRealModal(selectedTask?.horas_reales != null ? Number(selectedTask.horas_reales) : null);
+  }, [selectedTask]);
   const [hourPx, setHourPx] = useState<number>(HOUR_PX_DEFAULT);
   const [resizing, setResizing] = useState<{ id: number; initialX: number; initialWidth: number; recurso: string } | null>(null);
   const [resizeWidth, setResizeWidth] = useState<number>(0);
@@ -2710,6 +2715,13 @@ export default function ProgramacionSemanalPage() {
           // duración: editable aunque la tarea esté en curso; solo se bloquea si
           // está realizada o la semana publicada (igual que lo permite el backend).
           const editableDur = editMode && !selectedTask.publicado && selectedTask.estado !== "realizado";
+          // REGULARIZACIÓN de la ejecución real (técnico que marcó tarde, olvidó
+          // el cronómetro o trabajó sin sistema — "empecé 16:30, actualizar en
+          // la programación"): el planner corrige inicio/fin/horas reales acá,
+          // sin tickets. Solo tareas con ejecución; el fin y la duración solo
+          // cuando ya está realizada (en curso las maneja el técnico).
+          const regularizable = editMode && haEmpezado(selectedTask.estado) && !!selectedTask.fecha_inicio_real;
+          const regularizableFin = regularizable && selectedTask.estado === "realizado";
           const operarios = splitRecursos(selectedTask.tecnico);
           const equiposSel = splitRecursos(selectedTask.maquina);
           return (
@@ -2771,9 +2783,44 @@ export default function ProgramacionSemanalPage() {
                 </Space>
               ) : `${Number(selectedTask.horas_estimadas ?? 0).toFixed(1)}h · Qty ${selectedTask.qty_personal ?? 1}`}
             </Descriptions.Item>
-            <Descriptions.Item label="Inicio real">{selectedTask.fecha_inicio_real ? dayjs(selectedTask.fecha_inicio_real).format("DD/MM/YY HH:mm") : "—"}</Descriptions.Item>
-            <Descriptions.Item label="Fin real">{selectedTask.fecha_fin_real ? dayjs(selectedTask.fecha_fin_real).format("DD/MM/YY HH:mm") : "—"}</Descriptions.Item>
-            <Descriptions.Item label="Duración real">{selectedTask.horas_reales != null ? `${Number(selectedTask.horas_reales).toFixed(2)}h` : "—"}</Descriptions.Item>
+            <Descriptions.Item label="Inicio real">
+              {regularizable ? (
+                <DatePicker
+                  size="small"
+                  showTime={{ format: "HH:mm" }}
+                  format="DD/MM/YY HH:mm"
+                  allowClear={false}
+                  value={selectedTask.fecha_inicio_real ? dayjs(selectedTask.fecha_inicio_real) : null}
+                  onChange={(d) => d && guardarCampoDetalle({ fecha_inicio_real: d.toISOString() }, "Inicio real corregido")}
+                />
+              ) : (selectedTask.fecha_inicio_real ? dayjs(selectedTask.fecha_inicio_real).format("DD/MM/YY HH:mm") : "—")}
+            </Descriptions.Item>
+            <Descriptions.Item label="Fin real">
+              {regularizableFin ? (
+                <DatePicker
+                  size="small"
+                  showTime={{ format: "HH:mm" }}
+                  format="DD/MM/YY HH:mm"
+                  allowClear={false}
+                  value={selectedTask.fecha_fin_real ? dayjs(selectedTask.fecha_fin_real) : null}
+                  onChange={(d) => d && guardarCampoDetalle({ fecha_fin_real: d.toISOString() }, "Fin real corregido")}
+                />
+              ) : (selectedTask.fecha_fin_real ? dayjs(selectedTask.fecha_fin_real).format("DD/MM/YY HH:mm") : "—")}
+            </Descriptions.Item>
+            <Descriptions.Item label="Duración real">
+              {regularizableFin ? (
+                <Space>
+                  <InputNumber
+                    size="small" min={0} step={0.25} style={{ width: 90 }}
+                    value={durRealModal}
+                    onChange={(v) => setDurRealModal(v == null ? null : Number(v))}
+                    onBlur={() => { if (durRealModal != null && Number(durRealModal) !== Number(selectedTask.horas_reales ?? 0)) guardarCampoDetalle({ horas_reales: durRealModal }, "Duración real regularizada"); }}
+                    onPressEnter={() => { if (durRealModal != null) guardarCampoDetalle({ horas_reales: durRealModal }, "Duración real regularizada"); }}
+                  />
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>h trabajadas</Typography.Text>
+                </Space>
+              ) : (selectedTask.horas_reales != null ? `${Number(selectedTask.horas_reales).toFixed(2)}h` : "—")}
+            </Descriptions.Item>
             <Descriptions.Item label="Estado"><Tag color={estadoColor(selectedTask.estado)}>{estadoNombre(selectedTask.estado)}</Tag></Descriptions.Item>
             {selectedTask.observaciones && (
               <Descriptions.Item label="Nota del técnico">

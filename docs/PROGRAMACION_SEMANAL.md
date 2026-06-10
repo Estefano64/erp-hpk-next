@@ -147,6 +147,12 @@ Detalles:
   realizada cuando todos terminan (rollup).
 - "Reabrir tarea" finalizada por error: solo desde Planificación
   (planner/admin); vuelve a Pausado conservando el tiempo.
+- **Regularización**: si el técnico marcó tarde / olvidó el cronómetro /
+  trabajó sin sistema ("empecé 16:30, actualizar en la programación"), el
+  planner corrige **Inicio real / Fin real / Duración real** desde el modal
+  Detalle del Gantt (Modo edición). El inicio real es editable en tareas
+  iniciadas; el fin y la duración solo cuando ya está realizada. Las sesiones
+  crudas del Historial no se tocan (queda la trazabilidad).
 
 ## 10. Decisiones de producto vigentes
 
