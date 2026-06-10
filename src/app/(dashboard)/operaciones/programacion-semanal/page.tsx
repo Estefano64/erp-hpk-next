@@ -9,7 +9,7 @@ import {
   SettingOutlined, RollbackOutlined, UnorderedListOutlined, WarningFilled, ZoomInOutlined, ZoomOutOutlined,
   PrinterOutlined, BgColorsOutlined, FilterOutlined, ClearOutlined,
   LoadingOutlined, CheckCircleFilled, CloseCircleFilled, EyeOutlined, SearchOutlined,
-  PushpinOutlined,
+  PushpinOutlined, QuestionCircleOutlined,
 } from "@ant-design/icons";
 import dayjs, { Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
@@ -23,6 +23,7 @@ import { useTabSync } from "@/lib/useTabSync";
 import { useSession } from "next-auth/react";
 import { useEditLock } from "@/lib/useEditLock";
 import TareaAdjuntosLista from "@/components/TareaAdjuntosLista";
+import AyudaProgramacionSemanal from "@/components/modules/operaciones/AyudaProgramacionSemanal";
 
 dayjs.extend(isoWeek);
 dayjs.locale("es");
@@ -250,6 +251,7 @@ export default function ProgramacionSemanalPage() {
   const [resizeWidth, setResizeWidth] = useState<number>(0);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [printModalOpen, setPrintModalOpen] = useState(false);
+  const [ayudaOpen, setAyudaOpen] = useState(false);
   const [printDayIdx, setPrintDayIdx] = useState<number | null>(null); // null = semana, 0-4 = día específico
   const [panning, setPanning] = useState<{ initialX: number; initialScroll: number } | null>(null);
   // Drag con pointer events (más fluido que HTML5 drag)
@@ -529,13 +531,21 @@ export default function ProgramacionSemanalPage() {
     const semFin = lunes.endOf("isoWeek").toDate();
     for (const r of rowsFiltradas) {
       if (!r.fecha_inicio) continue;
-      const dur = Number(r.horas_estimadas ?? 0);
       const qty = Math.max(1, Number(r.qty_personal ?? 1));
-      const hhTotal = dur * qty;
+      // Una tarea TERMINADA carga sus horas REALES (lo que de verdad consumió):
+      // el operario que terminó antes muestra su capacidad liberada en la barra.
+      const hhTotal = (r.estado === "realizado" && r.horas_reales != null)
+        ? Number(r.horas_reales)
+        : Number(r.horas_estimadas ?? 0) * qty;
       let hhEnSemana: number;
       if (r.horas_extras) {
         // HE = horas continuas fuera de jornada; se cuentan enteras en su semana
         // de inicio (no se prorratean por jornada hábil).
+        const fi = dayjs(r.fecha_inicio);
+        hhEnSemana = (fi.isoWeek() === lunes.isoWeek() && fi.isoWeekYear() === lunes.isoWeekYear()) ? hhTotal : 0;
+      } else if (r.estado === "realizado" && r.horas_reales != null) {
+        // Terminada: cargan las horas REALES enteras en la semana de su inicio
+        // (la ventana plan ya no representa lo que ocupó de verdad).
         const fi = dayjs(r.fecha_inicio);
         hhEnSemana = (fi.isoWeek() === lunes.isoWeek() && fi.isoWeekYear() === lunes.isoWeekYear()) ? hhTotal : 0;
       } else {
@@ -1503,8 +1513,28 @@ export default function ProgramacionSemanalPage() {
       && (Math.abs(baseIni.diff(planIni, "minute")) >= 1 || (r.tecnico_base ?? r.tecnico ?? "") !== (r.tecnico ?? ""));
     const fueraDePlan = vistaTiempo === "plan" && !baseIni && lanesConEnvio.has(recurso);
     const empezada = haEmpezado(r.estado);
-    const ini = planIni;
-    const fin = planFin;
+    // En SEMANA REAL una tarea ya iniciada muestra su ventana REAL en el propio
+    // bloque: inicio_real → fin real (terminada), → ahora (en proceso, crece en
+    // vivo), o proyección por horas reales (pausada). Así una tarea terminada
+    // antes ACORTA su bloque y el espacio liberado del operario se ve al
+    // instante. Es seguro: las iniciadas no se arrastran ni se redimensionan.
+    let ini = planIni;
+    let fin = planFin;
+    let ventanaReal = false;
+    if (vistaTiempo === "plan" && empezada && r.fecha_inicio_real) {
+      ini = dayjs(r.fecha_inicio_real);
+      if (r.estado === "en_proceso") {
+        fin = ahoraTick ?? dayjs(); // crece en vivo
+      } else if (r.estado === "realizado" && r.fecha_fin_real) {
+        fin = dayjs(r.fecha_fin_real);
+      } else {
+        // pausado (o realizado sin fin_real): proyectar por horas reales hábiles.
+        const hr = Number(r.horas_reales ?? 0);
+        fin = hr > 0 ? dayjs(calcularFin(ini.toDate(), hr, !!r.horas_extras)) : ini.add(30, "minute");
+      }
+      if (!fin.isAfter(ini)) fin = ini.add(15, "minute"); // guard tamaño mínimo
+      ventanaReal = true;
+    }
     // Bordes de la semana visible (lunes 8:00 → viernes 18:00)
     const semanaIni = lunes.hour(JORNADA_INICIO).minute(0).second(0).millisecond(0);
     const semanaFin = lunes.add(4, "day").hour(JORNADA_FIN).minute(0).second(0).millisecond(0);
@@ -1524,34 +1554,6 @@ export default function ProgramacionSemanalPage() {
     const widthPx = resizing?.id === r.id ? Math.max(20, resizeWidth) : baseWidth;
     const color = estadoColor(r.estado);
     const hasConflict = conflictos.has(r.id);
-
-    // ── Barra de EJECUCIÓN real (vista Semana real) ──
-    // La ejecución vive dentro de la semana real: cada tarea iniciada dibuja una
-    // barrita bajo el bloque del plan con su ejecución real (inicio_real → fin
-    // real / ahora si está en proceso — crece en vivo). Reemplaza a la vieja
-    // vista "Real" separada.
-    let execBar: { left: number; width: number } | null = null;
-    if (vistaTiempo === "plan" && empezada && r.fecha_inicio_real) {
-      const eIni = dayjs(r.fecha_inicio_real);
-      let eFin: Dayjs;
-      if (r.estado === "en_proceso") {
-        eFin = ahoraTick ?? dayjs(); // crece en vivo
-      } else if (r.estado === "realizado" && r.fecha_fin_real) {
-        eFin = dayjs(r.fecha_fin_real);
-      } else {
-        // pausado (o realizado sin fin_real): proyectar por horas reales hábiles.
-        const hr = Number(r.horas_reales ?? 0);
-        eFin = hr > 0 ? dayjs(calcularFin(eIni.toDate(), hr, !!r.horas_extras)) : eIni.add(30, "minute");
-      }
-      if (!eFin.isAfter(eIni)) eFin = eIni.add(15, "minute"); // guard tamaño mínimo
-      const eIniC = eIni.isBefore(semanaIni) ? semanaIni : eIni;
-      const eFinC = eFin.isAfter(semanaFin) ? semanaFin : eFin;
-      if (eFinC.isAfter(eIniC)) {
-        const exStart = eIniC.diff(lunes, "day") * dayPx + (hourDecimal(eIniC) - JORNADA_INICIO) * hourPx;
-        const exEnd = eFinC.diff(lunes, "day") * dayPx + (hourDecimal(eFinC) - JORNADA_INICIO) * hourPx;
-        execBar = { left: exStart, width: Math.max(6, exEnd - exStart) };
-      }
-    }
     return (
       <Fragment key={r.id}>
       <Tooltip
@@ -1566,6 +1568,9 @@ export default function ProgramacionSemanalPage() {
               <div>⏱ Real: {dayjs(r.fecha_inicio_real).format("DD/MM HH:mm")} → {r.fecha_fin_real ? dayjs(r.fecha_fin_real).format("DD/MM HH:mm") : (r.estado === "en_proceso" ? "en curso" : "—")}{r.horas_reales != null ? ` · ${Number(r.horas_reales).toFixed(1)}h` : ""}</div>
             )}
             <div>Estado: {estadoNombre(r.estado)}</div>
+            {ventanaReal && (
+              <div style={{ opacity: 0.9 }}>⏱ El bloque muestra el horario REAL (la tarea ya fue iniciada); el plan original queda arriba.</div>
+            )}
             {enviadoMode && r.publicado_at && (
               <div>📌 Foto del plan enviado el {dayjs(r.publicado_at).format("DD/MM HH:mm")}</div>
             )}
@@ -1664,14 +1669,6 @@ export default function ProgramacionSemanalPage() {
           )}
         </div>
       </Tooltip>
-      {/* Barra de ejecución real bajo el bloque (no intercepta el mouse). */}
-      {execBar && (
-        <div
-          className="psg-exec-bar"
-          data-estado={r.estado ?? ""}
-          style={{ left: execBar.left, width: execBar.width }}
-        />
-      )}
       </Fragment>
     );
   }
@@ -2009,6 +2006,9 @@ export default function ProgramacionSemanalPage() {
               />
             </Tooltip>
             <Button icon={<UnorderedListOutlined />} onClick={() => router.push("/operaciones/planificacion")}>Planificación</Button>
+            <Tooltip title="¿Cómo funciona este tablero?">
+              <Button shape="circle" icon={<QuestionCircleOutlined />} onClick={() => setAyudaOpen(true)} />
+            </Tooltip>
             <Button icon={<RollbackOutlined />} onClick={() => router.back()}>Volver</Button>
           </Space>
         </div>
@@ -2220,8 +2220,7 @@ export default function ProgramacionSemanalPage() {
               <WarningFilled style={{ color: brand.error, fontSize: 12 }} /> Conflicto
             </span>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
-              <span style={{ display: "inline-block", width: 16, height: 6, borderRadius: 3, background: "#13C2C2", boxShadow: "0 0 0 1px rgba(0,0,0,0.15)" }} />
-              ⏱ Ejecución real (barra bajo el bloque)
+              ⏱ Tarea iniciada: el bloque muestra su horario REAL (terminó antes ⇒ bloque más corto)
             </span>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
               <span style={{ fontWeight: 800 }}>↷</span> Distinto al enviado
@@ -2759,6 +2758,9 @@ export default function ProgramacionSemanalPage() {
         })()}
       </Modal>
 
+      {/* Ayuda in-app (botón "?" del header) */}
+      <AyudaProgramacionSemanal open={ayudaOpen} onClose={() => setAyudaOpen(false)} />
+
       <style jsx global>{`
         /* ── Estilos de impresión ── */
         @media print {
@@ -2923,19 +2925,6 @@ export default function ProgramacionSemanalPage() {
         .psg-task-block[data-conflict="1"] { outline: 2px solid #ff4d4f; }
         /* Modo Real: la tarea aún no empezó → es solo plan. Atenuada + borde punteado
            para distinguirla de la ejecución real. */
-        /* Barra de ejecución real bajo el bloque del plan (vista Semana real). */
-        .psg-exec-bar {
-          position: absolute;
-          bottom: 2px;
-          height: 7px;
-          border-radius: 3px;
-          pointer-events: none;
-          z-index: 2;
-          background: #13C2C2;
-          box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.85);
-        }
-        .psg-exec-bar[data-estado="realizado"] { background: #52C41A; }
-        .psg-exec-bar[data-estado="pausado"] { background: #FA8C16; }
 
         /* Trabajo derivado a tercero: stripes diagonales + borde dorado para distinguir. */
         .psg-task-block[data-externo="1"] {

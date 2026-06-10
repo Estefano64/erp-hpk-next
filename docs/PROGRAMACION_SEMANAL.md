@@ -1,7 +1,9 @@
 # Programación Semanal — Manual de funcionamiento
 
 > Módulo: `/operaciones/programacion-semanal` (Gantt) + `/operaciones/planificacion` (tabla).
-> Última actualización: 2026-06-10.
+> Última actualización: 2026-06-10. Versión in-app: botón "?" del header
+> (`src/components/modules/operaciones/AyudaProgramacionSemanal.tsx`) — si se
+> cambia el comportamiento, actualizar ambos.
 
 ## 1. Los tres "tiempos" de una tarea
 
@@ -40,10 +42,12 @@ Selector del header:
 - **Semana planificada** 📌 — la foto. Solo lectura, sin pools. Si una tarea se
   movió después a otra semana, acá se ve donde estaba al enviarse.
 - **Semana real** — el plan vivo (editable). Además muestra:
-  - **Barra de ejecución** bajo cada bloque iniciado: cyan = en proceso (crece
-    en vivo), verde = realizada, naranja = pausada. La barra está donde la
-    ejecución ocurrió de verdad (ej. si arrancó 9:40 una tarea planeada 8:00,
-    la barra arranca 9:40).
+  - **Tareas iniciadas con su horario REAL en el propio bloque**: el bloque va
+    de `inicio_real` al fin real (terminada), hasta "ahora" (en proceso, crece
+    en vivo) o se proyecta por horas reales (pausada). Una tarea terminada
+    antes **acorta su bloque** y el espacio liberado del operario se ve al
+    instante. La barra de carga del operario también descuenta lo terminado por
+    sus horas reales. (Las iniciadas no se arrastran, así que es seguro.)
   - **↷** = tarea distinta a la foto (fecha u operario cambiado). El tooltip
     muestra el horario enviado original.
   - **＋** = tarea fuera del plan enviado (agregada después de enviar). Solo se
