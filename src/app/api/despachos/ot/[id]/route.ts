@@ -91,6 +91,32 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         const material = await tx.material.findUnique({ where: { material_id: rep.material_id } });
         if (!material) { errores.push({ id: reqId, error: "Material no encontrado" }); continue; }
 
+        // Si el item ya fue consumido del almacén (CONSUMIDO_ALMACEN), el
+        // stock ya se decrementó y se registró el movimiento SALIDA en
+        // /consumir-de-almacen. Acá SOLO entregamos al técnico: actualizamos
+        // cantidad_recibida + status_oc. No tocamos stock ni creamos movimiento.
+        const yaConsumido = rep.status_oc_codigo === "CONSUMIDO_ALMACEN";
+        if (yaConsumido) {
+          const aDespachar = pendiente;
+          const nuevaDespachada = yaDespachado.plus(aDespachar);
+          const quedaCompleto = nuevaDespachada.gte(cantTotal);
+          const obsPrev = rep.observaciones ? `${rep.observaciones}\n` : "";
+          const etiqueta = quedaCompleto ? "completo" : `parcial (${aDespachar} de ${pendiente} pendiente)`;
+          await tx.oTRepuesto.update({
+            where: { id: rep.id },
+            data: {
+              status_oc_codigo: quedaCompleto ? "ENTREGADO" : "CONSUMIDO_ALMACEN",
+              cantidad_recibida: nuevaDespachada,
+              fecha_entrega_real: quedaCompleto ? fechaDespacho : rep.fecha_entrega_real,
+              fecha_salida_almacen: rep.fecha_salida_almacen ?? fechaDespacho,
+              observaciones: `${obsPrev}Entregado al técnico el ${fechaDespacho.toLocaleDateString("es-PE")} — ${etiqueta} (${usuario})${personaRecibe ? ` — recibe: ${personaRecibe}` : ""}${comentariosBulk ? ` · ${comentariosBulk}` : ""}`,
+            },
+          });
+          if (quedaCompleto) ok.push(rep.id);
+          else parciales.push(rep.id);
+          continue;
+        }
+
         const stock = new Prisma.Decimal(material.stock_actual ?? 0);
         if (stock.lte(0)) {
           errores.push({ id: reqId, error: `Sin stock en almacén` });

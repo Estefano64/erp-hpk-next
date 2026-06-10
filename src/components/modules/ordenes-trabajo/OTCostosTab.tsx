@@ -56,6 +56,7 @@ interface HHRow {
 interface CostosResponse {
   ejecutado: {
     materiales: { items: ItemRow[]; total_por_moneda: MonedaTotales };
+    cargo_directo: { items: ItemRow[]; total_por_moneda: MonedaTotales };
     servicios: { items: ItemRow[]; total_por_moneda: MonedaTotales };
     hh: { items: HHRow[]; total_por_moneda: MonedaTotales };
     ocs: { items: OCRow[]; total_por_moneda: MonedaTotales };
@@ -63,9 +64,12 @@ interface CostosResponse {
   };
   proyectado: {
     materiales: { items: ItemRow[]; total_por_moneda: MonedaTotales };
+    cargo_directo: { items: ItemRow[]; total_por_moneda: MonedaTotales };
     servicios: { items: ItemRow[]; total_por_moneda: MonedaTotales };
+    hh: { items: HHRow[]; total_por_moneda: MonedaTotales };
     total_por_moneda: MonedaTotales;
   };
+  trabajadores: { estimado: number; real: number };
 }
 
 interface Props {
@@ -154,11 +158,16 @@ export default function OTCostosTab({ otId, kind = "externa" }: Props) {
     const p = data.proyectado;
     return (
       e.materiales.items.length > 0
+      || e.cargo_directo.items.length > 0
       || e.servicios.items.length > 0
       || e.hh.items.length > 0
       || e.ocs.items.length > 0
       || p.materiales.items.length > 0
+      || p.cargo_directo.items.length > 0
       || p.servicios.items.length > 0
+      || p.hh.items.length > 0
+      || data.trabajadores.estimado > 0
+      || data.trabajadores.real > 0
     );
   }, [data]);
 
@@ -188,8 +197,69 @@ export default function OTCostosTab({ otId, kind = "externa" }: Props) {
     );
   }
 
+  // Matriz Estimado × Real pedida por el usuario: cinco filas
+  // (materiales, cargo directo, servicio, QtY, HH). Para items monetarios
+  // mostramos totales por moneda; para QtY mostramos el conteo de trabajadores.
+  const matrizRows = [
+    {
+      key: "materiales", label: "Materiales",
+      estimado: data.proyectado.materiales.total_por_moneda,
+      real: data.ejecutado.materiales.total_por_moneda,
+    },
+    {
+      key: "cargo_directo", label: "Cargo directo",
+      estimado: data.proyectado.cargo_directo.total_por_moneda,
+      real: data.ejecutado.cargo_directo.total_por_moneda,
+    },
+    {
+      key: "servicio", label: "Servicio",
+      estimado: data.proyectado.servicios.total_por_moneda,
+      real: data.ejecutado.servicios.total_por_moneda,
+    },
+    {
+      key: "qty", label: "QtY (trabajadores)",
+      estimado: data.trabajadores.estimado,
+      real: data.trabajadores.real,
+      esConteo: true,
+    },
+    {
+      key: "hh", label: "HH",
+      estimado: data.proyectado.hh.total_por_moneda,
+      real: data.ejecutado.hh.total_por_moneda,
+    },
+  ] as Array<{
+    key: string; label: string;
+    estimado: MonedaTotales | number; real: MonedaTotales | number;
+    esConteo?: boolean;
+  }>;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: space.md }}>
+      {/* ── Matriz Estimado / Real (pedido del user) ── */}
+      <Card size="small" title={<Text strong>Resumen Estimado vs Real</Text>}>
+        <Table
+          size="small"
+          dataSource={matrizRows}
+          rowKey="key"
+          pagination={false}
+          columns={[
+            { title: "", dataIndex: "label", key: "label", width: 200, render: (v: string) => <Text strong>{v}</Text> },
+            {
+              title: "Estimado", dataIndex: "estimado", key: "estimado", align: "right",
+              render: (v: MonedaTotales | number, r) => r.esConteo
+                ? <Text>{Number(v ?? 0)}</Text>
+                : <MonedasTotalesInline totales={v as MonedaTotales} />,
+            },
+            {
+              title: "Real", dataIndex: "real", key: "real", align: "right",
+              render: (v: MonedaTotales | number, r) => r.esConteo
+                ? <Text>{Number(v ?? 0)}</Text>
+                : <MonedasTotalesInline totales={v as MonedaTotales} />,
+            },
+          ]}
+        />
+      </Card>
+
       {/* ── Resumen totales ── */}
       <Card size="small">
         <Row gutter={[16, 12]}>
@@ -246,6 +316,25 @@ export default function OTCostosTab({ otId, kind = "externa" }: Props) {
                 <Table.Summary.Row>
                   <Table.Summary.Cell index={0} colSpan={6}><Text strong>Subtotal materiales</Text></Table.Summary.Cell>
                   <Table.Summary.Cell index={1} align="right"><MonedasTotalesInline totales={data.ejecutado.materiales.total_por_moneda} /></Table.Summary.Cell>
+                </Table.Summary.Row>
+              )}
+            />
+          </div>
+        )}
+        {data.ejecutado.cargo_directo.items.length > 0 && (
+          <div style={{ marginBottom: space.md }}>
+            <Title level={5}>Cargos directos</Title>
+            <Table
+              size="small"
+              dataSource={data.ejecutado.cargo_directo.items}
+              columns={ITEM_COLUMNS}
+              rowKey="id"
+              pagination={false}
+              scroll={{ x: 900 }}
+              summary={() => (
+                <Table.Summary.Row>
+                  <Table.Summary.Cell index={0} colSpan={6}><Text strong>Subtotal cargo directo</Text></Table.Summary.Cell>
+                  <Table.Summary.Cell index={1} align="right"><MonedasTotalesInline totales={data.ejecutado.cargo_directo.total_por_moneda} /></Table.Summary.Cell>
                 </Table.Summary.Row>
               )}
             />
@@ -308,7 +397,10 @@ export default function OTCostosTab({ otId, kind = "externa" }: Props) {
       </Card>
 
       {/* ── Proyectado ── */}
-      {(data.proyectado.materiales.items.length > 0 || data.proyectado.servicios.items.length > 0) && (
+      {(data.proyectado.materiales.items.length > 0
+        || data.proyectado.cargo_directo.items.length > 0
+        || data.proyectado.servicios.items.length > 0
+        || data.proyectado.hh.items.length > 0) && (
         <Card
           size="small"
           title={
@@ -337,8 +429,27 @@ export default function OTCostosTab({ otId, kind = "externa" }: Props) {
               />
             </div>
           )}
+          {data.proyectado.cargo_directo.items.length > 0 && (
+            <div style={{ marginBottom: space.md }}>
+              <Title level={5}>Cargos directos pendientes</Title>
+              <Table
+                size="small"
+                dataSource={data.proyectado.cargo_directo.items}
+                columns={ITEM_COLUMNS}
+                rowKey="id"
+                pagination={false}
+                scroll={{ x: 900 }}
+                summary={() => (
+                  <Table.Summary.Row>
+                    <Table.Summary.Cell index={0} colSpan={6}><Text strong>Subtotal proyectado</Text></Table.Summary.Cell>
+                    <Table.Summary.Cell index={1} align="right"><MonedasTotalesInline totales={data.proyectado.cargo_directo.total_por_moneda} /></Table.Summary.Cell>
+                  </Table.Summary.Row>
+                )}
+              />
+            </div>
+          )}
           {data.proyectado.servicios.items.length > 0 && (
-            <div>
+            <div style={{ marginBottom: space.md }}>
               <Title level={5}>Servicios pendientes</Title>
               <Table
                 size="small"
@@ -351,6 +462,25 @@ export default function OTCostosTab({ otId, kind = "externa" }: Props) {
                   <Table.Summary.Row>
                     <Table.Summary.Cell index={0} colSpan={6}><Text strong>Subtotal proyectado</Text></Table.Summary.Cell>
                     <Table.Summary.Cell index={1} align="right"><MonedasTotalesInline totales={data.proyectado.servicios.total_por_moneda} /></Table.Summary.Cell>
+                  </Table.Summary.Row>
+                )}
+              />
+            </div>
+          )}
+          {data.proyectado.hh.items.length > 0 && (
+            <div>
+              <Title level={5}>HH pendiente</Title>
+              <Table
+                size="small"
+                dataSource={data.proyectado.hh.items}
+                columns={HH_COLUMNS}
+                rowKey={(r) => `${r.planificacion_id}-${r.tecnico}`}
+                pagination={false}
+                scroll={{ x: 900 }}
+                summary={() => (
+                  <Table.Summary.Row>
+                    <Table.Summary.Cell index={0} colSpan={6}><Text strong>Subtotal HH proyectado</Text></Table.Summary.Cell>
+                    <Table.Summary.Cell index={1} align="right"><MonedasTotalesInline totales={data.proyectado.hh.total_por_moneda} /></Table.Summary.Cell>
                   </Table.Summary.Row>
                 )}
               />

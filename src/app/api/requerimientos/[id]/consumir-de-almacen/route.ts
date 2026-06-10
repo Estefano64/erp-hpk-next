@@ -115,28 +115,30 @@ export async function POST(req: NextRequest, { params }: Params) {
         data: { stock_actual: { decrement: cantidad } },
       });
 
-      // 3) Marcar el requerimiento. Si fue completo, status final = CONSUMIDO_ALMACEN
-      //    (estado nuevo, distinto de ENTREGADO que se reserva para entregas vía OC).
+      // 3) Marcar el requerimiento. Si fue completo, status pasa a
+      //    CONSUMIDO_ALMACEN (estado intermedio: stock ya salió pero aún no
+      //    se entregó al técnico). El despacho final al técnico se hace en
+      //    /despachos y ahí pasa a ENTREGADO. Por eso NO incrementamos
+      //    `cantidad_recibida` ni seteamos `fecha_entrega_real` acá — eso
+      //    lo hace el módulo Despachos cuando se confirma la entrega al técnico.
       //    Si fue parcial, decrementar la cantidad y dejar el resto pendiente.
       //    En AMBOS casos se persiste la zona/posición física del consumo.
       let nuevoEstado: string;
       const updateData: Prisma.OTRepuestoUncheckedUpdateInput = {
-        cantidad_recibida: { increment: cantidad },
         almacen_zona_id: parsed.data.almacen_zona_id,
         almacen_posicion_id: parsed.data.almacen_posicion_id ?? null,
       };
       if (cantidad.equals(cantPedida)) {
         nuevoEstado = "CONSUMIDO_ALMACEN";
         updateData.status_oc_codigo = nuevoEstado;
-        updateData.fecha_entrega_real = new Date();
         const obsPrev = rep.observaciones ? `${rep.observaciones}\n` : "";
-        updateData.observaciones = `${obsPrev}Consumido de almacén el ${new Date().toLocaleDateString("es-PE")} (${usuario})`;
+        updateData.observaciones = `${obsPrev}Consumido de almacén el ${new Date().toLocaleDateString("es-PE")} (${usuario}) — pendiente despacho al técnico`;
       } else {
         // Consumo parcial: reducir la cantidad pedida y mantener el item pendiente para otro destino.
         nuevoEstado = rep.status_oc_codigo ?? "PEND_OC";
         updateData.cantidad = cantPedida.minus(cantidad);
         const obsPrev = rep.observaciones ? `${rep.observaciones}\n` : "";
-        updateData.observaciones = `${obsPrev}Consumo parcial de almacén: ${cantidad} u. el ${new Date().toLocaleDateString("es-PE")} (${usuario})`;
+        updateData.observaciones = `${obsPrev}Consumo parcial de almacén: ${cantidad} u. el ${new Date().toLocaleDateString("es-PE")} (${usuario}) — pendiente despacho al técnico`;
       }
       await tx.oTRepuesto.update({ where: { id: rep.id }, data: updateData });
 

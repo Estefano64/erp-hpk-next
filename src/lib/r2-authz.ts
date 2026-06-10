@@ -88,26 +88,26 @@ export async function authorizeR2Access(params: {
       });
       return row ? { ok: true } : notFound();
     }
-    case "compra-guia": {
-      const row = await prisma.compra.findFirst({
-        where: { id: resourceId, guia_key: key },
-        select: { id: true },
-      });
-      return row ? { ok: true } : notFound();
-    }
-    case "compra-factura": {
-      const row = await prisma.compra.findFirst({
-        where: { id: resourceId, factura_key: key },
-        select: { id: true },
-      });
-      return row ? { ok: true } : notFound();
-    }
+    case "compra-guia":
+    case "compra-factura":
     case "compra-pago": {
-      const row = await prisma.compra.findFirst({
-        where: { id: resourceId, pago_key: key },
+      // Multi-adjunto: el archivo puede vivir como guia/factura/pago "legacy"
+      // (campos directos en Compra) o como fila en CompraAdjunto. Aceptamos
+      // ambos lados para no romper enlaces ya emitidos.
+      const tipo = resource === "compra-guia" ? "guia" : resource === "compra-factura" ? "factura" : "pago";
+      const adj = await prisma.compraAdjunto.findFirst({
+        where: { compra_id: resourceId, tipo, r2_key: key },
         select: { id: true },
       });
-      return row ? { ok: true } : notFound();
+      if (adj) return { ok: true };
+      const legacy = await prisma.compra.findFirst({
+        where: {
+          id: resourceId,
+          ...(tipo === "guia" ? { guia_key: key } : tipo === "factura" ? { factura_key: key } : { pago_key: key }),
+        },
+        select: { id: true },
+      });
+      return legacy ? { ok: true } : notFound();
     }
     case "evaluacion-informe": {
       const row = await prisma.evaluacionTecnica.findFirst({

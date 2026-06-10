@@ -1280,6 +1280,10 @@ model Compra {
   pago_mime              String?         @db.VarChar(100)
   pago_tamano            Int?
   pago_fecha_subida      DateTime?
+  // Adjuntos múltiples (guías, facturas, comprobantes de pago). Reemplaza el
+  // patrón "una sola guía/factura/pago" — los campos legacy guia_*/factura_*
+  // /pago_* arriba quedan para compat con callers que aún los lean.
+  adjuntos               CompraAdjunto[]
   observaciones          String?
   usuario_solicita       String          @db.VarChar(100)
   usuario_aprueba        String?         @db.VarChar(100)
@@ -1301,6 +1305,31 @@ model Compra {
   @@index([status_oc_codigo])
   @@index([ot_id])
   @@map("compras")
+}
+
+// Archivos adjuntos múltiples por OC (guías, facturas, comprobantes de pago).
+// Reemplaza el patrón legacy "una sola guía/factura/pago" — los campos
+// guia_*/factura_*/pago_* en Compra quedan por compat con callers antiguos
+// mientras se migra el código.
+model CompraAdjunto {
+  id              Int      @id @default(autoincrement())
+  compra_id       Int
+  // "guia" | "factura" | "pago". Sin enum dedicado para no romper la migración;
+  // la app valida el valor.
+  tipo            String   @db.VarChar(20)
+  r2_key          String   @db.VarChar(500)
+  nombre_archivo  String   @db.VarChar(300)
+  tipo_mime       String?  @db.VarChar(100)
+  tamano          Int?
+  // Quién subió el archivo (auditUser). Opcional para no romper backfill de
+  // los archivos legacy donde no se guardó el usuario.
+  usuario_carga   String?  @db.VarChar(150)
+  fecha_subida    DateTime @default(now())
+  compra          Compra   @relation(fields: [compra_id], references: [id], onDelete: Cascade)
+
+  @@index([compra_id])
+  @@index([tipo])
+  @@map("compra_adjunto")
 }
 
 model CompraDetalle {

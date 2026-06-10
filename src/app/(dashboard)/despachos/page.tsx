@@ -45,6 +45,9 @@ interface Item {
   _puede_despachar: boolean;
   _po_status: string | null;
   _po_recibida: boolean;
+  // Item ya consumido de almacén — el stock salió en `consumir-de-almacen`
+  // y queda solo entregar al técnico (no se vuelve a tocar stock).
+  _es_consumido_almacen?: boolean;
 }
 
 interface GrupoOT {
@@ -296,13 +299,18 @@ function GrupoCard({
     {
       key: "stock", title: "Stock alm.", width: 90, align: "right",
       render: (_, r) => {
+        // Para items ya consumidos de almacén el stock ya salió — no aplica.
+        if (r._es_consumido_almacen) return <Text type="secondary">—</Text>;
         const st = Number(r.material?.stock_actual ?? 0);
         return <span style={{ color: r._puede_despachar ? "#52c41a" : "#cf1322", fontWeight: 600 }}>{st}</span>;
       },
     },
     {
-      key: "origen", title: "Origen / PO", width: 150, align: "center",
+      key: "origen", title: "Origen / PO", width: 170, align: "center",
       render: (_, r) => {
+        if (r._es_consumido_almacen) {
+          return <Tag color="cyan">📦 De almacén</Tag>;
+        }
         if (!r.po_id) return <Tag color="default">Stock directo</Tag>;
         const recibida = r._po_recibida;
         return (
@@ -332,10 +340,15 @@ function GrupoCard({
       },
     },
     {
-      key: "puede", title: "Puede despachar", width: 130, align: "center",
-      render: (_, r) => r._puede_despachar
-        ? <Tag color="green">✓ Sí</Tag>
-        : <Tag color="red">✗ Sin stock</Tag>,
+      key: "puede", title: "Puede despachar", width: 150, align: "center",
+      render: (_, r) => {
+        if (r._es_consumido_almacen) {
+          return <Tag color="green">✓ Listo (de almacén)</Tag>;
+        }
+        return r._puede_despachar
+          ? <Tag color="green">✓ Sí</Tag>
+          : <Tag color="red">✗ Sin stock</Tag>;
+      },
     },
   ];
 

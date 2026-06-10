@@ -44,6 +44,9 @@ interface CompraRow {
   pago_key: string | null;
   pago_nombre: string | null;
   tipo_pago: string | null;
+  // Adjuntos múltiples — el patrón legacy (guia_key/factura_key/pago_key)
+  // se mantiene por compat, pero los nuevos archivos se cargan acá.
+  adjuntos: { id: number; tipo: string; r2_key: string; nombre_archivo: string; tipo_mime: string | null; tamano: number | null; fecha_subida: string }[];
 }
 
 export type FiltroDocs = "todos" | "con_factura" | "sin_factura" | "con_guia" | "sin_guia";
@@ -86,13 +89,22 @@ export default function ContabilidadView({
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Helpers para chequear si una OC tiene al menos un adjunto del tipo X.
+  // Considera tanto el campo legacy como compra_adjunto (multi).
+  const tieneTipo = (r: CompraRow, tipo: "guia" | "factura" | "pago") => {
+    if (tipo === "guia" && r.guia_key) return true;
+    if (tipo === "factura" && r.factura_key) return true;
+    if (tipo === "pago" && r.pago_key) return true;
+    return (r.adjuntos ?? []).some((a) => a.tipo === tipo);
+  };
+
   const filtradas = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
-      if (filtroDocs === "con_factura" && !r.factura_key) return false;
-      if (filtroDocs === "sin_factura" && r.factura_key) return false;
-      if (filtroDocs === "con_guia" && !r.guia_key) return false;
-      if (filtroDocs === "sin_guia" && r.guia_key) return false;
+      if (filtroDocs === "con_factura" && !tieneTipo(r, "factura")) return false;
+      if (filtroDocs === "sin_factura" && tieneTipo(r, "factura")) return false;
+      if (filtroDocs === "con_guia" && !tieneTipo(r, "guia")) return false;
+      if (filtroDocs === "sin_guia" && tieneTipo(r, "guia")) return false;
       if (!q) return true;
       return (
         r.numero_po.toLowerCase().includes(q) ||
@@ -107,13 +119,16 @@ export default function ContabilidadView({
   }, [rows, search, filtroDocs]);
 
   const kpis = useMemo(() => {
-    const conFactura = rows.filter((r) => r.factura_key).length;
-    const conGuia = rows.filter((r) => r.guia_key).length;
-    const sinFactura = rows.filter((r) => !r.factura_key).length;
+    const conFactura = rows.filter((r) => tieneTipo(r, "factura")).length;
+    const conGuia = rows.filter((r) => tieneTipo(r, "guia")).length;
+    const sinFactura = rows.filter((r) => !tieneTipo(r, "factura")).length;
     return { total: rows.length, conFactura, conGuia, sinFactura };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows]);
 
-  // Subir guía/factura/pago: presigned R2 → registrar en /api/compras/[id]/guia.
+  // Subir guía/factura/pago. Cada upload registra una FILA NUEVA en
+  // compra_adjunto — una misma OC puede tener N guías, N facturas y N pagos.
+  // El endpoint legacy /api/compras/[id]/guia ya no se usa para subir.
   type TipoArchivo = "guia" | "factura" | "pago";
   const ETIQUETA_TIPO: Record<TipoArchivo, string> = {
     guia: "Guía",
@@ -128,10 +143,10 @@ export default function ContabilidadView({
         file,
         uploadUrlEndpoint: `/api/compras/${compraId}/guia/upload-url?tipo=${tipo}`,
       });
-      const res = await fetch(`/api/compras/${compraId}/guia?tipo=${tipo}`, {
+      const res = await fetch(`/api/compras/${compraId}/adjuntos`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(meta),
+        body: JSON.stringify({ tipo, ...meta }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Error al registrar archivo");
@@ -144,7 +159,10 @@ export default function ContabilidadView({
     }
   };
 
-  const eliminarArchivo = async (compraId: number, tipo: TipoArchivo) => {
+  // Eliminar — distingue legacy (campos guia_key/factura_key/pago_key en
+  // Compra) vs multi (filas de compra_adjunto). El callsite pasa adjuntoId
+  // si viene de la lista nueva, o null si es el slot legacy de la fila.
+  const eliminarLegacy = async (compraId: number, tipo: TipoArchivo) => {
     try {
       const res = await fetch(`/api/compras/${compraId}/guia?tipo=${tipo}`, { method: "DELETE" });
       const json = await res.json();
@@ -155,42 +173,58 @@ export default function ContabilidadView({
       message.error(err instanceof Error ? err.message : "Error al eliminar archivo");
     }
   };
+  const eliminarAdjunto = async (compraId: number, adjuntoId: number) => {
+    try {
+      const res = await fetch(`/api/compras/${compraId}/adjuntos/${adjuntoId}`, { method: "DELETE" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Error al eliminar adjunto");
+      message.success("Archivo eliminado");
+      fetchData();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : "Error al eliminar adjunto");
+    }
+  };
 
   const archivoCell = (
-    r2Key: string | null,
-    nombre: string | null,
+    r: CompraRow,
     label: string,
     tipo: TipoArchivo,
     resource: "compra-guia" | "compra-factura" | "compra-pago",
-    compraId: number,
   ) => {
+    const compraId = r.id;
     const slotId = `${compraId}-${tipo}`;
     const uploading = uploadingId === slotId;
+    // Combinar legacy (si existe) + multi. El legacy se muestra como una
+    // fila más, identificada con `adjId=null` para que delete vaya al
+    // endpoint correcto.
+    const legacyKey = tipo === "guia" ? r.guia_key : tipo === "factura" ? r.factura_key : r.pago_key;
+    const legacyNombre = tipo === "guia" ? r.guia_nombre : tipo === "factura" ? r.factura_nombre : r.pago_nombre;
+    const multi = (r.adjuntos ?? []).filter((a) => a.tipo === tipo);
+    const filas: Array<{ adjId: number | null; r2Key: string; nombre: string | null }> = [];
+    if (legacyKey) filas.push({ adjId: null, r2Key: legacyKey, nombre: legacyNombre });
+    for (const a of multi) filas.push({ adjId: a.id, r2Key: a.r2_key, nombre: a.nombre_archivo });
     return (
-      <Space wrap size={4} style={{ rowGap: 4 }}>
-        {r2Key ? (
-          <>
-            <R2FileLink
-              resource={resource}
-              resourceId={compraId}
-              r2Key={r2Key}
-              style={{ fontSize: 12 }}
-            >
-              <FileTextOutlined style={{ color: brand.cyan, marginRight: 4 }} />
-              {nombre || `Ver ${label}`}
-            </R2FileLink>
-            <Popconfirm
-              title={`¿Eliminar ${label}?`}
-              onConfirm={() => eliminarArchivo(compraId, tipo)}
-              okType="danger"
-              okText="Eliminar"
-              cancelText="Cancelar"
-            >
-              <Button size="small" type="text" danger icon={<DeleteOutlined />} title={`Eliminar ${label}`} />
-            </Popconfirm>
-          </>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {filas.length === 0 ? (
+          <Tag color="default" style={{ margin: 0 }}>Sin {label}</Tag>
         ) : (
-          <Tag color="default" style={{ marginRight: 0 }}>Sin {label}</Tag>
+          filas.map((f) => (
+            <Space key={f.adjId ?? `legacy-${f.r2Key}`} size={4}>
+              <R2FileLink resource={resource} resourceId={compraId} r2Key={f.r2Key} style={{ fontSize: 12 }}>
+                <FileTextOutlined style={{ color: brand.cyan, marginRight: 4 }} />
+                {f.nombre || `Ver ${label}`}
+              </R2FileLink>
+              <Popconfirm
+                title={`¿Eliminar este ${label}?`}
+                onConfirm={() => (f.adjId == null ? eliminarLegacy(compraId, tipo) : eliminarAdjunto(compraId, f.adjId))}
+                okType="danger"
+                okText="Eliminar"
+                cancelText="Cancelar"
+              >
+                <Button size="small" type="text" danger icon={<DeleteOutlined />} title={`Eliminar ${label}`} />
+              </Popconfirm>
+            </Space>
+          ))
         )}
         <Upload
           showUploadList={false}
@@ -202,10 +236,10 @@ export default function ContabilidadView({
           disabled={uploading}
         >
           <Button size="small" icon={<UploadOutlined />} loading={uploading}>
-            {r2Key ? "Reemplazar" : "Subir"}
+            {filas.length > 0 ? "Subir otra" : "Subir"}
           </Button>
         </Upload>
-      </Space>
+      </div>
     );
   };
 
@@ -261,8 +295,8 @@ export default function ContabilidadView({
       render: (v: string | null) => v ?? <Text type="secondary">—</Text>,
     },
     {
-      key: "guia", title: "Archivo Guía", width: 260, align: "left",
-      render: (_v, r) => archivoCell(r.guia_key, r.guia_nombre, "guía", "guia", "compra-guia", r.id),
+      key: "guia", title: "Archivos Guía", width: 280, align: "left",
+      render: (_v, r) => archivoCell(r, "guía", "guia", "compra-guia"),
     },
     {
       key: "nro_factura", title: "Nro Factura", dataIndex: "nro_factura", width: 130, align: "left",
@@ -270,8 +304,8 @@ export default function ContabilidadView({
       render: (v: string | null) => v ?? <Text type="secondary">—</Text>,
     },
     {
-      key: "factura", title: "Archivo Factura", width: 260, align: "left",
-      render: (_v, r) => archivoCell(r.factura_key, r.factura_nombre, "factura", "factura", "compra-factura", r.id),
+      key: "factura", title: "Archivos Factura", width: 280, align: "left",
+      render: (_v, r) => archivoCell(r, "factura", "factura", "compra-factura"),
     },
     {
       key: "pago", title: "Comprobante Pago", width: 260, align: "left",
@@ -286,7 +320,7 @@ export default function ContabilidadView({
             </Text>
           );
         }
-        return archivoCell(r.pago_key, r.pago_nombre, "comprobante de pago", "pago", "compra-pago", r.id);
+        return archivoCell(r, "comprobante de pago", "pago", "compra-pago");
       },
     },
     {

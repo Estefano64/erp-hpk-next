@@ -60,24 +60,32 @@ export async function GET(_req: NextRequest) {
         const yaDespachado = Number(it.cantidad_recibida ?? 0);
         const cantPendiente = Math.max(0, cantTotal - yaDespachado);
         const esFree = it.material_id == null;
+        // Origen del item para el despacho al técnico:
+        //   "stock"      → ya fue sacado del almacén vía consumir-de-almacen,
+        //                  el stock fue decrementado y queda pendiente la entrega
+        //                  al técnico. El despacho NO debe decrementar de nuevo.
+        //   "oc"         → flujo normal de OC recibida (con o sin material).
+        const esConsumidoAlmacen = it.status_oc_codigo === "CONSUMIDO_ALMACEN";
         const stockMat = Number(it.material?.stock_actual ?? 0);
         const poStatus = it.compra?.status_oc_codigo ?? null;
         const poRecibida = it.po_id == null
           ? stockMat > 0
           : poStatus === "ENTREGADO" || poStatus === "INCOMPLETO" || poStatus === "COMPLETO";
-        // Lógica de "puede despachar" según el tipo de item:
-        //   - MAC (con material): hay stock suficiente en almacén.
-        //   - FREE (sin material): la OC asociada ya fue recibida (la cantidad
-        //     pendiente se entrega directo a la OT, no hay stock que chequear).
-        //     Sin OC el item free no tiene sentido (no hay de dónde despachar).
+        // Lógica de "puede despachar" según el origen del item:
+        //   - CONSUMIDO_ALMACEN: el stock ya salió, siempre se puede entregar.
+        //   - MAC desde OC: hay stock suficiente en almacén.
+        //   - FREE (sin material): la OC asociada ya fue recibida.
         const puedeDespachar = cantPendiente > 0 && (
-          esFree
-            ? poRecibida
-            : stockMat >= cantPendiente
+          esConsumidoAlmacen
+            ? true
+            : esFree
+              ? poRecibida
+              : stockMat >= cantPendiente
         );
         return {
           ...it,
           _es_free: esFree,
+          _es_consumido_almacen: esConsumidoAlmacen,
           _cant_pendiente: cantPendiente,
           _puede_despachar: puedeDespachar,
           _po_status: poStatus,
