@@ -45,10 +45,11 @@ Selector del header:
   verde = terminada, naranja = pausada): la comparación plan enviado vs realidad
   se ve en el mismo carril.
 - **Semana real** — el plan vivo (editable). Además muestra:
-  - **Tareas iniciadas con su horario REAL en el propio bloque**: el bloque va
-    de `inicio_real` al fin real (terminada), hasta "ahora" (en proceso, crece
-    en vivo) o se proyecta por horas reales (pausada). Una tarea terminada
-    antes **acorta su bloque** y el espacio liberado del operario se ve al
+  - **Tareas iniciadas**: el bloque arranca en `inicio_real` y mientras está
+    en proceso/pausada **reserva la duración planificada** (si mostrara solo lo
+    transcurrido, el espacio "libre" invitaría a sobre-programar al operario);
+    si se pasa del plan, crece en vivo hasta "ahora". Recién al **terminar** el
+    bloque se acorta a lo que realmente duró y el espacio liberado se ve al
     instante. La barra de carga del operario también descuenta lo terminado por
     sus horas reales. (Las iniciadas no se arrastran, así que es seguro.)
   - **↷** = tarea distinta a la foto (fecha u operario cambiado). El tooltip

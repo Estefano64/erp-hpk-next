@@ -1514,27 +1514,33 @@ export default function ProgramacionSemanalPage() {
       && (Math.abs(baseIni.diff(planIni, "minute")) >= 1 || (r.tecnico_base ?? r.tecnico ?? "") !== (r.tecnico ?? ""));
     const fueraDePlan = vistaTiempo === "plan" && !baseIni && lanesConEnvio.has(recurso);
     const empezada = haEmpezado(r.estado);
-    // En SEMANA REAL una tarea ya iniciada muestra su ventana REAL en el propio
-    // bloque: inicio_real → fin real (terminada), → ahora (en proceso, crece en
-    // vivo), o proyección por horas reales (pausada). Así una tarea terminada
-    // antes ACORTA su bloque y el espacio liberado del operario se ve al
-    // instante. Es seguro: las iniciadas no se arrastran ni se redimensionan.
+    // En SEMANA REAL una tarea ya iniciada arranca su bloque en el inicio REAL,
+    // pero el ACORTE a la duración real ocurre recién al TERMINAR:
+    //   - realizado → inicio_real → fin_real (bloque del tamaño que realmente duró).
+    //   - en_proceso / pausado → el bloque RESERVA la duración planificada desde
+    //     el inicio real. Si mostrara solo lo transcurrido (3h plan, va 1h →
+    //     bloque de 1h), el espacio "libre" invitaría a sobre-programar al
+    //     operario con trabajo que no le entra. Si se pasa del plan, crece en
+    //     vivo hasta "ahora" (el atraso se ve).
+    // Es seguro: las iniciadas no se arrastran ni se redimensionan.
     let ini = planIni;
     let fin = planFin;
-    let ventanaReal = false;
     if (vistaTiempo === "plan" && empezada && r.fecha_inicio_real) {
       ini = dayjs(r.fecha_inicio_real);
-      if (r.estado === "en_proceso") {
-        fin = ahoraTick ?? dayjs(); // crece en vivo
-      } else if (r.estado === "realizado" && r.fecha_fin_real) {
-        fin = dayjs(r.fecha_fin_real);
+      const durPlan = Number(r.horas_estimadas ?? 0) * Math.max(1, Number(r.qty_personal ?? 1));
+      if (r.estado === "realizado") {
+        // Terminada: recién acá se acorta a lo que realmente duró.
+        fin = r.fecha_fin_real
+          ? dayjs(r.fecha_fin_real)
+          : dayjs(calcularFin(ini.toDate(), Math.max(Number(r.horas_reales ?? 0), 0.25), !!r.horas_extras));
       } else {
-        // pausado (o realizado sin fin_real): proyectar por horas reales hábiles.
-        const hr = Number(r.horas_reales ?? 0);
-        fin = hr > 0 ? dayjs(calcularFin(ini.toDate(), hr, !!r.horas_extras)) : ini.add(30, "minute");
+        const finEsperado = durPlan > 0
+          ? dayjs(calcularFin(ini.toDate(), durPlan, !!r.horas_extras))
+          : ini.add(1, "hour");
+        const ahora = ahoraTick ?? dayjs();
+        fin = r.estado === "en_proceso" && ahora.isAfter(finEsperado) ? ahora : finEsperado;
       }
       if (!fin.isAfter(ini)) fin = ini.add(15, "minute"); // guard tamaño mínimo
-      ventanaReal = true;
     }
     // Bordes de la semana visible (lunes 8:00 → viernes 18:00)
     const semanaIni = lunes.hour(JORNADA_INICIO).minute(0).second(0).millisecond(0);
@@ -1596,9 +1602,6 @@ export default function ProgramacionSemanalPage() {
               <div>⏱ Real: {dayjs(r.fecha_inicio_real).format("DD/MM HH:mm")} → {r.fecha_fin_real ? dayjs(r.fecha_fin_real).format("DD/MM HH:mm") : (r.estado === "en_proceso" ? "en curso" : "—")}{r.horas_reales != null ? ` · ${Number(r.horas_reales).toFixed(1)}h` : ""}</div>
             )}
             <div>Estado: {estadoNombre(r.estado)}</div>
-            {ventanaReal && (
-              <div style={{ opacity: 0.9 }}>⏱ El bloque muestra el horario REAL (la tarea ya fue iniciada); el plan original queda arriba.</div>
-            )}
             {r.observaciones && (
               <div style={{ color: "#13C2C2" }}>🗒 Nota del técnico: {r.observaciones}</div>
             )}
@@ -2264,7 +2267,7 @@ export default function ProgramacionSemanalPage() {
               <WarningFilled style={{ color: brand.error, fontSize: 12 }} /> Conflicto
             </span>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
-              ⏱ Tarea iniciada: el bloque muestra su horario REAL (terminó antes ⇒ bloque más corto)
+              ⏱ Iniciada: el bloque arranca en su inicio real y reserva la duración planificada; al terminar se ajusta a lo que duró
             </span>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
               <span style={{ display: "inline-block", width: 16, height: 6, borderRadius: 3, background: "#13C2C2", boxShadow: "0 0 0 1px rgba(0,0,0,0.15)" }} />
