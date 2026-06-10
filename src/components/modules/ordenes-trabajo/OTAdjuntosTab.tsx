@@ -14,7 +14,6 @@ import {
   Empty,
   Card,
   DatePicker,
-  Checkbox,
   Input,
   Space,
 } from "antd";
@@ -167,7 +166,6 @@ function EtapaMetaForm({
   const [fechaCotizacion, setFechaCotizacion] = useState<Dayjs | null>(toDayjs(meta.fecha_cotizacion));
   const [fechaGeneracionPo, setFechaGeneracionPo] = useState<Dayjs | null>(toDayjs(meta.fecha_generacion_po));
   const [fechaAprobacion, setFechaAprobacion] = useState<Dayjs | null>(toDayjs(meta.fecha_aprobacion));
-  const [poOk, setPoOk] = useState<boolean>(!!meta.po_cliente_ok);
   const [fechaDespacho, setFechaDespacho] = useState<Dayjs | null>(toDayjs(meta.fecha_despacho));
   const [empresaRecibe, setEmpresaRecibe] = useState<string>(meta.empresa_recibe ?? "");
   const [fechaFacturacion, setFechaFacturacion] = useState<Dayjs | null>(toDayjs(meta.fecha_facturacion));
@@ -177,11 +175,10 @@ function EtapaMetaForm({
     setFechaCotizacion(toDayjs(meta.fecha_cotizacion));
     setFechaGeneracionPo(toDayjs(meta.fecha_generacion_po));
     setFechaAprobacion(toDayjs(meta.fecha_aprobacion));
-    setPoOk(!!meta.po_cliente_ok);
     setFechaDespacho(toDayjs(meta.fecha_despacho));
     setEmpresaRecibe(meta.empresa_recibe ?? "");
     setFechaFacturacion(toDayjs(meta.fecha_facturacion));
-  }, [meta.fecha_cotizacion, meta.fecha_generacion_po, meta.fecha_aprobacion, meta.po_cliente_ok, meta.fecha_despacho, meta.empresa_recibe, meta.fecha_facturacion]);
+  }, [meta.fecha_cotizacion, meta.fecha_generacion_po, meta.fecha_aprobacion, meta.fecha_despacho, meta.empresa_recibe, meta.fecha_facturacion]);
 
   const fmt = (d: Dayjs | null) => (d ? d.format("YYYY-MM-DD") : null);
 
@@ -243,10 +240,7 @@ function EtapaMetaForm({
           <div style={labelStyle}>Fecha de aprobación de cotización</div>
           <DatePicker format="DD/MM/YYYY" value={fechaAprobacion} onChange={setFechaAprobacion} disabled={cerrada} style={{ width: 180 }} />
         </div>
-        <Checkbox checked={poOk} onChange={(e) => setPoOk(e.target.checked)} disabled={cerrada} style={{ paddingBottom: 4 }}>
-          Cotización aprobada / conforme
-        </Checkbox>
-        {guardarBtn({ fecha_generacion_po: fmt(fechaGeneracionPo), fecha_aprobacion: fmt(fechaAprobacion), po_cliente_ok: poOk })}
+        {guardarBtn({ fecha_generacion_po: fmt(fechaGeneracionPo), fecha_aprobacion: fmt(fechaAprobacion) })}
       </Space>
     );
   } else if (etapaKey === "despacho") {

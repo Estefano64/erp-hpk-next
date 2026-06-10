@@ -100,6 +100,16 @@ export async function GET(req: NextRequest) {
           orderBy: { fecha_solicitud: "asc" },
           take: 100,
         },
+        // Adjuntos múltiples (compra_adjunto). Reemplaza el patrón legacy de
+        // guia_key/factura_key/pago_key — una OC puede tener N guías, N
+        // facturas y N comprobantes de pago.
+        adjuntos: {
+          select: {
+            id: true, tipo: true, r2_key: true, nombre_archivo: true,
+            tipo_mime: true, tamano: true, fecha_subida: true,
+          },
+          orderBy: [{ tipo: "asc" }, { fecha_subida: "asc" }],
+        },
       },
       orderBy: { fecha_solicitud: "desc" },
     });
@@ -157,6 +167,7 @@ export async function GET(req: NextRequest) {
       pago_key: r.pago_key,
       pago_nombre: r.pago_nombre,
       tipo_pago: r.tipo_pago,
+      adjuntos: r.adjuntos,
       observaciones: r.observaciones,
       usuario_solicita: r.usuario_solicita,
       usuario_aprueba: r.usuario_aprueba,
