@@ -1287,6 +1287,10 @@ model Compra {
   observaciones          String?
   usuario_solicita       String          @db.VarChar(100)
   usuario_aprueba        String?         @db.VarChar(100)
+  // Aprobación: descripción corta (etiqueta visible en listados) + detalle largo.
+  // Complementan al `comentario_aprobacion` que ya existía (nota libre).
+  descripcion_aprobacion String?         @db.VarChar(300)
+  detalle_aprobacion     String?
   // Comentario / recomendación que dejó el aprobador al aceptar la OC. Opcional.
   // Se persiste en el momento de aceptar (espejo del que va a OTHistorial)
   // para poder mostrarlo en la UI sin parsear el JSON del historial.
@@ -1506,6 +1510,10 @@ model OTRepuesto {
   fecha_envio_aprobacion      DateTime?            @db.Date
   usuario_aprueba             String?              @db.VarChar(100)
   fecha_aprobacion            DateTime?            @db.Date
+  // Aprobación: descripción corta (etiqueta visible en listados) + detalle largo.
+  // Complementan al `comentario_aprobacion` que ya existía.
+  descripcion_aprobacion      String?              @db.VarChar(300)
+  detalle_aprobacion          String?
   // Comentario / recomendación que dejó el aprobador. Opcional. Se setea
   // en el momento de aprobar (single o lote). Si después se anula y se
   // vuelve a aprobar, este campo se reescribe con el nuevo comentario.

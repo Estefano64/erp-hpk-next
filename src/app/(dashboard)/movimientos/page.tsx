@@ -1104,9 +1104,22 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                     compra={poSeleccionada}
                     tipo="guia"
                     onChanged={async () => {
-                      await fetchPOs();
-                      const refreshed = await fetch(`/api/compras/${poSeleccionada.id}`).then((r) => r.ok ? r.json() : null).catch(() => null);
-                      if (refreshed?.data) setPoSeleccionada(refreshed.data);
+                      // Re-fetch SOLO la lista de adjuntos (no la OC entera) y
+                      // mergeamos al state actual. Antes hacíamos fetch a
+                      // /api/compras/[id] que devuelve un shape distinto al
+                      // de POPendiente — eso pisaba campos y daba la sensación
+                      // de "duplicar adjuntos y borrar lo de abajo".
+                      try {
+                        const r = await fetch(`/api/compras/${poSeleccionada.id}/adjuntos`);
+                        if (r.ok) {
+                          const j = await r.json();
+                          setPoSeleccionada((prev) => prev ? { ...prev, adjuntos: j.data ?? [] } : prev);
+                        }
+                      } catch { /* refresco best-effort */ }
+                      // El listado del grid se refresca por las dudas (otros
+                      // campos como nro_guia podrían haber cambiado vía la
+                      // metadata del modal de subida).
+                      void fetchPOs();
                     }}
                   />
                 </Col>
@@ -1118,9 +1131,22 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                     compra={poSeleccionada}
                     tipo="factura"
                     onChanged={async () => {
-                      await fetchPOs();
-                      const refreshed = await fetch(`/api/compras/${poSeleccionada.id}`).then((r) => r.ok ? r.json() : null).catch(() => null);
-                      if (refreshed?.data) setPoSeleccionada(refreshed.data);
+                      // Re-fetch SOLO la lista de adjuntos (no la OC entera) y
+                      // mergeamos al state actual. Antes hacíamos fetch a
+                      // /api/compras/[id] que devuelve un shape distinto al
+                      // de POPendiente — eso pisaba campos y daba la sensación
+                      // de "duplicar adjuntos y borrar lo de abajo".
+                      try {
+                        const r = await fetch(`/api/compras/${poSeleccionada.id}/adjuntos`);
+                        if (r.ok) {
+                          const j = await r.json();
+                          setPoSeleccionada((prev) => prev ? { ...prev, adjuntos: j.data ?? [] } : prev);
+                        }
+                      } catch { /* refresco best-effort */ }
+                      // El listado del grid se refresca por las dudas (otros
+                      // campos como nro_guia podrían haber cambiado vía la
+                      // metadata del modal de subida).
+                      void fetchPOs();
                     }}
                   />
                 </Col>

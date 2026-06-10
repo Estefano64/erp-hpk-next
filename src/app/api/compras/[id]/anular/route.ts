@@ -33,6 +33,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
     const body = await req.json().catch(() => ({}));
     const motivo = typeof body?.motivo === "string" ? body.motivo.trim() : "";
+    const descripcionAprob = typeof body?.descripcion === "string" ? body.descripcion.trim().slice(0, 300) : "";
+    const detalleAprob = typeof body?.detalle === "string" ? body.detalle.trim() : "";
 
     const result = await prisma.$transaction(async (tx) => {
       const compra = await tx.compra.findUnique({
@@ -49,13 +51,16 @@ export async function POST(req: NextRequest, { params }: Params) {
         );
       }
 
-      // Anular la OC + sus items vinculados
+      // Anular la OC + sus items vinculados. Persistimos también descripción
+      // + detalle de aprobación (los 3 campos del modal de rechazo).
       const actualizada = await tx.compra.update({
         where: { id: compraId },
         data: {
           status_oc_codigo: "ANULADO",
           usuario_aprueba: usuario,
           comentario_aprobacion: motivo || null,
+          descripcion_aprobacion: descripcionAprob || null,
+          detalle_aprobacion: detalleAprob || null,
         },
       });
       await tx.oTRepuesto.updateMany({
@@ -74,14 +79,21 @@ export async function POST(req: NextRequest, { params }: Params) {
         select: { orden_trabajo_interna_id: true },
         distinct: ["orden_trabajo_interna_id"],
       });
-      const descripcion = motivo
-        ? `OC ${compra.numero_po} ANULADA por ${usuario} — ${motivo}`
+      const piezas = [
+        descripcionAprob ? `Desc: ${descripcionAprob}` : null,
+        detalleAprob ? `Detalle: ${detalleAprob}` : null,
+        motivo || null,
+      ].filter(Boolean);
+      const descripcion = piezas.length > 0
+        ? `OC ${compra.numero_po} ANULADA por ${usuario} — ${piezas.join(" · ")}`
         : `OC ${compra.numero_po} ANULADA por ${usuario}`;
       const datosAdicionales = JSON.stringify({
         po_id: compraId,
         numero_po: compra.numero_po,
         accion: "ANULAR_OC",
         motivo: motivo || null,
+        descripcion: descripcionAprob || null,
+        detalle: detalleAprob || null,
       });
       for (const { ot_id } of otsExternas) {
         if (ot_id == null) continue;
