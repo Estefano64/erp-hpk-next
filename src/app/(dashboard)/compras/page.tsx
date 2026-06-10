@@ -762,11 +762,11 @@ export default function ComprasPage() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
         <Title level={3} style={{ margin: 0 }}>
           Compras
         </Title>
-        <Space>
+        <Space wrap>
           <ColumnasToggleButton<Compra>
             columns={columns}
             ocultas={ocultas}

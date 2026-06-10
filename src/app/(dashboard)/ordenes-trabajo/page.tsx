@@ -43,6 +43,7 @@ import {
   useColumnasRedimensionables,
 } from "@/lib/tables";
 import { brand } from "@/lib/theme";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 import { formatDateOnly } from "@/lib/dates";
@@ -208,6 +209,7 @@ const FIXED_FILTERS: Record<string, { text: string; value: string }[]> = {
 export default function OrdenesTrabajoPage() {
   const router = useRouter();
   const { message, modal } = App.useApp();
+  const { screens } = useResponsive();
   const { data: session } = useSession();
   // Eliminar / desactivar OTs es exclusivo del admin (operación destructiva).
   const esAdmin = ((session?.user as { roles?: string[] } | undefined)?.roles ?? []).includes("admin");
@@ -332,7 +334,7 @@ export default function OrdenesTrabajoPage() {
       okText: "Eliminar todo",
       okButtonProps: { danger: true },
       cancelText: "Cancelar",
-      width: 520,
+      width: modalWidth(screens, 520),
       content: (
         <div style={{ fontSize: 13 }}>
           Esto borra <b>permanentemente</b> la OT y <b>todo lo relacionado</b>:
@@ -903,9 +905,9 @@ export default function OrdenesTrabajoPage() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
         <Title level={3} style={{ margin: 0 }}>Órdenes de Trabajo</Title>
-        <Space>
+        <Space wrap>
           <Tooltip title="Refrescar el listado preservando filtros, paginación y ancho de columnas (sin recargar la página).">
             <Button
               icon={<ReloadOutlined />}
@@ -1022,7 +1024,7 @@ export default function OrdenesTrabajoPage() {
       {/* Filtro rápido por tipo de OT (sincronizado con el filtro de columna
           `tipo_ot`). "Todas" limpia ese filtro. */}
       <Segmented
-        style={{ marginBottom: 12 }}
+        style={{ marginBottom: 12, maxWidth: "100%", overflowX: "auto" }}
         value={(columnFilters.tipo_ot?.[0] as string) || "todas"}
         onChange={(v) => {
           setColumnFilters((prev) => {

@@ -474,12 +474,12 @@ export default function StockPage() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
         <Title level={3} style={{ margin: 0 }}>
           <DatabaseOutlined style={{ marginRight: 8, color: brand.navy }} />
           Stock de Materiales
         </Title>
-        <Space>
+        <Space wrap>
           <ColumnasToggleButton<StockItem>
             columns={columns}
             ocultas={ocultas}

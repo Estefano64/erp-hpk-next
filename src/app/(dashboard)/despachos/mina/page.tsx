@@ -15,6 +15,7 @@ import type { UploadFile } from "antd/es/upload/interface";
 import dayjs, { Dayjs } from "dayjs";
 import { paginacionEstandar } from "@/lib/tables";
 import { brand } from "@/lib/theme";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 import { formatDateOnly } from "@/lib/dates";
 import { uploadToR2 } from "@/lib/r2-client";
 import { useColumnasRedimensionables, STICKY_HEADER } from "@/lib/tables";
@@ -46,6 +47,7 @@ interface OTLista {
 export default function DespachoMinaPage() {
   const { message: msg } = App.useApp();
   const router = useRouter();
+  const { screens } = useResponsive();
   const [data, setData] = useState<OTLista[]>([]);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
@@ -292,7 +294,7 @@ export default function DespachoMinaPage() {
         okText="Generar guía y marcar Entregado"
         cancelText="Cancelar"
         confirmLoading={saving}
-        width={640}
+        width={modalWidth(screens, 640)}
       >
         {otSel && (
           <div>
@@ -306,7 +308,7 @@ export default function DespachoMinaPage() {
             </div>
             <Form form={form} layout="vertical">
               <Row gutter={12}>
-                <Col span={12}>
+                <Col xs={24} md={12}>
                   <Form.Item
                     name="guia_entrega_salida"
                     label="N° Guía de remisión"
@@ -315,7 +317,7 @@ export default function DespachoMinaPage() {
                     <Input placeholder="Ej: GR-2026-0001" />
                   </Form.Item>
                 </Col>
-                <Col span={12}>
+                <Col xs={24} md={12}>
                   <Form.Item
                     name="fecha_entrega"
                     label="Fecha de entrega"

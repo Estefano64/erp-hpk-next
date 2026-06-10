@@ -319,7 +319,7 @@ export default function TicketsPage() {
             Reportá bugs, mejoras o consultas del ERP. Adjuntá una captura si ayuda a explicar el problema.
           </Text>
         </div>
-        <Space>
+        <Space wrap>
           <ExportarExcelButton<Ticket>
             endpoint="/api/tickets"
             filename="Tickets"

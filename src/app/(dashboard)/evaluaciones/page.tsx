@@ -379,12 +379,12 @@ export default function EvaluacionesPage() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
         <Title level={3} style={{ margin: 0 }}>
           <ExperimentOutlined style={{ color: brand.cyan, marginRight: 8 }} />
           Hojas de Evaluación
         </Title>
-        <Space>
+        <Space wrap>
           <ColumnasToggleButton<Evaluacion>
             columns={columns}
             ocultas={ocultas}

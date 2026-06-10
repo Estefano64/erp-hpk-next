@@ -356,11 +356,11 @@ export default function CodigosReparacionPage() {
   return (
     <div>
       {contextHolder}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
         <Title level={3} style={{ margin: 0 }}>
           Códigos Reparables
         </Title>
-        <Space>
+        <Space wrap>
           <ColumnasToggleButton<CodRep>
             columns={columns}
             ocultas={ocultas}
@@ -544,17 +544,17 @@ export default function CodigosReparacionPage() {
                 <Input />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col xs={12} sm={8}>
               <Form.Item name="tipo_codigo" label="Tipo" rules={[{ required: true, message: "Requerido" }]}>
                 <Select showSearch optionFilterProp="label" options={tipos.map((t) => ({ value: t.codigo, label: `${t.codigo} - ${t.nombre}` }))} />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col xs={12} sm={8}>
               <Form.Item name="categoria_codigo" label="Categoría" rules={[{ required: true, message: "Requerido" }]}>
                 <Select showSearch optionFilterProp="label" options={categorias.map((c) => ({ value: c.codigo, label: `${c.codigo} - ${c.nombre}` }))} />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col xs={24} sm={8}>
               <Form.Item name="flota_codigo" label="Flota" rules={[{ required: true, message: "Requerido" }]}>
                 {/* Combobox: se puede elegir una flota existente o escribir una
                     nueva (se crea al vuelo en el catálogo al guardar). */}
@@ -568,17 +568,17 @@ export default function CodigosReparacionPage() {
                 />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col xs={12} sm={8}>
               <Form.Item name="fabricante_codigo" label="Fabricante">
                 <Select showSearch optionFilterProp="label" allowClear options={fabricantes.map((f) => ({ value: f.codigo, label: f.nombre }))} />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col xs={12} sm={8}>
               <Form.Item name="np" label="Número de Parte">
                 <Input />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col xs={24} sm={8}>
               <Form.Item name="posicion_codigo" label="Posición">
                 <Select showSearch optionFilterProp="label" allowClear options={posiciones.map((p) => ({ value: p.codigo, label: `${p.codigo} - ${p.nombre}` }))} />
               </Form.Item>

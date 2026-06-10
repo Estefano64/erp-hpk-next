@@ -408,7 +408,7 @@ export default function OrdenesTrabajoInternasPage() {
       okText: "Eliminar todo",
       okButtonProps: { danger: true },
       cancelText: "Cancelar",
-      width: 500,
+      width: modalWidth(screens, 500),
       content: (
         <div style={{ fontSize: 13 }}>
           Esto borra <b>permanentemente</b> la OT interna y <b>todo lo relacionado</b>
@@ -803,7 +803,7 @@ export default function OrdenesTrabajoInternasPage() {
             Mantenimiento de equipos del taller HP&amp;K (correctivas y preventivas).
           </Text>
         </div>
-        <Space>
+        <Space wrap>
           <Button icon={<ReloadOutlined />} onClick={fetchData} />
           {/* Export Excel — usa las MISMAS keys que las columnas de la tabla
               para que "Respetar layout actual de la tabla" pueda matchearlas. */}
@@ -881,7 +881,7 @@ export default function OrdenesTrabajoInternasPage() {
             />
           </Col>
           <Col xs={24} md={5}>
-            <Space>
+            <Space wrap>
               <ColumnasToggleButton<OTInternaRow>
                 columns={baseColumns}
                 ocultas={ocultas}

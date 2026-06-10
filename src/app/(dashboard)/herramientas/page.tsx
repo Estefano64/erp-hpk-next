@@ -266,6 +266,7 @@ function TabCatalogo() {
           onChange={onTablaChange}
           size="small"
           sticky={STICKY_HEADER}
+          scroll={{ x: 900 }}
           pagination={paginacionEstandar({
             current: page, pageSize, total: data.length,
             onChange: (p, s) => { setPage(p); setPageSize(s); },
@@ -292,17 +293,17 @@ function TabCatalogo() {
             <Input placeholder="Llave de impacto 3/4" />
           </Form.Item>
           <Row gutter={12}>
-            <Col span={8}>
+            <Col xs={12} md={8}>
               <Form.Item name="stock" label="Stock" rules={[{ required: true }]}>
                 <InputNumber min={0} style={{ width: "100%" }} />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col xs={12} md={8}>
               <Form.Item name="asignadas" label="Asignadas">
                 <InputNumber min={0} style={{ width: "100%" }} disabled />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col xs={24} md={8}>
               <Form.Item name="estado" label="Estado">
                 <Select showSearch optionFilterProp="label" options={["Disponible", "Mantenimiento", "Inactiva", "Reservada"].map((v) => ({ value: v, label: v }))} />
               </Form.Item>
@@ -640,12 +641,12 @@ function TabPrestamos() {
             />
           </Form.Item>
           <Row gutter={12}>
-            <Col span={8}>
+            <Col xs={24} md={8}>
               <Form.Item name="cantidad" label="Cantidad" rules={[{ required: true }]}>
                 <InputNumber min={1} style={{ width: "100%" }} />
               </Form.Item>
             </Col>
-            <Col span={16}>
+            <Col xs={24} md={16}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <Text style={{ fontSize: 13, fontWeight: 500 }}>
                   Prestado a {!destinoExterno && <span style={{ color: brand.error }}>*</span>}
@@ -707,12 +708,12 @@ function TabPrestamos() {
             />
           </Form.Item>
           <Row gutter={12}>
-            <Col span={12}>
+            <Col xs={24} md={12}>
               <Form.Item name="fecha_entrega" label="Fecha entrega" rules={[{ required: true }]}>
                 <DatePicker format="DD/MM/YYYY" style={{ width: "100%" }} />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col xs={24} md={12}>
               <Form.Item name="fecha_devolucion_prevista" label="Devolución prevista">
                 <DatePicker format="DD/MM/YYYY" style={{ width: "100%" }} />
               </Form.Item>

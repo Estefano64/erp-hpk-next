@@ -201,7 +201,7 @@ function TabCatalogo() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12, gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12, gap: 8, flexWrap: "wrap" }}>
         <ExportarExcelButton<StockItem>
           // OJO: /api/stock devuelve TODO el stock (no solo suministros) y no
           // pagina; con el checkbox "usar filtros de la tabla" (default) se
@@ -274,7 +274,7 @@ function TabCatalogo() {
           placeholder="Buscar código, descripción, N/P..."
           prefix={<SearchOutlined />}
           allowClear value={search} onChange={(e) => setSearch(e.target.value)}
-          style={{ width: 360 }}
+          style={{ width: 360, maxWidth: "100%" }}
         />
       </Card>
 
@@ -521,11 +521,11 @@ function TabEntregas() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8, flexWrap: "wrap" }}>
         <Text type="secondary">
           {rows.length} entrega(s) registrada(s)
         </Text>
-        <Space>
+        <Space wrap>
           <ExportarExcelButton<EntregaRow>
             // OJO: el endpoint devuelve todas las SALIDAs (no solo suministros);
             // con el checkbox "usar filtros de la tabla" (default) se exportan
@@ -592,7 +592,7 @@ function TabEntregas() {
           </Form.Item>
 
           <Row gutter={12}>
-            <Col span={8}>
+            <Col xs={24} sm={8}>
               <Form.Item
                 name="cantidad" label="Cantidad"
                 rules={[{ required: true, message: "Cantidad obligatoria" }]}
@@ -600,7 +600,7 @@ function TabEntregas() {
                 <InputNumber min={1} step={1} style={{ width: "100%" }} />
               </Form.Item>
             </Col>
-            <Col span={16}>
+            <Col xs={24} sm={16}>
               <Form.Item
                 name="trabajador_id" label="Entregado a (trabajador)"
                 rules={[{ required: true, message: "Seleccioná un trabajador" }]}

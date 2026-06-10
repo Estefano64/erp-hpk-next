@@ -16,6 +16,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 import { formatDateOnly } from "@/lib/dates";
 import { useColumnasRedimensionables, STICKY_HEADER, paginacionEstandar } from "@/lib/tables";
 import { uploadToR2, openR2File } from "@/lib/r2-client";
@@ -74,6 +75,7 @@ function formatFileSize(bytes: number): string {
 export default function FacturacionOTPage() {
   const { message: msg } = App.useApp();
   const router = useRouter();
+  const { screens } = useResponsive();
   const [data, setData] = useState<OTLista[]>([]);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
@@ -363,7 +365,7 @@ export default function FacturacionOTPage() {
         cancelText="Cerrar"
         confirmLoading={saving}
         okButtonProps={{ disabled: !!(otSel && !otSel.adjuntos_ok) }}
-        width={860}
+        width={modalWidth(screens, 860)}
         destroyOnHidden
       >
         {otSel && (
@@ -387,7 +389,7 @@ export default function FacturacionOTPage() {
 
             <Form form={form} layout="vertical">
               <Row gutter={12}>
-                <Col span={12}>
+                <Col xs={24} md={12}>
                   <Form.Item
                     name="nro_factura"
                     label="N° Factura"
@@ -396,7 +398,7 @@ export default function FacturacionOTPage() {
                     <Input placeholder="Ej: F001-12345" />
                   </Form.Item>
                 </Col>
-                <Col span={12}>
+                <Col xs={24} md={12}>
                   <Form.Item
                     name="fecha_facturacion"
                     label="Fecha factura"

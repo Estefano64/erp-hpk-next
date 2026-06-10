@@ -1271,7 +1271,7 @@ export default function RequerimientosPage() {
           <InboxOutlined style={{ marginRight: 8 }} />
           Requerimientos
         </Title>
-        <Space>
+        <Space wrap>
           {/* La tabla baja todo el dataset (limit 10000) y filtra client-side,
               así que `itemsVisibles` ya respeta búsqueda, rangos y filtros de
               columna; el export aplana los items de los grupos visibles. */}
@@ -1668,17 +1668,17 @@ export default function RequerimientosPage() {
             <Input.TextArea rows={2} maxLength={500} />
           </Form.Item>
           <Row gutter={12}>
-            <Col span={8}>
+            <Col xs={24} sm={8}>
               <Form.Item name="cantidad" label="Cantidad" rules={[{ required: true }]}>
                 <InputNumber min={0.01} step={1} style={{ width: "100%" }} />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col xs={12} sm={8}>
               <Form.Item name="unidad_medida" label="Unidad">
                 <Input placeholder="UNIDAD" />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col xs={12} sm={8}>
               <Form.Item name="fabricante_codigo" label="Fabricante">
                 <Select
                   showSearch allowClear optionFilterProp="label"

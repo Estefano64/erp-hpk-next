@@ -13,6 +13,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 import {
   numeracionColumn, useColumnasOcultas, ColumnasToggleButton, visibleColumns,
   filtroPorColumna, STICKY_HEADER, useColumnasRedimensionables,
@@ -67,6 +68,7 @@ interface GrupoOT {
 export default function DespachosPage() {
   const { message } = App.useApp();
   const router = useRouter();
+  const { screens } = useResponsive();
   const [grupos, setGrupos] = useState<GrupoOT[]>([]);
   const [loading, setLoading] = useState(false);
   const [seleccionados, setSeleccionados] = useState<Record<number, number[]>>({}); // otId -> reqIds
@@ -197,7 +199,7 @@ export default function DespachosPage() {
             value={filtro}
             onChange={(e) => setFiltro(e.target.value)}
             allowClear
-            style={{ width: 320 }}
+            style={{ width: 320, maxWidth: "100%" }}
           />
           <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>Actualizar</Button>
           {/* El endpoint agrupa por OT (no devuelve items planos), así que la
@@ -272,7 +274,7 @@ export default function DespachosPage() {
         confirmLoading={modalDespacho ? submitting === modalDespacho.otId : false}
         okText={`Despachar ${modalDespacho ? (seleccionados[modalDespacho.otId] ?? []).length : 0} item(s)`}
         cancelText="Cancelar"
-        width={520}
+        width={modalWidth(screens, 520)}
       >
         <Form form={formDespacho} layout="vertical" preserve={false}>
           <Form.Item
@@ -416,7 +418,7 @@ function GrupoCard({
         </Space>
       }
       extra={
-        <Space>
+        <Space wrap>
           <Tooltip title="Ver OT">
             <Button size="small" icon={<EyeOutlined />} onClick={() => router.push(`/ordenes-trabajo/${grupo.ot_id}`)} />
           </Tooltip>
@@ -445,6 +447,7 @@ function GrupoCard({
         components={tableComponents}
         dataSource={grupo.items}
         sticky={STICKY_HEADER}
+        scroll={{ x: 1200 }}
         pagination={false}
         rowSelection={{
           selectedRowKeys: seleccionados,

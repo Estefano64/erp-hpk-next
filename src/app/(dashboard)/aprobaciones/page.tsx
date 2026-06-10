@@ -17,6 +17,7 @@ import { uploadToR2 } from "@/lib/r2-client";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { brand } from "@/lib/theme";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 import {
   numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE,
   useColumnasOcultas, ColumnasToggleButton, visibleColumns, filtroPorColumna,
@@ -126,6 +127,7 @@ interface ProveedorOpt { id: number; razon_social: string; ruc: string | null }
 export default function AceptacionesPage() {
   const router = useRouter();
   const { message, modal } = App.useApp();
+  const { screens } = useResponsive();
 
   const [data, setData] = useState<AceptacionesPayload | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1369,7 +1371,7 @@ export default function AceptacionesPage() {
                       </Space>
                     }
                     extra={
-                      <Space>
+                      <Space wrap>
                         {selOcs.length > 0 && montoSelOcs && (
                           <Tag color="blue" style={{ fontWeight: 600 }}>
                             Total seleccionado: {montoSelOcs}
@@ -1464,7 +1466,7 @@ export default function AceptacionesPage() {
                       </Space>
                     }
                     extra={
-                      <Space>
+                      <Space wrap>
                         {selReqs.length > 0 && montoSelReqs && (
                           <Tag color="blue" style={{ fontWeight: 600 }}>
                             Total seleccionado: {montoSelReqs}
@@ -1573,7 +1575,7 @@ export default function AceptacionesPage() {
                   </Space>
                 }
                 extra={
-                  <Space>
+                  <Space wrap>
                     <ColumnasToggleButton<HistorialItem>
                       columns={histColumns}
                       ocultas={ocultasHist}
@@ -1623,6 +1625,7 @@ export default function AceptacionesPage() {
         confirmLoading={aprobarSaving}
         okText="Aprobar"
         cancelText="Cancelar"
+        width={modalWidth(screens, 520)}
         destroyOnHidden
       >
         {aprobarModalReq && (

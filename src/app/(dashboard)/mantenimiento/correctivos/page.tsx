@@ -661,11 +661,11 @@ export default function CorrectivosPage() {
           <>
             <Card size="small" style={{ marginBottom: 12 }}>
               <Row gutter={12}>
-                <Col span={12}>
+                <Col xs={24} md={12}>
                   <Text type="secondary">Equipo:</Text>{" "}
                   <Text strong>{cerrarTarget.equipo_codigo}</Text>
                 </Col>
-                <Col span={12}>
+                <Col xs={24} md={12}>
                   <Text type="secondary">OT vinculada:</Text>{" "}
                   {cerrarTarget.ot_interna?.ot ? (
                     <Tag color="blue">{formatOtInternaCodigo(cerrarTarget.ot_interna.ot)}</Tag>

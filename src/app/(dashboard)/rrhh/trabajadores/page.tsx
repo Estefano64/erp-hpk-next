@@ -23,7 +23,7 @@ import {
   useColumnasRedimensionables, useTablaFiltrada,
 } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
-import { useResponsive } from "@/lib/responsive";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 
 dayjs.extend(isoWeek);
 
@@ -168,7 +168,7 @@ function eficienciaColorVista(pct: number | null): string {
 
 export default function TrabajadoresPage() {
   const { message, modal } = App.useApp();
-  const { isMobile } = useResponsive();
+  const { isMobile, screens } = useResponsive();
   const [rows, setRows] = useState<Trabajador[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -721,12 +721,12 @@ export default function TrabajadoresPage() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
         <Title level={3} style={{ margin: 0 }}>
           <TeamOutlined style={{ marginRight: 8 }} />
           Trabajadores
         </Title>
-        <Space>
+        <Space wrap>
           <Tooltip title="Ver lo que un técnico vería en su sesión (por DNI). Solo lectura.">
             <Button icon={<EyeOutlined />} onClick={() => abrirVista()}>Ver vista de técnico</Button>
           </Tooltip>
@@ -828,7 +828,7 @@ export default function TrabajadoresPage() {
         onOk={handleSave}
         confirmLoading={saving}
         okText="Guardar" cancelText="Cancelar"
-        width={620}
+        width={modalWidth(screens, 620)}
         destroyOnHidden
       >
         <Form form={form} layout="vertical">
@@ -888,10 +888,10 @@ export default function TrabajadoresPage() {
         open={cuentaModalOpen}
         onCancel={() => setCuentaModalOpen(false)}
         confirmLoading={cuentaSaving}
-        width={560}
+        width={modalWidth(screens, 560)}
         destroyOnHidden
         footer={
-          <Space>
+          <Space wrap>
             {cuentaUsuario && (
               <Button danger icon={<DisconnectOutlined />} onClick={desvincularCuenta} loading={cuentaSaving}>
                 Desvincular

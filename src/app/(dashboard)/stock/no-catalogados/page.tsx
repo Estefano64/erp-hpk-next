@@ -259,7 +259,7 @@ export default function NoCatalogadosPage() {
           <InboxOutlined style={{ marginRight: 8 }} />
           Inventario — Materiales no catalogados
         </Title>
-        <Space>
+        <Space wrap>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => { setNuevoOpen(true); formNuevo.resetFields(); }}>
             Nuevo material
           </Button>
@@ -281,7 +281,7 @@ export default function NoCatalogadosPage() {
 
       <Card size="small" style={{ marginBottom: 12 }} styles={{ body: { padding: 10 } }}>
         <Space wrap>
-          <Input placeholder="Buscar código o descripción…" prefix={<SearchOutlined />} allowClear value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 320 }} />
+          <Input placeholder="Buscar código o descripción…" prefix={<SearchOutlined />} allowClear value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 320, maxWidth: "100%" }} />
           <ColumnasToggleButton<MatRow> columns={columns} ocultas={ocultas} setOcultas={setOcultas} obligatorias={["codigo", "stock_actual", "acciones"]} />
           <ExportarExcelButton<MatRow>
             endpoint="/api/no-catalogados"
@@ -464,7 +464,7 @@ export default function NoCatalogadosPage() {
         title={histOpen ? `Historial — ${histOpen.codigo}` : ""}
         open={!!histOpen}
         onClose={() => setHistOpen(null)}
-        size={520}
+        width={screens.md ? 520 : "100%"}
       >
         {histLoading ? (
           <div style={{ textAlign: "center", padding: 20, color: brand.textSecondary }}>Cargando…</div>
@@ -473,6 +473,7 @@ export default function NoCatalogadosPage() {
         ) : (
           <Table<Movimiento>
             rowKey="id" size="small" pagination={false}
+            scroll={{ x: 500 }}
             dataSource={histData}
             columns={[
               { key: "fecha", title: "Fecha", dataIndex: "fecha_movimiento", render: (v: string) => dayjs(v).format("DD/MM/YY HH:mm") },

@@ -437,7 +437,7 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
         </Row>
       </Card>
 
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
         <ColumnasToggleButton<Movimiento>
           columns={columns}
           ocultas={ocultas}
@@ -908,7 +908,7 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
       )}
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
-        <Space>
+        <Space wrap>
           <RangoFechasFiltro
             label="Fecha entrega esperada"
             value={rangoEntrega}
@@ -935,7 +935,7 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
             Recibir seleccionados ({selectedItemIds.length})
           </Button>
         </Space>
-        <Space>
+        <Space wrap>
           <ColumnasToggleButton<ItemFila>
             columns={columnasItems}
             ocultas={ingresoOcultas}
@@ -993,10 +993,10 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
         {poSeleccionada && (
           <>
             <Card size="small" style={{ background: brand.bgPage, marginBottom: 12 }}>
-              <Row gutter={16}>
-                <Col span={8}><Text type="secondary">Proveedor:</Text> <b>{poSeleccionada.proveedor_nombre}</b></Col>
-                <Col span={8}><Text type="secondary">Almacén destino:</Text> <b>{poSeleccionada.almacen_nombre}</b></Col>
-                <Col span={8}><Text type="secondary">Total OC:</Text> <b style={{ color: brand.navy }}>{poSeleccionada.moneda} {Number(poSeleccionada.total).toFixed(2)}</b></Col>
+              <Row gutter={[16, 4]}>
+                <Col xs={24} sm={8}><Text type="secondary">Proveedor:</Text> <b>{poSeleccionada.proveedor_nombre}</b></Col>
+                <Col xs={24} sm={8}><Text type="secondary">Almacén destino:</Text> <b>{poSeleccionada.almacen_nombre}</b></Col>
+                <Col xs={24} sm={8}><Text type="secondary">Total OC:</Text> <b style={{ color: brand.navy }}>{poSeleccionada.moneda} {Number(poSeleccionada.total).toFixed(2)}</b></Col>
               </Row>
             </Card>
 

@@ -388,7 +388,7 @@ export default function OTInternaDetallePage() {
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <div>
-            <Space size={10}>
+            <Space size={10} wrap>
               <ToolOutlined style={{ fontSize: 22 }} />
               <Title level={3} style={{ color: brand.white, margin: 0 }}>
                 {formatOtInternaCodigo(ot.ot, `#${ot.id}`)}
