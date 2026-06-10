@@ -2,31 +2,43 @@
 
 // Tab "Requerimientos" del detalle de OT Interna.
 //
-// Features (paridad parcial con OTRequerimientosTab de OT externas):
-//   - Multi-item: crear varios items en un solo modal (tabla editable)
-//   - Edición inline de campos clave (cantidad, descripción, precio)
-//   - Anular / eliminar items
-//   - Enviar a aprobación por requerimiento (todos los items de un nro_req)
+// CALCA de OTRequerimientosTab (OT externas): misma UI, columnas y
+// comportamientos, adaptando:
+//   - Endpoints → /api/ordenes-trabajo-internas/[id]/requerimientos...
+//   - "Generar desde template" (cod_rep) → "Aplicar Task List" (equipo +
+//     estrategia PM1..PM4 con cascada acumulativa).
+//   - Sin fecha_recepcion: las OT internas no la tienen, así que la fecha
+//     requerida no valida contra un piso.
 //
-// Comparte la mayoría de los endpoints con OT externa porque OTRepuesto es
-// polimórfico (ot_id o orden_trabajo_interna_id).
+// OTRepuesto es polimórfico (ot_id o orden_trabajo_interna_id), por lo que las
+// rutas por item (/api/requerimientos/[id], adjuntos) son compartidas.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Table, Button, Tag, Space, Modal, Form, Input, InputNumber, Select,
-  Typography, Empty, App, AutoComplete, Popconfirm, Tooltip, Card, DatePicker,
-  Popover, Upload,
+  Table, Button, Tag, Space, Modal, Form, Input, InputNumber, Select, DatePicker, AutoComplete,
+  message, Popconfirm, Tooltip, Empty, Alert, Row, Col, Typography, Radio, Card, Popover,
 } from "antd";
-import dayjs from "dayjs";
 import {
-  PlusOutlined, ReloadOutlined, SendOutlined, DeleteOutlined,
-  CloseCircleOutlined, EditOutlined, PaperClipOutlined, CalendarOutlined,
-  ThunderboltOutlined,
+  PlusOutlined, ReloadOutlined, CloseOutlined, SaveOutlined,
+  EditOutlined, DeleteOutlined, SendOutlined,
+  PaperClipOutlined, CalendarOutlined, ThunderboltOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
+import dayjs from "dayjs";
+import { formatDateOnly } from "@/lib/dates";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
-import { useColumnasRedimensionables, STICKY_HEADER } from "@/lib/tables";
+import { useCachedFetch } from "@/lib/useCachedFetch";
+import {
+  useColumnasOcultas,
+  ColumnasToggleButton,
+  visibleColumns,
+  filtroPorColumna,
+  useRangoFechas,
+  RangoFechasFiltro,
+  dentroDeRango,
+  useColumnasRedimensionables,
+} from "@/lib/tables";
 import { uploadToR2 } from "@/lib/r2-client";
 import { R2FileLink } from "@/components/R2FileLink";
 
@@ -36,21 +48,37 @@ interface RequerimientoRow {
   id: number;
   nro_req: string | null;
   item_req: number | null;
-  tipo_codigo: string | null;
+  tipo_codigo: string;
+  material_id: number | null;
   material_codigo: string | null;
+  material: { codigo: string; descripcion: string; precio?: string | null; moneda_codigo?: string | null } | null;
+  cantidad: string;
+  unidad_medida: string | null;
   descripcion: string | null;
   texto: string | null;
-  cantidad: string | number;
-  unidad_medida: string | null;
-  precio_unitario: string | number | null;
-  moneda: string | null;
-  observaciones: string | null;
+  fabricante_codigo: string | null;
+  fecha_solicitud: string;
   fecha_requerida: string | null;
-  material: { codigo: string; descripcion: string } | null;
+  precio_unitario: string | null;
+  moneda: string | null;
+  status_requerimiento_codigo: string | null;
+  status_cotizacion_codigo: string | null;
+  status_oc_codigo: string | null;
   status_requerimiento: { codigo: string; nombre: string } | null;
-  // Adjuntos del ítem — fotos / cotizaciones / comprobantes. Mismo polimorfismo
-  // que OT externa (OTRepuestoAdjunto está atado a OTRepuesto, no a la OT).
+  status_cotizacion: { codigo: string; nombre: string } | null;
+  status_oc: { codigo: string; nombre: string } | null;
+  proveedor: { id: number; razon_social: string } | null;
+  compra: { id: number; numero_po: string; fecha_entrega_esperada: string | null } | null;
   adjuntos?: { id: number; nombre_archivo: string; r2_key: string; tamano: number }[];
+  po_id: number | null;
+  nro_oc: string | null;
+  es_adicional: boolean | null;
+  observaciones: string | null;
+  usuario_solicita: string;
+  usuario_envia: string | null;
+  fecha_envio_aprobacion: string | null;
+  usuario_aprueba: string | null;
+  fecha_aprobacion: string | null;
 }
 
 interface MaterialOpt {
@@ -59,123 +87,62 @@ interface MaterialOpt {
   descripcion: string;
   fabricante_codigo: string | null;
   unidad_medida_codigo: string | null;
-  // Precio del catálogo — se usa para auto-cargar el PU al elegir un material
-  // MAC en el form (el user pidió PU obligatorio).
-  precio: number | string | null;
+  precio: string | null;
   moneda_codigo: string | null;
+  np: string | null;
 }
-
-// Item del modal "Nuevo requerimiento" — antes de mandar al backend.
-interface DraftItem {
-  key: string; // local key React
-  tipo_codigo: "MAC" | "CAD" | "SER";
-  material_codigo?: string;
-  descripcion: string;
-  cantidad: number;
-  unidad_medida: string;
-  fabricante_codigo?: string;
-  observaciones?: string;
-  // precio_unitario y moneda: opcionales, solo se usan para items tipo SER y CAD
-  // (para MAC el precio viene del catálogo de materiales). Trabajo del otro dev
-  // mergeado: hace que cada draft item lleve su precio referencial.
-  precio_unitario?: number;
-  moneda?: string;
-  // Obligatoria para poder enviar a aprobación (mismo flujo que OT externa).
-  fecha_requerida?: dayjs.Dayjs | null;
-}
-
-// Conversión entre unidades equivalentes. Hoy solo cilindro ↔ galón
-// (1 cil = 55 gal — combustibles, lubricantes en HPK). El factor es
-// `from → to`: factor 55 significa "1 unidad de FROM = 55 unidades de TO".
-// Se usa para:
-//   - mostrar el equivalente al lado de la cantidad y del precio unitario,
-//   - autoescalar el precio cuando la UM elegida en el draft difiere de la
-//     UM con la que viene cotizado el material en catálogo.
-const CONVERSION_FACTORES: Record<string, Record<string, number>> = {
-  cil: { gl: 55 },
-  gl: { cil: 1 / 55 },
-};
-
-function factorEntreUM(from: string | null | undefined, to: string | null | undefined): number | null {
-  const a = (from ?? "").toLowerCase();
-  const b = (to ?? "").toLowerCase();
-  if (!a || !b || a === b) return null;
-  return CONVERSION_FACTORES[a]?.[b] ?? null;
-}
-
-// Formatea un número con hasta 4 decimales, sin ceros a la derecha.
-function fmtCant(n: number): string {
-  return Number(n.toFixed(4)).toLocaleString("es-PE", { maximumFractionDigits: 4 });
-}
-
-const REQ_COLOR: Record<string, string> = {
-  BORRADOR: "default",
-  SIN_APROBACION: "orange",
-  APROBADO: "green",
-  DESAPROBADO: "red",
-  ANULADO: "red",
-  CERRADO: "blue",
-};
-
-const TIPO_COLOR: Record<string, string> = { MAC: "blue", CAD: "orange", SER: "purple" };
 
 interface Props {
   otInternaId: number;
+  onUpdated?: () => void;
 }
 
-function randomKey() {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-}
+const TIPO_COLOR: Record<string, string> = { MAC: "blue", CAD: "orange", SER: "purple" };
+const REQ_COLOR: Record<string, string> = {
+  BORRADOR: "warning",
+  SIN_APROBACION: "default",
+  APROBADO: "success",
+  DESAPROBADO: "error",
+  ANULADO: "default",
+  CERRADO: "blue",
+};
+const COT_COLOR: Record<string, string> = {
+  PEND_COT: "default",
+  PEND_APROB: "processing",
+  APROBADO: "success",
+  COMPLETO: "success",
+  ANULADO: "error",
+};
+const OC_COLOR: Record<string, string> = {
+  PEND_OC: "default",
+  PROCESO: "processing",
+  ENTREGADO: "success",
+  COMPLETO: "success",
+  INCOMPLETO: "warning",
+  ANULADO: "error",
+  DEVOLUCION: "warning",
+};
 
-export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
-  const { message, modal } = App.useApp();
-  const { screens } = useResponsive();
-
+export default function OTInternaRequerimientosTab({ otInternaId, onUpdated }: Props) {
   const [rows, setRows] = useState<RequerimientoRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [materiales, setMateriales] = useState<MaterialOpt[]>([]);
-  // Catálogo de unidades de medida — para el Select de "Unidad" en el modal
-  // multi-item. Se carga lazy al abrir el modal por primera vez.
-  const [unidades, setUnidades] = useState<{ codigo: string; nombre: string }[]>([]);
-  // Info de la OT (equipo + estrategia) — necesaria para habilitar el botón
-  // "Aplicar Task List". Se carga junto con los requerimientos. Si no hay
-  // equipo o si la estrategia no es PM1/PM2/PM3/PM4, el botón queda deshabilitado.
-  const [otInfo, setOtInfo] = useState<{ equipo_codigo: string | null; estrategia_pm: string | null }>({ equipo_codigo: null, estrategia_pm: null });
-  // Loading del aplicar-tasklist (independiente del fetch general).
-  const [aplicandoTaskList, setAplicandoTaskList] = useState(false);
+  // Evita doble "Aplicar Task List" (doble click / carga lenta).
+  const [aplicandoTpl, setAplicandoTpl] = useState(false);
+  const [messageApi, contextHolder] = message.useMessage();
+  const { screens } = useResponsive();
+  const [modalApi, modalCtx] = Modal.useModal();
+  const { ocultas, setOcultas } = useColumnasOcultas("ot-interna-requerimientos-cols-v2");
+  const { rango: rangoSol, setRango: setRangoSol } = useRangoFechas();
+  const { rango: rangoReq, setRango: setRangoReq } = useRangoFechas();
 
-  // ── Modal "Nuevo requerimiento" (multi-item) ──────────────────────────
-  const [modalOpen, setModalOpen] = useState(false);
-  const [draftItems, setDraftItems] = useState<DraftItem[]>([]);
-  const [draftNroReq, setDraftNroReq] = useState<string>("");
-  const [saving, setSaving] = useState(false);
+  // Info de la OT interna (equipo + estrategia PM) — habilita "Aplicar Task List".
+  // Equivalente al codRepCodigo de las OT externas.
+  const [otInfo, setOtInfo] = useState<{ equipo_codigo: string | null; estrategia_pm: string | null }>({
+    equipo_codigo: null,
+    estrategia_pm: null,
+  });
+  const taskListDisponible = !!otInfo.equipo_codigo && !!otInfo.estrategia_pm;
 
-  // ── Edición inline ──────────────────────────────────────────────────
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editValues, setEditValues] = useState<Partial<RequerimientoRow>>({});
-  const [savingEdit, setSavingEdit] = useState(false);
-
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/ordenes-trabajo-internas/${otInternaId}/requerimientos`);
-      if (res.ok) {
-        const j = await res.json();
-        setRows(j.data ?? []);
-      }
-    } catch {
-      message.error("Error al cargar requerimientos.");
-    } finally {
-      setLoading(false);
-    }
-  }, [otInternaId, message]);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
-
-  // Cargar info de la OT para saber si tiene equipo + estrategia PM válida.
-  // Una sola vez al montar; si cambia la OT externamente (editan estrategia
-  // en otro tab) el usuario tendrá que refrescar — el costo de polling no
-  // se justifica.
   useEffect(() => {
     fetch(`/api/ordenes-trabajo-internas/${otInternaId}`)
       .then((r) => (r.ok ? r.json() : null))
@@ -188,632 +155,834 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
           estrategia_pm: esPM ? estCodigo : null,
         });
       })
-      .catch(() => { /* silently fail — el botón queda deshabilitado */ });
+      .catch(() => { /* el botón queda deshabilitado */ });
   }, [otInternaId]);
 
-  // Aplicar Task List — abre un modal de confirmación que pregunta qué hacer
-  // con los requerimientos existentes (replace_pending por default).
-  async function aplicarTaskList() {
-    if (!otInfo.equipo_codigo || !otInfo.estrategia_pm) return;
-    modal.confirm({
-      title: `Aplicar Task List ${otInfo.estrategia_pm}`,
-      content: (
-        <div>
-          <p style={{ marginBottom: 8 }}>
-            Se van a copiar los items del Task List del equipo <b>{otInfo.equipo_codigo}</b> con
-            cascada acumulativa para <b>{otInfo.estrategia_pm}</b>:
-          </p>
-          <ul style={{ marginTop: 0, paddingLeft: 20 }}>
-            {otInfo.estrategia_pm === "PM1" && <li>Solo items de PM1</li>}
-            {otInfo.estrategia_pm === "PM2" && <li>Items de PM1 + PM2</li>}
-            {otInfo.estrategia_pm === "PM3" && <li>Items de PM1 + PM2 + PM3</li>}
-            {otInfo.estrategia_pm === "PM4" && <li>Items de PM1 + PM2 + PM3 + PM4</li>}
-          </ul>
-          <p style={{ marginTop: 8, fontSize: 12, color: brand.textSecondary }}>
-            Los items en <b>BORRADOR/SIN_APROBACION</b> sin OC se reemplazarán. Los aprobados o con OC vinculada quedan intactos.
-          </p>
-        </div>
-      ),
-      okText: "Aplicar",
-      cancelText: "Cancelar",
-      okButtonProps: { type: "primary" },
-      onOk: async () => {
-        setAplicandoTaskList(true);
-        try {
-          const res = await fetch(
-            `/api/ordenes-trabajo-internas/${otInternaId}/requerimientos/aplicar-tasklist`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ estrategia: "replace_pending" }),
-            },
-          );
-          const j = await res.json();
-          if (!res.ok) throw new Error(j.error ?? "Error al aplicar task list");
-          if (j.skipped) {
-            message.info(`Ya hay ${j.existentes} requerimiento(s); no se aplicó task list.`);
-          } else {
-            const partes = [
-              `${j.creados} item(s) creados`,
-              j.eliminados ? `${j.eliminados} pendientes reemplazados` : null,
-              `req ${j.nro_req}`,
-            ].filter(Boolean).join(" · ");
-            message.success(`Task list aplicado: ${partes}`);
-          }
-          fetchData();
-        } catch (e) {
-          message.error(e instanceof Error ? e.message : "Error");
-        } finally {
-          setAplicandoTaskList(false);
-        }
-      },
-    });
+  // Modal solo para editar 1 item
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  type Adjunto = { id: number; nombre_archivo: string; r2_key: string; tamano: number; fecha_subida: string };
+  const [editAdjuntos, setEditAdjuntos] = useState<Adjunto[]>([]);
+  const [uploadingFile, setUploadingFile] = useState(false);
+
+  async function fetchAdjuntos(itemId: number) {
+    try {
+      const res = await fetch(`/api/requerimientos/${itemId}/adjuntos`);
+      if (res.ok) {
+        const j = await res.json();
+        setEditAdjuntos(j.data ?? []);
+      }
+    } catch { /* noop */ }
   }
-
-  // Catálogo de unidades — se carga al mount (solo 23 entradas, peso bajo) para
-  // que esté disponible tanto en el modal "Nuevo requerimiento" como en la
-  // edición inline de la columna "Unidad".
-  useEffect(() => {
-    if (unidades.length > 0) return;
-    fetch("/api/catalogos?tabla=unidadMedida")
-      .then((r) => (r.ok ? r.json() : { data: [] }))
-      .then((j) => setUnidades(j.data ?? []))
-      .catch(() => { /* noop */ });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // ── Adjuntos por ítem ───────────────────────────────────────────────
-  // El backend acepta upload via OTRepuestoAdjunto que es polimórfico (atado a
-  // OTRepuesto, no a la OT). El mismo endpoint sirve para externa e interna.
-  const [uploadingItemId, setUploadingItemId] = useState<number | null>(null);
-
-  async function subirAdjuntoItem(itemId: number, file: File) {
-    setUploadingItemId(itemId);
+  async function subirAdjuntoExistente(file: File) {
+    if (!editingId) return;
+    setUploadingFile(true);
     try {
       const meta = await uploadToR2({
         file,
-        uploadUrlEndpoint: `/api/requerimientos/${itemId}/adjuntos/upload-url`,
+        uploadUrlEndpoint: `/api/requerimientos/${editingId}/adjuntos/upload-url`,
       });
-      const res = await fetch(`/api/requerimientos/${itemId}/adjuntos`, {
+      const res = await fetch(`/api/requerimientos/${editingId}/adjuntos`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(meta),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => null);
-        message.error(err?.error ?? "Error al registrar archivo.");
+        messageApi.error(err?.error ?? "Error al registrar archivo.");
         return;
       }
-      message.success("Archivo adjuntado.");
-      fetchData();
+      messageApi.success("Archivo adjuntado.");
+      await fetchAdjuntos(editingId);
     } catch (e) {
-      message.error(e instanceof Error ? e.message : "Error al subir archivo.");
+      messageApi.error(e instanceof Error ? e.message : "Error al subir archivo.");
     } finally {
-      setUploadingItemId(null);
+      setUploadingFile(false);
     }
   }
-
-  async function eliminarAdjuntoItem(itemId: number, adjuntoId: number) {
-    try {
-      const res = await fetch(`/api/requerimientos/${itemId}/adjuntos`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ adjunto_id: adjuntoId }),
-      });
-      if (!res.ok) {
-        message.error("Error al eliminar adjunto.");
-        return;
-      }
-      message.success("Adjunto eliminado.");
-      fetchData();
-    } catch {
-      message.error("Error al eliminar adjunto.");
-    }
-  }
-
-  // ── Fecha requerida bulk ────────────────────────────────────────────
-  // Aplica una sola fecha a todos los ítems del requerimiento en paralelo.
-  // Cada PATCH hace su validación de status (solo BORRADOR es editable).
-  async function fijarFechaRequeridaBulk(items: RequerimientoRow[], fecha: dayjs.Dayjs) {
-    const editables = items.filter((i) => i.status_requerimiento?.codigo === "BORRADOR");
-    if (editables.length === 0) {
-      message.warning("No hay ítems en BORRADOR para actualizar.");
+  async function eliminarAdjunto(adjuntoId: number) {
+    if (!editingId) return;
+    const res = await fetch(`/api/requerimientos/${editingId}/adjuntos`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ adjunto_id: adjuntoId }),
+    });
+    if (!res.ok) {
+      messageApi.error("Error al eliminar adjunto.");
       return;
     }
-    const fechaStr = fecha.format("YYYY-MM-DD");
-    const results = await Promise.all(editables.map((i) =>
-      fetch(`/api/requerimientos/${i.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fecha_requerida: fechaStr }),
-      })
-    ));
-    const ok = results.filter((r) => r.ok).length;
-    const fail = results.length - ok;
-    if (ok > 0) message.success(`${ok} ítem(s) actualizado(s) con fecha ${fecha.format("DD/MM/YYYY")}.`);
-    if (fail > 0) message.warning(`${fail} ítem(s) fallaron.`);
-    fetchData();
+    setEditAdjuntos((prev) => prev.filter((a) => a.id !== adjuntoId));
   }
 
-  // Cargar materiales lazy al abrir modal por primera vez
-  useEffect(() => {
-    if (modalOpen && materiales.length === 0) {
-      fetch("/api/materiales?limit=2000")
-        .then((r) => (r.ok ? r.json() : { data: [] }))
-        .then((j) => setMateriales(j.data ?? []))
-        .catch(() => { /* noop */ });
-    }
-    // Catálogo de unidades — solo se pide la primera vez. 23 entradas, no necesita límite.
-    if (modalOpen && unidades.length === 0) {
-      fetch("/api/catalogos?tabla=unidadMedida")
-        .then((r) => (r.ok ? r.json() : { data: [] }))
-        .then((j) => setUnidades(j.data ?? []))
-        .catch(() => { /* noop */ });
-    }
-  }, [modalOpen, materiales.length, unidades.length]);
+  // Draft inline: crear nuevo requerimiento con múltiples items
+  type DraftItem = {
+    id: string; // local UUID
+    tipo_codigo: "MAC" | "CAD" | "SER";
+    material_codigo?: string;
+    servicio_codigo?: string;
+    descripcion: string;
+    cantidad: number;
+    unidad_medida?: string;
+    fabricante_codigo?: string;
+    fecha_requerida?: dayjs.Dayjs | null;
+    observaciones?: string;
+    archivos?: File[]; // archivos pendientes de subir
+    // Precio referencial para SER y CAD (MAC usa el del catálogo).
+    precio_unitario?: number;
+    moneda?: "USD" | "SOL";
+  };
+  const [draftOpen, setDraftOpen] = useState(false);
+  const [draftItems, setDraftItems] = useState<DraftItem[]>([]);
+  const [savingDraft, setSavingDraft] = useState(false);
+  // Si está seteado, los items del draft se agregan a este nro_req (en vez de crear uno nuevo).
+  const [draftAppendToNroReq, setDraftAppendToNroReq] = useState<string | null>(null);
 
-  // ── Modal multi-item ────────────────────────────────────────────────
-
-  function openNuevo() {
-    setDraftNroReq("");
+  function abrirDraft(appendToNroReq: string | null = null) {
+    setDraftAppendToNroReq(appendToNroReq);
     setDraftItems([{
-      key: randomKey(),
+      id: crypto.randomUUID(),
       tipo_codigo: "MAC",
       descripcion: "",
       cantidad: 1,
-      unidad_medida: "und",
     }]);
-    setModalOpen(true);
+    setDraftOpen(true);
   }
-
-  function addDraftRow() {
-    setDraftItems((prev) => [...prev, {
-      key: randomKey(),
-      tipo_codigo: "MAC",
-      descripcion: "",
-      cantidad: 1,
-      unidad_medida: "und",
-    }]);
+  function cerrarDraft() {
+    setDraftOpen(false);
+    setDraftItems([]);
+    setDraftAppendToNroReq(null);
   }
-
-  function removeDraftRow(key: string) {
-    setDraftItems((prev) => prev.filter((d) => d.key !== key));
+  function agregarItemDraft() {
+    setDraftItems((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        tipo_codigo: "MAC",
+        descripcion: "",
+        cantidad: 1,
+      },
+    ]);
   }
-
-  function updateDraft(key: string, patch: Partial<DraftItem>) {
-    setDraftItems((prev) => prev.map((d) => {
-      if (d.key !== key) return d;
-      const next = { ...d, ...patch };
-      // Auto-completar descripción / unidad / fabricante / precio desde el
-      // material si MAC. El precio es obligatorio en req de OT interna; si el
-      // catálogo lo tiene, se preselecciona — el user puede sobreescribir.
-      const mat =
-        next.tipo_codigo === "MAC" && next.material_codigo
-          ? materiales.find((m) => m.codigo === next.material_codigo)
-          : null;
-      if (patch.material_codigo && next.tipo_codigo === "MAC" && mat) {
-        if (!next.descripcion) next.descripcion = mat.descripcion;
-        if (!next.unidad_medida || next.unidad_medida === "und") {
-          next.unidad_medida = mat.unidad_medida_codigo ?? "und";
-        }
-        if (!next.fabricante_codigo && mat.fabricante_codigo) {
-          next.fabricante_codigo = mat.fabricante_codigo;
-        }
-        if (next.precio_unitario == null && mat.precio != null && Number(mat.precio) > 0) {
-          next.precio_unitario = Number(mat.precio);
-          next.moneda = next.moneda ?? mat.moneda_codigo ?? "USD";
+  function quitarItemDraft(id: string) {
+    setDraftItems((prev) => prev.filter((it) => it.id !== id));
+  }
+  function actualizarDraftItem(id: string, patch: Partial<DraftItem>) {
+    setDraftItems((prev) => prev.map((it) => {
+      if (it.id !== id) return it;
+      let next = { ...it, ...patch };
+      // Si cambió el tipo: limpiar TODOS los datos dependientes del tipo
+      // (material/servicio/descripción/fabricante/cantidad/UM) para evitar arrastrar datos del tipo anterior.
+      if (patch.tipo_codigo && patch.tipo_codigo !== it.tipo_codigo) {
+        next = {
+          ...next,
+          material_codigo: undefined,
+          servicio_codigo: undefined,
+          descripcion: "",
+          fabricante_codigo: undefined,
+          cantidad: 1,
+          unidad_medida: undefined,
+        };
+      }
+      // Si cambió material_codigo: auto-llenar descripcion/fabricante/unidad
+      if (patch.material_codigo && patch.material_codigo !== it.material_codigo) {
+        const m = materiales.find((x) => x.codigo === patch.material_codigo);
+        if (m) {
+          next.descripcion = m.descripcion;
+          next.fabricante_codigo = m.fabricante_codigo ?? undefined;
+          next.unidad_medida = m.unidad_medida_codigo ?? next.unidad_medida ?? "UNIDAD";
         }
       }
-      // Re-escalar precio cuando el usuario cambia la UM (o cuando recién
-      // se eligió un material y la UM elegida en el draft difiere de la del
-      // catálogo). Solo si hay un factor conocido en CONVERSION_FACTORES.
-      //
-      // Ej: material cotizado en gl a USD 10. User elige UM=cil → precio
-      // pasa a USD 550/cil (10 × 55). User cambia de cil a gl → vuelve a 10.
-      if (mat && mat.unidad_medida_codigo && next.unidad_medida) {
-        const matPrecio = mat.precio != null ? Number(mat.precio) : null;
-        if (matPrecio != null && matPrecio > 0) {
-          const factor = factorEntreUM(mat.unidad_medida_codigo, next.unidad_medida);
-          if (factor != null) {
-            // precio en la UM del draft = precio catálogo × (1 / factor)
-            // factor "from(mat) → to(draft)" mide cuántas unidades de draft
-            // hay en 1 unidad de mat, así que el precio se divide por factor.
-            next.precio_unitario = Number((matPrecio / factor).toFixed(4));
-          } else if (mat.unidad_medida_codigo === next.unidad_medida) {
-            // misma UM — si el user no lo tocó manualmente lo restauramos
-            // (solo cuando viene de un cambio de UM, no cuando ya está bien).
-            if (patch.unidad_medida) next.precio_unitario = matPrecio;
-          }
+      // Si cambió servicio_codigo: auto-llenar descripcion
+      if (patch.servicio_codigo && patch.servicio_codigo !== it.servicio_codigo) {
+        const s = servicios.find((x) => x.codigo === patch.servicio_codigo);
+        if (s) {
+          next.descripcion = s.nombre;
         }
       }
       return next;
     }));
   }
-
-  async function handleCrear() {
+  async function guardarDraft() {
     // Validar
-    if (draftItems.length === 0) {
-      message.error("Agregá al menos un item.");
+    const errors: string[] = [];
+    for (const [idx, it] of draftItems.entries()) {
+      if (!it.descripcion?.trim()) errors.push(`Item ${idx + 1}: descripción requerida`);
+      if (!it.cantidad || it.cantidad <= 0) errors.push(`Item ${idx + 1}: cantidad debe ser > 0`);
+      if (it.tipo_codigo === "MAC" && !it.material_codigo) errors.push(`Item ${idx + 1}: tipo MAC requiere material`);
+      // F. requerida es OBLIGATORIA — sin ella el flujo de aprobación no
+      // puede planificar entrega, así que rechazamos al guardar.
+      if (!it.fecha_requerida) {
+        errors.push(`Item ${idx + 1}: fecha requerida es obligatoria (sin ella no se puede enviar a aprobación)`);
+      }
+    }
+    if (errors.length > 0) {
+      messageApi.error(errors[0]);
       return;
     }
-    for (let i = 0; i < draftItems.length; i++) {
-      const it = draftItems[i];
-      if (!it.descripcion?.trim()) {
-        message.error(`Item ${i + 1}: descripción requerida.`);
-        return;
-      }
-      if (!it.cantidad || it.cantidad <= 0) {
-        message.error(`Item ${i + 1}: cantidad debe ser mayor a 0.`);
-        return;
-      }
-      if (it.tipo_codigo === "MAC" && !it.material_codigo) {
-        message.error(`Item ${i + 1}: tipo MAC requiere seleccionar material.`);
-        return;
-      }
-      if (it.precio_unitario == null || it.precio_unitario <= 0) {
-        message.error(`Item ${i + 1}: precio unitario es obligatorio (mayor a 0).`);
-        return;
-      }
-      if (!it.fecha_requerida) {
-        message.error(`Item ${i + 1}: fecha requerida es obligatoria (para poder enviar a aprobación).`);
-        return;
-      }
-    }
-
+    setSavingDraft(true);
     try {
-      setSaving(true);
+      const payload = {
+        items: draftItems.map((it) => ({
+          tipo_codigo: it.tipo_codigo,
+          material_codigo: it.material_codigo ?? null,
+          cantidad: it.cantidad,
+          descripcion: it.descripcion,
+          unidad_medida: it.unidad_medida ?? "UNIDAD",
+          fabricante_codigo: it.fabricante_codigo ?? null,
+          fecha_requerida: it.fecha_requerida ? it.fecha_requerida.format("YYYY-MM-DD") : null,
+          observaciones: it.observaciones ?? null,
+          // Precio referencial:
+          //   - SER/CAD → manual del usuario.
+          //   - MAC con precio en catálogo → null (el backend lo resuelve por material_id).
+          //   - MAC sin precio en catálogo → manual del usuario.
+          precio_unitario: it.precio_unitario ?? null,
+          moneda: it.moneda ?? "USD",
+        })),
+        nro_req: draftAppendToNroReq ?? undefined,
+      };
       const res = await fetch(`/api/ordenes-trabajo-internas/${otInternaId}/requerimientos/bulk`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        messageApi.error(err?.error ?? "Error al crear requerimiento.");
+        return;
+      }
+      const j = await res.json();
+      // Subir archivos de cada item (si los hay). j.items viene en el mismo orden de payload.items
+      const itemsCreados: { id: number; item_req: number }[] = j.items ?? [];
+      let archivosSubidos = 0;
+      let archivosFallidos = 0;
+      for (let i = 0; i < draftItems.length; i++) {
+        const archivos = draftItems[i].archivos ?? [];
+        if (archivos.length === 0) continue;
+        const creado = itemsCreados[i];
+        if (!creado) continue;
+        for (const file of archivos) {
+          try {
+            const meta = await uploadToR2({
+              file,
+              uploadUrlEndpoint: `/api/requerimientos/${creado.id}/adjuntos/upload-url`,
+            });
+            const r = await fetch(`/api/requerimientos/${creado.id}/adjuntos`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(meta),
+            });
+            if (r.ok) archivosSubidos++;
+            else archivosFallidos++;
+          } catch {
+            archivosFallidos++;
+          }
+        }
+      }
+      // Registrar nuevos servicios en catálogo (idempotente): para items SER con
+      // descripción tipeada, guardamos el servicio para que pueda reutilizarse.
+      const serviciosNuevos = new Set<string>();
+      const descripcionesSer = draftItems
+        .filter((it) => it.tipo_codigo === "SER" && it.descripcion?.trim())
+        .map((it) => it.descripcion.trim());
+      for (const nombre of [...new Set(descripcionesSer)]) {
+        try {
+          const r = await fetch("/api/servicios-reparacion", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ nombre }),
+          });
+          if (r.ok) {
+            const sj = await r.json().catch(() => null);
+            if (sj && !sj.reused) serviciosNuevos.add(nombre);
+          }
+        } catch { /* falla silenciosa: no bloquear el flujo principal */ }
+      }
+      messageApi.success(
+        (draftAppendToNroReq
+          ? `Agregados ${j.creados} item(s) a ${j.nro_req}.`
+          : `Requerimiento ${j.nro_req} creado con ${j.creados} item(s).`) +
+        (archivosSubidos > 0 ? ` ${archivosSubidos} archivo(s) subido(s).` : "") +
+        (archivosFallidos > 0 ? ` ${archivosFallidos} archivo(s) fallaron.` : "") +
+        (serviciosNuevos.size > 0 ? ` ${serviciosNuevos.size} servicio(s) nuevo(s) en catálogo.` : "")
+      );
+      cerrarDraft();
+      fetchData();
+      onUpdated?.();
+    } finally {
+      setSavingDraft(false);
+    }
+  }
+  const [form] = Form.useForm<{
+    tipo_codigo: "MAC" | "CAD" | "SER";
+    material_codigo?: string;
+    cantidad: number;
+    descripcion: string;
+    unidad_medida?: string;
+    fabricante_codigo?: string;
+    fecha_requerida?: dayjs.Dayjs | null;
+    observaciones?: string;
+    nro_req?: string | null;
+    precio_unitario?: number;
+    moneda?: string;
+  }>();
+  const tipoSeleccionado = Form.useWatch("tipo_codigo", form);
+
+  // Catálogos cacheados
+  type Wrapped<T> = { data: T[] } | null;
+  const matsRes = useCachedFetch<Wrapped<MaterialOpt>>("/api/materiales?limit=2000");
+  const materiales = matsRes?.data ?? [];
+  const fabsRes = useCachedFetch<Wrapped<{ codigo: string; nombre: string }>>("/api/catalogos?tabla=fabricante");
+  const fabricantes = fabsRes?.data ?? [];
+  const sersRes = useCachedFetch<Wrapped<{ codigo: string; nombre: string; descripcion: string | null }>>("/api/catalogos?tabla=servicioReparacion");
+  const servicios = sersRes?.data ?? [];
+  const umsRes = useCachedFetch<Wrapped<{ codigo: string; nombre: string; abreviatura?: string }>>("/api/catalogos?tabla=unidadMedida");
+  const unidades = umsRes?.data ?? [];
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/ordenes-trabajo-internas/${otInternaId}/requerimientos`);
+      if (res.ok) {
+        const j = await res.json();
+        setRows(j.data ?? []);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [otInternaId]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // ── Aplicar Task List ──
+  async function aplicarTaskList(estrategia: "replace_pending" | "keep_all" | "skip_if_any") {
+    if (aplicandoTpl) return; // re-entrada (doble click)
+    setAplicandoTpl(true);
+    try {
+      const res = await fetch(`/api/ordenes-trabajo-internas/${otInternaId}/requerimientos/aplicar-tasklist`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: draftItems.map(({ key: _key, fecha_requerida, ...rest }) => ({
-            ...rest,
-            fecha_requerida: fecha_requerida ? fecha_requerida.format("YYYY-MM-DD") : null,
-          })),
-          nro_req: draftNroReq.trim() || undefined,
-        }),
+        body: JSON.stringify({ estrategia }),
       });
-      const j = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(j?.error ?? "Error al crear requerimiento");
-      message.success(`Requerimiento ${j.nro_req} creado con ${j.creados} item(s).`);
-      setModalOpen(false);
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        messageApi.error(err?.error ?? "Error al aplicar task list.");
+        return;
+      }
+      const j = await res.json();
+      if (j.skipped) {
+        messageApi.info(`No se hizo nada: ya hay ${j.existentes} requerimientos.`);
+      } else {
+        messageApi.success(`Task list aplicado: ${j.creados} creados${j.eliminados ? `, ${j.eliminados} reemplazados` : ""}.`);
+      }
       fetchData();
-    } catch (e) {
-      if (e instanceof Error) message.error(e.message);
+      onUpdated?.();
+    } catch {
+      messageApi.error("Error al aplicar task list.");
+    } finally {
+      setAplicandoTpl(false);
+    }
+  }
+
+  function abrirDialogTaskList() {
+    if (!taskListDisponible) {
+      messageApi.warning(
+        !otInfo.equipo_codigo
+          ? "La OT no tiene equipo asignado — el task list se filtra por equipo."
+          : "La estrategia debe ser PM1, PM2, PM3 o PM4. Asignala en el tab Detalle.",
+      );
+      return;
+    }
+    if (rows.length === 0) {
+      // Sin requerimientos, aplicar directo
+      aplicarTaskList("replace_pending");
+      return;
+    }
+    modalApi.confirm({
+      title: "Aplicar task list de requerimientos",
+      content: (
+        <div>
+          <p>
+            La OT ya tiene <strong>{rows.length}</strong> requerimiento(s). ¿Qué hacemos con los del task list
+            del equipo <strong>{otInfo.equipo_codigo}</strong> (cascada <strong>{otInfo.estrategia_pm}</strong>)?
+          </p>
+          <ul style={{ marginLeft: 20, marginTop: 8 }}>
+            <li><strong>Reemplazar pendientes</strong>: borra los SIN_APROBACION sin OC y aplica el task list (los aprobados o con OC se mantienen).</li>
+            <li><strong>Sumar todos</strong>: agrega los del task list encima sin tocar lo existente (puede generar duplicados).</li>
+          </ul>
+        </div>
+      ),
+      okText: "Reemplazar pendientes",
+      cancelText: "Cancelar",
+      okButtonProps: { type: "primary" },
+      onOk: () => aplicarTaskList("replace_pending"),
+      // Botón extra: "Sumar todos" — uso footer custom
+      footer: (_, { OkBtn, CancelBtn }) => (
+        <>
+          <CancelBtn />
+          <Button onClick={() => { Modal.destroyAll(); aplicarTaskList("keep_all"); }}>
+            Sumar todos
+          </Button>
+          <OkBtn />
+        </>
+      ),
+    });
+  }
+
+  // ── Modal editar ──
+  function abrirEditar(r: RequerimientoRow) {
+    setEditingId(r.id);
+    setEditAdjuntos([]);
+    fetchAdjuntos(r.id);
+    // Si el item no tiene descripción / fabricante / unidad cargados, se usa
+    // lo del catálogo del material. Si ya tiene valores propios, se mantienen.
+    const matFromCat = r.material_codigo ? materiales.find((x) => x.codigo === r.material_codigo) : null;
+    form.setFieldsValue({
+      tipo_codigo: r.tipo_codigo as "MAC" | "CAD" | "SER",
+      material_codigo: r.material_codigo ?? undefined,
+      cantidad: Number(r.cantidad),
+      descripcion: r.descripcion ?? matFromCat?.descripcion ?? "",
+      unidad_medida: r.unidad_medida ?? matFromCat?.unidad_medida_codigo ?? undefined,
+      fabricante_codigo: r.fabricante_codigo ?? matFromCat?.fabricante_codigo ?? undefined,
+      fecha_requerida: r.fecha_requerida ? dayjs(r.fecha_requerida) : null,
+      observaciones: r.observaciones ?? undefined,
+      precio_unitario: r.precio_unitario != null ? Number(r.precio_unitario) : undefined,
+      moneda: r.moneda ?? "USD",
+    });
+    setModalOpen(true);
+  }
+  function onMaterialSelect(codigo: string | undefined) {
+    if (!codigo) return;
+    const m = materiales.find((x) => x.codigo === codigo);
+    if (!m) return;
+    // Autocomplete: pisa descripcion/fabricante/unidad con los datos del
+    // material seleccionado (al cambiar de material, el item refleja el nuevo).
+    // No tocamos precio/moneda, eso se maneja en el módulo de Compras.
+    form.setFieldsValue({
+      descripcion: m.descripcion,
+      fabricante_codigo: m.fabricante_codigo ?? undefined,
+      unidad_medida: m.unidad_medida_codigo ?? undefined,
+    });
+  }
+  function onServicioSelect(codigo: string | undefined) {
+    if (!codigo) return;
+    const s = servicios.find((x) => x.codigo === codigo);
+    if (!s) return;
+    form.setFieldsValue({
+      descripcion: s.nombre,
+      observaciones: s.descripcion ?? form.getFieldValue("observaciones") ?? undefined,
+    });
+  }
+  async function onSubmit(keepOpen = false) {
+    const values = await form.validateFields().catch(() => null);
+    if (!values) return;
+    setSaving(true);
+    try {
+      const payload = {
+        ...values,
+        fecha_requerida: values.fecha_requerida ? values.fecha_requerida.format("YYYY-MM-DD") : null,
+      };
+      const url = editingId
+        ? `/api/requerimientos/${editingId}`
+        : `/api/ordenes-trabajo-internas/${otInternaId}/requerimientos`;
+      const method = editingId ? "PUT" : "POST";
+      const res = await fetch(url, {
+        method, headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        messageApi.error(err?.error ?? "Error al guardar.");
+        return;
+      }
+      const j = await res.json().catch(() => null);
+      messageApi.success(editingId ? "Requerimiento actualizado." : "Item creado.");
+      fetchData();
+      onUpdated?.();
+      if (keepOpen && !editingId) {
+        // Mantener nro_req del item recién creado para agregar más al mismo requerimiento
+        const nroReq = j?.data?.nro_req ?? values.nro_req;
+        form.resetFields();
+        form.setFieldsValue({ tipo_codigo: "MAC", cantidad: 1, nro_req: nroReq });
+      } else {
+        setModalOpen(false);
+      }
     } finally {
       setSaving(false);
     }
   }
 
-  // ── Edición inline ──────────────────────────────────────────────────
-
-  function startEdit(r: RequerimientoRow) {
-    setEditingId(r.id);
-    setEditValues({
-      cantidad: r.cantidad,
-      descripcion: r.descripcion,
-      unidad_medida: r.unidad_medida,
-      precio_unitario: r.precio_unitario,
-      observaciones: r.observaciones,
-    });
-  }
-
-  function cancelEdit() {
-    setEditingId(null);
-    setEditValues({});
-  }
-
-  async function saveEdit(id: number) {
-    setSavingEdit(true);
-    try {
-      const res = await fetch(`/api/requerimientos/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cantidad: editValues.cantidad,
-          descripcion: editValues.descripcion,
-          unidad_medida: editValues.unidad_medida ?? null,
-          precio_unitario: editValues.precio_unitario ?? null,
-          observaciones: editValues.observaciones ?? null,
-        }),
-      });
-      const j = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(j?.error ?? "Error al guardar");
-      message.success("Item actualizado.");
-      cancelEdit();
-      fetchData();
-    } catch (e) {
-      if (e instanceof Error) message.error(e.message);
-    } finally {
-      setSavingEdit(false);
-    }
-  }
-
-  // ── Acciones por item ───────────────────────────────────────────────
-
-  async function eliminarItem(id: number) {
-    try {
-      const res = await fetch(`/api/requerimientos/${id}`, { method: "DELETE" });
-      const j = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(j?.error ?? "Error al eliminar");
-      message.success("Item eliminado.");
-      fetchData();
-    } catch (e) {
-      if (e instanceof Error) message.error(e.message);
-    }
-  }
-
-  function anularItem(r: RequerimientoRow) {
-    let motivo = "";
-    modal.confirm({
-      title: `Anular item ${r.nro_req}/${r.item_req}`,
-      content: <Input.TextArea rows={3} placeholder="Motivo (opcional)" onChange={(e) => { motivo = e.target.value; }} />,
-      okText: "Anular",
-      okButtonProps: { danger: true },
-      onOk: async () => {
-        const res = await fetch(`/api/requerimientos/${r.id}/anular`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ motivo: motivo || null }),
-        });
-        const j = await res.json().catch(() => null);
-        if (!res.ok) {
-          message.error(j?.error ?? "Error al anular.");
-          return;
-        }
-        message.success("Item anulado.");
-        fetchData();
-      },
-    });
-  }
-
-  // ── Acciones por requerimiento (grupo de items con mismo nro_req) ──
-
-  async function enviarAprobacion(nroReq: string) {
-    const itemsDelReq = rows.filter((r) => r.nro_req === nroReq);
-    const enBorrador = itemsDelReq.filter((r) => r.status_requerimiento?.codigo === "BORRADOR");
-    if (enBorrador.length === 0) {
-      message.warning(`No hay items en BORRADOR en ${nroReq}.`);
-      return;
-    }
+  // ── Enviar a aprobación ──
+  // En la UI siempre enviamos el requerimiento completo (todos los items de un nro_req).
+  async function enviarTodosBorrador() {
+    const borradores = rows.filter((r) => r.status_requerimiento_codigo === "BORRADOR");
+    if (borradores.length === 0) return;
+    const gruposUnicos = [...new Set(borradores.map((r) => r.nro_req).filter((n): n is string => !!n))];
     let ok = 0, errs = 0;
-    for (const r of enBorrador) {
-      const res = await fetch(`/api/requerimientos/${r.id}/enviar-a-aprobacion`, { method: "POST" });
+    for (const nro of gruposUnicos) {
+      const res = await fetch(
+        `/api/ordenes-trabajo-internas/${otInternaId}/requerimientos/${encodeURIComponent(nro)}/enviar`,
+        { method: "POST" },
+      );
       if (res.ok) ok++; else errs++;
     }
-    if (ok > 0) message.success(`${ok} item(s) enviado(s) a aprobación.`);
-    if (errs > 0) message.warning(`${errs} con error.`);
+    if (ok > 0) messageApi.success(`${ok} requerimiento(s) enviados a aprobación.`);
+    if (errs > 0) messageApi.warning(`${errs} con error.`);
     fetchData();
+    onUpdated?.();
+  }
+  async function setFechaRequeridaGrupo(nroReq: string, fecha: dayjs.Dayjs | null) {
+    const res = await fetch(
+      `/api/ordenes-trabajo-internas/${otInternaId}/requerimientos/${encodeURIComponent(nroReq)}/fecha-requerida`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fecha_requerida: fecha ? fecha.format("YYYY-MM-DD") : null }),
+      },
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      messageApi.error(err?.error ?? "Error al actualizar fecha requerida.");
+      return;
+    }
+    const j = await res.json().catch(() => null);
+    messageApi.success(
+      fecha
+        ? `Fecha requerida actualizada en ${j?.data?.actualizados ?? 0} item(s).`
+        : `Fecha requerida limpiada en ${j?.data?.actualizados ?? 0} item(s).`,
+    );
+    fetchData();
+    onUpdated?.();
+  }
+  async function enviarGrupo(nroReq: string) {
+    const res = await fetch(
+      `/api/ordenes-trabajo-internas/${otInternaId}/requerimientos/${encodeURIComponent(nroReq)}/enviar`,
+      { method: "POST" },
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      messageApi.error(err?.error ?? "Error al enviar requerimiento.");
+      return;
+    }
+    const j = await res.json().catch(() => null);
+    const enviados = j?.data?.enviados ?? 0;
+    messageApi.success(`${nroReq} enviado a aprobación (${enviados} item${enviados !== 1 ? "s" : ""}).`);
+    fetchData();
+    onUpdated?.();
   }
 
-  // ── Agrupación por nro_req (para mostrar acciones a nivel grupo) ────
-  const gruposPorReq = useMemo(() => {
-    const groups = new Map<string, RequerimientoRow[]>();
-    for (const r of rows) {
-      const k = r.nro_req ?? `__SIN_REQ_${r.id}`;
-      if (!groups.has(k)) groups.set(k, []);
-      groups.get(k)!.push(r);
+  // (Las acciones aprobar/desaprobar/anular se gestionan desde el módulo /requerimientos por admin)
+  async function eliminar(r: RequerimientoRow) {
+    const res = await fetch(`/api/requerimientos/${r.id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      messageApi.error(err?.error ?? "Error al eliminar.");
+      return;
     }
-    return groups;
+    messageApi.success("Eliminado.");
+    fetchData();
+    onUpdated?.();
+  }
+
+  // ── Stats ──
+  const stats = useMemo(() => {
+    let borrador = 0, aprobados = 0, sinAprob = 0, conOC = 0, anulados = 0;
+    // Totales por moneda. Para cada item: si tiene precio_unitario lo usa (real/quote),
+    // si no usa el precio del catálogo del material (estimado). Si no hay ninguno → no suma.
+    const totalReal: Record<string, number> = {};
+    const totalEstimado: Record<string, number> = {};
+    let itemsConPrecio = 0, itemsSinPrecio = 0;
+    for (const r of rows) {
+      const sr = r.status_requerimiento_codigo;
+      if (sr === "BORRADOR") borrador++;
+      else if (sr === "APROBADO") aprobados++;
+      else if (sr === "SIN_APROBACION") sinAprob++;
+      else if (sr === "ANULADO") anulados++;
+      if (r.po_id) conOC++;
+      if (sr === "ANULADO" || sr === "DESAPROBADO") continue; // no cuentan en costo
+      const cant = Number(r.cantidad);
+      const pu = r.precio_unitario != null ? Number(r.precio_unitario) : null;
+      const moneda = r.moneda ?? "USD";
+      if (pu != null && Number.isFinite(pu)) {
+        totalReal[moneda] = (totalReal[moneda] ?? 0) + cant * pu;
+        itemsConPrecio++;
+      } else if (r.material?.precio != null) {
+        const cat = Number(r.material.precio);
+        const monedaCat = r.material.moneda_codigo ?? moneda;
+        totalEstimado[monedaCat] = (totalEstimado[monedaCat] ?? 0) + cant * cat;
+        itemsConPrecio++;
+      } else {
+        itemsSinPrecio++;
+      }
+    }
+    return { borrador, aprobados, sinAprob, conOC, anulados, totalReal, totalEstimado, itemsConPrecio, itemsSinPrecio };
   }, [rows]);
+  const hayBorradores = stats.borrador > 0;
+  // Helper para mostrar precio efectivo de un item (real o catálogo).
+  function precioEfectivo(r: RequerimientoRow): { precio: number; moneda: string; esEstimado: boolean } | null {
+    if (r.precio_unitario != null) {
+      const pu = Number(r.precio_unitario);
+      if (Number.isFinite(pu)) return { precio: pu, moneda: r.moneda ?? "USD", esEstimado: false };
+    }
+    if (r.material?.precio != null) {
+      const pu = Number(r.material.precio);
+      if (Number.isFinite(pu)) return { precio: pu, moneda: r.material.moneda_codigo ?? r.moneda ?? "USD", esEstimado: true };
+    }
+    return null;
+  }
+  function fmtMonto(n: number): string {
+    return n.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
 
-  // ── Columnas ────────────────────────────────────────────────────────
+  // Valores únicos para filtros derivados de relaciones
+  const reqStatusValores = [...new Set(rows.map((r) => r.status_requerimiento?.nombre).filter(Boolean) as string[])]
+    .sort().map((v) => ({ text: v, value: v }));
+  const cotStatusValores = [...new Set(rows.map((r) => r.status_cotizacion?.nombre).filter(Boolean) as string[])]
+    .sort().map((v) => ({ text: v, value: v }));
+  const ocStatusValores = [...new Set(rows.map((r) => r.status_oc?.nombre).filter(Boolean) as string[])]
+    .sort().map((v) => ({ text: v, value: v }));
 
+  // ── Columnas ──
   const columns: ColumnsType<RequerimientoRow> = [
     {
-      key: "nro_req", title: "Nro Req / Item", width: 140,
+      key: "item_req", title: "#", dataIndex: "item_req", width: 50, align: "center",
+      sorter: (a, b) => (a.item_req ?? 0) - (b.item_req ?? 0),
+      filters: [...new Set(rows.map((r) => r.item_req).filter((v): v is number => v != null))]
+        .sort((a, b) => a - b).map((v) => ({ text: String(v), value: String(v) })),
+      filterSearch: true,
+      onFilter: (value, r) => String(r.item_req) === value,
+    },
+    {
+      title: "Nro Req", key: "nro", width: 130,
+      ...filtroPorColumna(rows, "nro_req"),
       render: (_, r) => (
-        <Text strong style={{ fontSize: 12 }}>
-          {r.nro_req ?? "—"} / {r.item_req ?? "—"}
-        </Text>
+        <Space size={4} orientation="vertical" style={{ lineHeight: 1.2 }}>
+          <Text strong style={{ fontSize: 11 }}>{r.nro_req ?? "—"}</Text>
+          {r.es_adicional && <Tag color="gold" style={{ fontSize: 9, margin: 0 }}>ADICIONAL</Tag>}
+        </Space>
       ),
     },
     {
-      key: "tipo", title: "Tipo", width: 70, align: "center",
-      render: (_, r) => (
-        <Tag color={TIPO_COLOR[r.tipo_codigo ?? ""] ?? "default"} style={{ margin: 0 }}>
-          {r.tipo_codigo ?? "—"}
-        </Tag>
-      ),
+      key: "tipo_codigo",
+      title: "Tipo", dataIndex: "tipo_codigo", width: 70, align: "center",
+      filters: [
+        { text: "MAC", value: "MAC" },
+        { text: "CAD", value: "CAD" },
+        { text: "SER", value: "SER" },
+      ],
+      onFilter: (value, r) => r.tipo_codigo === value,
+      render: (v: string) => <Tag color={TIPO_COLOR[v] ?? "default"} style={{ margin: 0 }}>{v}</Tag>,
     },
     {
-      key: "descripcion", title: "Descripción", ellipsis: true,
+      title: "Cód. Material", key: "material_codigo", width: 120,
+      ...filtroPorColumna(rows, "material_codigo"),
+      render: (_, r) => r.material_codigo
+        ? <Tag style={{ fontSize: 10, margin: 0 }}>{r.material_codigo}</Tag>
+        : <Text type="secondary" style={{ fontSize: 11 }}>—</Text>,
+    },
+    {
+      title: "Descripción", key: "desc", width: 280, ellipsis: true,
+      ...filtroPorColumna(rows, "descripcion"),
       render: (_, r) => {
-        if (editingId === r.id) {
-          return (
-            <Input.TextArea
-              value={String(editValues.descripcion ?? "")}
-              onChange={(e) => setEditValues((v) => ({ ...v, descripcion: e.target.value }))}
-              rows={1}
-              autoSize={{ minRows: 1, maxRows: 3 }}
-            />
-          );
-        }
+        // Para MAC con material vinculado, mostrar la descripción REAL del material
+        // (no la genérica heredada del task list que viene en r.descripcion).
+        const descripcionMostrada = r.tipo_codigo === "MAC" && r.material?.descripcion
+          ? r.material.descripcion
+          : r.descripcion;
         return (
-          <div style={{ lineHeight: 1.2 }}>
-            {r.material?.codigo && <Tag style={{ fontSize: 10, marginRight: 4 }}>{r.material.codigo}</Tag>}
-            {r.material?.descripcion ?? r.descripcion ?? "—"}
-            {r.observaciones && (
-              <div style={{ fontSize: 11, color: "#888", fontStyle: "italic", marginTop: 2 }}>
-                {r.observaciones}
-              </div>
+          <div style={{ lineHeight: 1.3 }}>
+            <div style={{ fontSize: 12 }}>{descripcionMostrada}</div>
+            {r.fabricante_codigo && (
+              <Text type="secondary" style={{ fontSize: 10 }}>{r.fabricante_codigo}</Text>
             )}
           </div>
         );
       },
     },
     {
-      // En modo lectura: "5 lt" (cantidad + unidad). En modo edición: 2 inputs
-      // separados (InputNumber cantidad + Select unidad) para que se pueda
-      // corregir cualquier dato sin tener que anular y rehacer el item.
-      key: "cantidad", title: "Cant. / Unidad", width: 180, align: "right",
+      title: "Cant.", key: "qty", width: 80, align: "right",
+      sorter: (a, b) => Number(a.cantidad) - Number(b.cantidad),
+      filters: [...new Set(rows.map((r) => Number(r.cantidad)))]
+        .sort((a, b) => a - b).map((v) => ({ text: String(v), value: String(v) })),
+      filterSearch: true,
+      onFilter: (value, r) => String(Number(r.cantidad)) === value,
+      render: (_, r) => Number(r.cantidad).toLocaleString(),
+    },
+    {
+      title: "P. Unit.", key: "precio_unit", width: 110, align: "right",
+      sorter: (a, b) => {
+        const pa = precioEfectivo(a)?.precio ?? -1;
+        const pb = precioEfectivo(b)?.precio ?? -1;
+        return pa - pb;
+      },
       render: (_, r) => {
-        if (editingId === r.id) {
-          return (
-            <Space size={4}>
-              <InputNumber
-                value={Number(editValues.cantidad ?? 0)}
-                onChange={(v) => setEditValues((vs) => ({ ...vs, cantidad: v ?? 0 }))}
-                min={0.01}
-                style={{ width: 80 }}
-              />
-              <Select
-                size="small"
-                showSearch
-                optionFilterProp="label"
-                value={editValues.unidad_medida ?? ""}
-                onChange={(nv) => setEditValues((vs) => ({ ...vs, unidad_medida: nv }))}
-                style={{ width: 90 }}
-                options={unidades.map((u) => ({ value: u.codigo, label: u.codigo }))}
-              />
-            </Space>
-          );
-        }
-        const um = r.unidad_medida ?? "";
-        const cant = Number(r.cantidad);
-        const equiv = um === "cil"
-          ? `≈ ${fmtCant(cant * 55)} gl`
-          : um === "gl"
-            ? `≈ ${fmtCant(cant / 55)} cil`
-            : null;
+        const eff = precioEfectivo(r);
+        if (!eff) return <Text type="secondary">—</Text>;
         return (
-          <div style={{ lineHeight: 1.15 }}>
-            {cant.toLocaleString()} {um}
-            {equiv && (
-              <div style={{ fontSize: 10, color: "rgba(0,0,0,0.45)" }}>{equiv}</div>
-            )}
-          </div>
+          <Tooltip title={eff.esEstimado ? "Precio del catálogo (estimado)" : "Precio cargado (real)"}>
+            <div style={{ lineHeight: 1.1 }}>
+              <Text style={{ fontSize: 12, color: eff.esEstimado ? "#888" : brand.navy }}>
+                {eff.moneda} {fmtMonto(eff.precio)}
+              </Text>
+              {eff.esEstimado && (
+                <div style={{ fontSize: 9, color: "#aaa" }}>estimado</div>
+              )}
+            </div>
+          </Tooltip>
         );
       },
     },
     {
-      key: "precio", title: "P. unitario", width: 120, align: "right",
+      title: "Subtotal", key: "subtotal", width: 130, align: "right",
+      sorter: (a, b) => {
+        const pa = (precioEfectivo(a)?.precio ?? 0) * Number(a.cantidad);
+        const pb = (precioEfectivo(b)?.precio ?? 0) * Number(b.cantidad);
+        return pa - pb;
+      },
       render: (_, r) => {
-        if (editingId === r.id) {
-          return (
-            <InputNumber
-              value={editValues.precio_unitario != null ? Number(editValues.precio_unitario) : null}
-              onChange={(v) => setEditValues((vs) => ({ ...vs, precio_unitario: v }))}
-              min={0}
-              placeholder="—"
-              style={{ width: 100 }}
-            />
-          );
-        }
-        if (r.precio_unitario == null) return <Text type="secondary">—</Text>;
-        return <span>{r.moneda ?? "USD"} {Number(r.precio_unitario).toFixed(2)}</span>;
+        const eff = precioEfectivo(r);
+        if (!eff) return <Text type="secondary">—</Text>;
+        const sub = eff.precio * Number(r.cantidad);
+        return (
+          <Text strong style={{ fontSize: 12, color: eff.esEstimado ? "#888" : brand.navy }}>
+            {eff.moneda} {fmtMonto(sub)}
+          </Text>
+        );
       },
     },
     {
-      key: "status", title: "Estado", width: 130,
-      render: (_, r) => r.status_requerimiento
-        ? <Tag color={REQ_COLOR[r.status_requerimiento.codigo] ?? "default"}>{r.status_requerimiento.nombre}</Tag>
+      title: "U.M.", key: "unidad_medida", width: 90,
+      ...filtroPorColumna(rows, "unidad_medida"),
+      render: (_, r) => r.unidad_medida
+        ? <Text style={{ fontSize: 12 }}>{r.unidad_medida}</Text>
         : <Text type="secondary">—</Text>,
     },
     {
-      // Adjuntos por ítem — popover con la lista de archivos + botón para subir.
-      // Útil para que el solicitante adjunte cotización del proveedor, foto del
-      // repuesto, comprobante, etc. — y que el aprobador los pueda descargar.
-      key: "adjuntos", title: "Adjuntos", width: 130, align: "center",
-      render: (_, r) => {
-        const adj = r.adjuntos ?? [];
-        return (
-          <Space size={4}>
-            {adj.length > 0 ? (
-              <Popover
-                placement="left"
-                title={`Adjuntos del ítem ${r.item_req ?? r.id} (${adj.length})`}
-                content={
-                  <div style={{ maxWidth: 320, display: "flex", flexDirection: "column", gap: 4 }}>
-                    {adj.map((a) => (
-                      <div
-                        key={a.id}
-                        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 12 }}
-                      >
-                        <R2FileLink resource="req-adjunto" resourceId={a.id} r2Key={a.r2_key}>
-                          <PaperClipOutlined /> {a.nombre_archivo} ({(a.tamano / 1024).toFixed(1)} KB)
-                        </R2FileLink>
-                        <Popconfirm
-                          title="¿Eliminar adjunto?"
-                          onConfirm={() => eliminarAdjuntoItem(r.id, a.id)}
-                          okText="Eliminar"
-                          okButtonProps={{ danger: true }}
-                          cancelText="Cancelar"
-                        >
-                          <Button size="small" type="text" danger icon={<DeleteOutlined />} />
-                        </Popconfirm>
-                      </div>
-                    ))}
-                  </div>
-                }
-              >
-                <Tag color="blue" style={{ margin: 0, cursor: "pointer" }}>
-                  <PaperClipOutlined /> {adj.length}
-                </Tag>
-              </Popover>
-            ) : (
-              <Text type="secondary">—</Text>
-            )}
-            <Upload
-              showUploadList={false}
-              beforeUpload={(file) => {
-                subirAdjuntoItem(r.id, file as File);
-                return false;
-              }}
-            >
-              <Tooltip title="Adjuntar archivo">
-                <Button
-                  size="small"
-                  type="text"
-                  icon={<PaperClipOutlined />}
-                  loading={uploadingItemId === r.id}
-                />
-              </Tooltip>
-            </Upload>
-          </Space>
-        );
-      },
+      title: "F. Requerida", key: "fecha_requerida", width: 120,
+      sorter: (a, b) => (a.fecha_requerida ?? "").localeCompare(b.fecha_requerida ?? ""),
+      render: (_, r) => r.fecha_requerida
+        ? <Text style={{ fontSize: 12 }}>{formatDateOnly(r.fecha_requerida)}</Text>
+        : <Text type="secondary">—</Text>,
     },
     {
-      key: "acciones", title: "", width: 130, fixed: "right", align: "center",
-      render: (_, r) => {
-        const editable = r.status_requerimiento?.codigo === "BORRADOR";
-        if (editingId === r.id) {
-          return (
-            <Space size={2}>
-              <Button size="small" type="primary" loading={savingEdit} onClick={() => saveEdit(r.id)}>
-                Guardar
-              </Button>
-              <Button size="small" onClick={cancelEdit}>Cancelar</Button>
+      title: "Observaciones / Adjuntos", key: "observaciones", width: 240,
+      render: (_, r) => (
+        <div style={{ lineHeight: 1.3 }}>
+          {r.observaciones && (
+            <div style={{ fontSize: 12, marginBottom: r.adjuntos?.length ? 4 : 0 }}>
+              {r.observaciones}
+            </div>
+          )}
+          {r.adjuntos && r.adjuntos.length > 0 && (
+            <Space size={4} wrap>
+              {r.adjuntos.map((a) => (
+                <Tooltip key={a.id} title={`${a.nombre_archivo} (${(a.tamano / 1024).toFixed(1)} KB)`}>
+                  <Tag style={{ fontSize: 10, margin: 0, cursor: "pointer" }}>
+                    <R2FileLink
+                      resource="req-adjunto"
+                      resourceId={a.id}
+                      r2Key={a.r2_key}
+                      style={{ color: "inherit" }}
+                    >
+                      <PaperClipOutlined /> {a.nombre_archivo.length > 18 ? a.nombre_archivo.slice(0, 15) + "…" : a.nombre_archivo}
+                    </R2FileLink>
+                  </Tag>
+                </Tooltip>
+              ))}
             </Space>
-          );
-        }
+          )}
+          {!r.observaciones && (!r.adjuntos || r.adjuntos.length === 0) && (
+            <Text type="secondary">—</Text>
+          )}
+        </div>
+      ),
+    },
+    {
+      title: "REQ", key: "req", width: 110, align: "center",
+      filters: reqStatusValores, filterSearch: true,
+      onFilter: (value, r) => r.status_requerimiento?.nombre === value,
+      render: (_, r) => r.status_requerimiento ? (
+        <Tag color={REQ_COLOR[r.status_requerimiento.codigo] ?? "default"} style={{ margin: 0, fontSize: 10 }}>
+          {r.status_requerimiento.nombre}
+        </Tag>
+      ) : "—",
+    },
+    {
+      title: "F. Enviado", key: "fecha_envio_aprobacion", width: 110,
+      sorter: (a, b) => (a.fecha_envio_aprobacion ?? "").localeCompare(b.fecha_envio_aprobacion ?? ""),
+      render: (_, r) => r.fecha_envio_aprobacion ? (
+        <Tooltip title={r.usuario_envia ? `Enviado por ${r.usuario_envia}` : undefined}>
+          <Text style={{ fontSize: 11 }}>{formatDateOnly(r.fecha_envio_aprobacion)}</Text>
+        </Tooltip>
+      ) : <Text type="secondary">—</Text>,
+    },
+    {
+      title: "F. Aprobado", key: "fecha_aprobacion", width: 110,
+      sorter: (a, b) => (a.fecha_aprobacion ?? "").localeCompare(b.fecha_aprobacion ?? ""),
+      render: (_, r) => r.fecha_aprobacion ? (
+        <Tooltip title={r.usuario_aprueba ? `Aprobado por ${r.usuario_aprueba}` : undefined}>
+          <Text style={{ fontSize: 11 }}>{formatDateOnly(r.fecha_aprobacion)}</Text>
+        </Tooltip>
+      ) : <Text type="secondary">—</Text>,
+    },
+    {
+      title: "COT", key: "cot", width: 110, align: "center",
+      filters: cotStatusValores, filterSearch: true,
+      onFilter: (value, r) => r.status_cotizacion?.nombre === value,
+      render: (_, r) => r.status_cotizacion ? (
+        <Tag color={COT_COLOR[r.status_cotizacion.codigo] ?? "default"} style={{ margin: 0, fontSize: 10 }}>
+          {r.status_cotizacion.nombre}
+        </Tag>
+      ) : "—",
+    },
+    {
+      title: "OC", key: "oc", width: 150, align: "center",
+      filters: ocStatusValores, filterSearch: true,
+      onFilter: (value, r) => r.status_oc?.nombre === value,
+      render: (_, r) => (
+        <Space orientation="vertical" size={2} style={{ lineHeight: 1.2 }}>
+          {r.status_oc ? (
+            <Tag color={OC_COLOR[r.status_oc.codigo] ?? "default"} style={{ margin: 0, fontSize: 10 }}>
+              {r.status_oc.nombre}
+            </Tag>
+          ) : <Text type="secondary">—</Text>}
+          {r.compra?.numero_po && (
+            <Text style={{ fontSize: 10 }} code>{r.compra.numero_po}</Text>
+          )}
+          {r.compra?.fecha_entrega_esperada && (
+            <Text type="secondary" style={{ fontSize: 10 }}>
+              📦 Llega: {formatDateOnly(r.compra.fecha_entrega_esperada)}
+            </Text>
+          )}
+        </Space>
+      ),
+    },
+    {
+      title: "", key: "actions", width: 130, fixed: "right",
+      render: (_, r) => {
+        const sr = r.status_requerimiento_codigo;
+        // En el tab OT solo permitimos editar/eliminar mientras está en BORRADOR.
+        // El envío a aprobación es a nivel de requerimiento completo (botón en la cabecera del card).
+        const isBorrador = sr === "BORRADOR";
+        const canEdit = isBorrador;
+        const canDelete = isBorrador;
         return (
-          <Space size={2}>
-            {editable && (
+          <Space size={0}>
+            {canEdit && (
               <Tooltip title="Editar">
-                <Button size="small" type="text" icon={<EditOutlined />} onClick={() => startEdit(r)} />
+                <Button type="text" size="small" icon={<EditOutlined />} onClick={() => abrirEditar(r)} />
               </Tooltip>
             )}
-            <Tooltip title="Anular">
-              <Button
-                size="small" type="text"
-                icon={<CloseCircleOutlined />}
-                style={{ color: "#fa8c16" }}
-                onClick={() => anularItem(r)}
-              />
-            </Tooltip>
-            {editable && (
-              <Popconfirm
-                title="¿Eliminar este item?"
-                description="Solo se puede eliminar en estado BORRADOR."
-                onConfirm={() => eliminarItem(r.id)}
-                okText="Eliminar" okButtonProps={{ danger: true }} cancelText="Cancelar"
-              >
+            {canDelete && (
+              <Popconfirm title="Eliminar permanentemente" onConfirm={() => eliminar(r)} okText="Eliminar" okButtonProps={{ danger: true }} cancelText="Cancelar">
                 <Tooltip title="Eliminar">
-                  <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+                  <Button type="text" size="small" danger icon={<DeleteOutlined />} />
                 </Tooltip>
               </Popconfirm>
+            )}
+            {!isBorrador && (
+              <Tooltip title="Gestión disponible solo desde Logística → Requerimientos">
+                <Text type="secondary" style={{ fontSize: 11 }}>—</Text>
+              </Tooltip>
             )}
           </Space>
         );
@@ -821,159 +990,165 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
     },
   ];
 
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+    useColumnasRedimensionables<RequerimientoRow>(columns, "ot-interna-req-cols-widths-v1");
+
+  const monedasActivas = useMemo(() => {
+    return [...new Set([...Object.keys(stats.totalReal), ...Object.keys(stats.totalEstimado)])].sort();
+  }, [stats.totalReal, stats.totalEstimado]);
+
   return (
     <div>
-      <Space style={{ marginBottom: 12 }} wrap>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openNuevo}>
-          Nuevo requerimiento
-        </Button>
-        {/* Aplicar Task List — botón verde con rayo. Solo habilitado cuando
-            la OT tiene equipo + estrategia PM1/PM2/PM3/PM4. El tooltip
-            explica por qué está deshabilitado si falta alguno. */}
-        <Tooltip
-          title={
-            !otInfo.equipo_codigo
-              ? "La OT no tiene equipo asignado — el task list se filtra por equipo."
-              : !otInfo.estrategia_pm
-                ? "La estrategia debe ser PM1, PM2, PM3 o PM4. Asignala en el tab Detalle."
-                : `Genera los requerimientos del Task List del equipo ${otInfo.equipo_codigo} con cascada ${otInfo.estrategia_pm}`
-          }
+      {contextHolder}
+      {modalCtx}
+      {/* Card de costos estimados/reales */}
+      {rows.length > 0 && monedasActivas.length > 0 && (
+        <Card
+          size="small"
+          style={{ marginBottom: 12, background: "#FAFCFE", borderColor: "#D6E4FF" }}
+          styles={{ body: { padding: 12 } }}
         >
-          <Button
-            icon={<ThunderboltOutlined />}
-            onClick={aplicarTaskList}
-            loading={aplicandoTaskList}
-            disabled={!otInfo.equipo_codigo || !otInfo.estrategia_pm}
-            style={{
-              background: otInfo.equipo_codigo && otInfo.estrategia_pm ? brand.success ?? "#52c41a" : undefined,
-              borderColor: otInfo.equipo_codigo && otInfo.estrategia_pm ? brand.success ?? "#52c41a" : undefined,
-              color: otInfo.equipo_codigo && otInfo.estrategia_pm ? "#fff" : undefined,
-            }}
-          >
-            Aplicar Task List{otInfo.estrategia_pm ? ` (${otInfo.estrategia_pm})` : ""}
-          </Button>
-        </Tooltip>
-        <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>
-          Refrescar
-        </Button>
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          {rows.length} item{rows.length === 1 ? "" : "s"} · {gruposPorReq.size} requerimiento{gruposPorReq.size === 1 ? "" : "s"}
-        </Text>
-      </Space>
-
-      {/* Resumen + acciones a nivel grupo (por nro_req): subtotal del req,
-          "Fecha requerida bulk" (fija la fecha en todos los items del grupo) y
-          "Enviar a aprobación" (todos los items en BORRADOR del req). */}
-      {gruposPorReq.size > 0 && (
-        <Card size="small" style={{ marginBottom: 12, background: brand.bgPage }}>
-          <Space orientation="vertical" size={6} style={{ width: "100%" }}>
-            {[...gruposPorReq.entries()].map(([nroReq, items]) => {
-              // Subtotal del requerimiento: suma de (cantidad × precio_unitario)
-              // por moneda — es habitual que un req tenga ítems en USD y SOL.
-              const subtotalPorMoneda = new Map<string, number>();
-              let itemsSinPrecio = 0;
-              for (const it of items) {
-                const cant = Number(it.cantidad) || 0;
-                const pu = it.precio_unitario != null ? Number(it.precio_unitario) : null;
-                if (pu == null || pu <= 0) {
-                  itemsSinPrecio++;
-                  continue;
-                }
-                const mon = it.moneda ?? "USD";
-                subtotalPorMoneda.set(mon, (subtotalPorMoneda.get(mon) ?? 0) + cant * pu);
-              }
-              const enBorrador = items.filter((i) => i.status_requerimiento?.codigo === "BORRADOR").length;
-              return (
-                <div
-                  key={nroReq}
-                  style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}
-                >
-                  <Tag color="default" style={{ margin: 0, fontWeight: 600 }}>{nroReq}</Tag>
-                  <Text type="secondary" style={{ fontSize: 11 }}>
-                    {items.length} ítem{items.length === 1 ? "" : "s"}
-                  </Text>
-                  {/* Subtotal por moneda */}
-                  {[...subtotalPorMoneda.entries()].map(([mon, total]) => (
-                    <Tag key={mon} color="green" style={{ margin: 0 }}>
-                      {mon} {total.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </Tag>
-                  ))}
-                  {itemsSinPrecio > 0 && (
-                    <Tooltip title="Items sin precio unitario. Edítalos antes de enviar a aprobación.">
-                      <Tag color="orange" style={{ margin: 0 }}>{itemsSinPrecio} sin precio</Tag>
-                    </Tooltip>
-                  )}
-                  {/* Fecha requerida bulk: fija una fecha a todos los items del req */}
-                  <FechaRequeridaBulk
-                    nroReq={nroReq}
-                    items={items}
-                    onConfirmar={(fecha) => fijarFechaRequeridaBulk(items, fecha)}
-                  />
-                  {/* Enviar a aprobación (solo si hay items en BORRADOR) */}
-                  {enBorrador > 0 && (
-                    <Popconfirm
-                      title={`Enviar ${nroReq} a aprobación`}
-                      description={`${enBorrador} item(s) en BORRADOR pasarán a SIN_APROBACION.`}
-                      onConfirm={() => enviarAprobacion(nroReq)}
-                      okText="Enviar" cancelText="Cancelar"
-                    >
-                      <Button size="small" icon={<SendOutlined />} type="primary">
-                        Enviar ({enBorrador})
-                      </Button>
-                    </Popconfirm>
-                  )}
-                </div>
-              );
-            })}
-          </Space>
+          <Row gutter={12} align="middle">
+            <Col flex="auto">
+              <Space size={20} wrap>
+                {monedasActivas.map((moneda) => {
+                  const real = stats.totalReal[moneda] ?? 0;
+                  const est = stats.totalEstimado[moneda] ?? 0;
+                  const total = real + est;
+                  return (
+                    <div key={moneda} style={{ lineHeight: 1.2 }}>
+                      <Text type="secondary" style={{ fontSize: 11 }}>Costo total ({moneda})</Text>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: brand.navy }}>
+                        {moneda} {fmtMonto(total)}
+                      </div>
+                      <div style={{ fontSize: 10, color: "#888" }}>
+                        Real (PO/quote): <b>{fmtMonto(real)}</b>
+                        {est > 0 && <> · Estimado catálogo: <b>{fmtMonto(est)}</b></>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </Space>
+            </Col>
+            <Col>
+              <Space size={6} orientation="vertical" style={{ textAlign: "right" }}>
+                <Tag color="success">{stats.itemsConPrecio} item(s) con precio</Tag>
+                {stats.itemsSinPrecio > 0 && (
+                  <Tooltip title="Items sin precio_unitario y sin precio de catálogo. Editá el item o cargá precio al material.">
+                    <Tag color="warning">{stats.itemsSinPrecio} sin precio</Tag>
+                  </Tooltip>
+                )}
+              </Space>
+            </Col>
+          </Row>
         </Card>
       )}
+      {/* Toolbar */}
+      <Row gutter={12} style={{ marginBottom: 12 }} wrap>
+        <Col flex="auto">
+          <Space wrap>
+            <Tag color={brand.navy}>Total: {rows.length}</Tag>
+            {stats.borrador > 0 && <Tag color="warning">Borrador: {stats.borrador}</Tag>}
+            <Tag color="default">Sin aprob.: {stats.sinAprob}</Tag>
+            <Tag color="success">Aprobados: {stats.aprobados}</Tag>
+            <Tag color="processing">Con OC: {stats.conOC}</Tag>
+            {stats.anulados > 0 && <Tag>Anulados: {stats.anulados}</Tag>}
+          </Space>
+        </Col>
+        <Col>
+          <Space>
+            {hayBorradores && (
+              <Popconfirm
+                title={`Enviar ${stats.borrador} borrador(es) a aprobación`}
+                description="Una vez enviados, no podrás editarlos desde acá. Solo un admin desde el módulo Requerimientos."
+                onConfirm={enviarTodosBorrador}
+                okText="Enviar todos" cancelText="Cancelar"
+              >
+                <Button type="primary" ghost icon={<SendOutlined />}>
+                  Enviar todos a aprobación ({stats.borrador})
+                </Button>
+              </Popconfirm>
+            )}
+            <ColumnasToggleButton<RequerimientoRow>
+              columns={columns}
+              ocultas={ocultas}
+              setOcultas={setOcultas}
+              obligatorias={["item_req", "desc"]}
+            />
+          <Button onClick={resetAnchos}>Restablecer anchos</Button>
+            <Button icon={<ReloadOutlined />} onClick={fetchData}>Refrescar</Button>
+            <Tooltip
+              title={
+                !otInfo.equipo_codigo
+                  ? "La OT no tiene equipo asignado — el task list se filtra por equipo."
+                  : !otInfo.estrategia_pm
+                    ? "La estrategia debe ser PM1, PM2, PM3 o PM4. Asignala en el tab Detalle."
+                    : `Copia los items del Task List del equipo ${otInfo.equipo_codigo} con cascada ${otInfo.estrategia_pm}`
+              }
+            >
+              <Button
+                icon={<ThunderboltOutlined />}
+                onClick={abrirDialogTaskList}
+                loading={aplicandoTpl}
+                disabled={aplicandoTpl || !taskListDisponible}
+              >
+                Aplicar Task List{otInfo.estrategia_pm ? ` (${otInfo.estrategia_pm})` : ""}
+              </Button>
+            </Tooltip>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => abrirDraft()} disabled={draftOpen}>
+              Nuevo Requerimiento
+            </Button>
+          </Space>
+        </Col>
+      </Row>
 
-      {rows.length === 0 && !loading ? (
-        <Empty description="Sin requerimientos. Crea el primero con el botón de arriba." />
-      ) : (
-        <TablaReqInternos columns={columns} data={rows} loading={loading} />
+      {!taskListDisponible && rows.length === 0 && (
+        <Alert
+          type="info" showIcon style={{ marginBottom: 12 }}
+          title="Sin task list aplicable"
+          description="Esta OT no tiene equipo asignado o su estrategia no es PM1..PM4, por lo que no hay task list para aplicar. Agregá los items manualmente con 'Nuevo Requerimiento'."
+        />
       )}
 
-      {/* ── Modal multi-item ── */}
-      <Modal
-        title="Nuevo requerimiento"
-        open={modalOpen}
-        onCancel={() => setModalOpen(false)}
-        onOk={handleCrear}
-        confirmLoading={saving}
-        okText={`Crear (${draftItems.length} item${draftItems.length === 1 ? "" : "s"})`}
-        cancelText="Cancelar"
-        width={modalWidth(screens, 1100)}
-        destroyOnHidden
-      >
-        <Space orientation="vertical" style={{ width: "100%" }} size="small">
-          <Form layout="inline">
-            <Form.Item label="Agregar a req existente (opcional)">
-              <Input
-                placeholder="Código existente (ej. 390626-1)"
-                value={draftNroReq}
-                onChange={(e) => setDraftNroReq(e.target.value)}
-                style={{ width: 240 }}
-              />
-            </Form.Item>
-          </Form>
-
+      {/* ── Draft inline: nuevo requerimiento con múltiples items ── */}
+      {draftOpen && (
+        <Card
+          size="small"
+          style={{ marginBottom: 16, borderColor: brand.cyan, background: "#F0FAFB" }}
+          styles={{ body: { padding: 16 } }}
+          title={
+            <Space>
+              <span style={{ fontWeight: 600 }}>
+                {draftAppendToNroReq ? `Agregar items a ${draftAppendToNroReq}` : "Nuevo Requerimiento"}
+              </span>
+              <Tag color="orange">BORRADOR</Tag>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                ({draftItems.length} item{draftItems.length !== 1 ? "s" : ""})
+              </Text>
+            </Space>
+          }
+          extra={
+            <Button size="small" type="text" icon={<CloseOutlined />} onClick={cerrarDraft} aria-label="Cerrar" />
+          }
+        >
           <Table
-            size="small"
-            rowKey="key"
             dataSource={draftItems}
+            rowKey="id"
             pagination={false}
+            size="small"
             scroll={{ x: 1200 }}
             columns={[
               {
-                title: "Tipo", dataIndex: "tipo_codigo", width: 100,
-                render: (v: string, row) => (
+                title: "Ítem", key: "n", width: 50, align: "center",
+                render: (_: unknown, _r: DraftItem, idx: number) => idx + 1,
+              },
+              {
+                title: "Tipo", key: "tipo", width: 80,
+                render: (_: unknown, r: DraftItem) => (
                   <Select showSearch optionFilterProp="label"
-                    size="small"
-                    value={v}
-                    style={{ width: 90 }}
-                    onChange={(nv) => updateDraft(row.key, { tipo_codigo: nv as DraftItem["tipo_codigo"] })}
+                    size="small" style={{ width: "100%" }}
+                    value={r.tipo_codigo}
+                    onChange={(v) => actualizarDraftItem(r.id, { tipo_codigo: v as "MAC" | "CAD" | "SER", material_codigo: undefined })}
                     options={[
                       { value: "MAC", label: "MAC" },
                       { value: "CAD", label: "CAD" },
@@ -983,280 +1158,697 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
                 ),
               },
               {
-                title: "Material", dataIndex: "material_codigo", width: 240,
-                render: (v: string | undefined, row) =>
-                  row.tipo_codigo === "MAC" ? (
-                    <AutoComplete
-                      size="small"
-                      value={v ?? ""}
-                      placeholder="Código o descripción"
-                      style={{ width: "100%" }}
-                      onChange={(nv) => updateDraft(row.key, { material_codigo: nv })}
-                      options={materiales.map((m) => ({
-                        value: m.codigo,
-                        label: `${m.codigo} — ${m.descripcion}`,
-                      }))}
-                      filterOption={(input, option) =>
-                        String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())
-                      }
-                    />
-                  ) : (
-                    <Text type="secondary" style={{ fontSize: 11 }}>—</Text>
-                  ),
-              },
-              {
-                title: "Descripción", dataIndex: "descripcion",
-                render: (v: string, row) => (
-                  <Input
-                    size="small"
-                    value={v}
-                    placeholder={row.tipo_codigo === "MAC" ? "(se autocompleta del material)" : "Detalle"}
-                    onChange={(e) => updateDraft(row.key, { descripcion: e.target.value })}
-                  />
-                ),
-              },
-              {
-                title: "Cant.", dataIndex: "cantidad", width: 110,
-                render: (v: number, row) => {
-                  // Si UM es cilindro o galón, mostramos el equivalente debajo
-                  // (factor 55). Le evita al user calcular mentalmente.
-                  const factor = row.unidad_medida === "cil"
-                    ? { to: "gl", value: Number(v ?? 0) * 55 }
-                    : row.unidad_medida === "gl"
-                      ? { to: "cil", value: Number(v ?? 0) / 55 }
-                      : null;
-                  return (
-                    <div>
-                      <InputNumber
-                        size="small"
-                        value={v}
-                        min={0.01}
-                        style={{ width: 90 }}
-                        onChange={(nv) => updateDraft(row.key, { cantidad: nv ?? 1 })}
+                title: "Material / Servicio", key: "mat", width: 240,
+                render: (_: unknown, r: DraftItem) => {
+                  if (r.tipo_codigo === "MAC") {
+                    return (
+                      <Select
+                        size="small" style={{ width: "100%" }}
+                        placeholder="Buscar material…"
+                        showSearch optionFilterProp="label" allowClear
+                        // Después de seleccionar muestra solo el código (la descripción ya va en su propio campo).
+                        optionLabelProp="value"
+                        value={r.material_codigo}
+                        onChange={(v) => actualizarDraftItem(r.id, { material_codigo: v })}
+                        options={materiales.map((m) => ({
+                          value: m.codigo,
+                          label: `${m.codigo} — ${m.descripcion}${m.np ? ` · NP ${m.np}` : ""}`,
+                        }))}
                       />
-                      {factor && Number(v ?? 0) > 0 && (
-                        <div style={{ fontSize: 10, color: "rgba(0,0,0,0.45)", marginTop: 2 }}>
-                          ≈ {fmtCant(factor.value)} {factor.to}
-                        </div>
-                      )}
-                    </div>
+                    );
+                  }
+                  // SER y CAD: no usan dropdown — la descripción es donde el usuario tipea el servicio/cargo.
+                  return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
+                },
+              },
+              {
+                title: "Descripción *", key: "desc", width: 250,
+                render: (_: unknown, r: DraftItem) => {
+                  // Para SER usamos AutoComplete con sugerencias del catálogo de servicios
+                  // (lo que escriben se guarda al guardar; reutilizable después).
+                  if (r.tipo_codigo === "SER") {
+                    // Usamos `descripcion` del catálogo (es el "nombre visible" del servicio).
+                    // Fallback a `nombre` por compatibilidad con entries viejos.
+                    const opciones = servicios.map((s) => {
+                      const valor = s.descripcion?.trim() || s.nombre;
+                      return { value: valor, label: valor };
+                    });
+                    return (
+                      <AutoComplete
+                        size="small"
+                        placeholder="Tipeá un servicio (ej. SVC Cromado)..."
+                        value={r.descripcion}
+                        onChange={(v) => actualizarDraftItem(r.id, { descripcion: v })}
+                        options={opciones}
+                        filterOption={(input, option) => String(option?.value ?? "").toLowerCase().includes(input.toLowerCase())}
+                        style={{ width: "100%" }}
+                      />
+                    );
+                  }
+                  return (
+                    <Input
+                      size="small"
+                      placeholder="Descripción"
+                      value={r.descripcion}
+                      onChange={(e) => actualizarDraftItem(r.id, { descripcion: e.target.value })}
+                    />
                   );
                 },
               },
               {
-                title: "Unidad", dataIndex: "unidad_medida", width: 130,
-                render: (v: string, row) => (
+                title: "Marca", key: "marca", width: 140,
+                render: (_: unknown, r: DraftItem) => (
                   <Select
-                    showSearch
-                    size="small"
-                    value={v}
-                    style={{ width: "100%" }}
-                    placeholder="Elegí unidad"
-                    optionFilterProp="label"
-                    onChange={(nv) => updateDraft(row.key, { unidad_medida: nv })}
+                    size="small" style={{ width: "100%" }}
+                    placeholder="Marca" allowClear showSearch optionFilterProp="label"
+                    value={r.fabricante_codigo}
+                    onChange={(v) => actualizarDraftItem(r.id, { fabricante_codigo: v })}
+                    options={fabricantes.map((f) => ({ value: f.codigo, label: f.nombre }))}
+                  />
+                ),
+              },
+              {
+                title: "Cant. *", key: "cant", width: 80, align: "right",
+                render: (_: unknown, r: DraftItem) => (
+                  <InputNumber
+                    size="small" style={{ width: "100%" }}
+                    min={0.01} step={1}
+                    value={r.cantidad}
+                    onChange={(v) => actualizarDraftItem(r.id, { cantidad: Number(v ?? 0) })}
+                  />
+                ),
+              },
+              {
+                title: "U.M.", key: "um", width: 110,
+                render: (_: unknown, r: DraftItem) => (
+                  <Select
+                    size="small" style={{ width: "100%" }}
+                    placeholder="U.M."
+                    showSearch optionFilterProp="label" allowClear
+                    value={r.unidad_medida}
+                    onChange={(v) => actualizarDraftItem(r.id, { unidad_medida: v })}
                     options={unidades.map((u) => ({
                       value: u.codigo,
-                      label: u.codigo,
+                      label: `${u.nombre}${u.abreviatura ? ` (${u.abreviatura})` : ""}`,
                     }))}
                   />
                 ),
               },
               {
-                // Precio unitario — obligatorio para TODOS los tipos.
-                // MAC auto-rellena desde el catálogo del material (si tiene
-                // precio); SER y CAD lo ingresa el usuario. Cuando la UM del
-                // draft es cil/gl, mostramos el precio equivalente en la otra
-                // unidad (factor 55) para que el user vea el costo por galón.
-                title: <span>Precio unitario <Text type="danger">*</Text></span>,
-                dataIndex: "precio_unitario", width: 200,
-                render: (v: number | undefined, row) => {
-                  const pu = v != null ? Number(v) : null;
-                  const equiv =
-                    pu != null && pu > 0
-                      ? row.unidad_medida === "cil"
-                        ? { to: "gl", value: pu / 55 }
-                        : row.unidad_medida === "gl"
-                          ? { to: "cil", value: pu * 55 }
-                          : null
-                      : null;
-                  return (
-                    <div>
-                      <Space size={2}>
-                        <InputNumber
-                          size="small"
-                          value={v}
-                          min={0}
-                          step={0.01}
-                          placeholder="0.00"
-                          style={{ width: 90 }}
-                          onChange={(nv) => updateDraft(row.key, { precio_unitario: nv ?? undefined })}
-                        />
-                        <Select showSearch optionFilterProp="label"
-                          size="small"
-                          value={row.moneda ?? "USD"}
-                          style={{ width: 70 }}
-                          onChange={(nv) => updateDraft(row.key, { moneda: nv })}
-                          options={[
-                            { value: "USD", label: "USD" },
-                            { value: "SOL", label: "SOL" },
-                          ]}
-                        />
-                      </Space>
-                      {equiv && (
-                        <div style={{ fontSize: 10, color: "rgba(0,0,0,0.45)", marginTop: 2 }}>
-                          ≈ {row.moneda ?? "USD"} {fmtCant(equiv.value)}/{equiv.to}
-                        </div>
-                      )}
-                    </div>
-                  );
-                },
-              },
-              {
-                // Precio total — calculado en vivo (cantidad × precio_unitario).
-                // Read-only para evitar inconsistencias; si el usuario quiere otro
-                // total, debe ajustar cantidad o precio unitario.
-                title: "Precio total",
-                key: "precio_total", width: 130, align: "right",
-                render: (_: unknown, row: DraftItem) => {
-                  const cant = Number(row.cantidad) || 0;
-                  const pu = row.precio_unitario != null ? Number(row.precio_unitario) : null;
-                  if (pu == null || pu <= 0 || cant <= 0) {
-                    return <Text type="secondary">—</Text>;
+                // Precio referencial:
+                //   - MAC con material y precio en catálogo → muestra el del
+                //     catálogo en read-only (con tooltip).
+                //   - MAC sin precio en catálogo (o sin material elegido aún)
+                //     → input editable, igual que SER/CAD.
+                //   - SER/CAD → siempre editable.
+                title: "Precio ref.", key: "precio", width: 150, align: "right",
+                render: (_: unknown, r: DraftItem) => {
+                  const mat = r.tipo_codigo === "MAC" && r.material_codigo
+                    ? materiales.find((m) => m.codigo === r.material_codigo)
+                    : null;
+                  if (mat?.precio) {
+                    return (
+                      <Tooltip title="Precio del catálogo de material">
+                        <Text style={{ fontSize: 12 }}>
+                          {Number(mat.precio).toFixed(2)} {mat.moneda_codigo ?? "USD"}
+                        </Text>
+                      </Tooltip>
+                    );
                   }
-                  const total = cant * pu;
+                  // Input editable: SER, CAD, o MAC sin precio en catálogo.
                   return (
-                    <Text strong>
-                      {(row.moneda ?? "USD")} {total.toLocaleString("es-PE", {
-                        minimumFractionDigits: 2, maximumFractionDigits: 2,
-                      })}
-                    </Text>
+                    <Space.Compact style={{ width: "100%" }}>
+                      <InputNumber
+                        size="small" style={{ width: 80 }}
+                        min={0} step={0.01}
+                        placeholder="0.00"
+                        value={r.precio_unitario}
+                        onChange={(v) => actualizarDraftItem(r.id, { precio_unitario: v == null ? undefined : Number(v) })}
+                      />
+                      <Select showSearch optionFilterProp="label"
+                        size="small" style={{ width: 70 }}
+                        value={r.moneda ?? "USD"}
+                        onChange={(v) => actualizarDraftItem(r.id, { moneda: v })}
+                        options={[
+                          { value: "USD", label: "USD" },
+                          { value: "SOL", label: "SOL" },
+                        ]}
+                      />
+                    </Space.Compact>
                   );
                 },
               },
               {
-                // Fecha requerida — obligatoria para poder enviar a aprobación.
-                title: <span>F. requerida <Text type="danger">*</Text></span>,
-                dataIndex: "fecha_requerida", width: 140,
-                render: (_: unknown, row) => (
+                title: <span>F. requerida <Text type="danger">*</Text></span>, key: "freq", width: 130,
+                render: (_: unknown, r: DraftItem) => (
                   <DatePicker
-                    size="small"
-                    value={row.fecha_requerida ?? null}
+                    size="small" style={{ width: "100%" }}
                     format="DD/MM/YYYY"
-                    style={{ width: "100%" }}
-                    onChange={(d) => updateDraft(row.key, { fecha_requerida: d })}
+                    value={r.fecha_requerida ?? null}
+                    onChange={(d) => actualizarDraftItem(r.id, { fecha_requerida: d })}
                   />
                 ),
               },
               {
-                title: "", key: "del", width: 50, align: "center", fixed: "right",
-                render: (_, row) => (
-                  <Tooltip title="Quitar fila">
-                    <Button
-                      size="small" type="text" danger icon={<DeleteOutlined />}
-                      onClick={() => removeDraftRow(row.key)}
-                      disabled={draftItems.length === 1}
-                    />
-                  </Tooltip>
+                title: "Observaciones / Adjuntos", key: "obs",
+                render: (_: unknown, r: DraftItem) => (
+                  <div>
+                    <Space.Compact style={{ width: "100%" }}>
+                      <Input
+                        size="small"
+                        placeholder="Obs."
+                        value={r.observaciones ?? ""}
+                        onChange={(e) => actualizarDraftItem(r.id, { observaciones: e.target.value })}
+                      />
+                      <Tooltip title="Adjuntar archivo(s)">
+                        <Button
+                          size="small"
+                          icon={<PaperClipOutlined />}
+                          onClick={() => {
+                            const input = document.createElement("input");
+                            input.type = "file";
+                            input.multiple = true;
+                            input.onchange = (e) => {
+                              const files = Array.from((e.target as HTMLInputElement).files ?? []);
+                              if (files.length === 0) return;
+                              actualizarDraftItem(r.id, {
+                                archivos: [...(r.archivos ?? []), ...files],
+                              });
+                            };
+                            input.click();
+                          }}
+                        />
+                      </Tooltip>
+                    </Space.Compact>
+                    {(r.archivos ?? []).length > 0 && (
+                      <Space size={4} wrap style={{ marginTop: 4 }}>
+                        {(r.archivos ?? []).map((f, i) => (
+                          <Tag
+                            key={i}
+                            closable
+                            onClose={() => actualizarDraftItem(r.id, {
+                              archivos: (r.archivos ?? []).filter((_, j) => j !== i),
+                            })}
+                            style={{ fontSize: 10, margin: 0 }}
+                          >
+                            <PaperClipOutlined /> {f.name.length > 20 ? f.name.slice(0, 17) + "…" : f.name}
+                          </Tag>
+                        ))}
+                      </Space>
+                    )}
+                  </div>
+                ),
+              },
+              {
+                title: "", key: "del", width: 40, align: "center",
+                render: (_: unknown, r: DraftItem) => (
+                  <Button
+                    type="text" size="small" danger icon={<DeleteOutlined />}
+                    disabled={draftItems.length === 1}
+                    onClick={() => quitarItemDraft(r.id)}
+                  />
                 ),
               },
             ]}
           />
-          <Button type="dashed" icon={<PlusOutlined />} onClick={addDraftRow} block>
-            Agregar otro item
-          </Button>
-        </Space>
+          <Row justify="space-between" align="middle" style={{ marginTop: 12 }}>
+            <Col>
+              <Button icon={<PlusOutlined />} onClick={agregarItemDraft}>
+                Agregar otro ítem
+              </Button>
+            </Col>
+            <Col>
+              <Space>
+                <Button onClick={cerrarDraft}>Cancelar</Button>
+                <Button type="primary" icon={<SaveOutlined />} loading={savingDraft} onClick={guardarDraft}>
+                  Guardar Requerimiento
+                </Button>
+              </Space>
+            </Col>
+          </Row>
+        </Card>
+      )}
+
+      <Row gutter={[12, 8]} style={{ marginBottom: 12 }}>
+        <Col xs={24} md={12}>
+          <RangoFechasFiltro label="Fecha solicitud" value={rangoSol} onChange={setRangoSol} />
+        </Col>
+        <Col xs={24} md={12}>
+          <RangoFechasFiltro label="Fecha requerida" value={rangoReq} onChange={setRangoReq} />
+        </Col>
+      </Row>
+
+      {rows.length === 0 ? (
+        <Empty description="Sin requerimientos. Aplicá el task list o agregá uno nuevo." />
+      ) : (
+        <RequerimientosAgrupados
+          rows={rows.filter((r) =>
+            dentroDeRango(r, "fecha_solicitud", rangoSol) &&
+            dentroDeRango(r, "fecha_requerida", rangoReq)
+          )}
+          columns={visibleColumns(columnsResizable, ocultas, ["item_req", "desc"])}
+          components={tableComponents}
+          loading={loading}
+          onAddItems={(nro) => abrirDraft(nro)}
+          onEnviarGrupo={enviarGrupo}
+          onSetFechaRequerida={setFechaRequeridaGrupo}
+        />
+      )}
+
+      {/* Modal editar */}
+      <Modal
+        title={editingId ? "Editar requerimiento" : "Nuevo requerimiento adicional"}
+        open={modalOpen}
+        onCancel={() => setModalOpen(false)}
+        confirmLoading={saving}
+        width={modalWidth(screens, 680)}
+        destroyOnHidden
+        footer={[
+          <Button key="cancel" onClick={() => setModalOpen(false)}>Cancelar</Button>,
+          ...(editingId
+            ? [<Button key="save" type="primary" loading={saving} onClick={() => onSubmit(false)}>Guardar</Button>]
+            : [
+                <Button key="saveAdd" loading={saving} onClick={() => onSubmit(true)}>Guardar y agregar otro</Button>,
+                <Button key="save" type="primary" loading={saving} onClick={() => onSubmit(false)}>Guardar y cerrar</Button>,
+              ]),
+        ]}
+      >
+        <Form form={form} layout="vertical">
+          {!editingId && (
+            <Form.Item
+              name="nro_req"
+              label="Requerimiento"
+              extra="Crear uno nuevo o agregar este item a uno existente (solo BORRADOR / SIN_APROBACION)."
+              initialValue={null}
+            >
+              <Select showSearch optionFilterProp="label"
+                placeholder="Crear nuevo requerimiento"
+                allowClear
+                options={[
+                  ...(() => {
+                    // Agrupar items por nro_req y mostrar los editables
+                    const byReq = new Map<string, RequerimientoRow[]>();
+                    for (const r of rows) {
+                      if (!r.nro_req) continue;
+                      const status = r.status_requerimiento_codigo ?? "BORRADOR";
+                      if (!["BORRADOR", "SIN_APROBACION"].includes(status)) continue;
+                      if (!byReq.has(r.nro_req)) byReq.set(r.nro_req, []);
+                      byReq.get(r.nro_req)!.push(r);
+                    }
+                    return [...byReq.entries()].map(([nro, items]) => ({
+                      value: nro,
+                      label: `${nro} — ${items.length} item${items.length !== 1 ? "s" : ""}`,
+                    }));
+                  })(),
+                ]}
+              />
+            </Form.Item>
+          )}
+          <Form.Item
+            name="tipo_codigo"
+            label="Tipo"
+            rules={[{ required: true }]}
+          >
+            <Radio.Group disabled={!!editingId}>
+              <Radio.Button value="MAC">MAC (Material catalogado)</Radio.Button>
+              <Radio.Button value="CAD">CAD (Cargo directo)</Radio.Button>
+              <Radio.Button value="SER">SER (Servicio)</Radio.Button>
+            </Radio.Group>
+          </Form.Item>
+
+          {tipoSeleccionado === "MAC" && (
+            <Form.Item
+              name="material_codigo"
+              label="Material"
+              rules={[{ required: true, message: "Material requerido para tipo MAC" }]}
+            >
+              <Select
+                showSearch
+                placeholder="Buscá por código o descripción…"
+                optionFilterProp="label"
+                optionLabelProp="value"
+                onChange={onMaterialSelect}
+                options={materiales.map((m) => ({
+                  value: m.codigo,
+                  label: `${m.codigo} — ${m.descripcion}${m.fabricante_codigo ? ` [${m.fabricante_codigo}]` : ""}`,
+                }))}
+              />
+            </Form.Item>
+          )}
+
+          {tipoSeleccionado === "SER" && (
+            <Form.Item
+              label="Servicio (catálogo)"
+              extra="Seleccioná uno del catálogo y se autocompleta la descripción. Podés editar después."
+            >
+              <Select
+                showSearch
+                placeholder="Buscar servicio del catálogo…"
+                optionFilterProp="label"
+                onChange={onServicioSelect}
+                allowClear
+                options={servicios.map((s) => ({
+                  value: s.codigo,
+                  label: `${s.codigo} — ${s.nombre}`,
+                }))}
+              />
+            </Form.Item>
+          )}
+
+          <Form.Item
+            name="descripcion"
+            label="Descripción"
+            rules={[{ required: true, max: 500 }]}
+          >
+            <Input.TextArea rows={2} maxLength={500} />
+          </Form.Item>
+
+          <Row gutter={12}>
+            <Col span={8}>
+              <Form.Item name="cantidad" label="Cantidad" rules={[{ required: true }]}>
+                <InputNumber min={0.01} step={1} style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="unidad_medida" label="Unidad">
+                <Input placeholder="UNIDAD" />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="fabricante_codigo" label="Fabricante">
+                <Select
+                  showSearch allowClear
+                  optionFilterProp="label"
+                  placeholder="Elegir fabricante…"
+                  options={fabricantes.map((f) => ({ value: f.codigo, label: `${f.codigo} — ${f.nombre}` }))}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          {/* Precio referencial para SER / CAD — no se piden para MAC porque
+              ese ya viene del catálogo de material. Es manual y orientativo;
+              el precio definitivo lo carga el comprador en la OC. */}
+          {(tipoSeleccionado === "SER" || tipoSeleccionado === "CAD") && (
+            <Row gutter={12}>
+              <Col span={12}>
+                <Form.Item
+                  name="precio_unitario"
+                  label="Precio referencial"
+                  tooltip="Precio orientativo de quien crea el requerimiento. El precio definitivo lo carga el área de compras en la OC."
+                >
+                  <InputNumber min={0} step={0.01} style={{ width: "100%" }} placeholder="0.00" />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="moneda" label="Moneda" initialValue="USD">
+                  <Select showSearch optionFilterProp="label"
+                    options={[
+                      { value: "USD", label: "USD ($)" },
+                      { value: "SOL", label: "SOL (S/)" },
+                    ]}
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+          )}
+
+          <Form.Item
+            name="fecha_requerida"
+            label="Fecha requerida"
+            tooltip="Obligatoria para poder enviar el requerimiento a aprobación."
+            rules={[{ required: true, message: "Fecha requerida obligatoria" }]}
+          >
+            <DatePicker
+              style={{ width: 200 }}
+              format="DD/MM/YYYY"
+            />
+          </Form.Item>
+
+          <Form.Item name="observaciones" label="Observaciones">
+            <Input.TextArea rows={2} />
+          </Form.Item>
+
+          {editingId && (
+            <Form.Item label="Adjuntos">
+              <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+                <Button
+                  size="small" icon={<PaperClipOutlined />} loading={uploadingFile}
+                  onClick={() => {
+                    const input = document.createElement("input");
+                    input.type = "file";
+                    input.multiple = true;
+                    input.onchange = async (e) => {
+                      const files = Array.from((e.target as HTMLInputElement).files ?? []);
+                      for (const f of files) await subirAdjuntoExistente(f);
+                    };
+                    input.click();
+                  }}
+                >
+                  Subir archivo(s)
+                </Button>
+                {editAdjuntos.length === 0 ? (
+                  <Text type="secondary" style={{ fontSize: 12 }}>Sin adjuntos.</Text>
+                ) : (
+                  <Space size={4} wrap>
+                    {editAdjuntos.map((a) => (
+                      <Tag
+                        key={a.id}
+                        closable
+                        onClose={(e) => { e.preventDefault(); eliminarAdjunto(a.id); }}
+                        style={{ fontSize: 11, margin: 0 }}
+                      >
+                        <PaperClipOutlined />{" "}
+                        <R2FileLink resource="req-adjunto" resourceId={a.id} r2Key={a.r2_key}>
+                          {a.nombre_archivo}
+                        </R2FileLink>
+                      </Tag>
+                    ))}
+                  </Space>
+                )}
+              </Space>
+            </Form.Item>
+          )}
+        </Form>
       </Modal>
 
-      <style jsx>{`
-        :global(.ant-table-thead > tr > th) {
-          background: ${brand.bgPage} !important;
-        }
+      <style jsx global>{`
+        .req-anulado > td { background: #FFF1F0 !important; opacity: 0.7; }
       `}</style>
     </div>
   );
 }
 
-// Popover con DatePicker para fijar una fecha requerida a TODOS los ítems
-// (en BORRADOR) de un requerimiento de una sola vez. Útil cuando los ítems se
-// crearon sin fecha o cuando hay que sincronizarlos a una sola fecha de llegada.
-function FechaRequeridaBulk({
-  nroReq, items, onConfirmar,
+// ───────────────────────────────────────────────────────────────────────────
+// Componente: items agrupados por nro_req como Cards colapsables.
+// ───────────────────────────────────────────────────────────────────────────
+function RequerimientosAgrupados({
+  rows,
+  columns,
+  components,
+  loading,
+  onAddItems,
+  onEnviarGrupo,
+  onSetFechaRequerida,
+}: {
+  rows: RequerimientoRow[];
+  columns: ColumnsType<RequerimientoRow>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  components?: any;
+  loading: boolean;
+  onAddItems?: (nroReq: string) => void;
+  onEnviarGrupo?: (nroReq: string) => void;
+  onSetFechaRequerida?: (nroReq: string, fecha: dayjs.Dayjs | null) => Promise<void>;
+}) {
+  // Agrupar por nro_req (preservando orden por fecha desc del primer item de cada grupo)
+  const groups = useMemo(() => {
+    const m = new Map<string, RequerimientoRow[]>();
+    for (const r of rows) {
+      const key = r.nro_req ?? "(sin nro)";
+      if (!m.has(key)) m.set(key, []);
+      m.get(key)!.push(r);
+    }
+    // Ordenar grupos: primero por fecha_solicitud desc del item más reciente
+    return [...m.entries()]
+      .map(([nro, items]) => {
+        const sorted = [...items].sort((a, b) => (a.item_req ?? 0) - (b.item_req ?? 0));
+        return { nro, items: sorted };
+      })
+      .sort((a, b) => (b.items[0]?.fecha_solicitud ?? "").localeCompare(a.items[0]?.fecha_solicitud ?? ""));
+  }, [rows]);
+
+  // Estado de colapso por grupo
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  function toggle(nro: string) {
+    setCollapsed((prev) => ({ ...prev, [nro]: !prev[nro] }));
+  }
+
+  if (loading && rows.length === 0) return <div style={{ padding: 16 }}><Text type="secondary">Cargando…</Text></div>;
+
+  return (
+    <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+      {groups.map(({ nro, items }) => {
+        const first = items[0];
+        const status = first?.status_requerimiento?.nombre ?? first?.status_requerimiento_codigo ?? "BORRADOR";
+        const statusColor = REQ_COLOR[first?.status_requerimiento_codigo ?? "BORRADOR"] ?? "default";
+        const isCollapsed = !!collapsed[nro];
+        const hasBorrador = items.some((i) => i.status_requerimiento_codigo === "BORRADOR");
+        const allEditable = items.every(
+          (i) => i.status_requerimiento_codigo === "BORRADOR" || i.status_requerimiento_codigo === "SIN_APROBACION",
+        );
+        const isRealReq = nro !== "(sin nro)";
+        const cantBorradores = items.filter((i) => i.status_requerimiento_codigo === "BORRADOR").length;
+        // Subtotal del grupo por moneda (real + estimado catálogo, excluye ANULADO/DESAPROBADO)
+        const subtotalGrupo: Record<string, number> = {};
+        for (const it of items) {
+          const sr = it.status_requerimiento_codigo;
+          if (sr === "ANULADO" || sr === "DESAPROBADO") continue;
+          const cant = Number(it.cantidad);
+          let pu: number | null = null;
+          let moneda = it.moneda ?? "USD";
+          if (it.precio_unitario != null) {
+            pu = Number(it.precio_unitario);
+          } else if (it.material?.precio != null) {
+            pu = Number(it.material.precio);
+            moneda = it.material.moneda_codigo ?? moneda;
+          }
+          if (pu != null && Number.isFinite(pu)) {
+            subtotalGrupo[moneda] = (subtotalGrupo[moneda] ?? 0) + cant * pu;
+          }
+        }
+        const subtotalTexto = Object.entries(subtotalGrupo)
+          .map(([m, t]) => `${m} ${t.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+          .join(" · ");
+        return (
+          <Card
+            key={nro}
+            size="small"
+            styles={{ body: { padding: isCollapsed ? 0 : 0 } }}
+            title={
+              <Space size={8}>
+                <Button
+                  type="text" size="small"
+                  icon={<span style={{ fontSize: 12 }}>{isCollapsed ? "▶" : "▼"}</span>}
+                  onClick={() => toggle(nro)}
+                />
+                <Text strong style={{ fontSize: 13 }}>{nro}</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {items.length} ítem{items.length !== 1 ? "s" : ""}
+                  {first?.fecha_solicitud ? ` · ${formatDateOnly(first.fecha_solicitud)}` : ""}
+                </Text>
+                {subtotalTexto && (
+                  <Tooltip title="Subtotal del requerimiento (precio real + estimado catálogo)">
+                    <Tag color="blue" style={{ marginLeft: 4 }}>
+                      💰 {subtotalTexto}
+                    </Tag>
+                  </Tooltip>
+                )}
+              </Space>
+            }
+            extra={
+              <Space size={6}>
+                {isRealReq && allEditable && onSetFechaRequerida && (
+                  <FechaRequeridaBulkButton
+                    nroReq={nro}
+                    onApply={onSetFechaRequerida}
+                  />
+                )}
+                {isRealReq && allEditable && onAddItems && (
+                  <Tooltip title="Agregar más items a este requerimiento">
+                    <Button size="small" icon={<PlusOutlined />} onClick={() => onAddItems(nro)}>
+                      Agregar items
+                    </Button>
+                  </Tooltip>
+                )}
+                {isRealReq && hasBorrador && onEnviarGrupo && (
+                  <Popconfirm
+                    title={`Enviar ${nro} a aprobación`}
+                    description={`Se enviarán los ${cantBorradores} item(s) en BORRADOR. Después no se podrá editar desde acá.`}
+                    onConfirm={() => onEnviarGrupo(nro)}
+                    okText="Enviar" cancelText="Cancelar"
+                  >
+                    <Button size="small" type="primary" icon={<SendOutlined />}>
+                      Enviar requerimiento ({cantBorradores})
+                    </Button>
+                  </Popconfirm>
+                )}
+                <Tag color={statusColor}>{status}</Tag>
+              </Space>
+            }
+          >
+            {!isCollapsed && (
+              <Table
+                rowKey="id"
+                columns={columns.filter((c) => (c as { key?: React.Key }).key !== "nro")}
+                components={components as never}
+                dataSource={items}
+                pagination={false}
+                size="small"
+                scroll={{ x: 2160 }}
+                rowClassName={(r) => r.status_requerimiento_codigo === "ANULADO" ? "req-anulado" : ""}
+              />
+            )}
+          </Card>
+        );
+      })}
+    </Space>
+  );
+}
+
+// Botón con Popover que abre un DatePicker para setear fecha_requerida en todos los items del grupo.
+function FechaRequeridaBulkButton({
+  nroReq,
+  onApply,
 }: {
   nroReq: string;
-  items: RequerimientoRow[];
-  onConfirmar: (fecha: dayjs.Dayjs) => void;
+  onApply: (nroReq: string, fecha: dayjs.Dayjs | null) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [fecha, setFecha] = useState<dayjs.Dayjs | null>(null);
-  const editables = items.filter((i) => i.status_requerimiento?.codigo === "BORRADOR").length;
-  if (editables === 0) return null;
+  const [saving, setSaving] = useState(false);
+
+  async function aplicar() {
+    setSaving(true);
+    try {
+      await onApply(nroReq, fecha);
+      setOpen(false);
+      setFecha(null);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <Popover
       open={open}
       onOpenChange={setOpen}
       trigger="click"
-      placement="top"
-      title={`Fecha requerida para ${nroReq}`}
+      placement="bottomRight"
       content={
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 220 }}>
-          <Text type="secondary" style={{ fontSize: 11 }}>
-            Se aplicará a {editables} ítem(s) en BORRADOR.
+        <div style={{ width: 240 }}>
+          <Text strong style={{ fontSize: 12, display: "block", marginBottom: 6 }}>
+            Fecha requerida para todo {nroReq}
           </Text>
           <DatePicker
-            size="small"
             value={fecha}
             onChange={setFecha}
             format="DD/MM/YYYY"
             style={{ width: "100%" }}
           />
-          <Space>
-            <Button size="small" onClick={() => setOpen(false)}>Cancelar</Button>
-            <Button
-              size="small"
-              type="primary"
-              disabled={!fecha}
-              onClick={() => {
-                if (fecha) {
-                  onConfirmar(fecha);
-                  setOpen(false);
-                  setFecha(null);
-                }
-              }}
-            >
-              Aplicar
+          <Space style={{ marginTop: 10, width: "100%", justifyContent: "flex-end" }}>
+            <Button size="small" onClick={() => { setOpen(false); setFecha(null); }}>
+              Cancelar
+            </Button>
+            <Button size="small" type="primary" onClick={aplicar} loading={saving} disabled={!fecha}>
+              Aplicar a todos
             </Button>
           </Space>
         </div>
       }
     >
-      <Tooltip title="Fijar fecha requerida en todos los ítems del requerimiento">
-        <Button size="small" icon={<CalendarOutlined />} type="dashed">
-          Fecha bulk
-        </Button>
+      <Tooltip title="Fijar fecha requerida en todos los items del requerimiento">
+        <Button size="small" icon={<CalendarOutlined />}>F. Requerida</Button>
       </Tooltip>
     </Popover>
-  );
-}
-
-function TablaReqInternos({
-  columns, data, loading,
-}: { columns: ColumnsType<RequerimientoRow>; data: RequerimientoRow[]; loading: boolean }) {
-  const { columnas, components, TableDragWrapper } = useColumnasRedimensionables<RequerimientoRow>(
-    columns, "ot-interna-requerimientos-v1",
-  );
-  return (
-    <TableDragWrapper>
-      <Table
-        rowKey="id"
-        columns={columnas}
-        components={components}
-        dataSource={data}
-        loading={loading}
-        size="small"
-        scroll={{ x: 1000 }}
-        sticky={STICKY_HEADER}
-        pagination={false}
-      />
-    </TableDragWrapper>
   );
 }
