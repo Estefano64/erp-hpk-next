@@ -696,10 +696,20 @@ function RequerimientosDetalleInner() {
       // Match por NP (Número de parte) — el usuario solo ve el NP en el
       // sistema. Los material_id pueden no coincidir porque la OC abierta
       // suele importarse con materiales nuevos. Como fallback aceptamos
-      // match por material_id (si ambos lados tienen el mismo). Normalizamos
-      // case + espacios para evitar discrepancias triviales.
+      // match por material_id (si ambos lados tienen el mismo).
+      //
+      // Normalización LAXA: case-insensitive, colapsa cualquier separador
+      // (guión, punto, slash, underscore, espacio múltiple) a un único
+      // espacio. Así "58B-32-00919" ≡ "58B 32 00919" ≡ "58b.32.00919".
+      // Los DÍGITOS sí importan — no tratamos similares (00910 vs 00919)
+      // como iguales para no encubrir typos de materiales distintos.
       const normalizaNp = (s: string | null | undefined) =>
-        (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+        (s ?? "")
+          .trim()
+          .toLowerCase()
+          .replace(/[-_./\\]+/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
       const npReq = normalizaNp(r.np);
       const det = oc.items.find((it) => {
         const npDet = normalizaNp(it.np);
@@ -708,7 +718,46 @@ function RequerimientosDetalleInner() {
         return false;
       });
       if (!det) {
-        return { req: r, detalle: null, error: `NP "${r.np ?? "—"}" no figura en esta OC abierta`, cantidadAConsumir: 0 };
+        // Cuando no hay match, buscamos el NP más parecido del OC vía
+        // Levenshtein y lo sugerimos en el error. Si la distancia es ≤4,
+        // probablemente es un typo (ej. un dígito mal) y el user puede
+        // corregir el material del req o el del OC en lugar de adivinar.
+        const dist = (a: string, b: string): number => {
+          if (a.length === 0) return b.length;
+          if (b.length === 0) return a.length;
+          const m: number[][] = Array.from({ length: a.length + 1 }, () =>
+            new Array(b.length + 1).fill(0),
+          );
+          for (let i = 0; i <= a.length; i++) m[i][0] = i;
+          for (let j = 0; j <= b.length; j++) m[0][j] = j;
+          for (let i = 1; i <= a.length; i++) {
+            for (let j = 1; j <= b.length; j++) {
+              m[i][j] = a[i - 1] === b[j - 1]
+                ? m[i - 1][j - 1]
+                : 1 + Math.min(m[i - 1][j - 1], m[i - 1][j], m[i][j - 1]);
+            }
+          }
+          return m[a.length][b.length];
+        };
+        let mejor: { np: string | null; d: number } | null = null;
+        if (npReq) {
+          for (const it of oc.items) {
+            const npDet = normalizaNp(it.np);
+            if (!npDet) continue;
+            const d = dist(npReq, npDet);
+            if (mejor == null || d < mejor.d) mejor = { np: it.np, d };
+          }
+        }
+        const sugerencia =
+          mejor && mejor.np && mejor.d > 0 && mejor.d <= 4
+            ? ` — el más parecido es "${mejor.np}" (revisá si hay un typo)`
+            : "";
+        return {
+          req: r,
+          detalle: null,
+          error: `NP "${r.np ?? "—"}" no figura en esta OC abierta${sugerencia}`,
+          cantidadAConsumir: 0,
+        };
       }
       const pedido = Number(r.cantidad);
       const disponible = stockRestante.get(det.detalle_id) ?? 0;

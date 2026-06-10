@@ -136,10 +136,19 @@ export async function POST(req: NextRequest, ctx: Ctx) {
             errores.push({ requerimiento_id: it.requerimiento_id, error: `Req en estado ${rep.status_requerimiento_codigo} no se puede consumir.` });
             continue;
           }
-          // Match por NP (Número de parte): normalizamos case + espacios.
+          // Match por NP (Número de parte): normalización LAXA que ignora
+          // case y trata cualquier separador (guión, punto, slash, underscore,
+          // espacios múltiples) como un único espacio. Espejo de la lógica
+          // del cliente en /requerimientos/detalle para que ambos lados
+          // matcheen los mismos NPs. Los dígitos siguen siendo significativos.
           // Fallback a material_id solo si ambos lados lo tienen igual.
           const normalizaNp = (s: string | null | undefined) =>
-            (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+            (s ?? "")
+              .trim()
+              .toLowerCase()
+              .replace(/[-_./\\]+/g, " ")
+              .replace(/\s+/g, " ")
+              .trim();
           const npRep = normalizaNp(rep.material?.np);
           const npDet = normalizaNp(detalle.material?.np);
           const matchPorNp = npRep && npDet && npRep === npDet;
