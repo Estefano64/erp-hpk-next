@@ -831,6 +831,14 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
               />
             </Col>
             <Col xs={12} md={6}>
+              {/* Prioridad arriba de todo (pedido del equipo): antes había que
+                  scrollear hasta "Documentos y Logística" para verla. */}
+              <FieldLabel>Prioridad</FieldLabel>
+              <div style={{ fontWeight: 600, fontSize: 14 }}>
+                {ot?.prioridad_atencion ? `${ot.prioridad_atencion.codigo} - ${ot.prioridad_atencion.nombre}` : "—"}
+              </div>
+            </Col>
+            <Col xs={12} md={6}>
               <FieldLabel>Fecha Req. Cliente</FieldLabel>
               <div style={{ fontWeight: 600, fontSize: 14 }}>{fmtDate(fechaReqActual)}</div>
               {fueReprogramada && (
@@ -1077,14 +1085,8 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
               <Row gutter={[16, 4]}>
                 <Col xs={12} md={6}><Field label="Empresa que entrega" value={ot.empresa_entrega} /></Col>
                 <Col xs={12} md={6}><Field label="Fecha Recepción" value={fmtDate(ot.fecha_recepcion)} /></Col>
-                {/* Prioridad subió acá (al lado de la fecha de requerimiento)
-                    — antes vivía abajo en "Tipo Reparación y Garantía". */}
-                <Col xs={12} md={6}>
-                  <Field
-                    label="Prioridad"
-                    value={ot.prioridad_atencion ? `${ot.prioridad_atencion.codigo} - ${ot.prioridad_atencion.nombre}` : null}
-                  />
-                </Col>
+                {/* Prioridad se movió al bloque de arriba "Estados y Fecha
+                    Requerimiento" (pedido del equipo: verla sin scrollear). */}
                 <Col xs={12} md={6}><Field label="Fecha Req. Cliente" value={fmtDate(ot.fecha_requerimiento_cliente)} /></Col>
               </Row>
               {/* Despacho / recepción del cliente (flujo comercial-logístico que llegó desde main). */}

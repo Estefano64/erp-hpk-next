@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useSession } from "next-auth/react";
-import { Button, Checkbox, DatePicker, Divider, Popover, Space, Typography } from "antd";
-import { CalendarOutlined, SettingOutlined, PushpinOutlined, PushpinFilled } from "@ant-design/icons";
+import { Button, Checkbox, DatePicker, Divider, Input, Popover, Space, Typography } from "antd";
+import { CalendarOutlined, SettingOutlined, PushpinOutlined, PushpinFilled, SearchOutlined } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
 import type { ColumnsType, ColumnType, TablePaginationConfig } from "antd/es/table/interface";
 import dayjs, { Dayjs } from "dayjs";
@@ -174,14 +174,26 @@ export function ColumnasToggleButton<T>({
   obligatorias = [],
   buttonText = "Columnas",
 }: ColumnasToggleButtonProps<T>) {
+  // Buscador del popover: con 50+ columnas encontrar una a ojo era lento.
+  const [busqueda, setBusqueda] = useState("");
   const claves = columns
     .map((c) => (c as { key?: React.Key }).key)
     .filter((k): k is string | number => k !== undefined)
     .map(String);
   const visibles = claves.filter((k) => !ocultas.includes(k));
+  const termino = busqueda.trim().toLowerCase();
 
   const contenido = (
     <div style={{ minWidth: 220, maxHeight: 380, overflowY: "auto" }}>
+      <Input
+        size="small"
+        allowClear
+        placeholder="Buscar columna…"
+        prefix={<SearchOutlined style={{ color: "#999" }} />}
+        value={busqueda}
+        onChange={(e) => setBusqueda(e.target.value)}
+        style={{ marginBottom: 8 }}
+      />
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
         <Button
           size="small"
@@ -217,6 +229,9 @@ export function ColumnasToggleButton<T>({
             if (!k) return null;
             const fija = obligatorias.includes(k);
             const titulo = (c as { title?: unknown }).title;
+            // Filtro del buscador: matchea por título visible o por key.
+            const texto = typeof titulo === "string" ? titulo : k;
+            if (termino && !texto.toLowerCase().includes(termino) && !k.toLowerCase().includes(termino)) return null;
             return (
               <Checkbox key={k} value={k} disabled={fija}>
                 <span style={{ fontSize: 13 }}>

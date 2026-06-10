@@ -236,9 +236,10 @@ export default function OrdenesTrabajoPage() {
   const [aniosSel, setAniosSel] = usePersistedState<number[]>("ot-list-anios", [new Date().getFullYear() % 100]);
   // Admin: ver también las OTs desactivadas (para reactivarlas).
   const [verInactivas, setVerInactivas] = usePersistedState<boolean>("ot-list-ver-inactivas", false);
-  // v2: nuevas columnas opcionales (tipo, NP, flota, posición, fabricante, garantía, base metálica, etc.)
-  // ocultas por default — el usuario las habilita desde el botón "Columnas".
-  const { ocultas, setOcultas } = useColumnasOcultas("ordenes-trabajo-list-cols-v2", [
+  // v3: "evaluador" y "fecha_evaluacion" pasan a VISIBLES por default (pedido
+  // del equipo: ver quién hizo la hoja de evaluación y cuándo, sin configurar).
+  // El bump v2→v3 resetea una vez la preferencia de columnas guardada.
+  const { ocultas, setOcultas } = useColumnasOcultas("ordenes-trabajo-list-cols-v3", [
     "tipo", "np", "cod_rep_flota", "fabricante",
     "plaqueteo", "wo_cliente", "po_cliente", "po_item", "id_viajero", "guia_remision", "empresa_entrega",
     "usuario_crea", "fecha_creacion",
@@ -247,7 +248,7 @@ export default function OrdenesTrabajoPage() {
     // Bloque "ciclo evaluación → cotización → aprobación → facturación":
     // ocultas por default (son muchas columnas; el usuario las activa
     // desde el botón "Columnas" cuando hace análisis).
-    "fecha_evaluacion", "evaluador", "fecha_aprobacion_evaluacion",
+    "fecha_aprobacion_evaluacion",
     "evaluacion_aprobado_por", "fecha_cotizacion",
     "caracteristica_cilindro",
     "reparacion_externa", "vendor_externo",
