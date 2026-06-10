@@ -50,6 +50,12 @@ interface Item {
   // Item ya consumido de almacén — el stock salió en `consumir-de-almacen`
   // y queda solo entregar al técnico (no se vuelve a tocar stock).
   _es_consumido_almacen?: boolean;
+  // Motivo por el cual el item está en la lista de pendientes:
+  //   ok            → tiene stock listo, se puede despachar.
+  //   sin_oc        → todavía no se generó OC para este req.
+  //   oc_pendiente  → ya hay OC pero aún no se recepcionó.
+  //   sin_stock     → OC recibida pero stock insuficiente.
+  _motivo_pendiente?: "ok" | "sin_oc" | "oc_pendiente" | "sin_stock" | null;
 }
 
 interface GrupoOT {
@@ -62,6 +68,13 @@ interface GrupoOT {
   items: Item[];
   con_stock: number;
   sin_stock: number;
+  // Totales globales de la OT (incluye los ya entregados). Permite mostrar
+  // "X de Y items" en la cabecera para entender el avance global.
+  total_items_ot: number;
+  items_entregados: number;
+  items_sin_oc: number;
+  items_oc_pendiente: number;
+  items_sin_stock: number;
   estado_ot: "completa" | "incompleta";
 }
 
@@ -379,14 +392,36 @@ function GrupoCard({
       },
     },
     {
-      key: "puede", title: "Puede despachar", width: 150, align: "center",
+      // Estado de cada ítem con motivo explícito si no se puede despachar.
+      // Antes solo decía "Sin stock" — el user quería saber si el bloqueo
+      // era "falta comprar OC" (no hay OC), "OC pendiente" (esperando
+      // recepción) o "sin stock" (OC recibida pero no hay material).
+      key: "puede", title: "Estado", width: 180, align: "center",
       render: (_, r) => {
         if (r._es_consumido_almacen) {
           return <Tag color="green">✓ Listo (de almacén)</Tag>;
         }
-        return r._puede_despachar
-          ? <Tag color="green">✓ Sí</Tag>
-          : <Tag color="red">✗ Sin stock</Tag>;
+        if (r._puede_despachar) {
+          return <Tag color="green">✓ Listo para despachar</Tag>;
+        }
+        switch (r._motivo_pendiente) {
+          case "sin_oc":
+            return (
+              <Tooltip title="Hay que generar una OC desde Requerimientos">
+                <Tag color="volcano">🛒 Falta comprar</Tag>
+              </Tooltip>
+            );
+          case "oc_pendiente":
+            return (
+              <Tooltip title="OC emitida pero no recepcionada — recepcionar en Movimientos">
+                <Tag color="gold">📦 OC pendiente</Tag>
+              </Tooltip>
+            );
+          case "sin_stock":
+            return <Tag color="red">⚠️ Sin stock</Tag>;
+          default:
+            return <Tag color="default">—</Tag>;
+        }
       },
     },
   ];
@@ -413,8 +448,32 @@ function GrupoCard({
           {grupo.ubicacion
             ? <Tag color="purple">📍 {grupo.ubicacion}</Tag>
             : <Tag>📍 Sin ubicación (asignar al recibir PO)</Tag>}
+          {/* "X de Y items" — avance global incluyendo los ya entregados.
+              El user nos pidió ver esto para entender que la OT 390926
+              tiene 6/7 items resueltos, solo falta 1 (sin OC). */}
+          {grupo.total_items_ot > 0 && (
+            <Tooltip title={`${grupo.items_entregados} ya entregado(s) + ${grupo.items.length} pendiente(s)`}>
+              <Tag color={brand.cyan} style={{ fontWeight: 600 }}>
+                {grupo.items_entregados} / {grupo.total_items_ot} items
+              </Tag>
+            </Tooltip>
+          )}
           <Tag color="green">{grupo.con_stock} listo(s)</Tag>
-          {grupo.sin_stock > 0 && <Tag color="red">{grupo.sin_stock} sin stock</Tag>}
+          {grupo.items_sin_oc > 0 && (
+            <Tooltip title="Hay items aprobados que todavía no tienen OC generada">
+              <Tag color="volcano">🛒 {grupo.items_sin_oc} falta comprar</Tag>
+            </Tooltip>
+          )}
+          {grupo.items_oc_pendiente > 0 && (
+            <Tooltip title="OC ya emitida pero todavía no se recepcionó">
+              <Tag color="gold">📦 {grupo.items_oc_pendiente} OC pendiente</Tag>
+            </Tooltip>
+          )}
+          {grupo.items_sin_stock > 0 && (
+            <Tooltip title="Sin stock disponible en almacén">
+              <Tag color="red">⚠️ {grupo.items_sin_stock} sin stock</Tag>
+            </Tooltip>
+          )}
         </Space>
       }
       extra={
