@@ -342,6 +342,10 @@ function RequerimientosDetalleInner() {
   interface OCAbierta {
     id: number;
     numero_po: string;
+    // `nombre` = label de display (ej. "BC BEARING — OC Abierta M260033"),
+    // setea en la compra. Si está cargado se prioriza sobre el proveedor.
+    nombre: string | null;
+    fuente_display: string;
     moneda: string;
     fecha_solicitud: string;
     fecha_expiracion: string | null;
@@ -2013,7 +2017,12 @@ function RequerimientosDetalleInner() {
                 style={{ width: "100%" }}
                 options={ocsAbiertas.map((oc) => ({
                   value: oc.id,
-                  label: `${oc.numero_po} — ${oc.proveedor?.nombre_comercial ?? oc.proveedor?.razon_social ?? "(sin proveedor)"} · ${oc.items.filter((i) => i.stock_disponible > 0).length}/${oc.items.length} items con stock`,
+                  // Display: priorizamos `fuente_display` (que sale de
+                  // compra.nombre — "BC BEARING — OC Abierta M260033") sobre
+                  // el nombre del proveedor de la tabla. Decisión del user:
+                  // la fuente real (BC Bearing) NO está en la tabla de
+                  // proveedores; solo en la compra.
+                  label: `${oc.numero_po} — ${oc.fuente_display} · ${oc.items.filter((i) => i.stock_disponible > 0).length}/${oc.items.length} items con stock`,
                 }))}
               />
             </Form.Item>

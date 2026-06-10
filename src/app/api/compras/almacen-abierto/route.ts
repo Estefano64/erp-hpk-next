@@ -38,6 +38,10 @@ import { prisma } from "@/lib/prisma";
 interface CompraRow {
   id: number;
   numero_po: string;
+  // nombre = label de display para la OC (ej. "BC BEARING — OC Abierta M260033").
+  // Usado en el selector de OC abierta. La tabla de proveedores queda intacta
+  // (puede apuntar a otro proveedor por razones legacy/operativas).
+  nombre: string | null;
   moneda_codigo: string | null;
   fecha_solicitud: Date;
   fecha_expiracion: Date | null;
@@ -54,7 +58,7 @@ export async function GET(req: NextRequest) {
     // 1. Compras almacén abierto activas (SQL raw porque `es_almacen_abierto`
     //    y `fecha_expiracion` pueden no estar en el cliente Prisma todavía).
     const compras = await prisma.$queryRaw<CompraRow[]>`
-      SELECT id, numero_po, moneda_codigo, fecha_solicitud, fecha_expiracion,
+      SELECT id, numero_po, nombre, moneda_codigo, fecha_solicitud, fecha_expiracion,
              status_oc_codigo, observaciones, proveedor_id
         FROM "compras"
        WHERE es_almacen_abierto = true
@@ -139,9 +143,19 @@ export async function GET(req: NextRequest) {
         if (!tieneStockEnAlgunItem) return null;
 
         const prov = provById.get(c.proveedor_id);
+        // Display label de la fuente: si la compra tiene `nombre` cargado
+        // (ej. "BC BEARING — OC Abierta M260033") lo usamos directo. Si no,
+        // caemos al nombre del proveedor. La tabla de proveedores queda
+        // intacta; el label vive solo en la compra.
+        const fuenteDisplay = c.nombre
+          ?? prov?.nombre_comercial
+          ?? prov?.razon_social
+          ?? "(sin proveedor)";
         return {
           id: c.id,
           numero_po: c.numero_po,
+          nombre: c.nombre,
+          fuente_display: fuenteDisplay,
           moneda: c.moneda_codigo ?? "USD",
           fecha_solicitud: c.fecha_solicitud,
           fecha_expiracion: c.fecha_expiracion,

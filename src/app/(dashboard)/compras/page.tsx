@@ -185,34 +185,67 @@ export default function ComprasPage() {
   }
 
   function handleAceptar(id: number) {
+    // Tres campos opcionales (mismo patrón que /aprobaciones):
+    //   descripcion → resumen corto (etiqueta en listados, ≤300)
+    //   detalle     → texto largo (motivo, contexto)
+    //   comentario  → nota libre (≤500)
+    let descripcion = "";
+    let detalle = "";
     let comentario = "";
     modal.confirm({
       title: "Aceptar OC",
       content: (
-        <div style={{ marginTop: 8 }}>
-          <Text style={{ fontSize: 12 }}>
-            Comentario <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
-          </Text>
-          <Input.TextArea
-            rows={3}
-            maxLength={500}
-            showCount
-            placeholder="Ej. aprobada después de revisar precios"
-            onChange={(e) => { comentario = e.target.value; }}
-            style={{ marginTop: 8 }}
-          />
+        <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+          <div>
+            <Text style={{ fontSize: 12 }}>
+              Descripción <Text type="secondary" style={{ fontWeight: 400 }}>(opcional, ≤300)</Text>
+            </Text>
+            <Input
+              maxLength={300}
+              placeholder="Resumen breve de la decisión"
+              onChange={(e) => { descripcion = e.target.value; }}
+              style={{ marginTop: 4 }}
+            />
+          </div>
+          <div>
+            <Text style={{ fontSize: 12 }}>
+              Detalle <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+            </Text>
+            <Input.TextArea
+              rows={3}
+              placeholder="Motivo, contexto, instrucciones…"
+              onChange={(e) => { detalle = e.target.value; }}
+              style={{ marginTop: 4 }}
+            />
+          </div>
+          <div>
+            <Text style={{ fontSize: 12 }}>
+              Comentario <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+            </Text>
+            <Input.TextArea
+              rows={2}
+              maxLength={500}
+              showCount
+              placeholder="Ej. aprobada después de revisar precios"
+              onChange={(e) => { comentario = e.target.value; }}
+              style={{ marginTop: 4 }}
+            />
+          </div>
         </div>
       ),
       okText: "Aceptar OC",
       cancelText: "Cancelar",
-      width: 460,
+      width: 520,
       onOk: async () => {
-        const txt = comentario.trim();
         try {
           const res = await fetch(`/api/compras/${id}/aceptar`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ comentario: txt || null }),
+            body: JSON.stringify({
+              comentario: comentario.trim() || null,
+              descripcion: descripcion.trim() || null,
+              detalle: detalle.trim() || null,
+            }),
           });
           const json = await res.json();
           if (!res.ok) throw new Error(json.error || "Error al aceptar OC");
