@@ -1,11 +1,13 @@
-// POST /api/compras/[id]/guia/upload-url?tipo=guia|factura
-// Genera presigned URL para subir guía o factura de una compra.
+// POST /api/compras/[id]/guia/upload-url?tipo=guia|factura|pago
+// Genera presigned URL para subir guía, factura o comprobante de pago.
 // Path:
-//   - Si Compra.ot_id != null: R2Keys.compraGuia(otCodigo, numero_po)
-//   - Si Compra.ot_id == null: R2Keys.compraSueltaGuia(numero_po)  (compra sin OT)
+//   - Si Compra.ot_id != null: R2Keys.compra{Guia|Factura|Pago}(otCodigo, numero_po)
+//   - Si Compra.ot_id == null: R2Keys.compraSuelta{Guia|Factura|Pago}(numero_po)
 //
 // Decisión del user (2026-06): se removió la regla que bloqueaba la presigned
 // URL de factura si la compra no tenía guía. El orden de subida es libre.
+// El "pago" es el comprobante (voucher / boleta de transferencia); la UI lo
+// gatea por tipo_pago, el endpoint no, para permitir corregir clasificaciones.
 import { NextResponse, type NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
@@ -14,11 +16,13 @@ import { R2Keys, otCodigoFor } from "@/lib/r2";
 import { assertOTAccess, readJsonBody, validateUploadBody } from "@/lib/r2-server";
 
 type Params = { params: Promise<{ id: string }> };
-type Tipo = "guia" | "factura";
+type Tipo = "guia" | "factura" | "pago";
 
 function parseTipo(req: NextRequest): Tipo {
   const t = new URL(req.url).searchParams.get("tipo");
-  return t === "factura" ? "factura" : "guia";
+  if (t === "factura") return "factura";
+  if (t === "pago") return "pago";
+  return "guia";
 }
 
 export async function POST(req: NextRequest, { params }: Params) {
@@ -61,10 +65,14 @@ export async function POST(req: NextRequest, { params }: Params) {
     const folderPrefix = otCodigo
       ? (tipo === "guia"
           ? R2Keys.compraGuia(otCodigo, compra.numero_po)
-          : R2Keys.compraFactura(otCodigo, compra.numero_po))
+          : tipo === "factura"
+            ? R2Keys.compraFactura(otCodigo, compra.numero_po)
+            : R2Keys.compraPago(otCodigo, compra.numero_po))
       : (tipo === "guia"
           ? R2Keys.compraSueltaGuia(compra.numero_po)
-          : R2Keys.compraSueltaFactura(compra.numero_po));
+          : tipo === "factura"
+            ? R2Keys.compraSueltaFactura(compra.numero_po)
+            : R2Keys.compraSueltaPago(compra.numero_po));
 
     const result = await generateUploadUrl({
       folderPrefix,

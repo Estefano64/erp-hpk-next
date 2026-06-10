@@ -897,7 +897,7 @@ export default function TrabajadoresPage() {
                   showIcon
                   type="info"
                   style={{ marginBottom: 12 }}
-                  message="Vincular cuenta existente"
+                  title="Vincular cuenta existente"
                   description="Elegí una cuenta ya creada. Las cuentas resaltadas en gris ya están vinculadas a otro trabajador — si las elegís, se va a transferir (el trabajador anterior queda sin cuenta)."
                 />
                 <Select
@@ -1012,7 +1012,7 @@ export default function TrabajadoresPage() {
           showIcon
           type="info"
           style={{ marginBottom: 12 }}
-          message="Vista de solo lectura"
+          title="Vista de solo lectura"
           description="Ves las tareas, horas y eficiencia del técnico tal cual aparecen en su sesión. No se ejecuta ninguna acción a su nombre."
         />
 
@@ -1040,7 +1040,7 @@ export default function TrabajadoresPage() {
         </Card>
 
         {vistaError && (
-          <Alert type="error" showIcon message={vistaError} style={{ marginBottom: 12 }} />
+          <Alert type="error" showIcon title={vistaError} style={{ marginBottom: 12 }} />
         )}
 
         {!vistaData && !vistaError && !vistaLoading && (

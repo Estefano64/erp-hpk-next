@@ -1,0 +1,234 @@
+// POST /api/compras/[id]/consumir-almacen-abierto
+//
+// Descuenta stock de una OC marcada como "almacén abierto" (ej. PO Quellaveco)
+// para cubrir uno o varios requerimientos sin generar una OC nueva.
+//
+// Flujo:
+//   1. Valida que la Compra tenga es_almacen_abierto = true y no haya expirado.
+//   2. Para cada item: valida match material req vs detalle compra, stock
+//      suficiente, req no anulado/con OC.
+//   3. Descuenta del CompraDetalle (cantidad_recibida +=).
+//   4. Marca el OTRepuesto con status_oc = CONSUMIDO_OC_ABIERTA, po_id, fechas.
+//   5. Registra OTHistorial (si el req pertenece a una OT externa o interna).
+//
+// Body:
+//   {
+//     items: [
+//       { requerimiento_id: 123, detalle_compra_id: 456, cantidad: 2 }
+//     ],
+//     comentarios?: string
+//   }
+//
+// Respuesta: { ok: [...ids], errores: [{ requerimiento_id, error }] }
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import { getAuditUser } from "@/lib/audit";
+
+type Ctx = { params: Promise<{ id: string }> };
+
+const Schema = z.object({
+  items: z.array(
+    z.object({
+      requerimiento_id: z.coerce.number().int().positive(),
+      detalle_compra_id: z.coerce.number().int().positive(),
+      cantidad: z.coerce.number().positive(),
+    }),
+  ).min(1),
+  comentarios: z.string().trim().max(500).optional().nullable(),
+});
+
+interface CompraRow {
+  id: number;
+  numero_po: string;
+  es_almacen_abierto: boolean;
+  fecha_expiracion: Date | null;
+  status_oc_codigo: string | null;
+  moneda_codigo: string | null;
+}
+
+export async function POST(req: NextRequest, ctx: Ctx) {
+  try {
+    const { id } = await ctx.params;
+    const compraId = Number(id);
+    if (!Number.isFinite(compraId) || compraId <= 0) {
+      return NextResponse.json({ error: "ID de Compra inválido" }, { status: 400 });
+    }
+    const body = await req.json().catch(() => ({}));
+    const parsed = Schema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Validación", detail: parsed.error.flatten() }, { status: 400 });
+    }
+    const usuario = (await getAuditUser(req)) ?? "Logistica";
+
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Validar Compra es almacén abierto activa. SQL raw porque el campo
+      //    es_almacen_abierto puede no estar en el cliente Prisma (dev server
+      //    bloquea regenerate).
+      const compraRows = await tx.$queryRaw<CompraRow[]>`
+        SELECT id, numero_po, es_almacen_abierto, fecha_expiracion,
+               status_oc_codigo, moneda_codigo
+          FROM "compras" WHERE id = ${compraId} LIMIT 1
+      `;
+      if (compraRows.length === 0) {
+        throw Object.assign(new Error("Compra no encontrada"), { code: "NOT_FOUND" });
+      }
+      const compra = compraRows[0];
+      if (!compra.es_almacen_abierto) {
+        throw Object.assign(
+          new Error("Esta OC no está marcada como almacén abierto."),
+          { code: "NOT_OPEN_WAREHOUSE" },
+        );
+      }
+      if (compra.status_oc_codigo === "ANULADO" || compra.status_oc_codigo === "COMPLETO") {
+        throw Object.assign(
+          new Error(`OC en estado ${compra.status_oc_codigo} no permite consumo.`),
+          { code: "INVALID_STATE" },
+        );
+      }
+      if (compra.fecha_expiracion && compra.fecha_expiracion < new Date()) {
+        throw Object.assign(
+          new Error(`OC expiró el ${compra.fecha_expiracion.toISOString().slice(0, 10)}. Importá la OC del nuevo período.`),
+          { code: "EXPIRED" },
+        );
+      }
+
+      const ok: number[] = [];
+      const errores: { requerimiento_id: number; error: string }[] = [];
+
+      for (const it of parsed.data.items) {
+        try {
+          // Detalle de la Compra
+          const detalle = await tx.compraDetalle.findUnique({
+            where: { id: it.detalle_compra_id },
+            select: {
+              id: true, compra_id: true, material_id: true,
+              cantidad: true, cantidad_recibida: true, precio_unitario: true,
+            },
+          });
+          if (!detalle || detalle.compra_id !== compraId) {
+            errores.push({ requerimiento_id: it.requerimiento_id, error: "Detalle de compra no pertenece a esta OC." });
+            continue;
+          }
+
+          // Requerimiento
+          const rep = await tx.oTRepuesto.findUnique({ where: { id: it.requerimiento_id } });
+          if (!rep) {
+            errores.push({ requerimiento_id: it.requerimiento_id, error: "Requerimiento no encontrado." });
+            continue;
+          }
+          if (rep.po_id != null) {
+            errores.push({ requerimiento_id: it.requerimiento_id, error: "El requerimiento ya está asignado a otra OC." });
+            continue;
+          }
+          if (rep.status_requerimiento_codigo === "ANULADO" || rep.status_requerimiento_codigo === "DESAPROBADO") {
+            errores.push({ requerimiento_id: it.requerimiento_id, error: `Req en estado ${rep.status_requerimiento_codigo} no se puede consumir.` });
+            continue;
+          }
+          if (rep.material_id == null) {
+            errores.push({ requerimiento_id: it.requerimiento_id, error: "El requerimiento es free (sin material) — no se puede consumir de almacén abierto." });
+            continue;
+          }
+          if (rep.material_id !== detalle.material_id) {
+            errores.push({ requerimiento_id: it.requerimiento_id, error: "El material del requerimiento no coincide con el del detalle de la OC abierta." });
+            continue;
+          }
+
+          // Stock disponible del detalle
+          const stockDisp = new Prisma.Decimal(detalle.cantidad).minus(detalle.cantidad_recibida ?? 0);
+          const cant = new Prisma.Decimal(it.cantidad);
+          if (cant.lte(0)) {
+            errores.push({ requerimiento_id: it.requerimiento_id, error: "Cantidad debe ser > 0." });
+            continue;
+          }
+          if (cant.gt(stockDisp)) {
+            errores.push({ requerimiento_id: it.requerimiento_id, error: `Stock insuficiente en OC abierta (disponible: ${stockDisp}, pedido: ${cant}).` });
+            continue;
+          }
+          const cantPedida = new Prisma.Decimal(rep.cantidad);
+          if (cant.gt(cantPedida)) {
+            errores.push({ requerimiento_id: it.requerimiento_id, error: `Cantidad ${cant} excede la pedida del req (${cantPedida}).` });
+            continue;
+          }
+
+          // 1. Descontar stock del CompraDetalle
+          await tx.compraDetalle.update({
+            where: { id: detalle.id },
+            data: { cantidad_recibida: { increment: cant } },
+          });
+
+          // 2. Marcar el req como CONSUMIDO_OC_ABIERTA. Usamos el precio
+          //    congelado de la OC abierta para el req (sobreescribe el precio
+          //    libre que pudiera tener antes).
+          const obsPrev = rep.observaciones ? `${rep.observaciones}\n` : "";
+          await tx.oTRepuesto.update({
+            where: { id: rep.id },
+            data: {
+              status_oc_codigo: "CONSUMIDO_OC_ABIERTA",
+              status_requerimiento_codigo: "APROBADO", // al consumir, queda como aprobado
+              po_id: compraId,
+              nro_oc: compra.numero_po,
+              cantidad_recibida: { increment: cant },
+              precio_unitario: detalle.precio_unitario,
+              moneda: compra.moneda_codigo ?? "USD",
+              fecha_entrega_real: new Date(),
+              observaciones: `${obsPrev}Consumido de OC abierta ${compra.numero_po} el ${new Date().toLocaleDateString("es-PE")} — ${cant} unid. (${usuario})${parsed.data.comentarios ? ` · ${parsed.data.comentarios}` : ""}`,
+            },
+          });
+
+          // 3. Historial polimórfico (OT externa o interna)
+          await tx.oTHistorial.create({
+            data: {
+              ot_id: rep.ot_id,
+              orden_trabajo_interna_id: rep.orden_trabajo_interna_id,
+              tipo_operacion: "REQUERIMIENTO",
+              descripcion: `Req ${rep.nro_req ?? rep.id} consumido de OC abierta ${compra.numero_po}: ${cant} × ${detalle.precio_unitario} ${compra.moneda_codigo ?? "USD"}`,
+              usuario,
+            },
+          });
+
+          ok.push(rep.id);
+        } catch (e) {
+          errores.push({
+            requerimiento_id: it.requerimiento_id,
+            error: e instanceof Error ? e.message : "Error",
+          });
+        }
+      }
+
+      // 4. Si quedó sin stock total la OC abierta, marcarla COMPLETO.
+      const detallesAct = await tx.compraDetalle.findMany({
+        where: { compra_id: compraId },
+        select: { cantidad: true, cantidad_recibida: true },
+      });
+      const todoConsumido = detallesAct.every(
+        (d) => new Prisma.Decimal(d.cantidad).minus(d.cantidad_recibida ?? 0).lte(0),
+      );
+      if (todoConsumido) {
+        await tx.compra.update({
+          where: { id: compraId },
+          data: { status_oc_codigo: "COMPLETO" },
+        });
+      }
+
+      return { ok, errores };
+    }, { maxWait: 10_000, timeout: 30_000 });
+
+    const partes: string[] = [];
+    if (result.ok.length) partes.push(`${result.ok.length} consumido(s)`);
+    if (result.errores.length) partes.push(`${result.errores.length} error(es)`);
+    return NextResponse.json({
+      message: `Consumo de OC abierta: ${partes.join(", ") || "sin cambios"}.`,
+      ...result,
+    });
+  } catch (error: unknown) {
+    const err = error as { code?: string; message?: string };
+    if (err.code === "NOT_FOUND") return NextResponse.json({ error: err.message }, { status: 404 });
+    if (err.code === "NOT_OPEN_WAREHOUSE" || err.code === "INVALID_STATE" || err.code === "EXPIRED") {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    console.error("POST consumir-almacen-abierto error:", error);
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Error" }, { status: 500 });
+  }
+}

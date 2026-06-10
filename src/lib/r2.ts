@@ -90,6 +90,11 @@ export const R2Keys = {
     `ordenes-trabajo/${sanitize(otCodigo)}/compras/${sanitize(ocCodigo)}/factura`,
   compraSueltaGuia: (ocCodigo: string) => `compras-sueltas/${sanitize(ocCodigo)}/guia`,
   compraSueltaFactura: (ocCodigo: string) => `compras-sueltas/${sanitize(ocCodigo)}/factura`,
+  // Comprobante de pago (voucher/boleta/transferencia). Solo aplica a OCs
+  // pagadas al contado o por transferencia.
+  compraPago: (otCodigo: string, ocCodigo: string) =>
+    `ordenes-trabajo/${sanitize(otCodigo)}/compras/${sanitize(ocCodigo)}/pago`,
+  compraSueltaPago: (ocCodigo: string) => `compras-sueltas/${sanitize(ocCodigo)}/pago`,
   // Capturas de tickets (bugs/mejoras del ERP). No vinculados a OT.
   ticket: () => `tickets`,
   // Adjuntos de OT Interna — mismo patrón que OT Externa pero en otro namespace.

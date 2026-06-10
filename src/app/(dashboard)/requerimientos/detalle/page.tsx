@@ -21,6 +21,9 @@ import {
   Tooltip,
   Popconfirm,
   Alert,
+  Spin,
+  Empty,
+  Segmented,
 } from "antd";
 import {
   ArrowLeftOutlined,
@@ -128,6 +131,10 @@ interface Requerimiento {
   id: number;
   // ot_id puede ser null si el item pertenece a una OT INTERNA.
   ot_id: number | null;
+  // Si el item pertenece a una OT INTERNA, este es su id. Mutuamente
+  // exclusivo con ot_id (uno u otro, nunca ambos). Se usa para el filtro
+  // ext/int en la cabecera del detalle.
+  orden_trabajo_interna_id: number | null;
   numero_ot: string | null;
   // Descripción de la OT (no del material) — proviene de OrdenTrabajo.descripcion.
   descripcion_ot: string | null;
@@ -195,6 +202,7 @@ function normalize(r: RequerimientoApi): Requerimiento {
   return {
     id: r.id,
     ot_id: r.ot_id,
+    orden_trabajo_interna_id: r.orden_trabajo_interna?.id ?? r.orden_trabajo_interna_id ?? null,
     numero_ot: numeroOt || null,
     descripcion_ot: descripcionOt,
     flota: r.orden_trabajo?.cod_rep_flota ?? null,
@@ -288,6 +296,9 @@ function RequerimientosDetalleInner() {
   const [filtroOt, setFiltroOt] = useState<string | undefined>(undefined);
   const [filtroEstado, setFiltroEstado] = useState<string | undefined>(undefined);
   const [filtroRapido, setFiltroRapido] = useState<string>("todos");
+  // Filtro general por tipo de OT — externa | interna | todas. Persistido en
+  // localStorage para que el user no tenga que volver a seleccionarlo cada vez.
+  const [filtroTipoOT, setFiltroTipoOT] = useState<"todas" | "externa" | "interna">("todas");
   const [filtroNroReq, setFiltroNroReq] = useState<string | undefined>(undefined);
   const [selectedRows, setSelectedRows] = useState<number[]>([]);
 
@@ -307,6 +318,39 @@ function RequerimientosDetalleInner() {
   const [modalDividir, setModalDividir] = useState<Requerimiento | null>(null);
   const [partesDividir, setPartesDividir] = useState<number[]>([]);
   const [dividiendo, setDividiendo] = useState(false);
+
+  // ── Modal "Consumir de Almacén Abierto" (Quellaveco, etc.) ─────────
+  // Permite descontar items de los reqs seleccionados desde el stock fijo
+  // de una OC marcada como `es_almacen_abierto`. Mostrá las OCs activas, el
+  // user elige una, y el modal matchea cada req seleccionado contra los
+  // detalles disponibles de esa OC. Si matchea (mismo material + stock OK),
+  // permite confirmar.
+  interface OCAbiertaItem {
+    detalle_id: number;
+    material_id: number | null;
+    material_codigo: string | null;
+    descripcion: string | null;
+    um: string | null;
+    cantidad_total: number;
+    cantidad_consumida: number;
+    stock_disponible: number;
+    precio_unitario: number;
+  }
+  interface OCAbierta {
+    id: number;
+    numero_po: string;
+    moneda: string;
+    fecha_solicitud: string;
+    fecha_expiracion: string | null;
+    proveedor: { id: number; razon_social: string; nombre_comercial: string | null } | null;
+    items: OCAbiertaItem[];
+  }
+  const [modalAbiertaOpen, setModalAbiertaOpen] = useState(false);
+  const [ocsAbiertas, setOcsAbiertas] = useState<OCAbierta[]>([]);
+  const [loadingAbiertas, setLoadingAbiertas] = useState(false);
+  const [ocAbiertaSel, setOcAbiertaSel] = useState<number | null>(null);
+  const [consumiendoAbierta, setConsumiendoAbierta] = useState(false);
+  const [comentariosAbierta, setComentariosAbierta] = useState("");
 
   // Modal de Consumir de Almacén — requiere elegir zona + posición física.
   const [modalConsumir, setModalConsumir] = useState<Requerimiento | null>(null);
@@ -385,7 +429,19 @@ function RequerimientosDetalleInner() {
     if (otId) setFiltroOt(otId);
     const nroReq = params.get("nro_req");
     if (nroReq) setFiltroNroReq(nroReq);
+    // Hidratar filtro tipoOT desde localStorage
+    try {
+      const stored = localStorage.getItem("req-detalle-tipo-ot");
+      if (stored === "externa" || stored === "interna" || stored === "todas") {
+        setFiltroTipoOT(stored);
+      }
+    } catch { /* ignore */ }
   }, [fetchData, params]);
+
+  // Persistir filtro tipoOT en localStorage cada vez que cambia
+  useEffect(() => {
+    try { localStorage.setItem("req-detalle-tipo-ot", filtroTipoOT); } catch { /* ignore */ }
+  }, [filtroTipoOT]);
 
   useEffect(() => {
     fetch("/api/proveedores?limit=500")
@@ -398,6 +454,14 @@ function RequerimientosDetalleInner() {
   // Filtros rapidos
   const filteredData = useMemo(() => {
     let rows = [...allData];
+
+    // Por tipo de OT (externa | interna | todas). Las externas tienen
+    // ot_id != null y orden_trabajo_interna_id null. Las internas al revés.
+    if (filtroTipoOT === "externa") {
+      rows = rows.filter((r) => !r.orden_trabajo_interna_id);
+    } else if (filtroTipoOT === "interna") {
+      rows = rows.filter((r) => !!r.orden_trabajo_interna_id);
+    }
 
     // Por OT
     if (filtroOt) rows = rows.filter((r) => String(r.ot_id) === String(filtroOt));
@@ -438,7 +502,7 @@ function RequerimientosDetalleInner() {
     }
 
     return rows;
-  }, [allData, filtroOt, filtroNroReq, filtroRapido, filtroEstado, search, rangoSol, rangoReq]);
+  }, [allData, filtroTipoOT, filtroOt, filtroNroReq, filtroRapido, filtroEstado, search, rangoSol, rangoReq]);
 
   const otOptions = useMemo(() => {
     const map = new Map<number, string>();
@@ -573,6 +637,116 @@ function RequerimientosDetalleInner() {
       if (!msg.includes("validation")) message.error(msg);
     } finally {
       setCreatingOC(false);
+    }
+  };
+
+  // ── Consumir de OC Almacén Abierto ─────────────────────────────────
+  // Abre el modal y carga las OCs activas. Pre-selecciona la primera (si hay).
+  const abrirModalAbierta = async () => {
+    if (selectedRows.length === 0) {
+      message.warning("Seleccioná items primero.");
+      return;
+    }
+    setModalAbiertaOpen(true);
+    setLoadingAbiertas(true);
+    setOcAbiertaSel(null);
+    setComentariosAbierta("");
+    try {
+      const res = await fetch("/api/compras/almacen-abierto");
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error ?? "Error al cargar OCs abiertas");
+      const list: OCAbierta[] = j.data ?? [];
+      setOcsAbiertas(list);
+      if (list.length === 1) setOcAbiertaSel(list[0].id);
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "Error");
+    } finally {
+      setLoadingAbiertas(false);
+    }
+  };
+
+  // Para cada req seleccionado, calcula su match contra la OC abierta elegida.
+  // Devuelve { req, detalle, stockOk, error? } por cada item.
+  const matchReqsConOCAbierta = (oc: OCAbierta | undefined) => {
+    if (!oc) return [];
+    const seleccionados = selectedRecords;
+    // Stock pendiente por detalle (mutado a medida que asignamos para que
+    // múltiples reqs del mismo material no compitan por el mismo stock).
+    const stockRestante = new Map<number, number>();
+    for (const it of oc.items) stockRestante.set(it.detalle_id, it.stock_disponible);
+
+    return seleccionados.map((r) => {
+      // Skip si el req no tiene material o ya está en OC o anulado
+      if (r.po_id != null) {
+        return { req: r, detalle: null, error: "Ya tiene OC asignada", cantidadAConsumir: 0 };
+      }
+      if (r.status_req === "ANULADO" || r.status_req === "DESAPROBADO") {
+        return { req: r, detalle: null, error: `Status ${r.status_req}`, cantidadAConsumir: 0 };
+      }
+      if (r.material_id == null) {
+        return { req: r, detalle: null, error: "Item free (sin material) — no aplica", cantidadAConsumir: 0 };
+      }
+      // Buscar detalle que coincida con el material_id del req
+      const det = oc.items.find((it) => it.material_id === r.material_id);
+      if (!det) {
+        return { req: r, detalle: null, error: "Material no está en esta OC", cantidadAConsumir: 0 };
+      }
+      const pedido = Number(r.cantidad);
+      const disponible = stockRestante.get(det.detalle_id) ?? 0;
+      const aConsumir = Math.min(pedido, disponible);
+      stockRestante.set(det.detalle_id, disponible - aConsumir);
+      if (aConsumir < pedido) {
+        return {
+          req: r,
+          detalle: det,
+          error: `Stock insuficiente: ${disponible} disponible, ${pedido} pedido`,
+          cantidadAConsumir: aConsumir,
+        };
+      }
+      return { req: r, detalle: det, error: null, cantidadAConsumir: aConsumir };
+    });
+  };
+
+  const confirmarConsumirAbierta = async () => {
+    if (!ocAbiertaSel) {
+      message.warning("Elegí una OC abierta.");
+      return;
+    }
+    const oc = ocsAbiertas.find((o) => o.id === ocAbiertaSel);
+    if (!oc) return;
+    const matches = matchReqsConOCAbierta(oc);
+    const validos = matches.filter((m) => m.detalle && m.cantidadAConsumir > 0 && !m.error);
+    if (validos.length === 0) {
+      message.warning("Ningún item seleccionado puede consumirse de esta OC.");
+      return;
+    }
+    setConsumiendoAbierta(true);
+    try {
+      const res = await fetch(`/api/compras/${ocAbiertaSel}/consumir-almacen-abierto`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: validos.map((m) => ({
+            requerimiento_id: m.req.id,
+            detalle_compra_id: m.detalle!.detalle_id,
+            cantidad: m.cantidadAConsumir,
+          })),
+          comentarios: comentariosAbierta || null,
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error ?? "Error al consumir");
+      const partes: string[] = [];
+      if (j.ok?.length) partes.push(`${j.ok.length} item(s) consumido(s)`);
+      if (j.errores?.length) partes.push(`${j.errores.length} error(es)`);
+      message[j.errores?.length ? "warning" : "success"](partes.join(", "));
+      setModalAbiertaOpen(false);
+      setSelectedRows([]);
+      await fetchData();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "Error");
+    } finally {
+      setConsumiendoAbierta(false);
     }
   };
 
@@ -1391,9 +1565,21 @@ function RequerimientosDetalleInner() {
             <Button icon={<SettingOutlined />}>Columnas</Button>
           </Popover>
           {selectedRows.length > 0 && (
-            <Button type="primary" size="large" icon={<FileDoneOutlined />} onClick={abrirModalOC}>
-              Crear OC ({selectedRows.length})
-            </Button>
+            <>
+              <Tooltip title="Descuenta los items seleccionados del stock de una OC marcada como 'almacén abierto' (ej. Quellaveco). No genera OC nueva.">
+                <Button
+                  size="large"
+                  icon={<InboxOutlined />}
+                  onClick={abrirModalAbierta}
+                  style={{ background: brand.cyan, borderColor: brand.cyan, color: "#fff" }}
+                >
+                  Consumir de Almacén Abierto ({selectedRows.length})
+                </Button>
+              </Tooltip>
+              <Button type="primary" size="large" icon={<FileDoneOutlined />} onClick={abrirModalOC}>
+                Crear OC ({selectedRows.length})
+              </Button>
+            </>
           )}
         </Space>
       </div>
@@ -1489,6 +1675,34 @@ function RequerimientosDetalleInner() {
             </Button>
           </Col>
         </Row>
+
+        {/* Filtro por tipo de OT (externa/interna/todas) — persistido en localStorage */}
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${brand.border}` }}>
+          <Space wrap size={8} align="center">
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              <FilterOutlined /> Tipo de OT:
+            </Text>
+            {(() => {
+              // Conteos en vivo derivados del dataset SIN aplicar el filtro tipoOT
+              // (así el badge muestra cuántos hay de cada tipo independientemente
+              // de qué esté seleccionado actualmente).
+              const totalExt = allData.filter((r) => !r.orden_trabajo_interna_id).length;
+              const totalInt = allData.filter((r) => !!r.orden_trabajo_interna_id).length;
+              return (
+                <Segmented
+                  size="small"
+                  value={filtroTipoOT}
+                  onChange={(v) => setFiltroTipoOT(v as "todas" | "externa" | "interna")}
+                  options={[
+                    { label: `Todas (${allData.length})`, value: "todas" },
+                    { label: `OT Externas (${totalExt})`, value: "externa" },
+                    { label: `OT Internas (${totalInt})`, value: "interna" },
+                  ]}
+                />
+              );
+            })()}
+          </Space>
+        </div>
 
         {/* Filtros rapidos */}
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${brand.border}` }}>
@@ -1749,6 +1963,140 @@ function RequerimientosDetalleInner() {
         </Form>
       </Modal>
 
+      {/* ── Modal "Consumir de Almacén Abierto" (Quellaveco, etc.) ───── */}
+      <Modal
+        title={
+          <Space>
+            <InboxOutlined style={{ color: brand.cyan }} />
+            <span>Consumir de Almacén Abierto ({selectedRows.length} item{selectedRows.length !== 1 ? "s" : ""} seleccionado{selectedRows.length !== 1 ? "s" : ""})</span>
+          </Space>
+        }
+        open={modalAbiertaOpen}
+        onCancel={() => setModalAbiertaOpen(false)}
+        width={modalWidth(screens, 900)}
+        confirmLoading={consumiendoAbierta}
+        okText={`Consumir ${matchReqsConOCAbierta(ocsAbiertas.find((o) => o.id === ocAbiertaSel)).filter((m) => m.detalle && m.cantidadAConsumir > 0 && !m.error).length} item(s)`}
+        cancelText="Cancelar"
+        okButtonProps={{
+          disabled: !ocAbiertaSel
+            || matchReqsConOCAbierta(ocsAbiertas.find((o) => o.id === ocAbiertaSel)).filter((m) => m.detalle && m.cantidadAConsumir > 0 && !m.error).length === 0,
+        }}
+        onOk={confirmarConsumirAbierta}
+        destroyOnHidden
+      >
+        {loadingAbiertas ? (
+          <div style={{ textAlign: "center", padding: 40 }}>
+            <Spin tip="Cargando OCs abiertas..." />
+          </div>
+        ) : ocsAbiertas.length === 0 ? (
+          <Empty
+            description={
+              <span>
+                No hay OCs marcadas como <b>almacén abierto</b> con stock disponible.
+                <br />
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  Importá un PDF (ej. Quellaveco.pdf) con el script para crear una.
+                </Text>
+              </span>
+            }
+          />
+        ) : (
+          <>
+            <Form.Item label="OC Almacén Abierto" style={{ marginBottom: 12 }}>
+              <Select
+                value={ocAbiertaSel ?? undefined}
+                onChange={(v) => setOcAbiertaSel(v ?? null)}
+                placeholder="Elegí una OC"
+                style={{ width: "100%" }}
+                options={ocsAbiertas.map((oc) => ({
+                  value: oc.id,
+                  label: `${oc.numero_po} — ${oc.proveedor?.nombre_comercial ?? oc.proveedor?.razon_social ?? "(sin proveedor)"} · ${oc.items.filter((i) => i.stock_disponible > 0).length}/${oc.items.length} items con stock`,
+                }))}
+              />
+            </Form.Item>
+
+            {ocAbiertaSel && (() => {
+              const oc = ocsAbiertas.find((o) => o.id === ocAbiertaSel)!;
+              const matches = matchReqsConOCAbierta(oc);
+              const validos = matches.filter((m) => m.detalle && m.cantidadAConsumir > 0 && !m.error);
+              const inválidos = matches.filter((m) => !m.detalle || m.error || m.cantidadAConsumir === 0);
+              return (
+                <>
+                  <Alert
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: 12 }}
+                    title={`${validos.length} item(s) se pueden consumir · ${inválidos.length} no aplican`}
+                    description={
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        Stock disponible total en la OC: {oc.items.reduce((s, i) => s + i.stock_disponible, 0)} unidades. Los items inválidos abajo no se procesarán.
+                      </Text>
+                    }
+                  />
+
+                  <Table
+                    size="small"
+                    rowKey={(r) => r.req.id}
+                    dataSource={matches}
+                    pagination={false}
+                    scroll={{ x: 700, y: 320 }}
+                    columns={[
+                      {
+                        title: "Req", key: "req", width: 90,
+                        render: (_v, m) => <Tag color={brand.navy}>{m.req.nro_req ?? `#${m.req.id}`}/{m.req.item_req ?? "-"}</Tag>,
+                      },
+                      {
+                        title: "Material", key: "mat", width: 250,
+                        render: (_v, m) => (
+                          <div>
+                            <div style={{ fontSize: 12 }}><b>{m.req.material_codigo ?? "(sin código)"}</b></div>
+                            <div style={{ fontSize: 11, color: brand.textSecondary }}>{m.req.descripcion?.slice(0, 60)}</div>
+                          </div>
+                        ),
+                      },
+                      {
+                        title: "Pedido", key: "ped", width: 70, align: "right",
+                        render: (_v, m) => Number(m.req.cantidad),
+                      },
+                      {
+                        title: "Stock OC", key: "stock", width: 80, align: "right",
+                        render: (_v, m) => m.detalle ? m.detalle.stock_disponible : "—",
+                      },
+                      {
+                        title: "A consumir", key: "consumir", width: 90, align: "right",
+                        render: (_v, m) => m.error
+                          ? <Text type="secondary">—</Text>
+                          : <b style={{ color: brand.success ?? "#52c41a" }}>{m.cantidadAConsumir}</b>,
+                      },
+                      {
+                        title: "Precio fijo OC", key: "precio", width: 110, align: "right",
+                        render: (_v, m) => m.detalle ? `${oc.moneda} ${m.detalle.precio_unitario.toFixed(2)}` : "—",
+                      },
+                      {
+                        title: "Estado", key: "estado", width: 200,
+                        render: (_v, m) => m.error
+                          ? <Tag color="orange" style={{ whiteSpace: "normal" }}>{m.error}</Tag>
+                          : <Tag color="green">OK</Tag>,
+                      },
+                    ]}
+                  />
+
+                  <Form.Item label="Comentarios (opcional)" style={{ marginTop: 12, marginBottom: 0 }}>
+                    <Input.TextArea
+                      rows={2}
+                      placeholder="Ej. Salida de stock para mantenimiento del 10/06"
+                      value={comentariosAbierta}
+                      onChange={(e) => setComentariosAbierta(e.target.value)}
+                      maxLength={500}
+                    />
+                  </Form.Item>
+                </>
+              );
+            })()}
+          </>
+        )}
+      </Modal>
+
       {/* Modal Dividir Cantidad */}
       <Modal
         title={
@@ -1957,7 +2305,7 @@ function RequerimientosDetalleInner() {
             <Alert
               type="info"
               showIcon
-              message="El requerimiento pasará a estado CONSUMIDO_ALMACEN y ya no podrá volver a sacarse de stock."
+              title="El requerimiento pasará a estado CONSUMIDO_ALMACEN y ya no podrá volver a sacarse de stock."
             />
           </div>
         )}

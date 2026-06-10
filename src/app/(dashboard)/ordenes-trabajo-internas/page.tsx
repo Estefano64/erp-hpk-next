@@ -567,6 +567,12 @@ export default function OrdenesTrabajoInternasPage() {
       // Filtros derivados de los valores únicos cargados (que vienen del
       // catálogo OtStatus vía include en el endpoint). Por defecto seleccionado
       // "Abierta" — ver `otStatusFilter` arriba.
+      //
+      // 2026-06: usamos defaultFilteredValue (UNCONTROLLED) en vez de
+      // filteredValue (controlled) para evitar el warning de AntD que pide
+      // que TODAS las columnas tengan filteredValue o NINGUNA. La persistencia
+      // sigue funcionando porque guardamos a localStorage vía el onChange de
+      // la tabla; el inicial se lee del state cuando el componente monta.
       filters: [...new Set(rows.map((r) => r.ot_status?.codigo).filter(Boolean) as string[])]
         .sort()
         .map((c) => {
@@ -574,7 +580,7 @@ export default function OrdenesTrabajoInternasPage() {
           return { text: nombre, value: c };
         }),
       filterMultiple: true,
-      filteredValue: otStatusFilter,
+      defaultFilteredValue: otStatusFilter ?? undefined,
       onFilter: (value, r) => r.ot_status?.codigo === value,
       render: (_: unknown, r: OTInternaRow) => r.ot_status?.nombre
         ? <Tag color={r.ot_status.codigo === "Abierta" ? "processing" : r.ot_status.codigo === "Cerrada" ? "success" : "default"}>

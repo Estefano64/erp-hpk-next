@@ -116,18 +116,61 @@ export async function PUT(req: NextRequest, { params }: Params) {
     const result = await prisma.$transaction(async (tx) => {
       const before = await tx.ordenTrabajo.findUnique({
         where: { id: Number(id) },
-        select: { version: true, monto_cotizacion: true, ...AUDIT_OT_SELECT_FIELDS },
+        select: {
+          version: true,
+          monto_cotizacion: true,
+          ...AUDIT_OT_SELECT_FIELDS,
+          // Fechas que se exigen para cerrar — necesarias para validar el
+          // gate de "cerrar OT" mezclando body + valores actuales.
+          fecha_recepcion: true,
+          fecha_evaluacion: true,
+          fecha_aprobacion_evaluacion: true,
+          fecha_cotizacion: true,
+          fecha_aprobacion: true,
+          fecha_entrega: true,
+          fecha_facturacion: true,
+        },
       });
 
       if (!before) {
         return { conflict: false, notFound: true } as const;
       }
 
-      // Para CERRAR una OT, el monto de cotización es obligatorio. Vale el del
-      // body (si se manda en el mismo PUT) o el ya guardado en la OT.
+      // Gates para CERRAR la OT (ot_status_codigo → "Cerrada"):
+      //   1) Todas las fechas del ciclo deben estar cargadas (HEAD: trazabilidad).
+      //   2) El monto de cotización debe ser > 0 (main: requisito comercial).
+      // Solo se exigen en la TRANSICIÓN a "Cerrada" (no en updates idempotentes
+      // de una OT que ya está cerrada). Para mezclar body + BD, usamos el valor
+      // del body si viene, sino el actual en BD.
       const beforeStatus = (before as { ot_status_codigo?: string | null }).ot_status_codigo;
       const vaACerrar = body.ot_status_codigo === "Cerrada" && beforeStatus !== "Cerrada";
       if (vaACerrar) {
+        const beforeRec = before as Record<string, unknown>;
+        type FechaKey =
+          | "fecha_recepcion" | "fecha_evaluacion" | "fecha_aprobacion_evaluacion"
+          | "fecha_cotizacion" | "fecha_aprobacion" | "fecha_entrega" | "fecha_facturacion";
+        const FECHAS_REQUERIDAS_CIERRE: Array<{ key: FechaKey; label: string }> = [
+          { key: "fecha_recepcion", label: "Fecha Recepción" },
+          { key: "fecha_evaluacion", label: "Fecha Evaluación" },
+          { key: "fecha_aprobacion_evaluacion", label: "Fecha Aprobación Evaluación" },
+          { key: "fecha_cotizacion", label: "Fecha Cotización" },
+          { key: "fecha_aprobacion", label: "Fecha Aprobación (cliente)" },
+          { key: "fecha_entrega", label: "Fecha Entrega" },
+          { key: "fecha_facturacion", label: "Fecha Facturación" },
+        ];
+        const faltantes = FECHAS_REQUERIDAS_CIERRE
+          .filter(({ key }) => {
+            const valor = key in body ? body[key] : beforeRec[key];
+            return valor == null;
+          })
+          .map(({ label }) => label);
+        if (faltantes.length > 0) {
+          return {
+            conflict: false,
+            closeBlocked: true,
+            faltantes,
+          } as const;
+        }
         const montoEfectivo = body.monto_cotizacion !== undefined
           ? body.monto_cotizacion
           : (before as { monto_cotizacion?: unknown }).monto_cotizacion;
@@ -188,6 +231,15 @@ export async function PUT(req: NextRequest, { params }: Params) {
       return NextResponse.json(
         { error: "La OT está Cerrada. Reabrila primero (cambiar OT Status) antes de editar otros campos." },
         { status: 403 },
+      );
+    }
+    if ("closeBlocked" in result && result.closeBlocked) {
+      return NextResponse.json(
+        {
+          error: `No se puede cerrar la OT — faltan fechas: ${result.faltantes.join(", ")}. Completalas antes de cambiar el estado a Cerrada.`,
+          faltantes: result.faltantes,
+        },
+        { status: 400 },
       );
     }
     if ("needsMonto" in result && result.needsMonto) {

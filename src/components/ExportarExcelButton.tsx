@@ -446,7 +446,7 @@ export function ExportarExcelButton<T>({
           type="info"
           showIcon
           style={{ marginBottom: spc.md }}
-          message={
+          title={
             <span style={{ fontSize: 12 }}>
               Tu selección se recuerda para la próxima descarga.
             </span>

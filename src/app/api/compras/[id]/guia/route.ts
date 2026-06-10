@@ -1,13 +1,18 @@
-// Guía de remisión / factura de Compra en Cloudflare R2.
+// Guía de remisión / factura / comprobante de pago de Compra en Cloudflare R2.
 //
-// POST body: { tipo?: "guia"|"factura", key, nombre_archivo, tipo_mime, tamano }
+// POST body: { tipo?: "guia"|"factura"|"pago", key, nombre_archivo, tipo_mime, tamano }
 // El cliente subió antes a R2 via /api/r2/upload-url con
-//   resource = "compra-guia" | "compra-factura".
+//   resource = "compra-guia" | "compra-factura" | "compra-pago".
 //
 // Decisión del user (2026-06): se removió la regla que bloqueaba subir factura
 // sin guía. Algunos proveedores entregan factura antes que la guía, o nunca
 // emiten guía formal (servicios). Ahora ambos archivos son independientes —
 // el orden de subida es libre.
+//
+// "pago" = comprobante de pago (voucher, boleta de transferencia). Solo se
+// muestra/permite cuando compra.tipo_pago = "CONTADO" o "TRANSFERENCIA". El
+// gate visual está en la UI; el endpoint acepta el tipo siempre que la compra
+// exista (validación blanda — útil para corregir clasificaciones tardías).
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
@@ -17,14 +22,21 @@ import { R2Keys, otCodigoFor } from "@/lib/r2";
 import { getAuditUser } from "@/lib/audit";
 
 type Params = { params: Promise<{ id: string }> };
-type Tipo = "guia" | "factura";
+type Tipo = "guia" | "factura" | "pago";
 
 function parseTipo(req: NextRequest, fallback?: Tipo): Tipo {
   const t = new URL(req.url).searchParams.get("tipo");
   if (t === "factura") return "factura";
+  if (t === "pago") return "pago";
   if (t === "guia") return "guia";
   return fallback ?? "guia";
 }
+
+const ETIQUETA: Record<Tipo, string> = {
+  guia: "Guía",
+  factura: "Factura",
+  pago: "Comprobante de pago",
+};
 
 // POST — registra una guía o factura ya subida a R2.
 export async function POST(req: NextRequest, { params }: Params) {
@@ -62,13 +74,19 @@ export async function POST(req: NextRequest, { params }: Params) {
     };
 
     // El path correcto depende de si la compra está asociada a una OT o no.
-    const expectedPrefix = (compra.orden_trabajo
+    const otCodigo = compra.orden_trabajo ? otCodigoFor(compra.orden_trabajo) : null;
+    const prefijoBase = otCodigo
       ? (tipo === "guia"
-          ? R2Keys.compraGuia(otCodigoFor(compra.orden_trabajo), compra.numero_po)
-          : R2Keys.compraFactura(otCodigoFor(compra.orden_trabajo), compra.numero_po))
+          ? R2Keys.compraGuia(otCodigo, compra.numero_po)
+          : tipo === "factura"
+            ? R2Keys.compraFactura(otCodigo, compra.numero_po)
+            : R2Keys.compraPago(otCodigo, compra.numero_po))
       : (tipo === "guia"
           ? R2Keys.compraSueltaGuia(compra.numero_po)
-          : R2Keys.compraSueltaFactura(compra.numero_po))) + "/";
+          : tipo === "factura"
+            ? R2Keys.compraSueltaFactura(compra.numero_po)
+            : R2Keys.compraSueltaPago(compra.numero_po));
+    const expectedPrefix = prefijoBase + "/";
     if (typeof key !== "string" || !key.startsWith(expectedPrefix)) {
       return NextResponse.json({ error: "key fuera del namespace de la compra" }, { status: 400 });
     }
@@ -83,7 +101,12 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
 
     // Eliminar archivo anterior en R2 si existe (reemplazo).
-    const keyAnterior = tipo === "guia" ? compra.guia_key : compra.factura_key;
+    const keyAnterior =
+      tipo === "guia"
+        ? compra.guia_key
+        : tipo === "factura"
+          ? compra.factura_key
+          : compra.pago_key;
     if (keyAnterior && keyAnterior !== key) {
       try {
         await deleteObject(keyAnterior);
@@ -94,6 +117,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
 
     const nombreSanitizado = sanitizarNombreArchivo(nombre_archivo);
+    const ahora = new Date();
     const dataUpdate =
       tipo === "guia"
         ? {
@@ -101,15 +125,23 @@ export async function POST(req: NextRequest, { params }: Params) {
             guia_nombre: nombreSanitizado,
             guia_mime: tipo_mime,
             guia_tamano: tamano,
-            guia_fecha_subida: new Date(),
+            guia_fecha_subida: ahora,
           }
-        : {
-            factura_key: key,
-            factura_nombre: nombreSanitizado,
-            factura_mime: tipo_mime,
-            factura_tamano: tamano,
-            factura_fecha_subida: new Date(),
-          };
+        : tipo === "factura"
+          ? {
+              factura_key: key,
+              factura_nombre: nombreSanitizado,
+              factura_mime: tipo_mime,
+              factura_tamano: tamano,
+              factura_fecha_subida: ahora,
+            }
+          : {
+              pago_key: key,
+              pago_nombre: nombreSanitizado,
+              pago_mime: tipo_mime,
+              pago_tamano: tamano,
+              pago_fecha_subida: ahora,
+            };
 
     const updated = await prisma.compra.update({
       where: { id: compraId },
@@ -124,7 +156,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         data: {
           ot_id: compra.ot_id,
           tipo_operacion: "ADJUNTO",
-          descripcion: `${tipo === "guia" ? "Guía" : "Factura"} subida en OC ${compra.numero_po}: ${nombreSanitizado}`,
+          descripcion: `${ETIQUETA[tipo]} subida en OC ${compra.numero_po}: ${nombreSanitizado}`,
           usuario,
         },
       });
@@ -153,9 +185,14 @@ export async function DELETE(req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Compra no encontrada" }, { status: 404 });
     }
 
-    const keyActual = tipo === "guia" ? compra.guia_key : compra.factura_key;
+    const keyActual =
+      tipo === "guia"
+        ? compra.guia_key
+        : tipo === "factura"
+          ? compra.factura_key
+          : compra.pago_key;
     if (!keyActual) {
-      return NextResponse.json({ error: `No hay ${tipo} adjunta` }, { status: 404 });
+      return NextResponse.json({ error: `No hay ${ETIQUETA[tipo]} adjunto` }, { status: 404 });
     }
 
     try {
@@ -182,13 +219,21 @@ export async function DELETE(req: NextRequest, { params }: Params) {
             guia_tamano: null,
             guia_fecha_subida: null,
           }
-        : {
-            factura_key: null,
-            factura_nombre: null,
-            factura_mime: null,
-            factura_tamano: null,
-            factura_fecha_subida: null,
-          };
+        : tipo === "factura"
+          ? {
+              factura_key: null,
+              factura_nombre: null,
+              factura_mime: null,
+              factura_tamano: null,
+              factura_fecha_subida: null,
+            }
+          : {
+              pago_key: null,
+              pago_nombre: null,
+              pago_mime: null,
+              pago_tamano: null,
+              pago_fecha_subida: null,
+            };
 
     const updated = await prisma.compra.update({
       where: { id: compraId },
