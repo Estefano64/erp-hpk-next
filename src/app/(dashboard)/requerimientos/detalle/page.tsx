@@ -690,13 +690,25 @@ function RequerimientosDetalleInner() {
       if (r.status_req === "ANULADO" || r.status_req === "DESAPROBADO") {
         return { req: r, detalle: null, error: `Status ${r.status_req}`, cantidadAConsumir: 0 };
       }
-      if (r.material_id == null) {
-        return { req: r, detalle: null, error: "Item free (sin material) — no aplica", cantidadAConsumir: 0 };
+      if (r.material_id == null && !r.np) {
+        return { req: r, detalle: null, error: "Item free (sin material ni NP) — no aplica", cantidadAConsumir: 0 };
       }
-      // Buscar detalle que coincida con el material_id del req
-      const det = oc.items.find((it) => it.material_id === r.material_id);
+      // Match por NP (Número de parte) — el usuario solo ve el NP en el
+      // sistema. Los material_id pueden no coincidir porque la OC abierta
+      // suele importarse con materiales nuevos. Como fallback aceptamos
+      // match por material_id (si ambos lados tienen el mismo). Normalizamos
+      // case + espacios para evitar discrepancias triviales.
+      const normalizaNp = (s: string | null | undefined) =>
+        (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+      const npReq = normalizaNp(r.np);
+      const det = oc.items.find((it) => {
+        const npDet = normalizaNp(it.np);
+        if (npReq && npDet && npReq === npDet) return true;
+        if (r.material_id != null && it.material_id === r.material_id) return true;
+        return false;
+      });
       if (!det) {
-        return { req: r, detalle: null, error: "Material no está en esta OC", cantidadAConsumir: 0 };
+        return { req: r, detalle: null, error: `NP "${r.np ?? "—"}" no figura en esta OC abierta`, cantidadAConsumir: 0 };
       }
       const pedido = Number(r.cantidad);
       const disponible = stockRestante.get(det.detalle_id) ?? 0;
@@ -850,7 +862,7 @@ function RequerimientosDetalleInner() {
         <div style={{ marginTop: 8 }}>
           <Text style={{ fontSize: 12 }}>
             {opts.campoLabel}{" "}
-            <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+
           </Text>
           <Input.TextArea
             rows={3}
@@ -1947,7 +1959,7 @@ function RequerimientosDetalleInner() {
             </Col>
           </Row>
           <Form.Item
-            label="Nombre OC (opcional)"
+            label="Nombre OC"
             name="nombre"
             tooltip="Si lo dejás vacío, se autogenera como 'OT {códigos} · {Proveedor}'."
           >
@@ -2103,7 +2115,7 @@ function RequerimientosDetalleInner() {
                     ]}
                   />
 
-                  <Form.Item label="Comentarios (opcional)" style={{ marginTop: 12, marginBottom: 0 }}>
+                  <Form.Item label="Comentarios" style={{ marginTop: 12, marginBottom: 0 }}>
                     <Input.TextArea
                       rows={2}
                       placeholder="Ej. Salida de stock para mantenimiento del 10/06"
@@ -2275,8 +2287,7 @@ function RequerimientosDetalleInner() {
               </Col>
               <Col span={12}>
                 <Text strong style={{ display: "block", marginBottom: 4 }}>
-                  Posición <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
-                </Text>
+                  Posición                </Text>
                 <Select
                   value={consumirPosicionId ?? undefined}
                   onChange={(v) => setConsumirPosicionId(v ?? null)}
@@ -2313,8 +2324,7 @@ function RequerimientosDetalleInner() {
               </Col>
               <Col span={12}>
                 <Text strong style={{ display: "block", marginBottom: 4 }}>
-                  Observación <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
-                </Text>
+                  Observación                </Text>
                 <Input
                   value={consumirObs}
                   onChange={(e) => setConsumirObs(e.target.value)}

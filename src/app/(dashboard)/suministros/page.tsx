@@ -617,7 +617,7 @@ function TabEntregas() {
             </Col>
           </Row>
 
-          <Form.Item name="ot_id" label="OT asociada (opcional)" extra="Aceptá un número de OT o buscá por cliente / descripción.">
+          <Form.Item name="ot_id" label="OT asociada" extra="Aceptá un número de OT o buscá por cliente / descripción.">
             <Select
               showSearch allowClear
               placeholder="Buscar OT por número, cliente o descripción..."

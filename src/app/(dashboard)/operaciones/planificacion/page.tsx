@@ -2070,7 +2070,7 @@ export default function PlanificacionPage() {
                       options={semanaOpts} optionFilterProp="label" />
                   </Col>
                   <Col xs={24}>
-                    <div style={lbl}>Comentario para el técnico (opcional)</div>
+                    <div style={lbl}>Comentario para el técnico</div>
                     <Input.TextArea size="small" autoSize={{ minRows: 1, maxRows: 3 }} maxLength={500}
                       value={d.comentario ?? ""} onChange={(e) => updateDraft(d.id, { comentario: e.target.value })}
                       placeholder="Ej: revisar fuga, usar repuesto X…" />

@@ -950,8 +950,7 @@ export default function EvaluacionPage() {
                 {modalAccion === "solicitar" ? "Comentarios para el revisor"
                   : modalAccion === "rechazar" ? "Motivo del rechazo"
                   : modalAccion === "reabrir" ? "Motivo de la reapertura"
-                  : "Comentarios"}{" "}
-                <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+                  : "Comentarios"}
               </span>
             }
             name="comentarios"

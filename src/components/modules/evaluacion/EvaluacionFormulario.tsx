@@ -1693,7 +1693,7 @@ export default function EvaluacionFormulario({
                   </div>
                   {/* Detalle libre - retrocompatibilidad con datos previos */}
                   <div style={{ marginTop: 12 }}>
-                    <Text strong style={{ fontSize: 12 }}>Detalle adicional (opcional)</Text>
+                    <Text strong style={{ fontSize: 12 }}>Detalle adicional</Text>
                     <TextArea
                       rows={2}
                       placeholder="Medidas y condicion..."
@@ -1740,7 +1740,7 @@ export default function EvaluacionFormulario({
                   </div>
                   {/* Detalle libre - retrocompatibilidad */}
                   <div style={{ marginTop: 12 }}>
-                    <Text strong style={{ fontSize: 12 }}>Detalle adicional (opcional)</Text>
+                    <Text strong style={{ fontSize: 12 }}>Detalle adicional</Text>
                     <TextArea
                       rows={2}
                       placeholder="Medidas y condicion..."

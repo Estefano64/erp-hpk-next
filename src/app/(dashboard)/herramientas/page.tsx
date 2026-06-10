@@ -693,7 +693,7 @@ function TabPrestamos() {
               )}
             </Col>
           </Row>
-          <Form.Item name="ot_id" label="OT asociada (opcional)" extra="Buscá por número de OT, cliente o descripción.">
+          <Form.Item name="ot_id" label="OT asociada" extra="Buscá por número de OT, cliente o descripción.">
             <Select
               showSearch allowClear
               placeholder="Buscar OT por número, cliente o descripción..."

@@ -408,7 +408,7 @@ export default function FacturacionOTPage() {
                   </Form.Item>
                 </Col>
               </Row>
-              <Form.Item name="monto" label="Monto facturado (opcional)">
+              <Form.Item name="monto" label="Monto facturado">
                 <InputNumber style={{ width: "100%" }} min={0} step={0.01} precision={2} />
               </Form.Item>
               <Form.Item name="observaciones" label="Observaciones">

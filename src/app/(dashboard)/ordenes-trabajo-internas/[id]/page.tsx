@@ -825,7 +825,7 @@ function DetalleTab({ ot, editing, form, catalogos }: {
             </Form.Item>
           </Col>
           <Col xs={24} md={16}>
-            <Form.Item name="equipo_codigo" label="Equipo (opcional)" tooltip="Si la OT es para un equipo específico del taller, seleccionalo." style={{ marginBottom: 0 }}>
+            <Form.Item name="equipo_codigo" label="Equipo" tooltip="Si la OT es para un equipo específico del taller, seleccionalo." style={{ marginBottom: 0 }}>
               <Select
                 placeholder="Buscar equipo (código o descripción)"
                 showSearch allowClear optionFilterProp="label"

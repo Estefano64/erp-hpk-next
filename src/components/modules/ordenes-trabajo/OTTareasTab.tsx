@@ -839,7 +839,7 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
                   />
                 </Col>
                 <Col xs={24} md={18}>
-                  <div style={{ fontSize: 11, color: "#888", marginBottom: 2 }}>Comentario para el técnico (opcional)</div>
+                  <div style={{ fontSize: 11, color: "#888", marginBottom: 2 }}>Comentario para el técnico</div>
                   <Input.TextArea
                     size="small"
                     autoSize={{ minRows: 1, maxRows: 3 }}

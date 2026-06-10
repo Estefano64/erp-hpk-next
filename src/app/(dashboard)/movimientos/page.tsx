@@ -1039,7 +1039,7 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
               <Row gutter={12}>
                 <Col xs={24} sm={16}>
                   <Text strong style={{ fontSize: 12 }}>
-                    Asignar zona a todos los items <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+                    Asignar zona a todos los items
                   </Text>
                   <Space.Compact style={{ width: "100%" }}>
                     <Select
@@ -1078,7 +1078,7 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                 </Col>
                 <Col xs={24} sm={8}>
                   <Text strong style={{ fontSize: 12 }}>
-                    Ubicación general (legacy) <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
+                    Ubicación general (legacy)
                   </Text>
                   <Select
                     placeholder="Ubicación a nivel OT"
@@ -1093,7 +1093,7 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                 </Col>
               </Row>
 
-              <Divider style={{ margin: "8px 0", fontSize: 11, color: "#666" }}>Archivos adjuntos (opcional)</Divider>
+              <Divider style={{ margin: "8px 0", fontSize: 11, color: "#666" }}>Archivos adjuntos</Divider>
 
               <Row gutter={12}>
                 <Col xs={24} sm={12}>

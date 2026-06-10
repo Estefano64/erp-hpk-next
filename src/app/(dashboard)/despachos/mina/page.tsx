@@ -327,10 +327,10 @@ export default function DespachoMinaPage() {
                   </Form.Item>
                 </Col>
               </Row>
-              <Form.Item name="nro_informe_entrega" label="N° Informe de entrega (opcional)">
+              <Form.Item name="nro_informe_entrega" label="N° Informe de entrega">
                 <Input placeholder="Si corresponde" maxLength={100} />
               </Form.Item>
-              <Form.Item label="Adjunto de la guía (opcional)">
+              <Form.Item label="Adjunto de la guía">
                 <Upload
                   beforeUpload={() => false}
                   fileList={archivoGuia}

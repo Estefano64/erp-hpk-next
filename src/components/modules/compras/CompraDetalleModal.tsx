@@ -243,8 +243,7 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
       content: (
         <div style={{ marginTop: 8 }}>
           <Text style={{ fontSize: 12 }}>
-            Comentario <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
-          </Text>
+            Comentario          </Text>
           <Text type="secondary" style={{ fontSize: 11, display: "block" }}>
             La OC pasará a "En Proceso" y se registrará tu usuario como aprobador.
           </Text>

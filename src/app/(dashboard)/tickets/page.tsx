@@ -393,7 +393,7 @@ export default function TicketsPage() {
                 placeholder="Explicá el bug, mejora o consulta. ¿Qué pasó? ¿Qué esperabas que pase?"
               />
             </Form.Item>
-            <Form.Item label="Captura (opcional) — pegá con Ctrl+V">
+            <Form.Item label="Captura — pegá con Ctrl+V">
               {capturaPreview ? (
                 <div style={{ position: "relative", display: "inline-block", maxWidth: "100%" }}>
                   <img
