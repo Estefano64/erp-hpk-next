@@ -1,7 +1,8 @@
 // POST /api/compras/[id]/consumir-almacen-abierto
 //
-// Descuenta stock de una OC marcada como "almacén abierto" (ej. PO Quellaveco)
-// para cubrir uno o varios requerimientos sin generar una OC nueva.
+// Descuenta stock de una OC marcada como "almacén abierto" (ej. PO 4504281587
+// emitida a BC Bering) para cubrir uno o varios requerimientos sin generar
+// una OC nueva. La trazabilidad se hace por NP (Número de parte) del material.
 //
 // Flujo:
 //   1. Valida que la Compra tenga es_almacen_abierto = true y no haya expirado.
@@ -99,12 +100,15 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 
       for (const it of parsed.data.items) {
         try {
-          // Detalle de la Compra
+          // Detalle de la Compra. Incluimos el `np` del material para
+          // poder dejarlo en la observación del req — la trazabilidad del
+          // item sacado del almacén abierto se hace por NP.
           const detalle = await tx.compraDetalle.findUnique({
             where: { id: it.detalle_compra_id },
             select: {
               id: true, compra_id: true, material_id: true,
               cantidad: true, cantidad_recibida: true, precio_unitario: true,
+              material: { select: { codigo: true, np: true } },
             },
           });
           if (!detalle || detalle.compra_id !== compraId) {
@@ -160,8 +164,14 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 
           // 2. Marcar el req como CONSUMIDO_OC_ABIERTA. Usamos el precio
           //    congelado de la OC abierta para el req (sobreescribe el precio
-          //    libre que pudiera tener antes).
+          //    libre que pudiera tener antes). En la observación incluimos
+          //    el NP (Número de parte) del item sacado para trazabilidad.
           const obsPrev = rep.observaciones ? `${rep.observaciones}\n` : "";
+          const npStr = detalle.material?.np
+            ? ` · NP ${detalle.material.np}`
+            : detalle.material?.codigo
+              ? ` · cod ${detalle.material.codigo}`
+              : "";
           await tx.oTRepuesto.update({
             where: { id: rep.id },
             data: {
@@ -173,7 +183,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
               precio_unitario: detalle.precio_unitario,
               moneda: compra.moneda_codigo ?? "USD",
               fecha_entrega_real: new Date(),
-              observaciones: `${obsPrev}Consumido de OC abierta ${compra.numero_po} el ${new Date().toLocaleDateString("es-PE")} — ${cant} unid. (${usuario})${parsed.data.comentarios ? ` · ${parsed.data.comentarios}` : ""}`,
+              observaciones: `${obsPrev}Consumido de OC abierta ${compra.numero_po}${npStr} el ${new Date().toLocaleDateString("es-PE")} — ${cant} unid. (${usuario})${parsed.data.comentarios ? ` · ${parsed.data.comentarios}` : ""}`,
             },
           });
 

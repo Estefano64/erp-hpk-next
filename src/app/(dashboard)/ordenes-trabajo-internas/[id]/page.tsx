@@ -5,13 +5,13 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   Alert, Button, Card, Tag, Space, Spin, Tabs, Row, Col, Form, Input, Select,
-  DatePicker, App, Typography, Tooltip, Modal,
+  DatePicker, App, Typography, Tooltip, Modal, Table, Empty,
 } from "antd";
+import type { FormInstance } from "antd";
 import { useEditLock } from "@/lib/useEditLock";
 import { useUnsavedChangesWarning } from "@/lib/unsaved-changes";
 import {
   ArrowLeftOutlined, EditOutlined, SaveOutlined, CloseOutlined, ToolOutlined,
-  ThunderboltOutlined,
 } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
@@ -28,7 +28,7 @@ const { TextArea } = Input;
 
 interface CatalogOption { codigo: string; nombre: string }
 interface EquipoOption { codigo: string; descripcion: string }
-interface EstrategiaOption { estrategia_id: number; codigo: string; descripcion: string }
+interface EstrategiaOption { estrategia_id: number; codigo: string; descripcion: string; equipo_codigo: string | null }
 interface TrabajadorOpt { nombre: string; area: string; puesto: string }
 
 interface OTInternaDetalle {
@@ -41,7 +41,6 @@ interface OTInternaDetalle {
   equipo_codigo: string | null;
   area_taller: string | null;
   semana_revision: string | null;
-  task_list: string | null;
   estrategia_id: number | null;
   asignado_a: string | null;
   comentarios: string | null;
@@ -82,7 +81,6 @@ interface EditValues {
   prioridad_atencion_codigo?: string;
   semana_revision?: string;
   estrategia_id?: number;
-  task_list?: string;
   user_status_codigo?: string;
   ot_status_codigo?: string;
   recursos_status_codigo?: string;
@@ -269,7 +267,6 @@ export default function OTInternaDetallePage() {
       prioridad_atencion_codigo: ot.prioridad_atencion?.codigo,
       semana_revision: ot.semana_revision ?? undefined,
       estrategia_id: ot.estrategia?.estrategia_id,
-      task_list: ot.task_list ?? undefined,
       user_status_codigo: ot.user_status?.codigo,
       ot_status_codigo: ot.ot_status?.codigo,
       recursos_status_codigo: ot.recursos_status?.codigo,
@@ -614,6 +611,34 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+// Select de Estrategia filtrado por el equipo elegido en el form. El user
+// quiere ver solo los PM (estrategias) del equipo de la OT. Si no hay equipo
+// seleccionado, dejamos el select vacío con placeholder explicativo.
+function EstrategiaSelect({
+  form, estrategias,
+}: {
+  form: FormInstance<EditValues>;
+  estrategias: EstrategiaOption[];
+}) {
+  const equipoCodigo = Form.useWatch("equipo_codigo", form);
+  const filtradas = !equipoCodigo
+    ? []
+    : estrategias.filter((e) => e.equipo_codigo === equipoCodigo);
+  return (
+    <Form.Item name="estrategia_id" label="Estrategia" style={{ marginBottom: 0 }}>
+      <Select
+        allowClear showSearch optionFilterProp="label"
+        placeholder={!equipoCodigo
+          ? "Elegí un equipo primero"
+          : filtradas.length === 0
+            ? "Este equipo no tiene estrategias cargadas"
+            : "Seleccionar PM"}
+        options={filtradas.map((e) => ({ value: e.estrategia_id, label: `${e.codigo} — ${e.descripcion}` }))}
+      />
+    </Form.Item>
+  );
+}
+
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
     <Text type="secondary" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.3, display: "block", marginBottom: 4 }}>
@@ -720,14 +745,6 @@ function DetalleTab({ ot, editing, form, catalogos }: {
               <Field
                 label="Estrategia"
                 value={ot.estrategia ? `${ot.estrategia.codigo}${ot.estrategia.descripcion ? ` — ${ot.estrategia.descripcion}` : ""}` : null}
-              />
-            </Col>
-            <Col xs={24} md={12}>
-              <Field
-                label="Task list"
-                value={ot.task_list
-                  ? <span style={{ fontSize: 13 }}>{ot.task_list.length > 100 ? `${ot.task_list.slice(0, 100)}…` : ot.task_list}</span>
-                  : null}
               />
             </Col>
           </Row>
@@ -866,12 +883,11 @@ function DetalleTab({ ot, editing, form, catalogos }: {
             </Form.Item>
           </Col>
           <Col xs={24} md={12}>
-            <Form.Item name="estrategia_id" label="Estrategia" style={{ marginBottom: 0 }}>
-              <Select
-                allowClear showSearch optionFilterProp="label"
-                options={catalogos.estrategias.map((e) => ({ value: e.estrategia_id, label: `${e.codigo} — ${e.descripcion}` }))}
-              />
-            </Form.Item>
+            {/* Estrategia filtrada por el equipo seleccionado. Si el form
+                aún no tiene equipo, mostramos vacío con placeholder.
+                Form.useWatch hace que la lista se reactivize cuando el
+                user cambia de equipo. */}
+            <EstrategiaSelect form={form} estrategias={catalogos.estrategias} />
           </Col>
         </Row>
       </Card>
@@ -922,161 +938,115 @@ function DetalleTab({ ot, editing, form, catalogos }: {
 // ───────────────────────────────────────────────────────────────────────────
 // Tab Tareas
 //
-// Muestra el campo `task_list` (texto libre) + botón "Aplicar Task List"
-// que pre-pobla el textarea con las descripciones del task list del catálogo
-// (filtradas por equipo + estrategia PM con cascada acumulativa).
+// Cambio (pedido del user): se eliminó el textarea libre `task_list` del
+// formulario. Ahora el tab Tareas muestra DIRECTAMENTE las tareas del
+// catálogo de TaskList correspondientes al equipo + estrategia PM de la OT
+// (con cascada acumulativa PM1 ⊂ PM2 ⊂ PM3 ⊂ PM4), igual que en OT externa.
 //
-// El botón solo aparece cuando estás en modo edición Y la OT tiene equipo +
-// estrategia PM1/PM2/PM3/PM4. El click consulta el endpoint preview-tasklist,
-// y si el textarea ya tiene contenido pregunta vía modal qué hacer (reemplazar /
-// agregar al final / cancelar).
+// El listado es read-only acá — para materializar los items como
+// requerimientos, se usa el botón "Aplicar Task List" del tab Requerimientos
+// (que invoca /requerimientos/aplicar-tasklist).
 // ───────────────────────────────────────────────────────────────────────────
-function TareasTab({ ot, editing, form }: {
+function TareasTab({ ot }: {
   ot: OTInternaDetalle;
   editing: boolean;
   form: ReturnType<typeof Form.useForm<EditValues>>[0];
 }) {
-  const { message, modal } = App.useApp();
-  const [aplicando, setAplicando] = useState(false);
+  const { message } = App.useApp();
+  const [tareas, setTareas] = useState<Array<{ actividad_codigo: string; descripcion: string }>>([]);
+  const [cascada, setCascada] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  // Habilitar el botón solo si hay equipo + estrategia PMx en la OT.
   const estrCodigo = ot.estrategia?.codigo;
   const esPM = !!estrCodigo && /^PM[1-4]$/.test(estrCodigo);
-  const puedeAplicar = !!ot.equipo_codigo && esPM;
+  const puedeListar = !!ot.equipo_codigo && esPM;
 
-  async function fetchPreview(): Promise<{ task_list_text: string; cascada: string[] } | null> {
-    try {
-      const res = await fetch(`/api/ordenes-trabajo-internas/${ot.id}/tareas/preview-tasklist`);
-      const j = await res.json();
-      if (!res.ok) {
-        message.error(j.error ?? "Error al consultar task list");
-        return null;
-      }
-      if (!j.task_list_text || j.task_list_text.length === 0) {
-        message.info(`No hay tareas en el catálogo para equipo ${j.equipo_codigo} con cascada ${j.cascada.join("+")}.`);
-        return null;
-      }
-      return j;
-    } catch (e) {
-      message.error(e instanceof Error ? e.message : "Error");
-      return null;
+  useEffect(() => {
+    if (!puedeListar) {
+      setTareas([]);
+      setCascada([]);
+      return;
     }
-  }
+    let cancelado = false;
+    setLoading(true);
+    fetch(`/api/ordenes-trabajo-internas/${ot.id}/tareas/preview-tasklist`)
+      .then(async (r) => {
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}));
+          throw new Error(j.error ?? "Error al cargar tareas");
+        }
+        return r.json();
+      })
+      .then((j) => {
+        if (cancelado) return;
+        setTareas(j.tareas ?? []);
+        setCascada(j.cascada ?? []);
+      })
+      .catch((e) => { if (!cancelado) message.error(e instanceof Error ? e.message : "Error"); })
+      .finally(() => { if (!cancelado) setLoading(false); });
+    return () => { cancelado = true; };
+  }, [ot.id, puedeListar, ot.equipo_codigo, estrCodigo, message]);
 
-  function aplicarAlTextarea(nuevoTexto: string, modo: "replace" | "append") {
-    const actual = (form.getFieldValue("task_list") as string | undefined) ?? "";
-    let resultado: string;
-    if (modo === "replace" || actual.trim() === "") {
-      resultado = nuevoTexto;
-    } else {
-      resultado = `${actual.replace(/\s+$/, "")}\n${nuevoTexto}`;
-    }
-    form.setFieldValue("task_list", resultado);
-    message.success(`Task list aplicado (${modo === "replace" ? "reemplazado" : "agregado al final"}).`);
-  }
-
-  async function handleAplicar() {
-    if (!puedeAplicar) return;
-    setAplicando(true);
-    try {
-      const data = await fetchPreview();
-      if (!data) return;
-
-      const actual = (form.getFieldValue("task_list") as string | undefined) ?? "";
-      // Si el textarea está vacío, aplicar directamente sin modal.
-      if (actual.trim() === "") {
-        aplicarAlTextarea(data.task_list_text, "replace");
-        return;
-      }
-
-      // Hay contenido — modal con 3 opciones (Reemplazar / Agregar al final / Cancelar).
-      modal.confirm({
-        title: `Aplicar Task List ${estrCodigo}`,
-        content: (
-          <div>
-            <p style={{ marginBottom: 8 }}>
-              El campo Task List ya tiene contenido. ¿Cómo aplicamos las{" "}
-              <b>{data.task_list_text.split("\n").length} tarea(s)</b> del task list
-              ({data.cascada.join(" + ")})?
-            </p>
-            <p style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 0 }}>
-              <b>Reemplazar</b>: borra lo que hay y pone solo el task list nuevo.<br />
-              <b>Agregar</b>: deja el contenido actual y agrega las tareas del task list al final.
-            </p>
-          </div>
-        ),
-        okText: "Reemplazar",
-        cancelText: "Cancelar",
-        okButtonProps: { danger: true },
-        footer: (_, { OkBtn, CancelBtn }) => (
-          <Space>
-            <CancelBtn />
-            <Button onClick={() => {
-              aplicarAlTextarea(data.task_list_text, "append");
-              Modal.destroyAll();
-            }}>
-              Agregar al final
-            </Button>
-            <OkBtn />
-          </Space>
-        ),
-        onOk: () => aplicarAlTextarea(data.task_list_text, "replace"),
-      });
-    } finally {
-      setAplicando(false);
-    }
-  }
-
-  // Vista NO edición: solo muestra el task_list actual.
-  if (!editing) {
+  if (!puedeListar) {
     return (
       <Card size="small">
-        <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 8 }}>
-          Lista de tareas / actividades a realizar en esta OT.
-        </Text>
-        <Paragraph style={{ whiteSpace: "pre-wrap", minHeight: 80, background: brand.bgPage, padding: 12, borderRadius: 4 }}>
-          {ot.task_list || "Sin tareas definidas. Hacé click en Editar para agregar."}
-        </Paragraph>
+        <Empty
+          description={
+            <div>
+              <div style={{ fontSize: 13, marginBottom: 4 }}>Sin tareas para mostrar</div>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                Asigná un <b>equipo</b> y una <b>estrategia PM</b> (PM1/PM2/PM3/PM4) en el tab Detalle
+                para ver las tareas del task list correspondiente.
+              </Text>
+            </div>
+          }
+        />
       </Card>
     );
   }
 
-  // Vista EDICIÓN: textarea + botón "Aplicar Task List".
+  // Vista única (sin edit mode): tabla con las tareas del PM seleccionado.
   return (
     <Card size="small">
-      <Form form={form} layout="vertical">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8, gap: 12, flexWrap: "wrap" }}>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            Una tarea por línea. Podés escribirlas a mano o aplicar el task list del equipo + estrategia PM.
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <Text strong style={{ fontSize: 13 }}>
+            Tareas — equipo <Tag style={{ margin: 0 }}>{ot.equipo_codigo}</Tag>{" "}
+            estrategia <Tag color="blue" style={{ margin: 0 }}>{estrCodigo}</Tag>
           </Text>
-          <Tooltip
-            title={
-              !ot.equipo_codigo
-                ? "La OT no tiene equipo asignado — el task list se filtra por equipo."
-                : !esPM
-                  ? `La estrategia "${estrCodigo ?? "(sin asignar)"}" no es PM1/PM2/PM3/PM4. Asigna una en el tab Detalle.`
-                  : `Trae las tareas del catálogo del equipo ${ot.equipo_codigo} con cascada ${estrCodigo}`
-            }
-          >
-            <Button
-              icon={<ThunderboltOutlined />}
-              onClick={handleAplicar}
-              loading={aplicando}
-              disabled={!puedeAplicar}
-              style={{
-                background: puedeAplicar ? brand.success ?? "#52c41a" : undefined,
-                borderColor: puedeAplicar ? brand.success ?? "#52c41a" : undefined,
-                color: puedeAplicar ? "#fff" : undefined,
-              }}
-            >
-              Aplicar Task List{esPM ? ` (${estrCodigo})` : ""}
-            </Button>
-          </Tooltip>
+          {cascada.length > 1 && (
+            <div style={{ fontSize: 11, color: brand.textSecondary, marginTop: 2 }}>
+              Incluye cascada acumulativa: {cascada.join(" + ")}
+            </div>
+          )}
         </div>
-        <Form.Item name="task_list" label="Task list" style={{ marginBottom: 0 }}>
-          <TextArea rows={12} maxLength={5000} placeholder={"[PM1] Limpieza de tanque hidráulico...\n[PM1] Cambio de filtros...\n[PM2] Inspección de mangueras..."} />
-        </Form.Item>
-      </Form>
+        <Text type="secondary" style={{ fontSize: 11 }}>
+          Para generar los requerimientos de estas tareas, usá el botón <b>Aplicar Task List</b> en el tab Requerimientos.
+        </Text>
+      </div>
+      <Table
+        size="small"
+        loading={loading}
+        rowKey={(_r, idx) => String(idx)}
+        dataSource={tareas}
+        pagination={false}
+        scroll={{ x: 700 }}
+        locale={{ emptyText: "No hay tareas en el catálogo para este equipo + PM" }}
+        columns={[
+          {
+            title: "#", key: "idx", width: 50, align: "right",
+            render: (_v, _r, i) => <Text type="secondary">{i + 1}</Text>,
+          },
+          {
+            title: "PM", dataIndex: "actividad_codigo", key: "pm", width: 70,
+            render: (v: string) => <Tag color="blue" style={{ margin: 0, fontFamily: "monospace" }}>{v}</Tag>,
+          },
+          {
+            title: "Tarea", dataIndex: "descripcion", key: "descripcion",
+            render: (v: string) => <span style={{ fontSize: 13 }}>{v}</span>,
+          },
+        ]}
+      />
     </Card>
   );
 }

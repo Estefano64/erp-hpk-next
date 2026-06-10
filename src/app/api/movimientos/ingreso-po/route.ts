@@ -315,14 +315,81 @@ export async function POST(req: NextRequest) {
       await tx.compra.update({ where: { id: d.po_id }, data: updateCompra });
 
       // Reflejar fechas/factura en los requerimientos vinculados.
-      await tx.oTRepuesto.updateMany({
-        where: { po_id: d.po_id },
-        data: {
-          fecha_entrega_real: new Date(),
-          ...(d.nro_guia ? { nro_guia: d.nro_guia } : {}),
-          ...(d.nro_factura ? { nro_factura_proveedor: d.nro_factura } : {}),
-        },
+      //
+      // BUG anterior (corregido): el updateMany seteaba `fecha_entrega_real`
+      // en TODOS los reqs de la OC, incluso en los que no llegaron en esta
+      // recepción parcial — dejaba items sin entregar marcados como entregados
+      // en la grilla. Ahora solo setea `fecha_entrega_real` para items 100%
+      // recibidos (MAC: material con todos sus CompraDetalle completos / FREE:
+      // OTRepuesto.cantidad_recibida = cantidad). Para items aún parciales
+      // o sin recibir solo reflejamos nro_guia / nro_factura (metadata útil).
+      const ahora = new Date();
+
+      // 1. Calcular qué materiales MAC quedaron al 100% en la OC.
+      const detallesParaCheck = await tx.compraDetalle.findMany({
+        where: { compra_id: d.po_id },
+        select: { material_id: true, cantidad: true, cantidad_recibida: true },
       });
+      const materialesFullRec = new Set<number>();
+      // Si un material está repartido en varios detalles, lo damos como completo
+      // solo cuando TODOS los detalles del material están completos.
+      const byMat = new Map<number, { ped: number; rec: number }>();
+      for (const x of detallesParaCheck) {
+        const cur = byMat.get(x.material_id) ?? { ped: 0, rec: 0 };
+        cur.ped += Number(x.cantidad);
+        cur.rec += Number(x.cantidad_recibida ?? 0);
+        byMat.set(x.material_id, cur);
+      }
+      for (const [matId, sums] of byMat) {
+        if (sums.rec >= sums.ped - 0.0001) materialesFullRec.add(matId);
+      }
+
+      // 2. Free items: cada OTRepuesto trae su propia cantidad_recibida.
+      const reqsFreeOC = await tx.oTRepuesto.findMany({
+        where: { po_id: d.po_id, material_id: null },
+        select: { id: true, cantidad: true, cantidad_recibida: true },
+      });
+      const freeFullIds = reqsFreeOC
+        .filter((r) => Number(r.cantidad_recibida ?? 0) >= Number(r.cantidad) - 0.0001)
+        .map((r) => r.id);
+
+      // 3. Items 100% recibidos → set fecha_entrega_real + metadata.
+      const dataConFecha: Prisma.OTRepuestoUncheckedUpdateManyInput = {
+        fecha_entrega_real: ahora,
+        ...(d.nro_guia ? { nro_guia: d.nro_guia } : {}),
+        ...(d.nro_factura ? { nro_factura_proveedor: d.nro_factura } : {}),
+      };
+      if (materialesFullRec.size > 0) {
+        await tx.oTRepuesto.updateMany({
+          where: {
+            po_id: d.po_id,
+            material_id: { in: Array.from(materialesFullRec) },
+          },
+          data: dataConFecha,
+        });
+      }
+      if (freeFullIds.length > 0) {
+        await tx.oTRepuesto.updateMany({
+          where: { id: { in: freeFullIds } },
+          data: dataConFecha,
+        });
+      }
+
+      // 4. Items parciales / no llegados → solo metadata (sin fecha de entrega).
+      if (d.nro_guia || d.nro_factura) {
+        await tx.oTRepuesto.updateMany({
+          where: {
+            po_id: d.po_id,
+            fecha_entrega_real: null,
+            // El where excluye implícitamente los recién actualizados arriba
+            // (fecha_entrega_real ya no es null para ellos en esta tx).
+          },
+          data: {
+            ...(d.nro_guia ? { nro_guia: d.nro_guia } : {}),
+            ...(d.nro_factura ? { nro_factura_proveedor: d.nro_factura } : {}),
+          },
+        });
+      }
 
       // Actualizar las OTs afectadas por esta PO: ubicación física + estado
       // de recursos. La OC puede agrupar items de OT externas + internas;

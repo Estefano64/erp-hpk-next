@@ -68,7 +68,11 @@ export async function PUT(req: NextRequest, { params }: Params) {
     const data: any = {};
     const editable = [
       "planta_codigo", "equipo_codigo", "area_taller", "tipo_ot_interna_codigo", "descripcion",
-      "prioridad_atencion_codigo", "semana_revision", "estrategia_id", "task_list",
+      // task_list removido (2026-06): el campo libre fue reemplazado por la
+      // vista tabla en el tab Tareas que lee directamente del catálogo
+      // TaskList según equipo + estrategia PM. La columna sigue en BD por
+      // compat con datos legacy pero ya no se acepta como input.
+      "prioridad_atencion_codigo", "semana_revision", "estrategia_id",
       "user_status_codigo", "ot_status_codigo", "recursos_status_codigo",
       "asignado_a", "comentarios", "solicitud_mantenimiento",
     ];

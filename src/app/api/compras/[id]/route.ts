@@ -50,6 +50,14 @@ export async function GET(_req: NextRequest, { params }: Params) {
             adjuntos: { select: { id: true, nombre_archivo: true, r2_key: true, tamano: true } },
           },
         },
+        // Adjuntos múltiples de la OC (guías, facturas, comprobantes de pago).
+        adjuntos: {
+          select: {
+            id: true, tipo: true, r2_key: true, nombre_archivo: true,
+            tipo_mime: true, tamano: true, fecha_subida: true,
+          },
+          orderBy: [{ tipo: "asc" }, { fecha_subida: "asc" }],
+        },
       },
     });
     if (!r) return NextResponse.json({ error: "Compra no encontrada" }, { status: 404 });
@@ -90,6 +98,9 @@ export async function GET(_req: NextRequest, { params }: Params) {
       factura_key: r.factura_key,
       factura_nombre: r.factura_nombre,
       factura_fecha_subida: r.factura_fecha_subida,
+      pago_key: r.pago_key,
+      pago_nombre: r.pago_nombre,
+      adjuntos: r.adjuntos,
       observaciones: r.observaciones,
       usuario_solicita: r.usuario_solicita,
       usuario_aprueba: r.usuario_aprueba,
