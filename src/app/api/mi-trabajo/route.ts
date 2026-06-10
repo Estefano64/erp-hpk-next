@@ -157,6 +157,24 @@ export async function GET(req: Request) {
       miEstadoPorTarea.set(id, estadoTecnico(misSesiones.filter((s) => s.planificacion_ot_id === id)));
     }
 
+    // Hoja de evaluación APROBADA de la OT de cada tarea (si aplica): el técnico
+    // puede VERLA en solo lectura desde su panel. Solo se exponen APROBADAS —
+    // borradores / pendientes / rechazadas no. Tareas sin OT no aplican.
+    const otIdsEval = [...new Set(
+      [...tareasHoy, ...tareasSemana].map((t) => t.ot_id).filter((v): v is number => v != null),
+    )];
+    const evalsAprobadas = otIdsEval.length
+      ? await prisma.evaluacionTecnica.findMany({
+          where: { ot_id: { in: otIdsEval }, estado: "APROBADA" },
+          select: { id: true, ot_id: true },
+          orderBy: { id: "desc" }, // si hubiera más de una, gana la más reciente
+        })
+      : [];
+    const evalPorOt = new Map<number, number>();
+    for (const e of evalsAprobadas) {
+      if (!evalPorOt.has(e.ot_id)) evalPorOt.set(e.ot_id, e.id);
+    }
+
     // Mapa código de equipo → nombre, para mostrar el NOMBRE de la máquina (no el
     // código) en el dashboard del técnico.
     const equiposCat = await prisma.equipo.findMany({ select: { codigo: true, descripcion: true } });
@@ -166,11 +184,12 @@ export async function GET(req: Request) {
       return maq.split("|").map((c) => nombreEquipo.get(c.trim()) ?? c.trim()).filter(Boolean).join(" | ");
     };
 
-    const conMiEstado = <T extends { id: number; maquina?: string | null }>(arr: T[]) =>
+    const conMiEstado = <T extends { id: number; maquina?: string | null; ot_id?: number | null }>(arr: T[]) =>
       arr.map((t) => ({
         ...t,
         miEstado: miEstadoPorTarea.get(t.id) ?? "sin_empezar" as EstadoTecnico,
         maquina_nombre: maquinaNombre(t.maquina),
+        evaluacion_aprobada_id: t.ot_id != null ? (evalPorOt.get(t.ot_id) ?? null) : null,
       }));
 
     // Horas reales del técnico logueado en un conjunto de tareas (sus sesiones).

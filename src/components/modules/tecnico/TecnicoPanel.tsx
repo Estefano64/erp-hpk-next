@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Typography, Card, Row, Col, Table, Tag, Button, Statistic, Empty, Space, App, Tooltip, Segmented, Modal, Input, Upload, Radio,
+  Typography, Card, Row, Col, Table, Tag, Button, Statistic, Empty, Space, App, Tooltip, Segmented, Modal, Input, Upload, Radio, Spin,
 } from "antd";
 import {
   PlayCircleOutlined, PauseCircleOutlined, CheckCircleOutlined,
   ClockCircleOutlined, ReloadOutlined, FireOutlined, LineChartOutlined,
   LeftOutlined, RightOutlined, DownOutlined, UpOutlined,
-  PaperClipOutlined, DeleteOutlined,
+  PaperClipOutlined, DeleteOutlined, FileTextOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { type Dayjs } from "dayjs";
@@ -17,6 +17,11 @@ import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import { uploadToR2 } from "@/lib/r2-client";
 import { MOTIVOS_PAUSA, MOTIVO_CAMBIO_TAREA } from "@/lib/motivos-pausa";
+import dynamic from "next/dynamic";
+
+// Formulario de evaluación en diferido: es un componente grande y solo se usa
+// si el técnico abre "Ver hoja de evaluación" (solo lectura).
+const EvaluacionFormulario = dynamic(() => import("@/components/modules/evaluacion/EvaluacionFormulario"), { ssr: false });
 import TareaAdjuntosLista from "@/components/TareaAdjuntosLista";
 
 // Tipos de archivo aceptados al pausar/finalizar (fotos + documentos).
@@ -58,6 +63,9 @@ interface TareaPlan {
   comentario: string | null;      // comentario del planner → técnico
   observaciones: string | null;   // observaciones de ejecución del técnico
   orden_trabajo: OTLite | null;
+  // Hoja de evaluación APROBADA de la OT (si aplica): el técnico puede verla
+  // en solo lectura. null = sin OT, sin hoja, o la hoja no está aprobada.
+  evaluacion_aprobada_id?: number | null;
   // Estado del técnico logueado en esta tarea (derivado de sus sesiones).
   // Independiente del estado global de la tarea (que es multi-técnico).
   miEstado?: "sin_empezar" | "en_proceso" | "pausado" | "realizado";
@@ -260,6 +268,46 @@ export default function TecnicoPanel() {
       return;
     }
     accion(r.id, "iniciar");
+  }
+
+  // ── Ver hoja de evaluación de la OT (solo lectura, solo APROBADAS) ──
+  interface EvalView {
+    id: number;
+    modelo_evaluacion: string;
+    sistema_medicion: string;
+    datos_formulario: Record<string, unknown>;
+    fecha_evaluacion: string | null;
+    evaluado_por: string | null;
+    supervisor: string | null;
+    resultado_general: string | null;
+    recomendaciones_general: string | null;
+    estado: string;
+    orden_trabajo?: { ot: number | null; np: string | null; descripcion: string | null; cod_rep_flota: string | null } | null;
+  }
+  const [evalOpen, setEvalOpen] = useState(false);
+  const [evalLoading, setEvalLoading] = useState(false);
+  const [evalData, setEvalData] = useState<EvalView | null>(null);
+  async function abrirEvaluacion(evaluacionId: number) {
+    setEvalOpen(true);
+    setEvalLoading(true);
+    setEvalData(null);
+    try {
+      const res = await fetch(`/api/evaluaciones/${evaluacionId}`);
+      const j = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(j?.error ?? "Error al cargar la evaluación");
+      // Defensa: el panel solo ofrece hojas aprobadas, pero igual validamos acá.
+      if (j?.data?.estado !== "APROBADA") {
+        message.info("La hoja de evaluación todavía no está aprobada.");
+        setEvalOpen(false);
+        return;
+      }
+      setEvalData(j.data as EvalView);
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "Error al cargar la evaluación");
+      setEvalOpen(false);
+    } finally {
+      setEvalLoading(false);
+    }
   }
 
   // Modal para que el técnico deje observaciones + adjunte archivos/fotos al pausar/finalizar.
@@ -475,6 +523,18 @@ export default function TecnicoPanel() {
           <div style={{ marginTop: 10 }}>
             <Text type="secondary" style={{ fontSize: 11 }}>Mis observaciones:</Text>
             <div style={{ fontSize: 12, whiteSpace: "pre-wrap" }}>{r.observaciones}</div>
+          </div>
+        )}
+        {/* Hoja de evaluación de la OT (si aplica y está APROBADA): solo lectura. */}
+        {r.evaluacion_aprobada_id != null && (
+          <div style={{ marginTop: 10 }}>
+            <Button
+              size="small"
+              icon={<FileTextOutlined />}
+              onClick={() => abrirEvaluacion(r.evaluacion_aprobada_id!)}
+            >
+              Ver hoja de evaluación
+            </Button>
           </div>
         )}
         <div style={{ marginTop: 10 }}>
@@ -737,6 +797,67 @@ export default function TecnicoPanel() {
           </Card>
         </Col>
       </Row>
+
+      {/* Hoja de evaluación de la OT — SOLO LECTURA, solo hojas APROBADAS. */}
+      <Modal
+        open={evalOpen}
+        onCancel={() => { setEvalOpen(false); setEvalData(null); }}
+        footer={<Button onClick={() => { setEvalOpen(false); setEvalData(null); }}>Cerrar</Button>}
+        width={modalWidth(screens, 1100)}
+        title={evalData?.orden_trabajo?.ot ? `Hoja de evaluación — OT ${evalData.orden_trabajo.ot}` : "Hoja de evaluación"}
+        destroyOnHidden
+      >
+        {evalLoading || !evalData ? (
+          <div style={{ textAlign: "center", padding: 48 }}><Spin /></div>
+        ) : (
+          <div>
+            <Row gutter={[12, 8]} style={{ marginBottom: 12 }}>
+              <Col xs={12} md={6}>
+                <Text type="secondary" style={{ fontSize: 11, display: "block" }}>Evaluado por</Text>
+                <div style={{ fontSize: 12 }}>{evalData.evaluado_por ?? "—"}</div>
+              </Col>
+              <Col xs={12} md={6}>
+                <Text type="secondary" style={{ fontSize: 11, display: "block" }}>Fecha evaluación</Text>
+                <div style={{ fontSize: 12 }}>{evalData.fecha_evaluacion ? dayjs(String(evalData.fecha_evaluacion).slice(0, 10)).format("DD/MM/YYYY") : "—"}</div>
+              </Col>
+              <Col xs={12} md={6}>
+                <Text type="secondary" style={{ fontSize: 11, display: "block" }}>Supervisor</Text>
+                <div style={{ fontSize: 12 }}>{evalData.supervisor ?? "—"}</div>
+              </Col>
+              <Col xs={12} md={6}>
+                <Text type="secondary" style={{ fontSize: 11, display: "block" }}>Estado</Text>
+                <Tag color="success" style={{ margin: 0 }}>Aprobada</Tag>
+              </Col>
+            </Row>
+            <EvaluacionFormulario
+              modelo={evalData.modelo_evaluacion}
+              sistemaMedicion={evalData.sistema_medicion}
+              datos={evalData.datos_formulario ?? {}}
+              onChange={() => { /* solo lectura */ }}
+              readonly
+              np={evalData.orden_trabajo?.np ?? null}
+              descripcionCilindro={evalData.orden_trabajo?.descripcion ?? null}
+              modeloCilindro={evalData.orden_trabajo?.cod_rep_flota ?? null}
+            />
+            {(evalData.resultado_general || evalData.recomendaciones_general) && (
+              <Card size="small" style={{ marginTop: 12 }} title="Resultado y recomendaciones">
+                {evalData.resultado_general && (
+                  <div style={{ marginBottom: 8 }}>
+                    <Text type="secondary" style={{ fontSize: 11, display: "block" }}>Resultado general</Text>
+                    <div style={{ fontSize: 12, whiteSpace: "pre-wrap" }}>{evalData.resultado_general}</div>
+                  </div>
+                )}
+                {evalData.recomendaciones_general && (
+                  <div>
+                    <Text type="secondary" style={{ fontSize: 11, display: "block" }}>Recomendaciones</Text>
+                    <div style={{ fontSize: 12, whiteSpace: "pre-wrap" }}>{evalData.recomendaciones_general}</div>
+                  </div>
+                )}
+              </Card>
+            )}
+          </div>
+        )}
+      </Modal>
 
       {/* Observaciones del técnico al pausar / finalizar (opcional). */}
       <Modal

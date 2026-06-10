@@ -154,6 +154,10 @@ Detalles:
   realizada cuando todos terminan (rollup).
 - "Reabrir tarea" finalizada por error: solo desde Planificación
   (planner/admin); vuelve a Pausado conservando el tiempo.
+- **Hoja de evaluación**: en el detalle de cada tarea, si la OT tiene hoja de
+  evaluación **APROBADA**, el técnico la puede abrir en solo lectura ("Ver hoja
+  de evaluación"). Tareas sin OT o con hoja en borrador/pendiente no muestran
+  el botón.
 - **Conteo del tiempo real** (`horasRealesEntre` en `lib/plan-sesion.ts`):
   ventana **07:00–20:00 L–V** — más ancha que la jornada a propósito: quien
   arranca minutos antes de las 8 o se queda después de las 18 lo suma como hora
