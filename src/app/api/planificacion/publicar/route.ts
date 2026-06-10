@@ -35,8 +35,14 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Faltan 'semana' y 'tecnico' (o 'ids')" }, { status: 400 });
       }
       // Fallback: tareas de esa semana asignadas a ese operario (tecnico puede ser multi: "A | B").
+      // Publicar congela solo lo AGENDADO (con fecha); reabrir toma todas (limpia
+      // flags `publicado` colgados de tareas sin agenda). Mismo criterio que el front.
       const candidatas = await prisma.planificacionOT.findMany({
-        where: { semana_plan: semana, tecnico: { not: null } },
+        where: {
+          semana_plan: semana,
+          tecnico: { not: null },
+          ...(publicado ? { fecha_inicio: { not: null } } : {}),
+        },
         select: { id: true, tecnico: true },
       });
       idsToPublish = candidatas.filter((t) => splitRecursos(t.tecnico).includes(tecnico)).map((t) => t.id);

@@ -198,6 +198,9 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         const semanaActualDeFecha = current.fecha_inicio ? semanaCodigoFromDate(current.fecha_inicio) : null;
         if (nuevaSemana && nuevaSemana !== semanaActualDeFecha) {
           data.fecha_inicio = null;
+          // También el fin: para tareas HE el recálculo de abajo no corre (el fin
+          // es manual) y quedaba una fecha_fin colgada sin inicio.
+          data.fecha_fin = null;
         }
       }
 
@@ -310,8 +313,23 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         estadoFinal = "programado";
       }
 
+      // 7c) programado → abierto cuando la tarea pierde su fecha (vuelve al pool).
+      // Es la inversa de 7b: sin esto, el pool mostraba tareas "programadas" sin
+      // agenda (estado colgado al cambiar de semana / sacar de la semana / quitar HE).
+      // Se chequea estadoFinal (no estadoActual) para no pisar 7a (fin real → realizado).
+      if (estadoFinal === "programado" && !finalIni && !estadoEnviado) {
+        estadoFinal = "abierto";
+      }
+
       if (estadoFinal !== estadoActual) {
         data.estado = estadoFinal;
+      }
+
+      // Una tarea sin agenda no es un plan congelado: si pierde su fecha, vuelve a
+      // borrador. Evita el flag `publicado` colgado en el pool (no editable y sin
+      // carril donde reabrirla).
+      if (!finalIni && current.publicado && input.publicado === undefined) {
+        data.publicado = false;
       }
 
       const updated = await tx.planificacionOT.update({
