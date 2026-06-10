@@ -154,10 +154,13 @@ export async function PUT(req: NextRequest, { params }: Params) {
     if (body.status_oc_codigo !== undefined) data.status_oc_codigo = body.status_oc_codigo;
     if (body.moneda !== undefined) data.moneda_codigo = body.moneda;
     if (body.moneda_codigo !== undefined) data.moneda_codigo = body.moneda_codigo;
-    for (const k of ["fecha_entrega_esperada", "fecha_entrega_real"]) {
+    for (const k of ["fecha_entrega_esperada", "fecha_entrega_real", "fecha_solicitud", "fecha_expiracion"]) {
       if (body[k] !== undefined) data[k] = parseDateOnly(body[k]);
     }
-    for (const k of ["nro_factura", "nro_guia", "observaciones", "usuario_aprueba", "tipo_pago"]) {
+    // `nombre` = label de display de la OC (ej. "BC BEARING — OC Abierta M260033").
+    // Lo usa el módulo de OC abiertas para identificar la fuente sin tocar
+    // la tabla de proveedores.
+    for (const k of ["nro_factura", "nro_guia", "observaciones", "usuario_aprueba", "tipo_pago", "nombre", "numero_po"]) {
       if (body[k] !== undefined) data[k] = body[k];
     }
     // dias_credito: normalizamos para que CONTADO siempre sea 0/null y no

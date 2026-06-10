@@ -1153,12 +1153,44 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
               </Row>
             </Card>
 
+            {/* Acciones bulk para recepción parcial. El user nos reportó que
+                no se daba cuenta de cómo dejar afuera un item que aún no llegó
+                — por defecto el modal auto-llena todas las cantidades con su
+                pedida total. Estos botones permiten "limpiar" todas las
+                cantidades y opt-inear fila por fila, o restaurarlas. */}
+            <Space style={{ marginBottom: 8 }} wrap>
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                Recepción parcial:
+              </Text>
+              <Button
+                size="small"
+                onClick={() => {
+                  const cero: Record<number, number> = {};
+                  poSeleccionada!.items.forEach((i) => { cero[i.id] = 0; });
+                  setCantidadesRecibidas(cero);
+                }}
+              >
+                Excluir todas (recibir 0)
+              </Button>
+              <Button
+                size="small"
+                onClick={() => {
+                  const full: Record<number, number> = {};
+                  poSeleccionada!.items.forEach((i) => { full[i.id] = i.cantidad; });
+                  setCantidadesRecibidas(full);
+                }}
+              >
+                Recibir todas (pedida completa)
+              </Button>
+            </Space>
+
             <Table
               rowKey="id"
               pagination={false}
               size="small"
               dataSource={poSeleccionada.items}
-              scroll={{ x: 1000 }}
+              scroll={{ x: 1100 }}
+              rowClassName={(r) => (cantidadesRecibidas[r.id] ?? 0) > 0 ? "" : "row-excluida"}
               columns={[
                 { title: "Código", dataIndex: "codigo", width: 100 },
                 { title: "Descripción", dataIndex: "descripcion", ellipsis: true },
@@ -1241,8 +1273,41 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                     );
                   },
                 },
+                {
+                  // Excluir/incluir fila — alterna entre cantidad=0 (no se
+                  // recibe) y cantidad=pedida (se recibe completo). Atajo
+                  // visible para el caso típico "este item aún no llegó,
+                  // recepciono solo los demás".
+                  title: "", key: "excluir", width: 88, align: "center", fixed: "right",
+                  render: (_, r) => {
+                    const recibido = (cantidadesRecibidas[r.id] ?? 0) > 0;
+                    return (
+                      <Tooltip title={recibido ? "No recibir esta fila (cantidad → 0)" : "Recibir cantidad pedida completa"}>
+                        <Button
+                          size="small"
+                          type={recibido ? "default" : "primary"}
+                          ghost={!recibido}
+                          onClick={() => setCantidadesRecibidas({
+                            ...cantidadesRecibidas,
+                            [r.id]: recibido ? 0 : r.cantidad,
+                          })}
+                        >
+                          {recibido ? "Excluir" : "Incluir"}
+                        </Button>
+                      </Tooltip>
+                    );
+                  },
+                },
               ]}
             />
+            <style jsx>{`
+              :global(.row-excluida) {
+                background: #fafafa;
+              }
+              :global(.row-excluida td) {
+                opacity: 0.55;
+              }
+            `}</style>
           </>
         )}
       </Modal>

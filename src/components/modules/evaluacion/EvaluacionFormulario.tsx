@@ -1396,7 +1396,14 @@ export default function EvaluacionFormulario({
   marca = null,
   modeloCilindro = null,
 }: EvaluacionFormularioProps) {
-  const unidad = sistemaMedicion === "Imperial" ? "in" : "mm";
+  // Normalizamos sistemaMedicion antes de comparar — antes la comparación
+  // strict `=== "Imperial"` fallaba si el valor venía con espacios, en otro
+  // caso ("imperial") o con sinónimos ("Pulgadas", "Inches"). El user
+  // reportó que al cambiar a milimétrico la flexión seguía en "Inch".
+  const sm = (sistemaMedicion ?? "").trim().toLowerCase();
+  const esImperial =
+    sm === "imperial" || sm === "pulgadas" || sm === "inches" || sm === "in" || sm === "inch";
+  const unidad = esImperial ? "in" : "mm";
 
   // Resolver medida modelo aplicable según NP / descripción.
   const medidaModelo = useMemo(

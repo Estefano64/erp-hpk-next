@@ -3,11 +3,12 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Typography, Card, Table, Tag, Space, Button, Input, Empty, Row, Col, Statistic, Segmented,
-  Upload, Popconfirm, App,
+  Upload, Popconfirm, Tooltip, App,
 } from "antd";
 import {
   ReloadOutlined, SearchOutlined, FileTextOutlined,
   FileDoneOutlined, AuditOutlined, UploadOutlined, DeleteOutlined,
+  FilePdfOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
@@ -246,10 +247,26 @@ export default function ContabilidadView({
   const columns: ColumnsType<CompraRow> = [
     numeracionColumn<CompraRow>({ current: page, pageSize }),
     {
-      key: "numero_po", title: "Nro OC", dataIndex: "numero_po", width: 130, align: "left",
+      key: "numero_po", title: "Nro OC / Descargar", dataIndex: "numero_po", width: 170, align: "left",
       sorter: (a, b) => a.numero_po.localeCompare(b.numero_po),
       ...filtroPorColumna(filtradas, "numero_po"),
-      render: (v: string) => <Tag color={brand.navy}>{v}</Tag>,
+      render: (v: string, r) => (
+        <Space size={4}>
+          <Tag color={brand.navy} style={{ margin: 0 }}>{v}</Tag>
+          {/* Descarga del PDF de la OC. El endpoint /api/compras/[id]/pdf
+              ya devolvía el documento; lo exponemos acá al lado del Nro OC
+              para que el área de contabilidad lo pueda guardar/imprimir
+              junto a la guía y la factura. */}
+          <Tooltip title="Descargar PDF de la OC">
+            <Button
+              size="small"
+              type="text"
+              icon={<FilePdfOutlined style={{ color: "#cf1322" }} />}
+              onClick={() => window.open(`/api/compras/${r.id}/pdf`, "_blank")}
+            />
+          </Tooltip>
+        </Space>
+      ),
     },
     {
       key: "ot", title: "OT", width: 230, align: "left",

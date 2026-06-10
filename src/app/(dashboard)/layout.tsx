@@ -111,6 +111,7 @@ function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
             { key: "/requerimientos", label: "Requerimientos" },
             { key: "/compras/historico", label: "Cotizaciones (precios históricos)" },
             { key: "/compras", label: "Órdenes de compra" },
+            { key: "/compras/oc-abiertas", label: "OCs Abiertas (almacén abierto)" },
           ],
         },
         {
