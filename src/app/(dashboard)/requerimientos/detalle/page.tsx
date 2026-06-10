@@ -319,17 +319,20 @@ function RequerimientosDetalleInner() {
   const [partesDividir, setPartesDividir] = useState<number[]>([]);
   const [dividiendo, setDividiendo] = useState(false);
 
-  // ── Modal "Consumir de Almacén Abierto" (Quellaveco, etc.) ─────────
+  // ── Modal "Consumir de Almacén Abierto" (BC Bering PO 4504281587, etc.) ─
   // Permite descontar items de los reqs seleccionados desde el stock fijo
   // de una OC marcada como `es_almacen_abierto`. Mostrá las OCs activas, el
   // user elige una, y el modal matchea cada req seleccionado contra los
   // detalles disponibles de esa OC. Si matchea (mismo material + stock OK),
-  // permite confirmar.
+  // permite confirmar. Cada item incluye el NP (Número de parte) del
+  // material — es la referencia que usa logística para identificar qué se
+  // está sacando del almacén abierto.
   interface OCAbiertaItem {
     detalle_id: number;
     material_id: number | null;
     material_codigo: string | null;
     descripcion: string | null;
+    np: string | null;
     um: string | null;
     cantidad_total: number;
     cantidad_consumida: number;
@@ -1566,7 +1569,7 @@ function RequerimientosDetalleInner() {
           </Popover>
           {selectedRows.length > 0 && (
             <>
-              <Tooltip title="Descuenta los items seleccionados del stock de una OC marcada como 'almacén abierto' (ej. Quellaveco). No genera OC nueva.">
+              <Tooltip title="Descuenta los items seleccionados del stock de una OC marcada como 'almacén abierto' (ej. BC Bering PO 4504281587). No genera OC nueva.">
                 <Button
                   size="large"
                   icon={<InboxOutlined />}
@@ -1963,7 +1966,7 @@ function RequerimientosDetalleInner() {
         </Form>
       </Modal>
 
-      {/* ── Modal "Consumir de Almacén Abierto" (Quellaveco, etc.) ───── */}
+      {/* ── Modal "Consumir de Almacén Abierto" (BC Bering, etc.) ───── */}
       <Modal
         title={
           <Space>
@@ -1995,7 +1998,7 @@ function RequerimientosDetalleInner() {
                 No hay OCs marcadas como <b>almacén abierto</b> con stock disponible.
                 <br />
                 <Text type="secondary" style={{ fontSize: 12 }}>
-                  Importá un PDF (ej. Quellaveco.pdf) con el script para crear una.
+                  Importá un PDF (ej. BC Bering 4504281587) con el script para crear una.
                 </Text>
               </span>
             }
@@ -2046,13 +2049,22 @@ function RequerimientosDetalleInner() {
                         render: (_v, m) => <Tag color={brand.navy}>{m.req.nro_req ?? `#${m.req.id}`}/{m.req.item_req ?? "-"}</Tag>,
                       },
                       {
-                        title: "Material", key: "mat", width: 250,
+                        title: "Material", key: "mat", width: 260,
                         render: (_v, m) => (
                           <div>
                             <div style={{ fontSize: 12 }}><b>{m.req.material_codigo ?? "(sin código)"}</b></div>
                             <div style={{ fontSize: 11, color: brand.textSecondary }}>{m.req.descripcion?.slice(0, 60)}</div>
                           </div>
                         ),
+                      },
+                      {
+                        // NP del material en la OC abierta — es la referencia
+                        // que usa logística para identificar qué item está
+                        // saliendo del stock fijo.
+                        title: "NP (OC abierta)", key: "np", width: 130,
+                        render: (_v, m) => m.detalle?.np
+                          ? <Tag style={{ margin: 0, fontFamily: "monospace" }}>{m.detalle.np}</Tag>
+                          : <Text type="secondary" style={{ fontSize: 11 }}>—</Text>,
                       },
                       {
                         title: "Pedido", key: "ped", width: 70, align: "right",

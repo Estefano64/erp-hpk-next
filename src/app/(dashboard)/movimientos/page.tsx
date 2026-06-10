@@ -142,6 +142,12 @@ interface POPendiente {
   guia_nombre: string | null;
   factura_key: string | null;
   factura_nombre: string | null;
+  // Adjuntos múltiples (compra_adjunto). Una OC puede tener N guías y N
+  // facturas — el patrón legacy (guia_key/factura_key) queda para compat.
+  adjuntos?: Array<{
+    id: number; tipo: string; r2_key: string; nombre_archivo: string;
+    tipo_mime: string | null; tamano: number | null; fecha_subida: string;
+  }>;
   items: Array<{
     id: number;
     // repuesto_id se setea cuando el item viene de ot_repuestos (item free
@@ -1089,157 +1095,31 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
               <Row gutter={12}>
                 <Col xs={24} sm={12}>
                   <Text strong style={{ fontSize: 12, display: "block", marginBottom: 4 }}>
-                    📎 Archivo de Guía de Remisión (PDF/imagen)
+                    📎 Guías de Remisión (podés adjuntar varias)
                   </Text>
-                  {poSeleccionada.guia_key ? (
-                    <Card size="small" style={{ background: "#f6ffed", borderColor: "#b7eb8f" }}>
-                      <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                        <Space size={6}>
-                          <CheckCircleOutlined style={{ color: "#52c41a" }} />
-                          <R2FileLink
-                            resource="compra-guia"
-                            resourceId={poSeleccionada.id}
-                            r2Key={poSeleccionada.guia_key}
-                            style={{ fontSize: 12 }}
-                          >
-                            {poSeleccionada.guia_nombre || "Guía adjunta"}
-                          </R2FileLink>
-                        </Space>
-                        <Space size={4}>
-                          <Tooltip title="Eliminar">
-                            <Button
-                              size="small"
-                              type="text"
-                              danger
-                              icon={<DeleteOutlined />}
-                              onClick={async () => {
-                                try {
-                                  const res = await fetch(`/api/compras/${poSeleccionada.id}/guia?tipo=guia`, { method: "DELETE" });
-                                  if (!res.ok) throw new Error();
-                                  message.success("Guía eliminada");
-                                  await fetchPOs();
-                                  setPoSeleccionada({ ...poSeleccionada, guia_key: null, guia_nombre: null });
-                                } catch {
-                                  message.error("Error al eliminar");
-                                }
-                              }}
-                            />
-                          </Tooltip>
-                        </Space>
-                      </Space>
-                    </Card>
-                  ) : (
-                    <Upload
-                      beforeUpload={async (file) => {
-                        if (file.size > 20 * 1024 * 1024) {
-                          message.warning("Archivo demasiado grande (max 20 MB)");
-                          return false;
-                        }
-                        try {
-                          const meta = await uploadToR2({
-                            file,
-                            uploadUrlEndpoint: `/api/compras/${poSeleccionada.id}/guia/upload-url?tipo=guia`,
-                          });
-                          const res = await fetch(`/api/compras/${poSeleccionada.id}/guia?tipo=guia`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify(meta),
-                          });
-                          const json = await res.json();
-                          if (!res.ok) throw new Error(json.error || "Error al registrar");
-                          message.success("Guía subida correctamente");
-                          await fetchPOs();
-                          setPoSeleccionada({ ...poSeleccionada, guia_key: json.data.guia_key, guia_nombre: json.data.guia_nombre });
-                        } catch (err) {
-                          message.error(err instanceof Error ? err.message : "Error");
-                        }
-                        return false;
-                      }}
-                      showUploadList={false}
-                      accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                    >
-                      <Button icon={<UploadOutlined />} block style={{ borderStyle: "dashed" }}>
-                        Subir Guía de Remisión
-                      </Button>
-                    </Upload>
-                  )}
+                  <AdjuntosMulti
+                    compra={poSeleccionada}
+                    tipo="guia"
+                    onChanged={async () => {
+                      await fetchPOs();
+                      const refreshed = await fetch(`/api/compras/${poSeleccionada.id}`).then((r) => r.ok ? r.json() : null).catch(() => null);
+                      if (refreshed?.data) setPoSeleccionada(refreshed.data);
+                    }}
+                  />
                 </Col>
                 <Col xs={24} sm={12}>
                   <Text strong style={{ fontSize: 12, display: "block", marginBottom: 4 }}>
-                    📎 Archivo de Factura (PDF/imagen)
+                    📎 Facturas (podés adjuntar varias)
                   </Text>
-                  {poSeleccionada.factura_key ? (
-                    <Card size="small" style={{ background: "#f6ffed", borderColor: "#b7eb8f" }}>
-                      <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                        <Space size={6}>
-                          <CheckCircleOutlined style={{ color: "#52c41a" }} />
-                          <R2FileLink
-                            resource="compra-factura"
-                            resourceId={poSeleccionada.id}
-                            r2Key={poSeleccionada.factura_key}
-                            style={{ fontSize: 12 }}
-                          >
-                            {poSeleccionada.factura_nombre || "Factura adjunta"}
-                          </R2FileLink>
-                        </Space>
-                        <Space size={4}>
-                          <Tooltip title="Eliminar">
-                            <Button
-                              size="small"
-                              type="text"
-                              danger
-                              icon={<DeleteOutlined />}
-                              onClick={async () => {
-                                try {
-                                  const res = await fetch(`/api/compras/${poSeleccionada.id}/guia?tipo=factura`, { method: "DELETE" });
-                                  if (!res.ok) throw new Error();
-                                  message.success("Factura eliminada");
-                                  await fetchPOs();
-                                  setPoSeleccionada({ ...poSeleccionada, factura_key: null, factura_nombre: null });
-                                } catch {
-                                  message.error("Error al eliminar");
-                                }
-                              }}
-                            />
-                          </Tooltip>
-                        </Space>
-                      </Space>
-                    </Card>
-                  ) : (
-                    <Upload
-                      beforeUpload={async (file) => {
-                        if (file.size > 20 * 1024 * 1024) {
-                          message.warning("Archivo demasiado grande (max 20 MB)");
-                          return false;
-                        }
-                        try {
-                          const meta = await uploadToR2({
-                            file,
-                            uploadUrlEndpoint: `/api/compras/${poSeleccionada.id}/guia/upload-url?tipo=factura`,
-                          });
-                          const res = await fetch(`/api/compras/${poSeleccionada.id}/guia?tipo=factura`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify(meta),
-                          });
-                          const json = await res.json();
-                          if (!res.ok) throw new Error(json.error || "Error al registrar");
-                          message.success("Factura subida correctamente");
-                          await fetchPOs();
-                          setPoSeleccionada({ ...poSeleccionada, factura_key: json.data.factura_key, factura_nombre: json.data.factura_nombre });
-                        } catch (err) {
-                          message.error(err instanceof Error ? err.message : "Error");
-                        }
-                        return false;
-                      }}
-                      showUploadList={false}
-                      accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                    >
-                      <Button icon={<UploadOutlined />} block style={{ borderStyle: "dashed" }}>
-                        Subir Factura
-                      </Button>
-                    </Upload>
-                  )}
+                  <AdjuntosMulti
+                    compra={poSeleccionada}
+                    tipo="factura"
+                    onChanged={async () => {
+                      await fetchPOs();
+                      const refreshed = await fetch(`/api/compras/${poSeleccionada.id}`).then((r) => r.ok ? r.json() : null).catch(() => null);
+                      if (refreshed?.data) setPoSeleccionada(refreshed.data);
+                    }}
+                  />
                 </Col>
               </Row>
             </Card>
@@ -1669,6 +1549,116 @@ export default function MovimientosPage() {
       </div>
 
       <Tabs items={tabItems} defaultActiveKey="movimientos" />
+    </div>
+  );
+}
+
+// Helper: lista N adjuntos (guías o facturas) de una OC, permite eliminar
+// uno a uno y subir más. Usa el patrón nuevo `/api/compras/[id]/adjuntos`
+// (multi-archivo) y degrada al campo legacy guia_key/factura_key si existe.
+function AdjuntosMulti({
+  compra, tipo, onChanged,
+}: {
+  compra: POPendiente;
+  tipo: "guia" | "factura";
+  onChanged: () => void | Promise<void>;
+}) {
+  const { message } = App.useApp();
+  const [uploading, setUploading] = useState(false);
+  const legacyKey = tipo === "guia" ? compra.guia_key : compra.factura_key;
+  const legacyNombre = tipo === "guia" ? compra.guia_nombre : compra.factura_nombre;
+  const resource: "compra-guia" | "compra-factura" = tipo === "guia" ? "compra-guia" : "compra-factura";
+  const labelTipo = tipo === "guia" ? "Guía" : "Factura";
+  const multi = (compra.adjuntos ?? []).filter((a) => a.tipo === tipo);
+  const filas: Array<{ adjId: number | null; r2Key: string; nombre: string | null }> = [];
+  if (legacyKey) filas.push({ adjId: null, r2Key: legacyKey, nombre: legacyNombre });
+  for (const a of multi) filas.push({ adjId: a.id, r2Key: a.r2_key, nombre: a.nombre_archivo });
+
+  const eliminar = async (adjId: number | null, _r2Key: string) => {
+    try {
+      const url = adjId == null
+        ? `/api/compras/${compra.id}/guia?tipo=${tipo}`
+        : `/api/compras/${compra.id}/adjuntos/${adjId}`;
+      const res = await fetch(url, { method: "DELETE" });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || `Error al eliminar ${labelTipo.toLowerCase()}`);
+      }
+      message.success(`${labelTipo} eliminada`);
+      await onChanged();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Error");
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {filas.map((f) => (
+        <Card
+          key={f.adjId ?? `legacy-${f.r2Key}`}
+          size="small"
+          style={{ background: "#f6ffed", borderColor: "#b7eb8f" }}
+        >
+          <Space style={{ width: "100%", justifyContent: "space-between" }}>
+            <Space size={6}>
+              <CheckCircleOutlined style={{ color: "#52c41a" }} />
+              <R2FileLink
+                resource={resource}
+                resourceId={compra.id}
+                r2Key={f.r2Key}
+                style={{ fontSize: 12 }}
+              >
+                {f.nombre || `${labelTipo} adjunta`}
+              </R2FileLink>
+            </Space>
+            <Tooltip title="Eliminar">
+              <Button
+                size="small"
+                type="text"
+                danger
+                icon={<DeleteOutlined />}
+                onClick={() => eliminar(f.adjId, f.r2Key)}
+              />
+            </Tooltip>
+          </Space>
+        </Card>
+      ))}
+      <Upload
+        beforeUpload={async (file) => {
+          if (file.size > 20 * 1024 * 1024) {
+            message.warning("Archivo demasiado grande (max 20 MB)");
+            return false;
+          }
+          setUploading(true);
+          try {
+            const meta = await uploadToR2({
+              file,
+              uploadUrlEndpoint: `/api/compras/${compra.id}/guia/upload-url?tipo=${tipo}`,
+            });
+            const res = await fetch(`/api/compras/${compra.id}/adjuntos`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ tipo, ...meta }),
+            });
+            const json = await res.json();
+            if (!res.ok) throw new Error(json.error || "Error al registrar");
+            message.success(`${labelTipo} subida correctamente`);
+            await onChanged();
+          } catch (err) {
+            message.error(err instanceof Error ? err.message : "Error");
+          } finally {
+            setUploading(false);
+          }
+          return false;
+        }}
+        showUploadList={false}
+        accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+        disabled={uploading}
+      >
+        <Button icon={<UploadOutlined />} block style={{ borderStyle: "dashed" }} loading={uploading}>
+          {filas.length > 0 ? `Subir otra ${labelTipo}` : `Subir ${labelTipo}`}
+        </Button>
+      </Upload>
     </div>
   );
 }

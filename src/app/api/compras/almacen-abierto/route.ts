@@ -4,7 +4,11 @@
 // con el stock disponible de cada item. Pensado para popular el dropdown de
 // "fuente de stock" al crear un requerimiento de OT: el usuario ve qué
 // CONTAINMENT TRAYS / SPILL PALLETS quedan disponibles para tirar de la OC
-// de Quellaveco antes de generar una nueva OC.
+// abierta (ej. la PO 4504281587 con BC Bering) antes de generar una nueva OC.
+//
+// Cada item incluye `np` (número de parte del material) — el flujo de
+// consumo en la UI usa el NP para identificar el item que se saca del
+// stock abierto, no solo el código interno.
 //
 // Una OC se considera "consumible" si:
 //   - es_almacen_abierto = true
@@ -88,6 +92,9 @@ export async function GET(req: NextRequest) {
             codigo: true,
             descripcion: true,
             unidad_medida_codigo: true,
+            // Número de parte del material — la UI lo muestra para que
+            // logística identifique qué item está sacando del almacén abierto.
+            np: true,
           },
         },
       },
@@ -116,6 +123,7 @@ export async function GET(req: NextRequest) {
               material_id: d.material_id,
               material_codigo: d.material?.codigo ?? null,
               descripcion: d.material?.descripcion ?? null,
+              np: d.material?.np ?? null,
               um: d.material?.unidad_medida_codigo ?? null,
               cantidad_total: cantTotal,
               cantidad_consumida: cantConsumida,
