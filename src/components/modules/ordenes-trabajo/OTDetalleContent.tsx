@@ -40,7 +40,7 @@ import {
 } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
 import dayjs from "dayjs";
-import { formatDateOnly } from "@/lib/dates";
+import { formatDateOnly, dateOnlyLocal } from "@/lib/dates";
 import { formatOtCodigo } from "@/lib/ot-formato";
 import OTAdjuntosTab from "./OTAdjuntosTab";
 import OTTareasTab from "./OTTareasTab";
@@ -696,7 +696,10 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
     }
     const fechaReqEf = ot.fecha_reprogramada ?? ot.fecha_requerimiento_cliente;
     if (fechaReqEf && ot.ot_status_codigo !== "Cerrada") {
-      const diasRestantes = dayjs(fechaReqEf).startOf("day").diff(dayjs().startOf("day"), "day");
+      // dateOnlyLocal: la fecha viene como medianoche UTC; parseada directo con
+      // dayjs caía a las 19:00 del día ANTERIOR en Lima, y una OT que vence HOY
+      // salía "vencida hace 1 día".
+      const diasRestantes = dayjs(dateOnlyLocal(fechaReqEf)).diff(dayjs().startOf("day"), "day");
       if (diasRestantes < 0) {
         validaciones.push({
           type: "error",

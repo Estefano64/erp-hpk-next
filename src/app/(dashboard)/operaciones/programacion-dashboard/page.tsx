@@ -38,6 +38,7 @@ import {
 import type { ColumnsType, ColumnGroupType, ColumnType } from "antd/es/table/interface";
 import dayjs, { type Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
+import { dateOnlyLocal } from "@/lib/dates";
 import Link from "next/link";
 import * as XLSX from "xlsx";
 
@@ -150,7 +151,9 @@ function estadoGlobalOT(o: OTRow): "sin_empezar" | "en_proceso" | "terminada" {
 function otAtrasada(o: OTRow): boolean {
   if (!o.fecha_entrega) return false;
   if (o.progreso.total > 0 && o.progreso.realizadas >= o.progreso.total) return false;
-  return dayjs(o.fecha_entrega).isBefore(dayjs(), "day");
+  // dateOnlyLocal: la fecha viene como medianoche UTC; con dayjs directo caía
+  // al día anterior en Lima y la OT salía atrasada un día antes de tiempo.
+  return dayjs(dateOnlyLocal(o.fecha_entrega)).isBefore(dayjs(), "day");
 }
 // ¿Tiene alguna operación tercerizada?
 function otTieneTercero(o: OTRow): boolean {
