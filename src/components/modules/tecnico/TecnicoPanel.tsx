@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Typography, Card, Row, Col, Table, Tag, Button, Statistic, Empty, Space, App, Tooltip, Segmented, Modal, Input, Upload,
+  Typography, Card, Row, Col, Table, Tag, Button, Statistic, Empty, Space, App, Tooltip, Segmented, Modal, Input, Upload, Radio,
 } from "antd";
 import {
   PlayCircleOutlined, PauseCircleOutlined, CheckCircleOutlined,
@@ -16,6 +16,7 @@ import isoWeek from "dayjs/plugin/isoWeek";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import { uploadToR2 } from "@/lib/r2-client";
+import { MOTIVOS_PAUSA, MOTIVO_CAMBIO_TAREA } from "@/lib/motivos-pausa";
 import TareaAdjuntosLista from "@/components/TareaAdjuntosLista";
 
 // Tipos de archivo aceptados al pausar/finalizar (fotos + documentos).
@@ -77,6 +78,21 @@ interface SesionEnCurso {
   operacion: string;
   horas_estimadas: number;
   horas_reales_previas: number;
+  es_horas_extras?: boolean;
+}
+
+// ¿"Ahora" cuenta para el cronómetro? Ventana de conteo 07:00–20:00 L–V (más
+// ancha que la jornada: los minutos antes de las 8 / después de las 18 corren
+// como hora normal). Durante el almuerzo (12:30–13:30) el tick se congela: si
+// el técnico trabaja de corrido esa hora se descuenta al guardar; si pausa
+// (almuerzo corrido de horario), el guardado le devuelve lo trabajado.
+function enVentanaConteo(d: Date): boolean {
+  const dow = d.getDay();
+  if (dow === 0 || dow === 6) return false;
+  const min = d.getHours() * 60 + d.getMinutes();
+  if (min < 7 * 60 || min >= 20 * 60) return false;
+  if (min >= 12 * 60 + 30 && min < 13 * 60 + 30) return false;
+  return true;
 }
 interface Rendimiento {
   totalProgramadas: number;
@@ -182,23 +198,31 @@ export default function TecnicoPanel() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Tick del cronómetro cada segundo si hay sesión en curso.
+  // Tick del cronómetro cada segundo si hay sesión en curso. Solo avanza en
+  // tiempo HÁBIL (se congela en el almuerzo y fuera de jornada — igual que las
+  // horas reales que se guardan), salvo tareas de horas extra.
   useEffect(() => {
     if (!data?.sesionEnCurso) return;
-    const handle = window.setInterval(() => setSecondsTick((s) => s + 1), 1000);
+    const esHE = !!data.sesionEnCurso.es_horas_extras;
+    const handle = window.setInterval(() => {
+      if (esHE || enVentanaConteo(new Date())) setSecondsTick((s) => s + 1);
+    }, 1000);
     return () => window.clearInterval(handle);
   }, [data?.sesionEnCurso]);
 
   // Reset del tick cuando cambia la sesión.
   useEffect(() => { setSecondsTick(0); }, [data?.sesionEnCurso?.sesion_id]);
 
-  async function accion(taskId: number, accion: "iniciar" | "pausar" | "finalizar", observaciones?: string): Promise<boolean> {
+  async function accion(taskId: number, accion: "iniciar" | "pausar" | "finalizar", observaciones?: string, motivo?: string): Promise<boolean> {
     setAccionLoading(taskId);
     try {
       const r = await fetch(`/api/planificacion/${taskId}/${accion}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(observaciones ? { observaciones } : {}),
+        body: JSON.stringify({
+          ...(observaciones ? { observaciones } : {}),
+          ...(motivo ? { motivo } : {}),
+        }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.error ?? `Error al ${accion}`);
@@ -227,7 +251,9 @@ export default function TecnicoPanel() {
         cancelText: "Cancelar",
         okButtonProps: { danger: true },
         onOk: async () => {
-          const ok = await accion(enCurso.planificacion_ot_id, "pausar");
+          // Motivo automático: pausó para arrancar otra tarea (no pasa por el
+          // modal de motivos).
+          const ok = await accion(enCurso.planificacion_ot_id, "pausar", undefined, MOTIVO_CAMBIO_TAREA.codigo);
           if (ok) await accion(r.id, "iniciar");
         },
       });
@@ -240,10 +266,14 @@ export default function TecnicoPanel() {
   type AdjuntoObs = { id: number; nombre_archivo: string; r2_key: string; tipo_mime: string };
   const [obsModal, setObsModal] = useState<{ taskId: number; accion: "pausar" | "finalizar" } | null>(null);
   const [obsText, setObsText] = useState("");
+  // Motivo categorizado de la pausa — OBLIGATORIO al pausar (es lo que vuelve
+  // agregable el "por qué se paró": apoyo, montacarga, falta material, etc.).
+  const [obsMotivo, setObsMotivo] = useState<string | null>(null);
   const [obsAdjuntos, setObsAdjuntos] = useState<AdjuntoObs[]>([]);
   const [obsSubiendo, setObsSubiendo] = useState(false);
   function abrirObs(taskId: number, acc: "pausar" | "finalizar") {
     setObsText("");
+    setObsMotivo(null);
     setObsAdjuntos([]);
     setObsModal({ taskId, accion: acc });
   }
@@ -290,8 +320,12 @@ export default function TecnicoPanel() {
   async function confirmarObs() {
     if (!obsModal) return;
     const { taskId, accion: acc } = obsModal;
+    if (acc === "pausar" && !obsMotivo) {
+      message.warning("Elegí el motivo de la pausa.");
+      return;
+    }
     cerrarObs();
-    await accion(taskId, acc, obsText.trim() || undefined);
+    await accion(taskId, acc, obsText.trim() || undefined, acc === "pausar" ? (obsMotivo ?? undefined) : undefined);
   }
 
   const sesionActivaSegundos = useMemo(() => {
@@ -586,6 +620,13 @@ export default function TecnicoPanel() {
                 Acumulado previo: {data.sesionEnCurso.horas_reales_previas.toFixed(2)}h /
                 estimado {data.sesionEnCurso.horas_estimadas.toFixed(1)}h
               </Text>
+              {!data.sesionEnCurso.es_horas_extras && (
+                <div>
+                  <Text type="secondary" style={{ fontSize: 11 }}>
+                    🍽 Si trabajás de corrido, el almuerzo (12:30–13:30) se descuenta solo — no hace falta pausar.
+                  </Text>
+                </div>
+              )}
             </Col>
             <Col xs={24} sm={12} md="auto">
               <Space orientation={isMobile ? "horizontal" : "vertical"} style={{ width: "100%" }}>
@@ -706,9 +747,35 @@ export default function TecnicoPanel() {
         cancelText="Cancelar"
         onOk={confirmarObs}
         onCancel={cerrarObs}
-        okButtonProps={{ disabled: obsSubiendo }}
+        okButtonProps={{ disabled: obsSubiendo || (obsModal?.accion === "pausar" && !obsMotivo) }}
         confirmLoading={obsModal ? accionLoading === obsModal.taskId : false}
       >
+        {/* Motivo de la pausa (obligatorio): convierte el "por qué se paró" en
+            data agregable para el planner (apoyos, montacarga, falta material…). */}
+        {obsModal?.accion === "pausar" && (
+          <div style={{ marginBottom: 12 }}>
+            <Text strong style={{ fontSize: 13 }}>¿Por qué pausás? <Text type="danger">*</Text></Text>
+            <Radio.Group
+              value={obsMotivo}
+              onChange={(e) => setObsMotivo(e.target.value)}
+              style={{ width: "100%", marginTop: 6 }}
+            >
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                {MOTIVOS_PAUSA.map((m) => (
+                  <Radio key={m.codigo} value={m.codigo} style={{ fontSize: 13 }}>
+                    {m.label}
+                  </Radio>
+                ))}
+              </div>
+            </Radio.Group>
+            {obsMotivo === "ALMUERZO" && (
+              <Text type="secondary" style={{ fontSize: 11, display: "block", marginTop: 4 }}>
+                🍽 Dato: no hace falta pausar por almuerzo — se descuenta 1h sola, aunque ese día
+                el almuerzo se corra de horario. Pausá solo si tu almuerzo dura más o menos de 1 hora.
+              </Text>
+            )}
+          </div>
+        )}
         <Text type="secondary" style={{ fontSize: 12 }}>
           Podés dejar una observación de lo que hiciste (opcional). Se guarda en la tarea.
         </Text>

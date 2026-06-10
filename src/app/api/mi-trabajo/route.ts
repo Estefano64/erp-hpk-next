@@ -6,7 +6,7 @@ import utc from "dayjs/plugin/utc";
 import timezone from "dayjs/plugin/timezone";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { horasHabilesDeSesiones, duracionRealTarea, estadoTecnico, type EstadoTecnico } from "@/lib/plan-sesion";
+import { horasHabilesDeSesiones, horasRealesEntre, duracionRealTarea, estadoTecnico, type EstadoTecnico } from "@/lib/plan-sesion";
 
 dayjs.extend(isoWeek);
 dayjs.extend(utc);
@@ -87,7 +87,7 @@ export async function GET(req: Request) {
         planificacion_ot: {
           select: {
             id: true, descripcion: true, ot_id: true, componente: true, operacion_codigo: true,
-            horas_estimadas: true, horas_reales: true,
+            horas_estimadas: true, horas_reales: true, horas_extras: true,
             orden_trabajo: { select: { ot: true } },
           },
         },
@@ -274,9 +274,18 @@ export async function GET(req: Request) {
       operacion: string;
       horas_estimadas: number;
       horas_reales_previas: number;
+      es_horas_extras: boolean;
     } | null = null;
     if (sesionAbierta) {
-      const transcurridoMs = Date.now() - sesionAbierta.inicio.getTime();
+      // El cronómetro cuenta igual que las horas reales que se van a guardar
+      // (ventana 07–20 L–V; almuerzo descontado solo si trabaja de corrido).
+      // Así el técnico ve que no hace falta pausar para almorzar, y los minutos
+      // antes de las 8 / después de las 18 sí le corren (hora normal, no HE).
+      // Excepción: tarea de HORAS EXTRA (vive fuera de jornada) → reloj de pared.
+      const esHE = !!sesionAbierta.planificacion_ot.horas_extras;
+      const transcurridoMs = esHE
+        ? Date.now() - sesionAbierta.inicio.getTime()
+        : horasRealesEntre(sesionAbierta.inicio, new Date()) * 3_600_000;
       const planSesiones = await prisma.planificacionOTSesion.findMany({
         where: {
           planificacion_ot_id: sesionAbierta.planificacion_ot_id,
@@ -295,6 +304,7 @@ export async function GET(req: Request) {
         operacion: sesionAbierta.planificacion_ot.operacion_codigo,
         horas_estimadas: Number(sesionAbierta.planificacion_ot.horas_estimadas ?? 0),
         horas_reales_previas: horasHabilesDeSesiones(planSesiones),
+        es_horas_extras: !!sesionAbierta.planificacion_ot.horas_extras,
       };
     }
 

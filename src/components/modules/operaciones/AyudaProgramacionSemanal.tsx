@@ -106,6 +106,7 @@ export default function AyudaProgramacionSemanal({ open, onClose }: { open: bool
             children: (
               <div style={{ fontSize: 13, display: "grid", gap: 6 }}>
                 <div>Desde su panel trabaja con <strong>Iniciar / Pausar / Finalizar</strong> (una tarea en curso a la vez). Cada tramo queda como sesión — se ve en el Historial de la tarea.</div>
+                <div>Al pausar elige un <strong>motivo</strong> (apoyo a otra OT, montacargas, falta material, máquina ocupada, emergencia, almuerzo…) — se ve como etiqueta en el Historial y en las notas 🗒 de la tarea.</div>
                 <div>Si finalizó por error, el planner la <strong>reabre desde Planificación</strong> (vuelve a Pausado conservando el tiempo).</div>
                 <div>Si marcó tarde u olvidó el cronómetro (&quot;empecé 16:30&quot;), el planner <strong>regulariza Inicio/Fin/Duración real</strong> desde el Detalle de la tarea (Modo edición) — sin tickets.</div>
               </div>

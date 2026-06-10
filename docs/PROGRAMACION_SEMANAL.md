@@ -143,10 +143,30 @@ Detalles:
 - El técnico ve las tareas de su semana (aunque no tengan hora todavía) y las
   trabaja con **Iniciar / Pausar / Finalizar**. Solo una tarea en curso a la
   vez. Cada tramo queda como sesión (auditable en el Historial de la tarea).
+- Al **pausar** elige un **motivo obligatorio** de catálogo fijo (Apoyo a otra
+  OT, Montacargas, Falta material, Máquina ocupada, Emergencia, Almuerzo, Fin
+  de jornada, Otro) + comentario opcional. "Pausar e iniciar otra" registra
+  automáticamente el motivo "Cambio a otra tarea". El motivo queda en la
+  sesión (`motivo_pausa`, catálogo en `src/lib/motivos-pausa.ts`), se ve como
+  tag en el Historial y se antepone como `[Etiqueta]` en las observaciones
+  acumuladas — base para reportar horas perdidas por causa.
 - `horas_reales` = suma de sesiones. Con varios técnicos, la tarea queda
   realizada cuando todos terminan (rollup).
 - "Reabrir tarea" finalizada por error: solo desde Planificación
   (planner/admin); vuelve a Pausado conservando el tiempo.
+- **Conteo del tiempo real** (`horasRealesEntre` en `lib/plan-sesion.ts`):
+  ventana **07:00–20:00 L–V** — más ancha que la jornada a propósito: quien
+  arranca minutos antes de las 8 o se queda después de las 18 lo suma como hora
+  normal (no es HE). La noche y el fin de semana no cuentan (protege contra
+  sesiones olvidadas; el planner regulariza si hace falta).
+- **El almuerzo se descuenta solo (1 hora)**: si la sesión trabaja de corrido
+  sobre la ventana 12:30–13:30 se resta 1h. No importa a qué hora se tomó el
+  almuerzo realmente: si ese día se corrió a 13:00–14:00 y el técnico no pausó,
+  el total igual sale exacto (reloj de pared − 1h). Si el técnico SÍ pausa
+  dentro de la franja, no hay descuento automático (su pausa ya descontó) — sin
+  doble descuento. Pausar solo hace falta cuando el almuerzo dura más o menos
+  de 1 hora. El cronómetro del panel sigue la misma regla (las tareas HE corren
+  a reloj de pared).
 - **Regularización**: si el técnico marcó tarde / olvidó el cronómetro /
   trabajó sin sistema ("empecé 16:30, actualizar en la programación"), el
   planner corrige **Inicio real / Fin real / Duración real** desde el modal

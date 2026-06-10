@@ -1683,6 +1683,11 @@ model PlanificacionOTSesion {
   cierre              String?         @db.VarChar(20)
   // comentario que dejó el técnico al cerrar ESTA sesión (pausa/fin). Para el historial.
   comentario          String?         @db.VarChar(1000)
+  // motivo CATEGORIZADO de la pausa (catálogo en src/lib/motivos-pausa.ts:
+  // APOYO_OTRA_OT, MONTACARGA, FALTA_MATERIAL, MAQUINA_OCUPADA, EMERGENCIA,
+  // ALMUERZO, FIN_JORNADA, CAMBIO_TAREA, OTRO). Solo aplica a cierre="pausa".
+  // Convierte el texto libre de los técnicos en data agregable.
+  motivo_pausa        String?         @db.VarChar(30)
   created_at          DateTime        @default(now())
   planificacion_ot    PlanificacionOT @relation(fields: [planificacion_ot_id], references: [id], onDelete: Cascade)
 
