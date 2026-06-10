@@ -22,6 +22,8 @@ import {
   Segmented,
   Skeleton,
   DatePicker,
+  Row,
+  Col,
 } from "antd";
 import {
   AppstoreOutlined,
@@ -39,6 +41,7 @@ import type { ColumnsType, ColumnGroupType, ColumnType } from "antd/es/table/int
 import dayjs, { type Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
 import { dateOnlyLocal } from "@/lib/dates";
+import { motivoPausa } from "@/lib/motivos-pausa";
 import Link from "next/link";
 import * as XLSX from "xlsx";
 
@@ -347,6 +350,216 @@ function RendimientoOperarios({ isMobile }: { isMobile: boolean }) {
   );
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   Tab RESUMEN — la pantalla "de cada mañana" del planner. Cuatro paneles que
+   responden: ¿quién trabaja ahora? · ¿cómo va la semana vs lo enviado? ·
+   ¿dónde se pierden horas (motivos de pausa)? · ¿qué vence o está atrasado?
+   Se refresca solo cada 60s ("Trabajando ahora" es en vivo).
+   ═══════════════════════════════════════════════════════════════════════════ */
+interface ResumenData {
+  trabajandoAhora: {
+    tecnico: string; inicio: string; transcurrido_h: number; tarea: string;
+    componente: string; horas_estimadas: number | null; es_correctivo: boolean;
+    ot: number | null; ot_id: number | null;
+  }[];
+  libres: string[];
+  semana: {
+    codigo: string; total: number; realizadas: number; enviadas: number;
+    operarios: { nombre: string; total: number; realizadas: number; enProceso: number; desviadas: number; fueraDePlan: number; pct: number }[];
+  };
+  pausas: { motivo: string; horas: number; veces: number }[];
+  alertas: {
+    atrasadas: { id: number; ot: number | null; descripcion: string | null; cliente: string | null; fecha: string }[];
+    atrasadasTotal: number;
+    porVencer: { id: number; ot: number | null; descripcion: string | null; cliente: string | null; fecha: string }[];
+    porVencerTotal: number;
+    poolSinAsignar: number;
+  };
+}
+
+function ResumenPlanner() {
+  const [data, setData] = useState<ResumenData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const fetchResumen = useCallback(async () => {
+    try {
+      const res = await fetch("/api/operaciones/resumen-planner");
+      if (res.ok) setData(await res.json());
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    fetchResumen();
+    const id = setInterval(fetchResumen, 60_000);
+    return () => clearInterval(id);
+  }, [fetchResumen]);
+
+  if (loading && !data) return <Skeleton active title={false} paragraph={{ rows: 10 }} style={{ padding: 16 }} />;
+  if (!data) return <Empty description="No se pudo cargar el resumen." />;
+
+  const tituloCard = (icono: string, texto: string, extra?: React.ReactNode) => (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+      <span style={{ fontSize: 14 }}>{icono} {texto}</span>
+      {extra}
+    </div>
+  );
+  const fila: React.CSSProperties = {
+    display: "flex", alignItems: "center", gap: 8, padding: "5px 0",
+    borderBottom: `1px solid ${brand.border}`, fontSize: 12,
+  };
+  const maxPausa = Math.max(1, ...data.pausas.map((p) => p.horas));
+  const diasDiff = (fecha: string) => dayjs().startOf("day").diff(dayjs(dateOnlyLocal(fecha)), "day");
+
+  return (
+    <Row gutter={[12, 12]}>
+      {/* ── Trabajando ahora (en vivo) ── */}
+      <Col xs={24} lg={12}>
+        <Card
+          size="small"
+          title={tituloCard("▶", `Trabajando ahora (${data.trabajandoAhora.length})`,
+            <Tag color="processing" style={{ margin: 0, fontSize: 10 }}>en vivo · se actualiza solo</Tag>)}
+          styles={{ body: { padding: "8px 14px", maxHeight: 360, overflowY: "auto" } }}
+        >
+          {data.trabajandoAhora.length === 0 ? (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Nadie tiene una tarea en curso." />
+          ) : data.trabajandoAhora.map((s, i) => {
+            const sobre = s.horas_estimadas != null && s.horas_estimadas > 0 && s.transcurrido_h > s.horas_estimadas;
+            return (
+              <div key={i} style={fila}>
+                <span style={{ flex: "0 0 200px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.tecnico}</span>
+                <span style={{ flex: 1, minWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {s.es_correctivo && "🚨 "}
+                  {s.ot_id != null
+                    ? <Link href={`/ordenes-trabajo/${s.ot_id}`} style={{ color: brand.navy, fontWeight: 600 }}>OT {s.ot}</Link>
+                    : <Tag style={{ margin: 0, fontSize: 10 }}>S/OT</Tag>}
+                  {" "}· {s.componente} — {s.tarea}
+                </span>
+                <Tooltip title={`Arrancó ${dayjs(s.inicio).format("HH:mm")}${s.horas_estimadas != null ? ` · estimado ${s.horas_estimadas.toFixed(1)}h` : ""}`}>
+                  <Tag color={sobre ? "error" : "cyan"} style={{ margin: 0, fontFamily: "monospace" }}>
+                    {s.transcurrido_h.toFixed(1)}h{s.horas_estimadas != null ? ` / ${s.horas_estimadas.toFixed(1)}h` : ""}
+                  </Tag>
+                </Tooltip>
+              </div>
+            );
+          })}
+          {data.libres.length > 0 && (
+            <div style={{ marginTop: 8, fontSize: 12, color: brand.textSecondary }}>
+              <Tooltip title={data.libres.join(" · ")}>
+                <span>⚠ <strong>{data.libres.length}</strong> operario(s) sin tarea en curso: {data.libres.slice(0, 3).join(", ")}{data.libres.length > 3 ? "…" : ""}</span>
+              </Tooltip>
+            </div>
+          )}
+        </Card>
+      </Col>
+
+      {/* ── Semana enviada vs real ── */}
+      <Col xs={24} lg={12}>
+        <Card
+          size="small"
+          title={tituloCard("📌", `Semana ${data.semana.codigo} — plan vs real`,
+            <Link href="/operaciones/programacion-semanal" style={{ fontSize: 12 }}>Abrir Gantt →</Link>)}
+          styles={{ body: { padding: "8px 14px", maxHeight: 360, overflowY: "auto" } }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+            <Progress
+              percent={data.semana.total > 0 ? Math.round((data.semana.realizadas / data.semana.total) * 100) : 0}
+              size="small"
+              style={{ flex: 1 }}
+            />
+            <span style={{ fontSize: 12, whiteSpace: "nowrap" }}>{data.semana.realizadas}/{data.semana.total} tareas</span>
+          </div>
+          {data.semana.operarios.map((o) => (
+            <div key={o.nombre} style={fila}>
+              <span style={{ flex: "0 0 200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.nombre}</span>
+              <Progress percent={o.pct} size="small" style={{ flex: 1, minWidth: 80 }} />
+              <span style={{ flex: "0 0 auto", fontSize: 11, color: brand.textSecondary, whiteSpace: "nowrap" }}>
+                {o.realizadas}/{o.total}
+                {o.enProceso > 0 && <Tooltip title="En proceso ahora"><span style={{ marginLeft: 6 }}>▶{o.enProceso}</span></Tooltip>}
+                {o.desviadas > 0 && <Tooltip title="Distintas a lo enviado (movidas)"><span style={{ marginLeft: 6, color: brand.warning }}>↷{o.desviadas}</span></Tooltip>}
+                {o.fueraDePlan > 0 && <Tooltip title="Agregadas después de enviar la semana"><span style={{ marginLeft: 6, color: brand.warning }}>＋{o.fueraDePlan}</span></Tooltip>}
+              </span>
+            </div>
+          ))}
+          {data.semana.operarios.length === 0 && (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Sin tareas esta semana." />
+          )}
+        </Card>
+      </Col>
+
+      {/* ── Pausas de la semana por motivo ── */}
+      <Col xs={24} lg={12}>
+        <Card
+          size="small"
+          title={tituloCard("⏸", "Horas de pausa por motivo (semana)",
+            <Tooltip title="Hueco entre que el técnico pausó y retomó (mismo día). Sale de los motivos que eligen al pausar.">
+              <Tag style={{ margin: 0, fontSize: 10 }}>¿qué frena al taller?</Tag>
+            </Tooltip>)}
+          styles={{ body: { padding: "8px 14px" } }}
+        >
+          {data.pausas.length === 0 ? (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Sin pausas registradas esta semana." />
+          ) : data.pausas.map((p) => {
+            const m = motivoPausa(p.motivo);
+            return (
+              <div key={p.motivo} style={{ ...fila, borderBottom: "none", padding: "3px 0" }}>
+                <span style={{ flex: "0 0 220px", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {m?.label ?? "Sin motivo (registros viejos)"}
+                </span>
+                <div style={{ flex: 1, background: brand.bgPage, borderRadius: 3, height: 14 }}>
+                  <div style={{ width: `${Math.round((p.horas / maxPausa) * 100)}%`, minWidth: 4, height: 14, borderRadius: 3, background: brand.cyan }} />
+                </div>
+                <span style={{ flex: "0 0 90px", textAlign: "right", fontSize: 12, fontWeight: 600 }}>{p.horas.toFixed(1)}h · {p.veces}×</span>
+              </div>
+            );
+          })}
+        </Card>
+      </Col>
+
+      {/* ── Alertas: vencimientos y pool ── */}
+      <Col xs={24} lg={12}>
+        <Card
+          size="small"
+          title={tituloCard("🔥", "Para hoy",
+            <Link href="/operaciones/programacion-semanal" style={{ fontSize: 12 }}>
+              {data.alertas.poolSinAsignar} tarea(s) sin programar →
+            </Link>)}
+          styles={{ body: { padding: "8px 14px", maxHeight: 360, overflowY: "auto" } }}
+        >
+          {data.alertas.atrasadasTotal > 0 && (
+            <>
+              <Text strong style={{ fontSize: 12, color: brand.error }}>Atrasadas ({data.alertas.atrasadasTotal})</Text>
+              {data.alertas.atrasadas.slice(0, 6).map((o) => (
+                <div key={o.id} style={fila}>
+                  <Link href={`/ordenes-trabajo/${o.id}`} style={{ flex: "0 0 70px", fontWeight: 600, color: brand.navy }}>OT {o.ot ?? o.id}</Link>
+                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.cliente ?? "—"} · {o.descripcion ?? ""}</span>
+                  <Tag color="error" style={{ margin: 0, fontSize: 10 }}>hace {diasDiff(o.fecha)}d</Tag>
+                </div>
+              ))}
+            </>
+          )}
+          <Text strong style={{ fontSize: 12, display: "block", marginTop: data.alertas.atrasadasTotal > 0 ? 10 : 0 }}>
+            Vencen en 7 días ({data.alertas.porVencerTotal})
+          </Text>
+          {data.alertas.porVencer.length === 0 ? (
+            <div style={{ fontSize: 12, color: brand.textSecondary, padding: "4px 0" }}>Nada por vencer esta semana. 🎉</div>
+          ) : data.alertas.porVencer.slice(0, 6).map((o) => {
+            const d = -diasDiff(o.fecha);
+            return (
+              <div key={o.id} style={fila}>
+                <Link href={`/ordenes-trabajo/${o.id}`} style={{ flex: "0 0 70px", fontWeight: 600, color: brand.navy }}>OT {o.ot ?? o.id}</Link>
+                <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.cliente ?? "—"} · {o.descripcion ?? ""}</span>
+                <Tag color={d <= 1 ? "error" : d <= 3 ? "warning" : "default"} style={{ margin: 0, fontSize: 10 }}>
+                  {d === 0 ? "HOY" : d === 1 ? "mañana" : `en ${d}d`}
+                </Tag>
+              </div>
+            );
+          })}
+        </Card>
+      </Col>
+    </Row>
+  );
+}
+
 export default function ProgramacionDashboardPage() {
   const { screens } = useResponsive();
   const isMobile = !screens.md;
@@ -384,7 +597,8 @@ export default function ProgramacionDashboardPage() {
   const [componentesOrdenHidratado, setComponentesOrdenHidratado] = useState(false);
   const [vistaConfigOpen, setVistaConfigOpen] = useState(false);
   // Vista principal: matriz de OTs (default) o rendimiento por operario.
-  const [vistaTab, setVistaTab] = useState<"matriz" | "rendimiento">("matriz");
+  // "resumen" es el landing: la pantalla de cada mañana del planner (en vivo).
+  const [vistaTab, setVistaTab] = useState<"resumen" | "matriz" | "rendimiento">("resumen");
   useEffect(() => {
     try {
       const raw = localStorage.getItem("programacion-dashboard-ops-ocultas-v1");
@@ -864,8 +1078,9 @@ export default function ProgramacionDashboardPage() {
           </Tooltip>
           <Segmented
             value={vistaTab}
-            onChange={(v) => setVistaTab(v as "matriz" | "rendimiento")}
+            onChange={(v) => setVistaTab(v as "resumen" | "matriz" | "rendimiento")}
             options={[
+              { label: "Resumen", value: "resumen" },
               { label: "Matriz de OTs", value: "matriz" },
               { label: "Rendimiento", value: "rendimiento" },
             ]}
@@ -928,7 +1143,9 @@ export default function ProgramacionDashboardPage() {
         </Space>
       </Card>
 
-      {vistaTab === "rendimiento" ? (
+      {vistaTab === "resumen" ? (
+        <ResumenPlanner />
+      ) : vistaTab === "rendimiento" ? (
         <RendimientoOperarios isMobile={isMobile} />
       ) : cargandoInicial ? (
         <Skeleton active title={false} paragraph={{ rows: 10 }} style={{ padding: 16 }} />
