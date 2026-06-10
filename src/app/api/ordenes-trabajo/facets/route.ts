@@ -12,7 +12,7 @@ export async function GET() {
   try {
     const [
       otStatus, recursosStatus, tallerStatus, prioridad,
-      atencion, tipoRep, tipoGar, tipoOt, fabricantes, codReps,
+      atencion, tipoRep, tipoGar, tipoOt, fabricantes, codReps, clientes,
     ] = await Promise.all([
       prisma.otStatus.findMany({ select: { codigo: true, nombre: true }, orderBy: { nombre: "asc" } }),
       prisma.recursosStatus.findMany({ select: { codigo: true, nombre: true }, orderBy: { nombre: "asc" } }),
@@ -24,6 +24,7 @@ export async function GET() {
       prisma.tipoOT.findMany({ select: { codigo: true, nombre: true }, orderBy: { nombre: "asc" } }),
       prisma.fabricante.findMany({ select: { nombre: true }, orderBy: { nombre: "asc" } }),
       prisma.codigoReparacion.findMany({ select: { codigo: true }, orderBy: { codigo: "asc" } }),
+      prisma.cliente.findMany({ select: { cliente_id: true, razon_social: true, nombre_comercial: true }, orderBy: { razon_social: "asc" } }),
     ]);
 
     // Años disponibles (2 dígitos), para el multi-select del listado.
@@ -50,6 +51,8 @@ export async function GET() {
       // fabricante se filtra por nombre; codigo_reparacion por su código.
       fabricante: fabricantes.filter((f) => f.nombre).map((f) => ({ value: f.nombre as string, text: f.nombre as string })),
       codigo_reparacion: codReps.filter((c) => c.codigo).map((c) => ({ value: c.codigo as string, text: c.codigo as string })),
+      // cliente se filtra por id_cliente (value = id), mostrando el nombre.
+      cliente: clientes.map((c) => ({ value: String(c.cliente_id), text: c.nombre_comercial ?? c.razon_social })),
       anios,
     });
   } catch (error) {

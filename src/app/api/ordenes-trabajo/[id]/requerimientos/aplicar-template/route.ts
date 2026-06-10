@@ -34,6 +34,11 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const usuario = (await getAuditUser(req)) ?? "sistema";
 
     const result = await prisma.$transaction(async (tx) => {
+      // Lock pesimista por OT: serializa dos "aplicar template" concurrentes
+      // (doble click / carga lenta). El segundo espera al COMMIT del primero,
+      // ve los items recién creados y replace_pending los deduplica — en vez de
+      // crear un requerimiento duplicado por la carrera.
+      await tx.$executeRawUnsafe("SELECT pg_advisory_xact_lock(hashtext($1))", `aplicar_template:${otId}`);
       const ot = await tx.ordenTrabajo.findUnique({
         where: { id: otId },
         select: { id: true, codigo_reparacion: { select: { codigo: true } } },

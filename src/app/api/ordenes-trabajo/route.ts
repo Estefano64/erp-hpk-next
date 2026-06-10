@@ -85,7 +85,12 @@ export async function GET(req: NextRequest) {
         : raw;
       where[col] = vals.length === 1 ? vals[0] : { in: vals };
     }
-    if (clienteId) where.id_cliente = Number(clienteId);
+    if (clienteId) {
+      // El filtro de columna manda el/los id_cliente como CSV (multi-select).
+      const ids = clienteId.split(",").map((s) => Number(s.trim())).filter(Number.isFinite);
+      if (ids.length === 1) where.id_cliente = ids[0];
+      else if (ids.length > 1) where.id_cliente = { in: ids };
+    }
 
     // Filtro por año (2 dígitos, ot % 100). Llega como ?anios=26,25. Si no
     // viene, no se filtra por año (el front manda el año actual por default;
@@ -367,6 +372,8 @@ export async function POST(req: NextRequest) {
           id_viajero: esBienOServicio ? null : (body.id_viajero || null),
           guia_remision: esBienOServicio ? null : (body.guia_remision || null),
           empresa_entrega: esBienOServicio ? null : (body.empresa_entrega || null),
+          // Lugar de entrega: SOLO Bien (opcional).
+          lugar_entrega: esBien ? (body.lugar_entrega || null) : null,
           fecha_recepcion: esBienOServicio ? null : parseDateOnly(body.fecha_recepcion),
           pcr: esBienOServicio ? null : (body.pcr ?? null),
           horas: esBienOServicio ? null : (body.horas ?? null),

@@ -63,6 +63,11 @@ export async function cascadeReprogramar(
       // (así "empujar" desplaza toda la cola del operario, no solo el día).
       fecha_inicio: opts.cruzarDias ? { gte: diaIni } : { gte: diaIni, lte: diaFin },
       estado: { notIn: ["cancelado", "realizado"] },
+      // Las HE viven fuera de la jornada (banda ≥18:00, reloj continuo): no
+      // compiten por el horario de jornada y NO se empujan — re-encadenarlas con
+      // calcularFinEstimado las metía a la jornada dejando el flag HE colgado.
+      // (OR explícito: `not: true` excluiría los null por lógica SQL trivaluada.)
+      OR: [{ horas_extras: false }, { horas_extras: null }],
     },
     orderBy: { fecha_inicio: "asc" },
   });
@@ -89,11 +94,27 @@ export async function cascadeReprogramar(
   let cursor: Date = finT;
 
   for (const c of aReprogramar) {
+    // Solo EMPUJAR, nunca adelantar (decisión 2026-06-09): si la cascada no la
+    // alcanza (arranca en/después del cursor), la tarea se queda donde está —
+    // se respetan los huecos que el planner dejó a propósito. Sigue siendo
+    // obstáculo: el cursor avanza hasta su fin para encadenar a las siguientes.
+    const origIni = c.fecha_inicio!;
+    if (origIni.getTime() >= cursor.getTime()) {
+      const qtyC = Math.max(1, Number(c.qty_personal ?? 1));
+      cursor = c.fecha_fin ?? calcularFinEstimado(origIni, Number(c.horas_estimadas ?? 0) * qtyC);
+      continue;
+    }
     const inicioHabil = normalizarAInicioHabil(cursor);
     // Sin cruzarDias (emergencia): lo que no entra en el día va al pool.
     // Con cruzarDias (empujar): se sigue ubicando en el siguiente día hábil.
     if (!opts.cruzarDias && !dayjs(inicioHabil).isSame(dia, "day")) {
-      await tx.planificacionOT.update({ where: { id: c.id }, data: { fecha_inicio: null, fecha_fin: null } });
+      // Al pool: además de las fechas se resetea el estado (programado → abierto)
+      // y el flag publicado (sin agenda no hay plan congelado). Conserva su
+      // semana_plan: queda en la bandeja "esta semana sin hora" para reubicarla.
+      await tx.planificacionOT.update({
+        where: { id: c.id },
+        data: { fecha_inicio: null, fecha_fin: null, estado: "abierto", publicado: false },
+      });
       alPool.push(c.id);
       continue;
     }

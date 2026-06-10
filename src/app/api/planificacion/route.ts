@@ -11,6 +11,9 @@ export async function GET(req: NextRequest) {
     const search = searchParams.get("search")?.trim() ?? "";
     const semana = searchParams.get("semana")?.trim();
     const estado = searchParams.get("estado")?.trim();
+    // Lista de estados (coma-separada) para el filtro por "estado general"/macro de
+    // Planificación: Abierto/Cerrado/No ejecutado mapean a varios estados puntuales.
+    const estados = searchParams.get("estados")?.split(",").map((s) => s.trim()).filter(Boolean) ?? [];
     const tecnico = searchParams.get("tecnico")?.trim();
     const maquina = searchParams.get("maquina")?.trim();
     const otId = searchParams.get("ot_id");
@@ -40,7 +43,10 @@ export async function GET(req: NextRequest) {
     };
 
     if (semana) where.semana_plan = semana;
-    if (estado) where.estado = estado;
+    // `estado` (puntual) y `estados` (macro) se combinan con AND: si vienen ambos,
+    // el puntual debe además pertenecer al conjunto del macro (intersección).
+    if (estado) and.push({ estado });
+    if (estados.length) and.push({ estado: { in: estados } });
     if (tecnico) and.push(tokenMatch("tecnico", tecnico));
     if (maquina) and.push(tokenMatch("maquina", maquina));
     if (otId) where.ot_id = Number(otId);
@@ -118,6 +124,9 @@ const CreateSchema = z.object({
   orden: z.coerce.number().int().min(0).optional(),
   horas_estimadas: z.coerce.number().min(0).optional().nullable(),
   comentario: z.string().trim().optional().nullable(),
+  // Semana de planificación (ej. "2026W23"). Opcional — desde el form de
+  // Planificación se puede asignar al crear; si no, queda en el pool.
+  semana_plan: z.string().trim().optional().nullable(),
 });
 
 // POST /api/planificacion — crear una fila PlanificacionOT individual
@@ -165,10 +174,12 @@ export async function POST(req: NextRequest) {
         descripcion: trabajo,
         tipo_reparacion: d.tipo_reparacion ?? null,
         orden,
+        qty_personal: d.qty,
         horas_estimadas: d.horas_estimadas ?? null,
         maquina: d.maquina ?? null,
         tecnico: d.tecnico ?? null,
         comentario: d.comentario ?? null,
+        semana_plan: d.semana_plan ?? null,
         estado: "abierto",
       },
       include: {

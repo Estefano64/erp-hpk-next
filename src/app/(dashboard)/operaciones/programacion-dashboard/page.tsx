@@ -19,6 +19,9 @@ import {
   ColorPicker,
   Tabs,
   App,
+  Segmented,
+  Skeleton,
+  DatePicker,
 } from "antd";
 import {
   AppstoreOutlined,
@@ -30,11 +33,21 @@ import {
   ArrowUpOutlined,
   ArrowDownOutlined,
   InfoCircleOutlined,
+  FileExcelOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType, ColumnGroupType, ColumnType } from "antd/es/table/interface";
-import dayjs from "dayjs";
+import dayjs, { type Dayjs } from "dayjs";
+import isoWeek from "dayjs/plugin/isoWeek";
 import Link from "next/link";
-import { brand } from "@/lib/theme";
+import * as XLSX from "xlsx";
+
+dayjs.extend(isoWeek);
+
+// Código ISO de semana "YYYYWww" — mismo formato que semana_plan/semana_base.
+function semanaCodigo(d: Dayjs): string {
+  return `${d.isoWeekYear()}W${String(d.isoWeek()).padStart(2, "0")}`;
+}
+import { brand, radius, shadow, space } from "@/lib/theme";
 import { useResponsive } from "@/lib/responsive";
 import {
   useColumnasOcultas,
@@ -127,7 +140,213 @@ function abreviarEstado(codigo: string | null): string {
   return c.slice(0, 3);
 }
 
+// Estado "global" de la OT derivado del progreso de tareas (para KPIs / filtros).
+function estadoGlobalOT(o: OTRow): "sin_empezar" | "en_proceso" | "terminada" {
+  if (o.progreso.total === 0 || o.progreso.realizadas === 0) return "sin_empezar";
+  if (o.progreso.realizadas >= o.progreso.total) return "terminada";
+  return "en_proceso";
+}
+// Atrasada = tiene fecha de entrega vencida y NO está terminada.
+function otAtrasada(o: OTRow): boolean {
+  if (!o.fecha_entrega) return false;
+  if (o.progreso.total > 0 && o.progreso.realizadas >= o.progreso.total) return false;
+  return dayjs(o.fecha_entrega).isBefore(dayjs(), "day");
+}
+// ¿Tiene alguna operación tercerizada?
+function otTieneTercero(o: OTRow): boolean {
+  for (const k in o.plan) { if (o.plan[k]?.externo) return true; }
+  return false;
+}
+
+type QuickFilter = "todas" | "sin_empezar" | "en_proceso" | "terminada" | "atrasadas" | "terceros";
+
+// Tarjeta KPI clickable que además actúa de filtro rápido (rec. 1 + 3).
+function Kpi({ label, value, color, active, onClick }: {
+  label: string; value: React.ReactNode; color?: string; active?: boolean; onClick?: () => void;
+}) {
+  const c = color ?? brand.navy;
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        cursor: onClick ? "pointer" : "default",
+        background: active ? c : brand.white,
+        border: `1px solid ${active ? c : brand.border}`,
+        borderRadius: radius.md,
+        padding: "6px 14px",
+        minWidth: 92,
+        lineHeight: 1.15,
+        boxShadow: shadow.sm,
+        transition: "all .15s",
+        flex: "0 0 auto",
+      }}
+    >
+      <div style={{ fontSize: 11, color: active ? "rgba(255,255,255,0.85)" : brand.textSecondary }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 700, color: active ? brand.white : c }}>{value}</div>
+    </div>
+  );
+}
+
+// ── Rendimiento por operario (semana). Mide justo: cumplimiento del plan +
+//    correctivos (crédito) + eficiencia (horas est/real). Usa /api/operaciones/rendimiento. ──
+interface RendimientoOperario {
+  operario: string;
+  planAsignadas: number; planCumplidas: number; pendientes: number;
+  correctivos: number; cargaReal: number;
+  cumplimiento: number | null; eficiencia: number | null;
+  horasEst: number; horasRealPlan: number; horasRealCorrectivos: number;
+}
+
+function RendimientoOperarios({ isMobile }: { isMobile: boolean }) {
+  const { message } = App.useApp();
+  const [semanaDate, setSemanaDate] = useState<Dayjs>(() => dayjs().startOf("isoWeek"));
+  const [rows, setRows] = useState<RendimientoOperario[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const semana = semanaCodigo(semanaDate);
+
+  const fetchR = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/operaciones/rendimiento?semana=${encodeURIComponent(semana)}`);
+      if (!res.ok) throw new Error("Error al cargar rendimiento");
+      const data = await res.json();
+      setRows((data.operarios ?? []) as RendimientoOperario[]);
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "Error");
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [semana, message]);
+  useEffect(() => { fetchR(); }, [fetchR]);
+
+  const tot = useMemo(() => {
+    const planAsig = rows.reduce((s, r) => s + r.planAsignadas, 0);
+    const planCump = rows.reduce((s, r) => s + r.planCumplidas, 0);
+    const corr = rows.reduce((s, r) => s + r.correctivos, 0);
+    return { planAsig, planCump, corr, cumpl: planAsig > 0 ? Math.round((planCump / planAsig) * 100) : 0, operarios: rows.length };
+  }, [rows]);
+
+  const pct = (v: number | null) => (v == null ? "—" : `${Math.round(v * 100)}%`);
+  const cumplColor = (v: number | null) => (v == null ? brand.textSecondary : v >= 0.85 ? brand.success : v >= 0.6 ? brand.warning : brand.error);
+  const efColor = (v: number | null) => (v == null ? brand.textSecondary : v >= 1 ? brand.success : v >= 0.8 ? brand.warning : brand.error);
+
+  const columns: ColumnsType<RendimientoOperario> = [
+    { title: "Operario", dataIndex: "operario", key: "operario", fixed: "left", width: 210, render: (s: string) => <Text strong>{s}</Text> },
+    {
+      title: <Tooltip title="Tareas del plan cumplidas / asignadas en la semana">Plan</Tooltip>,
+      key: "plan", width: 110, align: "center",
+      render: (_: unknown, r) => <span>{r.planCumplidas}<Text type="secondary"> / {r.planAsignadas}</Text></span>,
+    },
+    {
+      title: "Cumplimiento", dataIndex: "cumplimiento", key: "cumplimiento", width: 150,
+      sorter: (a, b) => (a.cumplimiento ?? -1) - (b.cumplimiento ?? -1),
+      render: (v: number | null) => (
+        <Tooltip title="% de tareas del plan que completó">
+          <Progress percent={v == null ? 0 : Math.round(v * 100)} size="small" strokeColor={cumplColor(v)} format={() => pct(v)} />
+        </Tooltip>
+      ),
+    },
+    {
+      title: <Tooltip title="Tareas del plan que quedaron sin completar">Pendientes</Tooltip>,
+      dataIndex: "pendientes", key: "pendientes", width: 110, align: "center",
+      render: (v: number) => (v > 0 ? <Tag color="warning" style={{ margin: 0 }}>{v}</Tag> : <Text type="secondary">0</Text>),
+    },
+    {
+      title: <Tooltip title="Correctivos (emergencias) que hizo fuera del plan — crédito extra">Correctivos</Tooltip>,
+      dataIndex: "correctivos", key: "correctivos", width: 120, align: "center",
+      sorter: (a, b) => a.correctivos - b.correctivos,
+      render: (v: number) => (v > 0 ? <Tag color="red" style={{ margin: 0 }}>+{v}</Tag> : <Text type="secondary">0</Text>),
+    },
+    {
+      title: <Tooltip title="Total que sacó: tareas del plan cumplidas + correctivos">Carga real</Tooltip>,
+      dataIndex: "cargaReal", key: "cargaReal", width: 110, align: "center",
+      defaultSortOrder: "descend", sorter: (a, b) => a.cargaReal - b.cargaReal,
+      render: (v: number) => <Text strong style={{ fontSize: 15 }}>{v}</Text>,
+    },
+    {
+      title: <Tooltip title="Horas estimadas / horas reales de lo cumplido. >100% = más rápido que lo planeado.">Eficiencia</Tooltip>,
+      dataIndex: "eficiencia", key: "eficiencia", width: 120, align: "center",
+      sorter: (a, b) => (a.eficiencia ?? -1) - (b.eficiencia ?? -1),
+      render: (v: number | null) => <span style={{ color: efColor(v), fontWeight: 600 }}>{pct(v)}</span>,
+    },
+    {
+      title: "Horas (real / est)", key: "horas", width: 150, align: "center",
+      render: (_: unknown, r) => <Text type="secondary" style={{ fontSize: 12 }}>{r.horasRealPlan}h / {r.horasEst}h</Text>,
+    },
+  ];
+
+  const header = (
+    <Card size="small" style={{ marginBottom: space.sm }} styles={{ body: { padding: 10 } }}>
+      <Space wrap>
+        <DatePicker
+          picker="week"
+          value={semanaDate}
+          onChange={(d) => d && setSemanaDate(d.startOf("isoWeek"))}
+          format={(v) => `Semana ${v.isoWeek()}, ${v.isoWeekYear()}`}
+          allowClear={false}
+          style={{ minWidth: 180 }}
+        />
+        <Button onClick={() => setSemanaDate(dayjs().startOf("isoWeek"))}>Esta semana</Button>
+        <Button icon={<ReloadOutlined />} onClick={fetchR} loading={loading}>Refrescar</Button>
+        <Text type="secondary" style={{ fontSize: 12 }}>{semana}</Text>
+      </Space>
+    </Card>
+  );
+
+  const kpis = (
+    <div style={{ display: "flex", gap: space.sm, flexWrap: "wrap", marginBottom: space.sm }}>
+      <Kpi label="Operarios" value={tot.operarios} color={brand.navy} />
+      <Kpi label="Plan cumplido" value={`${tot.planCump}/${tot.planAsig}`} color={brand.cyan} />
+      <Kpi label="Cumplimiento" value={`${tot.cumpl}%`} color={tot.cumpl >= 85 ? brand.success : tot.cumpl >= 60 ? brand.warning : brand.error} />
+      <Kpi label="Correctivos" value={tot.corr} color={brand.error} />
+    </div>
+  );
+
+  return (
+    <>
+      {header}
+      {kpis}
+      {rows.length === 0 ? (
+        <Empty description={loading ? "Cargando…" : "Sin actividad de operarios en esta semana."} />
+      ) : isMobile ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: space.sm }}>
+          {rows.map((r) => (
+            <Card key={r.operario} size="small" styles={{ body: { padding: 12 } }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <Text strong style={{ color: brand.navy }}>{r.operario}</Text>
+                <Text strong>Carga real: {r.cargaReal}</Text>
+              </div>
+              <Progress percent={r.cumplimiento == null ? 0 : Math.round(r.cumplimiento * 100)} size="small" strokeColor={cumplColor(r.cumplimiento)} format={() => `Plan ${r.planCumplidas}/${r.planAsignadas} · ${pct(r.cumplimiento)}`} />
+              <div style={{ fontSize: 12, color: brand.textSecondary, marginTop: 6 }}>
+                {r.correctivos > 0 && <Tag color="red" style={{ margin: 0, marginRight: 6 }}>+{r.correctivos} correctivos</Tag>}
+                Eficiencia <span style={{ color: efColor(r.eficiencia), fontWeight: 600 }}>{pct(r.eficiencia)}</span> · {r.horasRealPlan}h/{r.horasEst}h
+              </div>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <Card size="small" styles={{ body: { padding: 0 } }}>
+          <Table<RendimientoOperario>
+            rowKey="operario"
+            columns={columns}
+            dataSource={rows}
+            loading={loading}
+            size="small"
+            scroll={{ x: 1080 }}
+            pagination={paginacionEstandar({ current: page, pageSize, total: rows.length, onChange: (p, s) => { setPage(p); setPageSize(s); }, label: "operarios" })}
+          />
+        </Card>
+      )}
+    </>
+  );
+}
+
 export default function ProgramacionDashboardPage() {
+  const { screens } = useResponsive();
+  const isMobile = !screens.md;
   const [loading, setLoading] = useState(false);
   const [componentes, setComponentes] = useState<ComponenteCat[]>([]);
   const [operaciones, setOperaciones] = useState<OperacionCat[]>([]);
@@ -137,6 +356,18 @@ export default function ProgramacionDashboardPage() {
   const [pageSize, setPageSize] = useState(50);
   const [search, setSearch] = useState("");
   const [filtroComponente, setFiltroComponente] = useState<string | null>(null);
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>("todas");
+  const [leyendaVisible, setLeyendaVisible] = useState(true);
+  const [densidad, setDensidad] = useState<"compacto" | "comodo">("compacto");
+  // Componentes (grupos de columnas) colapsados → muestran una sola columna resumen.
+  const [gruposColapsados, setGruposColapsados] = useState<Set<string>>(new Set());
+  const toggleGrupo = useCallback((cod: string) => {
+    setGruposColapsados((prev) => {
+      const next = new Set(prev);
+      if (next.has(cod)) next.delete(cod); else next.add(cod);
+      return next;
+    });
+  }, []);
   const [detalle, setDetalle] = useState<OTRow | null>(null);
   const { ocultas, setOcultas } = useColumnasOcultas("programacion-dashboard-cols-v1");
   // Vista configurable: lista de operacion_codigos ocultos (persistida en localStorage).
@@ -149,6 +380,8 @@ export default function ProgramacionDashboardPage() {
   const [componentesOrden, setComponentesOrden] = useState<string[]>([]);
   const [componentesOrdenHidratado, setComponentesOrdenHidratado] = useState(false);
   const [vistaConfigOpen, setVistaConfigOpen] = useState(false);
+  // Vista principal: matriz de OTs (default) o rendimiento por operario.
+  const [vistaTab, setVistaTab] = useState<"matriz" | "rendimiento">("matriz");
   useEffect(() => {
     try {
       const raw = localStorage.getItem("programacion-dashboard-ops-ocultas-v1");
@@ -251,6 +484,48 @@ export default function ProgramacionDashboardPage() {
     );
   }, [ots, search]);
 
+  // KPIs sobre el set buscado (no el quickFilter, para que sean estables).
+  const kpis = useMemo(() => {
+    let sinEmpezar = 0, enProceso = 0, terminadas = 0, atrasadas = 0, terceros = 0;
+    let totTareas = 0, totReal = 0;
+    for (const o of otsFiltradas) {
+      const e = estadoGlobalOT(o);
+      if (e === "sin_empezar") sinEmpezar++; else if (e === "en_proceso") enProceso++; else terminadas++;
+      if (otAtrasada(o)) atrasadas++;
+      if (otTieneTercero(o)) terceros++;
+      totTareas += o.progreso.total; totReal += o.progreso.realizadas;
+    }
+    return {
+      activas: otsFiltradas.length,
+      avance: totTareas > 0 ? Math.round((totReal / totTareas) * 100) : 0,
+      sinEmpezar, enProceso, terminadas, atrasadas, terceros,
+    };
+  }, [otsFiltradas]);
+
+  // Lista visible = búsqueda + quickFilter, ordenada por urgencia
+  // (atrasadas primero, luego prioridad, luego fecha de entrega).
+  const otsVisibles = useMemo(() => {
+    const filtradas = otsFiltradas.filter((o) => {
+      switch (quickFilter) {
+        case "sin_empezar": return estadoGlobalOT(o) === "sin_empezar";
+        case "en_proceso": return estadoGlobalOT(o) === "en_proceso";
+        case "terminada": return estadoGlobalOT(o) === "terminada";
+        case "atrasadas": return otAtrasada(o);
+        case "terceros": return otTieneTercero(o);
+        default: return true;
+      }
+    });
+    return [...filtradas].sort((a, b) => {
+      const atrA = otAtrasada(a) ? 0 : 1, atrB = otAtrasada(b) ? 0 : 1;
+      if (atrA !== atrB) return atrA - atrB;
+      const pa = a.prioridad_nivel ?? 99, pb = b.prioridad_nivel ?? 99;
+      if (pa !== pb) return pa - pb;
+      return (a.fecha_entrega ?? "9999").localeCompare(b.fecha_entrega ?? "9999");
+    });
+  }, [otsFiltradas, quickFilter]);
+
+  const cargandoInicial = loading && ots.length === 0;
+
   // Agrupar operaciones por componente para construir las columnas anidadas
   const opsOcultasSet = useMemo(() => new Set(opsOcultas), [opsOcultas]);
   const operacionesPorComponente = useMemo(() => {
@@ -267,7 +542,7 @@ export default function ProgramacionDashboardPage() {
 
   // Renderer de celda de operación: muestra abreviatura sobre fondo del color del estado.
   const renderCelda = (estado: string | null, externo: boolean | null) => {
-    if (!estado) return <div style={{ width: "100%", textAlign: "center", color: "#bbb" }}>—</div>;
+    if (!estado) return <div style={{ width: "100%", textAlign: "center", color: brand.textSecondary }}>—</div>;
     const color = colorDeEstado(estado);
     const abr = abreviarEstado(estado);
     return (
@@ -302,8 +577,9 @@ export default function ProgramacionDashboardPage() {
       key: "ot",
       title: "HP&K",
       dataIndex: "ot",
-      width: 110,
+      width: 90,
       align: "left",
+      fixed: "left",
       sorter: (a, b) => Number(a.ot ?? 0) - Number(b.ot ?? 0),
       ...filtroPorColumna(otsFiltradas, "ot"),
       render: (v: number | null, r) => (
@@ -414,7 +690,7 @@ export default function ProgramacionDashboardPage() {
           <Tooltip title={`${realizadas}/${total} tareas realizadas (${pct}%)`}>
             <div style={{ lineHeight: 1.1 }}>
               <Progress percent={pct} size="small" status={pct === 100 ? "success" : "active"} showInfo={false} />
-              <div style={{ fontSize: 10, color: "#666" }}>{realizadas}/{total} ({pct}%)</div>
+              <div style={{ fontSize: 10, color: brand.textSecondary }}>{realizadas}/{total} ({pct}%)</div>
             </div>
           </Tooltip>
         );
@@ -430,6 +706,35 @@ export default function ProgramacionDashboardPage() {
       const ops = operacionesPorComponente.get(comp.codigo) ?? [];
       if (ops.length === 0) continue;
       const compColor = colorDeComponente(comp);
+
+      // Grupo COLAPSADO: una sola columna-resumen (realizadas/total de sus ops).
+      if (gruposColapsados.has(comp.codigo)) {
+        cols.push({
+          key: `comp-${comp.codigo}-collapsed`,
+          width: 48,
+          align: "center" as const,
+          title: (
+            <div
+              onClick={() => toggleGrupo(comp.codigo)}
+              title={`Expandir ${comp.nombre}`}
+              style={{ cursor: "pointer", fontWeight: 700, color: brand.white, fontSize: 10, background: compColor, padding: "4px 2px", borderRadius: 4, writingMode: "vertical-rl", transform: "rotate(180deg)", whiteSpace: "nowrap" }}
+            >
+              ▸ {comp.nombre}
+            </div>
+          ),
+          render: (_: unknown, r: OTRow) => {
+            let tot = 0, ok = 0;
+            for (const op of ops) {
+              const key = `${comp.codigo.trim().toUpperCase()}__${op.codigo.trim().toUpperCase()}`;
+              const cell = r.plan[key];
+              if (cell?.estado) { tot++; if (String(cell.estado).toLowerCase() === "realizado") ok++; }
+            }
+            if (tot === 0) return <span style={{ color: brand.textSecondary, fontSize: 10 }}>—</span>;
+            return <span style={{ fontSize: 10, fontWeight: 700, color: ok >= tot ? brand.success : brand.textSecondary }}>{ok}/{tot}</span>;
+          },
+        } as ColumnType<OTRow>);
+        continue;
+      }
 
       // Separar por clasificación
       const opsSTD = ops.filter((o) => (o.clasificacion ?? "STD").toUpperCase() === "STD");
@@ -483,17 +788,21 @@ export default function ProgramacionDashboardPage() {
       const groupCol: ColumnGroupType<OTRow> = {
         key: `comp-${comp.codigo}`,
         title: (
-          <div style={{
-            fontWeight: 700,
-            color: brand.white,
-            fontSize: 11,
-            letterSpacing: 0.5,
-            background: compColor,
-            padding: "4px 8px",
-            borderRadius: 4,
-            display: "inline-block",
-          }}>
-            {comp.nombre}
+          <div
+            onClick={() => toggleGrupo(comp.codigo)}
+            title={`Colapsar ${comp.nombre}`}
+            style={{
+              cursor: "pointer",
+              fontWeight: 700,
+              color: brand.white,
+              fontSize: 11,
+              letterSpacing: 0.5,
+              background: compColor,
+              padding: "4px 8px",
+              borderRadius: 4,
+              display: "inline-block",
+            }}>
+            {comp.nombre} <span style={{ opacity: 0.85 }}>▾</span>
           </div>
         ),
         children: subgrupos.length > 0 ? subgrupos : [],
@@ -501,9 +810,41 @@ export default function ProgramacionDashboardPage() {
       cols.push(groupCol);
     }
     return cols;
-  }, [componentesOrdenados, operacionesPorComponente, estados, colorDeEstado]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [componentesOrdenados, operacionesPorComponente, estados, colorDeEstado, gruposColapsados, toggleGrupo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const columns: ColumnsType<OTRow> = [...infoColumns, ...operacionColumns];
+
+  // Export client-side de la matriz a .xlsx (una columna por operación visible).
+  const exportarMatriz = useCallback(() => {
+    const rows = otsVisibles.map((o) => {
+      const r: Record<string, string | number> = {
+        "OT HP&K": o.ot ?? `#${o.id}`,
+        "Cliente": o.cliente_nombre ?? o.cliente_codigo ?? "",
+        "Descripción": o.descripcion ?? "",
+        "Flota": o.modelo ?? "",
+        "N/P": o.np ?? "",
+        "Prioridad": o.prioridad_codigo ?? "",
+        "F. Ingreso": o.fecha_recepcion ? dayjs(o.fecha_recepcion).format("DD/MM/YYYY") : "",
+        "Fecha entrega": o.fecha_entrega ? dayjs(o.fecha_entrega).format("DD/MM/YYYY") : "",
+        "Status OT": o.ot_status ?? "",
+        "Avance": o.progreso.total > 0 ? `${o.progreso.realizadas}/${o.progreso.total}` : "",
+      };
+      for (const comp of componentesOrdenados) {
+        for (const op of operacionesPorComponente.get(comp.codigo) ?? []) {
+          const key = `${comp.codigo.trim().toUpperCase()}__${op.codigo.trim().toUpperCase()}`;
+          const cell = o.plan[key];
+          r[`${comp.nombre} · ${op.nombre}`] = cell?.estado
+            ? `${estadoMap.get(cell.estado)?.nombre ?? cell.estado}${cell.externo ? " (tercero)" : ""}`
+            : "";
+        }
+      }
+      return r;
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Planificación");
+    XLSX.writeFile(wb, `Planificacion-${dayjs().format("YYYYMMDD-HHmm")}.xlsx`);
+  }, [otsVisibles, componentesOrdenados, operacionesPorComponente, estadoMap]);
 
   return (
     <div>
@@ -518,6 +859,15 @@ export default function ProgramacionDashboardPage() {
           <Tooltip title="Matriz de OTs activas × operaciones del catálogo. Cada celda muestra el estado actual de esa operación en la OT.">
             <InfoCircleOutlined style={{ color: brand.textSecondary, marginRight: 4 }} />
           </Tooltip>
+          <Segmented
+            value={vistaTab}
+            onChange={(v) => setVistaTab(v as "matriz" | "rendimiento")}
+            options={[
+              { label: "Matriz de OTs", value: "matriz" },
+              { label: "Rendimiento", value: "rendimiento" },
+            ]}
+          />
+          {vistaTab === "matriz" && (<>
           <Input
             placeholder="Buscar OT, descripción, cliente, equipo…"
             prefix={<SearchOutlined />}
@@ -547,50 +897,127 @@ export default function ProgramacionDashboardPage() {
           >
             Configurar vista{opsOcultas.length > 0 ? ` (${opsOcultas.length} ocultas)` : ""}
           </Button>
-          <Tooltip
-            title={
-              <div style={{ fontSize: 11 }}>
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>Leyenda de estados</div>
-                {estados.map((e) => (
-                  <div key={e.codigo} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-                    <span style={{ display: "inline-block", width: 16, height: 12, borderRadius: 2, background: colorDeEstado(e.codigo) }} />
-                    <span><b>{abreviarEstado(e.codigo)}</b> — {e.nombre}</span>
-                  </div>
-                ))}
-                <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.2)" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{
-                      display: "inline-block", width: 16, height: 12, borderRadius: 2, background: "#8c8c8c",
-                      backgroundImage: "repeating-linear-gradient(45deg, rgba(255,255,255,0.35) 0 3px, transparent 3px 6px)",
-                      boxShadow: "inset 0 0 0 1px #FAAD14",
-                    }} />
-                    <span>🤝 Trabajo a tercero</span>
-                  </div>
-                </div>
-              </div>
-            }
-            placement="bottomLeft"
+          <Button
+            icon={<BgColorsOutlined />}
+            type={leyendaVisible ? "primary" : "default"}
+            onClick={() => setLeyendaVisible((v) => !v)}
           >
-            <Button icon={<BgColorsOutlined />}>Leyenda</Button>
-          </Tooltip>
+            Leyenda
+          </Button>
+          <Segmented
+            size="small"
+            value={densidad}
+            onChange={(v) => setDensidad(v as "compacto" | "comodo")}
+            options={[{ label: "Compacto", value: "compacto" }, { label: "Cómodo", value: "comodo" }]}
+          />
+          {gruposColapsados.size > 0 && (
+            <Button onClick={() => setGruposColapsados(new Set())}>
+              Expandir grupos ({gruposColapsados.size})
+            </Button>
+          )}
+          <Button icon={<FileExcelOutlined />} onClick={exportarMatriz} disabled={otsVisibles.length === 0}>
+            Exportar
+          </Button>
           <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>
             Refrescar
           </Button>
+          </>)}
         </Space>
       </Card>
 
-      {otsFiltradas.length === 0 && !loading ? (
-        <Empty description="No hay OTs activas." />
+      {vistaTab === "rendimiento" ? (
+        <RendimientoOperarios isMobile={isMobile} />
+      ) : cargandoInicial ? (
+        <Skeleton active title={false} paragraph={{ rows: 10 }} style={{ padding: 16 }} />
+      ) : (
+        <>
+      {/* ── KPIs (también filtran la matriz) ── */}
+      <div style={{ display: "flex", gap: space.sm, flexWrap: "wrap", marginBottom: space.sm }}>
+        <Kpi label="OTs activas" value={kpis.activas} active={quickFilter === "todas"} onClick={() => setQuickFilter("todas")} />
+        <Kpi label="Avance global" value={`${kpis.avance}%`} color={brand.cyan} />
+        <Kpi label="Sin empezar" value={kpis.sinEmpezar} color={brand.warning} active={quickFilter === "sin_empezar"} onClick={() => setQuickFilter((q) => q === "sin_empezar" ? "todas" : "sin_empezar")} />
+        <Kpi label="En proceso" value={kpis.enProceso} color="#FA8C16" active={quickFilter === "en_proceso"} onClick={() => setQuickFilter((q) => q === "en_proceso" ? "todas" : "en_proceso")} />
+        <Kpi label="Terminadas" value={kpis.terminadas} color={brand.success} active={quickFilter === "terminada"} onClick={() => setQuickFilter((q) => q === "terminada" ? "todas" : "terminada")} />
+        <Kpi label="Atrasadas" value={kpis.atrasadas} color={brand.error} active={quickFilter === "atrasadas"} onClick={() => setQuickFilter((q) => q === "atrasadas" ? "todas" : "atrasadas")} />
+        <Kpi label="A tercero 🤝" value={kpis.terceros} color={brand.navy} active={quickFilter === "terceros"} onClick={() => setQuickFilter((q) => q === "terceros" ? "todas" : "terceros")} />
+      </div>
+
+      {/* ── Leyenda de estados (visible/colapsable) ── */}
+      {leyendaVisible && (
+        <Card size="small" style={{ marginBottom: space.sm }} styles={{ body: { padding: "6px 12px" } }}>
+          <Space wrap size={14}>
+            <Text style={{ fontSize: 11, fontWeight: 600, color: brand.textSecondary }}>Estados:</Text>
+            {estados.map((e) => (
+              <span key={e.codigo} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11 }}>
+                <span style={{ display: "inline-block", width: 18, height: 13, borderRadius: 2, background: colorDeEstado(e.codigo), color: brand.white, fontSize: 8, fontWeight: 700, textAlign: "center", lineHeight: "13px" }}>{abreviarEstado(e.codigo)}</span>
+                {e.nombre}
+              </span>
+            ))}
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11 }}>
+              <span style={{ display: "inline-block", width: 18, height: 13, borderRadius: 2, background: brand.textSecondary, backgroundImage: "repeating-linear-gradient(45deg, rgba(255,255,255,0.35) 0 3px, transparent 3px 6px)", boxShadow: `inset 0 0 0 1px ${brand.warning}` }} />
+              🤝 Trabajo a tercero
+            </span>
+          </Space>
+        </Card>
+      )}
+
+      {otsVisibles.length === 0 ? (
+        <Empty description={quickFilter === "todas" ? "No hay OTs activas." : "No hay OTs que coincidan con el filtro."} />
+      ) : isMobile ? (
+        /* ── Fallback mobile: lista de tarjetas por OT (avance + estados resumidos) ── */
+        <div style={{ display: "flex", flexDirection: "column", gap: space.sm }}>
+          {otsVisibles.map((o) => {
+            const pct = o.progreso.total > 0 ? Math.round((o.progreso.realizadas / o.progreso.total) * 100) : 0;
+            const atrasada = otAtrasada(o);
+            return (
+              <Card
+                key={o.id}
+                size="small"
+                onClick={() => setDetalle(o)}
+                style={{ cursor: "pointer", borderLeft: atrasada ? `3px solid ${brand.error}` : `3px solid ${brand.border}` }}
+                styles={{ body: { padding: 12 } }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                  <Text strong style={{ color: brand.navy }}>OT {o.ot ?? `#${o.id}`}</Text>
+                  <Space size={4}>
+                    {o.prioridad_codigo && <Tag color={prioridadColor(o.prioridad_nivel)} style={{ margin: 0 }}>{o.prioridad_codigo}</Tag>}
+                    {atrasada && <Tag color="error" style={{ margin: 0 }}>Atrasada</Tag>}
+                  </Space>
+                </div>
+                <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 6 }}>
+                  {o.cliente_nombre ?? o.cliente_codigo ?? "—"} · {o.modelo ?? "—"}{o.descripcion ? ` · ${o.descripcion}` : ""}
+                </div>
+                <Progress percent={pct} size="small" status={pct === 100 ? "success" : "active"} />
+                <div style={{ fontSize: 11, color: brand.textSecondary, marginBottom: 6 }}>{o.progreso.realizadas}/{o.progreso.total} tareas</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  {componentesOrdenados.map((comp) => {
+                    let tot = 0, ok = 0;
+                    for (const op of operacionesPorComponente.get(comp.codigo) ?? []) {
+                      const key = `${comp.codigo.trim().toUpperCase()}__${op.codigo.trim().toUpperCase()}`;
+                      const cell = o.plan[key];
+                      if (cell?.estado) { tot++; if (String(cell.estado).toLowerCase() === "realizado") ok++; }
+                    }
+                    if (tot === 0) return null;
+                    return <Tag key={comp.codigo} color={ok >= tot ? "success" : "default"} style={{ margin: 0, fontSize: 10 }}>{comp.nombre} {ok}/{tot}</Tag>;
+                  })}
+                </div>
+              </Card>
+            );
+          })}
+        </div>
       ) : (
         <TablaProgramacion
           columns={visibleColumns(columns, ocultas)}
-          data={otsFiltradas}
+          data={otsVisibles}
           loading={loading}
+          densidad={densidad}
           onRowClick={(r) => setDetalle(r)}
           page={page}
           pageSize={pageSize}
           onPageChange={(p, s) => { setPage(p); setPageSize(s); }}
         />
+      )}
+        </>
       )}
 
       <Drawer
@@ -884,9 +1311,10 @@ function ConfigurarVistaDrawer({
 }
 
 function TablaProgramacion({
-  columns, data, loading, onRowClick, page, pageSize, onPageChange,
+  columns, data, loading, densidad, onRowClick, page, pageSize, onPageChange,
 }: {
   columns: ColumnsType<OTRow>; data: OTRow[]; loading: boolean;
+  densidad: "compacto" | "comodo";
   onRowClick: (r: OTRow) => void;
   page: number;
   pageSize: number;
@@ -897,25 +1325,34 @@ function TablaProgramacion({
   );
   return (
     <TableDragWrapper>
-      <Table<OTRow>
-        rowKey="id"
-        size="small"
-        columns={columnas}
-        components={components}
-        dataSource={data}
-        loading={loading}
-        bordered
-        sticky={STICKY_HEADER}
-        scroll={{ x: "max-content", y: "calc(100vh - 210px)" }}
-        pagination={paginacionEstandar({
-          current: page,
-          pageSize,
-          total: data.length,
-          onChange: onPageChange,
-          label: "OTs",
-        })}
-        onRow={(r) => ({ onClick: () => onRowClick(r), style: { cursor: "pointer" } })}
-      />
+      <div className="pdash-tabla">
+        <Table<OTRow>
+          rowKey="id"
+          size={densidad === "comodo" ? "middle" : "small"}
+          columns={columnas}
+          components={components}
+          dataSource={data}
+          loading={loading}
+          bordered
+          sticky={STICKY_HEADER}
+          scroll={{ x: "max-content", y: "calc(100vh - 280px)" }}
+          rowClassName={(r, idx) => `${idx % 2 === 1 ? "pdash-zebra" : ""} ${otAtrasada(r) ? "pdash-overdue" : ""}`.trim()}
+          pagination={paginacionEstandar({
+            current: page,
+            pageSize,
+            total: data.length,
+            onChange: onPageChange,
+            label: "OTs",
+          })}
+          onRow={(r) => ({ onClick: () => onRowClick(r), style: { cursor: "pointer" } })}
+        />
+      </div>
+      <style jsx global>{`
+        .pdash-tabla .pdash-zebra > td { background: #FAFBFC; }
+        .pdash-tabla .pdash-overdue > td:first-child { box-shadow: inset 3px 0 0 ${brand.error}; }
+        .pdash-tabla .pdash-overdue > td { background: rgba(207, 19, 34, 0.04); }
+        .pdash-tabla .ant-table-tbody > tr:hover > td { background: rgba(17, 160, 182, 0.10) !important; }
+      `}</style>
     </TableDragWrapper>
   );
 }

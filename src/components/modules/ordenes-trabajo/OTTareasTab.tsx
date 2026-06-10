@@ -113,6 +113,7 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
     qty: number;
     tecnico: string | null;
     equipo: string | null;
+    horas_estimadas: number | null; // duración estimada (opcional)
     comentario: string | null; // comentario del planner para el técnico
   };
   const newDraft = (): DraftTarea => ({
@@ -125,6 +126,7 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
     qty: 1,
     tecnico: null,
     equipo: null,
+    horas_estimadas: null,
     comentario: null,
   });
   const [draftRows, setDraftRows] = useState<DraftTarea[]>([]);
@@ -304,6 +306,7 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
           qty: Number(d.qty ?? 1),
           maquina: d.equipo ?? null,
           tecnico: d.tecnico ?? null,
+          horas_estimadas: d.horas_estimadas ?? null,
           comentario: d.comentario?.trim() || null,
         };
         if (usaTextoLibrePara(d)) {
@@ -823,7 +826,19 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
                     style={{ width: "100%" }}
                   />
                 </Col>
-                <Col xs={24} md={22}>
+                <Col xs={24} sm={12} md={4}>
+                  <div style={{ fontSize: 11, color: "#888", marginBottom: 2 }}>Duración (hrs)</div>
+                  <InputNumber
+                    size="small"
+                    value={d.horas_estimadas}
+                    onChange={(v) => updateDraft(d.id, { horas_estimadas: v == null ? null : Number(v) })}
+                    min={0}
+                    step={0.5}
+                    placeholder="Opcional"
+                    style={{ width: "100%" }}
+                  />
+                </Col>
+                <Col xs={24} md={18}>
                   <div style={{ fontSize: 11, color: "#888", marginBottom: 2 }}>Comentario para el técnico (opcional)</div>
                   <Input.TextArea
                     size="small"
@@ -1019,7 +1034,7 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
 // Si el usuario tipea texto que no matchea ninguna opción, ofrece "+ Crear: <texto>".
 // Al confirmar la creación, el padre la guardará en catálogo al hacer "Guardar".
 // ───────────────────────────────────────────────────────────────────────────
-interface OperacionComboProps {
+export interface OperacionComboProps {
   draft: {
     parte: string | null;
     operacion_codigo: string | null;
@@ -1038,7 +1053,10 @@ interface OperacionComboProps {
   loadAllCount?: number;
 }
 
-function OperacionCombo({ draft, opciones, onPickExisting, onCreateNew, onClear, onLoadAll, loadAllCount = 0 }: OperacionComboProps) {
+// Combo de Tarea reutilizable (detalle de OT + Planificación). Permite elegir una
+// operación de catálogo, tipear una nueva ("+ Crear: …") o jalar todas las de la
+// parte. Exportado para que Planificación use exactamente el mismo control.
+export function OperacionCombo({ draft, opciones, onPickExisting, onCreateNew, onClear, onLoadAll, loadAllCount = 0 }: OperacionComboProps) {
   const [search, setSearch] = useState("");
   // Valor visible en el Select: si hay operacion_codigo elegida, su código.
   // Si hay nueva_operacion_nombre (pendiente de crear), un marker "__new__:nombre".

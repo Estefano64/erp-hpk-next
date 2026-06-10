@@ -1,14 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Typography, Button, Space, Tag, Card, Modal, Descriptions, Tooltip, message, Empty, DatePicker, Collapse, Segmented, Slider, Alert, Popover, Divider, Select, Popconfirm, Switch, Input,
+  Typography, Button, Space, Tag, Card, Modal, Descriptions, Tooltip, message, Empty, DatePicker, Collapse, Segmented, Slider, Alert, Popover, Divider, Select, Popconfirm, Switch, Input, InputNumber, Skeleton,
 } from "antd";
 import {
   CalendarOutlined, LeftOutlined, RightOutlined, UserOutlined, ToolOutlined, AimOutlined,
   SettingOutlined, RollbackOutlined, UnorderedListOutlined, WarningFilled, ZoomInOutlined, ZoomOutOutlined,
   PrinterOutlined, BgColorsOutlined, FilterOutlined, ClearOutlined,
   LoadingOutlined, CheckCircleFilled, CloseCircleFilled, EyeOutlined, SearchOutlined,
+  PushpinOutlined,
 } from "@ant-design/icons";
 import dayjs, { Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
@@ -17,7 +18,7 @@ import { useRouter } from "next/navigation";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import { calcularFin, normalizarAInicioHabil, horasHabilesEntre } from "@/lib/planification-hours";
-import { splitRecursos } from "@/lib/recursos";
+import { splitRecursos, joinRecursos } from "@/lib/recursos";
 import { useTabSync } from "@/lib/useTabSync";
 import { useSession } from "next-auth/react";
 import { useEditLock } from "@/lib/useEditLock";
@@ -41,6 +42,7 @@ interface PlanRow {
   horas_reales: string | null;
   tecnico: string | null;
   maquina: string | null;
+  comentario: string | null;
   estado: string | null;
   version: number;
   qty_personal: number | null;
@@ -50,6 +52,14 @@ interface PlanRow {
   trabajo_externo: boolean | null;
   publicado: boolean;
   es_correctivo: boolean;
+  // Línea base = foto del plan al ENVIAR (publicar) la semana. Se congela la
+  // PRIMERA vez que se envía cada tarea y no se pisa al reabrir/re-enviar.
+  fecha_inicio_base: string | null;
+  fecha_fin_base: string | null;
+  horas_estimadas_base: string | null;
+  tecnico_base: string | null;
+  semana_base: string | null;
+  publicado_at: string | null;
   orden_trabajo: {
     id: number;
     ot: string | null;
@@ -65,7 +75,7 @@ interface PlanRow {
   } | null;
 }
 
-interface Trabajador { trabajador_id: number; nombre: string; area: string; puesto: string }
+interface Trabajador { trabajador_id: number; nombre: string; area: string; puesto: string; equipo_codigo: string | null }
 interface Equipo { codigo: string; descripcion: string }
 interface StatusTareaOpt { codigo: string; nombre: string; color: string | null }
 
@@ -73,6 +83,35 @@ interface StatusTareaOpt { codigo: string; nombre: string; color: string | null 
 // El separador es "|" (NO coma): los nombres traen coma ("APELLIDO, NOMBRE").
 function splitTecnicos(s: string | null | undefined): string[] {
   return splitRecursos(s);
+}
+
+// Colores EXACTOS de los bloques del Gantt — DEBEN coincidir con el CSS
+// `.psg-task-block` de abajo. Los bloques NO usan los presets de antd tal cual:
+// remapean preset→hex (ej. volcano = morado) y pisan por estado (en_proceso,
+// cancelado). La leyenda usa este mismo helper para que coincida con los bloques.
+const BLOQUE_PRESET_HEX: Record<string, string> = {
+  warning: "#FA8C16", processing: "#1677FF", success: "#52C41A", volcano: "#B855E5", error: "#F5222D",
+};
+const BLOQUE_ESTADO_HEX: Record<string, string> = {
+  en_proceso: "#13C2C2", cancelado: "#8c8c8c",
+};
+function colorBloque(estado: string | null, ecolor: string | null): string {
+  if (estado && BLOQUE_ESTADO_HEX[estado]) return BLOQUE_ESTADO_HEX[estado];
+  if (ecolor && BLOQUE_PRESET_HEX[ecolor]) return BLOQUE_PRESET_HEX[ecolor];
+  return "#8c8c8c"; // fondo base del bloque
+}
+
+// Glifo por estado (accesibilidad: no depender solo del color).
+function glifoEstado(estado: string | null): string {
+  switch (estado) {
+    case "realizado": return "✓";
+    case "en_proceso": return "▶";
+    case "pausado": return "⏸";
+    case "programado": return "•";
+    case "cancelado": return "✕";
+    case "abierto": return "○";
+    default: return "";
+  }
 }
 
 const JORNADA_INICIO = 8;
@@ -163,8 +202,14 @@ export default function ProgramacionSemanalPage() {
   const lock = useEditLock("programacion-semanal", 1, currentUser);
   const [editMode, setEditMode] = useState(false);
   const [lunes, setLunes] = useState<Dayjs>(() => dayjs().startOf("isoWeek"));
+  const [cargando, setCargando] = useState(true);
   // Operarios es la vista principal (ahí se asigna); Equipos es solo lectura.
   const [view, setView] = useState<"equipo" | "operario">("operario");
+  // Enviado = foto del plan al enviar la semana (*_base, solo lectura).
+  // Plan ("Semana real") = el plan VIVO (editable: emergencias, movidas, tareas
+  // agregadas) + la EJECUCIÓN de cada tarea iniciada como barra bajo el bloque
+  // (inicio_real → fin real / ahora si está en proceso, crece en vivo).
+  const [vistaTiempo, setVistaTiempo] = useState<"enviado" | "plan">("plan");
   const [filtroEquipos, setFiltroEquipos] = useState<string[]>([]);
   const [filtroOperarios, setFiltroOperarios] = useState<string[]>([]);
   // Por defecto el filtro de arriba también aplica a los pendientes de abajo.
@@ -189,6 +234,17 @@ export default function ProgramacionSemanalPage() {
   const [equipos, setEquipos] = useState<Equipo[]>([]);
   const [estadosCat, setEstadosCat] = useState<StatusTareaOpt[]>([]);
   const [selectedTask, setSelectedTask] = useState<PlanRow | null>(null);
+  // Duración en edición dentro del modal Detalle (se guarda al salir del campo,
+  // no en cada tecla). Se sincroniza con la tarea seleccionada.
+  const [durModal, setDurModal] = useState<number | null>(null);
+  useEffect(() => {
+    setDurModal(selectedTask?.horas_estimadas != null ? Number(selectedTask.horas_estimadas) : null);
+  }, [selectedTask]);
+  // Comentario en edición dentro del modal Detalle (se guarda al salir del campo).
+  const [comentarioModal, setComentarioModal] = useState<string>("");
+  useEffect(() => {
+    setComentarioModal(selectedTask?.comentario ?? "");
+  }, [selectedTask]);
   const [hourPx, setHourPx] = useState<number>(HOUR_PX_DEFAULT);
   const [resizing, setResizing] = useState<{ id: number; initialX: number; initialWidth: number; recurso: string } | null>(null);
   const [resizeWidth, setResizeWidth] = useState<number>(0);
@@ -211,6 +267,7 @@ export default function ProgramacionSemanalPage() {
   } | null>(null);
   const [messageApi, contextHolder] = message.useMessage();
   const { screens } = useResponsive();
+  const isMobile = !screens.md;
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const stripsRef = useRef<Map<string, HTMLElement>>(new Map());
 
@@ -220,22 +277,43 @@ export default function ProgramacionSemanalPage() {
   const days = useMemo(() => buildWeekDays(lunes), [lunes]);
   const semanaActual = useMemo(() => semanaCodigo(lunes), [lunes]);
 
+  // ¿La tarea PERTENECE a la semana mostrada? (no solo se solapa con ella). Una
+  // tarea que empezó la semana pasada y cuyo fin se desborda al lunes aparece en
+  // el carril por solape de fechas, pero NO es parte del plan de esta semana.
+  // Este criterio debe ser el MISMO que usa la publicación, si no el indicador
+  // "Publicada/Reabrir" se desincroniza de lo que publicar realmente afecta.
+  const perteneceASemana = useCallback((r: PlanRow): boolean =>
+    r.semana_plan === semanaActual ||
+    (!!r.fecha_inicio &&
+      dayjs(r.fecha_inicio).isoWeek() === lunes.isoWeek() &&
+      dayjs(r.fecha_inicio).isoWeekYear() === lunes.isoWeekYear()),
+  [semanaActual, lunes]);
+
   const fetchData = useCallback(async () => {
-    const params1 = new URLSearchParams({
-      limit: "500",
-      desde: lunes.hour(0).minute(0).second(0).toISOString(),
-      hasta: viernes.toISOString(),
-    });
-    const [resWeek, resAll] = await Promise.all([
-      fetch(`/api/planificacion?${params1}`),
-      fetch(`/api/planificacion?limit=500`),
-    ]);
-    // Una tarea cancelada no ocupa lugar: la sacamos de la grilla y del pool para
-    // que su espacio quede libre y se pueda programar otra tarea encima (y para
-    // que no dispare falsos choques en la detección de superposición).
-    const sinCanceladas = (arr: PlanRow[]) => arr.filter((r) => r.estado !== "cancelado");
-    if (resWeek.ok) setRows(sinCanceladas((await resWeek.json()).data ?? []));
-    if (resAll.ok) setAllRows(sinCanceladas((await resAll.json()).data ?? []));
+    setCargando(true);
+    try {
+      const params1 = new URLSearchParams({
+        limit: "10000",
+        desde: lunes.hour(0).minute(0).second(0).toISOString(),
+        hasta: viernes.toISOString(),
+      });
+      // `resAll` alimenta el pool de pendientes (sin fecha / sin semana). Debe traer
+      // TODAS las filas: ordena por ot_id desc, así que con un límite chico las OTs
+      // de ot_id bajo caían fuera del corte y sus tareas desaparecían del pool
+      // (no se veían en la grilla ni en pendientes). 10000 = tope de la API.
+      const [resWeek, resAll] = await Promise.all([
+        fetch(`/api/planificacion?${params1}`),
+        fetch(`/api/planificacion?limit=10000`),
+      ]);
+      // Una tarea cancelada no ocupa lugar: la sacamos de la grilla y del pool para
+      // que su espacio quede libre y se pueda programar otra tarea encima (y para
+      // que no dispare falsos choques en la detección de superposición).
+      const sinCanceladas = (arr: PlanRow[]) => arr.filter((r) => r.estado !== "cancelado");
+      if (resWeek.ok) setRows(sinCanceladas((await resWeek.json()).data ?? []));
+      if (resAll.ok) setAllRows(sinCanceladas((await resAll.json()).data ?? []));
+    } finally {
+      setCargando(false);
+    }
   }, [lunes, viernes]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -257,31 +335,74 @@ export default function ProgramacionSemanalPage() {
     })();
   }, []);
 
-  const conflictos = useMemo(() => detectarConflictos(rows), [rows]);
+  // ── Vista ENVIADO: foto del plan al enviar la semana ──
+  // Proyecta los campos *_base sobre los vivos y alimenta el MISMO pipeline del
+  // Gantt (carriles, carga, bloques). Sale de allRows (todas las semanas): una
+  // tarea luego movida a otra semana debe seguir viéndose en la foto de su
+  // semana original. Solo lectura (el pasado enviado no se edita).
+  const enviadoMode = vistaTiempo === "enviado";
+  const baseRows = useMemo(() => {
+    const ini = lunes.startOf("day");
+    return allRows
+      .filter((r) => r.fecha_inicio_base && r.fecha_fin_base
+        && !dayjs(r.fecha_inicio_base).isAfter(viernes)
+        && !dayjs(r.fecha_fin_base).isBefore(ini))
+      .map((r) => ({
+        ...r,
+        fecha_inicio: r.fecha_inicio_base,
+        fecha_fin: r.fecha_fin_base,
+        horas_estimadas: r.horas_estimadas_base ?? r.horas_estimadas,
+        tecnico: r.tecnico_base ?? r.tecnico,
+        semana_plan: r.semana_base ?? r.semana_plan,
+      } as PlanRow));
+  }, [allRows, lunes, viernes]);
+  const vistaRows = enviadoMode ? baseRows : rows;
 
-  // ── Stats ──
+  // Operarios con algo ENVIADO esta semana — para marcar "fuera de plan" solo
+  // donde hubo envío (si no, toda semana aún en borrador se llenaría de "＋").
+  const lanesConEnvio = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of allRows) {
+      if (r.semana_base === semanaActual && r.fecha_inicio_base) {
+        for (const t of splitTecnicos(r.tecnico_base ?? r.tecnico)) s.add(t);
+      }
+    }
+    return s;
+  }, [allRows, semanaActual]);
+
+  const conflictos = useMemo(() => detectarConflictos(vistaRows), [vistaRows]);
+
+  // Una tarea pertenece al pool si no tiene fecha y NO está terminada: una
+  // "realizado" sin agenda (el técnico la ejecutó desde su panel sin que se
+  // calendarizara) ya no hay nada que programar — quedaba en el pool para
+  // siempre. Las en_proceso/pausado sí se muestran (el planner ve que hay
+  // trabajo en curso sin calendario); no se pueden arrastrar igual (haEmpezado).
+  const esDePool = useCallback((r: PlanRow): boolean =>
+    !r.fecha_inicio && r.estado !== "realizado", []);
+
+  // ── Stats (siguen a la vista: en "Enviado" cuentan la foto) ──
   const stats = useMemo(() => {
-    const conFecha = rows.filter((r) => r.fecha_inicio).length;
-    const sinFecha = rows.length - conFecha;
-    const sinSemana = allRows.filter((r) => !r.semana_plan && !r.fecha_inicio).length;
+    const conFecha = vistaRows.filter((r) => r.fecha_inicio).length;
+    const sinFecha = vistaRows.length - conFecha;
+    const sinSemana = allRows.filter((r) => !r.semana_plan && esDePool(r)).length;
     return {
-      total: rows.length,
+      total: vistaRows.length,
       conFecha,
       sinFecha,
       conflictos: conflictos.size,
       sinSemana,
     };
-  }, [rows, allRows, conflictos]);
+  }, [vistaRows, allRows, conflictos, esDePool]);
 
   const sinSemanaLista = useMemo(
-    () => allRows.filter((r) => !r.semana_plan && !r.fecha_inicio),
-    [allRows],
+    () => allRows.filter((r) => !r.semana_plan && esDePool(r)),
+    [allRows, esDePool],
   );
 
   // Tareas de ESTA semana sin fecha asignada (tienen semana_plan = semanaActual pero fecha_inicio en null)
   const sinFechaListaSemana = useMemo(
-    () => allRows.filter((r) => r.semana_plan === semanaActual && !r.fecha_inicio),
-    [allRows, semanaActual],
+    () => allRows.filter((r) => r.semana_plan === semanaActual && esDePool(r)),
+    [allRows, semanaActual, esDePool],
   );
 
   const estadoColor = useCallback((est: string | null): string => {
@@ -318,8 +439,8 @@ export default function ProgramacionSemanalPage() {
   }, [filtroEquipos, filtroOperarios]);
 
   const rowsFiltradas = useMemo(
-    () => (hayFiltro ? rows.filter(pasaFiltroRecurso) : rows),
-    [rows, hayFiltro, pasaFiltroRecurso],
+    () => (hayFiltro ? vistaRows.filter(pasaFiltroRecurso) : vistaRows),
+    [vistaRows, hayFiltro, pasaFiltroRecurso],
   );
 
   // Búsqueda libre del pool: matchea parte (componente), cilindro (flota), OT,
@@ -345,14 +466,22 @@ export default function ProgramacionSemanalPage() {
   // Pendientes (pools) mostrados: aplican el filtro por recurso (salvo "Ver todas")
   // y la búsqueda libre del pool.
   const filtrarPendientes = hayFiltro && !verTodasPendientes;
+  // Ordena el pool por prioridad (nivel 1 = más urgente) y luego por OT, para que
+  // lo más urgente de agendar quede arriba.
+  const ordenarPool = useCallback((l: PlanRow[]) => [...l].sort((a, b) => {
+    const pa = a.orden_trabajo?.prioridad_atencion?.nivel ?? 99;
+    const pb = b.orden_trabajo?.prioridad_atencion?.nivel ?? 99;
+    if (pa !== pb) return pa - pb;
+    return Number(a.orden_trabajo?.ot ?? 0) - Number(b.orden_trabajo?.ot ?? 0);
+  }), []);
   const sinSemanaMostrar = useMemo(() => {
     const l = filtrarPendientes ? sinSemanaLista.filter(pasaFiltroRecurso) : sinSemanaLista;
-    return l.filter(pasaBusquedaPool);
-  }, [sinSemanaLista, filtrarPendientes, pasaFiltroRecurso, pasaBusquedaPool]);
+    return ordenarPool(l.filter(pasaBusquedaPool));
+  }, [sinSemanaLista, filtrarPendientes, pasaFiltroRecurso, pasaBusquedaPool, ordenarPool]);
   const sinFechaMostrar = useMemo(() => {
     const l = filtrarPendientes ? sinFechaListaSemana.filter(pasaFiltroRecurso) : sinFechaListaSemana;
-    return l.filter(pasaBusquedaPool);
-  }, [sinFechaListaSemana, filtrarPendientes, pasaFiltroRecurso, pasaBusquedaPool]);
+    return ordenarPool(l.filter(pasaBusquedaPool));
+  }, [sinFechaListaSemana, filtrarPendientes, pasaFiltroRecurso, pasaBusquedaPool, ordenarPool]);
 
   // ── Agrupación por recurso ──
   const recursos = useMemo(() => {
@@ -432,7 +561,8 @@ export default function ProgramacionSemanalPage() {
   const [ahoraTick, setAhoraTick] = useState<Dayjs | null>(null);
   useEffect(() => {
     setAhoraTick(dayjs());
-    const id = setInterval(() => setAhoraTick(dayjs()), 60_000);
+    // 30s: en modo Real los bloques "en proceso" crecen en vivo hasta esta marca.
+    const id = setInterval(() => setAhoraTick(dayjs()), 30_000);
     return () => clearInterval(id);
   }, []);
 
@@ -492,8 +622,14 @@ export default function ProgramacionSemanalPage() {
     // el string completo y un multi-personal NO detectaba el choque).
     const recursosTarget = splitTecnicos(recursoTarget);
     const filtradasIds = new Set(rowsFiltradas.map((r) => r.id));
-    for (const t of rows) {
+    // Se chequea contra allRows (todas las semanas), no solo la visible: una
+    // tarea soltada el viernes puede desbordar a la semana siguiente y chocar
+    // allá. Con `rows` el cliente no veía ese choque, no mandaba `empujar`, y el
+    // server respondía 409 ("no se puede ubicar") en vez de empujar la cola.
+    for (const t of allRows) {
       if (t.id === taskId) continue;
+      // Una tarea cancelada libera su horario: no cuenta como choque.
+      if (t.estado === "cancelado") continue;
       // Soporta tareas con recurso multi (comma-separated por multi-personal).
       const recursoRaw = view === "equipo" ? t.maquina : t.tecnico;
       const recursos = splitTecnicos(recursoRaw);
@@ -565,6 +701,10 @@ export default function ProgramacionSemanalPage() {
       else patch.tecnico = nuevoRecurso;
     }
     if (empujando) patch.empujar = true;
+    // Si la tarea venía del pool con el flag `publicado` colgado (sin agenda), al
+    // ubicarla pasa a ser borrador: el planner la republica cuando termine.
+    const reseteaPublicado = !!original.publicado && !original.fecha_inicio;
+    if (reseteaPublicado) patch.publicado = false;
 
     // Optimista: actualizo inmediatamente la UI
     const updated: Partial<PlanRow> = {
@@ -573,6 +713,7 @@ export default function ProgramacionSemanalPage() {
       semana_plan: semanaCodigo(inicioReal),
     };
     if (horasFaltantes) updated.horas_estimadas = "1";
+    if (reseteaPublicado) updated.publicado = false;
     if (nuevoRecurso !== undefined) {
       if (view === "equipo") updated.maquina = nuevoRecurso;
       else updated.tecnico = nuevoRecurso;
@@ -639,18 +780,26 @@ export default function ProgramacionSemanalPage() {
     // la jornada 8–18 ni desborda al día siguiente).
     const finCalc = inicio ? calcularFin(inicio, horasPorPersona * qty, !!original.horas_extras) : null;
 
-    // Bloquear si la nueva duración haría chocar con otra tarea del mismo recurso.
-    if (inicio && finCalc) {
+    // Si la nueva duración pisa a la(s) siguiente(s) del recurso, empujamos la
+    // cola (cascada en el server). Solo bloqueamos si la que choca ya fue
+    // iniciada/realizada por el técnico (su horario es ejecución real y no se mueve).
+    // Excepción: una EMERGENCIA (correctiva) cae encima a propósito (el server
+    // corre cascadeEmergencia al reprogramar), así que no chequeamos choque acá.
+    let empujar = false;
+    if (inicio && finCalc && !original.es_correctivo) {
       const recurso = view === "equipo" ? original.maquina : original.tecnico;
       const choque = tareaSuperpuesta(id, inicio.getTime(), finCalc.getTime(), recurso);
       if (choque) {
-        const t = choque.task;
-        const cliente = t.orden_trabajo?.cliente?.nombre_comercial
-          ?? t.orden_trabajo?.cliente?.razon_social
-          ?? `OT ${t.orden_trabajo?.ot ?? "#?"}`;
-        const prefijoOculta = choque.oculta ? "[Tarea oculta por el filtro actual] " : "";
-        messageApi.error(`${prefijoOculta}No se puede agrandar: choca con ${cliente} — ${t.descripcion ?? t.operacion_codigo}`);
-        return;
+        if (haEmpezado(choque.task.estado)) {
+          const t = choque.task;
+          const cliente = t.orden_trabajo?.cliente?.nombre_comercial
+            ?? t.orden_trabajo?.cliente?.razon_social
+            ?? `OT ${t.orden_trabajo?.ot ?? "#?"}`;
+          const prefijoOculta = choque.oculta ? "[Tarea no visible en esta semana/filtro] " : "";
+          messageApi.error(`${prefijoOculta}No se puede agrandar: la siguiente (${cliente} — ${t.descripcion ?? t.operacion_codigo}) ya fue iniciada/realizada por el técnico.`);
+          return;
+        }
+        empujar = true;
       }
     }
 
@@ -662,6 +811,7 @@ export default function ProgramacionSemanalPage() {
         body: JSON.stringify({
           horas_estimadas: horasPorPersona,
           ...(finCalc ? { fecha_fin: finCalc.toISOString() } : {}),
+          ...(empujar ? { empujar: true } : {}),
         }),
       });
       if (res.status === 423) {
@@ -670,11 +820,13 @@ export default function ProgramacionSemanalPage() {
         fetchData();
         return;
       }
+      const j = await res.json().catch(() => null);
       if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        throw new Error(err?.error ?? "Error");
+        throw new Error(j?.error ?? "Error");
       }
-      messageApi.success(`Duración: ${horasPorPersona.toFixed(2)}h`);
+      const e = j?.push?.empujadas?.length ?? 0;
+      const p = j?.push?.alPool?.length ?? 0;
+      messageApi.success(`Duración: ${horasPorPersona.toFixed(2)}h${e ? ` · ${e} empujada(s).` : ""}${p ? ` ${p} al pool.` : ""}`);
       endSave();
       notifySync();
       fetchData();
@@ -682,6 +834,7 @@ export default function ProgramacionSemanalPage() {
       const msg = e instanceof Error ? e.message : "Error al redimensionar";
       endSave(msg);
       messageApi.error(msg);
+      fetchData();
     }
   }
 
@@ -723,15 +876,15 @@ export default function ProgramacionSemanalPage() {
       messageApi.warning("Activá Modo Edición para publicar.");
       return;
     }
-    // IDs exactos del operario en la semana mostrada (con o sin hora). Matchear por
-    // IDs es determinista: evita que el match por semana_plan deje tareas afuera.
-    const enSemana = (r: PlanRow) =>
-      r.semana_plan === semanaActual ||
-      (!!r.fecha_inicio &&
-        dayjs(r.fecha_inicio).isoWeek() === lunes.isoWeek() &&
-        dayjs(r.fecha_inicio).isoWeekYear() === lunes.isoWeekYear());
+    // IDs exactos del operario en la semana mostrada. Matchear por IDs es
+    // determinista: evita que el match por semana_plan deje tareas afuera.
+    // PUBLICAR congela solo lo AGENDADO (con fecha) — mismo criterio que el
+    // indicador del carril, que solo ve tareas con fecha; las del pool siguen en
+    // borrador hasta tener hora (si no, quedaba el flag `publicado` colgado).
+    // REABRIR sí toma todas: también limpia flags colgados sin agenda.
     const ids = allRows
-      .filter((r) => splitTecnicos(r.tecnico).includes(tecnico) && enSemana(r))
+      .filter((r) => splitTecnicos(r.tecnico).includes(tecnico) && perteneceASemana(r)
+        && (!publicado || !!r.fecha_inicio))
       .map((r) => r.id);
     if (ids.length === 0) {
       messageApi.info("Ese operario no tiene tareas en esta semana.");
@@ -746,11 +899,47 @@ export default function ProgramacionSemanalPage() {
       });
       if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Error");
       endSave();
-      messageApi.success(publicado ? `Semana de ${tecnico} publicada` : `Semana de ${tecnico} reabierta`);
+      messageApi.success(publicado ? `Semana de ${tecnico} enviada (foto del plan congelada)` : `Semana de ${tecnico} reabierta`);
       notifySync();
       fetchData();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Error al publicar";
+      endSave(msg);
+      messageApi.error(msg);
+    }
+  }
+
+  // ── Enviar la SEMANA COMPLETA (todos los operarios de una) ──
+  // Congela la foto del plan (semana planificada) de todas las tareas AGENDADAS
+  // de la semana mostrada que sigan en borrador. Las del pool (sin fecha) quedan
+  // en borrador, igual que en el envío por operario. La foto solo se escribe la
+  // primera vez por tarea: re-enviar después de reabrir NO la pisa.
+  async function enviarSemanaCompleta() {
+    if (!editMode) {
+      messageApi.warning("Activá Modo Edición para enviar la semana.");
+      return;
+    }
+    const ids = allRows
+      .filter((r) => perteneceASemana(r) && !!r.fecha_inicio && splitTecnicos(r.tecnico).length > 0 && !r.publicado)
+      .map((r) => r.id);
+    if (ids.length === 0) {
+      messageApi.info("No hay tareas agendadas pendientes de enviar en esta semana.");
+      return;
+    }
+    beginSave();
+    try {
+      const res = await fetch("/api/planificacion/publicar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ semana: semanaActual, publicado: true, ids }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Error");
+      endSave();
+      messageApi.success(`Semana ${semanaActual} enviada: ${ids.length} tarea(s). La foto del plan quedó congelada.`);
+      notifySync();
+      fetchData();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Error al enviar la semana";
       endSave(msg);
       messageApi.error(msg);
     }
@@ -784,6 +973,109 @@ export default function ProgramacionSemanalPage() {
       const msg = e instanceof Error ? e.message : "Error al marcar emergencia";
       endSave(msg);
       messageApi.error(msg);
+    }
+  }
+
+  // ── Edición de campos del modal Detalle (operario/equipo/duración/prioridad) ──
+  // PUT optimista a /api/planificacion/:id. Gateado por modo edición.
+  async function guardarCampoDetalle(patch: Record<string, unknown>, msg: string) {
+    if (!selectedTask) return;
+    const id = selectedTask.id;
+    // Los flags de control (empujar) no son campos de la tarea: no deben aplicarse
+    // al estado optimista local (solo van en el body del PUT).
+    const campos = { ...patch };
+    delete campos.empujar;
+    const apply = (r: PlanRow): PlanRow => (r.id === id ? ({ ...r, ...campos } as PlanRow) : r);
+    setRows((prev) => prev.map(apply));
+    setAllRows((prev) => prev.map(apply));
+    setSelectedTask((s) => (s ? apply(s) : s));
+    beginSave();
+    try {
+      const res = await fetch(`/api/planificacion/${id}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (res.status === 423) { messageApi.error("Tarea cerrada (realizado), no editable."); endSave("cerrada"); fetchData(); return; }
+      const j = await res.json().catch(() => null);
+      if (!res.ok) { throw new Error(j?.error ?? "Error"); }
+      // Si hubo cascada (empujar), avisamos cuántas se reacomodaron / al pool.
+      const e = j?.push?.empujadas?.length ?? 0;
+      const p = j?.push?.alPool?.length ?? 0;
+      const extra = `${e ? ` ${e} empujada(s).` : ""}${p ? ` ${p} al pool.` : ""}`;
+      messageApi.success(msg + extra); endSave(); notifySync(); fetchData();
+    } catch (e) {
+      const m = e instanceof Error ? e.message : "Error al guardar";
+      endSave(m); messageApi.error(m); fetchData();
+    }
+  }
+  function detalleEditarOperario(nombres: string[]) {
+    const tecnico = joinRecursos(nombres) || null;
+    const patch: Record<string, unknown> = { tecnico };
+    // Equipo amarrado al operario: si no hay equipo, tomar el del primer operario que tenga.
+    if (!selectedTask?.maquina?.trim()) {
+      for (const n of nombres) {
+        const t = trabajadores.find((x) => x.nombre === n);
+        if (t?.equipo_codigo) { patch.maquina = t.equipo_codigo; break; }
+      }
+    }
+    guardarCampoDetalle(patch, "Operario actualizado");
+  }
+  function detalleEditarEquipo(codes: string[]) {
+    guardarCampoDetalle({ maquina: joinRecursos(codes) || null }, "Equipo actualizado");
+  }
+  function detalleEditarDuracion(horasPorPersona: number | null) {
+    if (!selectedTask || horasPorPersona == null || !(horasPorPersona > 0)) return;
+    const qty = Math.max(1, Number(selectedTask.qty_personal ?? 1));
+    const inicio = selectedTask.fecha_inicio ? new Date(selectedTask.fecha_inicio) : null;
+    const finCalc = inicio ? calcularFin(inicio, horasPorPersona * qty, !!selectedTask.horas_extras) : null;
+    // Si al agrandar la tarea pisa a la(s) siguiente(s) del recurso, en vez de
+    // bloquear empujamos la cola (igual que el drag: persistMove). El server
+    // reacomoda las tareas del mismo operario; solo frena si choca con una
+    // máquina ocupada por OTRO operario (recurso compartido que no se mueve).
+    // Excepción: una EMERGENCIA (correctiva) cae encima a propósito; el server
+    // corre cascadeEmergencia al reprogramar, así que no chequeamos choque acá.
+    let empujar = false;
+    if (inicio && finCalc && !selectedTask.es_correctivo) {
+      const recurso = view === "equipo" ? selectedTask.maquina : selectedTask.tecnico;
+      const choque = tareaSuperpuesta(selectedTask.id, inicio.getTime(), finCalc.getTime(), recurso);
+      if (choque) {
+        // Si la siguiente ya fue iniciada/pausada/realizada por el técnico, su
+        // horario es ejecución real y la cascada NO la mueve: bloqueamos.
+        if (haEmpezado(choque.task.estado)) {
+          messageApi.error(`No se puede agrandar: la siguiente tarea (${choque.task.descripcion ?? choque.task.operacion_codigo}) ya fue iniciada/realizada por el técnico.`);
+          setDurModal(selectedTask.horas_estimadas != null ? Number(selectedTask.horas_estimadas) : null);
+          return;
+        }
+        empujar = true;
+      }
+    }
+    guardarCampoDetalle(
+      {
+        horas_estimadas: horasPorPersona,
+        ...(finCalc ? { fecha_fin: finCalc.toISOString() } : {}),
+        ...(empujar ? { empujar: true } : {}),
+      },
+      `Duración: ${horasPorPersona.toFixed(2)}h`,
+    );
+  }
+  function detalleEditarComentario(texto: string) {
+    if (!selectedTask) return;
+    const limpio = texto.trim();
+    // No persistir si no cambió (el blur se dispara igual al cerrar el campo).
+    if ((selectedTask.comentario ?? "") === limpio) return;
+    guardarCampoDetalle({ comentario: limpio || null }, "Comentario guardado");
+  }
+  function detalleCambiarPrioridad(correctiva: boolean) {
+    if (!selectedTask) return;
+    if (correctiva) {
+      Modal.confirm({
+        title: "Marcar como correctiva (emergencia)",
+        content: "Se reprograman las tareas del mismo día y operario que arranquen después de esta; las que no entren en el día van al pool.",
+        okText: "Marcar 🚨", cancelText: "Cancelar", okButtonProps: { danger: true },
+        onOk: () => marcarEmergencia(selectedTask),
+      });
+    } else {
+      guardarCampoDetalle({ es_correctivo: false }, "Prioridad: Normal");
     }
   }
 
@@ -847,10 +1139,12 @@ export default function ProgramacionSemanalPage() {
       }
     }
 
-    // (2) Choque con tareas fuera del grupo (mismo recurso).
+    // (2) Choque con tareas fuera del grupo (mismo recurso). Contra allRows:
+    // el grupo puede desbordar a otra semana y los PUTs van con omitirAntisolape,
+    // así que este chequeo es la única defensa también para esos choques.
     for (const s of slots) {
       const recsSlot = splitTecnicos(s.recurso);
-      for (const t of rows) {
+      for (const t of allRows) {
         if (idsGrupo.has(t.id)) continue;
         if (!t.fecha_inicio || !t.fecha_fin) continue;
         const recursoRaw = view === "equipo" ? t.maquina : t.tecnico;
@@ -935,11 +1229,18 @@ export default function ProgramacionSemanalPage() {
     // La vista por Equipos es SOLO LECTURA: las tareas se asignan a operarios
     // (la máquina sale del operario). Acá solo se visualiza la carga.
     if (view === "equipo") return;
+    // Enviado (foto) y Ejecución son solo lectura: solo se edita la Semana real.
+    if (vistaTiempo !== "plan") return;
     if (e.button !== 0) return; // solo click izquierdo
-    // Tarea publicada = plan congelado: no se mueve hasta reabrir la semana.
+    // Tarea publicada Y AGENDADA = plan congelado: no se mueve hasta reabrir la
+    // semana. Una tarea del pool (sin fecha) no es un plan congelado aunque arrastre
+    // el flag `publicado` (p.ej. quedó colgado de una importación): se puede asignar
+    // —y al asignarla se vuelve borrador (ver persistMove)—. Si no, una tarea
+    // publicada sin semana queda atascada: no se puede mover ni reabrir (no aparece
+    // en ningún carril semanal donde esté el botón Reabrir).
     const tDrag = rows.find((r) => r.id === taskId) ?? allRows.find((r) => r.id === taskId);
-    if (tDrag?.publicado) {
-      messageApi.info("Tarea publicada. Reabrí la semana del operario para moverla.");
+    if (tDrag?.publicado && tDrag?.fecha_inicio) {
+      messageApi.info("Tarea enviada. Reabrí la semana del operario para moverla.");
       return;
     }
     // Tarea ya iniciada por el técnico (en proceso / pausada / realizada): su
@@ -1149,9 +1450,25 @@ export default function ProgramacionSemanalPage() {
   }
 
   function renderTaskBlock(r: PlanRow, recurso: string) {
-    if (!r.fecha_inicio || !r.fecha_fin) return null;
-    const ini = dayjs(r.fecha_inicio);
-    const fin = dayjs(r.fecha_fin);
+    if (!r.fecha_inicio) return null;
+    const planIni = dayjs(r.fecha_inicio);
+    // Tarea agendada SIN duración (horas_estimadas 0/null → el server deja
+    // fecha_fin en null): antes no se renderizaba — quedaba invisible (con fecha
+    // no está en el pool, sin fin no tenía bloque). Se dibuja con 1h visual para
+    // que el planner la vea y le ajuste la duración.
+    const sinDuracion = !r.fecha_fin;
+    const planFin = sinDuracion ? planIni.add(1, "hour") : dayjs(r.fecha_fin);
+    // Desvíos vs el plan ENVIADO — solo en vista "Semana real":
+    //   ↷ la tarea se movió (fecha u operario distinto a la foto)
+    //   ＋ no estaba en el plan enviado (se agregó después; solo se marca si el
+    //     operario tiene algo enviado esta semana)
+    const baseIni = r.fecha_inicio_base ? dayjs(r.fecha_inicio_base) : null;
+    const desviada = vistaTiempo === "plan" && !!baseIni
+      && (Math.abs(baseIni.diff(planIni, "minute")) >= 1 || (r.tecnico_base ?? r.tecnico ?? "") !== (r.tecnico ?? ""));
+    const fueraDePlan = vistaTiempo === "plan" && !baseIni && lanesConEnvio.has(recurso);
+    const empezada = haEmpezado(r.estado);
+    const ini = planIni;
+    const fin = planFin;
     // Bordes de la semana visible (lunes 8:00 → viernes 18:00)
     const semanaIni = lunes.hour(JORNADA_INICIO).minute(0).second(0).millisecond(0);
     const semanaFin = lunes.add(4, "day").hour(JORNADA_FIN).minute(0).second(0).millisecond(0);
@@ -1171,17 +1488,59 @@ export default function ProgramacionSemanalPage() {
     const widthPx = resizing?.id === r.id ? Math.max(20, resizeWidth) : baseWidth;
     const color = estadoColor(r.estado);
     const hasConflict = conflictos.has(r.id);
+
+    // ── Barra de EJECUCIÓN real (vista Semana real) ──
+    // La ejecución vive dentro de la semana real: cada tarea iniciada dibuja una
+    // barrita bajo el bloque del plan con su ejecución real (inicio_real → fin
+    // real / ahora si está en proceso — crece en vivo). Reemplaza a la vieja
+    // vista "Real" separada.
+    let execBar: { left: number; width: number } | null = null;
+    if (vistaTiempo === "plan" && empezada && r.fecha_inicio_real) {
+      const eIni = dayjs(r.fecha_inicio_real);
+      let eFin: Dayjs;
+      if (r.estado === "en_proceso") {
+        eFin = ahoraTick ?? dayjs(); // crece en vivo
+      } else if (r.estado === "realizado" && r.fecha_fin_real) {
+        eFin = dayjs(r.fecha_fin_real);
+      } else {
+        // pausado (o realizado sin fin_real): proyectar por horas reales hábiles.
+        const hr = Number(r.horas_reales ?? 0);
+        eFin = hr > 0 ? dayjs(calcularFin(eIni.toDate(), hr, !!r.horas_extras)) : eIni.add(30, "minute");
+      }
+      if (!eFin.isAfter(eIni)) eFin = eIni.add(15, "minute"); // guard tamaño mínimo
+      const eIniC = eIni.isBefore(semanaIni) ? semanaIni : eIni;
+      const eFinC = eFin.isAfter(semanaFin) ? semanaFin : eFin;
+      if (eFinC.isAfter(eIniC)) {
+        const exStart = eIniC.diff(lunes, "day") * dayPx + (hourDecimal(eIniC) - JORNADA_INICIO) * hourPx;
+        const exEnd = eFinC.diff(lunes, "day") * dayPx + (hourDecimal(eFinC) - JORNADA_INICIO) * hourPx;
+        execBar = { left: exStart, width: Math.max(6, exEnd - exStart) };
+      }
+    }
     return (
+      <Fragment key={r.id}>
       <Tooltip
-        key={r.id}
         title={
           <div>
             <div><strong>OT {r.orden_trabajo?.ot ?? r.ot_id}</strong></div>
-            <div>{r.operacion_codigo} — {r.descripcion}</div>
-            <div>Cliente: {r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "—"}</div>
-            <div>{ini.format("DD/MM HH:mm")} → {fin.format("DD/MM HH:mm")}</div>
-            <div>Duración: {Number(r.horas_estimadas ?? 0).toFixed(1)}h{r.qty_personal && r.qty_personal > 1 ? ` × ${r.qty_personal} pers.` : ""}</div>
+            <div>{r.componente} — {r.operacion_codigo} {r.descripcion}</div>
+            {r.orden_trabajo?.descripcion && <div>Descripción: {r.orden_trabajo.descripcion}</div>}
+            <div>Flota: {flotaDe(r)}</div>
+            <div>📋 Plan: {planIni.format("DD/MM HH:mm")} → {planFin.format("DD/MM HH:mm")} · {Number(r.horas_estimadas ?? 0).toFixed(1)}h{r.qty_personal && r.qty_personal > 1 ? ` × ${r.qty_personal} pers.` : ""}</div>
+            {empezada && r.fecha_inicio_real && (
+              <div>⏱ Real: {dayjs(r.fecha_inicio_real).format("DD/MM HH:mm")} → {r.fecha_fin_real ? dayjs(r.fecha_fin_real).format("DD/MM HH:mm") : (r.estado === "en_proceso" ? "en curso" : "—")}{r.horas_reales != null ? ` · ${Number(r.horas_reales).toFixed(1)}h` : ""}</div>
+            )}
             <div>Estado: {estadoNombre(r.estado)}</div>
+            {enviadoMode && r.publicado_at && (
+              <div>📌 Foto del plan enviado el {dayjs(r.publicado_at).format("DD/MM HH:mm")}</div>
+            )}
+            {desviada && baseIni && (
+              <div style={{ color: brand.warning }}>
+                ↷ Distinto al enviado: {baseIni.format("DD/MM HH:mm")} → {r.fecha_fin_base ? dayjs(r.fecha_fin_base).format("DD/MM HH:mm") : "—"}
+                {(r.tecnico_base ?? "") !== (r.tecnico ?? "") ? ` · era de ${r.tecnico_base}` : ""}
+              </div>
+            )}
+            {fueraDePlan && <div style={{ color: brand.warning }}>＋ Fuera del plan enviado (agregada después de enviar)</div>}
+            {sinDuracion && <div style={{ color: brand.warning }}>⚠ Sin duración — se muestra 1h; ajustala con el resize o en el detalle</div>}
             {hasConflict && <div style={{ color: brand.error }}>⚠ Conflicto</div>}
           </div>
         }
@@ -1193,6 +1552,8 @@ export default function ProgramacionSemanalPage() {
             if (t.classList.contains("psg-resize-handle")) return;
             // Shift+Click NO inicia drag, solo toggle selección
             if (e.shiftKey) return;
+            // Enviado (foto) y Ejecución = solo lectura; solo se arrastra en Semana real.
+            if (vistaTiempo !== "plan") return;
             // Solo bloqueamos el drag si la tarea EMPIEZA en una semana anterior
             // (su inicio no está visible, no sabríamos reubicarla). Las que se
             // desbordan hacia adelante (continuaDespues) SÍ se pueden mover —
@@ -1240,14 +1601,20 @@ export default function ProgramacionSemanalPage() {
           {/* Franja de almuerzo dentro del bloque (si lo cruza) */}
           {renderLunchOverlayInBlock(visibleIni, visibleFin, startPx)}
           <div className="psg-task-title" style={{ paddingLeft: continuaDeAntes ? 14 : 0, paddingRight: continuaDespues ? 14 : 0 }}>
-            {r.es_correctivo && "🚨 "}{r.orden_trabajo?.ot ? `OT-${r.orden_trabajo.ot}` : "S/OT"} {r.operacion_codigo}
+            {r.es_correctivo && "🚨 "}{fueraDePlan && <span style={{ marginRight: 3, fontWeight: 800 }} title="Fuera del plan enviado">＋</span>}{desviada && <span style={{ marginRight: 3, fontWeight: 800 }} title="Distinto al plan enviado">↷</span>}{glifoEstado(r.estado) && <span style={{ opacity: 0.95, marginRight: 3 }}>{glifoEstado(r.estado)}</span>}{r.orden_trabajo?.ot ? `OT-${r.orden_trabajo.ot}` : "S/OT"}
             {hasConflict && <WarningFilled style={{ marginLeft: 4 }} />}
           </div>
-          <div className="psg-task-sub" style={{ paddingLeft: continuaDeAntes ? 14 : 0, paddingRight: continuaDespues ? 14 : 0 }}>{r.descripcion}</div>
-          {/* Resize handle: solo en vista Operarios (Equipos es solo lectura),
-              si la tarea NO continúa a la próxima semana y NO está publicada
-              (publicada = plan congelado). */}
-          {!continuaDespues && view !== "equipo" && !r.publicado && !haEmpezado(r.estado) && (
+          <div className="psg-task-sub" style={{ paddingLeft: continuaDeAntes ? 14 : 0, paddingRight: continuaDespues ? 14 : 0 }}>{r.componente} — {r.descripcion}</div>
+          {r.comentario && (widthPx >= 90 ? (
+            <div className="psg-task-cmt" style={{ paddingLeft: continuaDeAntes ? 14 : 0, paddingRight: continuaDespues ? 14 : 0 }}>💬 {r.comentario}</div>
+          ) : (
+            // Bloque angosto: el comentario no entra legible → badge (texto en el tooltip).
+            <span className="psg-task-cmt-badge" title={r.comentario}>💬</span>
+          ))}
+          {/* Resize handle: solo en Semana real + vista Operarios (Enviado /
+              Ejecución / Equipos son solo lectura), si la tarea NO continúa a la
+              próxima semana y NO está enviada (enviada = plan congelado). */}
+          {vistaTiempo === "plan" && !continuaDespues && view !== "equipo" && !r.publicado && !haEmpezado(r.estado) && (
             <div
               className="psg-resize-handle"
               onMouseDown={(e) => {
@@ -1261,6 +1628,15 @@ export default function ProgramacionSemanalPage() {
           )}
         </div>
       </Tooltip>
+      {/* Barra de ejecución real bajo el bloque (no intercepta el mouse). */}
+      {execBar && (
+        <div
+          className="psg-exec-bar"
+          data-estado={r.estado ?? ""}
+          style={{ left: execBar.left, width: execBar.width }}
+        />
+      )}
+      </Fragment>
     );
   }
 
@@ -1333,6 +1709,73 @@ export default function ProgramacionSemanalPage() {
     );
   }
 
+  // ── Fallback MOBILE: el Gantt no es usable en celular. Vista read-only por
+  //    recurso → tareas de la semana (hora + estado), tap abre la OT. ──
+  if (isMobile) {
+    return (
+      <div style={{ padding: 8 }}>
+        <Card size="small" style={{ marginBottom: 8 }} styles={{ body: { padding: "8px 12px" } }}>
+          <Space wrap size={6}>
+            <Button shape="circle" size="small" icon={<LeftOutlined />} onClick={() => setLunes((m) => m.subtract(1, "week"))} />
+            <strong style={{ fontSize: 13 }}>Semana {lunes.isoWeek()} · {lunes.isoWeekYear()}</strong>
+            <Button shape="circle" size="small" icon={<RightOutlined />} onClick={() => setLunes((m) => m.add(1, "week"))} />
+            <Button size="small" icon={<AimOutlined />} onClick={() => setLunes(dayjs().startOf("isoWeek"))}>Hoy</Button>
+            <Segmented
+              size="small" value={view}
+              onChange={(v) => setView(v as "equipo" | "operario")}
+              options={[{ value: "operario", icon: <UserOutlined /> }, { value: "equipo", icon: <ToolOutlined /> }]}
+            />
+            <Segmented
+              size="small" value={vistaTiempo}
+              onChange={(v) => setVistaTiempo(v as "enviado" | "plan")}
+              options={[
+                { value: "enviado", label: "Planificada" },
+                { value: "plan", label: "Semana real" },
+              ]}
+            />
+          </Space>
+        </Card>
+        {cargando && rows.length === 0 ? (
+          <Skeleton active />
+        ) : recursos.length === 0 ? (
+          <Empty description="Sin recursos." />
+        ) : (
+          recursos.map((res) => {
+            const tasks = (tareasPorRecurso.get(res.key) ?? []).slice().sort((a, b) => (a.fecha_inicio ?? "").localeCompare(b.fecha_inicio ?? ""));
+            return (
+              <Card key={res.key} size="small" title={res.label} style={{ marginBottom: 8 }} styles={{ body: { padding: 8 } }}>
+                {tasks.length === 0 ? (
+                  <span style={{ fontSize: 12, color: brand.textSecondary }}>Sin tareas esta semana.</span>
+                ) : tasks.map((t) => (
+                  <div
+                    key={t.id}
+                    onClick={() => router.push(`/ordenes-trabajo/${t.ot_id}`)}
+                    style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 4px", borderBottom: `1px solid ${brand.border}`, cursor: "pointer" }}
+                  >
+                    <span style={{ flexShrink: 0, width: 22, height: 22, borderRadius: 4, background: colorBloque(t.estado, estadoColor(t.estado)), color: brand.white, fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", opacity: t.estado === "cancelado" ? 0.5 : 1 }}>
+                      {t.es_correctivo ? "🚨" : glifoEstado(t.estado) || "•"}
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        OT-{t.orden_trabajo?.ot ?? t.ot_id} · {t.componente} — {t.descripcion}
+                      </div>
+                      <div style={{ fontSize: 11, color: brand.textSecondary }}>
+                        {t.fecha_inicio ? diaEs(dayjs(t.fecha_inicio), true) : "sin hora"} · {estadoNombre(t.estado)}
+                        {vistaTiempo === "plan" && haEmpezado(t.estado) && t.horas_reales != null && (
+                          <> · ⏱ {Number(t.horas_reales).toFixed(1)}h real{t.horas_estimadas != null ? ` / ${Number(t.horas_estimadas).toFixed(1)}h plan` : ""}</>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </Card>
+            );
+          })
+        )}
+      </div>
+    );
+  }
+
   return (
     <div style={{ minHeight: "100%" }}>
       {contextHolder}
@@ -1387,7 +1830,7 @@ export default function ProgramacionSemanalPage() {
               }
               return <Tag icon={<CheckCircleFilled />} color="default" style={{ fontWeight: 400, color: brand.textSecondary }}>Sincronizado</Tag>;
             })()}
-            {view === "equipo" ? (
+            {view === "equipo" || vistaTiempo !== "plan" ? (
               <Tag icon={<EyeOutlined />} color="default" style={{ fontWeight: 500 }}>Solo visualización</Tag>
             ) : (
               <Button
@@ -1400,6 +1843,52 @@ export default function ProgramacionSemanalPage() {
                 {editMode ? "Salir de edición" : "Modo edición"}
               </Button>
             )}
+            {/* Estado de envío + "Enviar semana" (todos los operarios de una).
+                El envío congela la foto del plan = semana planificada. */}
+            {view === "operario" && vistaTiempo === "plan" && (() => {
+              const agendadas = allRows.filter((r) => perteneceASemana(r) && !!r.fecha_inicio && splitTecnicos(r.tecnico).length > 0);
+              const pendientes = agendadas.filter((r) => !r.publicado);
+              if (agendadas.length === 0) return null;
+              const estadoEnvio = pendientes.length === 0 ? "enviada" : pendientes.length < agendadas.length ? "parcial" : "borrador";
+              return (
+                <>
+                  <Tag
+                    icon={<PushpinOutlined />}
+                    color={estadoEnvio === "enviada" ? "success" : estadoEnvio === "parcial" ? "warning" : "default"}
+                    style={{ fontWeight: 500 }}
+                  >
+                    {estadoEnvio === "enviada" ? "Semana enviada" : estadoEnvio === "parcial" ? "Envío parcial" : "Sin enviar"}
+                  </Tag>
+                  {pendientes.length > 0 && (
+                    <Popconfirm
+                      title={`Enviar semana ${semanaActual}`}
+                      description={(
+                        <div style={{ maxWidth: 320 }}>
+                          Se congela la <strong>semana planificada</strong> (foto del plan) de{" "}
+                          <strong>{pendientes.length}</strong> tarea(s) agendada(s) de{" "}
+                          <strong>{new Set(pendientes.flatMap((r) => splitTecnicos(r.tecnico))).size}</strong> operario(s).
+                          Las del pool (sin fecha) quedan en borrador. Después de enviar, los cambios de la semana cuentan como semana real.
+                        </div>
+                      )}
+                      okText="Enviar"
+                      cancelText="Cancelar"
+                      onConfirm={enviarSemanaCompleta}
+                      disabled={!editMode}
+                    >
+                      <Button
+                        type="primary"
+                        ghost
+                        icon={<PushpinOutlined />}
+                        disabled={!editMode}
+                        title={!editMode ? "Activá Modo Edición para enviar la semana" : undefined}
+                      >
+                        Enviar semana ({pendientes.length})
+                      </Button>
+                    </Popconfirm>
+                  )}
+                </>
+              );
+            })()}
             <Button shape="circle" icon={<LeftOutlined />} onClick={() => setLunes((m) => m.subtract(1, "week"))} />
             <DatePicker
               value={lunes}
@@ -1432,6 +1921,26 @@ export default function ProgramacionSemanalPage() {
                 { value: "equipo", icon: <ToolOutlined />, label: "Equipos" },
               ]}
             />
+            <Tooltip title={
+              vistaTiempo === "enviado"
+                ? "Semana planificada: la foto del plan congelada al Enviar la semana. Solo lectura."
+                : "Semana real: el plan vivo con los cambios de la semana (editable). La ejecución de cada tarea iniciada se ve como barra bajo el bloque."
+            }>
+              <Segmented
+                value={vistaTiempo}
+                onChange={(v) => {
+                  const nuevo = v as "enviado" | "plan";
+                  setVistaTiempo(nuevo);
+                  // La semana planificada es solo lectura: si veníamos editando,
+                  // salimos y soltamos el lock.
+                  if (nuevo !== "plan" && editMode) { setEditMode(false); void lock.release(); }
+                }}
+                options={[
+                  { value: "enviado", icon: <PushpinOutlined />, label: "Semana planificada" },
+                  { value: "plan", icon: <CalendarOutlined />, label: "Semana real" },
+                ]}
+              />
+            </Tooltip>
             <Button icon={<UnorderedListOutlined />} onClick={() => router.push("/operaciones/planificacion")}>Planificación</Button>
             <Button icon={<RollbackOutlined />} onClick={() => router.back()}>Volver</Button>
           </Space>
@@ -1443,7 +1952,28 @@ export default function ProgramacionSemanalPage() {
         <StatCard label="Tareas programadas" value={stats.total} color={brand.navy} />
         <StatCard label="Con fecha asignada" value={stats.conFecha} color={brand.success} />
         <StatCard label="Sin fecha" value={stats.sinFecha} color={brand.warning} />
-        <StatCard label="Conflictos" value={stats.conflictos} color={brand.error} />
+        {stats.conflictos > 0 ? (
+          <Popover
+            trigger="click"
+            placement="bottom"
+            title={<span><WarningFilled style={{ color: brand.error, marginRight: 6 }} />Conflictos de horario</span>}
+            content={
+              <div style={{ maxWidth: 340, maxHeight: 300, overflowY: "auto" }}>
+                {rows.filter((r) => conflictos.has(r.id)).map((r) => (
+                  <div key={r.id} onClick={() => setSelectedTask(r)}
+                    style={{ cursor: "pointer", padding: "5px 4px", borderBottom: `1px solid ${brand.border}`, fontSize: 12 }}>
+                    <strong>OT-{r.orden_trabajo?.ot ?? r.ot_id}</strong> · {r.componente} — {r.descripcion}
+                    <div style={{ fontSize: 11, color: brand.textSecondary }}>{r.tecnico ?? r.maquina ?? "—"}</div>
+                  </div>
+                ))}
+              </div>
+            }
+          >
+            <div style={{ cursor: "pointer" }}><StatCard label="Conflictos" value={stats.conflictos} color={brand.error} /></div>
+          </Popover>
+        ) : (
+          <StatCard label="Conflictos" value={stats.conflictos} color={brand.error} />
+        )}
         <StatCard label="Sin semana asignada" value={stats.sinSemana} color={brand.textSecondary} />
       </div>
 
@@ -1523,9 +2053,15 @@ export default function ProgramacionSemanalPage() {
                     <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
                       {estadosCat.map((e) => (
                         <div key={e.codigo} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <Tag color={e.color ?? "default"} style={{ margin: 0, minWidth: 90, textAlign: "center" }}>
+                          <span style={{
+                            display: "inline-block", minWidth: 90, textAlign: "center",
+                            padding: "1px 8px", borderRadius: 4,
+                            background: colorBloque(e.codigo, e.color), color: brand.white,
+                            fontSize: 11, fontWeight: 600,
+                            opacity: e.codigo === "cancelado" ? 0.5 : 1,
+                          }}>
                             {e.nombre}
-                          </Tag>
+                          </span>
                           <span style={{ color: brand.textSecondary, fontSize: 11 }}>{e.codigo}</span>
                         </div>
                       ))}
@@ -1598,8 +2134,52 @@ export default function ProgramacionSemanalPage() {
         </div>
       </Card>
 
+      {/* Leyenda de estados SIEMPRE visible (coincide con el color de los bloques) */}
+      {estadosCat.length > 0 && (
+        <Card size="small" style={{ marginBottom: 8 }} styles={{ body: { padding: "5px 12px" } }}>
+          <Space wrap size={12}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: brand.textSecondary }}>Leyenda:</span>
+            {estadosCat.map((e) => (
+              <span key={e.codigo} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
+                <span style={{ display: "inline-block", width: 16, height: 12, borderRadius: 2, background: colorBloque(e.codigo, e.color), opacity: e.codigo === "cancelado" ? 0.5 : 1 }} />
+                {e.nombre}
+              </span>
+            ))}
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
+              <span style={{ display: "inline-block", width: 16, height: 12, borderRadius: 2, background: "#8c8c8c", backgroundImage: "repeating-linear-gradient(45deg, rgba(255,255,255,0.35) 0 3px, transparent 3px 6px)", boxShadow: `inset 0 0 0 1px ${brand.warning}` }} />
+              🤝 Tercero
+            </span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
+              <WarningFilled style={{ color: brand.error, fontSize: 12 }} /> Conflicto
+            </span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
+              <span style={{ display: "inline-block", width: 16, height: 6, borderRadius: 3, background: "#13C2C2", boxShadow: "0 0 0 1px rgba(0,0,0,0.15)" }} />
+              ⏱ Ejecución real (barra bajo el bloque)
+            </span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
+              <span style={{ fontWeight: 800 }}>↷</span> Distinto al enviado
+              <span style={{ fontWeight: 800, marginLeft: 6 }}>＋</span> Fuera del plan enviado
+            </span>
+          </Space>
+        </Card>
+      )}
+
+      {/* Banner de modo edición (otros usuarios no pueden editar mientras tanto) */}
+      {editMode && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 8 }}
+          message="Estás en modo edición — los demás solo pueden visualizar hasta que salgas."
+          action={<Button size="small" danger onClick={toggleEditMode}>Salir de edición</Button>}
+        />
+      )}
+
       {/* Gantt */}
       <Card styles={{ body: { padding: 0 } }} style={{ overflow: "hidden" }}>
+        {cargando && rows.length === 0 && allRows.length === 0 ? (
+          <Skeleton active title={false} paragraph={{ rows: 8 }} style={{ padding: 24 }} />
+        ) : (
         <div
           className="psg-gantt-wrap"
           ref={timelineRef}
@@ -1607,7 +2187,7 @@ export default function ProgramacionSemanalPage() {
           onMouseDown={startPan}
         >
           {lineaHoy != null && (
-            <div className="psg-now-line" style={{ left: 220 + lineaHoy }} title={`Ahora: ${diaEs(ahoraTick ?? dayjs(), true)}`}>
+            <div className="psg-now-line" style={{ left: 220 + lineaHoy, height: recursos.length * ROW_HEIGHT, bottom: "auto" }} title={`Ahora: ${diaEs(ahoraTick ?? dayjs(), true)}`}>
               <div className="psg-now-dot" />
             </div>
           )}
@@ -1615,9 +2195,11 @@ export default function ProgramacionSemanalPage() {
           <div className="psg-row psg-header-row">
             <div className="psg-resource-cell">Recurso</div>
             <div className="psg-timeline-header">
-              {days.map((d, i) => (
-                <div key={i} className="psg-day-header" style={{ width: dayPx, minWidth: dayPx }}>
-                  <div className="psg-day-label">{diaEs(d)}</div>
+              {days.map((d, i) => {
+                const esHoy = d.isSame(dayjs(), "day");
+                return (
+                <div key={i} className={`psg-day-header${esHoy ? " psg-day-today" : ""}`} style={{ width: dayPx, minWidth: dayPx }}>
+                  <div className="psg-day-label">{diaEs(d)}{esHoy ? " · HOY" : ""}</div>
                   <div className="psg-hour-row" style={{ position: "relative" }}>
                     {Array.from({ length: HORAS_DIA }, (_, h) => {
                       const hour = JORNADA_INICIO + h;
@@ -1641,7 +2223,8 @@ export default function ProgramacionSemanalPage() {
                     />
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -1678,16 +2261,40 @@ export default function ProgramacionSemanalPage() {
                     })()}
                     {/* Publicar / reabrir la semana de este operario (planner). */}
                     {view === "operario" && tasks.length > 0 && (() => {
-                      const pub = tasks.every((t) => t.publicado);
+                      // Solo cuentan las tareas que PERTENECEN a esta semana, no las
+                      // que se desbordan desde otra (mismo criterio que publicarSemana).
+                      // Si no, una tarea spillover sin publicar dejaba `pub` en false
+                      // para siempre y "Reabrir" nunca aparecía.
+                      const tasksSemana = tasks.filter(perteneceASemana);
+                      if (tasksSemana.length === 0) return null;
+                      // Estado mixto: parte publicado / parte borrador (p.ej. se
+                      // publicó la semana y luego se agregaron tareas, o una quedó
+                      // publicada suelta). Antes el toggle era todo-o-nada y solo
+                      // ofrecía "Reabrir" si TODAS estaban publicadas; en mezcla
+                      // mostraba "Publicar" y dejaba trabada la tarea publicada (no
+                      // se podía reabrir ni sacar). Ahora: si hay alguna publicada
+                      // siempre se puede "Reabrir", y en mezcla se ofrecen ambas.
+                      const todasPub = tasksSemana.every((t) => t.publicado);
+                      const algunaPub = tasksSemana.some((t) => t.publicado);
+                      const mixta = algunaPub && !todasPub;
                       return (
                         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
-                          <Tag color={pub ? "success" : "default"} style={{ fontSize: 9, margin: 0, lineHeight: "14px" }}>
-                            {pub ? "Publicada" : "Borrador"}
+                          <Tag color={todasPub ? "success" : mixta ? "warning" : "default"} style={{ fontSize: 9, margin: 0, lineHeight: "14px" }}>
+                            {todasPub ? "Enviada" : mixta ? "Parcial" : "Borrador"}
                           </Tag>
                           {editMode && (
-                            <a style={{ fontSize: 10 }} onClick={() => publicarSemana(res.key, !pub)}>
-                              {pub ? "Reabrir" : "Publicar"}
-                            </a>
+                            <>
+                              {!todasPub && (
+                                <a style={{ fontSize: 10 }} onClick={() => publicarSemana(res.key, true)}>
+                                  Enviar
+                                </a>
+                              )}
+                              {algunaPub && (
+                                <a style={{ fontSize: 10 }} onClick={() => publicarSemana(res.key, false)}>
+                                  Reabrir
+                                </a>
+                              )}
+                            </>
                           )}
                         </div>
                       );
@@ -1755,8 +2362,12 @@ export default function ProgramacionSemanalPage() {
             })
           )}
         </div>
+        )}
       </Card>
 
+      {/* Pools de pendientes: ocultos en la vista Enviado (es una foto congelada,
+          no hay nada que programar sobre ella). */}
+      {!enviadoMode && (<>
       {/* Buscador del pool de pendientes (parte / cilindro / OT / descripción). */}
       <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <Input
@@ -1842,6 +2453,7 @@ export default function ProgramacionSemanalPage() {
           {sinSemanaMostrar.map((t) => renderPoolCard(t, false))}
         </div>
       )}
+      </>)}
 
       {/* Ghost del drag (sigue al cursor) */}
       {drag && (
@@ -1865,8 +2477,9 @@ export default function ProgramacionSemanalPage() {
                 const t = rows.find((r) => r.id === drag.taskId) ?? allRows.find((r) => r.id === drag.taskId);
                 return (
                   <>
-                    <div className="psg-task-title">OT-{t?.orden_trabajo?.ot ?? t?.ot_id} {t?.operacion_codigo}</div>
-                    <div className="psg-task-sub">{t?.descripcion}</div>
+                    <div className="psg-task-title">OT-{t?.orden_trabajo?.ot ?? t?.ot_id}</div>
+                    <div className="psg-task-sub">{t?.componente} — {t?.descripcion}</div>
+                    {t?.comentario && <div className="psg-task-cmt">💬 {t.comentario}</div>}
                   </>
                 );
               })()}
@@ -1965,26 +2578,21 @@ export default function ProgramacionSemanalPage() {
               <Button danger disabled={!editMode || !!selectedTask?.publicado || haEmpezado(selectedTask?.estado)}>Sacar de la semana</Button>
             </Popconfirm>
           ) : null,
-          selectedTask && !selectedTask.es_correctivo ? (
-            <Popconfirm
-              key="emergencia"
-              title="Marcar como emergencia (correctiva)"
-              description="Se reprograman las tareas del mismo día y operario que arranquen después de esta; las que no entren en el día van al pool."
-              okText="Marcar 🚨"
-              cancelText="Cancelar"
-              okButtonProps={{ danger: true }}
-              onConfirm={() => selectedTask && marcarEmergencia(selectedTask)}
-            >
-              <Button danger disabled={!editMode}>🚨 Emergencia</Button>
-            </Popconfirm>
-          ) : null,
           <Button key="plan" type="primary" onClick={() => router.push("/operaciones/planificacion")}>
             Editar en Planificación
           </Button>,
         ]}
         width={modalWidth(screens, 680)}
       >
-        {selectedTask && (
+        {selectedTask && (() => {
+          // operario/equipo/prioridad: solo para tareas NO iniciadas.
+          const editable = editMode && !selectedTask.publicado && !haEmpezado(selectedTask.estado);
+          // duración: editable aunque la tarea esté en curso; solo se bloquea si
+          // está realizada o la semana publicada (igual que lo permite el backend).
+          const editableDur = editMode && !selectedTask.publicado && selectedTask.estado !== "realizado";
+          const operarios = splitRecursos(selectedTask.tecnico);
+          const equiposSel = splitRecursos(selectedTask.maquina);
+          return (
           <>
           <Descriptions column={1} size="small">
             <Descriptions.Item label="OT">{selectedTask.orden_trabajo?.ot ?? `#${selectedTask.ot_id}`}</Descriptions.Item>
@@ -2003,26 +2611,85 @@ export default function ProgramacionSemanalPage() {
             </Descriptions.Item>
             <Descriptions.Item label="Tarea">{selectedTask.operacion_codigo} — {selectedTask.descripcion}</Descriptions.Item>
             <Descriptions.Item label="Parte">{selectedTask.componente}</Descriptions.Item>
-            <Descriptions.Item label="Operario">{selectedTask.tecnico ?? "-"}</Descriptions.Item>
-            <Descriptions.Item label="Equipo">{selectedTask.maquina ?? "-"}</Descriptions.Item>
+            <Descriptions.Item label="Operario">
+              {editable ? (
+                <Select mode="multiple" size="small" style={{ width: "100%" }} placeholder="Sin asignar"
+                  value={operarios}
+                  onChange={(vals) => detalleEditarOperario(vals as string[])}
+                  options={trabajadores.map((t) => ({ value: t.nombre, label: t.nombre }))}
+                  optionFilterProp="label" maxTagCount="responsive" />
+              ) : (selectedTask.tecnico ?? "-")}
+            </Descriptions.Item>
+            <Descriptions.Item label="Equipo">
+              {editable ? (
+                <Select mode="multiple" size="small" style={{ width: "100%" }} placeholder="Sin asignar"
+                  value={equiposSel}
+                  onChange={(vals) => detalleEditarEquipo(vals as string[])}
+                  options={equipos.map((e) => ({ value: e.codigo, label: `${e.codigo} — ${e.descripcion ?? ""}` }))}
+                  optionFilterProp="label" maxTagCount="responsive" />
+              ) : (selectedTask.maquina ?? "-")}
+            </Descriptions.Item>
+            <Descriptions.Item label="Prioridad">
+              {editable ? (
+                <Select size="small" style={{ width: 180 }}
+                  value={selectedTask.es_correctivo ? "correctiva" : "normal"}
+                  onChange={(v) => detalleCambiarPrioridad(v === "correctiva")}
+                  options={[{ value: "normal", label: "Normal" }, { value: "correctiva", label: "🚨 Correctiva (emergencia)" }]} />
+              ) : (selectedTask.es_correctivo ? <Tag color="error">🚨 Correctiva</Tag> : "Normal")}
+            </Descriptions.Item>
             <Descriptions.Item label="Inicio">{selectedTask.fecha_inicio ? dayjs(selectedTask.fecha_inicio).format("DD/MM/YY HH:mm") : "—"}</Descriptions.Item>
             <Descriptions.Item label="Fin">{selectedTask.fecha_fin ? dayjs(selectedTask.fecha_fin).format("DD/MM/YY HH:mm") : "—"}</Descriptions.Item>
-            <Descriptions.Item label="Duración">{Number(selectedTask.horas_estimadas ?? 0).toFixed(1)}h · Qty {selectedTask.qty_personal ?? 1}</Descriptions.Item>
+            <Descriptions.Item label="Duración">
+              {editableDur ? (
+                <Space>
+                  <InputNumber size="small" min={0.25} step={0.5} style={{ width: 90 }}
+                    value={durModal}
+                    onChange={(v) => setDurModal(v == null ? null : Number(v))}
+                    onBlur={() => { if (durModal != null && Number(durModal) !== Number(selectedTask.horas_estimadas ?? 0)) detalleEditarDuracion(durModal); }}
+                    onPressEnter={() => { if (durModal != null) detalleEditarDuracion(durModal); }} />
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>h/persona · Qty {selectedTask.qty_personal ?? 1}</Typography.Text>
+                </Space>
+              ) : `${Number(selectedTask.horas_estimadas ?? 0).toFixed(1)}h · Qty ${selectedTask.qty_personal ?? 1}`}
+            </Descriptions.Item>
             <Descriptions.Item label="Inicio real">{selectedTask.fecha_inicio_real ? dayjs(selectedTask.fecha_inicio_real).format("DD/MM/YY HH:mm") : "—"}</Descriptions.Item>
             <Descriptions.Item label="Fin real">{selectedTask.fecha_fin_real ? dayjs(selectedTask.fecha_fin_real).format("DD/MM/YY HH:mm") : "—"}</Descriptions.Item>
             <Descriptions.Item label="Duración real">{selectedTask.horas_reales != null ? `${Number(selectedTask.horas_reales).toFixed(2)}h` : "—"}</Descriptions.Item>
             <Descriptions.Item label="Estado"><Tag color={estadoColor(selectedTask.estado)}>{estadoNombre(selectedTask.estado)}</Tag></Descriptions.Item>
+            <Descriptions.Item label="Comentario">
+              {editMode ? (
+                <Input.TextArea
+                  size="small"
+                  autoSize={{ minRows: 2, maxRows: 6 }}
+                  placeholder="Agregá un comentario para esta tarea…"
+                  value={comentarioModal}
+                  onChange={(e) => setComentarioModal(e.target.value)}
+                  onBlur={() => detalleEditarComentario(comentarioModal)}
+                />
+              ) : (
+                <span style={{ whiteSpace: "pre-wrap" }}>{selectedTask.comentario || "—"}</span>
+              )}
+            </Descriptions.Item>
             {conflictos.has(selectedTask.id) && (
               <Descriptions.Item label="">
                 <Tag color="error">⚠ Conflicto con otra tarea del mismo recurso</Tag>
               </Descriptions.Item>
             )}
           </Descriptions>
+          {!editable && (
+            <Typography.Text type="secondary" style={{ fontSize: 11, display: "block", marginTop: 6 }}>
+              {!editMode ? "Activá Modo Edición para modificar operario, equipo, prioridad y duración."
+                : selectedTask.publicado ? "Semana enviada — reabrila para editar."
+                : selectedTask.estado === "realizado" ? "La tarea está realizada; no se edita desde acá."
+                : haEmpezado(selectedTask.estado) ? "Tarea en curso: solo se puede ajustar la duración."
+                : null}
+            </Typography.Text>
+          )}
           <div style={{ marginTop: 8 }}>
             <TareaAdjuntosLista taskId={selectedTask.id} />
           </div>
           </>
-        )}
+          );
+        })()}
       </Modal>
 
       <style jsx global>{`
@@ -2100,6 +2767,8 @@ export default function ProgramacionSemanalPage() {
           border-right: 1px solid ${brand.border};
         }
         .psg-day-header:last-child { border-right: none; }
+        .psg-day-today { background: ${brand.cyan}0d; }
+        .psg-day-today .psg-day-label { color: ${brand.cyan}; background: ${brand.cyan}1a; border-bottom: 2px solid ${brand.cyan}; }
         .psg-day-label {
           padding: 8px;
           text-align: center;
@@ -2185,6 +2854,21 @@ export default function ProgramacionSemanalPage() {
           font-size: 9px; opacity: 0.9; pointer-events: none; z-index: 2;
         }
         .psg-task-block[data-conflict="1"] { outline: 2px solid #ff4d4f; }
+        /* Modo Real: la tarea aún no empezó → es solo plan. Atenuada + borde punteado
+           para distinguirla de la ejecución real. */
+        /* Barra de ejecución real bajo el bloque del plan (vista Semana real). */
+        .psg-exec-bar {
+          position: absolute;
+          bottom: 2px;
+          height: 7px;
+          border-radius: 3px;
+          pointer-events: none;
+          z-index: 2;
+          background: #13C2C2;
+          box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.85);
+        }
+        .psg-exec-bar[data-estado="realizado"] { background: #52C41A; }
+        .psg-exec-bar[data-estado="pausado"] { background: #FA8C16; }
 
         /* Trabajo derivado a tercero: stripes diagonales + borde dorado para distinguir. */
         .psg-task-block[data-externo="1"] {
@@ -2387,12 +3071,21 @@ export default function ProgramacionSemanalPage() {
           background: rgba(245,34,45,0.95);
         }
         .psg-task-title {
-          font-weight: 600;
+          font-weight: 600; line-height: 1.2;
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .psg-task-sub {
-          font-size: 10px; opacity: 0.95;
+          font-size: 10px; opacity: 0.95; line-height: 1.15;
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .psg-task-cmt {
+          font-size: 9px; opacity: 0.9; font-style: italic; line-height: 1.15;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        /* Bloque angosto con comentario: badge en la esquina (texto en el tooltip). */
+        .psg-task-cmt-badge {
+          position: absolute; bottom: 1px; right: 3px;
+          font-size: 9px; opacity: 0.85; pointer-events: none; line-height: 1;
         }
 
         .psg-pool {

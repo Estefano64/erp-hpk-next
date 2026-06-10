@@ -26,6 +26,10 @@ const UpdateSchema = z.object({
   observaciones: z.string().trim().optional().nullable(),
   comentario: z.string().trim().optional().nullable(),
   semana_plan: z.string().trim().optional().nullable(),
+  // Volver una tarea a borrador (publicado=false). Publicar/reabrir en lote se hace
+  // por /publicar; acá se permite limpiar el flag al re-ubicar una tarea del pool
+  // que lo arrastraba sin agenda (ver persistMove en Programación Semanal).
+  publicado: z.boolean().optional(),
   // Cambiar la Parte/Tarea de una tarea existente (desde el detalle de OT). Son
   // campos "virtuales": se resuelven a las columnas componente/operacion_codigo/
   // descripcion antes del update (no se mandan tal cual a Prisma).
@@ -38,6 +42,9 @@ const UpdateSchema = z.object({
   horas_extras_qty: z.coerce.number().min(0).optional().nullable(),
   trabajo_externo: z.boolean().optional(),
   orden: z.coerce.number().int().min(0).optional(),
+  // Prioridad de la tarea = correctiva (emergencia) o no. Marcar como correctiva
+  // con cascada se hace por /emergencia; acá se permite VOLVER a normal (false).
+  es_correctivo: z.boolean().optional(),
   // Si true, ignora el check de estado=realizado (uso interno: revertir)
   forzarEdicion: z.boolean().optional(),
   // Si true, salta el anti-solape de servidor (el multi-move ya valida el grupo
@@ -103,7 +110,10 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       // El planner puede REGULARIZAR la duración real de una tarea ya terminada
       // (caso del técnico que se olvidó de marcar su fin de jornada).
       const soloHorasReales = camposReales.length === 1 && input.horas_reales !== undefined;
-      if (isRealizado && intentaEditar && !input.forzarEdicion && !soloRevertirEstado && !soloHorasReales) {
+      // Dejar un comentario es una nota informativa: se permite aunque la tarea ya
+      // esté realizada (no toca la planificación ni la ejecución).
+      const soloComentario = camposReales.length === 1 && input.comentario !== undefined;
+      if (isRealizado && intentaEditar && !input.forzarEdicion && !soloRevertirEstado && !soloHorasReales && !soloComentario) {
         throw Object.assign(
           new Error("Tarea en estado 'realizado' no puede editarse. Cambiá el estado primero o usá forzarEdicion=true."),
           { code: "REALIZADO_LOCKED" },
@@ -188,6 +198,9 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         const semanaActualDeFecha = current.fecha_inicio ? semanaCodigoFromDate(current.fecha_inicio) : null;
         if (nuevaSemana && nuevaSemana !== semanaActualDeFecha) {
           data.fecha_inicio = null;
+          // También el fin: para tareas HE el recálculo de abajo no corre (el fin
+          // es manual) y quedaba una fecha_fin colgada sin inicio.
+          data.fecha_fin = null;
         }
       }
 
@@ -300,8 +313,23 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         estadoFinal = "programado";
       }
 
+      // 7c) programado → abierto cuando la tarea pierde su fecha (vuelve al pool).
+      // Es la inversa de 7b: sin esto, el pool mostraba tareas "programadas" sin
+      // agenda (estado colgado al cambiar de semana / sacar de la semana / quitar HE).
+      // Se chequea estadoFinal (no estadoActual) para no pisar 7a (fin real → realizado).
+      if (estadoFinal === "programado" && !finalIni && !estadoEnviado) {
+        estadoFinal = "abierto";
+      }
+
       if (estadoFinal !== estadoActual) {
         data.estado = estadoFinal;
+      }
+
+      // Una tarea sin agenda no es un plan congelado: si pierde su fecha, vuelve a
+      // borrador. Evita el flag `publicado` colgado en el pool (no editable y sin
+      // carril donde reabrirla).
+      if (!finalIni && current.publicado && input.publicado === undefined) {
+        data.publicado = false;
       }
 
       const updated = await tx.planificacionOT.update({

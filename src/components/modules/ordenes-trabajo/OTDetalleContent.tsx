@@ -110,6 +110,7 @@ interface OTDetalle {
   id_viajero: string | null;
   guia_remision: string | null;
   empresa_entrega: string | null;
+  lugar_entrega: string | null;
   fecha_recepcion: string | null;
   pcr: number | null;
   horas: number | null;
@@ -158,6 +159,12 @@ interface OTDetalle {
   // Reparación en vendor externo.
   reparacion_externa: boolean;
   vendor_externo: string | null;
+  // Flujo comercial/logístico (sub-tabs de Adjuntos): tracking de la OC del
+  // cliente, fecha de despacho y recepción. Llegó desde main.
+  fecha_generacion_po: string | null;
+  po_cliente_ok: boolean | null;
+  fecha_despacho: string | null;
+  empresa_recibe: string | null;
 }
 
 interface Props {
@@ -352,6 +359,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
       id_viajero: ot.id_viajero,
       guia_remision: ot.guia_remision,
       empresa_entrega: ot.empresa_entrega,
+      lugar_entrega: ot.lugar_entrega,
       fecha_recepcion: ot.fecha_recepcion,
       pcr: ot.pcr ? Number(ot.pcr) : null,
       horas: ot.horas ? Number(ot.horas) : null,
@@ -421,6 +429,13 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   /* ── Guardar estados + comentarios ── */
   async function handleSaveStatuses() {
     if (!ot) return;
+    // Para CERRAR la OT, el monto de cotización es obligatorio. Lo validamos
+    // contra el valor ya guardado en la OT (se carga en "Editar OT").
+    const vaACerrar = otStatus === "Cerrada" && ot.ot_status_codigo !== "Cerrada";
+    if (vaACerrar && !(Number(ot.monto_cotizacion ?? 0) > 0)) {
+      messageApi.error("Para cerrar la OT, el monto de cotización es obligatorio. Cargalo en 'Editar OT' antes de cerrar.");
+      return;
+    }
     setSavingStatus(true);
     try {
       const res = await fetch(`/api/ordenes-trabajo/${ot.id}`, {
@@ -439,13 +454,16 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
         fetchOT();
         return;
       }
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error ?? "Error al guardar");
+      }
       messageApi.success("Estados y comentarios guardados");
       fetchOT();
       notifySync();
       onUpdated?.();
-    } catch {
-      messageApi.error("Error al guardar");
+    } catch (e) {
+      messageApi.error(e instanceof Error ? e.message : "Error al guardar");
     } finally {
       setSavingStatus(false);
     }
@@ -655,6 +673,8 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   const tipoOTCodigo = (editing ? (editData.tipo_codigo as string | null) : ot?.tipo_codigo) ?? null;
   const bloqueoBien = tipoOTCodigo === "BIE" || tipoOTCodigo === "SER";
   const bloqueoServicio = tipoOTCodigo === "SER";
+  const esBien = tipoOTCodigo === "BIE";
+  const esServicio = tipoOTCodigo === "SER";
 
   // ── Validaciones inline para mostrar arriba del resumen ──
   const validaciones: { type: "warning" | "info" | "error"; message: string; description?: string }[] = [];
@@ -1023,10 +1043,30 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
           {!editing ? (
             <>
               <Row gutter={[16, 4]}>
-                <Col xs={12} md={6}><Field label="WO Cliente" value={ot.wo_cliente} /></Col>
+                {!bloqueoBien && <Col xs={12} md={6}><Field label="WO Cliente" value={ot.wo_cliente} /></Col>}
                 <Col xs={12} md={6}><Field label="PO Cliente" value={ot.po_cliente} /></Col>
-                <Col xs={12} md={6}><Field label="PO Item" value={ot.po_item} /></Col>
-                <Col xs={12} md={6}><Field label="ID Viajero" value={ot.id_viajero} /></Col>
+                {!bloqueoBien && <Col xs={12} md={6}><Field label="PO Item" value={ot.po_item} /></Col>}
+                {esBien && <Col xs={12} md={6}><Field label="Lugar de entrega" value={ot.lugar_entrega} /></Col>}
+                {!bloqueoBien && <Col xs={12} md={6}><Field label="ID Viajero" value={ot.id_viajero} /></Col>}
+              </Row>
+              {!bloqueoBien && (
+                <>
+                  <Row gutter={[16, 4]}>
+                    <Col xs={12} md={6}><Field label="Guía Remisión" value={ot.guia_remision} /></Col>
+                  </Row>
+                  <Row gutter={[16, 4]}>
+                    <Col xs={12} md={6}><Field label="Empresa que entrega" value={ot.empresa_entrega} /></Col>
+                    <Col xs={12} md={6}><Field label="Fecha Recepción" value={fmtDate(ot.fecha_recepcion)} /></Col>
+                    <Col xs={12} md={6}><Field label="Plaqueteo" value={ot.plaqueteo} /></Col>
+                  </Row>
+                </>
+              )}
+              {/* Flujo comercial — se edita desde los sub-tabs de Adjuntos. */}
+              <Row gutter={[16, 4]} style={{ marginTop: 4 }}>
+                <Col xs={12} md={6}><Field label="Fecha envío cotización" value={fmtDate(ot.fecha_cotizacion)} /></Col>
+                <Col xs={12} md={6}><Field label="Fecha generación PO" value={fmtDate(ot.fecha_generacion_po)} /></Col>
+                <Col xs={12} md={6}><Field label="Fecha aprob. cotización" value={fmtDate(ot.fecha_aprobacion)} /></Col>
+                <Col xs={12} md={6}><Field label="Cotización conforme" value={ot.po_cliente_ok ? <span style={{ color: brand.success, fontWeight: 600 }}>✓ Sí</span> : "No"} /></Col>
               </Row>
               <Row gutter={[16, 4]}>
                 <Col xs={12} md={6}><Field label="Guía Remisión" value={ot.guia_remision} /></Col>
@@ -1044,65 +1084,76 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                 </Col>
                 <Col xs={12} md={6}><Field label="Fecha Req. Cliente" value={fmtDate(ot.fecha_requerimiento_cliente)} /></Col>
               </Row>
+              {/* Despacho / recepción del cliente (flujo comercial-logístico que llegó desde main). */}
+              <Row gutter={[16, 4]}>
+                <Col xs={12} md={6}><Field label="Fecha despacho" value={fmtDate(ot.fecha_despacho)} /></Col>
+                <Col xs={12} md={6}><Field label="Empresa que recibe" value={ot.empresa_recibe} /></Col>
+                <Col xs={12} md={6}><Field label="Fecha facturación" value={fmtDate(ot.fecha_facturacion)} /></Col>
+              </Row>
             </>
           ) : (
             <>
+              {/* Sincronizado con el form de creación por tipo: para Bien/Servicio
+                  se ocultan WO/PO Item/Viajero/Guía/Empresa/Fecha Recepción. */}
               <Row gutter={[16, 12]}>
-                <Col xs={12} md={6}>
-                  <FieldLabel>WO Cliente</FieldLabel>
-                  <Input value={(editData.wo_cliente as string) ?? ""} onChange={(e) => setField("wo_cliente", e.target.value)} />
-                </Col>
+                {!bloqueoBien && (
+                  <Col xs={12} md={6}>
+                    <FieldLabel>WO Cliente</FieldLabel>
+                    <Input value={(editData.wo_cliente as string) ?? ""} onChange={(e) => setField("wo_cliente", e.target.value)} />
+                  </Col>
+                )}
                 <Col xs={12} md={6}>
                   <FieldLabel>PO Cliente</FieldLabel>
                   <Input value={(editData.po_cliente as string) ?? ""} onChange={(e) => setField("po_cliente", e.target.value)} />
                 </Col>
-                <Col xs={12} md={6}>
-                  <FieldLabel>PO Item</FieldLabel>
-                  <Input value={(editData.po_item as string) ?? ""} onChange={(e) => setField("po_item", e.target.value)} />
-                </Col>
-                <Col xs={12} md={6}>
-                  <FieldLabel>ID Viajero</FieldLabel>
-                  <Input
-                    disabled={bloqueoBien}
-                    value={(editData.id_viajero as string) ?? ""}
-                    onChange={(e) => setField("id_viajero", e.target.value)}
-                  />
-                </Col>
-                <Col xs={12} md={6}>
-                  <FieldLabel>Guía Remisión</FieldLabel>
-                  <Input
-                    disabled={bloqueoBien}
-                    value={(editData.guia_remision as string) ?? ""}
-                    onChange={(e) => setField("guia_remision", e.target.value)}
-                  />
-                </Col>
-              </Row>
-              <Row gutter={[16, 12]} style={{ marginTop: 8 }}>
-                <Col xs={12} md={6}>
-                  <FieldLabel>Empresa que entrega</FieldLabel>
-                  <Input
-                    disabled={bloqueoBien}
-                    value={(editData.empresa_entrega as string) ?? ""}
-                    onChange={(e) => setField("empresa_entrega", e.target.value)}
-                  />
-                </Col>
-                <Col xs={12} md={6}>
-                  <FieldLabel>Fecha Recepción</FieldLabel>
-                  <DatePicker
-                    style={{ width: "100%" }} format="DD/MM/YYYY"
-                    disabled={bloqueoBien}
-                    value={editData.fecha_recepcion ? dayjs(String(editData.fecha_recepcion).slice(0, 10)) : null}
-                    onChange={(d) => setField("fecha_recepcion", d ? d.format("YYYY-MM-DD") : null)}
-                  />
-                </Col>
-                <Col xs={12} md={6}>
-                  <FieldLabel>Fecha Requerimiento Cliente</FieldLabel>
-                  <DatePicker
-                    style={{ width: "100%" }} format="DD/MM/YYYY"
-                    value={editData.fecha_requerimiento_cliente ? dayjs(String(editData.fecha_requerimiento_cliente).slice(0, 10)) : null}
-                    onChange={(d) => setField("fecha_requerimiento_cliente", d ? d.format("YYYY-MM-DD") : null)}
-                  />
-                </Col>
+                {!bloqueoBien && (
+                  <Col xs={12} md={6}>
+                    <FieldLabel>PO Item</FieldLabel>
+                    <Input value={(editData.po_item as string) ?? ""} onChange={(e) => setField("po_item", e.target.value)} />
+                  </Col>
+                )}
+                {/* Lugar de entrega: solo Bien. */}
+                {esBien && (
+                  <Col xs={12} md={8}>
+                    <FieldLabel>Lugar de entrega</FieldLabel>
+                    <Input value={(editData.lugar_entrega as string) ?? ""} onChange={(e) => setField("lugar_entrega", e.target.value)} placeholder="Ej. Almacén mina, dirección…" />
+                  </Col>
+                )}
+                {!bloqueoBien && (
+                  <>
+                    <Col xs={12} md={6}>
+                      <FieldLabel>ID Viajero</FieldLabel>
+                      <Input value={(editData.id_viajero as string) ?? ""} onChange={(e) => setField("id_viajero", e.target.value)} />
+                    </Col>
+                    <Col xs={12} md={6}>
+                      <FieldLabel>Guía Remisión</FieldLabel>
+                      <Input value={(editData.guia_remision as string) ?? ""} onChange={(e) => setField("guia_remision", e.target.value)} />
+                    </Col>
+                    <Col xs={12} md={6}>
+                      <FieldLabel>Empresa que entrega</FieldLabel>
+                      <Input value={(editData.empresa_entrega as string) ?? ""} onChange={(e) => setField("empresa_entrega", e.target.value)} />
+                    </Col>
+                    <Col xs={12} md={6}>
+                      <FieldLabel>Fecha Recepción</FieldLabel>
+                      <DatePicker
+                        style={{ width: "100%" }} format="DD/MM/YYYY"
+                        value={editData.fecha_recepcion ? dayjs(String(editData.fecha_recepcion).slice(0, 10)) : null}
+                        onChange={(d) => setField("fecha_recepcion", d ? d.format("YYYY-MM-DD") : null)}
+                      />
+                    </Col>
+                  </>
+                )}
+                {/* Fecha Requerimiento: REP y Bien; Servicio no la usa (igual que creación). */}
+                {!esServicio && (
+                  <Col xs={12} md={6}>
+                    <FieldLabel>Fecha Requerimiento Cliente</FieldLabel>
+                    <DatePicker
+                      style={{ width: "100%" }} format="DD/MM/YYYY"
+                      value={editData.fecha_requerimiento_cliente ? dayjs(String(editData.fecha_requerimiento_cliente).slice(0, 10)) : null}
+                      onChange={(d) => setField("fecha_requerimiento_cliente", d ? d.format("YYYY-MM-DD") : null)}
+                    />
+                  </Col>
+                )}
               </Row>
             </>
           )}
@@ -1456,7 +1507,23 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
     { key: "tareas", label: "Tareas", icon: <UnorderedListOutlined />, children: ot ? <OTTareasTab otId={ot.id} codRepCodigo={ot.codigo_reparacion?.codigo ?? null} /> : null },
     { key: "requerimientos", label: "Requerimientos", icon: <InboxOutlined />, children: ot ? <OTRequerimientosTab otId={ot.id} codRepCodigo={ot.codigo_reparacion?.codigo ?? null} otFechaRecepcion={ot.fecha_recepcion} onUpdated={() => fetchOT()} /> : null },
     { key: "costos", label: "Costos", icon: <DollarOutlined />, children: ot ? <OTCostosTab otId={ot.id} /> : null },
-    { key: "adjuntos", label: "Adjuntos", icon: <PaperClipOutlined />, children: ot ? <OTAdjuntosTab otId={ot.id} /> : null },
+    { key: "adjuntos", label: "Adjuntos", icon: <PaperClipOutlined />, children: ot ? (
+      <OTAdjuntosTab
+        otId={ot.id}
+        meta={{
+          version: ot.version,
+          ot_status_codigo: ot.ot_status_codigo,
+          fecha_cotizacion: ot.fecha_cotizacion,
+          fecha_aprobacion: ot.fecha_aprobacion,
+          fecha_generacion_po: ot.fecha_generacion_po,
+          po_cliente_ok: ot.po_cliente_ok,
+          fecha_despacho: ot.fecha_despacho,
+          empresa_recibe: ot.empresa_recibe,
+          fecha_facturacion: ot.fecha_facturacion,
+        }}
+        onMetaSaved={() => fetchOT()}
+      />
+    ) : null },
     { key: "historial", label: "Historial", icon: <HistoryOutlined />, children: ot ? <OTHistorialTab otId={ot.id} /> : null },
   ];
 

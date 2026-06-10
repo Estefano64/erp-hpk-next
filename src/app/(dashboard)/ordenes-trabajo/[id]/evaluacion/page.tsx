@@ -161,12 +161,14 @@ export default function EvaluacionPage() {
   const [accionForm] = Form.useForm();
   const [procesandoAccion, setProcesandoAccion] = useState(false);
   const { data: session } = useSession();
+  // El nombre del aprobador/evaluador se toma del usuario logueado y se muestra
+  // solo-lectura. El registro real lo hace el backend desde el token (no se
+  // confía en lo que mande el cliente).
   const currentUser = session?.user?.name ?? session?.user?.email ?? "";
-  // Cada vez que abro el modal de acción, pre-fileo el "usuario" con el
-  // nombre del logueado. El input queda disabled — no debe poder cambiarlo.
-  useEffect(() => {
-    if (modalAccion) accionForm.setFieldValue("usuario", currentUser);
-  }, [modalAccion, currentUser, accionForm]);
+  // forceRender del modal solo tras montar, para no romper la hidratación SSR
+  // (el portal del modal no matchea server vs cliente en React 19).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
 
   const cargarDatos = useCallback(async () => {
     setLoading(true);
@@ -414,7 +416,6 @@ export default function EvaluacionPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           accion: modalAccion,
-          usuario: values.usuario || "Usuario",
           comentarios: (values.comentarios ?? "").trim(),
         }),
       });
@@ -928,7 +929,7 @@ export default function EvaluacionPage() {
         onOk={ejecutarAccionRevision}
         confirmLoading={procesandoAccion}
         width={modalWidth(screens, 520)}
-        forceRender
+        forceRender={mounted}
         okText={
           modalAccion === "solicitar" ? "Enviar" :
           modalAccion === "aprobar" ? "Aprobar" :
@@ -938,12 +939,10 @@ export default function EvaluacionPage() {
       >
         <Form form={accionForm} layout="vertical">
           <Form.Item
-            label={modalAccion === "solicitar" ? "Tu nombre (evaluador)" : "Tu nombre"}
-            name="usuario"
-            rules={[{ required: true, message: "Ingresa tu nombre" }]}
-            tooltip="Se completa automáticamente con tu usuario logueado."
+            label={modalAccion === "solicitar" ? "Evaluador" : "Aprobador"}
+            tooltip="Se registra automáticamente con tu usuario logueado; no se puede editar."
           >
-            <Input placeholder="Ej. Juan Pérez" disabled />
+            <Input value={currentUser} disabled />
           </Form.Item>
           <Form.Item
             label={

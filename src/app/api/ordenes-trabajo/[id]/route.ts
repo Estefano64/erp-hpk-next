@@ -73,6 +73,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
       "fecha_evaluacion", "fecha_entrega_informe", "fecha_cotizacion",
       "fecha_aprobacion", "fecha_llegada_repuestos", "fecha_entrega",
       "fecha_facturacion", "fecha_req_1", "fecha_req_2",
+      "fecha_generacion_po", "fecha_despacho",
     ];
     for (const field of dateFields) {
       if (body[field]) body[field] = parseDateOnly(body[field]);
@@ -105,6 +106,10 @@ export async function PUT(req: NextRequest, { params }: Params) {
       body.plaqueteo = null;
       body.wo_cliente = null;
     }
+    // Lugar de entrega: SOLO Bien. Si el tipo pasa a REP o SER, se anula.
+    if (body.tipo_codigo === "REP" || body.tipo_codigo === "SER") {
+      body.lugar_entrega = null;
+    }
 
     const usuario = (await getAuditUser(req)) ?? "sistema";
 
@@ -113,6 +118,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
         where: { id: Number(id) },
         select: {
           version: true,
+          monto_cotizacion: true,
           ...AUDIT_OT_SELECT_FIELDS,
           // Fechas que se exigen para cerrar — necesarias para validar el
           // gate de "cerrar OT" mezclando body + valores actuales.
@@ -130,11 +136,15 @@ export async function PUT(req: NextRequest, { params }: Params) {
         return { conflict: false, notFound: true } as const;
       }
 
-      // Gate: para CERRAR la OT (ot_status_codigo → "Cerrada") todas las
-      // fechas del ciclo deben estar cargadas. Se chequea el valor FINAL
-      // (body si viene, sino el actual en BD). Pedido del user: bloquear
-      // cierre incompleto para asegurar trazabilidad completa del flujo.
-      if (body.ot_status_codigo === "Cerrada") {
+      // Gates para CERRAR la OT (ot_status_codigo → "Cerrada"):
+      //   1) Todas las fechas del ciclo deben estar cargadas (HEAD: trazabilidad).
+      //   2) El monto de cotización debe ser > 0 (main: requisito comercial).
+      // Solo se exigen en la TRANSICIÓN a "Cerrada" (no en updates idempotentes
+      // de una OT que ya está cerrada). Para mezclar body + BD, usamos el valor
+      // del body si viene, sino el actual en BD.
+      const beforeStatus = (before as { ot_status_codigo?: string | null }).ot_status_codigo;
+      const vaACerrar = body.ot_status_codigo === "Cerrada" && beforeStatus !== "Cerrada";
+      if (vaACerrar) {
         const beforeRec = before as Record<string, unknown>;
         type FechaKey =
           | "fecha_recepcion" | "fecha_evaluacion" | "fecha_aprobacion_evaluacion"
@@ -150,8 +160,6 @@ export async function PUT(req: NextRequest, { params }: Params) {
         ];
         const faltantes = FECHAS_REQUERIDAS_CIERRE
           .filter(({ key }) => {
-            // Si el body trae el campo: usa su valor (incluso si es null = se está borrando).
-            // Si no viene en el body: usa el valor actual en BD.
             const valor = key in body ? body[key] : beforeRec[key];
             return valor == null;
           })
@@ -162,6 +170,12 @@ export async function PUT(req: NextRequest, { params }: Params) {
             closeBlocked: true,
             faltantes,
           } as const;
+        }
+        const montoEfectivo = body.monto_cotizacion !== undefined
+          ? body.monto_cotizacion
+          : (before as { monto_cotizacion?: unknown }).monto_cotizacion;
+        if (!(Number(montoEfectivo ?? 0) > 0)) {
+          return { conflict: false, needsMonto: true } as const;
         }
       }
 
@@ -225,6 +239,12 @@ export async function PUT(req: NextRequest, { params }: Params) {
           error: `No se puede cerrar la OT — faltan fechas: ${result.faltantes.join(", ")}. Completalas antes de cambiar el estado a Cerrada.`,
           faltantes: result.faltantes,
         },
+        { status: 400 },
+      );
+    }
+    if ("needsMonto" in result && result.needsMonto) {
+      return NextResponse.json(
+        { error: "Para cerrar la OT, el monto de cotización es obligatorio. Cargalo en 'Editar OT' antes de cerrar." },
         { status: 400 },
       );
     }
