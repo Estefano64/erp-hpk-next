@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Typography, Button, Space, Tag, Card, Modal, Descriptions, Tooltip, message, Empty, DatePicker, Collapse, Segmented, Slider, Alert, Popover, Divider, Select, Popconfirm, Switch, Input, InputNumber, Skeleton,
 } from "antd";
@@ -8,7 +8,8 @@ import {
   CalendarOutlined, LeftOutlined, RightOutlined, UserOutlined, ToolOutlined, AimOutlined,
   SettingOutlined, RollbackOutlined, UnorderedListOutlined, WarningFilled, ZoomInOutlined, ZoomOutOutlined,
   PrinterOutlined, BgColorsOutlined, FilterOutlined, ClearOutlined,
-  LoadingOutlined, CheckCircleFilled, CloseCircleFilled, EyeOutlined, SearchOutlined, ClockCircleOutlined,
+  LoadingOutlined, CheckCircleFilled, CloseCircleFilled, EyeOutlined, SearchOutlined,
+  PushpinOutlined,
 } from "@ant-design/icons";
 import dayjs, { Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
@@ -51,6 +52,14 @@ interface PlanRow {
   trabajo_externo: boolean | null;
   publicado: boolean;
   es_correctivo: boolean;
+  // Línea base = foto del plan al ENVIAR (publicar) la semana. Se congela la
+  // PRIMERA vez que se envía cada tarea y no se pisa al reabrir/re-enviar.
+  fecha_inicio_base: string | null;
+  fecha_fin_base: string | null;
+  horas_estimadas_base: string | null;
+  tecnico_base: string | null;
+  semana_base: string | null;
+  publicado_at: string | null;
   orden_trabajo: {
     id: number;
     ot: string | null;
@@ -196,10 +205,11 @@ export default function ProgramacionSemanalPage() {
   const [cargando, setCargando] = useState(true);
   // Operarios es la vista principal (ahí se asigna); Equipos es solo lectura.
   const [view, setView] = useState<"equipo" | "operario">("operario");
-  // Plan = bloques con tamaño planificado (editable). Real = bloques con tamaño
-  // de EJECUCIÓN real (inicio_real → fin real / ahora si está en proceso); en
-  // este modo el Gantt es solo lectura (la realidad no se arrastra).
-  const [vistaTiempo, setVistaTiempo] = useState<"plan" | "real">("plan");
+  // Enviado = foto del plan al enviar la semana (*_base, solo lectura).
+  // Plan ("Semana real") = el plan VIVO (editable: emergencias, movidas, tareas
+  // agregadas) + la EJECUCIÓN de cada tarea iniciada como barra bajo el bloque
+  // (inicio_real → fin real / ahora si está en proceso, crece en vivo).
+  const [vistaTiempo, setVistaTiempo] = useState<"enviado" | "plan">("plan");
   const [filtroEquipos, setFiltroEquipos] = useState<string[]>([]);
   const [filtroOperarios, setFiltroOperarios] = useState<string[]>([]);
   // Por defecto el filtro de arriba también aplica a los pendientes de abajo.
@@ -325,31 +335,74 @@ export default function ProgramacionSemanalPage() {
     })();
   }, []);
 
-  const conflictos = useMemo(() => detectarConflictos(rows), [rows]);
+  // ── Vista ENVIADO: foto del plan al enviar la semana ──
+  // Proyecta los campos *_base sobre los vivos y alimenta el MISMO pipeline del
+  // Gantt (carriles, carga, bloques). Sale de allRows (todas las semanas): una
+  // tarea luego movida a otra semana debe seguir viéndose en la foto de su
+  // semana original. Solo lectura (el pasado enviado no se edita).
+  const enviadoMode = vistaTiempo === "enviado";
+  const baseRows = useMemo(() => {
+    const ini = lunes.startOf("day");
+    return allRows
+      .filter((r) => r.fecha_inicio_base && r.fecha_fin_base
+        && !dayjs(r.fecha_inicio_base).isAfter(viernes)
+        && !dayjs(r.fecha_fin_base).isBefore(ini))
+      .map((r) => ({
+        ...r,
+        fecha_inicio: r.fecha_inicio_base,
+        fecha_fin: r.fecha_fin_base,
+        horas_estimadas: r.horas_estimadas_base ?? r.horas_estimadas,
+        tecnico: r.tecnico_base ?? r.tecnico,
+        semana_plan: r.semana_base ?? r.semana_plan,
+      } as PlanRow));
+  }, [allRows, lunes, viernes]);
+  const vistaRows = enviadoMode ? baseRows : rows;
 
-  // ── Stats ──
+  // Operarios con algo ENVIADO esta semana — para marcar "fuera de plan" solo
+  // donde hubo envío (si no, toda semana aún en borrador se llenaría de "＋").
+  const lanesConEnvio = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of allRows) {
+      if (r.semana_base === semanaActual && r.fecha_inicio_base) {
+        for (const t of splitTecnicos(r.tecnico_base ?? r.tecnico)) s.add(t);
+      }
+    }
+    return s;
+  }, [allRows, semanaActual]);
+
+  const conflictos = useMemo(() => detectarConflictos(vistaRows), [vistaRows]);
+
+  // Una tarea pertenece al pool si no tiene fecha y NO está terminada: una
+  // "realizado" sin agenda (el técnico la ejecutó desde su panel sin que se
+  // calendarizara) ya no hay nada que programar — quedaba en el pool para
+  // siempre. Las en_proceso/pausado sí se muestran (el planner ve que hay
+  // trabajo en curso sin calendario); no se pueden arrastrar igual (haEmpezado).
+  const esDePool = useCallback((r: PlanRow): boolean =>
+    !r.fecha_inicio && r.estado !== "realizado", []);
+
+  // ── Stats (siguen a la vista: en "Enviado" cuentan la foto) ──
   const stats = useMemo(() => {
-    const conFecha = rows.filter((r) => r.fecha_inicio).length;
-    const sinFecha = rows.length - conFecha;
-    const sinSemana = allRows.filter((r) => !r.semana_plan && !r.fecha_inicio).length;
+    const conFecha = vistaRows.filter((r) => r.fecha_inicio).length;
+    const sinFecha = vistaRows.length - conFecha;
+    const sinSemana = allRows.filter((r) => !r.semana_plan && esDePool(r)).length;
     return {
-      total: rows.length,
+      total: vistaRows.length,
       conFecha,
       sinFecha,
       conflictos: conflictos.size,
       sinSemana,
     };
-  }, [rows, allRows, conflictos]);
+  }, [vistaRows, allRows, conflictos, esDePool]);
 
   const sinSemanaLista = useMemo(
-    () => allRows.filter((r) => !r.semana_plan && !r.fecha_inicio),
-    [allRows],
+    () => allRows.filter((r) => !r.semana_plan && esDePool(r)),
+    [allRows, esDePool],
   );
 
   // Tareas de ESTA semana sin fecha asignada (tienen semana_plan = semanaActual pero fecha_inicio en null)
   const sinFechaListaSemana = useMemo(
-    () => allRows.filter((r) => r.semana_plan === semanaActual && !r.fecha_inicio),
-    [allRows, semanaActual],
+    () => allRows.filter((r) => r.semana_plan === semanaActual && esDePool(r)),
+    [allRows, semanaActual, esDePool],
   );
 
   const estadoColor = useCallback((est: string | null): string => {
@@ -386,8 +439,8 @@ export default function ProgramacionSemanalPage() {
   }, [filtroEquipos, filtroOperarios]);
 
   const rowsFiltradas = useMemo(
-    () => (hayFiltro ? rows.filter(pasaFiltroRecurso) : rows),
-    [rows, hayFiltro, pasaFiltroRecurso],
+    () => (hayFiltro ? vistaRows.filter(pasaFiltroRecurso) : vistaRows),
+    [vistaRows, hayFiltro, pasaFiltroRecurso],
   );
 
   // Búsqueda libre del pool: matchea parte (componente), cilindro (flota), OT,
@@ -569,7 +622,11 @@ export default function ProgramacionSemanalPage() {
     // el string completo y un multi-personal NO detectaba el choque).
     const recursosTarget = splitTecnicos(recursoTarget);
     const filtradasIds = new Set(rowsFiltradas.map((r) => r.id));
-    for (const t of rows) {
+    // Se chequea contra allRows (todas las semanas), no solo la visible: una
+    // tarea soltada el viernes puede desbordar a la semana siguiente y chocar
+    // allá. Con `rows` el cliente no veía ese choque, no mandaba `empujar`, y el
+    // server respondía 409 ("no se puede ubicar") en vez de empujar la cola.
+    for (const t of allRows) {
       if (t.id === taskId) continue;
       // Una tarea cancelada libera su horario: no cuenta como choque.
       if (t.estado === "cancelado") continue;
@@ -738,7 +795,7 @@ export default function ProgramacionSemanalPage() {
           const cliente = t.orden_trabajo?.cliente?.nombre_comercial
             ?? t.orden_trabajo?.cliente?.razon_social
             ?? `OT ${t.orden_trabajo?.ot ?? "#?"}`;
-          const prefijoOculta = choque.oculta ? "[Tarea oculta por el filtro actual] " : "";
+          const prefijoOculta = choque.oculta ? "[Tarea no visible en esta semana/filtro] " : "";
           messageApi.error(`${prefijoOculta}No se puede agrandar: la siguiente (${cliente} — ${t.descripcion ?? t.operacion_codigo}) ya fue iniciada/realizada por el técnico.`);
           return;
         }
@@ -819,10 +876,15 @@ export default function ProgramacionSemanalPage() {
       messageApi.warning("Activá Modo Edición para publicar.");
       return;
     }
-    // IDs exactos del operario en la semana mostrada (con o sin hora). Matchear por
-    // IDs es determinista: evita que el match por semana_plan deje tareas afuera.
+    // IDs exactos del operario en la semana mostrada. Matchear por IDs es
+    // determinista: evita que el match por semana_plan deje tareas afuera.
+    // PUBLICAR congela solo lo AGENDADO (con fecha) — mismo criterio que el
+    // indicador del carril, que solo ve tareas con fecha; las del pool siguen en
+    // borrador hasta tener hora (si no, quedaba el flag `publicado` colgado).
+    // REABRIR sí toma todas: también limpia flags colgados sin agenda.
     const ids = allRows
-      .filter((r) => splitTecnicos(r.tecnico).includes(tecnico) && perteneceASemana(r))
+      .filter((r) => splitTecnicos(r.tecnico).includes(tecnico) && perteneceASemana(r)
+        && (!publicado || !!r.fecha_inicio))
       .map((r) => r.id);
     if (ids.length === 0) {
       messageApi.info("Ese operario no tiene tareas en esta semana.");
@@ -837,7 +899,7 @@ export default function ProgramacionSemanalPage() {
       });
       if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Error");
       endSave();
-      messageApi.success(publicado ? `Semana de ${tecnico} publicada` : `Semana de ${tecnico} reabierta`);
+      messageApi.success(publicado ? `Semana de ${tecnico} enviada (foto del plan congelada)` : `Semana de ${tecnico} reabierta`);
       notifySync();
       fetchData();
     } catch (e) {
@@ -1041,10 +1103,12 @@ export default function ProgramacionSemanalPage() {
       }
     }
 
-    // (2) Choque con tareas fuera del grupo (mismo recurso).
+    // (2) Choque con tareas fuera del grupo (mismo recurso). Contra allRows:
+    // el grupo puede desbordar a otra semana y los PUTs van con omitirAntisolape,
+    // así que este chequeo es la única defensa también para esos choques.
     for (const s of slots) {
       const recsSlot = splitTecnicos(s.recurso);
-      for (const t of rows) {
+      for (const t of allRows) {
         if (idsGrupo.has(t.id)) continue;
         if (!t.fecha_inicio || !t.fecha_fin) continue;
         const recursoRaw = view === "equipo" ? t.maquina : t.tecnico;
@@ -1129,6 +1193,8 @@ export default function ProgramacionSemanalPage() {
     // La vista por Equipos es SOLO LECTURA: las tareas se asignan a operarios
     // (la máquina sale del operario). Acá solo se visualiza la carga.
     if (view === "equipo") return;
+    // Enviado (foto) y Ejecución son solo lectura: solo se edita la Semana real.
+    if (vistaTiempo !== "plan") return;
     if (e.button !== 0) return; // solo click izquierdo
     // Tarea publicada Y AGENDADA = plan congelado: no se mueve hasta reabrir la
     // semana. Una tarea del pool (sin fecha) no es un plan congelado aunque arrastre
@@ -1138,7 +1204,7 @@ export default function ProgramacionSemanalPage() {
     // en ningún carril semanal donde esté el botón Reabrir).
     const tDrag = rows.find((r) => r.id === taskId) ?? allRows.find((r) => r.id === taskId);
     if (tDrag?.publicado && tDrag?.fecha_inicio) {
-      messageApi.info("Tarea publicada. Reabrí la semana del operario para moverla.");
+      messageApi.info("Tarea enviada. Reabrí la semana del operario para moverla.");
       return;
     }
     // Tarea ya iniciada por el técnico (en proceso / pausada / realizada): su
@@ -1348,29 +1414,25 @@ export default function ProgramacionSemanalPage() {
   }
 
   function renderTaskBlock(r: PlanRow, recurso: string) {
-    if (!r.fecha_inicio || !r.fecha_fin) return null;
+    if (!r.fecha_inicio) return null;
     const planIni = dayjs(r.fecha_inicio);
-    const planFin = dayjs(r.fecha_fin);
-    const realMode = vistaTiempo === "real";
+    // Tarea agendada SIN duración (horas_estimadas 0/null → el server deja
+    // fecha_fin en null): antes no se renderizaba — quedaba invisible (con fecha
+    // no está en el pool, sin fin no tenía bloque). Se dibuja con 1h visual para
+    // que el planner la vea y le ajuste la duración.
+    const sinDuracion = !r.fecha_fin;
+    const planFin = sinDuracion ? planIni.add(1, "hour") : dayjs(r.fecha_fin);
+    // Desvíos vs el plan ENVIADO — solo en vista "Semana real":
+    //   ↷ la tarea se movió (fecha u operario distinto a la foto)
+    //   ＋ no estaba en el plan enviado (se agregó después; solo se marca si el
+    //     operario tiene algo enviado esta semana)
+    const baseIni = r.fecha_inicio_base ? dayjs(r.fecha_inicio_base) : null;
+    const desviada = vistaTiempo === "plan" && !!baseIni
+      && (Math.abs(baseIni.diff(planIni, "minute")) >= 1 || (r.tecnico_base ?? r.tecnico ?? "") !== (r.tecnico ?? ""));
+    const fueraDePlan = vistaTiempo === "plan" && !baseIni && lanesConEnvio.has(recurso);
     const empezada = haEmpezado(r.estado);
-    // Modo Real: el bloque refleja la EJECUCIÓN (inicio_real → fin real / ahora si
-    // está en proceso). Si la tarea no empezó, cae al plan (queda atenuado).
-    let ini = planIni;
-    let fin = planFin;
-    if (realMode && empezada && r.fecha_inicio_real) {
-      ini = dayjs(r.fecha_inicio_real);
-      if (r.estado === "en_proceso") {
-        fin = ahoraTick ?? dayjs(); // crece en vivo
-      } else if (r.estado === "realizado" && r.fecha_fin_real) {
-        fin = dayjs(r.fecha_fin_real);
-      } else {
-        // pausado (o realizado sin fin_real): proyectar por horas reales hábiles.
-        const hr = Number(r.horas_reales ?? 0);
-        fin = hr > 0 ? dayjs(calcularFin(ini.toDate(), hr, !!r.horas_extras)) : ini.add(30, "minute");
-      }
-      if (!fin.isAfter(ini)) fin = ini.add(15, "minute"); // guard tamaño mínimo
-    }
-    const realPendiente = realMode && !empezada; // en Real, todavía es solo plan
+    const ini = planIni;
+    const fin = planFin;
     // Bordes de la semana visible (lunes 8:00 → viernes 18:00)
     const semanaIni = lunes.hour(JORNADA_INICIO).minute(0).second(0).millisecond(0);
     const semanaFin = lunes.add(4, "day").hour(JORNADA_FIN).minute(0).second(0).millisecond(0);
@@ -1390,9 +1452,37 @@ export default function ProgramacionSemanalPage() {
     const widthPx = resizing?.id === r.id ? Math.max(20, resizeWidth) : baseWidth;
     const color = estadoColor(r.estado);
     const hasConflict = conflictos.has(r.id);
+
+    // ── Barra de EJECUCIÓN real (vista Semana real) ──
+    // La ejecución vive dentro de la semana real: cada tarea iniciada dibuja una
+    // barrita bajo el bloque del plan con su ejecución real (inicio_real → fin
+    // real / ahora si está en proceso — crece en vivo). Reemplaza a la vieja
+    // vista "Real" separada.
+    let execBar: { left: number; width: number } | null = null;
+    if (vistaTiempo === "plan" && empezada && r.fecha_inicio_real) {
+      const eIni = dayjs(r.fecha_inicio_real);
+      let eFin: Dayjs;
+      if (r.estado === "en_proceso") {
+        eFin = ahoraTick ?? dayjs(); // crece en vivo
+      } else if (r.estado === "realizado" && r.fecha_fin_real) {
+        eFin = dayjs(r.fecha_fin_real);
+      } else {
+        // pausado (o realizado sin fin_real): proyectar por horas reales hábiles.
+        const hr = Number(r.horas_reales ?? 0);
+        eFin = hr > 0 ? dayjs(calcularFin(eIni.toDate(), hr, !!r.horas_extras)) : eIni.add(30, "minute");
+      }
+      if (!eFin.isAfter(eIni)) eFin = eIni.add(15, "minute"); // guard tamaño mínimo
+      const eIniC = eIni.isBefore(semanaIni) ? semanaIni : eIni;
+      const eFinC = eFin.isAfter(semanaFin) ? semanaFin : eFin;
+      if (eFinC.isAfter(eIniC)) {
+        const exStart = eIniC.diff(lunes, "day") * dayPx + (hourDecimal(eIniC) - JORNADA_INICIO) * hourPx;
+        const exEnd = eFinC.diff(lunes, "day") * dayPx + (hourDecimal(eFinC) - JORNADA_INICIO) * hourPx;
+        execBar = { left: exStart, width: Math.max(6, exEnd - exStart) };
+      }
+    }
     return (
+      <Fragment key={r.id}>
       <Tooltip
-        key={r.id}
         title={
           <div>
             <div><strong>OT {r.orden_trabajo?.ot ?? r.ot_id}</strong></div>
@@ -1404,6 +1494,17 @@ export default function ProgramacionSemanalPage() {
               <div>⏱ Real: {dayjs(r.fecha_inicio_real).format("DD/MM HH:mm")} → {r.fecha_fin_real ? dayjs(r.fecha_fin_real).format("DD/MM HH:mm") : (r.estado === "en_proceso" ? "en curso" : "—")}{r.horas_reales != null ? ` · ${Number(r.horas_reales).toFixed(1)}h` : ""}</div>
             )}
             <div>Estado: {estadoNombre(r.estado)}</div>
+            {enviadoMode && r.publicado_at && (
+              <div>📌 Foto del plan enviado el {dayjs(r.publicado_at).format("DD/MM HH:mm")}</div>
+            )}
+            {desviada && baseIni && (
+              <div style={{ color: brand.warning }}>
+                ↷ Distinto al enviado: {baseIni.format("DD/MM HH:mm")} → {r.fecha_fin_base ? dayjs(r.fecha_fin_base).format("DD/MM HH:mm") : "—"}
+                {(r.tecnico_base ?? "") !== (r.tecnico ?? "") ? ` · era de ${r.tecnico_base}` : ""}
+              </div>
+            )}
+            {fueraDePlan && <div style={{ color: brand.warning }}>＋ Fuera del plan enviado (agregada después de enviar)</div>}
+            {sinDuracion && <div style={{ color: brand.warning }}>⚠ Sin duración — se muestra 1h; ajustala con el resize o en el detalle</div>}
             {hasConflict && <div style={{ color: brand.error }}>⚠ Conflicto</div>}
           </div>
         }
@@ -1415,8 +1516,8 @@ export default function ProgramacionSemanalPage() {
             if (t.classList.contains("psg-resize-handle")) return;
             // Shift+Click NO inicia drag, solo toggle selección
             if (e.shiftKey) return;
-            // Modo Real = solo lectura (la ejecución no se reprograma arrastrando).
-            if (realMode) return;
+            // Enviado (foto) y Ejecución = solo lectura; solo se arrastra en Semana real.
+            if (vistaTiempo !== "plan") return;
             // Solo bloqueamos el drag si la tarea EMPIEZA en una semana anterior
             // (su inicio no está visible, no sabríamos reubicarla). Las que se
             // desbordan hacia adelante (continuaDespues) SÍ se pueden mover —
@@ -1448,7 +1549,6 @@ export default function ProgramacionSemanalPage() {
           data-pub={r.publicado ? "1" : "0"}
           data-conflict={hasConflict ? "1" : "0"}
           data-externo={r.trabajo_externo ? "1" : "0"}
-          data-realpending={realPendiente ? "1" : "0"}
         >
           {/* Indicador de continuación desde semana anterior */}
           {continuaDeAntes && (
@@ -1465,7 +1565,7 @@ export default function ProgramacionSemanalPage() {
           {/* Franja de almuerzo dentro del bloque (si lo cruza) */}
           {renderLunchOverlayInBlock(visibleIni, visibleFin, startPx)}
           <div className="psg-task-title" style={{ paddingLeft: continuaDeAntes ? 14 : 0, paddingRight: continuaDespues ? 14 : 0 }}>
-            {r.es_correctivo && "🚨 "}{glifoEstado(r.estado) && <span style={{ opacity: 0.95, marginRight: 3 }}>{glifoEstado(r.estado)}</span>}{r.orden_trabajo?.ot ? `OT-${r.orden_trabajo.ot}` : "S/OT"}
+            {r.es_correctivo && "🚨 "}{fueraDePlan && <span style={{ marginRight: 3, fontWeight: 800 }} title="Fuera del plan enviado">＋</span>}{desviada && <span style={{ marginRight: 3, fontWeight: 800 }} title="Distinto al plan enviado">↷</span>}{glifoEstado(r.estado) && <span style={{ opacity: 0.95, marginRight: 3 }}>{glifoEstado(r.estado)}</span>}{r.orden_trabajo?.ot ? `OT-${r.orden_trabajo.ot}` : "S/OT"}
             {hasConflict && <WarningFilled style={{ marginLeft: 4 }} />}
           </div>
           <div className="psg-task-sub" style={{ paddingLeft: continuaDeAntes ? 14 : 0, paddingRight: continuaDespues ? 14 : 0 }}>{r.componente} — {r.descripcion}</div>
@@ -1475,10 +1575,10 @@ export default function ProgramacionSemanalPage() {
             // Bloque angosto: el comentario no entra legible → badge (texto en el tooltip).
             <span className="psg-task-cmt-badge" title={r.comentario}>💬</span>
           ))}
-          {/* Resize handle: solo en vista Operarios (Equipos es solo lectura),
-              si la tarea NO continúa a la próxima semana y NO está publicada
-              (publicada = plan congelado). */}
-          {!realMode && !continuaDespues && view !== "equipo" && !r.publicado && !haEmpezado(r.estado) && (
+          {/* Resize handle: solo en Semana real + vista Operarios (Enviado /
+              Ejecución / Equipos son solo lectura), si la tarea NO continúa a la
+              próxima semana y NO está enviada (enviada = plan congelado). */}
+          {vistaTiempo === "plan" && !continuaDespues && view !== "equipo" && !r.publicado && !haEmpezado(r.estado) && (
             <div
               className="psg-resize-handle"
               onMouseDown={(e) => {
@@ -1492,6 +1592,15 @@ export default function ProgramacionSemanalPage() {
           )}
         </div>
       </Tooltip>
+      {/* Barra de ejecución real bajo el bloque (no intercepta el mouse). */}
+      {execBar && (
+        <div
+          className="psg-exec-bar"
+          data-estado={r.estado ?? ""}
+          style={{ left: execBar.left, width: execBar.width }}
+        />
+      )}
+      </Fragment>
     );
   }
 
@@ -1582,8 +1691,11 @@ export default function ProgramacionSemanalPage() {
             />
             <Segmented
               size="small" value={vistaTiempo}
-              onChange={(v) => setVistaTiempo(v as "plan" | "real")}
-              options={[{ value: "plan", label: "Plan" }, { value: "real", label: "Real" }]}
+              onChange={(v) => setVistaTiempo(v as "enviado" | "plan")}
+              options={[
+                { value: "enviado", label: "Enviado" },
+                { value: "plan", label: "Semana real" },
+              ]}
             />
           </Space>
         </Card>
@@ -1613,7 +1725,7 @@ export default function ProgramacionSemanalPage() {
                       </div>
                       <div style={{ fontSize: 11, color: brand.textSecondary }}>
                         {t.fecha_inicio ? diaEs(dayjs(t.fecha_inicio), true) : "sin hora"} · {estadoNombre(t.estado)}
-                        {vistaTiempo === "real" && haEmpezado(t.estado) && t.horas_reales != null && (
+                        {vistaTiempo === "plan" && haEmpezado(t.estado) && t.horas_reales != null && (
                           <> · ⏱ {Number(t.horas_reales).toFixed(1)}h real{t.horas_estimadas != null ? ` / ${Number(t.horas_estimadas).toFixed(1)}h plan` : ""}</>
                         )}
                       </div>
@@ -1682,7 +1794,7 @@ export default function ProgramacionSemanalPage() {
               }
               return <Tag icon={<CheckCircleFilled />} color="default" style={{ fontWeight: 400, color: brand.textSecondary }}>Sincronizado</Tag>;
             })()}
-            {view === "equipo" || vistaTiempo === "real" ? (
+            {view === "equipo" || vistaTiempo !== "plan" ? (
               <Tag icon={<EyeOutlined />} color="default" style={{ fontWeight: 500 }}>Solo visualización</Tag>
             ) : (
               <Button
@@ -1727,18 +1839,23 @@ export default function ProgramacionSemanalPage() {
                 { value: "equipo", icon: <ToolOutlined />, label: "Equipos" },
               ]}
             />
-            <Tooltip title={vistaTiempo === "real" ? "Mostrando ejecución real (tamaño según horas reales, en vivo). Solo lectura." : "Mostrando el plan (editable)."}>
+            <Tooltip title={
+              vistaTiempo === "enviado"
+                ? "Foto del plan tal como se ENVIÓ la semana (línea base congelada). Solo lectura."
+                : "Semana real: el plan vivo con los cambios de la semana (editable). La ejecución de cada tarea iniciada se ve como barra bajo el bloque."
+            }>
               <Segmented
                 value={vistaTiempo}
                 onChange={(v) => {
-                  const nuevo = v as "plan" | "real";
+                  const nuevo = v as "enviado" | "plan";
                   setVistaTiempo(nuevo);
-                  // Real es solo lectura: si veníamos editando, salimos y soltamos el lock.
-                  if (nuevo === "real" && editMode) { setEditMode(false); void lock.release(); }
+                  // Enviado es solo lectura: si veníamos editando, salimos y
+                  // soltamos el lock.
+                  if (nuevo !== "plan" && editMode) { setEditMode(false); void lock.release(); }
                 }}
                 options={[
-                  { value: "plan", icon: <CalendarOutlined />, label: "Plan" },
-                  { value: "real", icon: <ClockCircleOutlined />, label: "Real" },
+                  { value: "enviado", icon: <PushpinOutlined />, label: "Enviado" },
+                  { value: "plan", icon: <CalendarOutlined />, label: "Semana real" },
                 ]}
               />
             </Tooltip>
@@ -1953,6 +2070,14 @@ export default function ProgramacionSemanalPage() {
             <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
               <WarningFilled style={{ color: brand.error, fontSize: 12 }} /> Conflicto
             </span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
+              <span style={{ display: "inline-block", width: 16, height: 6, borderRadius: 3, background: "#13C2C2", boxShadow: "0 0 0 1px rgba(0,0,0,0.15)" }} />
+              ⏱ Ejecución real (barra bajo el bloque)
+            </span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
+              <span style={{ fontWeight: 800 }}>↷</span> Distinto al enviado
+              <span style={{ fontWeight: 800, marginLeft: 6 }}>＋</span> Fuera del plan enviado
+            </span>
           </Space>
         </Card>
       )}
@@ -2073,13 +2198,13 @@ export default function ProgramacionSemanalPage() {
                       return (
                         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
                           <Tag color={todasPub ? "success" : mixta ? "warning" : "default"} style={{ fontSize: 9, margin: 0, lineHeight: "14px" }}>
-                            {todasPub ? "Publicada" : mixta ? "Parcial" : "Borrador"}
+                            {todasPub ? "Enviada" : mixta ? "Parcial" : "Borrador"}
                           </Tag>
                           {editMode && (
                             <>
                               {!todasPub && (
                                 <a style={{ fontSize: 10 }} onClick={() => publicarSemana(res.key, true)}>
-                                  Publicar
+                                  Enviar
                                 </a>
                               )}
                               {algunaPub && (
@@ -2158,6 +2283,9 @@ export default function ProgramacionSemanalPage() {
         )}
       </Card>
 
+      {/* Pools de pendientes: ocultos en la vista Enviado (es una foto congelada,
+          no hay nada que programar sobre ella). */}
+      {!enviadoMode && (<>
       {/* Buscador del pool de pendientes (parte / cilindro / OT / descripción). */}
       <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <Input
@@ -2243,6 +2371,7 @@ export default function ProgramacionSemanalPage() {
           {sinSemanaMostrar.map((t) => renderPoolCard(t, false))}
         </div>
       )}
+      </>)}
 
       {/* Ghost del drag (sigue al cursor) */}
       {drag && (
@@ -2467,7 +2596,7 @@ export default function ProgramacionSemanalPage() {
           {!editable && (
             <Typography.Text type="secondary" style={{ fontSize: 11, display: "block", marginTop: 6 }}>
               {!editMode ? "Activá Modo Edición para modificar operario, equipo, prioridad y duración."
-                : selectedTask.publicado ? "Semana publicada — reabrila para editar."
+                : selectedTask.publicado ? "Semana enviada — reabrila para editar."
                 : selectedTask.estado === "realizado" ? "La tarea está realizada; no se edita desde acá."
                 : haEmpezado(selectedTask.estado) ? "Tarea en curso: solo se puede ajustar la duración."
                 : null}
@@ -2645,7 +2774,19 @@ export default function ProgramacionSemanalPage() {
         .psg-task-block[data-conflict="1"] { outline: 2px solid #ff4d4f; }
         /* Modo Real: la tarea aún no empezó → es solo plan. Atenuada + borde punteado
            para distinguirla de la ejecución real. */
-        .psg-task-block[data-realpending="1"] { opacity: 0.4; outline: 1px dashed rgba(255,255,255,0.7); }
+        /* Barra de ejecución real bajo el bloque del plan (vista Semana real). */
+        .psg-exec-bar {
+          position: absolute;
+          bottom: 2px;
+          height: 7px;
+          border-radius: 3px;
+          pointer-events: none;
+          z-index: 2;
+          background: #13C2C2;
+          box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.85);
+        }
+        .psg-exec-bar[data-estado="realizado"] { background: #52C41A; }
+        .psg-exec-bar[data-estado="pausado"] { background: #FA8C16; }
 
         /* Trabajo derivado a tercero: stripes diagonales + borde dorado para distinguir. */
         .psg-task-block[data-externo="1"] {
