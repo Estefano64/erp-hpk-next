@@ -18,7 +18,17 @@ export async function GET(_req: NextRequest) {
         status_requerimiento_codigo: "APROBADO",
         // Removido `material_id: { not: null }` — los items free (CAD) tienen
         // material_id NULL pero igual deben aparecer para despacho a la OT.
-        status_oc_codigo: { notIn: ["ENTREGADO", "ANULADO"] },
+        //
+        // BUG fix: antes usábamos `status_oc_codigo: { notIn: [...] }` pero en
+        // SQL `NULL NOT IN (...)` evalúa a NULL (= FALSE), por lo que TODOS los
+        // items con status_oc=null (reqs aprobados sin OC todavía) quedaban
+        // excluidos. Por eso una OT como 390926, con 1 item en estado
+        // "aprobado pero sin OC", no aparecía en despachos. Ahora usamos OR
+        // explícito: status_oc IS NULL O distinto de ENTREGADO/ANULADO.
+        OR: [
+          { status_oc_codigo: null },
+          { status_oc_codigo: { notIn: ["ENTREGADO", "ANULADO"] } },
+        ],
       },
       select: {
         id: true,
