@@ -909,6 +909,42 @@ export default function ProgramacionSemanalPage() {
     }
   }
 
+  // ── Enviar la SEMANA COMPLETA (todos los operarios de una) ──
+  // Congela la foto del plan (semana planificada) de todas las tareas AGENDADAS
+  // de la semana mostrada que sigan en borrador. Las del pool (sin fecha) quedan
+  // en borrador, igual que en el envío por operario. La foto solo se escribe la
+  // primera vez por tarea: re-enviar después de reabrir NO la pisa.
+  async function enviarSemanaCompleta() {
+    if (!editMode) {
+      messageApi.warning("Activá Modo Edición para enviar la semana.");
+      return;
+    }
+    const ids = allRows
+      .filter((r) => perteneceASemana(r) && !!r.fecha_inicio && splitTecnicos(r.tecnico).length > 0 && !r.publicado)
+      .map((r) => r.id);
+    if (ids.length === 0) {
+      messageApi.info("No hay tareas agendadas pendientes de enviar en esta semana.");
+      return;
+    }
+    beginSave();
+    try {
+      const res = await fetch("/api/planificacion/publicar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ semana: semanaActual, publicado: true, ids }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Error");
+      endSave();
+      messageApi.success(`Semana ${semanaActual} enviada: ${ids.length} tarea(s). La foto del plan quedó congelada.`);
+      notifySync();
+      fetchData();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Error al enviar la semana";
+      endSave(msg);
+      messageApi.error(msg);
+    }
+  }
+
   // ── Marcar una tarea como EMERGENCIA (correctiva) ──
   // Pone la tarea en estado correctivo y reacomoda las tareas del mismo día y
   // operario que arranquen después: las empuja, y las que no entran van al pool.
@@ -1693,7 +1729,7 @@ export default function ProgramacionSemanalPage() {
               size="small" value={vistaTiempo}
               onChange={(v) => setVistaTiempo(v as "enviado" | "plan")}
               options={[
-                { value: "enviado", label: "Enviado" },
+                { value: "enviado", label: "Planificada" },
                 { value: "plan", label: "Semana real" },
               ]}
             />
@@ -1807,6 +1843,52 @@ export default function ProgramacionSemanalPage() {
                 {editMode ? "Salir de edición" : "Modo edición"}
               </Button>
             )}
+            {/* Estado de envío + "Enviar semana" (todos los operarios de una).
+                El envío congela la foto del plan = semana planificada. */}
+            {view === "operario" && vistaTiempo === "plan" && (() => {
+              const agendadas = allRows.filter((r) => perteneceASemana(r) && !!r.fecha_inicio && splitTecnicos(r.tecnico).length > 0);
+              const pendientes = agendadas.filter((r) => !r.publicado);
+              if (agendadas.length === 0) return null;
+              const estadoEnvio = pendientes.length === 0 ? "enviada" : pendientes.length < agendadas.length ? "parcial" : "borrador";
+              return (
+                <>
+                  <Tag
+                    icon={<PushpinOutlined />}
+                    color={estadoEnvio === "enviada" ? "success" : estadoEnvio === "parcial" ? "warning" : "default"}
+                    style={{ fontWeight: 500 }}
+                  >
+                    {estadoEnvio === "enviada" ? "Semana enviada" : estadoEnvio === "parcial" ? "Envío parcial" : "Sin enviar"}
+                  </Tag>
+                  {pendientes.length > 0 && (
+                    <Popconfirm
+                      title={`Enviar semana ${semanaActual}`}
+                      description={(
+                        <div style={{ maxWidth: 320 }}>
+                          Se congela la <strong>semana planificada</strong> (foto del plan) de{" "}
+                          <strong>{pendientes.length}</strong> tarea(s) agendada(s) de{" "}
+                          <strong>{new Set(pendientes.flatMap((r) => splitTecnicos(r.tecnico))).size}</strong> operario(s).
+                          Las del pool (sin fecha) quedan en borrador. Después de enviar, los cambios de la semana cuentan como semana real.
+                        </div>
+                      )}
+                      okText="Enviar"
+                      cancelText="Cancelar"
+                      onConfirm={enviarSemanaCompleta}
+                      disabled={!editMode}
+                    >
+                      <Button
+                        type="primary"
+                        ghost
+                        icon={<PushpinOutlined />}
+                        disabled={!editMode}
+                        title={!editMode ? "Activá Modo Edición para enviar la semana" : undefined}
+                      >
+                        Enviar semana ({pendientes.length})
+                      </Button>
+                    </Popconfirm>
+                  )}
+                </>
+              );
+            })()}
             <Button shape="circle" icon={<LeftOutlined />} onClick={() => setLunes((m) => m.subtract(1, "week"))} />
             <DatePicker
               value={lunes}
@@ -1841,7 +1923,7 @@ export default function ProgramacionSemanalPage() {
             />
             <Tooltip title={
               vistaTiempo === "enviado"
-                ? "Foto del plan tal como se ENVIÓ la semana (línea base congelada). Solo lectura."
+                ? "Semana planificada: la foto del plan congelada al Enviar la semana. Solo lectura."
                 : "Semana real: el plan vivo con los cambios de la semana (editable). La ejecución de cada tarea iniciada se ve como barra bajo el bloque."
             }>
               <Segmented
@@ -1849,12 +1931,12 @@ export default function ProgramacionSemanalPage() {
                 onChange={(v) => {
                   const nuevo = v as "enviado" | "plan";
                   setVistaTiempo(nuevo);
-                  // Enviado es solo lectura: si veníamos editando, salimos y
-                  // soltamos el lock.
+                  // La semana planificada es solo lectura: si veníamos editando,
+                  // salimos y soltamos el lock.
                   if (nuevo !== "plan" && editMode) { setEditMode(false); void lock.release(); }
                 }}
                 options={[
-                  { value: "enviado", icon: <PushpinOutlined />, label: "Enviado" },
+                  { value: "enviado", icon: <PushpinOutlined />, label: "Semana planificada" },
                   { value: "plan", icon: <CalendarOutlined />, label: "Semana real" },
                 ]}
               />
