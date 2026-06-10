@@ -2311,11 +2311,6 @@ export default function ProgramacionSemanalPage() {
           style={{ position: "relative", cursor: panning ? "grabbing" : "grab" }}
           onMouseDown={startPan}
         >
-          {lineaHoy != null && (
-            <div className="psg-now-line" style={{ left: 220 + lineaHoy, height: recursos.length * ROW_HEIGHT, bottom: "auto" }} title={`Ahora: ${diaEs(ahoraTick ?? dayjs(), true)}`}>
-              <div className="psg-now-dot" />
-            </div>
-          )}
           {/* Header */}
           <div className="psg-row psg-header-row">
             <div className="psg-resource-cell">Recurso</div>
@@ -2353,7 +2348,17 @@ export default function ProgramacionSemanalPage() {
             </div>
           </div>
 
-          {/* Filas de recursos */}
+          {/* Filas de recursos + línea de "ahora". El wrapper relativo (zIndex 0:
+              queda DEBAJO del header sticky al scrollear) hace que la línea mida
+              la altura REAL de las filas con top/bottom 0 — antes se calculaba
+              recursos × 64px y se quedaba corta cuando las filas crecían (el pie
+              de carga + Enviar/Reabrir las estira más que ROW_HEIGHT). */}
+          <div style={{ position: "relative", zIndex: 0, width: "max-content", minWidth: "100%" }}>
+          {lineaHoy != null && (
+            <div className="psg-now-line" style={{ left: 220 + lineaHoy }} title={`Ahora: ${diaEs(ahoraTick ?? dayjs(), true)}`}>
+              <div className="psg-now-dot" />
+            </div>
+          )}
           {recursos.length === 0 ? (
             <div style={{ padding: 40 }}>
               <Empty description="Sin recursos disponibles." />
@@ -2486,6 +2491,7 @@ export default function ProgramacionSemanalPage() {
               );
             })
           )}
+          </div>
         </div>
         )}
       </Card>
@@ -3172,8 +3178,10 @@ export default function ProgramacionSemanalPage() {
         }
 
         .psg-now-line {
+          /* Vive dentro del wrapper relativo de las filas: top/bottom 0 la
+             estiran a la altura REAL del contenido (todas las filas). */
           position: absolute;
-          top: 60px;
+          top: 0;
           bottom: 0;
           width: 2px;
           background: #F5222D;
