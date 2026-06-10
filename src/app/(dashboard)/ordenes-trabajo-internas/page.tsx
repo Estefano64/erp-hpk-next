@@ -1119,88 +1119,51 @@ export default function OrdenesTrabajoInternasPage() {
               <>
                 <Col xs={24} md={12}>
                   <Form.Item name="estrategia_id" label="Estrategia (opcional)">
-                    {/* Solo PMs (PM1/PM2/PM3/PM4) del equipo seleccionado.
-                        Pedido del user: la dropdown ya no muestra TODA la
-                        tabla de estrategias — quedan únicamente los niveles
-                        PM correspondientes al equipo de la OT. Si no hay
-                        equipo elegido todavía, se ve placeholder explicativo. */}
+                    {/* Lista priorizada: arriba van las estrategias del equipo
+                        seleccionado (lo "fijado" a esa maquinaria), abajo van
+                        las que no están atadas a ningún equipo (genéricas /
+                        compartidas) por si el user necesita una alternativa.
+                        Las estrategias amarradas a OTROS equipos se ocultan. */}
                     <Select
                       allowClear
                       showSearch
                       placeholder={equipoSel
-                        ? "Elegí PM1 / PM2 / PM3 / PM4"
-                        : "Elegí un equipo primero"}
+                        ? "Elegí estrategia del equipo (o una genérica)"
+                        : "Elegí una estrategia"}
                       optionFilterProp="label"
-                      disabled={!equipoSel}
-                      options={estrategias
-                        .filter((e) => {
-                          if (!equipoSel) return false;
-                          if (e.equipo_codigo !== equipoSel) return false;
-                          // Aceptamos como "PM" tanto el codigo (PM1..PM4)
-                          // como el actividad_codigo (algunos seeds lo guardan
-                          // ahí). Hacemos uppercase para evitar discrepancias.
-                          const cod = (e.codigo ?? "").toUpperCase();
-                          const act = (e.actividad_codigo ?? "").toUpperCase();
-                          return /^PM[1-4]$/.test(cod) || /^PM[1-4]$/.test(act);
-                        })
-                        .map((e) => ({
-                          value: e.estrategia_id,
-                          label: `${e.codigo} — ${e.descripcion}`,
-                        }))}
-                    />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} md={12}>
-                  <Form.Item
-                    name="task_list"
-                    label="Task list"
-                    tooltip={
-                      equipoSel
-                        ? "Filtrado por el equipo seleccionado. Si querés ver todos, sacá el equipo."
-                        : "Catálogo importado del Excel de mantenimiento. Al elegir uno se auto-llena la descripción si está vacía."
-                    }
-                  >
-                    <Select
-                      allowClear
-                      showSearch
-                      placeholder={
-                        equipoSel
-                          ? "Tareas del equipo seleccionado"
-                          : "Buscar tarea (máquina, MP, descripción)"
-                      }
-                      optionFilterProp="label"
-                      onChange={(value) => {
-                        // Al elegir un task list, autocompletar la descripción si
-                        // está vacía. El usuario puede modificarla después.
-                        if (!value) return;
-                        const tl = taskLists.find((t) => labelDeTaskList(t) === value);
-                        if (!tl) return;
-                        const descActual = (form.getFieldValue("descripcion") as string | undefined)?.trim();
-                        if (!descActual) {
-                          form.setFieldValue("descripcion", tl.descripcion);
-                        }
-                      }}
-                      // Si hay un equipo seleccionado, filtramos los task lists
-                      // cuya `maquina_taller` matchea (case-insensitive, ignorando
-                      // espacios) con el código o descripción del equipo. Si no
-                      // hay match, devolvemos lista completa para no bloquear.
+                      // AntD Select acepta o un array plano de {value,label}
+                      // o un array de grupos {label, options:[]}. Para que
+                      // TypeScript no se queje de la unión, casteamos a un
+                      // tipo amplio aceptado por el componente.
                       options={(() => {
-                        const equipo = equipos.find((e) => e.codigo === equipoSel);
-                        if (!equipo) return taskLists.map((t) => ({
-                          value: labelDeTaskList(t),
-                          label: labelDeTaskList(t),
-                        }));
-                        const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
-                        const objetivos = [norm(equipo.codigo), norm(equipo.descripcion)];
-                        const filtrados = taskLists.filter((t) => {
-                          const m = norm(t.maquina_taller);
-                          return objetivos.some((o) => m === o || m.includes(o) || o.includes(m));
-                        });
-                        const final = filtrados.length > 0 ? filtrados : taskLists;
-                        return final.map((t) => ({
-                          value: labelDeTaskList(t),
-                          label: labelDeTaskList(t),
-                        }));
+                        const labelOf = (e: EstrategiaOption) => `${e.codigo} — ${e.descripcion}`;
+                        const delEquipo = equipoSel
+                          ? estrategias.filter((e) => e.equipo_codigo === equipoSel)
+                          : [];
+                        const genericas = estrategias.filter((e) => e.equipo_codigo == null);
+                        if (delEquipo.length === 0 && genericas.length === 0) {
+                          return estrategias.map((e) => ({
+                            value: e.estrategia_id,
+                            label: labelOf(e),
+                          })) as unknown as { value: number; label: string }[];
+                        }
+                        const groups: Array<{
+                          label: React.ReactNode;
+                          options: { value: number; label: string }[];
+                        }> = [];
+                        if (delEquipo.length > 0) {
+                          groups.push({
+                            label: <Text strong style={{ fontSize: 11 }}>Del equipo seleccionado</Text>,
+                            options: delEquipo.map((e) => ({ value: e.estrategia_id, label: labelOf(e) })),
+                          });
+                        }
+                        if (genericas.length > 0) {
+                          groups.push({
+                            label: <Text type="secondary" style={{ fontSize: 11 }}>Genéricas (sin equipo)</Text>,
+                            options: genericas.map((e) => ({ value: e.estrategia_id, label: labelOf(e) })),
+                          });
+                        }
+                        return groups as unknown as { value: number; label: string }[];
                       })()}
                     />
                   </Form.Item>
