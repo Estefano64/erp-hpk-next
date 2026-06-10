@@ -242,7 +242,10 @@ export default function PlanificacionPage() {
   const [search, setSearch] = useState("");
   const [filterSemana, setFilterSemana] = useState<string | undefined>();
   const [filterEstado, setFilterEstado] = useState<string | undefined>();
-  const [filterMacroEstado, setFilterMacroEstado] = useState<string | undefined>();
+  // Por defecto solo se cargan las tareas con estado general "Abierto" (activas:
+  // sin terminar ni anular) — es lo que el planner trabaja a diario. Para ver
+  // cerradas/no ejecutadas se cambia el filtro o se limpia.
+  const [filterMacroEstado, setFilterMacroEstado] = useState<string | undefined>("abierto");
   const [filterTecnico, setFilterTecnico] = useState<string | undefined>();
   const [filterMaquina, setFilterMaquina] = useState<string | undefined>();
 
