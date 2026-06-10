@@ -945,6 +945,42 @@ export default function ProgramacionSemanalPage() {
     }
   }
 
+  // ── RE-ENVIAR la semana: rehacer la foto (rebasar) ──
+  // Para cuando se envió por error o el plan se corrigió ANTES de que la semana
+  // arranque: vuelve a congelar la semana planificada con el plan ACTUAL
+  // (rebasar=true pisa la foto anterior). La comparativa plan vs real de esa
+  // semana se resetea — por eso la confirmación es fuerte.
+  async function reenviarSemanaCompleta() {
+    if (!editMode) {
+      messageApi.warning("Activá Modo Edición para re-enviar.");
+      return;
+    }
+    const ids = allRows
+      .filter((r) => perteneceASemana(r) && !!r.fecha_inicio && splitTecnicos(r.tecnico).length > 0)
+      .map((r) => r.id);
+    if (ids.length === 0) {
+      messageApi.info("No hay tareas agendadas en esta semana.");
+      return;
+    }
+    beginSave();
+    try {
+      const res = await fetch("/api/planificacion/publicar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ semana: semanaActual, publicado: true, ids, rebasar: true }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Error");
+      endSave();
+      messageApi.success(`Foto rehecha: la semana planificada ahora es el plan actual (${ids.length} tarea(s)).`);
+      notifySync();
+      fetchData();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Error al re-enviar";
+      endSave(msg);
+      messageApi.error(msg);
+    }
+  }
+
   // ── Marcar una tarea como EMERGENCIA (correctiva) ──
   // Pone la tarea en estado correctivo y reacomoda las tareas del mismo día y
   // operario que arranquen después: las empuja, y las que no entran van al pool.
@@ -1868,6 +1904,12 @@ export default function ProgramacionSemanalPage() {
                           <strong>{pendientes.length}</strong> tarea(s) agendada(s) de{" "}
                           <strong>{new Set(pendientes.flatMap((r) => splitTecnicos(r.tecnico))).size}</strong> operario(s).
                           Las del pool (sin fecha) quedan en borrador. Después de enviar, los cambios de la semana cuentan como semana real.
+                          {estadoEnvio === "parcial" && (
+                            <div style={{ marginTop: 6 }}>
+                              Las tareas que ya tienen foto NO se re-fotografían: esto solo congela las pendientes
+                              (sirve como <strong>publicar todo</strong> después de editar a varios operarios).
+                            </div>
+                          )}
                         </div>
                       )}
                       okText="Enviar"
@@ -1877,12 +1919,37 @@ export default function ProgramacionSemanalPage() {
                     >
                       <Button
                         type="primary"
-                        ghost
                         icon={<PushpinOutlined />}
                         disabled={!editMode}
                         title={!editMode ? "Activá Modo Edición para enviar la semana" : undefined}
                       >
                         Enviar semana ({pendientes.length})
+                      </Button>
+                    </Popconfirm>
+                  )}
+                  {/* Re-enviar = rehacer la FOTO con el plan actual (rebasar). Para
+                      cuando se envió por error. Pisa la semana planificada anterior. */}
+                  {agendadas.length > pendientes.length && (
+                    <Popconfirm
+                      title="Re-enviar: rehacer la foto del plan"
+                      description={(
+                        <div style={{ maxWidth: 330 }}>
+                          La <strong>semana planificada</strong> pasa a ser EXACTAMENTE el plan actual
+                          ({agendadas.length} tarea(s)). La foto anterior se pierde y la comparativa
+                          plan vs real de esta semana se resetea. Usalo solo si se envió por error.
+                        </div>
+                      )}
+                      okText="Rehacer foto"
+                      okButtonProps={{ danger: true }}
+                      cancelText="Cancelar"
+                      onConfirm={reenviarSemanaCompleta}
+                      disabled={!editMode}
+                    >
+                      <Button
+                        disabled={!editMode}
+                        title={!editMode ? "Activá Modo Edición para re-enviar" : "Por si se envió por error: vuelve a congelar la semana planificada con el plan actual"}
+                      >
+                        Re-enviar
                       </Button>
                     </Popconfirm>
                   )}
