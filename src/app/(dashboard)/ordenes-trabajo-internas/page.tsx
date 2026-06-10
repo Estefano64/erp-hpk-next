@@ -1118,7 +1118,7 @@ export default function OrdenesTrabajoInternasPage() {
             {!esCorrectiva && (
               <>
                 <Col xs={24} md={12}>
-                  <Form.Item name="estrategia_id" label="Estrategia (opcional)">
+                  <Form.Item name="estrategia_id" label="Estrategia">
                     {/* Lista priorizada: arriba van las estrategias del equipo
                         seleccionado (lo "fijado" a esa maquinaria), abajo van
                         las que no están atadas a ningún equipo (genéricas /

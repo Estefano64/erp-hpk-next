@@ -540,7 +540,7 @@ export default function CorrectivosPage() {
           </Form.Item>
           <Form.Item
             name="reportado_por"
-            label="Reportado por (opcional)"
+            label="Reportado por"
             tooltip="Si lo dejás vacío, se usa tu usuario."
           >
             <Input placeholder="Nombre del operario que detectó la falla" maxLength={150} />
@@ -589,7 +589,7 @@ export default function CorrectivosPage() {
               </Form.Item>
               <Row gutter={12}>
                 <Col xs={24} md={12}>
-                  <Form.Item name="area_taller" label="Área asignada (opcional)">
+                  <Form.Item name="area_taller" label="Área asignada">
                     <Select
                       placeholder="Elegí un área o sub-área"
                       showSearch
@@ -600,7 +600,7 @@ export default function CorrectivosPage() {
                   </Form.Item>
                 </Col>
                 <Col xs={24} md={12}>
-                  <Form.Item name="asignado_a" label="Asignado a (opcional)">
+                  <Form.Item name="asignado_a" label="Asignado a">
                     <Input placeholder="Operario responsable" />
                   </Form.Item>
                 </Col>

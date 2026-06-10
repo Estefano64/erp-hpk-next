@@ -571,10 +571,10 @@ export default function EvaluacionesPage() {
           <Form.Item
             label={
               modalAccion?.accion === "solicitar"
-                ? "Comentarios para el revisor (opcional)"
+                ? "Comentarios para el revisor"
                 : modalAccion?.accion === "rechazar"
                 ? "Motivo del rechazo"
-                : "Comentarios (opcional)"
+                : "Comentarios"
             }
             name="comentarios"
             rules={

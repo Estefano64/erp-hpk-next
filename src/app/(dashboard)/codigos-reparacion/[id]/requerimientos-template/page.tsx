@@ -682,7 +682,7 @@ export default function TemplateRequerimientosPage() {
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="precio" label="Precio (opcional)">
+              <Form.Item name="precio" label="Precio">
                 <InputNumber min={0} step={0.01} style={{ width: "100%" }} />
               </Form.Item>
             </Col>

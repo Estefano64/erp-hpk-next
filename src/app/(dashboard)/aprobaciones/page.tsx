@@ -217,8 +217,7 @@ export default function AceptacionesPage() {
           </div>
           <div>
             <Text style={{ fontSize: 12 }}>
-              Detalle <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
-            </Text>
+              Detalle            </Text>
             <Input.TextArea
               rows={3}
               placeholder="Motivo, contexto, instrucciones…"
@@ -228,8 +227,7 @@ export default function AceptacionesPage() {
           </div>
           <div>
             <Text style={{ fontSize: 12 }}>
-              Comentario <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
-            </Text>
+              Comentario            </Text>
             <Input.TextArea
               rows={2}
               maxLength={500}
@@ -297,8 +295,7 @@ export default function AceptacionesPage() {
           </div>
           <div>
             <Text style={{ fontSize: 12 }}>
-              Detalle <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
-            </Text>
+              Detalle            </Text>
             <Input.TextArea
               rows={3}
               placeholder="Contexto, acciones a tomar, próximos pasos…"
@@ -308,8 +305,7 @@ export default function AceptacionesPage() {
           </div>
           <div>
             <Text style={{ fontSize: 12 }}>
-              Motivo <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
-            </Text>
+              Motivo            </Text>
             <Input.TextArea
               rows={2}
               maxLength={500}
@@ -451,8 +447,7 @@ export default function AceptacionesPage() {
       content: (
         <div style={{ marginTop: 8 }}>
           <Text style={{ fontSize: 12 }}>
-            Motivo <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
-          </Text>
+            Motivo          </Text>
           <Input.TextArea
             rows={3}
             placeholder="Ej: falta cotización del proveedor"
@@ -492,8 +487,7 @@ export default function AceptacionesPage() {
       content: (
         <div style={{ marginTop: 8 }}>
           <Text style={{ fontSize: 12 }}>
-            Motivo <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
-          </Text>
+            Motivo          </Text>
           <Text type="secondary" style={{ fontSize: 11, display: "block" }}>
             Todas las OCs seleccionadas pasarán a ANULADAS. Los items vinculados también quedan anulados.
             Si lo dejás, el motivo se aplica a todas.
@@ -541,8 +535,7 @@ export default function AceptacionesPage() {
       content: (
         <div style={{ marginTop: 8 }}>
           <Text style={{ fontSize: 12 }}>
-            Motivo <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
-          </Text>
+            Motivo          </Text>
           <Text type="secondary" style={{ fontSize: 11, display: "block" }}>
             Si lo dejás, se aplica a todos los items del lote.
           </Text>
@@ -607,8 +600,7 @@ export default function AceptacionesPage() {
           </div>
           <div>
             <Text style={{ fontSize: 12 }}>
-              Detalle <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
-            </Text>
+              Detalle            </Text>
             <Input.TextArea
               rows={3}
               placeholder="Motivo, contexto, instrucciones…"
@@ -618,8 +610,7 @@ export default function AceptacionesPage() {
           </div>
           <div>
             <Text style={{ fontSize: 12 }}>
-              Comentario <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
-            </Text>
+              Comentario            </Text>
             <Input.TextArea
               rows={2}
               maxLength={500}
@@ -667,8 +658,7 @@ export default function AceptacionesPage() {
         <div style={{ marginTop: 8 }}>
           <Text style={{ fontSize: 12 }}>
             Comentario / recomendación{" "}
-            <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
-          </Text>
+                     </Text>
           <Text type="secondary" style={{ fontSize: 11, display: "block" }}>
             Si lo dejás, se aplica a todos los items del lote.
           </Text>
@@ -1595,8 +1585,7 @@ export default function AceptacionesPage() {
             </div>
             <div>
               <Text strong style={{ display: "block", marginBottom: 4 }}>
-                Precio estimado <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
-              </Text>
+                Precio estimado              </Text>
               <Space>
                 <Input
                   type="number"
@@ -1637,8 +1626,7 @@ export default function AceptacionesPage() {
             </div>
             <div>
               <Text strong style={{ display: "block", marginBottom: 4 }}>
-                Detalle <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
-              </Text>
+                Detalle              </Text>
               <Input.TextArea
                 rows={4}
                 placeholder="Motivo, contexto, instrucciones para logística o el técnico…"
@@ -1649,8 +1637,7 @@ export default function AceptacionesPage() {
             <div>
               <Text strong style={{ display: "block", marginBottom: 4 }}>
                 Comentario / recomendación{" "}
-                <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
-              </Text>
+                             </Text>
               <Input.TextArea
                 rows={3}
                 maxLength={500}
@@ -1688,8 +1675,7 @@ export default function AceptacionesPage() {
             <div>
               <Text strong style={{ display: "block", marginBottom: 4 }}>
                 <PaperClipOutlined /> Adjuntar capturas / archivos{" "}
-                <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
-              </Text>
+                             </Text>
               <Upload
                 fileList={aprobarArchivos}
                 onChange={({ fileList }) => setAprobarArchivos(fileList)}

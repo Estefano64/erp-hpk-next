@@ -148,8 +148,7 @@ export default function ComprasPage() {
       content: (
         <div style={{ marginTop: 8 }}>
           <Text style={{ fontSize: 12 }}>
-            Motivo <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
-          </Text>
+            Motivo          </Text>
           <Input.TextArea
             rows={3}
             maxLength={500}
@@ -209,8 +208,7 @@ export default function ComprasPage() {
           </div>
           <div>
             <Text style={{ fontSize: 12 }}>
-              Detalle <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
-            </Text>
+              Detalle            </Text>
             <Input.TextArea
               rows={3}
               placeholder="Motivo, contexto, instrucciones…"
@@ -220,8 +218,7 @@ export default function ComprasPage() {
           </div>
           <div>
             <Text style={{ fontSize: 12 }}>
-              Comentario <Text type="secondary" style={{ fontWeight: 400 }}>(opcional)</Text>
-            </Text>
+              Comentario            </Text>
             <Input.TextArea
               rows={2}
               maxLength={500}

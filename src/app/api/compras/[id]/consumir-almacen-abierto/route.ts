@@ -116,8 +116,14 @@ export async function POST(req: NextRequest, ctx: Ctx) {
             continue;
           }
 
-          // Requerimiento
-          const rep = await tx.oTRepuesto.findUnique({ where: { id: it.requerimiento_id } });
+          // Requerimiento. Traemos el material del rep para poder comparar
+          // por NP (no por material_id). El user solo ve el NP en el sistema,
+          // y la OC abierta normalmente trae materiales nuevos cuyo id no
+          // coincide con los de los catálogos previos.
+          const rep = await tx.oTRepuesto.findUnique({
+            where: { id: it.requerimiento_id },
+            include: { material: { select: { codigo: true, np: true } } },
+          });
           if (!rep) {
             errores.push({ requerimiento_id: it.requerimiento_id, error: "Requerimiento no encontrado." });
             continue;
@@ -130,12 +136,19 @@ export async function POST(req: NextRequest, ctx: Ctx) {
             errores.push({ requerimiento_id: it.requerimiento_id, error: `Req en estado ${rep.status_requerimiento_codigo} no se puede consumir.` });
             continue;
           }
-          if (rep.material_id == null) {
-            errores.push({ requerimiento_id: it.requerimiento_id, error: "El requerimiento es free (sin material) — no se puede consumir de almacén abierto." });
-            continue;
-          }
-          if (rep.material_id !== detalle.material_id) {
-            errores.push({ requerimiento_id: it.requerimiento_id, error: "El material del requerimiento no coincide con el del detalle de la OC abierta." });
+          // Match por NP (Número de parte): normalizamos case + espacios.
+          // Fallback a material_id solo si ambos lados lo tienen igual.
+          const normalizaNp = (s: string | null | undefined) =>
+            (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+          const npRep = normalizaNp(rep.material?.np);
+          const npDet = normalizaNp(detalle.material?.np);
+          const matchPorNp = npRep && npDet && npRep === npDet;
+          const matchPorId = rep.material_id != null && rep.material_id === detalle.material_id;
+          if (!matchPorNp && !matchPorId) {
+            errores.push({
+              requerimiento_id: it.requerimiento_id,
+              error: `NP del req "${rep.material?.np ?? "—"}" no coincide con el NP del detalle de la OC abierta "${detalle.material?.np ?? "—"}".`,
+            });
             continue;
           }
 

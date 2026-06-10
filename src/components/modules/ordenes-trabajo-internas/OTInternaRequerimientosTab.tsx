@@ -949,7 +949,7 @@ export default function OTInternaRequerimientosTab({ otInternaId }: Props) {
       >
         <Space orientation="vertical" style={{ width: "100%" }} size="small">
           <Form layout="inline">
-            <Form.Item label="Agregar a req existente (opcional)">
+            <Form.Item label="Agregar a req existente">
               <Input
                 placeholder="Código existente (ej. 390626-1)"
                 value={draftNroReq}
