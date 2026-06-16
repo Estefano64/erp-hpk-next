@@ -224,7 +224,7 @@ export default function OTInternaDetallePage() {
     (async () => {
       const [tRes, eRes, pRes, prRes, usRes, osRes, rsRes, estRes, trRes] = await Promise.all([
         fetch("/api/catalogos?tabla=tipoOTInterna"),
-        fetch("/api/equipos?limit=500"),
+        fetch("/api/equipos?limit=10000"),
         fetch("/api/catalogos?tabla=planta"),
         fetch("/api/catalogos?tabla=prioridadAtencion"),
         fetch("/api/catalogos?tabla=userStatus"),
@@ -233,7 +233,7 @@ export default function OTInternaDetallePage() {
         fetch("/api/catalogos?tabla=estrategia"),
         // No usamos soloOperarios=1 acá: necesitamos incluir JEFE DE LOGISTICA
         // y COMPRAS (que sí pueden ser asignados de OTs internas).
-        fetch("/api/trabajadores?limit=200"),
+        fetch("/api/trabajadores?limit=10000"),
       ]);
       if (tRes.ok) setTipos((await tRes.json()).data ?? []);
       if (eRes.ok) setEquipos((await eRes.json()).data ?? []);

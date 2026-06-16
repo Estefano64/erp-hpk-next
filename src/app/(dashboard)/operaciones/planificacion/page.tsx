@@ -376,10 +376,10 @@ export default function PlanificacionPage() {
     (async () => {
       const anioActual = new Date().getFullYear() % 100; // ej. 26 → solo OTs del año
       const [resT, resE, resS, resO, resC, resOp] = await Promise.all([
-        fetch("/api/trabajadores?limit=200&soloOperarios=1"),
-        fetch("/api/equipos?limit=200&tipo=MAQ"),
+        fetch("/api/trabajadores?limit=10000&soloOperarios=1"),
+        fetch("/api/equipos?limit=10000&tipo=MAQ"),
         fetch("/api/catalogos?tabla=statusTarea"),
-        fetch(`/api/ordenes-trabajo?limit=1000&anios=${anioActual}`),
+        fetch(`/api/ordenes-trabajo?limit=10000&anios=${anioActual}`),
         fetch("/api/catalogos?tabla=componente"),
         fetch("/api/catalogos?tabla=operacionReparacion"),
       ]);

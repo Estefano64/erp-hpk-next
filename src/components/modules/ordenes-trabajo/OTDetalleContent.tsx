@@ -239,8 +239,8 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   const otStatusesRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=otStatus");
   const recursosStatusesRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=recursosStatus");
   const tallerStatusesRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=tallerStatus");
-  const clientesRes = useCachedFetch<Wrapped<ClienteOption>>("/api/clientes?limit=100");
-  const codRepsRes = useCachedFetch<Wrapped<CodRepOption>>("/api/codigos-reparacion?limit=500");
+  const clientesRes = useCachedFetch<Wrapped<ClienteOption>>("/api/clientes?limit=10000");
+  const codRepsRes = useCachedFetch<Wrapped<CodRepOption>>("/api/codigos-reparacion?limit=10000");
   const tipoReparacionesRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=tipoReparacion");
   const atencionReparacionesRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=atencionReparacion");
   const prioridadesRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=prioridadAtencion");
@@ -252,7 +252,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   const posicionesRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=posicion");
   // Proveedores para el Select de "Vendor Externo" — reusa la tabla proveedor
   // existente (decisión del user, evita crear nuevo catálogo).
-  const proveedoresRes = useCachedFetch<Wrapped<{ id: number; razon_social: string; nombre_comercial: string | null }>>("/api/proveedores?limit=500");
+  const proveedoresRes = useCachedFetch<Wrapped<{ id: number; razon_social: string; nombre_comercial: string | null }>>("/api/proveedores?limit=10000");
 
   const otStatuses = otStatusesRes?.data ?? [];
   const recursosStatuses = recursosStatusesRes?.data ?? [];

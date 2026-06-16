@@ -172,7 +172,7 @@ export default function AceptacionesPage() {
 
   // Catálogo de proveedores para filtro
   type Wrapped<T> = { data: T[] } | null;
-  const provRes = useCachedFetch<Wrapped<ProveedorOpt>>("/api/proveedores?limit=500");
+  const provRes = useCachedFetch<Wrapped<ProveedorOpt>>("/api/proveedores?limit=10000");
   const proveedoresOpts = (provRes?.data ?? []).map((p) => ({
     value: p.id, label: `${p.razon_social}${p.ruc ? ` (${p.ruc})` : ""}`,
   }));

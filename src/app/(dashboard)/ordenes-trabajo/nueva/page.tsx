@@ -118,8 +118,8 @@ export default function NuevaOTPage() {
   useEffect(() => {
     async function loadCatalogs() {
       const [cliRes, crRes, tipoRepRes, atencionRes, prioRes, tipoGarRes, tipoCRRes, fabRes, posRes, tipoOTRes, monRes, matRes] = await Promise.all([
-        fetch("/api/clientes?limit=100"),
-        fetch("/api/codigos-reparacion?limit=500"),
+        fetch("/api/clientes?limit=10000"),
+        fetch("/api/codigos-reparacion?limit=10000"),
         fetch("/api/catalogos?tabla=tipoReparacion"),
         fetch("/api/catalogos?tabla=atencionReparacion"),
         fetch("/api/catalogos?tabla=prioridadAtencion"),
@@ -129,7 +129,7 @@ export default function NuevaOTPage() {
         fetch("/api/catalogos?tabla=posicion"),
         fetch("/api/catalogos?tabla=tipoOT"),
         fetch("/api/catalogos?tabla=moneda"),
-        fetch("/api/materiales?limit=2000"),
+        fetch("/api/materiales?limit=10000"),
       ]);
       if (cliRes.ok) setClientes((await cliRes.json()).data ?? []);
       if (crRes.ok) setCodReps((await crRes.json()).data ?? []);
@@ -221,7 +221,7 @@ export default function NuevaOTPage() {
     const fechaRecepcion = form.getFieldValue("fecha_recepcion");
 
     if (cId && crId) {
-      const res = await fetch(`/api/contratos?cliente=${cId}&limit=100`);
+      const res = await fetch(`/api/contratos?cliente=${cId}&limit=10000`);
       if (res.ok) {
         const json = await res.json();
         const contrato = (json.data ?? []).find(

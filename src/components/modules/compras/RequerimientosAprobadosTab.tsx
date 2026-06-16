@@ -114,7 +114,7 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
 
   // Catálogos
   type Wrapped<T> = { data: T[] } | null;
-  const provRes = useCachedFetch<Wrapped<ProveedorOpt>>("/api/proveedores?limit=500");
+  const provRes = useCachedFetch<Wrapped<ProveedorOpt>>("/api/proveedores?limit=10000");
   const ubicRes = useCachedFetch<Wrapped<UbicacionOpt>>("/api/catalogos?tabla=ubicacion");
   const proveedoresOpts = (provRes?.data ?? []).map((p) => ({ value: p.id, label: `${p.razon_social}${p.ruc ? ` (${p.ruc})` : ""}` }));
   const ubicacionesOpts = (ubicRes?.data ?? []).map((u) => ({ value: u.codigo, label: `${u.codigo} — ${u.nombre}` }));
@@ -122,7 +122,7 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ solo_aprobados_sin_oc: "1", limit: "500" });
+      const params = new URLSearchParams({ solo_aprobados_sin_oc: "1", limit: "10000" });
       if (search) params.set("search", search);
       if (filterProv) params.set("proveedor_id", String(filterProv));
       const res = await fetch(`/api/requerimientos?${params}`);

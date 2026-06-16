@@ -269,11 +269,11 @@ export default function EvaluacionPage() {
   //   - "Supervisor"   → rol "aprobador_evaluacion" (solo los que pueden
   //     aprobar la hoja una vez llenada).
   useEffect(() => {
-    fetch("/api/trabajadores?limit=200&paraEvaluacion=1")
+    fetch("/api/trabajadores?limit=10000&paraEvaluacion=1")
       .then((r) => r.ok ? r.json() : null)
       .then((j) => { if (j?.data) setTrabajadores(j.data); })
       .catch(() => { /* noop */ });
-    fetch("/api/trabajadores?limit=200&paraSupervisor=1")
+    fetch("/api/trabajadores?limit=10000&paraSupervisor=1")
       .then((r) => r.ok ? r.json() : null)
       .then((j) => { if (j?.data) setSupervisores(j.data); })
       .catch(() => { /* noop */ });

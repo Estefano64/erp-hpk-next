@@ -401,7 +401,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
 
   // Catálogos cacheados
   type Wrapped<T> = { data: T[] } | null;
-  const matsRes = useCachedFetch<Wrapped<MaterialOpt>>("/api/materiales?limit=2000");
+  const matsRes = useCachedFetch<Wrapped<MaterialOpt>>("/api/materiales?limit=10000");
   const materiales = matsRes?.data ?? [];
   const fabsRes = useCachedFetch<Wrapped<{ codigo: string; nombre: string }>>("/api/catalogos?tabla=fabricante");
   const fabricantes = fabsRes?.data ?? [];

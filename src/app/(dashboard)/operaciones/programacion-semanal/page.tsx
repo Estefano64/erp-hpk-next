@@ -330,8 +330,8 @@ export default function ProgramacionSemanalPage() {
   useEffect(() => {
     (async () => {
       const [resT, resE, resS] = await Promise.all([
-        fetch("/api/trabajadores?limit=200&soloOperarios=1"),
-        fetch("/api/equipos?limit=200&tipo=MAQ"),
+        fetch("/api/trabajadores?limit=10000&soloOperarios=1"),
+        fetch("/api/equipos?limit=10000&tipo=MAQ"),
         fetch("/api/catalogos?tabla=statusTarea"),
       ]);
       if (resT.ok) setTrabajadores((await resT.json()).data ?? []);
