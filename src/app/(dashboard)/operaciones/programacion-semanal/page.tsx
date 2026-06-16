@@ -797,26 +797,17 @@ export default function ProgramacionSemanalPage() {
     const finCalc = inicio ? calcularFin(inicio, horasPorPersona * qty, !!original.horas_extras) : null;
 
     // Si la nueva duración pisa a la(s) siguiente(s) del recurso, empujamos la
-    // cola (cascada en el server). Solo bloqueamos si la que choca ya fue
-    // iniciada/realizada por el técnico (su horario es ejecución real y no se mueve).
+    // cola (cascada en el server). Si la que choca ya fue iniciada/realizada, el
+    // server NO la mueve (cascadeReprogramar excluye realizado/iniciadas: su
+    // horario es ejecución real) y queda un solape visible — mismo criterio que
+    // el drag (persistMove): los solapes se dejan a propósito.
     // Excepción: una EMERGENCIA (correctiva) cae encima a propósito (el server
     // corre cascadeEmergencia al reprogramar), así que no chequeamos choque acá.
     let empujar = false;
     if (inicio && finCalc && !original.es_correctivo) {
       const recurso = view === "equipo" ? original.maquina : original.tecnico;
       const choque = tareaSuperpuesta(id, inicio.getTime(), finCalc.getTime(), recurso);
-      if (choque) {
-        if (haEmpezado(choque.task.estado)) {
-          const t = choque.task;
-          const cliente = t.orden_trabajo?.cliente?.nombre_comercial
-            ?? t.orden_trabajo?.cliente?.razon_social
-            ?? `OT ${t.orden_trabajo?.ot ?? "#?"}`;
-          const prefijoOculta = choque.oculta ? "[Tarea no visible en esta semana/filtro] " : "";
-          messageApi.error(`${prefijoOculta}No se puede agrandar: la siguiente (${cliente} — ${t.descripcion ?? t.operacion_codigo}) ya fue iniciada/realizada por el técnico.`);
-          return;
-        }
-        empujar = true;
-      }
+      if (choque) empujar = true;
     }
 
     beginSave();
@@ -1080,26 +1071,18 @@ export default function ProgramacionSemanalPage() {
     const qty = Math.max(1, Number(selectedTask.qty_personal ?? 1));
     const inicio = selectedTask.fecha_inicio ? new Date(selectedTask.fecha_inicio) : null;
     const finCalc = inicio ? calcularFin(inicio, horasPorPersona * qty, !!selectedTask.horas_extras) : null;
-    // Si al agrandar la tarea pisa a la(s) siguiente(s) del recurso, en vez de
-    // bloquear empujamos la cola (igual que el drag: persistMove). El server
-    // reacomoda las tareas del mismo operario; solo frena si choca con una
-    // máquina ocupada por OTRO operario (recurso compartido que no se mueve).
+    // Si al agrandar la tarea pisa a la(s) siguiente(s) del recurso, empujamos la
+    // cola (igual que el drag: persistMove). El server reacomoda las tareas del
+    // mismo operario; las ya iniciadas/realizadas NO las mueve (cascadeReprogramar
+    // las excluye: su horario es ejecución real) y simplemente queda un solape
+    // visible — los solapes se dejan a propósito.
     // Excepción: una EMERGENCIA (correctiva) cae encima a propósito; el server
     // corre cascadeEmergencia al reprogramar, así que no chequeamos choque acá.
     let empujar = false;
     if (inicio && finCalc && !selectedTask.es_correctivo) {
       const recurso = view === "equipo" ? selectedTask.maquina : selectedTask.tecnico;
       const choque = tareaSuperpuesta(selectedTask.id, inicio.getTime(), finCalc.getTime(), recurso);
-      if (choque) {
-        // Si la siguiente ya fue iniciada/pausada/realizada por el técnico, su
-        // horario es ejecución real y la cascada NO la mueve: bloqueamos.
-        if (haEmpezado(choque.task.estado)) {
-          messageApi.error(`No se puede agrandar: la siguiente tarea (${choque.task.descripcion ?? choque.task.operacion_codigo}) ya fue iniciada/realizada por el técnico.`);
-          setDurModal(selectedTask.horas_estimadas != null ? Number(selectedTask.horas_estimadas) : null);
-          return;
-        }
-        empujar = true;
-      }
+      if (choque) empujar = true;
     }
     guardarCampoDetalle(
       {
