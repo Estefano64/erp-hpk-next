@@ -36,6 +36,20 @@ export async function GET(_req: NextRequest, { params }: Params) {
             orden_trabajo_interna: { select: { ot: true, area_taller: true } },
           },
         },
+        // Items directos sin OT (catálogo): OCs "abiertas", OCs sueltas, etc.
+        // Antes el PDF solo leía ot_repuestos → si la OC tenía sus items en
+        // CompraDetalle el PDF salía en blanco. Ahora incluimos detalles para
+        // poder mergearlos en la tabla del PDF.
+        detalles: {
+          include: {
+            material: {
+              select: {
+                codigo: true, descripcion: true, np: true, unidad_medida_codigo: true,
+                fabricante: { select: { nombre: true } },
+              },
+            },
+          },
+        },
       },
     });
 
@@ -68,8 +82,35 @@ export async function GET(_req: NextRequest, { params }: Params) {
       return d.replace(re, "").trim();
     };
 
-    const items = compra.ot_repuestos as typeof compra.ot_repuestos;
-    type Item = (typeof compra.ot_repuestos)[number];
+    // Items totales = ot_repuestos (con OT vinculada) + detalles directos
+    // (sin OT, ej. OCs abiertas). Los `detalles` se mapean al mismo shape
+    // que ot_repuestos para reusar el render. Los campos que no aplican a
+    // un CompraDetalle (nro_req, item_req, orden_trabajo, etc.) van como null
+    // y la plantilla los maneja como "" en la columna OT.
+    type RepItem = (typeof compra.ot_repuestos)[number];
+    const itemsDetalles = compra.detalles.map((d) => ({
+      id: -d.id, // negativo para no chocar con id de ot_repuestos
+      nro_req: null,
+      item_req: null,
+      ot_id: null,
+      orden_trabajo_interna_id: null,
+      material_id: d.material_id,
+      material_codigo: d.material?.codigo ?? null,
+      descripcion: d.material?.descripcion ?? null,
+      texto: null,
+      cantidad: d.cantidad,
+      precio_unitario: d.precio_unitario,
+      unidad_medida: d.material?.unidad_medida_codigo ?? null,
+      material: d.material,
+      orden_trabajo: null,
+      orden_trabajo_interna: null,
+    })) as unknown as RepItem[];
+    // Si la OC tiene OTRepuesto, esos llevan prioridad (son los items "reales"
+    // con vínculo a OT). Si NO tiene OTRepuesto, caemos a detalles. NO
+    // mezclamos para evitar duplicados — la mayoría de las OCs tienen items
+    // SOLO en una de las dos tablas.
+    const items = compra.ot_repuestos.length > 0 ? compra.ot_repuestos : itemsDetalles;
+    type Item = RepItem;
     const subtotal = Number(compra.subtotal || 0);
     const descuento = Number(compra.descuento || 0);
     const igv = Number(compra.impuesto || 0);

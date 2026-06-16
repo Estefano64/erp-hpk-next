@@ -142,13 +142,44 @@ export default function ComprasPage() {
   }, [fetchData]);
 
   function handleDelete(id: number) {
+    // Pre-check del estado de la OC. El endpoint DELETE solo permite borrar
+    // OCs en estado Pendiente (PEND_OC). Si está aceptada / en proceso /
+    // recibida, hay que usar "Anular" desde /aprobaciones (que marca
+    // status_oc = ANULADO sin perder la traza). Antes el user clickeaba
+    // Eliminar, recibía un error breve y no sabía qué hacer.
+    const compra = data.find((c) => c.id === id);
+    if (compra && compra.estado !== "Pendiente") {
+      modal.error({
+        title: "Esta OC no se puede eliminar",
+        content: (
+          <div style={{ marginTop: 8 }}>
+            <Text>
+              La OC <b>{compra.numero_po}</b> está en estado <b>{compra.estado}</b>.
+            </Text>
+            <Text style={{ display: "block", marginTop: 8 }}>
+              Solo las OCs en estado <b>Pendiente</b> se pueden eliminar (porque aún no se
+              recibieron ni se procesaron). Para esta OC corresponde
+              <b> Anular</b>, que la marca como cancelada sin perder la traza
+              en el historial.
+            </Text>
+            <Text type="secondary" style={{ display: "block", marginTop: 8, fontSize: 12 }}>
+              Andá a <b>Aprobaciones</b> y usá el botón <b>Rechazar</b> en la OC,
+              o entrá al detalle de la OC y elegí <b>Anular</b>.
+            </Text>
+          </div>
+        ),
+        okText: "Entendido",
+        width: 480,
+      });
+      return;
+    }
+
     let motivo = "";
     modal.confirm({
       title: "Eliminar compra",
       content: (
         <div style={{ marginTop: 8 }}>
-          <Text style={{ fontSize: 12 }}>
-            Motivo          </Text>
+          <Text style={{ fontSize: 12 }}>Motivo</Text>
           <Input.TextArea
             rows={3}
             maxLength={500}
