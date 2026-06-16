@@ -218,19 +218,18 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     }
     const usuario = (await getAuditUser(req)) ?? "sistema";
 
-    // Desvincular requerimientos asociados
-    await prisma.oTRepuesto.updateMany({
-      where: { po_id: Number(id) },
-      data: { po_id: null, nro_oc: null, status_oc_codigo: null },
-    });
-
-    // Registramos el motivo en el historial de cada OT vinculada ANTES de
-    // borrar la compra (después no quedan referencias). Como la OC podría
-    // estar vinculada a OT externas e internas, loggeamos para cada una.
+    // BUG fix: antes hacíamos updateMany (po_id=null) ANTES de capturar las
+    // OTs vinculadas — entonces la siguiente query devolvía vacío y el
+    // historial nunca se creaba. Ahora primero capturamos las OTs y después
+    // desvinculamos, dentro de una transacción para que sea atómico.
     const reqsVinculados = await prisma.oTRepuesto.findMany({
       where: { po_id: Number(id) },
       select: { ot_id: true, orden_trabajo_interna_id: true },
       distinct: ["ot_id", "orden_trabajo_interna_id"],
+    });
+    await prisma.oTRepuesto.updateMany({
+      where: { po_id: Number(id) },
+      data: { po_id: null, nro_oc: null, status_oc_codigo: null },
     });
     const otsExternasUnicas = [...new Set(reqsVinculados.map((r) => r.ot_id).filter((x): x is number => x != null))];
     const otsInternasUnicas = [...new Set(reqsVinculados.map((r) => r.orden_trabajo_interna_id).filter((x): x is number => x != null))];

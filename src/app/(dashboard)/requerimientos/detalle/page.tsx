@@ -1114,6 +1114,22 @@ function RequerimientosDetalleInner() {
       render: (v) => (v ? <Tag color={brand.navy}>{v}</Tag> : "-"),
     },
     {
+      // Cliente de la OT — el user pidió tenerlo visible y poder fijarlo en
+      // la lista de columnas. Lo movimos junto a OT para que aparezca arriba
+      // del dropdown y sea fácil de pinear/visualizar.
+      key: "cliente_nombre",
+      title: "Cliente",
+      dataIndex: "cliente_nombre",
+      width: 160,
+      ellipsis: true,
+      filters: obtenerValoresUnicos("cliente_nombre"),
+      filterSearch: true,
+      onFilter: (value, r) => r.cliente_nombre === value,
+      render: (v: string | null) =>
+        v ? <Tag color="purple" style={{ margin: 0, maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis" }}>📍 {v}</Tag>
+          : <Text type="secondary">—</Text>,
+    },
+    {
       key: "descripcion_ot",
       title: "Descripción OT",
       dataIndex: "descripcion_ot",
@@ -1355,16 +1371,6 @@ function RequerimientosDetalleInner() {
       filters: obtenerValoresUnicos("unidad_medida"),
       filterSearch: true,
       onFilter: (value, r) => r.unidad_medida === value,
-    },
-    {
-      key: "cliente_nombre",
-      title: "Cliente",
-      dataIndex: "cliente_nombre",
-      width: 130,
-      ellipsis: true,
-      filters: obtenerValoresUnicos("cliente_nombre"),
-      filterSearch: true,
-      onFilter: (value, r) => r.cliente_nombre === value,
     },
     {
       key: "fabricante_codigo",
