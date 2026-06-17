@@ -5,10 +5,11 @@ import { useParams, useRouter } from "next/navigation";
 import {
   Typography, Card, Button, Space, Table, Input, InputNumber, DatePicker, Alert,
   Popconfirm, message, Tag, Row, Col, Statistic, Spin, Empty, Switch, Tooltip, Select,
+  Modal,
 } from "antd";
 import {
   SaveOutlined, PlusOutlined, DeleteOutlined, RollbackOutlined,
-  EditOutlined, FileTextOutlined,
+  EditOutlined, FileTextOutlined, ImportOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
@@ -203,6 +204,121 @@ export default function EditarOCPage() {
         _ot_codigo: otHeredada,
       },
     ]);
+  };
+
+  // ─── Importar items desde otra OC (usar como plantilla) ────────────
+  // Permite cargar items de otra OC como filas nuevas en esta OC. Útil
+  // cuando se repite una compra similar (ej. service kit estándar). Los
+  // items importados se agregan como NUEVOS (id=null, es_adicional=true al
+  // guardar) — heredan descripción/cantidad/precio/UM de la OC fuente
+  // (con override oc_* si lo tienen), pero la OT y la OC destino son las
+  // de la OC actual.
+  const [importOpen, setImportOpen] = useState(false);
+  const [ocOpciones, setOcOpciones] = useState<Array<{ value: number; label: string; numero_po: string }>>([]);
+  const [ocLoading, setOcLoading] = useState(false);
+  const [ocSelectedId, setOcSelectedId] = useState<number | null>(null);
+  const [ocSelectedItems, setOcSelectedItems] = useState<Array<{
+    id: number; material_id: number | null; material_codigo: string | null;
+    descripcion: string | null; texto: string | null; unidad_medida: string | null;
+    cantidad: number; precio_unitario: number; moneda: string | null;
+    fabricante_codigo: string | null;
+  }>>([]);
+  const [ocItemsLoading, setOcItemsLoading] = useState(false);
+  const [importSelectedKeys, setImportSelectedKeys] = useState<number[]>([]);
+
+  const abrirImport = async () => {
+    setImportOpen(true);
+    setOcSelectedId(null); setOcSelectedItems([]); setImportSelectedKeys([]);
+    // Cargar lista de OCs (limit grande — el Select hace search local).
+    setOcLoading(true);
+    try {
+      const res = await fetch("/api/compras?limit=5000");
+      if (res.ok) {
+        const j = await res.json();
+        type OCBrief = { id: number; numero_po: string; proveedor_nombre: string | null; nombre: string | null };
+        const opts = (j.data as OCBrief[])
+          .filter((o) => o.id !== compraId) // excluir la OC actual
+          .map((o) => ({
+            value: o.id,
+            numero_po: o.numero_po,
+            label: `${o.numero_po}${o.proveedor_nombre ? " · " + o.proveedor_nombre : ""}${o.nombre ? " — " + o.nombre : ""}`,
+          }));
+        setOcOpciones(opts);
+      }
+    } finally { setOcLoading(false); }
+  };
+
+  // Cuando el user elige una OC en el Select, traemos sus items.
+  const cargarItemsDeOC = async (ocId: number) => {
+    setOcSelectedId(ocId);
+    setImportSelectedKeys([]);
+    setOcItemsLoading(true);
+    try {
+      const res = await fetch(`/api/compras/${ocId}`);
+      if (!res.ok) throw new Error("No se pudo cargar la OC fuente");
+      const j = await res.json();
+      type SourceItem = {
+        id: number;
+        material_id: number | null;
+        material_codigo: string | null;
+        descripcion: string | null;
+        texto: string | null;
+        unidad_medida: string | null;
+        cantidad: number | string;
+        precio_unitario: number | string | null;
+        moneda: string | null;
+        fabricante_codigo: string | null;
+        oc_descripcion?: string | null;
+        oc_cantidad?: number | string | null;
+        oc_precio_unitario?: number | string | null;
+        oc_unidad_medida?: string | null;
+      };
+      const items = (j.data.ot_repuestos as SourceItem[]).map((it) => ({
+        id: it.id,
+        material_id: it.material_id,
+        material_codigo: it.material_codigo,
+        // Override de OC tiene precedencia — refleja lo que el user editó en esa OC.
+        descripcion: it.oc_descripcion ?? it.descripcion,
+        texto: it.texto,
+        unidad_medida: it.oc_unidad_medida ?? it.unidad_medida ?? "UNIDAD",
+        cantidad: Number(it.oc_cantidad ?? it.cantidad ?? 0),
+        precio_unitario: Number(it.oc_precio_unitario ?? it.precio_unitario ?? 0),
+        moneda: it.moneda,
+        fabricante_codigo: it.fabricante_codigo,
+      }));
+      setOcSelectedItems(items);
+      // Por defecto preseleccionamos todo — el caso común es "copiar toda la OC".
+      setImportSelectedKeys(items.map((it) => it.id));
+    } catch (e) {
+      if (e instanceof Error) message.error(e.message);
+      setOcSelectedItems([]);
+    } finally { setOcItemsLoading(false); }
+  };
+
+  const confirmarImport = () => {
+    const aImportar = ocSelectedItems.filter((it) => importSelectedKeys.includes(it.id));
+    if (aImportar.length === 0) { message.warning("Seleccioná al menos un item"); return; }
+    const otHeredada = rows.find((r) => r._ot_codigo)?._ot_codigo ?? null;
+    setRows((prev) => [
+      ...prev,
+      ...aImportar.map((it) => ({
+        _localId: genLocalId(),
+        id: null,
+        material_id: it.material_id,
+        material_codigo: it.material_codigo,
+        descripcion: it.descripcion,
+        texto: it.texto,
+        unidad_medida: it.unidad_medida ?? "UNIDAD",
+        cantidad: it.cantidad,
+        precio_unitario: it.precio_unitario,
+        moneda: it.moneda ?? compra?.moneda ?? "USD",
+        fabricante_codigo: it.fabricante_codigo,
+        fecha_entrega_esperada: null,
+        _ot_codigo: otHeredada,
+      })),
+    ]);
+    message.success(`${aImportar.length} item(s) importado(s)`);
+    setImportOpen(false);
   };
 
   const deleteRow = (localId: string) => {
@@ -601,20 +717,74 @@ export default function EditarOCPage() {
         </Row>
       </Card>
 
-      <TablaItems columns={columns} rows={visibleRows} onAdd={addRow} />
+      <TablaItems columns={columns} rows={visibleRows} onAdd={addRow} onImport={abrirImport} />
 
       <div style={{ marginTop: 16, padding: 12, background: "#f6f6f6", borderRadius: 4, fontSize: 11, color: brand.textSecondary }}>
         <Tag color="orange">Tip</Tag>
         Las filas que agregás se guardan como items libres (sin material del catálogo) y se vinculan a la primera OT existente de la OC.
         Si la OC no tiene ninguna OT asociada, no podrás agregar items libres — primero tenés que generar la OC normal y luego ajustar acá.
       </div>
+
+      <Modal
+        title={<Space><ImportOutlined style={{ color: brand.navy }} /><span>Importar items desde otra OC</span></Space>}
+        open={importOpen}
+        onCancel={() => setImportOpen(false)}
+        onOk={confirmarImport}
+        okText={`Importar ${importSelectedKeys.length || ""} items`.trim()}
+        okButtonProps={{ disabled: importSelectedKeys.length === 0, type: "primary" }}
+        cancelText="Cancelar"
+        width={780}
+        destroyOnHidden
+      >
+        <Text type="secondary" style={{ display: "block", marginBottom: 12, fontSize: 12 }}>
+          Elegí una OC fuente y copiá sus items como filas nuevas (libres) en esta OC. Cantidad, precio, descripción y UM se traen desde la OC fuente — podés ajustar después acá.
+        </Text>
+        <Space direction="vertical" style={{ width: "100%" }} size={12}>
+          <Select
+            showSearch
+            placeholder="Buscá OC por número, proveedor o nombre…"
+            value={ocSelectedId ?? undefined}
+            onChange={(v) => v && cargarItemsDeOC(v)}
+            options={ocOpciones}
+            optionFilterProp="label"
+            loading={ocLoading}
+            style={{ width: "100%" }}
+            notFoundContent={ocLoading ? "Cargando…" : "Sin OCs"}
+          />
+          {ocSelectedId && (
+            <Table
+              size="small"
+              rowKey="id"
+              loading={ocItemsLoading}
+              dataSource={ocSelectedItems}
+              pagination={false}
+              scroll={{ y: 360 }}
+              rowSelection={{
+                selectedRowKeys: importSelectedKeys,
+                onChange: (keys) => setImportSelectedKeys(keys as number[]),
+              }}
+              columns={[
+                { title: "Código", dataIndex: "material_codigo", width: 100, render: (v: string | null) => v ?? <Text type="secondary">—</Text> },
+                { title: "Descripción", dataIndex: "descripcion", render: (v: string | null) => v ?? <Text type="secondary">—</Text> },
+                { title: "UM", dataIndex: "unidad_medida", width: 70 },
+                { title: "Cant.", dataIndex: "cantidad", width: 80, align: "right" as const, render: (v: number) => v.toLocaleString("es-PE") },
+                {
+                  title: "P. Unit.", dataIndex: "precio_unitario", width: 100, align: "right" as const,
+                  render: (v: number, r: { moneda: string | null }) =>
+                    `${r.moneda ?? ""} ${Number(v).toLocaleString("es-PE", { minimumFractionDigits: 2 })}`,
+                },
+              ]}
+            />
+          )}
+        </Space>
+      </Modal>
     </div>
   );
 }
 
 function TablaItems({
-  columns, rows, onAdd,
-}: { columns: ColumnsType<ItemRow>; rows: ItemRow[]; onAdd: () => void }) {
+  columns, rows, onAdd, onImport,
+}: { columns: ColumnsType<ItemRow>; rows: ItemRow[]; onAdd: () => void; onImport: () => void }) {
   const { columnas, components, TableDragWrapper } = useColumnasRedimensionables<ItemRow>(
     columns, "compras-editar-items-v1",
   );
@@ -631,9 +801,14 @@ function TablaItems({
         sticky={STICKY_HEADER}
         bordered
         footer={() => (
-          <Button type="dashed" block icon={<PlusOutlined />} onClick={onAdd}>
-            Agregar fila (item libre)
-          </Button>
+          <Space direction="vertical" style={{ width: "100%" }} size={6}>
+            <Button type="dashed" block icon={<PlusOutlined />} onClick={onAdd}>
+              Agregar fila (item libre)
+            </Button>
+            <Button type="dashed" block icon={<ImportOutlined />} onClick={onImport}>
+              Importar desde otra OC (usar como plantilla)
+            </Button>
+          </Space>
         )}
       />
     </TableDragWrapper>
