@@ -601,24 +601,23 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
               </Descriptions.Item>
               <Descriptions.Item label="Nro Factura">
                 {editing ? (
-                  // Multi-valor: cada tag es un número de factura. Persistimos
-                  // como string comma-separated en `nro_factura`. Mode "tags"
-                  // permite escribir libre y separar con Enter, sin lista de
-                  // sugerencias (open=false).
-                  <Select
-                    mode="tags"
-                    value={nroFactura ? nroFactura.split(",").map((s) => s.trim()).filter(Boolean) : []}
-                    onChange={(arr: string[]) => setNroFactura(arr.map((s) => s.trim()).filter(Boolean).join(", "))}
-                    tokenSeparators={[",", ";"]}
-                    open={false}
-                    suffixIcon={null}
-                    placeholder="Escribí cada nro y Enter"
-                    style={{ width: "100%" }}
+                  // Multi-valor: el user escribe los números separados por
+                  // coma o salto de línea ("11111, 2222" o uno por línea).
+                  // Antes era un Select mode="tags", pero si el user escribía
+                  // un número y guardaba sin presionar Enter, AntD no lo
+                  // commiteaba como tag y se perdía. TextArea plano evita
+                  // ese problema — el texto se guarda tal cual y la vista de
+                  // lectura/contabilidad lo splittea por coma.
+                  <Input.TextArea
+                    value={nroFactura}
+                    onChange={(e) => setNroFactura(e.target.value)}
+                    placeholder="11111111, 2222222 (uno por coma)"
+                    autoSize={{ minRows: 1, maxRows: 3 }}
                   />
                 ) : (
-                  // Read: split por coma y render en líneas separadas.
+                  // Read: split por coma/newline y render en líneas separadas.
                   (() => {
-                    const partes = (compra.nro_factura ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+                    const partes = (compra.nro_factura ?? "").split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
                     if (partes.length === 0) return "-";
                     return (
                       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -630,19 +629,15 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
               </Descriptions.Item>
               <Descriptions.Item label="Nro Guía">
                 {editing ? (
-                  <Select
-                    mode="tags"
-                    value={nroGuia ? nroGuia.split(",").map((s) => s.trim()).filter(Boolean) : []}
-                    onChange={(arr: string[]) => setNroGuia(arr.map((s) => s.trim()).filter(Boolean).join(", "))}
-                    tokenSeparators={[",", ";"]}
-                    open={false}
-                    suffixIcon={null}
-                    placeholder="Escribí cada nro y Enter"
-                    style={{ width: "100%" }}
+                  <Input.TextArea
+                    value={nroGuia}
+                    onChange={(e) => setNroGuia(e.target.value)}
+                    placeholder="11111111, 2222222 (uno por coma)"
+                    autoSize={{ minRows: 1, maxRows: 3 }}
                   />
                 ) : (
                   (() => {
-                    const partes = (compra.nro_guia ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+                    const partes = (compra.nro_guia ?? "").split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
                     if (partes.length === 0) return "-";
                     return (
                       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
