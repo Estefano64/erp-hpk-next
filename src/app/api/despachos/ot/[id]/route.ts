@@ -91,25 +91,36 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         const material = await tx.material.findUnique({ where: { material_id: rep.material_id } });
         if (!material) { errores.push({ id: reqId, error: "Material no encontrado" }); continue; }
 
-        // Si el item ya fue consumido del almacén (CONSUMIDO_ALMACEN), el
-        // stock ya se decrementó y se registró el movimiento SALIDA en
-        // /consumir-de-almacen. Acá SOLO entregamos al técnico: actualizamos
-        // cantidad_recibida + status_oc. No tocamos stock ni creamos movimiento.
-        const yaConsumido = rep.status_oc_codigo === "CONSUMIDO_ALMACEN";
+        // Si el item ya fue consumido (CONSUMIDO_ALMACEN o CONSUMIDO_OC_ABIERTA),
+        // el "stock" ya salió en su flujo previo:
+        //   - CONSUMIDO_ALMACEN     → decremento real de Material.stock_actual
+        //                             + movimiento SALIDA registrado.
+        //   - CONSUMIDO_OC_ABIERTA  → consumo del stock fijo de la OC abierta
+        //                             (CompraDetalle.cantidad_recibida) — no hay
+        //                             material en catálogo que tocar.
+        // En ambos casos el despacho actual SOLO entrega al técnico: actualiza
+        // cantidad_recibida + status_oc del OTRepuesto. No toca stock ni crea
+        // movimiento (eso ya pasó).
+        const statusPrevio = rep.status_oc_codigo;
+        const yaConsumido = statusPrevio === "CONSUMIDO_ALMACEN" || statusPrevio === "CONSUMIDO_OC_ABIERTA";
         if (yaConsumido) {
           const aDespachar = pendiente;
           const nuevaDespachada = yaDespachado.plus(aDespachar);
           const quedaCompleto = nuevaDespachada.gte(cantTotal);
           const obsPrev = rep.observaciones ? `${rep.observaciones}\n` : "";
           const etiqueta = quedaCompleto ? "completo" : `parcial (${aDespachar} de ${pendiente} pendiente)`;
+          const fuente = statusPrevio === "CONSUMIDO_OC_ABIERTA" ? "OC abierta" : "almacén";
           await tx.oTRepuesto.update({
             where: { id: rep.id },
             data: {
-              status_oc_codigo: quedaCompleto ? "ENTREGADO" : "CONSUMIDO_ALMACEN",
+              // Si quedó completo → ENTREGADO. Si parcial → preserva el status
+              // previo (CONSUMIDO_ALMACEN o CONSUMIDO_OC_ABIERTA) para que
+              // siga apareciendo en despachos hasta que se complete.
+              status_oc_codigo: quedaCompleto ? "ENTREGADO" : statusPrevio,
               cantidad_recibida: nuevaDespachada,
               fecha_entrega_real: quedaCompleto ? fechaDespacho : rep.fecha_entrega_real,
               fecha_salida_almacen: rep.fecha_salida_almacen ?? fechaDespacho,
-              observaciones: `${obsPrev}Entregado al técnico el ${fechaDespacho.toLocaleDateString("es-PE")} — ${etiqueta} (${usuario})${personaRecibe ? ` — recibe: ${personaRecibe}` : ""}${comentariosBulk ? ` · ${comentariosBulk}` : ""}`,
+              observaciones: `${obsPrev}Entregado al técnico desde ${fuente} el ${fechaDespacho.toLocaleDateString("es-PE")} — ${etiqueta} (${usuario})${personaRecibe ? ` — recibe: ${personaRecibe}` : ""}${comentariosBulk ? ` · ${comentariosBulk}` : ""}`,
             },
           });
           if (quedaCompleto) ok.push(rep.id);

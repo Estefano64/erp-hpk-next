@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { rutaFirmaDe } from "@/lib/firmas";
+import { rutaFirmaDe, nombreParaFirma } from "@/lib/firmas";
 import { formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
 import { areaTallerLabel } from "@/lib/areas-taller";
 
@@ -183,9 +183,13 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
     // Firmas: si el nombre del usuario coincide con un archivo en public/firmas/
     // (mapeo en src/lib/firmas.ts), se renderiza la imagen sobre el nombre.
-    // Si no coincide, solo se muestra el nombre como texto.
+    // Si no coincide, solo se muestra el nombre como texto. Para nombres
+    // genéricos como "Logistica" se usa el alias (Miriam) tanto en la firma
+    // como en el rótulo, así no quedan en blanco en OCs viejas.
     const firmaElaboro = rutaFirmaDe(compra.usuario_solicita);
     const firmaAprobo = rutaFirmaDe(compra.usuario_aprueba);
+    const nombreElaboro = nombreParaFirma(compra.usuario_solicita);
+    const nombreAprobo = nombreParaFirma(compra.usuario_aprueba);
     const renderFirma = (rutaImg: string | null, nombre: string) =>
       rutaImg
         ? `<img class="img-firma" src="${esc(rutaImg)}" alt="Firma" /><div class="nombre">${esc(nombre)}</div>`
@@ -473,11 +477,11 @@ export async function GET(_req: NextRequest, { params }: Params) {
     <tr>
       <td>
         <div class="rol">ELABORADO POR:</div>
-        ${renderFirma(firmaElaboro, compra.usuario_solicita ?? "")}
+        ${renderFirma(firmaElaboro, nombreElaboro ?? compra.usuario_solicita ?? "")}
       </td>
       <td>
         <div class="rol">APROBADO POR:</div>
-        ${renderFirma(firmaAprobo, compra.usuario_aprueba ?? "_______________")}
+        ${renderFirma(firmaAprobo, nombreAprobo ?? compra.usuario_aprueba ?? "_______________")}
       </td>
       <td>
         <div class="rol">ACEPTADO POR:</div>
@@ -500,8 +504,8 @@ export async function GET(_req: NextRequest, { params }: Params) {
   </div>
 
   <div class="pie">
-    <span class="usuario">Elaborado por: ${esc(compra.usuario_solicita ?? "—")}</span>
-    <span class="aprobador">Aprobado por: ${esc(compra.usuario_aprueba ?? "—")}</span>
+    <span class="usuario">Elaborado por: ${esc(nombreElaboro ?? compra.usuario_solicita ?? "—")}</span>
+    <span class="aprobador">Aprobado por: ${esc(nombreAprobo ?? compra.usuario_aprueba ?? "—")}</span>
     <span class="formato">FORMATO OC - Versión: 01</span>
   </div>
 
