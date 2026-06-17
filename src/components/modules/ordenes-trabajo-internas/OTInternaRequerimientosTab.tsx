@@ -361,11 +361,8 @@ export default function OTInternaRequerimientosTab({ otInternaId, onUpdated }: P
       if (!it.descripcion?.trim()) errors.push(`Item ${idx + 1}: descripción requerida`);
       if (!it.cantidad || it.cantidad <= 0) errors.push(`Item ${idx + 1}: cantidad debe ser > 0`);
       if (it.tipo_codigo === "MAC" && !it.material_codigo) errors.push(`Item ${idx + 1}: tipo MAC requiere material`);
-      // F. requerida es OBLIGATORIA — sin ella el flujo de aprobación no
-      // puede planificar entrega, así que rechazamos al guardar.
-      if (!it.fecha_requerida) {
-        errors.push(`Item ${idx + 1}: fecha requerida es obligatoria (sin ella no se puede enviar a aprobación)`);
-      }
+      // F. requerida es OPCIONAL al CREAR; se vuelve obligatoria al ENVIAR a
+      // aprobación (lo valida el endpoint /enviar).
     }
     if (errors.length > 0) {
       messageApi.error(errors[0]);
@@ -1401,7 +1398,7 @@ export default function OTInternaRequerimientosTab({ otInternaId, onUpdated }: P
                 },
               },
               {
-                title: <span>F. requerida <Text type="danger">*</Text></span>, key: "freq", width: 130,
+                title: <span>F. requerida</span>, key: "freq", width: 130,
                 render: (_: unknown, r: DraftItem) => (
                   <DatePicker
                     size="small" style={{ width: "100%" }}
@@ -1678,8 +1675,7 @@ export default function OTInternaRequerimientosTab({ otInternaId, onUpdated }: P
           <Form.Item
             name="fecha_requerida"
             label="Fecha requerida"
-            tooltip="Obligatoria para poder enviar el requerimiento a aprobación."
-            rules={[{ required: true, message: "Fecha requerida obligatoria" }]}
+            tooltip="Opcional al crear. Se vuelve obligatoria al enviar el requerimiento a aprobación."
           >
             <DatePicker
               style={{ width: 200 }}
