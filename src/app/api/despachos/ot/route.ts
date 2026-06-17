@@ -16,6 +16,9 @@ export async function GET(_req: NextRequest) {
     const items = await prisma.oTRepuesto.findMany({
       where: {
         status_requerimiento_codigo: "APROBADO",
+        // Excluir items "libres" agregados desde el editor de OC — esos
+        // solo van al PDF de OC, no al despacho del técnico.
+        AND: [{ OR: [{ solo_para_oc: false }, { solo_para_oc: null }] }],
         // Removido `material_id: { not: null }` — los items free (CAD) tienen
         // material_id NULL pero igual deben aparecer para despacho a la OT.
         //

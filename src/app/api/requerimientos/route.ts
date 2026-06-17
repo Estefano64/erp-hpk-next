@@ -23,7 +23,12 @@ export async function GET(req: NextRequest) {
     const page = Math.max(1, Number(sp.get("page") ?? 1));
     const limit = Math.min(10000, Math.max(1, Number(sp.get("limit") ?? 100)));
 
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = {
+      // Excluir items "libres" agregados desde el editor de OC — esos
+      // solo deben figurar en el PDF/editor de la OC, no como reqs.
+      // Usamos AND para no chocar con el OR de search/ot que se setea abajo.
+      AND: [{ OR: [{ solo_para_oc: false }, { solo_para_oc: null }] }],
+    };
     const otId = sp.get("ot_id");
     if (otId) where.ot_id = Number(otId);
 

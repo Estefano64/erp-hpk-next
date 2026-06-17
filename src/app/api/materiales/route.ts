@@ -13,6 +13,13 @@ export async function GET(req: NextRequest) {
     const categoria = searchParams.get("categoria") ?? "";
     const clasificacion = searchParams.get("clasificacion") ?? "";
     const fabricante = searchParams.get("fabricante") ?? "";
+    // Filtro opcional: cuando es "true", excluye materiales con código no
+    // numérico — esos son entries auto-creados desde flujos como ingreso-po
+    // de OCs abiertas (ej. "BC-PB8931" para BC Bearing) y NO son catalogados
+    // formales (los catalogados tienen código de 6+ dígitos numéricos). La
+    // tabla de /materiales pasa este flag; otros consumidores (OC editor,
+    // requerimientos, etc.) no lo pasan para seguir viendo todo.
+    const soloCatalogados = searchParams.get("solo_catalogados") === "true";
 
     const where: Record<string, unknown> = { activo: true };
     if (search) {
@@ -27,6 +34,15 @@ export async function GET(req: NextRequest) {
     if (categoria) where.categoria_codigo = categoria;
     if (clasificacion) where.clasificacion_codigo = clasificacion;
     if (fabricante) where.fabricante_codigo = fabricante;
+    // Heurística simple: los auto-creados (ej. "BC-PB8931") llevan guión en
+    // el código; los catalogados formales son código numérico puro de 6+ dígitos
+    // ("000123"). Usamos AND para no colisionar con el OR de búsqueda.
+    if (soloCatalogados) {
+      where.AND = [
+        ...((where.AND as object[]) ?? []),
+        { codigo: { not: { contains: "-" } } },
+      ];
+    }
 
     const [data, total] = await Promise.all([
       prisma.material.findMany({

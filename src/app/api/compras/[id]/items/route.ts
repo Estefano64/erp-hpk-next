@@ -112,9 +112,10 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
               { code: "SIN_OT" },
             );
           }
-          // Items "libres" agregados desde el editor de OC. Como no tienen
-          // req previo, sus valores originales y los oc_* son iguales — el
-          // user los ve tanto en /requerimientos como en el PDF de OC.
+          // Items "libres" agregados desde el editor de OC. Solo viven en
+          // el PDF y editor de OC — NO aparecen en /requerimientos, /detalle,
+          // /despachos, aprobaciones ni tabs de OT. El flag solo_para_oc=true
+          // hace que todas las vistas de req los filtren fuera.
           await tx.oTRepuesto.create({
             data: {
               ot_id: otIdDefault,
@@ -136,6 +137,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
               fecha_solicitud: new Date(),
               tipo_codigo: "MAC",
               es_adicional: true,
+              solo_para_oc: true,
               usuario_solicita: compra.usuario_solicita ?? "Logistica",
               // Override = original para items nuevos (no tienen req previo).
               oc_descripcion: it.descripcion ?? null,

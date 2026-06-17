@@ -23,7 +23,10 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
       return NextResponse.json({ error: "ID inválido" }, { status: 400 });
     }
     const data = await prisma.oTRepuesto.findMany({
-      where: { orden_trabajo_interna_id: otInternaId },
+      where: {
+        orden_trabajo_interna_id: otInternaId,
+        OR: [{ solo_para_oc: false }, { solo_para_oc: null }],
+      },
       include: {
         material: { select: { codigo: true, descripcion: true, fabricante_codigo: true, unidad_medida_codigo: true, precio: true, moneda_codigo: true } },
         status_requerimiento: { select: { codigo: true, nombre: true } },
