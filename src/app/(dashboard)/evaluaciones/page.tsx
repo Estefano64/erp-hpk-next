@@ -328,7 +328,7 @@ export default function EvaluacionesPage() {
             <Button
               type="text"
               icon={<EyeOutlined />}
-              onClick={() => router.push(`/ordenes-trabajo/${r.ot_id}/evaluacion`)}
+              onClick={() => router.push(`/ordenes-trabajo/${r.ot_id}/evaluacion?from=evaluaciones`)}
             />
           </Tooltip>
           {(r.estado === "BORRADOR" || r.estado === "RECHAZADA") && (
