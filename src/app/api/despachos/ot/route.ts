@@ -105,13 +105,28 @@ export async function GET(_req: NextRequest) {
           && poRecibida
           && it.status_oc_codigo !== "ENTREGADO"
           && it.status_oc_codigo !== "ANULADO";
+        // Caso especial CONSUMIDO_*: items consumidos de almacén / OC abierta
+        // que aún no se entregaron formalmente al técnico (status_oc sigue
+        // siendo CONSUMIDO_* y no ENTREGADO). Cubre dos sub-casos:
+        //   (a) NUEVO flujo (post-fix): cantidad_recibida=0 → cant_pendiente=cant
+        //       → ya pasa por `cantPendiente > 0`, no hace falta esta rama.
+        //   (b) LEGACY: items consumidos antes del fix con cantidad_recibida=cant
+        //       (o casos raros con cantidad_recibida > cantidad) → cant_pendiente
+        //       ≤ 0 y el filtro los excluía. Esta rama los rescata para que el
+        //       almacenero pueda cerrar el despacho final.
+        const esConsumidoPendDespacho =
+          yaConsumido
+          && cantPendiente <= 0
+          && it.status_oc_codigo !== "ENTREGADO"
+          && it.status_oc_codigo !== "ANULADO";
         // Lógica de "puede despachar":
         //   - Ya consumido (almacén o OC abierta): siempre listo para entrega.
         //   - FREE con OC recibida: listo (el stock ya está físicamente).
+        //   - Consumido legacy (pend=0): listo (solo cierre formal).
         //   - MAC desde OC: hay stock suficiente en almacén.
         //   - FREE (sin material) normal: la OC asociada ya fue recibida.
-        const puedeDespachar = (cantPendiente > 0 || esFreeOCRecibida) && (
-          yaConsumido || esFreeOCRecibida
+        const puedeDespachar = (cantPendiente > 0 || esFreeOCRecibida || esConsumidoPendDespacho) && (
+          yaConsumido || esFreeOCRecibida || esConsumidoPendDespacho
             ? true
             : esFree
               ? poRecibida
@@ -138,6 +153,7 @@ export async function GET(_req: NextRequest) {
           _es_consumido_almacen: esConsumidoAlmacen,
           _es_consumido_oc_abierta: esConsumidoOCAbierta,
           _es_free_oc_recibida: esFreeOCRecibida,
+          _es_consumido_pend_despacho: esConsumidoPendDespacho,
           _cant_pendiente: cantPendiente,
           _puede_despachar: puedeDespachar,
           _po_status: poStatus,
@@ -145,7 +161,7 @@ export async function GET(_req: NextRequest) {
           _motivo_pendiente: motivoPendiente,
         };
       })
-      .filter((it) => it._cant_pendiente > 0 || it._es_free_oc_recibida);
+      .filter((it) => it._cant_pendiente > 0 || it._es_free_oc_recibida || it._es_consumido_pend_despacho);
 
     type ItemConCalc = (typeof pendientes)[number];
 

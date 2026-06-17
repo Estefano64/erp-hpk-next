@@ -90,8 +90,13 @@ export async function POST(req: NextRequest, { params }: Ctx) {
           continue;
         }
 
-        // De acá en adelante son items MAC — pendiente debe ser > 0.
-        if (pendiente.lte(0)) { errores.push({ id: reqId, error: "Ya despachado completo" }); continue; }
+        // De acá en adelante son items MAC. Para items YA CONSUMIDOS
+        // (CONSUMIDO_ALMACEN / CONSUMIDO_OC_ABIERTA) NO bloqueamos por
+        // pendiente=0 — esos casos legacy se cierran formalmente abajo
+        // sin tocar cantidad_recibida. Para items MAC normales sí: si
+        // pendiente=0 ya está despachado.
+        const esYaConsumido = rep.status_oc_codigo === "CONSUMIDO_ALMACEN" || rep.status_oc_codigo === "CONSUMIDO_OC_ABIERTA";
+        if (pendiente.lte(0) && !esYaConsumido) { errores.push({ id: reqId, error: "Ya despachado completo" }); continue; }
 
         // ─── Items MAC (con material catálogo): flujo normal ──────────
         const material = await tx.material.findUnique({ where: { material_id: rep.material_id } });
@@ -110,11 +115,17 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         const statusPrevio = rep.status_oc_codigo;
         const yaConsumido = statusPrevio === "CONSUMIDO_ALMACEN" || statusPrevio === "CONSUMIDO_OC_ABIERTA";
         if (yaConsumido) {
-          const aDespachar = pendiente;
+          // Caso legacy: pendiente=0 pero el item NO fue formalmente entregado
+          // (status sigue siendo CONSUMIDO_*, no ENTREGADO). Solo cerramos:
+          // ENTREGADO sin tocar cantidad_recibida (ya está al máximo). Antes
+          // el endpoint erraba "Ya despachado completo" — ahora lo aceptamos.
+          const aDespachar = pendiente.gt(0) ? pendiente : new Prisma.Decimal(0);
           const nuevaDespachada = yaDespachado.plus(aDespachar);
           const quedaCompleto = nuevaDespachada.gte(cantTotal);
           const obsPrev = rep.observaciones ? `${rep.observaciones}\n` : "";
-          const etiqueta = quedaCompleto ? "completo" : `parcial (${aDespachar} de ${pendiente} pendiente)`;
+          const etiqueta = aDespachar.gt(0)
+            ? (quedaCompleto ? "completo" : `parcial (${aDespachar} de ${pendiente} pendiente)`)
+            : "cierre formal — stock ya entregado en consumo previo";
           const fuente = statusPrevio === "CONSUMIDO_OC_ABIERTA" ? "OC abierta" : "almacén";
           await tx.oTRepuesto.update({
             where: { id: rep.id },
