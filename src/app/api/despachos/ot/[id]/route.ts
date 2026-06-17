@@ -228,6 +228,14 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       }
 
       return { ok, parciales, errores };
+    }, {
+      // El despacho bulk puede tocar muchos items (cada uno con findUnique,
+      // updates, movimiento, etc.). El timeout default de 5s no alcanza
+      // cuando se despachan 8+ items de golpe — Prisma corta la TX y tira
+      // "Transaction not found / Transaction ID is invalid". Subimos a 30s
+      // con maxWait holgado para no fallar bajo carga.
+      maxWait: 10_000,
+      timeout: 30_000,
     });
 
     const partes: string[] = [];
