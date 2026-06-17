@@ -140,7 +140,14 @@ function detectarConflictos(filas: PlanRow[]): Set<number> {
   const byResource = new Map<string, PlanRow[]>();
   for (const r of filas) {
     if (!r.fecha_inicio || !r.fecha_fin) continue;
-    const key = `${r.tecnico ?? ""}|${r.maquina ?? ""}`;
+    const tec = (r.tecnico ?? "").trim();
+    const maq = (r.maquina ?? "").trim();
+    // Sin recurso asignado (ni operario ni equipo) no hay nada con qué chocar:
+    // no se agrupan ni se marcan como conflicto. Antes todas las tareas sin
+    // recurso caían bajo la misma key "|" y se marcaban entre sí como
+    // "conflicto del mismo recurso" aunque no compartieran ninguno.
+    if (!tec && !maq) continue;
+    const key = `${tec}|${maq}`;
     if (!byResource.has(key)) byResource.set(key, []);
     byResource.get(key)!.push(r);
   }
