@@ -1,5 +1,6 @@
 import { MODELOS_EVALUACION } from "./EvaluacionFormulario";
 import { CATALOGOS_EVALUACION } from "@/lib/evaluacion-catalogos";
+import { VAS, type CampoMedida } from "@/lib/evaluacion-campos";
 
 interface OTDetalle {
   ot: string | null;
@@ -472,6 +473,22 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
   };
   const p = prefijos[modeloEvaluacion] || "t1";
 
+  // Renderiza un CampoMedida del esquema compartido (`@/lib/evaluacion-campos`)
+  // a fila(s) HTML. Para "puntos" emite una fila por punto (B1, B2, B3...).
+  // Es la MISMA definición que consume el formulario → clave y tipo no se
+  // pueden desincronizar.
+  const renderCampoMedida = (c: CampoMedida): string => {
+    const full = `${p}_${c.key}`;
+    if (c.tipo === "puntos") {
+      return Array.from({ length: c.puntos ?? 0 }, (_, i) => i + 1)
+        .map((n) => renderMedida(`${full}_${c.sufijo}${n}`, `${c.label} ${c.letra}${n}`, "xy"))
+        .join("");
+    }
+    return renderMedida(full, c.label, c.tipo);
+  };
+  // Atajo: renderiza el campo de vástago por su key.
+  const C = (k: string) => renderCampoMedida(VAS[k]);
+
   // Armar secciones
   let seccionesHTML = "";
   let numSec = 2;
@@ -535,24 +552,20 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
     }
 
     // ─── Vastago principal ───
+    // Medidas del vástago desde el esquema compartido (single source con el form).
+    // El "Diámetro Vástago" se emite como 3 puntos (B1-B3) via tipo "puntos".
     const medidasVasTel = [
-      renderMedida(`${p}_vas_desp`, "Diametro Espiga (A)", "xy"),
-      // Diámetro Vástago se mide en 3 puntos (B1-B3) — el form usa TablaPuntos
-      // con prefijo `{p}_vas_dext` + sufijo "b" → claves `{p}_vas_dext_b{1,2,3}_{x,y}`.
-      // (Antes se leía `{p}_vas_dext`/`{p}_vas_dsell` como un solo X/Y, claves que
-      //  el form nunca escribe → salían filas "Exterior (B)"/"Sellado (C)" con "—".)
-      renderMedida(`${p}_vas_dext_b1`, "Diametro Vástago B1", "xy"),
-      renderMedida(`${p}_vas_dext_b2`, "Diametro Vástago B2", "xy"),
-      renderMedida(`${p}_vas_dext_b3`, "Diametro Vástago B3", "xy"),
-      renderMedida(`${p}_vas_dcoj`, "Diametro Cojinete (D)", "xy"),
-      renderMedida(`${p}_vas_lcro`, "Longitud Cromo (E)", "single"),
-      renderMedida(`${p}_vas_ltot`, "Longitud Total (F)", "single"),
-      renderMedida(`${p}_vas_long_espiga_g`, "Longitud de Espiga G", "single"),
-      renderMedida(`${p}_vas_dext_ojo_h`, "Diám. Ext. Ojo H", "xy"),
+      C("vas_desp"),
+      C("vas_dext"),
+      C("vas_dcoj"),
+      C("vas_lcro"),
+      C("vas_ltot"),
+      C("vas_long_espiga_g"),
+      C("vas_dext_ojo_h"),
       renderRadioLinea(`${p}_vas_elem_sujecion`, "Elemento de sujeción"),
-      renderMedida(`${p}_vas_dint_ojo_i`, "Diám. Int. Ojo I", "xy"),
-      renderMedida(`${p}_vas_dint_j`, "Diám. Int. J", "xy"),
-      renderMedida(`${p}_vas_ancho_ojo`, "Ancho de Ojo", "single"),
+      C("vas_dint_ojo_i"),
+      C("vas_dint_j"),
+      C("vas_ancho_ojo"),
     ].join("");
     seccionesHTML += renderSeccionComponente(
       numSec++,
@@ -1038,25 +1051,22 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
     // Vastago
     if (!modeloEvaluacion.startsWith("acum")) {
       const muestraCancamoVastago = esCilHidraulico; // CHVS/CHP/CHPDV
+      // Medidas del vástago desde el esquema compartido (single source con el form).
       const medidasVasBase = [
-        renderMedida(`${p}_vas_desp`, "Diametro Espiga (A)", "xy"),
-        // Diámetro Vástago en 3 puntos (B1-B3): el form usa TablaPuntos con
-        // prefijo `{p}_vas_dext` + sufijo "b" → `{p}_vas_dext_b{1,2,3}_{x,y}`.
-        renderMedida(`${p}_vas_dext_b1`, "Diametro Vástago B1", "xy"),
-        renderMedida(`${p}_vas_dext_b2`, "Diametro Vástago B2", "xy"),
-        renderMedida(`${p}_vas_dext_b3`, "Diametro Vástago B3", "xy"),
-        renderMedida(`${p}_vas_dcoj`, "Diametro Cojinete (D)", "xy"),
-        renderMedida(`${p}_vas_lcro`, "Longitud Cromo (E)", "single"),
-        renderMedida(`${p}_vas_ltot`, "Longitud Total (F)", "single"),
-        renderMedida(`${p}_vas_long_espiga_g`, "Longitud de Espiga G", "single"),
+        C("vas_desp"),
+        C("vas_dext"),
+        C("vas_dcoj"),
+        C("vas_lcro"),
+        C("vas_ltot"),
+        C("vas_long_espiga_g"),
       ].join("");
       const medidasVasExtra = [
         ...(muestraCancamoVastago ? [renderRadioLinea(`${p}_vas_tipo_cancamo`, "Tipo de cáncamo")] : []),
-        renderMedida(`${p}_vas_dext_ojo_h`, "Diám. Ext. Ojo H", "xy"),
+        C("vas_dext_ojo_h"),
         renderRadioLinea(`${p}_vas_elem_sujecion`, "Elemento de sujeción"),
-        renderMedida(`${p}_vas_dint_ojo_i`, "Diám. Int. Ojo I", "xy"),
-        renderMedida(`${p}_vas_dint_j`, "Diám. Int. J", "xy"),
-        renderMedida(`${p}_vas_ancho_ojo`, "Ancho de Ojo", "single"),
+        C("vas_dint_ojo_i"),
+        C("vas_dint_j"),
+        C("vas_ancho_ojo"),
       ].join("");
       const medidasVas = medidasVasBase + medidasVasExtra;
       seccionesHTML += renderSeccionComponente(numSec++, "Vastago", imgVastago, "Vastago (A-J)", medidasVas, `${p}_vas`, []);
