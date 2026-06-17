@@ -70,23 +70,28 @@ export async function GET(_req: NextRequest) {
         const yaDespachado = Number(it.cantidad_recibida ?? 0);
         const cantPendiente = Math.max(0, cantTotal - yaDespachado);
         const esFree = it.material_id == null;
-        // Origen del item para el despacho al técnico:
-        //   "stock"      → ya fue sacado del almacén vía consumir-de-almacen,
-        //                  el stock fue decrementado y queda pendiente la entrega
-        //                  al técnico. El despacho NO debe decrementar de nuevo.
-        //   "oc"         → flujo normal de OC recibida (con o sin material).
+        // Origen del item para el despacho al técnico. Dos casos especiales:
+        //   "stock"        → CONSUMIDO_ALMACEN: stock ya descontado en
+        //                    consumir-de-almacen, queda solo entrega al técnico.
+        //   "oc_abierta"   → CONSUMIDO_OC_ABIERTA: ya se reservó del stock
+        //                    fijo de la OC abierta, también queda solo
+        //                    entrega al técnico. El despacho NO debe tocar
+        //                    stock catálogo (no aplica).
+        //   "oc"           → flujo normal de OC recibida (con o sin material).
         const esConsumidoAlmacen = it.status_oc_codigo === "CONSUMIDO_ALMACEN";
+        const esConsumidoOCAbierta = it.status_oc_codigo === "CONSUMIDO_OC_ABIERTA";
+        const yaConsumido = esConsumidoAlmacen || esConsumidoOCAbierta;
         const stockMat = Number(it.material?.stock_actual ?? 0);
         const poStatus = it.compra?.status_oc_codigo ?? null;
         const poRecibida = it.po_id == null
           ? stockMat > 0
           : poStatus === "ENTREGADO" || poStatus === "INCOMPLETO" || poStatus === "COMPLETO";
-        // Lógica de "puede despachar" según el origen del item:
-        //   - CONSUMIDO_ALMACEN: el stock ya salió, siempre se puede entregar.
+        // Lógica de "puede despachar":
+        //   - Ya consumido (almacén o OC abierta): siempre listo para entrega.
         //   - MAC desde OC: hay stock suficiente en almacén.
         //   - FREE (sin material): la OC asociada ya fue recibida.
         const puedeDespachar = cantPendiente > 0 && (
-          esConsumidoAlmacen
+          yaConsumido
             ? true
             : esFree
               ? poRecibida
@@ -97,9 +102,9 @@ export async function GET(_req: NextRequest) {
         // recepcionar", "sin stock" para entender el bloqueo.
         let motivoPendiente: "sin_oc" | "oc_pendiente" | "sin_stock" | "ok" | null = null;
         if (!puedeDespachar && cantPendiente > 0) {
-          if (it.po_id == null && !esConsumidoAlmacen && stockMat === 0) {
+          if (it.po_id == null && !yaConsumido && stockMat === 0) {
             motivoPendiente = "sin_oc";          // falta generar la OC
-          } else if (it.po_id != null && !poRecibida) {
+          } else if (it.po_id != null && !poRecibida && !yaConsumido) {
             motivoPendiente = "oc_pendiente";    // hay OC pero no se recibió
           } else {
             motivoPendiente = "sin_stock";       // stock insuficiente
@@ -111,6 +116,7 @@ export async function GET(_req: NextRequest) {
           ...it,
           _es_free: esFree,
           _es_consumido_almacen: esConsumidoAlmacen,
+          _es_consumido_oc_abierta: esConsumidoOCAbierta,
           _cant_pendiente: cantPendiente,
           _puede_despachar: puedeDespachar,
           _po_status: poStatus,

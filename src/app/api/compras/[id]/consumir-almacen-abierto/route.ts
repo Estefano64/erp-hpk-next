@@ -188,6 +188,13 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           //    congelado de la OC abierta para el req (sobreescribe el precio
           //    libre que pudiera tener antes). En la observación incluimos
           //    el NP (Número de parte) del item sacado para trazabilidad.
+          //
+          //    NO incrementamos `cantidad_recibida` en el OTRepuesto ni
+          //    seteamos `fecha_entrega_real` — eso lo hace el módulo
+          //    /despachos cuando se confirma la entrega al técnico (mismo
+          //    patrón que `consumir-de-almacen`). Antes el incremento
+          //    automático dejaba el ítem con cantPendiente=0 y se filtraba
+          //    de la lista de despachos por OT → el user no podía entregarlo.
           const obsPrev = rep.observaciones ? `${rep.observaciones}\n` : "";
           const npStr = detalle.material?.np
             ? ` · NP ${detalle.material.np}`
@@ -201,11 +208,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
               status_requerimiento_codigo: "APROBADO", // al consumir, queda como aprobado
               po_id: compraId,
               nro_oc: compra.numero_po,
-              cantidad_recibida: { increment: cant },
               precio_unitario: detalle.precio_unitario,
               moneda: compra.moneda_codigo ?? "USD",
-              fecha_entrega_real: new Date(),
-              observaciones: `${obsPrev}Consumido de OC abierta ${compra.numero_po}${npStr} el ${new Date().toLocaleDateString("es-PE")} — ${cant} unid. (${usuario})${parsed.data.comentarios ? ` · ${parsed.data.comentarios}` : ""}`,
+              observaciones: `${obsPrev}Consumido de OC abierta ${compra.numero_po}${npStr} el ${new Date().toLocaleDateString("es-PE")} — ${cant} unid. (${usuario}) — pendiente despacho al técnico${parsed.data.comentarios ? ` · ${parsed.data.comentarios}` : ""}`,
             },
           });
 

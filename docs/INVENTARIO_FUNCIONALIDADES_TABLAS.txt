@@ -1,0 +1,971 @@
+================================================================================
+ERP HP&K — INVENTARIO DE FUNCIONALIDADES Y TABLAS
+Fecha: 2026-06-16
+================================================================================
+
+OBJETIVO
+--------
+Inventario exhaustivo de todas las páginas del dashboard, las tablas que
+contienen, sus filtros, ordenamiento y herramientas de personalización
+(columnas ocultas, drag-to-resize, persistencia, export, edición inline, etc.).
+
+
+================================================================================
+RESUMEN DE HERRAMIENTAS DE PERSONALIZACIÓN GLOBALES
+================================================================================
+
+COLUMNAS & VISIBILIDAD
+- useColumnasOcultas .......... almacena columnas ocultas en localStorage
+                                (key = "modulo-cols-vN")
+- ColumnasToggleButton ........ UI desplegable para mostrar/ocultar columnas;
+                                soporta columnas "obligatorias" no ocultables
+- visibleColumns(cols, ocultas) filtro que aplica las ocultas
+- useColumnasRedimensionables . drag en el header para ajustar ancho; persiste
+                                widths en localStorage (-widths-vN)
+
+FILTROS
+- filtroPorColumna(rows, key) . helper que arma filters[] con valores únicos
+- RangoFechasFiltro ........... DatePicker desde/hasta para una fecha
+- useRangoFechasPersistente ... rango con persistencia en localStorage
+- usePersistedState ........... custom hook para guardar cualquier estado en LS
+- Segmented ................... control tipo tab para quick filters
+- Input search, Select, DatePicker en cards superiores
+- dentroDeRango(fecha, rango) . validador
+
+PAGINACIÓN
+- paginacionEstandar({ ... }) . config con page-size selector (default 50)
+- PAGINATION_PAGE_SIZE ........ constante = 50
+
+ORDENAMIENTO
+- sorter: true (server-side) o sorter: (a,b) => ... (client-side)
+
+EXPORT
+- ExportarExcelButton ......... genera XLS:
+                                · respeta filtros server-side
+                                · respeta layout (orden + ocultas)
+                                · category filters dropdown
+                                · date filter
+                                · currentRows para exportar solo lo visible
+- DescargarOTExcelButton ...... export específico de una OT (externa/interna)
+
+EDICIÓN
+- EditableCell ................ cell inline editable (string/number/select)
+- Modal Form .................. edición multi-campo
+- Draft pattern ............... cambios locales + Save por fila o bulk
+
+SELECCIÓN MASIVA
+- rowSelection (Ant Design) ... checkboxes + bulk actions
+
+OTROS
+- STICKY_HEADER ............... headers fijos al scrollear
+- useTabSync .................. sync cross-tab (refresh en otra pestaña)
+- useEditLock ................. lock pesimista server-side
+- formatDateOnly, numeracionColumn, brand tokens (theme)
+
+
+================================================================================
+MÓDULO: OPERACIONES
+================================================================================
+
+----------------------------------------------------------------------
+1) PLANIFICACIÓN DE TAREAS
+   Path: /operaciones/planificacion
+   File: src/app/(dashboard)/operaciones/planificacion/page.tsx
+----------------------------------------------------------------------
+Funcionalidad: Vista central para planificar tareas de reparación por semana.
+Permite asignar operarios, máquinas, fechas estimadas y monitorear carga de
+personal. Auto-cálculo de fecha fin y validación de capacidad por recurso.
+
+TABLA: Tareas de Planificación
+Columnas:
+- N° (numeración)
+- OT (selector buscable, con opción "Sin OT")
+- Cliente
+- Flota
+- Descripción de OT
+- F. Recepción (sorter)
+- Prioridad (tags con colores por urgencia)
+- Taller Status
+- N° (orden tarea, sorter)
+- Parte (componente; tag cyan)
+- Tarea (descripción)
+- Comentario (editable inline, tooltip)
+- Historial (botón ver pausas/fin y comentarios técnico)
+- Semana (selector ISO YYYY-Wnn, con rango visual)
+- Operario (selector con carga visual por semana)
+- Equipo (selector con carga visual)
+- Fecha Inicio (datetime picker con atajos)
+- Fecha Fin (auto-calculado; readonly si horas_extras=true)
+- Fecha Inicio Real
+- Fecha Fin Real
+- HH Estimadas (editable, dispara recálculo fin)
+- HH Reales
+- Duración extras
+- Estado (combo con catálogo)
+- Emergencia (botón 🚨 marcar correctivo)
+
+Filtros:
+- Búsqueda libre (OT, componente, descripción, técnico, máquina)
+- Semana (combo 8 pasadas + 8 futuras, ISO)
+- Estado puntual
+- MacroEstado (Abierto/Cerrado/No ejecutado) — DEFAULT "Abierto"
+- Técnico, Máquina (valores únicos del dataset)
+- RangoFechasFiltro doble (inicio + fin)
+- Filtros por columna en cabecera
+
+Ordenamiento: F. Recepción, N°, Fecha Inicio Est, Fecha Fin Est
+
+Personalización:
+- useColumnasOcultas ("planificacion-cols-v1")
+- useColumnasRedimensionables
+- ColumnasToggleButton
+- STICKY_HEADER
+- paginacionEstandar (default 50)
+- Edición inline
+- rowSelection (bulk edit operario/máquina/semana)
+- Edit lock pesimista (Modo Edición exclusivo)
+- Auto-save / Batch mode
+
+Export: ExportarExcelButton (respeta filtros y layout)
+
+Acciones por fila:
+- Editar inline
+- Historial (modal con sesiones)
+- Reabrir tarea
+- Marcar emergencia (🚨 empuja otras al pool)
+- Borrar (Popconfirm)
+
+----------------------------------------------------------------------
+2) PROGRAMACIÓN SEMANAL
+   Path: /operaciones/programacion-semanal
+   File: src/app/(dashboard)/operaciones/programacion-semanal/page.tsx
+----------------------------------------------------------------------
+Funcionalidad: Calendario semanal de OTs/tareas con planificación visual.
+Botón "Enviar semana completa" → publica al técnico.
+- KPIs: OTs en rango, semanas con OTs, semana focal, semana actual
+- Búsqueda por OT/equipo/asignado/descripción
+- Navegación entre semanas (anterior / siguiente / hoy)
+
+----------------------------------------------------------------------
+3) DASHBOARD PLANIFICACIÓN
+   Path: /operaciones/programacion-dashboard
+----------------------------------------------------------------------
+Funcionalidad: Vista agregada/analítica de la planificación.
+
+
+================================================================================
+MÓDULO: ÓRDENES DE TRABAJO (Externas)
+================================================================================
+
+----------------------------------------------------------------------
+1) LISTADO OTs EXTERNAS
+   Path: /ordenes-trabajo
+----------------------------------------------------------------------
+Funcionalidad: Panel maestro de OTs externas con búsqueda y filtros
+server-side, paginación, acciones admin. Filtro default "OT Status = Abierta".
+
+TABLA: OTs Externas
+Columnas visibles default:
+- N°, OT (tag navy), Cliente, Código Reparación, Equipo, Cantidad,
+  Descripción, F. Recepción, % PCR, Prioridad, OT Status, Evaluación,
+  Recursos Status, Taller Status, Estado PO, Monto Cotizado
+
+Columnas opcionales (ocultas default):
+- Tipo OT, N/P, Flota, Posición, Fabricante, Plaqueteo, WO Cliente,
+  PO Cliente, PO Item, ID Viajero, Guía Remisión, Empresa Entrega,
+  PCR, Horas, Días contrato, F. Req Cliente, F. Reprogramada,
+  F. Evaluación, Evaluador, F. Aprobación Eval, Aprobado Por,
+  F. Cotización, Característica Cilindro, Reparación Externa,
+  Vendor Externo, F. Aprobación (cliente), F. Facturación,
+  Días en Taller, F. Creación, Usuario Crea, Atención Rep,
+  Tipo Rep, Garantía, Tipo Garantía, Base Metálica, Comentarios
+
+Filtros (todos PERSISTENTES por usuario):
+- search (OT/equipo/NS/descripción global)
+- columnFilters: enum + texto libre
+  · enum multi-select: cliente, código_reparacion, prioridad, ot_status,
+    recursos_status, taller_status, tipo_ot, fabricante, atención_rep,
+    tipo_rep, garantia, tipo_garantia, base_metalica
+  · texto libre: equipo, descripcion, tipo, np, flota, posicion,
+    plaqueteo, wo_cliente, po_cliente, po_item, id_viajero,
+    guia_remision, empresa_entrega, comentarios
+  · fijo: caracteristica_cilindro, reparacion_externa,
+    evaluacion_estado, estado_po
+- RangoFechasFiltro: fecha_recepcion
+- Segmented quick: Todas / Reparación / Bien / Servicio
+- Select multi Año (default año actual)
+- Switch (admin): Ver OTs desactivadas
+
+Ordenamiento: server-side, no persistido (F5 resetea)
+
+Personalización:
+- useColumnasOcultas ("ordenes-trabajo-list-cols-v3")
+- useColumnasRedimensionables
+- ColumnasToggleButton
+- STICKY_HEADER (offset 56)
+- paginacionEstandar (default 50)
+
+Export: ExportarExcelButton (respeta filtros + layout)
+Columnas Excel: OT, Cliente, Cod.Rep, Equipo, Cantidad, Fabricante, Tipo,
+N/P, Flota, Posición, Plaqueteo, Descripción, F. Recepción, F. Req. Cliente,
+F. Reprogramada, PCR, Horas, % PCR, Días contrato, Prioridad, Atención Rep,
+Tipo Rep, OT Status, Recursos Status, Taller Status, Garantía, Tipo Garantía,
+Base Metálica, Comentarios
+Histórico export-only: F. Evaluación, Evaluador, Nro Informe Eval,
+F. Cotización, Nro Cotización, Monto Cotización, F. Aprobación, F. Entrega,
+Cumplimiento, Días Proceso, Días Taller, Nro Factura, F. Facturación,
+Usuario Crea, F. Creación
+
+Acciones por fila:
+- 👁 Ver detalle (modal)
+- 📋 Hoja evaluación
+- ⏹ Desactivar (admin, reversible)
+- ↩ Reactivar (admin)
+- 🗑 Eliminar cascada (admin, confirmación reforzada)
+
+----------------------------------------------------------------------
+2) DETALLE DE OT EXTERNA (Tabbed)
+   Path: /ordenes-trabajo/[id]
+   File: src/components/modules/ordenes-trabajo/OTDetalleContent.tsx
+----------------------------------------------------------------------
+Tabs: Tareas | Requerimientos | Costos | Adjuntos | Historial
+
+==========
+TAB TAREAS
+==========
+Columnas:
+- N°, Parte (tag cyan), Tipo (Estándar/No), Operación (combo o texto),
+  Orden, Qty, HH Est, HH Real, F. Inicio, F. Fin, F. Inicio Real,
+  F. Fin Real, Técnico (multi), Equipo, Estado, Acciones
+
+Filtros: 2 RangoFechas (inicio, fin), búsqueda texto, filtros Parte/Tipo/Estado
+Ordenamiento: sí
+Personalización:
+- useColumnasOcultas ("ot-tareas-cols-v1")
+- useColumnasRedimensionables
+- Edición inline (Select, Segmented, InputNumber, TextArea)
+- Form modal "Nueva Tarea" multi-fila
+
+==================
+TAB REQUERIMIENTOS
+==================
+Columnas:
+- N°, Nro Req/Item, Tipo (MAC/CAD/SER tag), Material, Descripción,
+  Cantidad, UM, Precio Unitario, Moneda, Proveedor, F. Solicitud,
+  F. Requerida, Estado Req, Estado Cotización, Estado OC,
+  Aprobado Por (popover), Acciones
+
+Filtros: búsqueda texto, RangoFechas (solicitud + requerida),
+filtros columna (Tipo, Material, Proveedor, estados)
+Personalización:
+- useColumnasOcultas ("ot-requerimientos-cols-v2")
+- useColumnasRedimensionables
+- Modal edición multi-campo
+- Adjuntos (upload R2 + delete)
+
+==========
+TAB COSTOS
+==========
+Matriz Estimado vs Real (5 filas): Materiales, Cargo Directo, Servicio,
+QtY (trabajadores), HH
++ Tablas detalle por categoría (Ejecutados / Proyectados / OCs vinculadas)
+Read-only, sin filtros/ordenamiento avanzado.
+
+============
+TAB ADJUNTOS
+============
+7 sub-tabs por etapa:
+Recepción GR | Evaluación | Cotización | PO Cliente | Término |
+Despacho GR | Facturación
+Cada etapa: Uploader drag&drop + galería + meta-fields editables.
+
+==============
+TAB HISTORIAL
+==============
+Columnas: Cuándo (sorter), Operación (tag color), Descripción, Usuario
+Filtros: RangoFechas + filtros columna (Tipo Op, Usuario)
+Personalización: useColumnasOcultas ("ot-historial-cols-v1"),
+useColumnasRedimensionables
+
+----------------------------------------------------------------------
+3) NUEVA OT EXTERNA
+   Path: /ordenes-trabajo/nueva
+----------------------------------------------------------------------
+Funcionalidad: Form creación OT. Campos por tipo (Reparación/Bien/Servicio).
+Obligatorios: NP, Equipo, ID Viajero, Guía Remisión, Empresa Entrega,
+F. Req Cliente, F. Evaluación.
+
+----------------------------------------------------------------------
+4) HOJA DE EVALUACIÓN
+   Path: /ordenes-trabajo/[id]/evaluacion
+----------------------------------------------------------------------
+Funcionalidad: Editor formulario evaluación técnica por modelo de cilindro.
+Sistema de medida: Pulgada (Imperial) / Milimétrico (Metrico).
+Genera Word descargable.
+
+
+================================================================================
+MÓDULO: OTs INTERNAS
+================================================================================
+
+----------------------------------------------------------------------
+1) LISTADO OTs INTERNAS
+   Path: /ordenes-trabajo-internas
+----------------------------------------------------------------------
+Similar a OTs externas. Tipos: Preventiva / Correctiva / Solicitud mant.
+
+TABLA: OTs Internas
+Columnas: N°, OT (OI######), Tipo, Estado, Aprob., Prio, Equipo,
+Estrategia (PM1..PM4), Asignado a, Descripción, F. Inicio Plan,
+F. Fin Plan, Costo Real, Costo Estimado, # Reqs, # Items
+
+Filtros: búsqueda, segmented por tipo, columnas (Estado, Equipo,
+Asignado), RangoFechas (inicio plan, fin plan)
+Personalización completa (oculta, resize, toggle, sticky, paginación,
+persistencia de filtros)
+
+Modal Nueva OT Interna:
+- Tipo OT (req), Área Asignada (req), Equipo, Descripción (req),
+  Inicio Planificado, Fin Planificado, Estrategia (PMs del equipo +
+  genéricas, agrupado), Asignado a, Prioridad, Comentarios
+
+----------------------------------------------------------------------
+2) DETALLE OT INTERNA (Tabbed)
+   Path: /ordenes-trabajo-internas/[id]
+----------------------------------------------------------------------
+Tabs: Detalle | Tareas | Requerimientos | Costos | Adjuntos | Historial
+
+Header: tag aprobación (Borrador/SIN_APROBACION/APROBADA/RECHAZADA)
++ botones según estado (Enviar a aprobación / Aprobar / Rechazar / Reabrir)
++ Costos resumen (real vs estimado)
+
+Tab Requerimientos: similar a OT externa pero polimórfico, soporta
+conversión cilindro→galón (factor 55) en MAC items
+Tab Tareas: carga del Task List del equipo + PM cascade
+Tab Costos: matriz Estimado/Real (5 categorías)
+Tab Adjuntos: simple (sin etapas)
+Tab Historial
+
+
+================================================================================
+MÓDULO: REQUERIMIENTOS
+================================================================================
+
+----------------------------------------------------------------------
+1) LISTADO REQUERIMIENTOS
+   Path: /requerimientos
+----------------------------------------------------------------------
+Panel global de todos los requerimientos. Filtros por tipo MAC/CAD/SER.
+
+TABLA: Requerimientos
+Columnas (30+):
+- N°, Nro Req/Item, Tipo (tag color), OT (clickeable), Cliente,
+  Código Rep, Material, Descripción, Cantidad, UM, Precio Unit,
+  Moneda, Proveedor, F. Solicitud (sorter), F. Requerida (sorter),
+  F. Entrega Esperada, Estado Req (tag), Estado Cot (tag),
+  Estado OC (tag), Aprobado Por (popup), Observaciones, Adjuntos
+
+Filtros:
+- Búsqueda (nro_req, descripcion, material)
+- Segmented: Todos / MAC / CAD / SER
+- Select por columna (Cliente, Proveedor, Estados, Tipo)
+- RangoFechasFiltro (solicitud, requerida)
+
+KPIs: Total + items, Aprobados, Pendientes, En OC, En PO, Con entrega
+
+Personalización: useColumnasOcultas, useColumnasRedimensionables,
+ColumnasToggleButton, paginacionEstandar
+Export: ExportarExcelButton
+
+----------------------------------------------------------------------
+2) DETALLE REQUERIMIENTOS
+   Path: /requerimientos/detalle
+----------------------------------------------------------------------
+Vista detallada por item con filtros avanzados + acciones masivas.
+
+TABLA: Detalle Requerimientos
+Columnas: N°, OT (tag navy), CLIENTE (tag púrpura 📍 — fijable),
+Descripción OT, Flota, Estado REQ, Nro OC, Coment. aprob. REQ,
+Coment. aprob. OC, Nro REQ, Item, Tipo, Código Material, Descripción,
+Cantidad, UM, Estado Cotización, Estado OC, F. Requerida, Observaciones,
+Adjuntos
+
+Filtros:
+- Búsqueda + RangoFechas (solicitud, requerida)
+- Segmented OT ext/int
+- Tabs estados: Listos OC | En OC
+- Filtros por columna (todos con filterSearch)
+
+Personalización:
+- columnasOcultas con localStorage propio (COLS_STORAGE_KEY)
+- useColumnasRedimensionables
+- Dropdown "Columnas visibles" custom (Checkbox.Group)
+- KPIs clickeables (Total, Aprobados, Pendientes...)
+
+Acciones (singulares y bulk):
+- Aprobar/Desaprobar req (modal con precio, descripción, detalle,
+  comentario)
+- Aprobar/Desaprobar OC
+- Generar OC (modal)
+- Consumir de Almacén Abierto (modal con match por NP)
+- Subir adjuntos
+- Editar
+
+----------------------------------------------------------------------
+3) OC ABIERTA EDITOR
+   Ya descrito bajo "Módulo Compras".
+
+
+================================================================================
+MÓDULO: COMPRAS
+================================================================================
+
+----------------------------------------------------------------------
+1) ÓRDENES DE COMPRA
+   Path: /compras
+----------------------------------------------------------------------
+Listado OCs (excluye almacén abierto). Acciones aceptar/rechazar/eliminar.
+
+TABLA: Compras
+Columnas:
+- N°, Nro OC, Nombre OC, Proveedor, OT (clickeable), F. Solicitud,
+  F. Entrega Esperada, F. Entrega Real, Estado (tag color),
+  Subtotal, Impuesto, Total, Moneda, Nro Factura, Nro Guía,
+  Cantidad Items, Usuario Solicita, Adjuntos, Acciones
+
+Filtros:
+- Búsqueda + Select Estado
+- RangoFechas persistentes (solicitud + entrega)
+- Filtros columna (Proveedor, OT, Estado)
+- PERSISTENTES por usuario (usePersistedState)
+
+Personalización:
+- useColumnasOcultas ("compras-list-cols-v2")
+- useColumnasRedimensionables
+- ColumnasToggleButton
+- paginacionEstandar
+
+Export: ExportarExcelButton (respeta filtros + layout)
+
+Acciones por fila:
+- 👁 Ver detalle (modal)
+- ✓ Aceptar OC (modal con descripción + detalle + comentario)
+- 🗑 Eliminar (pre-check: solo PEND_OC, sino mensaje sugiere Anular)
+
+----------------------------------------------------------------------
+2) EDITAR OC
+   Path: /compras/[id]/editar
+----------------------------------------------------------------------
+Editor full OC: header + items. Para OCs en proceso/recibidas.
+
+----------------------------------------------------------------------
+3) OCs ABIERTAS (Almacén Abierto)
+   Path: /compras/oc-abiertas
+----------------------------------------------------------------------
+Stock fijo con precios congelados.
+
+TABLA: OCs Abiertas
+Columnas:
+- N°, Nro OC (tag navy), Fuente/Proveedor, Ítems (con stock/total),
+  Stock Disponible (sum), Moneda, F. Emisión, F. Expira (alerta
+  rojo/orange <30d), Estado, Acciones (Editar)
+
+Filtros: búsqueda libre
+Personalización: useColumnasRedimensionables, STICKY_HEADER,
+paginacionEstandar
+KPIs: OCs abiertas, Ítems totales, Ítems con stock, Stock disp.
+
+----------------------------------------------------------------------
+4) EDITOR OC ABIERTA
+   Path: /compras/oc-abiertas/[id]
+----------------------------------------------------------------------
+Editor header (Form) + items (tabla editable).
+
+Header editable:
+- Nro OC, Nombre/Fuente, Proveedor (Select buscable), Moneda,
+  Tipo Pago, Días Crédito, F. Emisión, F. Expiración, Observaciones
+
+TABLA: Ítems de la OC (editable inline)
+Columnas:
+- N°, Código Material (tag mono), NP (Input editable),
+  Descripción (Input editable), Cantidad (InputNumber; disabled
+  si cantidad_recibida > 0), Consumido, Stock Disp., Precio Unit
+  (InputNumber), Subtotal, Acciones (Save/Delete por fila)
+
+Personalización:
+- Draft pattern (cambios locales, save por fila)
+- Add ítem: Select buscable de materiales no presentes
+- PATCH /api/materiales/[id] (np/descripcion)
+- PUT /api/compras/[id]/detalles/[detId] (cantidad/precio)
+
+----------------------------------------------------------------------
+5) CONTABILIDAD (Guías y Facturas)
+   Path: /compras/contabilidad
+   Sub: /compras/contabilidad/guias, /compras/contabilidad/facturas
+----------------------------------------------------------------------
+TABLA: OCs con guía/factura/pago
+Columnas:
+- N°, Nro OC + botón PDF (descarga), OT, Nombre OC, Proveedor,
+  Estado, Total, Nro Guía, Archivos Guía (multi-adjuntos),
+  Nro Factura, Archivos Factura, Comprobante Pago (solo CONTADO/
+  TRANSFERENCIA), F. Recepción
+
+Filtros:
+- Búsqueda libre
+- Segmented: Todos / Con factura / Sin factura / Con guía / Sin guía
+
+Personalización: useColumnasOcultas, useColumnasRedimensionables,
+ColumnasToggleButton, STICKY_HEADER, paginacionEstandar
+
+Acciones por fila:
+- Descargar PDF de la OC
+- Upload guía / factura / pago (multi-adjunto)
+- Eliminar adjunto
+
+----------------------------------------------------------------------
+6) COMPRAS HISTÓRICO (Cotizaciones precios)
+   Path: /compras/historico
+----------------------------------------------------------------------
+Archivo histórico de precios por material/proveedor.
+
+----------------------------------------------------------------------
+7) APROBACIONES
+   Path: /aprobaciones
+----------------------------------------------------------------------
+Panel dual: OCs Pendientes + Reqs Pendientes + Historial.
+
+TABLA 1: OCs Pendientes
+Columnas: Nro OC, Proveedor, F. Solicitud, Total + moneda, Status,
+Ubicación, OC (tag con N° si vinculado), Botones: Aprobar / Rechazar /
+Ver detalle
+
+TABLA 2: Reqs Pendientes
+Columnas: Nro Req/Item, Tipo (tag), OT, Cliente, Descripción,
+Cantidad, UM, Precio Unit, F. Solicitud, Estado Req, Material,
+Stock Actual, Adjuntos, Status OC, Botones: Aprobar / Rechazar / Ver
+
+TABLA 3: Historial
+Columnas: Tipo, Ref, Descripción, Total/Moneda, OT, Usuario, Fecha,
+Nuevo Estado
+
+Filtros: Segmented (Todas/OCs/Reqs), búsqueda OT, Select Proveedor
+
+Modal Aprobar Req: Descripción (≤300), Detalle (textarea),
+Comentario (≤500), Precio Estimado + Moneda + Adjuntos
+Modal Aceptar OC: Descripción + Detalle + Comentario
+Modal Rechazar OC: Descripción + Detalle + Motivo
+
+Bulk: Aprobar/Rechazar seleccionados (mismo modal con 3 campos)
+
+
+================================================================================
+MÓDULO: LOGÍSTICA — ALMACÉN DE REPUESTOS
+================================================================================
+
+----------------------------------------------------------------------
+1) MOVIMIENTO DE REPUESTOS
+   Path: /movimientos
+----------------------------------------------------------------------
+Tabs: Movimientos | POs Pendientes | Stock Actual
+
+TABLA: Movimientos
+Columnas: N°, F. Movimiento (sorter), Tipo (ENTRADA/SALIDA/AJUSTE),
+Material Código, Descripción, Cantidad (sorter), UM, Stock Actual,
+Precio Unit, Moneda, Costo Total, Documento Ref, Observación, Usuario
+
+Filtros: búsqueda, Segmented Tipo, RangoFechasFiltro
+
+TABLA: POs Pendientes
+Items de OCs por recepcionar. Modal "Recibir OC":
+- Acciones bulk: Excluir todas / Recibir todas
+- Por fila: InputNumber cant recibida (min 0, max pedida) + Selector
+  Zona almacén (req) + Selector Posición + botón Excluir/Incluir
+- Subida adjuntos por etapa (guía, factura, pago - multi)
+
+----------------------------------------------------------------------
+2) INVENTARIO DE STOCK
+   Path: /stock
+----------------------------------------------------------------------
+TABLA: Stock
+Columnas:
+- N°, Alerta (SIN/BAJO/OK/EXCESO; tag+icon), Código (sorter),
+  Descripción (popover detalle), N/P, Stock, Disponible (calculado),
+  UM, En POs (con tooltip), En REQ (tooltip), Pto. Repo, Máximo,
+  Almacén, Ubicación (editable inline), Fabricante, Precio Último,
+  Valor Total (sorter)
+
+Filtros:
+- Búsqueda (código/desc/NP)
+- Desplegable preset: Todos / Con mín-máx / Sin stock / Bajo stock /
+  Exceso / Con POs / En REQ / Por solicitar
+- Segmented: Solo catálogo / No catalogados / Todos
+- KPI cards clickeables (reset filtro)
+
+Personalización:
+- useColumnasOcultas ("stock-list-cols-v1")
+- useColumnasRedimensionables, ColumnasToggleButton
+- Edición inline ubicación (EditableCell + PATCH)
+- paginacionEstandar (default 50)
+
+KPIs (3 filas):
+- Row1: Total, Con mín-máx, Sin stock, Bajo, Exceso, En POs, En REQ,
+  Por solicitar, Valor Total
+- Row2: Total Ingresos (ENTRADA), Salidas, Ajustes, Balance neto
+- Todos clickeables → preset filtro
+
+Export: ExportarExcelButton (respeta filtros)
+Columnas Excel: Alerta, Código, Descripción, N/P, Stock, Disponible,
+UM, En POs, POs Pendientes, En REQ, REQs Pendientes, Pto. Repo,
+Máximo, Por Solicitar, Almacén, Ubicación, Fabricante, Categoría,
+Precio, Moneda, Valor Total
+
+----------------------------------------------------------------------
+3) INVENTARIO NO CATALOGADO
+   Path: /stock/no-catalogados
+----------------------------------------------------------------------
+Items físicos sin entry en catálogo de materiales.
+
+----------------------------------------------------------------------
+4) INVENTARIO POR OT (DESPACHOS)
+   Path: /despachos
+----------------------------------------------------------------------
+Listado de OTs con items pendientes de despachar al técnico.
+
+Por cada OT (Card):
+- Header: Nro OT, Cliente, Cod Rep, Estado (completa/incompleta),
+  Recursos status, Ubicación, X/Y items (avance global),
+  N listo(s), N falta comprar (🛒), N OC pendiente (📦),
+  N sin stock (⚠️)
+- Tabla items pendientes:
+  · NRO, Req/Item, Código, Descripción, OT (link), Pedido,
+    Pendiente, Stock alm., Origen/PO (tag), Ubicación, Estado
+    (Listo / Falta comprar / OC pendiente / Sin stock)
+  · Checkbox selección
+- Botón "Despachar seleccionados" → modal datos despacho (fecha,
+  persona recibe, comentarios)
+
+Personalización por OT: useColumnasOcultas, useColumnasRedimensionables
+Export: ExportarExcelButton (todos los items planos)
+
+----------------------------------------------------------------------
+5) DESPACHOS MINA
+   Path: /despachos/mina
+----------------------------------------------------------------------
+Despachos hacia los clientes mineros (vs despacho a técnico).
+Modal con N° Informe Entrega, adjunto guía, fecha, persona recibe.
+
+
+================================================================================
+MÓDULO: LOGÍSTICA — ALMACÉN DE HERRAMIENTAS Y SUMINISTROS
+================================================================================
+
+----------------------------------------------------------------------
+1) HERRAMIENTAS
+   Path: /herramientas
+----------------------------------------------------------------------
+CRUD herramientas. Asociables a OT.
+Modal: nombre, código, OT asociada (buscable), observaciones.
+
+----------------------------------------------------------------------
+2) SUMINISTROS
+   Path: /suministros
+----------------------------------------------------------------------
+CRUD suministros menores.
+
+
+================================================================================
+MÓDULO: LOGÍSTICA — MAESTROS
+================================================================================
+
+----------------------------------------------------------------------
+1) CLIENTES
+   Path: /clientes
+----------------------------------------------------------------------
+TABLA: Clientes
+Columnas: N°, Código, Razón Social (sorter+search), Nombre Comercial,
+RUC (sorter+search), Dirección (oculta), Teléfono, Email (oculta),
+Contacto Principal, Nota, Activo, Acciones
+
+Modal: Código, Razón Social (+DuplicateHint), Nombre Comercial,
+RUC (+RucLookupInput auto SUNAT), Dirección, Teléfono, Email,
+Contacto Principal, Nota
+
+Personalización: paginacionEstandar, useColumnasOcultas (v2),
+ColumnasToggleButton, ImportarExcelModal (batch)
+Export: ExportarExcelButton
+
+----------------------------------------------------------------------
+2) PROVEEDORES
+   Path: /proveedores
+----------------------------------------------------------------------
+Similar a Clientes. ImportarExcelModal + RucLookup + ExportarExcelButton.
+
+----------------------------------------------------------------------
+3) MATERIALES
+   Path: /materiales
+----------------------------------------------------------------------
+TABLA: Materiales
+Columnas: N°, Código (sorter+search), Descripción (sorter+search),
+N/P, UM, Precio Último, Moneda, Almacén, Ubicación, Fabricante,
+Categoría, Acciones
+
+Modal: Código (req), Descripción (req), N/P, UM, Precio, Moneda,
+Almacén, Ubicación, Fabricante, Categoría
+
+Personalización: paginacionEstandar, ImportarExcelModal,
+useColumnasOcultas
+Export: ExportarExcelButton
+
+
+================================================================================
+MÓDULO: MANTENIMIENTO
+================================================================================
+
+----------------------------------------------------------------------
+1) EQUIPOS
+   Path: /mantenimiento/equipos
+----------------------------------------------------------------------
+TABLA: Equipos
+Columnas:
+- N°, Código (sorter), Descripción (ellipsis), Status (tag),
+  Tipo, Área, Sub Área, Criticidad (tag), Planta, Ubicación,
+  Fabricante, Modelo, Número Serie, Número Parte, Capacidad,
+  Precio, Moneda, F. Inicio, F. Fabricación, Observaciones,
+  Usuario Responsable
+- Ocultas default: descripcion, modelo, NS, NP, ubicación,
+  fechas, observaciones, usuario
+
+Filtros: búsqueda, Select Tipo, Área, Status, Criticidad,
+RangoFechasFiltro (inicio + fabricación)
+
+Modal: Código, Descripción, Tipo (req), Área (req), Sub Área,
+Status (req), Planta, Criticidad, Ubicación, Fabricante, Modelo,
+NS, NP, Capacidad, UM Capacidad, Precio, Moneda, F. Inicio,
+F. Fabricación, Observaciones, Usuario Responsable, Cantidad
+
+Personalización: useColumnasOcultas (v2), useColumnasRedimensionables,
+ColumnasToggleButton, paginacionEstandar (50)
+Admin-only: desactivar/reactivar/eliminar
+Export: ExportarExcelButton
+
+----------------------------------------------------------------------
+2) CORRECTIVOS
+   Path: /mantenimiento/correctivos
+----------------------------------------------------------------------
+TABLA: Reportes de Mantenimiento Correctivo
+Columnas: N°, Fecha, Equipo, Síntoma, Reportado por, Área asignada,
+Asignado a, Estado, OT Interna asociada
+Modal: Equipo, Fecha, Síntoma, Reportado por, Área, Asignado, Adjuntos.
+
+----------------------------------------------------------------------
+3) TASK LISTS
+   Path: /mantenimiento/task-lists
+----------------------------------------------------------------------
+Catálogo TaskList (291 entradas + items) por equipo. Editor.
+
+
+================================================================================
+MÓDULO: RR/HH
+================================================================================
+
+----------------------------------------------------------------------
+1) TRABAJADORES
+   Path: /rrhh/trabajadores
+----------------------------------------------------------------------
+TABLA: Trabajadores
+Columnas: N°, Nombre (sorter), Puesto (sorter+filter), Área
+(sorter+filter), Email, Teléfono, Activo, Acciones
+
+Modal: Nombre (req), Puesto, Área, Email, Teléfono, Equipo asignado,
+Activo
+
+Personalización: paginacionEstandar, useColumnasOcultas,
+ColumnasToggleButton
+
+
+================================================================================
+MÓDULO: HOJAS DE EVALUACIÓN
+================================================================================
+
+----------------------------------------------------------------------
+1) EVALUACIONES (Listado)
+   Path: /evaluaciones
+----------------------------------------------------------------------
+Listado de evaluaciones técnicas. Estado: Borrador / Pend. Aprobación /
+Aprobada / Rechazada. Acciones: Ver, Editar, Aprobar / Rechazar.
+
+
+================================================================================
+MÓDULO: COD. REPARABLES
+================================================================================
+
+----------------------------------------------------------------------
+1) CÓDIGOS REPARACIÓN
+   Path: /codigos-reparacion
+----------------------------------------------------------------------
+Maestro de códigos de reparación. CRUD.
+
+Sub-páginas:
+- /codigos-reparacion/[id]/operaciones (operaciones del CR)
+- /codigos-reparacion/[id]/requerimientos-template (template de reqs
+  por CR — reusa al crear OT del mismo CR)
+
+
+================================================================================
+MÓDULO: CONTRATOS
+================================================================================
+
+----------------------------------------------------------------------
+1) CONTRATOS
+   Path: /contratos
+----------------------------------------------------------------------
+Contratos comerciales con clientes. Asociar a CR opcional.
+
+
+================================================================================
+MÓDULO: FACTURACIÓN
+================================================================================
+
+----------------------------------------------------------------------
+1) FACTURACIÓN OT
+   Path: /facturacion/ot
+----------------------------------------------------------------------
+TABLA: OTs para Facturación
+Columnas: N°, OT, Cliente, Cod Rep, NS, WO Cliente, PO Cliente,
+F. Entrega, F. Facturación (editable), Guía Entrega Salida,
+Nro Informe Entrega, Nro Factura, Monto Cotización, Taller Status,
+Adjuntos OK (flag verde/rojo), Botón Abrir
+
+Modal Detalle:
+- Nro Factura, F. Facturación, Monto (pre-llenado), Observaciones
+- Upload PDF Factura, Upload Guía Remisión
+- Adjuntos por etapa (7 tabs)
+
+Filtros: búsqueda, rango fecha facturación, Segmented (Pendiente/
+Facturado)
+
+Bloqueo si faltan adjuntos (a menos que ya facturado).
+Export: ExportarExcelButton
+
+
+================================================================================
+MÓDULO: APROBACIONES (alias Aceptaciones)
+================================================================================
+Ya descrito arriba (mismo path /aprobaciones).
+
+
+================================================================================
+MÓDULO: TICKETS
+================================================================================
+
+----------------------------------------------------------------------
+1) TICKETS
+   Path: /tickets
+----------------------------------------------------------------------
+Gestión de tickets de soporte interno. Captura adjunta (paste Ctrl+V).
+
+
+================================================================================
+MÓDULO: REPORTES
+================================================================================
+
+----------------------------------------------------------------------
+1) REPORTES
+   Path: /reportes
+----------------------------------------------------------------------
+Vistas analíticas / reportes personalizados.
+
+
+================================================================================
+MÓDULO: CATÁLOGOS
+================================================================================
+
+----------------------------------------------------------------------
+1) CATÁLOGOS (Maestros generales)
+   Path: /catalogos
+   Sub: /catalogos/[tabla]
+----------------------------------------------------------------------
+CRUD valores de catálogos: estados, prioridades, unidades, fabricantes,
+plantas, posiciones, áreas, tipos OT, monedas, etc.
+
+TABLA por catálogo:
+Columnas: N°, Código (sorter+search), Nombre (sorter+search),
+Descripción, Orden, Activo, Acciones
+
+Modal varía por tabla.
+
+
+================================================================================
+MÓDULO: CONFIGURACIÓN
+================================================================================
+
+----------------------------------------------------------------------
+1) CONFIGURACIÓN COTIZACIÓN
+   Path: /configuracion-cotizacion
+----------------------------------------------------------------------
+Settings del workflow de cotización (impuestos, formatos, etc.).
+
+----------------------------------------------------------------------
+2) CONFIGURACIÓN CHECKLIST
+   Path: /configuracion/checklist
+----------------------------------------------------------------------
+Editor de checklists reutilizables.
+
+
+================================================================================
+MÓDULO: PERFIL Y MIS TAREAS
+================================================================================
+
+----------------------------------------------------------------------
+1) MIS TAREAS
+   Path: /mis-tareas
+----------------------------------------------------------------------
+Dashboard personal de tareas asignadas al usuario logueado.
+
+----------------------------------------------------------------------
+2) PERFIL
+   Path: /perfil
+----------------------------------------------------------------------
+Editor del perfil del usuario.
+
+
+================================================================================
+TOTALES Y NOTAS FINALES
+================================================================================
+
+PÁGINAS DOCUMENTADAS: 30+
+TABLAS PRINCIPALES: 40+
+HERRAMIENTAS DE PERSONALIZACIÓN: 12+
+  · Columnas ocultas + toggle + persistencia
+  · Drag-to-resize columnas + persistencia
+  · Drag-to-reorder filas (templates de reqs)
+  · Filtros (server-side + client-side, multi-tipo)
+  · Rangos de fecha persistentes
+  · Búsqueda libre
+  · Segmented quick-filters
+  · Paginación con page-size selector
+  · Sticky headers
+  · Sortable columns (server + client)
+  · Edición inline (cells)
+  · Selección masiva + bulk actions
+  · Export Excel respetando layout + filtros
+  · Import Excel (clientes, proveedores, materiales)
+  · Modal forms para CRUD
+  · Locks pesimistas server-side
+  · Tab sync cross-tab
+  · localStorage persistence por usuario
+
+NOTAS:
+- Todos los listados usan AntD Table con scroll horizontal x="max-content"
+- La mayoría tienen toolbar superior con búsqueda + filtros + botones
+- Los filtros enum se generan automáticamente con `filtroPorColumna(rows, key)`
+- Los formatos de fecha son consistentes (DD/MM/YY o DD/MM/YYYY)
+- Tags con colores brand (navy, cyan, purple, etc.) — todo desde theme.ts
+- Responsive: las tablas usan scroll horizontal; modales usan modalWidth()
+- Edit locks evitan colisiones en planificación y OTs externas
+- Auditoría completa: cambios en OT/Req/OC quedan en OTHistorial
+- localStorage keys versionados (vN) para invalidar caché al cambiar columnas
+
+================================================================================
+FIN DEL INVENTARIO
+================================================================================
