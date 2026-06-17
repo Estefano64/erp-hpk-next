@@ -81,6 +81,20 @@ export interface CostosResultado {
     hh: { items: HHItem[]; total_por_moneda: MonedaTotales };
     total_por_moneda: MonedaTotales;
   };
+  // ESTIMADO total: lo que SE PROYECTÓ gastar al crear los reqs/tareas,
+  // independiente de si ya se ejecutó o no. A diferencia de `proyectado`
+  // (que solo cuenta items pendientes y desaparece al ejecutarse), `estimado`
+  // se mantiene SIEMPRE — es el plan inicial completo. La matriz Estimado/Real
+  // del UI usa este campo para que el estimado nunca se pierda.
+  //   Materiales/cargo_directo/servicios: Σ(cantidad × precio_unitario)
+  //   HH: Σ(horas_estimadas × tasa) — incluye horas ya ejecutadas también.
+  estimado: {
+    materiales: { total_por_moneda: MonedaTotales };
+    cargo_directo: { total_por_moneda: MonedaTotales };
+    servicios: { total_por_moneda: MonedaTotales };
+    hh: { total_por_moneda: MonedaTotales };
+    total_por_moneda: MonedaTotales;
+  };
   // Conteo de trabajadores asignados a esta OT — "QtY" en el resumen pedido.
   //   estimado = trabajadores distintos planificados (PlanificacionOT.tecnico)
   //   real     = trabajadores distintos que efectivamente trabajaron
@@ -153,6 +167,12 @@ export async function calcularCostosOT(
   const totalProyectadoMat: MonedaTotales = {};
   const totalProyectadoCad: MonedaTotales = {};
   const totalProyectadoSer: MonedaTotales = {};
+  // Estimado total — siempre suma todos los items no anulados, sin importar
+  // si están ejecutados o pendientes. Se mantiene visible para siempre como
+  // referencia del costo proyectado al crear el req.
+  const totalEstimadoMat: MonedaTotales = {};
+  const totalEstimadoCad: MonedaTotales = {};
+  const totalEstimadoSer: MonedaTotales = {};
 
   for (const r of repuestos) {
     const cantidad = dec(r.cantidad);
@@ -185,10 +205,12 @@ export async function calcularCostosOT(
       status_req: r.status_requerimiento_codigo,
       status_oc: r.status_oc_codigo,
     };
+    const subEstimado = cantidad * precio;
     if (r.tipo_codigo === "SER") {
       servicios.push(item);
       sumarMoneda(totalEjecutadoSer, moneda, subEjecutado);
       sumarMoneda(totalProyectadoSer, moneda, subProyectado);
+      sumarMoneda(totalEstimadoSer, moneda, subEstimado);
     } else if (r.tipo_codigo === "CAD") {
       // CAD = "cargo directo" / item free sin catálogo (servicios menores,
       // gastos directos imputados a la OT). Se separan de MAC en el resumen
@@ -196,10 +218,12 @@ export async function calcularCostosOT(
       cargoDirecto.push(item);
       sumarMoneda(totalEjecutadoCad, moneda, subEjecutado);
       sumarMoneda(totalProyectadoCad, moneda, subProyectado);
+      sumarMoneda(totalEstimadoCad, moneda, subEstimado);
     } else {
       materiales.push(item);
       sumarMoneda(totalEjecutadoMat, moneda, subEjecutado);
       sumarMoneda(totalProyectadoMat, moneda, subProyectado);
+      sumarMoneda(totalEstimadoMat, moneda, subEstimado);
     }
   }
 
@@ -284,6 +308,8 @@ export async function calcularCostosOT(
   const hhProyectadoItems: HHItem[] = [];
   const totalEjecutadoHH: MonedaTotales = {};
   const totalProyectadoHH: MonedaTotales = {};
+  // Estimado de HH: tarifa × horas_estimadas (sin importar si ya se ejecutó).
+  const totalEstimadoHH: MonedaTotales = {};
   const trabajadoresEstimado = new Set<string>();
   const trabajadoresReal = new Set<string>();
   if (!esInterna) {
@@ -360,12 +386,14 @@ export async function calcularCostosOT(
       // ejecutaron por completo, contamos la diferencia como proyección.
       const horasEstim = dec(p.horas_estimadas);
       if (horasEstim > 0 && p.tecnico) {
+        const cost = costoPorTecnico.get(p.tecnico) ?? { normal: 0, extra: 0 };
+        const tasa = p.horas_extras ? cost.extra : cost.normal;
+        // Estimado: tarifa × horas_estimadas — siempre, sin importar el avance.
+        sumarMoneda(totalEstimadoHH, MONEDA_HH, horasEstim * tasa);
         const ejecutadas = Array.from(aggregadoPorTecnico.values())
           .reduce((s, x) => s + x.horasNormales + x.horasExtras, 0);
         const pendientes = Math.max(horasEstim - ejecutadas, 0);
         if (pendientes > 0) {
-          const cost = costoPorTecnico.get(p.tecnico) ?? { normal: 0, extra: 0 };
-          const tasa = p.horas_extras ? cost.extra : cost.normal;
           const subtotal = pendientes * tasa;
           if (subtotal > 0) {
             hhProyectadoItems.push({
@@ -389,6 +417,7 @@ export async function calcularCostosOT(
   // ── Totales generales por moneda ────────────────────────────────────
   const totalEjecutado: MonedaTotales = {};
   const totalProyectado: MonedaTotales = {};
+  const totalEstimado: MonedaTotales = {};
   for (const [m, v] of Object.entries(totalEjecutadoMat)) sumarMoneda(totalEjecutado, m, v);
   for (const [m, v] of Object.entries(totalEjecutadoCad)) sumarMoneda(totalEjecutado, m, v);
   for (const [m, v] of Object.entries(totalEjecutadoSer)) sumarMoneda(totalEjecutado, m, v);
@@ -397,6 +426,10 @@ export async function calcularCostosOT(
   for (const [m, v] of Object.entries(totalProyectadoCad)) sumarMoneda(totalProyectado, m, v);
   for (const [m, v] of Object.entries(totalProyectadoSer)) sumarMoneda(totalProyectado, m, v);
   for (const [m, v] of Object.entries(totalProyectadoHH)) sumarMoneda(totalProyectado, m, v);
+  for (const [m, v] of Object.entries(totalEstimadoMat)) sumarMoneda(totalEstimado, m, v);
+  for (const [m, v] of Object.entries(totalEstimadoCad)) sumarMoneda(totalEstimado, m, v);
+  for (const [m, v] of Object.entries(totalEstimadoSer)) sumarMoneda(totalEstimado, m, v);
+  for (const [m, v] of Object.entries(totalEstimadoHH)) sumarMoneda(totalEstimado, m, v);
 
   return {
     ejecutado: {
@@ -413,6 +446,13 @@ export async function calcularCostosOT(
       servicios: { items: servicios.filter((s) => s.subtotal_proyectado > 0), total_por_moneda: totalProyectadoSer },
       hh: { items: hhProyectadoItems, total_por_moneda: totalProyectadoHH },
       total_por_moneda: totalProyectado,
+    },
+    estimado: {
+      materiales: { total_por_moneda: totalEstimadoMat },
+      cargo_directo: { total_por_moneda: totalEstimadoCad },
+      servicios: { total_por_moneda: totalEstimadoSer },
+      hh: { total_por_moneda: totalEstimadoHH },
+      total_por_moneda: totalEstimado,
     },
     trabajadores: {
       estimado: trabajadoresEstimado.size,
