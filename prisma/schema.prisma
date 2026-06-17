@@ -1247,8 +1247,11 @@ model Compra {
   otros                  Decimal         @default(0) @db.Decimal(12, 2)
   total                  Decimal         @default(0) @db.Decimal(12, 2)
   moneda_codigo          String?         @db.VarChar(10)
-  nro_factura            String?         @db.VarChar(100)
-  nro_guia               String?         @db.VarChar(100)
+  // Multi-valor (comma-separated): el editor de OC los compone como tags y
+  // ContabilidadView los renderiza en líneas separadas. Bumpeamos a 500 para
+  // soportar varios numeros largos en la misma OC.
+  nro_factura            String?         @db.VarChar(500)
+  nro_guia               String?         @db.VarChar(500)
   // Tipo de pago acordado con el proveedor.
   //   CONTADO        → pago al recibir / sin plazo
   //   CREDITO        → pago a N días (ver dias_credito para el plazo)

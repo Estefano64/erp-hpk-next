@@ -601,16 +601,55 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
               </Descriptions.Item>
               <Descriptions.Item label="Nro Factura">
                 {editing ? (
-                  <Input value={nroFactura} onChange={(e) => setNroFactura(e.target.value)} />
+                  // Multi-valor: cada tag es un número de factura. Persistimos
+                  // como string comma-separated en `nro_factura`. Mode "tags"
+                  // permite escribir libre y separar con Enter, sin lista de
+                  // sugerencias (open=false).
+                  <Select
+                    mode="tags"
+                    value={nroFactura ? nroFactura.split(",").map((s) => s.trim()).filter(Boolean) : []}
+                    onChange={(arr: string[]) => setNroFactura(arr.map((s) => s.trim()).filter(Boolean).join(", "))}
+                    tokenSeparators={[",", ";"]}
+                    open={false}
+                    suffixIcon={null}
+                    placeholder="Escribí cada nro y Enter"
+                    style={{ width: "100%" }}
+                  />
                 ) : (
-                  compra.nro_factura ?? "-"
+                  // Read: split por coma y render en líneas separadas.
+                  (() => {
+                    const partes = (compra.nro_factura ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+                    if (partes.length === 0) return "-";
+                    return (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                        {partes.map((p, i) => <span key={i}>{p}</span>)}
+                      </div>
+                    );
+                  })()
                 )}
               </Descriptions.Item>
               <Descriptions.Item label="Nro Guía">
                 {editing ? (
-                  <Input value={nroGuia} onChange={(e) => setNroGuia(e.target.value)} />
+                  <Select
+                    mode="tags"
+                    value={nroGuia ? nroGuia.split(",").map((s) => s.trim()).filter(Boolean) : []}
+                    onChange={(arr: string[]) => setNroGuia(arr.map((s) => s.trim()).filter(Boolean).join(", "))}
+                    tokenSeparators={[",", ";"]}
+                    open={false}
+                    suffixIcon={null}
+                    placeholder="Escribí cada nro y Enter"
+                    style={{ width: "100%" }}
+                  />
                 ) : (
-                  compra.nro_guia ?? "-"
+                  (() => {
+                    const partes = (compra.nro_guia ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+                    if (partes.length === 0) return "-";
+                    return (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                        {partes.map((p, i) => <span key={i}>{p}</span>)}
+                      </div>
+                    );
+                  })()
                 )}
               </Descriptions.Item>
               <Descriptions.Item label="Tipo de Pago">

@@ -148,6 +148,9 @@ interface Requerimiento {
   nro_req: string | null;
   item_req: number | null;
   tipo_codigo: string | null;
+  // Tipo de la OT (BIE/SER/REP). Solo aplica a OT externa — para las internas
+  // queda null y el filtro las matchea con la rama INT (orden_trabajo_interna_id).
+  ot_tipo_codigo: string | null;
   cantidad: number;
   descripcion: string | null;
   fabricante_codigo: string | null;
@@ -213,6 +216,7 @@ function normalize(r: RequerimientoApi): Requerimiento {
     nro_req: r.nro_req,
     item_req: r.item_req,
     tipo_codigo: r.tipo_codigo,
+    ot_tipo_codigo: r.orden_trabajo?.tipo_codigo ?? null,
     cantidad: Number(r.cantidad),
     descripcion: r.descripcion,
     fabricante_codigo: r.fabricante_codigo,
@@ -296,9 +300,16 @@ function RequerimientosDetalleInner() {
   const [filtroOt, setFiltroOt] = useState<string | undefined>(undefined);
   const [filtroEstado, setFiltroEstado] = useState<string | undefined>(undefined);
   const [filtroRapido, setFiltroRapido] = useState<string>("todos");
-  // Filtro general por tipo de OT — externa | interna | todas. Persistido en
-  // localStorage para que el user no tenga que volver a seleccionarlo cada vez.
-  const [filtroTipoOT, setFiltroTipoOT] = useState<"todas" | "externa" | "interna">("todas");
+  // Filtro general por tipo de OT — granular:
+  //   "todas"   → sin filtro
+  //   "BIE"     → OT externa de tipo Bien/Venta (prefijo V)
+  //   "SER"     → OT externa de tipo Servicio (prefijo S)
+  //   "REP"     → OT externa de tipo Reparación (sin prefijo)
+  //   "INT"     → OT interna (prefijo OI)
+  //   "externa" → cualquier OT externa (BIE+SER+REP) — para compat con vistas viejas
+  // Persistido en localStorage para que el user no tenga que volver a seleccionarlo.
+  type FiltroTipoOT = "todas" | "BIE" | "SER" | "REP" | "INT" | "externa";
+  const [filtroTipoOT, setFiltroTipoOT] = useState<FiltroTipoOT>("todas");
   const [filtroNroReq, setFiltroNroReq] = useState<string | undefined>(undefined);
   const [selectedRows, setSelectedRows] = useState<number[]>([]);
 
@@ -439,8 +450,9 @@ function RequerimientosDetalleInner() {
     // Hidratar filtro tipoOT desde localStorage
     try {
       const stored = localStorage.getItem("req-detalle-tipo-ot");
-      if (stored === "externa" || stored === "interna" || stored === "todas") {
-        setFiltroTipoOT(stored);
+      const VALORES: FiltroTipoOT[] = ["todas", "BIE", "SER", "REP", "INT", "externa"];
+      if (stored && (VALORES as string[]).includes(stored)) {
+        setFiltroTipoOT(stored as FiltroTipoOT);
       }
     } catch { /* ignore */ }
   }, [fetchData, params]);
@@ -462,12 +474,18 @@ function RequerimientosDetalleInner() {
   const filteredData = useMemo(() => {
     let rows = [...allData];
 
-    // Por tipo de OT (externa | interna | todas). Las externas tienen
-    // ot_id != null y orden_trabajo_interna_id null. Las internas al revés.
+    // Por tipo de OT — granular.
+    //   "externa"   → cualquier OT externa (ot_id != null y no interna)
+    //   "INT"       → interna (orden_trabajo_interna_id != null)
+    //   "BIE/SER/REP" → externa filtrada por r.tipo_codigo
     if (filtroTipoOT === "externa") {
       rows = rows.filter((r) => !r.orden_trabajo_interna_id);
-    } else if (filtroTipoOT === "interna") {
+    } else if (filtroTipoOT === "INT") {
       rows = rows.filter((r) => !!r.orden_trabajo_interna_id);
+    } else if (filtroTipoOT === "BIE" || filtroTipoOT === "SER" || filtroTipoOT === "REP") {
+      rows = rows.filter(
+        (r) => !r.orden_trabajo_interna_id && (r.ot_tipo_codigo ?? "").toUpperCase() === filtroTipoOT,
+      );
     }
 
     // Por OT
@@ -1760,17 +1778,22 @@ function RequerimientosDetalleInner() {
               // Conteos en vivo derivados del dataset SIN aplicar el filtro tipoOT
               // (así el badge muestra cuántos hay de cada tipo independientemente
               // de qué esté seleccionado actualmente).
-              const totalExt = allData.filter((r) => !r.orden_trabajo_interna_id).length;
+              const externas = allData.filter((r) => !r.orden_trabajo_interna_id);
+              const totalBIE = externas.filter((r) => (r.ot_tipo_codigo ?? "").toUpperCase() === "BIE").length;
+              const totalSER = externas.filter((r) => (r.ot_tipo_codigo ?? "").toUpperCase() === "SER").length;
+              const totalREP = externas.filter((r) => (r.ot_tipo_codigo ?? "").toUpperCase() === "REP").length;
               const totalInt = allData.filter((r) => !!r.orden_trabajo_interna_id).length;
               return (
                 <Segmented
                   size="small"
                   value={filtroTipoOT}
-                  onChange={(v) => setFiltroTipoOT(v as "todas" | "externa" | "interna")}
+                  onChange={(v) => setFiltroTipoOT(v as FiltroTipoOT)}
                   options={[
                     { label: `Todas (${allData.length})`, value: "todas" },
-                    { label: `OT Externas (${totalExt})`, value: "externa" },
-                    { label: `OT Internas (${totalInt})`, value: "interna" },
+                    { label: `Venta · V (${totalBIE})`, value: "BIE" },
+                    { label: `Servicio · S (${totalSER})`, value: "SER" },
+                    { label: `Reparación (${totalREP})`, value: "REP" },
+                    { label: `Interna · OI (${totalInt})`, value: "INT" },
                   ]}
                 />
               );
