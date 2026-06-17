@@ -127,6 +127,11 @@ export async function POST(req: NextRequest) {
         // Identificado por material_id == null. La distribución va por
         // repuesto_id directamente: actualizamos OTRepuesto.cantidad_recibida
         // y saltamos MovimientoInventario + stock_actual (no hay material).
+        //
+        // Nota: cantidad_recibida se incrementa acá (item arribó a HPK), pero
+        // el item AÚN NO está entregado al técnico. /despachos/ot detecta
+        // este caso (FREE con cant_pendiente=0 + status_oc != ENTREGADO) y
+        // lo muestra como "Listo (de OC recibida)" para el despacho final.
         if (item.material_id == null) {
           if (!item.repuesto_id) {
             throw Object.assign(
