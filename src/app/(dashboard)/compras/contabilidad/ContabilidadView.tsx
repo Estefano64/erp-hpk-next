@@ -313,7 +313,7 @@ export default function ContabilidadView({
       // renderizamos cada número en una línea para que múltiples guías sean
       // fácilmente legibles ("11111111, 2222222" → dos líneas apiladas).
       render: (v: string | null) => {
-        const partes = (v ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+        const partes = (v ?? "").split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
         if (partes.length === 0) return <Text type="secondary">—</Text>;
         return (
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -333,7 +333,7 @@ export default function ContabilidadView({
       ...filtroPorColumna(filtradas, "nro_factura"),
       // Multi-valor (mismo patrón que nro_guia).
       render: (v: string | null) => {
-        const partes = (v ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+        const partes = (v ?? "").split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
         if (partes.length === 0) return <Text type="secondary">—</Text>;
         return (
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
