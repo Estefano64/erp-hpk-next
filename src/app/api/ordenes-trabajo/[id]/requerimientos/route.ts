@@ -17,7 +17,12 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
       return NextResponse.json({ error: "ID inválido" }, { status: 400 });
     }
     const data = await prisma.oTRepuesto.findMany({
-      where: { ot_id: otId },
+      where: {
+        ot_id: otId,
+        // Excluir items "libres" agregados desde el editor de OC — esos
+        // solo viven en el PDF/editor de la OC, no como req de la OT.
+        OR: [{ solo_para_oc: false }, { solo_para_oc: null }],
+      },
       include: {
         material: { select: { codigo: true, descripcion: true, fabricante_codigo: true, unidad_medida_codigo: true, precio: true, moneda_codigo: true } },
         status_requerimiento: { select: { codigo: true, nombre: true } },

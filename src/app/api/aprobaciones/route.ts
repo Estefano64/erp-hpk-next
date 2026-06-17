@@ -60,7 +60,11 @@ export async function GET(req: NextRequest) {
     // ─── RQs pendientes (SIN_APROBACION) ──────────────────────────────────
     let reqs_pendientes: Awaited<ReturnType<typeof prisma.oTRepuesto.findMany>> = [];
     if (tipo === "ALL" || tipo === "RQ") {
-      const whereRQ: Record<string, unknown> = { status_requerimiento_codigo: "SIN_APROBACION" };
+      const whereRQ: Record<string, unknown> = {
+        status_requerimiento_codigo: "SIN_APROBACION",
+        // Items "libres" del editor de OC nunca pasan por aprobación de req.
+        OR: [{ solo_para_oc: false }, { solo_para_oc: null }],
+      };
       if (ot) {
         const otNum = /^\d+$/.test(ot) ? Number(ot) : null;
         if (otNum != null) whereRQ.orden_trabajo = { ot: otNum };
@@ -106,7 +110,12 @@ export async function GET(req: NextRequest) {
 
     // RQs aprobados: status = APROBADO con usuario_aprueba y fecha_aprobacion.
     const histRQs = await prisma.oTRepuesto.findMany({
-      where: { status_requerimiento_codigo: "APROBADO", usuario_aprueba: { not: null }, fecha_aprobacion: { not: null } },
+      where: {
+        status_requerimiento_codigo: "APROBADO",
+        usuario_aprueba: { not: null },
+        fecha_aprobacion: { not: null },
+        OR: [{ solo_para_oc: false }, { solo_para_oc: null }],
+      },
       select: {
         id: true, nro_req: true, item_req: true, descripcion: true, cantidad: true,
         usuario_aprueba: true, fecha_aprobacion: true,

@@ -50,6 +50,10 @@ interface Item {
   // Item ya consumido de almacén — el stock salió en `consumir-de-almacen`
   // y queda solo entregar al técnico (no se vuelve a tocar stock).
   _es_consumido_almacen?: boolean;
+  // Item consumido de OC abierta (ej. BC Bearing M260033) — el stock se
+  // reservó del CompraDetalle de la OC abierta. Mismo patrón que CONSUMIDO
+  // _ALMACEN: solo queda el despacho final al técnico.
+  _es_consumido_oc_abierta?: boolean;
   // Motivo por el cual el item está en la lista de pendientes:
   //   ok            → tiene stock listo, se puede despachar.
   //   sin_oc        → todavía no se generó OC para este req.
@@ -365,17 +369,29 @@ function GrupoCard({
     {
       key: "stock", title: "Stock alm.", width: 90, align: "right",
       render: (_, r) => {
-        // Para items ya consumidos de almacén el stock ya salió — no aplica.
-        if (r._es_consumido_almacen) return <Text type="secondary">—</Text>;
+        // Items ya consumidos (de almacén u OC abierta): el stock ya salió o
+        // está reservado — no aplica mostrar stock catálogo del material.
+        if (r._es_consumido_almacen || r._es_consumido_oc_abierta) return <Text type="secondary">—</Text>;
         const st = Number(r.material?.stock_actual ?? 0);
         return <span style={{ color: r._puede_despachar ? "#52c41a" : "#cf1322", fontWeight: 600 }}>{st}</span>;
       },
     },
     {
-      key: "origen", title: "Origen / PO", width: 170, align: "center",
+      key: "origen", title: "Origen / PO", width: 200, align: "center",
       render: (_, r) => {
         if (r._es_consumido_almacen) {
           return <Tag color="cyan">📦 De almacén</Tag>;
+        }
+        // Items consumidos de OC abierta: mostrar tag explícito con el nro
+        // de OC fuente — antes caía al render de PO normal y aparecía como
+        // "⏳ por llegar" (porque OC abierta status=PROCESO ≠ ENTREGADO),
+        // lo que confundía al user (el item SÍ está listo para despachar).
+        if (r._es_consumido_oc_abierta) {
+          return (
+            <Tooltip title={`Consumido de OC abierta ${r.compra?.numero_po ?? r.po_id}`}>
+              <Tag color="cyan">📦 De OC abierta {r.compra?.numero_po ?? ""}</Tag>
+            </Tooltip>
+          );
         }
         if (!r.po_id) return <Tag color="default">Stock directo</Tag>;
         const recibida = r._po_recibida;
@@ -410,10 +426,13 @@ function GrupoCard({
       // Antes solo decía "Sin stock" — el user quería saber si el bloqueo
       // era "falta comprar OC" (no hay OC), "OC pendiente" (esperando
       // recepción) o "sin stock" (OC recibida pero no hay material).
-      key: "puede", title: "Estado", width: 180, align: "center",
+      key: "puede", title: "Estado", width: 200, align: "center",
       render: (_, r) => {
         if (r._es_consumido_almacen) {
           return <Tag color="green">✓ Listo (de almacén)</Tag>;
+        }
+        if (r._es_consumido_oc_abierta) {
+          return <Tag color="green">✓ Listo (de OC abierta)</Tag>;
         }
         if (r._puede_despachar) {
           return <Tag color="green">✓ Listo para despachar</Tag>;

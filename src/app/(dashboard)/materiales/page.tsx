@@ -146,6 +146,10 @@ export default function MaterialesPage() {
     const params = new URLSearchParams({
       page: String(page),
       limit: String(pageSize),
+      // Esta tabla muestra SOLO catalogados formales (código numérico).
+      // Excluye entries auto-creados desde flujos como ingreso de OCs
+      // abiertas (ej. "BC-PB8931") — esos se ven en /stock/no-catalogados.
+      solo_catalogados: "true",
     });
     if (search) params.set("search", search);
     if (filterPlanta) params.set("planta", filterPlanta);
