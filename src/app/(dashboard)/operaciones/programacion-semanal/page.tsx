@@ -191,6 +191,18 @@ function haEmpezado(estado: string | null | undefined): boolean {
   return ["en_proceso", "pausado", "realizado"].includes(estado ?? "");
 }
 
+// ¿La foto (línea base) quedó desfasada del plan vivo? Pasa cuando una tarea ya
+// enviada se movió después: su *_base apunta al lugar viejo y la vista "Enviado"
+// la sigue mostrando ahí (deja huecos). Solo se considera para tareas NO
+// empezadas: las iniciadas/realizadas conservan su línea base real a propósito.
+function fotoDesfasada(r: PlanRow): boolean {
+  if (!r.fecha_inicio_base) return true; // enviada sin foto → hay que congelarla
+  const ms = (v: string | null) => (v ? new Date(v).getTime() : 0);
+  return ms(r.fecha_inicio) !== ms(r.fecha_inicio_base)
+    || ms(r.fecha_fin) !== ms(r.fecha_fin_base)
+    || (r.tecnico ?? "") !== (r.tecnico_base ?? "");
+}
+
 // Día abreviado en español (sin cambiar el locale global de dayjs).
 const DIAS_ES = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 function diaEs(d: Dayjs, conHora = false): string {
@@ -917,19 +929,22 @@ export default function ProgramacionSemanalPage() {
   }
 
   // ── Enviar la SEMANA COMPLETA (todos los operarios de una) ──
-  // Congela la foto del plan (semana planificada) de todas las tareas AGENDADAS
-  // de la semana mostrada que sigan en borrador. Las del pool (sin fecha) quedan
-  // en borrador, igual que en el envío por operario. La foto solo se escribe la
-  // primera vez por tarea: re-enviar después de reabrir NO la pisa.
+  // Congela la foto del plan (semana planificada) de las tareas AGENDADAS de la
+  // semana. Publica las que aún estaban en borrador y, además, REFRESCA la foto
+  // de TODAS las no empezadas al plan actual — así captura la semana tal como
+  // quedó aunque algunas ya se hubieran enviado y luego se hayan movido (sin
+  // esto quedaban con la foto vieja = huecos). Las iniciadas/realizadas conservan
+  // su línea base real. Las del pool (sin fecha) quedan en borrador.
   async function enviarSemanaCompleta() {
     if (!editMode) {
       messageApi.warning("Activá Modo Edición para enviar la semana.");
       return;
     }
-    const ids = allRows
-      .filter((r) => perteneceASemana(r) && !!r.fecha_inicio && splitTecnicos(r.tecnico).length > 0 && !r.publicado)
-      .map((r) => r.id);
-    if (ids.length === 0) {
+    const agendadas = allRows.filter((r) => perteneceASemana(r) && !!r.fecha_inicio && splitTecnicos(r.tecnico).length > 0);
+    const idsPublicar = agendadas.filter((r) => !r.publicado).map((r) => r.id);
+    const rebasarIds = agendadas.filter((r) => !haEmpezado(r.estado)).map((r) => r.id);
+    const totalAfectadas = new Set([...idsPublicar, ...rebasarIds]).size;
+    if (totalAfectadas === 0) {
       messageApi.info("No hay tareas agendadas pendientes de enviar en esta semana.");
       return;
     }
@@ -938,11 +953,11 @@ export default function ProgramacionSemanalPage() {
       const res = await fetch("/api/planificacion/publicar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ semana: semanaActual, publicado: true, ids }),
+        body: JSON.stringify({ semana: semanaActual, publicado: true, ids: idsPublicar, rebasarIds }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Error");
       endSave();
-      messageApi.success(`Semana ${semanaActual} enviada: ${ids.length} tarea(s). La foto del plan quedó congelada.`);
+      messageApi.success(`Semana ${semanaActual} enviada: ${totalAfectadas} tarea(s). La foto del plan quedó congelada.`);
       notifySync();
       fetchData();
     } catch (e) {
@@ -1915,7 +1930,10 @@ export default function ProgramacionSemanalPage() {
                 El envío congela la foto del plan = semana planificada. */}
             {view === "operario" && vistaTiempo === "plan" && (() => {
               const agendadas = allRows.filter((r) => perteneceASemana(r) && !!r.fecha_inicio && splitTecnicos(r.tecnico).length > 0);
-              const pendientes = agendadas.filter((r) => !r.publicado);
+              // "Pendiente de enviar" = nunca enviada O ya enviada pero movida
+              // después (foto desfasada) y aún no empezada → "Enviar semana" la
+              // re-fotografía. Las iniciadas/realizadas no cuentan (foto fija).
+              const pendientes = agendadas.filter((r) => !r.publicado || (!haEmpezado(r.estado) && fotoDesfasada(r)));
               if (agendadas.length === 0) return null;
               const estadoEnvio = pendientes.length === 0 ? "enviada" : pendientes.length < agendadas.length ? "parcial" : "borrador";
               return (
@@ -1938,8 +1956,9 @@ export default function ProgramacionSemanalPage() {
                           Las del pool (sin fecha) quedan en borrador. Después de enviar, los cambios de la semana cuentan como semana real.
                           {estadoEnvio === "parcial" && (
                             <div style={{ marginTop: 6 }}>
-                              Las tareas que ya tienen foto NO se re-fotografían: esto solo congela las pendientes
-                              (sirve como <strong>publicar todo</strong> después de editar a varios operarios).
+                              Incluye las tareas que se movieron después de un envío anterior: se les
+                              <strong> refresca la foto</strong> al plan actual. Las ya iniciadas/realizadas
+                              conservan su foto original.
                             </div>
                           )}
                         </div>
