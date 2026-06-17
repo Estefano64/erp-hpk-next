@@ -498,7 +498,7 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
           renderMedida(`${p}_cil_dojo_f`, "Diámetro Ojo F", "xy"),
           renderRadioLinea(`${p}_cil_elem_sujecion`, "Elemento de sujeción"),
           renderMedida(`${p}_cil_dint_g`, "Diám. Int. G", "xy"),
-          renderMedida(`${p}_cil_ancho_ojo`, "Ancho de Ojo", "xy"),
+          renderMedida(`${p}_cil_ancho_ojo`, "Ancho de Ojo", "single"),
         ].join("")
       : "";
     seccionesHTML += renderSeccionComponente(
@@ -537,8 +537,13 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
     // ─── Vastago principal ───
     const medidasVasTel = [
       renderMedida(`${p}_vas_desp`, "Diametro Espiga (A)", "xy"),
-      renderMedida(`${p}_vas_dext`, "Diametro Exterior (B)", "xy"),
-      renderMedida(`${p}_vas_dsell`, "Diametro Sellado (C)", "xy"),
+      // Diámetro Vástago se mide en 3 puntos (B1-B3) — el form usa TablaPuntos
+      // con prefijo `{p}_vas_dext` + sufijo "b" → claves `{p}_vas_dext_b{1,2,3}_{x,y}`.
+      // (Antes se leía `{p}_vas_dext`/`{p}_vas_dsell` como un solo X/Y, claves que
+      //  el form nunca escribe → salían filas "Exterior (B)"/"Sellado (C)" con "—".)
+      renderMedida(`${p}_vas_dext_b1`, "Diametro Vástago B1", "xy"),
+      renderMedida(`${p}_vas_dext_b2`, "Diametro Vástago B2", "xy"),
+      renderMedida(`${p}_vas_dext_b3`, "Diametro Vástago B3", "xy"),
       renderMedida(`${p}_vas_dcoj`, "Diametro Cojinete (D)", "xy"),
       renderMedida(`${p}_vas_lcro`, "Longitud Cromo (E)", "single"),
       renderMedida(`${p}_vas_ltot`, "Longitud Total (F)", "single"),
@@ -547,7 +552,7 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
       renderRadioLinea(`${p}_vas_elem_sujecion`, "Elemento de sujeción"),
       renderMedida(`${p}_vas_dint_ojo_i`, "Diám. Int. Ojo I", "xy"),
       renderMedida(`${p}_vas_dint_j`, "Diám. Int. J", "xy"),
-      renderMedida(`${p}_vas_ancho_ojo`, "Ancho de Ojo", "xy"),
+      renderMedida(`${p}_vas_ancho_ojo`, "Ancho de Ojo", "single"),
     ].join("");
     seccionesHTML += renderSeccionComponente(
       numSec++,
@@ -703,7 +708,7 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
         renderMedida(`${p}_tapa_post_dsell`, "Diám. Sellado", "single"),
         renderMedida(`${p}_tapa_post_dint_ojo`, "Diám. Int. Ojo", "single"),
         renderMedida(`${p}_tapa_post_dint_rotula`, "Diám. Int. Rótula", "single"),
-        renderMedida(`${p}_tapa_post_ancho_ojo`, "Ancho de Ojo", "single"),
+        renderMedida(`${p}_tapa_post_ancho_ojo`, "Ancho de Ojo", "xy"),
       ].join(""),
       `${p}_tapa_post`,
       []
@@ -955,7 +960,7 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
           renderMedida(`${p}_cil_dojo_f`, "Diámetro Ojo F", "xy"),
           renderRadioLinea(`${p}_cil_elem_sujecion`, "Elemento de sujeción"),
           renderMedida(`${p}_cil_dint_g`, "Diám. Int. G", "xy"),
-          renderMedida(`${p}_cil_ancho_ojo`, "Ancho de Ojo", "xy"),
+          renderMedida(`${p}_cil_ancho_ojo`, "Ancho de Ojo", "single"),
         ].join("")
       : "";
     const medidasCil = medidasCilBase + medidasCilExtra;
@@ -1035,8 +1040,11 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
       const muestraCancamoVastago = esCilHidraulico; // CHVS/CHP/CHPDV
       const medidasVasBase = [
         renderMedida(`${p}_vas_desp`, "Diametro Espiga (A)", "xy"),
-        renderMedida(`${p}_vas_dext`, "Diametro Exterior (B)", "xy"),
-        renderMedida(`${p}_vas_dsell`, "Diametro Sellado (C)", "xy"),
+        // Diámetro Vástago en 3 puntos (B1-B3): el form usa TablaPuntos con
+        // prefijo `{p}_vas_dext` + sufijo "b" → `{p}_vas_dext_b{1,2,3}_{x,y}`.
+        renderMedida(`${p}_vas_dext_b1`, "Diametro Vástago B1", "xy"),
+        renderMedida(`${p}_vas_dext_b2`, "Diametro Vástago B2", "xy"),
+        renderMedida(`${p}_vas_dext_b3`, "Diametro Vástago B3", "xy"),
         renderMedida(`${p}_vas_dcoj`, "Diametro Cojinete (D)", "xy"),
         renderMedida(`${p}_vas_lcro`, "Longitud Cromo (E)", "single"),
         renderMedida(`${p}_vas_ltot`, "Longitud Total (F)", "single"),
@@ -1048,7 +1056,7 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
         renderRadioLinea(`${p}_vas_elem_sujecion`, "Elemento de sujeción"),
         renderMedida(`${p}_vas_dint_ojo_i`, "Diám. Int. Ojo I", "xy"),
         renderMedida(`${p}_vas_dint_j`, "Diám. Int. J", "xy"),
-        renderMedida(`${p}_vas_ancho_ojo`, "Ancho de Ojo", "xy"),
+        renderMedida(`${p}_vas_ancho_ojo`, "Ancho de Ojo", "single"),
       ].join("");
       const medidasVas = medidasVasBase + medidasVasExtra;
       seccionesHTML += renderSeccionComponente(numSec++, "Vastago", imgVastago, "Vastago (A-J)", medidasVas, `${p}_vas`, []);
