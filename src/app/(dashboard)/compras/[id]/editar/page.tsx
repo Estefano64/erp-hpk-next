@@ -95,9 +95,17 @@ export default function EditarOCPage() {
   const [rows, setRows] = useState<ItemRow[]>([]);
   const [originalRowsHash, setOriginalRowsHash] = useState<string>("");
   const [descuento, setDescuento] = useState<number>(0);
+  // "Otros" se guarda como Decimal signado en BD. El input UI maneja el
+  // valor absoluto + un toggle de signo (+/−) para que sea explícito si el
+  // monto suma o resta del total. Persistimos signed → en BD `otros` puede
+  // ser negativo (descuento extra) o positivo (cargo extra).
   const [otros, setOtros] = useState<number>(0);
+  const [otrosSigno, setOtrosSigno] = useState<"+" | "-">("+");
   const [originalDescuento, setOriginalDescuento] = useState<number>(0);
+  // El "original" se compara con valor SIGNED (otros × signo) — así un cambio
+  // de signo cuenta como cambio aunque el valor absoluto no cambie.
   const [originalOtros, setOriginalOtros] = useState<number>(0);
+  const [originalOtrosSigno, setOriginalOtrosSigno] = useState<"+" | "-">("+");
   const [numeroReq, setNumeroReq] = useState<string>("");
   const [tipoPago, setTipoPago] = useState<string | null>(null);
   const [diasCredito, setDiasCredito] = useState<number | null>(null);
@@ -151,7 +159,13 @@ export default function EditarOCPage() {
       setRows(mapped);
       setOriginalRowsHash(JSON.stringify(mapped));
       const desc = Number(c.descuento ?? 0);
-      const otr = Number(c.otros ?? 0);
+      // Recuperamos signo desde el valor signed: si es < 0, mostramos
+      // "−" con el valor absoluto; si ≥ 0, "+" con el valor tal cual.
+      const otrRaw = Number(c.otros ?? 0);
+      const otr = Math.abs(otrRaw);
+      const signo: "+" | "-" = otrRaw < 0 ? "-" : "+";
+      setOtrosSigno(signo);
+      setOriginalOtrosSigno(signo);
       setDescuento(desc);
       setOtros(otr);
       setOriginalDescuento(desc);
@@ -339,8 +353,9 @@ export default function EditarOCPage() {
     || rows.some((r) => r._deleted && r.id != null)
     || descuento !== originalDescuento
     || otros !== originalOtros
+    || otrosSigno !== originalOtrosSigno
     || numeroReq !== originalNumeroReq,
-  [visibleRows, originalRowsHash, rows, descuento, originalDescuento, otros, originalOtros, numeroReq, originalNumeroReq, tipoPago, originalTipoPago, diasCredito, originalDiasCredito, aplicaIgv, originalAplicaIgv]);
+  [visibleRows, originalRowsHash, rows, descuento, originalDescuento, otros, originalOtros, otrosSigno, originalOtrosSigno, numeroReq, originalNumeroReq, tipoPago, originalTipoPago, diasCredito, originalDiasCredito, aplicaIgv, originalAplicaIgv]);
 
   useUnsavedChangesWarning(hayCambios, "Hay cambios sin guardar en la OC.", `compra-editar-${params?.id ?? "?"}`);
 
@@ -354,9 +369,11 @@ export default function EditarOCPage() {
     // Si la OC está marcada como "Sin IGV" (aplicaIgv=false) el impuesto es 0.
     const baseImponible = Math.max(0, subtotal - descuento);
     const igv = aplicaIgv ? baseImponible * 0.18 : 0;
-    const total = baseImponible + igv + otros;
-    return { sumaIngresada, subtotal, descuento, igv, otros, total };
-  }, [visibleRows, descuento, otros, preciosConIgv, aplicaIgv]);
+    // El signo decide si "otros" suma o resta del total.
+    const otrosSignado = otrosSigno === "-" ? -otros : otros;
+    const total = baseImponible + igv + otrosSignado;
+    return { sumaIngresada, subtotal, descuento, igv, otros: otrosSignado, total };
+  }, [visibleRows, descuento, otros, otrosSigno, preciosConIgv, aplicaIgv]);
 
   const handleGuardar = async () => {
     if (!compra) return;
@@ -384,7 +401,7 @@ export default function EditarOCPage() {
         })),
         deleteIds: rows.filter((r) => r._deleted && r.id != null).map((r) => r.id),
         descuento,
-        otros,
+        otros: otrosSigno === "-" ? -otros : otros,
         numero_req: numeroReq.trim() || null,
         tipo_pago: tipoPago,
         dias_credito: tipoPago === "CONTADO" ? 0 : (diasCredito ?? null),
@@ -700,16 +717,32 @@ export default function EditarOCPage() {
             />
           </Col>
           <Col xs={12} md={4}>
-            <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 2 }}>Otros</div>
-            <InputNumber
-              value={otros}
-              min={0}
-              step={0.01}
-              precision={2}
-              style={{ width: "100%" }}
-              prefix={compra.moneda}
-              onChange={(v) => setOtros(v == null ? 0 : Number(v))}
-            />
+            <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 2 }}>
+              Otros{" "}
+              <Tooltip title="Cargo o descuento adicional aplicado al total">
+                <span style={{ color: brand.textSecondary, fontSize: 11 }}>ⓘ</span>
+              </Tooltip>
+            </div>
+            <Space.Compact style={{ width: "100%" }}>
+              <Select
+                value={otrosSigno}
+                onChange={(v) => setOtrosSigno(v)}
+                style={{ width: 70 }}
+                options={[
+                  { value: "+", label: "+ Sumar" },
+                  { value: "-", label: "− Restar" },
+                ]}
+              />
+              <InputNumber
+                value={otros}
+                min={0}
+                step={0.01}
+                precision={2}
+                style={{ width: "100%" }}
+                prefix={compra.moneda}
+                onChange={(v) => setOtros(v == null ? 0 : Number(v))}
+              />
+            </Space.Compact>
           </Col>
           <Col xs={12} md={4}>
             <Statistic title="TOTAL" value={totales.total} precision={2} prefix={compra.moneda} styles={{ content: { color: brand.navy, fontWeight: 700 } }} />

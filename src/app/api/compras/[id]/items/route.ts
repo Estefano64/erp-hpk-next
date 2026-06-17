@@ -25,7 +25,9 @@ const Schema = z.object({
   deleteIds: z.array(z.coerce.number().int().positive()).default([]),
   // Header-level (opcionales): si vienen, se persisten en la Compra.
   descuento: z.coerce.number().min(0).optional(),
-  otros: z.coerce.number().min(0).optional(),
+  // `otros` puede ser negativo: el editor de OC permite elegir si suma o
+  // resta del total (toggle +/− al lado del input). Se persiste signed.
+  otros: z.coerce.number().optional(),
   numero_req: z.string().trim().max(50).nullable().optional(),
   tipo_pago: z.string().trim().max(30).nullable().optional(),
   dias_credito: z.coerce.number().int().min(0).max(365).nullable().optional(),

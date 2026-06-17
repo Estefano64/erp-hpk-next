@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Typography, Card, Table, Tag, Space, Button, Row, Col, Statistic, Empty,
-  App, Tooltip, Alert, Modal, Form, Input, DatePicker,
+  App, Tooltip, Modal, Form, Input, DatePicker,
 } from "antd";
 import {
   ExportOutlined, ReloadOutlined, CheckCircleOutlined, WarningOutlined,
@@ -267,12 +267,6 @@ export default function DespachosPage() {
           />
         </Space>
       </div>
-
-      <Alert
-        type="info" showIcon style={{ marginBottom: 12 }}
-        title="¿Qué es esto?"
-        description="OTs con requerimientos APROBADOS pendientes de entrega. Incluye items con OC ya recibida (material llegó al almacén) e items que ya estaban en stock. Una OT 'completa' tiene todos sus items con stock listo; 'incompleta' espera que llegue parte del material. Podés despachar parcial o completo: descuenta stock + marca ENTREGADO/INCOMPLETO + deja traza en historial."
-      />
 
       <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
         <Col xs={12} md={4}><Card><Statistic title="OTs pendientes" value={gruposFiltrados.length} prefix={<InboxOutlined style={{ color: brand.navy }} />} /></Card></Col>
