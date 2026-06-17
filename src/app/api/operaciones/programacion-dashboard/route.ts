@@ -82,30 +82,36 @@ export async function GET() {
     // por componente perdía las de distinto casing. Resolvemos por código O por
     // nombre (normalizado) al código CANÓNICO del catálogo.
     const norm = (s: string | null | undefined): string => (s ?? "").trim().toUpperCase();
+    // `mkey`: clave de EMPAREJAMIENTO contra el catálogo — además de trim+upper,
+    // ignora tildes ("Preparacion" vs "Preparación"). Solo para MATCHEAR; las claves
+    // finales del planMap usan `norm` sobre el código canónico (sin tildes), así
+    // coinciden con las que arma el frontend.
+    const mkey = (s: string | null | undefined): string =>
+      norm(s).normalize("NFD").replace(/\p{Diacritic}/gu, "");
     const compsCatSet = new Set(componentesCat.map((c) => norm(c.codigo)));
     // Componente: por código y por nombre → código canónico.
     const compCanonByKey = new Map<string, string>();
     for (const c of componentesCat) {
-      compCanonByKey.set(norm(c.codigo), c.codigo);
-      compCanonByKey.set(norm(c.nombre), c.codigo);
+      compCanonByKey.set(mkey(c.codigo), c.codigo);
+      compCanonByKey.set(mkey(c.nombre), c.codigo);
     }
-    // Operación: `${normCompCanon}__${normCódigoONombre}` → código canónico.
+    // Operación: `${mkeyCompCanon}__${mkeyCódigoONombre}` → código canónico.
     const opCanonByKey = new Map<string, string>();
     for (const o of operacionesCat) {
-      const cc = norm(o.componente_codigo);
-      opCanonByKey.set(`${cc}__${norm(o.codigo)}`, o.codigo);
-      opCanonByKey.set(`${cc}__${norm(o.nombre)}`, o.codigo);
+      const cc = mkey(o.componente_codigo);
+      opCanonByKey.set(`${cc}__${mkey(o.codigo)}`, o.codigo);
+      opCanonByKey.set(`${cc}__${mkey(o.nombre)}`, o.codigo);
     }
     // Devuelve los códigos canónicos de una planificación. `opCanon` es null si la
     // operación no existe en el catálogo (ni por código ni por nombre) → es un extra.
     const resolver = (p: Plan) => {
       const rawComp = (p.componente ?? "").trim();
       const rawOp = (p.operacion_codigo ?? "").trim();
-      const compCanon = compCanonByKey.get(norm(rawComp)) ?? rawComp;
-      const cc = norm(compCanon);
+      const compCanon = compCanonByKey.get(mkey(rawComp)) ?? rawComp;
+      const cc = mkey(compCanon);
       const opCanon =
-        opCanonByKey.get(`${cc}__${norm(rawOp)}`) ??
-        opCanonByKey.get(`${cc}__${norm((p.descripcion ?? "").trim())}`) ??
+        opCanonByKey.get(`${cc}__${mkey(rawOp)}`) ??
+        opCanonByKey.get(`${cc}__${mkey((p.descripcion ?? "").trim())}`) ??
         null;
       return { rawComp, rawOp, compCanon, opCanon };
     };
