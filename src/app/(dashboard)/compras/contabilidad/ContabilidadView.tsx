@@ -307,18 +307,42 @@ export default function ContabilidadView({
       render: (v: number | string, r) => <b style={{ color: brand.navy }}>{r.moneda} {Number(v).toLocaleString("es-PE", { minimumFractionDigits: 2 })}</b>,
     },
     {
-      key: "nro_guia", title: "Nro Guía", dataIndex: "nro_guia", width: 120, align: "left",
+      key: "nro_guia", title: "Nro Guía", dataIndex: "nro_guia", width: 140, align: "left",
       ...filtroPorColumna(filtradas, "nro_guia"),
-      render: (v: string | null) => v ?? <Text type="secondary">—</Text>,
+      // Multi-valor: el campo es texto plano comma-separated. Lo dividimos y
+      // renderizamos cada número en una línea para que múltiples guías sean
+      // fácilmente legibles ("11111111, 2222222" → dos líneas apiladas).
+      render: (v: string | null) => {
+        const partes = (v ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+        if (partes.length === 0) return <Text type="secondary">—</Text>;
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {partes.map((p, i) => (
+              <span key={i} style={{ fontSize: 12, lineHeight: 1.2 }}>{p}</span>
+            ))}
+          </div>
+        );
+      },
     },
     {
       key: "guia", title: "Archivos Guía", width: 280, align: "left",
       render: (_v, r) => archivoCell(r, "guía", "guia", "compra-guia"),
     },
     {
-      key: "nro_factura", title: "Nro Factura", dataIndex: "nro_factura", width: 130, align: "left",
+      key: "nro_factura", title: "Nro Factura", dataIndex: "nro_factura", width: 150, align: "left",
       ...filtroPorColumna(filtradas, "nro_factura"),
-      render: (v: string | null) => v ?? <Text type="secondary">—</Text>,
+      // Multi-valor (mismo patrón que nro_guia).
+      render: (v: string | null) => {
+        const partes = (v ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+        if (partes.length === 0) return <Text type="secondary">—</Text>;
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {partes.map((p, i) => (
+              <span key={i} style={{ fontSize: 12, lineHeight: 1.2 }}>{p}</span>
+            ))}
+          </div>
+        );
+      },
     },
     {
       key: "factura", title: "Archivos Factura", width: 280, align: "left",

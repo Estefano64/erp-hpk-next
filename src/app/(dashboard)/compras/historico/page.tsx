@@ -4,9 +4,10 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Typography, Table, Input, Space, Button, Empty, Row, Col, Card, Statistic,
   Tag, InputNumber, DatePicker, App, Tooltip, Select, Segmented, Switch, Badge,
+  Modal, Form,
 } from "antd";
 import dayjs, { Dayjs } from "dayjs";
-import { ReloadOutlined, SearchOutlined, FileSearchOutlined, EditOutlined, FileExcelOutlined, ClearOutlined } from "@ant-design/icons";
+import { ReloadOutlined, SearchOutlined, FileSearchOutlined, EditOutlined, FileExcelOutlined, ClearOutlined, PlusOutlined } from "@ant-design/icons";
 import type { ColumnsType, ColumnGroupType, ColumnType } from "antd/es/table/interface";
 import { brand } from "@/lib/theme";
 import {
@@ -60,6 +61,81 @@ export default function HistoricoComprasPage() {
   const [precioMax, setPrecioMax] = useState<number | null>(null);
   const [minCantProveedores, setMinCantProveedores] = useState<number | null>(null);
   const [soloConCompra, setSoloConCompra] = useState(false);
+
+  // Modal "Nueva cotización": permite crear una cotización fresca eligiendo
+  // material + proveedor + precio + fecha desde un único formulario, sin
+  // depender de que la celda esté visible en la matriz. Útil cuando el
+  // material todavía no aparece (no tiene OC previa ni cotización registrada).
+  const [nuevaCotOpen, setNuevaCotOpen] = useState(false);
+  const [nuevaCotForm] = Form.useForm<{
+    material_id: number;
+    proveedor_id: number;
+    precio_unitario: number;
+    moneda_codigo: string;
+    fecha: Dayjs;
+    observaciones?: string;
+  }>();
+  const [matOptions, setMatOptions] = useState<Array<{ value: number; label: string }>>([]);
+  const [matSearch, setMatSearch] = useState("");
+  const [matLoading, setMatLoading] = useState(false);
+  const [savingNuevaCot, setSavingNuevaCot] = useState(false);
+
+  // Búsqueda incremental de materiales (debounce 250ms). Cada query trae los
+  // 30 más relevantes por code/np/descripción.
+  useEffect(() => {
+    if (!nuevaCotOpen) return;
+    const q = matSearch.trim();
+    if (!q) { setMatOptions([]); return; }
+    const t = setTimeout(async () => {
+      setMatLoading(true);
+      try {
+        const res = await fetch(`/api/materiales?limit=30&search=${encodeURIComponent(q)}`);
+        if (res.ok) {
+          const j = await res.json();
+          type MatBrief = { material_id: number; codigo: string | null; np: string | null; descripcion: string | null };
+          const opts = (j.data as MatBrief[]).map((m) => ({
+            value: m.material_id,
+            label: `${m.codigo ?? "—"} · ${m.np ?? "—"} · ${m.descripcion ?? ""}`.trim(),
+          }));
+          setMatOptions(opts);
+        }
+      } finally { setMatLoading(false); }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [matSearch, nuevaCotOpen]);
+
+  const abrirNuevaCot = () => {
+    nuevaCotForm.resetFields();
+    nuevaCotForm.setFieldsValue({ fecha: dayjs(), moneda_codigo: "USD" });
+    setMatOptions([]); setMatSearch("");
+    setNuevaCotOpen(true);
+  };
+
+  const guardarNuevaCot = async () => {
+    try {
+      const v = await nuevaCotForm.validateFields();
+      setSavingNuevaCot(true);
+      const res = await fetch("/api/compras/cotizaciones", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          material_id: v.material_id,
+          proveedor_id: v.proveedor_id,
+          precio_unitario: v.precio_unitario,
+          moneda_codigo: v.moneda_codigo || "USD",
+          observaciones: v.observaciones || null,
+          usuario: "Logistica",
+          fecha: v.fecha.format("YYYY-MM-DD"),
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || "Error");
+      message.success(j.message || "Cotización creada");
+      setNuevaCotOpen(false);
+      fetchData();
+    } catch (e) {
+      if (e instanceof Error) message.error(e.message);
+    } finally { setSavingNuevaCot(false); }
+  };
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -401,6 +477,14 @@ export default function HistoricoComprasPage() {
           Listado de Repuestos — Precios Unitarios por Proveedor
         </Title>
         <Space>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={abrirNuevaCot}
+            style={{ background: brand.navy, borderColor: brand.navy }}
+          >
+            Nueva cotización
+          </Button>
           <Tooltip title="Descarga lo que está visible en la tabla — respeta búsqueda y filtros de columna">
             <Button
               icon={<FileExcelOutlined />}
@@ -557,6 +641,79 @@ export default function HistoricoComprasPage() {
           onFilteredChange={setVistaActual}
         />
       )}
+
+      <Modal
+        title={<Space><PlusOutlined style={{ color: brand.navy }} /><span>Nueva cotización</span></Space>}
+        open={nuevaCotOpen}
+        onCancel={() => setNuevaCotOpen(false)}
+        onOk={guardarNuevaCot}
+        confirmLoading={savingNuevaCot}
+        okText="Guardar cotización"
+        cancelText="Cancelar"
+        destroyOnHidden
+        width={560}
+      >
+        <Text type="secondary" style={{ display: "block", marginBottom: 12, fontSize: 12 }}>
+          Crea una cotización manual: elegí material, proveedor y precio. Aparecerá luego en la matriz como override (naranja).
+        </Text>
+        <Form form={nuevaCotForm} layout="vertical" preserve={false}>
+          <Form.Item
+            name="material_id"
+            label="Material"
+            rules={[{ required: true, message: "Elegí un material" }]}
+          >
+            <Select
+              showSearch
+              placeholder="Buscá por código, N° parte o descripción…"
+              filterOption={false}
+              onSearch={setMatSearch}
+              notFoundContent={matLoading ? "Buscando…" : matSearch ? "Sin resultados" : "Escribí para buscar"}
+              options={matOptions}
+              loading={matLoading}
+            />
+          </Form.Item>
+          <Form.Item
+            name="proveedor_id"
+            label="Proveedor"
+            rules={[{ required: true, message: "Elegí un proveedor" }]}
+          >
+            <Select
+              showSearch
+              placeholder="Elegí proveedor"
+              optionFilterProp="label"
+              options={proveedores.map((p) => ({ value: p.id, label: p.nombre }))}
+            />
+          </Form.Item>
+          <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item
+                name="precio_unitario"
+                label="Precio unitario"
+                rules={[{ required: true, message: "Precio requerido" }]}
+              >
+                <InputNumber min={0} step={0.01} style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
+              <Form.Item name="moneda_codigo" label="Moneda" initialValue="USD">
+                <Select options={[
+                  { value: "USD", label: "USD" },
+                  { value: "PEN", label: "PEN" },
+                  { value: "EUR", label: "EUR" },
+                ]} />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
+              <Form.Item name="fecha" label="Fecha" rules={[{ required: true }]}>
+                <DatePicker format="DD/MM/YY" style={{ width: "100%" }} allowClear={false} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item name="observaciones" label="Observaciones (opcional)">
+            <Input.TextArea rows={2} maxLength={300} showCount placeholder="Notas internas" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }
