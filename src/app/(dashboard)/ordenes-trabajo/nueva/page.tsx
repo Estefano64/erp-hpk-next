@@ -170,10 +170,10 @@ export default function NuevaOTPage() {
       setPorcentajePcr(null);
     }
     if (esServicio) {
-      // SER no usa Atención reparación ni fecha de requerimiento del cliente.
+      // SER no usa Atención reparación. La Fecha de Requerimiento del Cliente
+      // SÍ aplica a servicio (no se limpia al cambiar de tipo).
       form.setFieldsValue({
         atencion_reparacion_codigo: undefined,
-        fecha_requerimiento_cliente: undefined,
       });
       setAtencionCodigo("");
       setDiasCalculados(null);
@@ -331,9 +331,9 @@ export default function NuevaOTPage() {
         monto_cotizacion: values.monto_cotizacion ?? null,
         moneda_cotizacion_codigo: values.moneda_cotizacion_codigo || null,
         comentarios: values.comentarios || null,
-        // Fecha Requerimiento Cliente: aplica a REP y BIE (no SER). Para
-        // Contrato se calcula sola (manda null) y el backend la deriva.
-        fecha_requerimiento_cliente: !esServicio && atencionCodigo !== "Contrato" && values.fecha_requerimiento_cliente
+        // Fecha Requerimiento Cliente: aplica a REP, BIE y SER. Para Contrato
+        // (solo REP/BIE) se calcula sola (manda null) y el backend la deriva.
+        fecha_requerimiento_cliente: atencionCodigo !== "Contrato" && values.fecha_requerimiento_cliente
           ? values.fecha_requerimiento_cliente.format("YYYY-MM-DD")
           : null,
       };
@@ -800,9 +800,9 @@ export default function NuevaOTPage() {
           </Row>
 
           {/* Fecha Requerimiento Cliente: REP y BIE; SER no la usa. */}
-          {!esServicio && <Divider style={{ margin: "8px 0 16px" }} />}
+          <Divider style={{ margin: "8px 0 16px" }} />
 
-          <Row gutter={16} style={{ display: esServicio ? "none" : undefined }}>
+          <Row gutter={16}>
             {atencionCodigo === "Contrato" ? (
               <>
                 <Col xs={12} md={6}>
@@ -851,13 +851,17 @@ export default function NuevaOTPage() {
                     />
                   </Form.Item>
                 </Col>
-                <Col xs={12} md={6}>
-                  <Form.Item label="Días calculados">
-                    <Text strong style={{ fontSize: 16 }}>
-                      {diasCalculados != null ? `${diasCalculados} días` : "-"}
-                    </Text>
-                  </Form.Item>
-                </Col>
+                {/* "Días calculados" = días entre recepción y requerimiento.
+                    No aplica a Servicio (no hay recepción) → se oculta. */}
+                {!esServicio && (
+                  <Col xs={12} md={6}>
+                    <Form.Item label="Días calculados">
+                      <Text strong style={{ fontSize: 16 }}>
+                        {diasCalculados != null ? `${diasCalculados} días` : "-"}
+                      </Text>
+                    </Form.Item>
+                  </Col>
+                )}
               </>
             )}
           </Row>
