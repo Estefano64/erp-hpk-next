@@ -202,13 +202,30 @@ export async function GET(_req: NextRequest, { params }: Params) {
     const MIN_ROWS = Math.max(5, items.length);
     const itemsRows: string[] = [];
     items.forEach((r: Item, idx: number) => {
-      const descCruda = r.material?.descripcion ?? r.descripcion ?? r.texto ?? "";
+      // Override por OC: si el user editó algún campo en /compras/[id]/editar
+      // se persistió en oc_* y prevalece sobre el del req. Cast a `any` porque
+      // el tipo inferido de ot_repuestos no incluye las columnas nuevas si
+      // este endpoint se compiló antes del prisma generate.
+      const rAny = r as unknown as {
+        oc_descripcion?: string | null;
+        oc_cantidad?: string | number | null;
+        oc_precio_unitario?: string | number | null;
+        oc_unidad_medida?: string | null;
+      };
+      const descCruda = rAny.oc_descripcion
+        ?? r.material?.descripcion
+        ?? r.descripcion
+        ?? r.texto
+        ?? "";
       const descripcion = quitarFabricanteDeDesc(descCruda, r.material?.fabricante?.nombre);
       const codigo = r.material?.codigo ?? r.material_codigo ?? "";
       const np = r.material?.np ?? "";
-      const um = r.material?.unidad_medida_codigo ?? r.unidad_medida ?? "UN";
-      const cant = Number(r.cantidad);
-      const pu = r.precio_unitario ? Number(r.precio_unitario) : 0;
+      const um = rAny.oc_unidad_medida
+        ?? r.material?.unidad_medida_codigo
+        ?? r.unidad_medida
+        ?? "UN";
+      const cant = Number(rAny.oc_cantidad ?? r.cantidad);
+      const pu = Number(rAny.oc_precio_unitario ?? r.precio_unitario ?? 0);
       const tot = cant * pu;
 
       // Plantilla 2026: la columna "OT" muestra el código formateado de la OT

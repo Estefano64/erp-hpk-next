@@ -73,23 +73,35 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
       }
 
       // 2) Update / create
+      //
+      // Decisión de arquitectura (pedido del user): los edits en la OC NO
+      // deben pisar los campos del req original. En su lugar se persisten
+      // en columnas paralelas oc_descripcion / oc_cantidad / oc_precio_unitario
+      // / oc_unidad_medida. El PDF y la vista de la OC los muestran con
+      // fallback al valor original. Esto permite ajustar descripción y
+      // precio para el proveedor sin alterar el req que sigue siendo la
+      // fuente de verdad del pedido del técnico.
+      //
+      // Campos que SÍ siguen modificándose en el req: material_id,
+      // material_codigo, fabricante_codigo, moneda y fecha_entrega_esperada
+      // — son "metadatos" del item que naturalmente cambian al armar la OC.
       for (const it of items) {
         const fecha = parseDateOnly(it.fecha_entrega_esperada);
         if (it.id && itemsIds.has(it.id)) {
-          // Update existente
+          // Update existente — solo override (no toca cantidad/precio/desc/UM del req).
           await tx.oTRepuesto.update({
             where: { id: it.id },
             data: {
               material_id: it.material_id ?? null,
               material_codigo: it.material_codigo ?? null,
-              descripcion: it.descripcion ?? null,
-              texto: it.texto ?? null,
-              unidad_medida: it.unidad_medida ?? "UNIDAD",
-              cantidad: new Prisma.Decimal(it.cantidad),
-              precio_unitario: new Prisma.Decimal(it.precio_unitario),
               moneda: it.moneda ?? compra.moneda_codigo ?? "USD",
               fabricante_codigo: it.fabricante_codigo ?? null,
               fecha_entrega_esperada: fecha,
+              // Override columnas — solo escribimos si llegó valor del cliente.
+              oc_descripcion: it.descripcion ?? null,
+              oc_cantidad: new Prisma.Decimal(it.cantidad),
+              oc_precio_unitario: new Prisma.Decimal(it.precio_unitario),
+              oc_unidad_medida: it.unidad_medida ?? "UNIDAD",
             },
           });
         } else {
@@ -100,6 +112,9 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
               { code: "SIN_OT" },
             );
           }
+          // Items "libres" agregados desde el editor de OC. Como no tienen
+          // req previo, sus valores originales y los oc_* son iguales — el
+          // user los ve tanto en /requerimientos como en el PDF de OC.
           await tx.oTRepuesto.create({
             data: {
               ot_id: otIdDefault,
@@ -122,6 +137,11 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
               tipo_codigo: "MAC",
               es_adicional: true,
               usuario_solicita: compra.usuario_solicita ?? "Logistica",
+              // Override = original para items nuevos (no tienen req previo).
+              oc_descripcion: it.descripcion ?? null,
+              oc_cantidad: new Prisma.Decimal(it.cantidad),
+              oc_precio_unitario: new Prisma.Decimal(it.precio_unitario),
+              oc_unidad_medida: it.unidad_medida ?? "UNIDAD",
             },
           });
         }
@@ -129,13 +149,17 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
 
       // 3) Recalcular totales de la compra
       //    total = subtotal − descuento + impuesto + otros
+      // Usamos los OVERRIDES de OC con fallback al valor del req — así el
+      // total de la OC refleja lo que el user ve en el editor, no lo del req.
       const itemsActuales = await tx.oTRepuesto.findMany({
         where: { po_id: compraId },
-        select: { cantidad: true, precio_unitario: true },
+        select: { cantidad: true, precio_unitario: true, oc_cantidad: true, oc_precio_unitario: true },
       });
       let subtotal = new Prisma.Decimal(0);
       for (const r of itemsActuales) {
-        const linea = new Prisma.Decimal(r.precio_unitario ?? 0).mul(new Prisma.Decimal(r.cantidad ?? 0));
+        const cantUsada = r.oc_cantidad ?? r.cantidad ?? 0;
+        const precioUsado = r.oc_precio_unitario ?? r.precio_unitario ?? 0;
+        const linea = new Prisma.Decimal(precioUsado).mul(new Prisma.Decimal(cantUsada));
         subtotal = subtotal.plus(linea);
       }
       // Si vinieron en el payload los persistimos; si no, usamos los actuales de la compra.
