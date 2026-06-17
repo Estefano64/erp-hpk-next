@@ -15,7 +15,7 @@ import dayjs from "dayjs";
 import { formatDateOnly } from "@/lib/dates";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
-import { useCachedFetch } from "@/lib/useCachedFetch";
+import { useCachedFetch, invalidateCachePrefix } from "@/lib/useCachedFetch";
 import {
   useColumnasOcultas,
   ColumnasToggleButton,
@@ -368,6 +368,12 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
             if (sj && !sj.reused) serviciosNuevos.add(nombre);
           }
         } catch { /* falla silenciosa: no bloquear el flujo principal */ }
+      }
+      // Si se registró algún servicio nuevo, invalidar el cache compartido del
+      // catálogo (useCachedFetch no refresca solo) para que aparezca en el
+      // próximo montaje del form sin necesidad de recargar la página.
+      if (serviciosNuevos.size > 0) {
+        invalidateCachePrefix("/api/catalogos?tabla=servicioReparacion");
       }
       messageApi.success(
         (draftAppendToNroReq
