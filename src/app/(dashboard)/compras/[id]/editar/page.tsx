@@ -68,6 +68,12 @@ interface CompraData {
     precio_unitario: number | null;
     moneda: string | null;
     fabricante_codigo: string | null;
+    // Override por OC — si están seteados, prevalecen sobre los originales
+    // del req al renderizar este editor y el PDF de OC.
+    oc_descripcion?: string | null;
+    oc_cantidad?: number | string | null;
+    oc_precio_unitario?: number | string | null;
+    oc_unidad_medida?: string | null;
     orden_trabajo?: { id: number; ot: number | string | null; tipo_codigo: string | null } | null;
     orden_trabajo_interna?: { id: number; ot: number | string | null } | null;
   }>;
@@ -121,11 +127,16 @@ export default function EditarOCPage() {
         id: it.id,
         material_id: it.material_id,
         material_codigo: it.material_codigo,
-        descripcion: it.descripcion,
+        // Mostramos el override de OC si está seteado; si no, el original
+        // del req. Así el editor refleja "el contenido de la OC", no el del req.
+        descripcion: it.oc_descripcion ?? it.descripcion,
         texto: it.texto,
-        unidad_medida: it.unidad_medida ?? "UNIDAD",
-        cantidad: Number(it.cantidad ?? 0),
-        precio_unitario: it.precio_unitario != null ? Number(it.precio_unitario) : 0,
+        unidad_medida: it.oc_unidad_medida ?? it.unidad_medida ?? "UNIDAD",
+        cantidad: Number(it.oc_cantidad ?? it.cantidad ?? 0),
+        precio_unitario:
+          it.oc_precio_unitario != null ? Number(it.oc_precio_unitario)
+          : it.precio_unitario != null ? Number(it.precio_unitario)
+          : 0,
         moneda: it.moneda ?? c.moneda,
         fabricante_codigo: it.fabricante_codigo,
         fecha_entrega_esperada: null,

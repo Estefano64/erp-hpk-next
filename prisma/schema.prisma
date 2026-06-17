@@ -1498,6 +1498,15 @@ model OTRepuesto {
   gr_mina                     String?              @db.VarChar(100)
   evaluador                   String?              @db.VarChar(100)
   es_adicional                Boolean?             @default(false)
+  // Override por OC: cuando se edita un item de OC en /compras/[id]/editar
+  // las modificaciones de descripción/cantidad/precio NO pisan el req
+  // original — persisten acá. El PDF y la vista de la OC usan estas con
+  // fallback al valor original del req (descripcion/cantidad/precio_unitario/
+  // unidad_medida). Si están en NULL, se asume que no hay override.
+  oc_descripcion              String?              @db.VarChar(500)
+  oc_cantidad                 Decimal?             @db.Decimal(12, 4)
+  oc_precio_unitario          Decimal?             @db.Decimal(15, 4)
+  oc_unidad_medida            String?              @db.VarChar(20)
   ubicacion                   String?              @db.VarChar(50)
   // Almacén físico HP&K donde se guardó / entregó el item. Se setea cuando
   // se consume de almacén o cuando se recibe contra OC. Permite trazabilidad
