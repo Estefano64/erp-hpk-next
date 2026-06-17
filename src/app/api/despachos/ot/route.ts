@@ -63,7 +63,15 @@ export async function GET(_req: NextRequest) {
       orderBy: [{ ot_id: "asc" }, { nro_req: "asc" }, { item_req: "asc" }],
     });
 
-    // Solo items con cantidad pendiente de despacho (> 0).
+    // Items pendientes de despacho a la OT. Reglas:
+    //   - status_req = APROBADO (filtro inicial)
+    //   - status_oc NO ENTREGADO/ANULADO (filtro inicial)
+    //   - cant_pendiente > 0  (normalmente);
+    //     EXCEPCIÓN: items FREE (sin material catálogo) que ya fueron
+    //     recibidos vía ingreso-po tienen cantidad_recibida = cantidad pero
+    //     todavía NO se entregaron al técnico (el despacho final no tocó
+    //     OTRepuesto). Los detectamos como `esFreeOCRecibida` y los
+    //     incluimos para que aparezcan en /despachos.
     const pendientes = items
       .map((it) => {
         const cantTotal = Number(it.cantidad);
@@ -86,12 +94,24 @@ export async function GET(_req: NextRequest) {
         const poRecibida = it.po_id == null
           ? stockMat > 0
           : poStatus === "ENTREGADO" || poStatus === "INCOMPLETO" || poStatus === "COMPLETO";
+        // Caso especial FREE: ingreso-po incrementa cantidad_recibida (item
+        // ya arribó a HPK) pero el item AÚN no se entregó al técnico — su
+        // status_oc sigue siendo PROCESO/INCOMPLETO/COMPLETO. En este estado
+        // cant_pendiente=0 pero el item DEBE aparecer en despachos para que
+        // el almacenero confirme la entrega final al técnico.
+        const esFreeOCRecibida =
+          esFree
+          && cantPendiente <= 0
+          && poRecibida
+          && it.status_oc_codigo !== "ENTREGADO"
+          && it.status_oc_codigo !== "ANULADO";
         // Lógica de "puede despachar":
         //   - Ya consumido (almacén o OC abierta): siempre listo para entrega.
+        //   - FREE con OC recibida: listo (el stock ya está físicamente).
         //   - MAC desde OC: hay stock suficiente en almacén.
-        //   - FREE (sin material): la OC asociada ya fue recibida.
-        const puedeDespachar = cantPendiente > 0 && (
-          yaConsumido
+        //   - FREE (sin material) normal: la OC asociada ya fue recibida.
+        const puedeDespachar = (cantPendiente > 0 || esFreeOCRecibida) && (
+          yaConsumido || esFreeOCRecibida
             ? true
             : esFree
               ? poRecibida
@@ -117,6 +137,7 @@ export async function GET(_req: NextRequest) {
           _es_free: esFree,
           _es_consumido_almacen: esConsumidoAlmacen,
           _es_consumido_oc_abierta: esConsumidoOCAbierta,
+          _es_free_oc_recibida: esFreeOCRecibida,
           _cant_pendiente: cantPendiente,
           _puede_despachar: puedeDespachar,
           _po_status: poStatus,
@@ -124,7 +145,7 @@ export async function GET(_req: NextRequest) {
           _motivo_pendiente: motivoPendiente,
         };
       })
-      .filter((it) => it._cant_pendiente > 0);
+      .filter((it) => it._cant_pendiente > 0 || it._es_free_oc_recibida);
 
     type ItemConCalc = (typeof pendientes)[number];
 

@@ -52,26 +52,29 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         const cantTotal = new Prisma.Decimal(rep.cantidad);
         const yaDespachado = new Prisma.Decimal(rep.cantidad_recibida ?? 0);
         const pendiente = cantTotal.minus(yaDespachado);
-        if (pendiente.lte(0)) { errores.push({ id: reqId, error: "Ya despachado completo" }); continue; }
 
         // Items FREE (sin material_id): se despachan directo a la OT sin
-        // tocar stock ni MovimientoInventario (no hay material catálogo). La
-        // cantidad "ya recibida" debe venir desde la OC asociada — si la OC
-        // todavía no se recibió, no hay nada para despachar.
+        // tocar stock ni MovimientoInventario (no hay material catálogo).
+        //
+        // Caso especial: ingreso-po ya incrementa cantidad_recibida cuando
+        // el item arriba a HPK. Si pendiente=0 pero el item AÚN no se
+        // entregó al técnico (status_oc != ENTREGADO), igual lo procesamos:
+        // solo cambiamos status_oc a ENTREGADO sin tocar cantidad_recibida
+        // (ya está al máximo). Antes el endpoint erraba "Ya despachado
+        // completo" y el item nunca se cerraba — quedaba fantasma en PROCESO.
         if (!rep.material_id) {
-          // El "stock disponible" para un item free es lo que llegó vía OC
-          // menos lo ya despachado a la OT. Como reusamos cantidad_recibida
-          // para ambas cosas, asumimos que si pendiente > 0 hay para despachar
-          // (la OC ya fue recibida total o parcialmente).
-          // Si la OC no se recibió, status_oc del rep no sería ENTREGADO o
-          // INCOMPLETO y cantidad_recibida=0 → pendiente=cantTotal pero el
-          // user en la UI no podría seleccionarlo (el listado lo marca
-          // "sin OC recibida"). Acá igual lo procesamos: despachar=pendiente.
-          const aDespachar = pendiente;
+          const yaEntregadoAlTecnico = rep.status_oc_codigo === "ENTREGADO";
+          if (pendiente.lte(0) && yaEntregadoAlTecnico) {
+            errores.push({ id: reqId, error: "Ya despachado completo" });
+            continue;
+          }
+          const aDespachar = pendiente.gt(0) ? pendiente : new Prisma.Decimal(0);
           const nuevaDespachada = yaDespachado.plus(aDespachar);
           const quedaCompleto = nuevaDespachada.gte(cantTotal);
           const obsPrev = rep.observaciones ? `${rep.observaciones}\n` : "";
-          const etiqueta = quedaCompleto ? "completo" : `parcial (${aDespachar} de ${pendiente} pendiente)`;
+          const etiqueta = aDespachar.gt(0)
+            ? (quedaCompleto ? "completo" : `parcial (${aDespachar} de ${pendiente} pendiente)`)
+            : "ya recibido en almacén — solo cierre de despacho";
           await tx.oTRepuesto.update({
             where: { id: rep.id },
             data: {
@@ -79,13 +82,16 @@ export async function POST(req: NextRequest, { params }: Ctx) {
               cantidad_recibida: nuevaDespachada,
               fecha_entrega_real: quedaCompleto ? fechaDespacho : rep.fecha_entrega_real,
               fecha_salida_almacen: fechaDespacho,
-              observaciones: `${obsPrev}Despacho a OT (item free, sin stock) el ${fechaDespacho.toLocaleDateString("es-PE")} — ${etiqueta} (${usuario})${personaRecibe ? ` — recibe: ${personaRecibe}` : ""}${comentariosBulk ? ` · ${comentariosBulk}` : ""}`,
+              observaciones: `${obsPrev}Despacho a OT (item free) el ${fechaDespacho.toLocaleDateString("es-PE")} — ${etiqueta} (${usuario})${personaRecibe ? ` — recibe: ${personaRecibe}` : ""}${comentariosBulk ? ` · ${comentariosBulk}` : ""}`,
             },
           });
           if (quedaCompleto) ok.push(rep.id);
           else parciales.push(rep.id);
           continue;
         }
+
+        // De acá en adelante son items MAC — pendiente debe ser > 0.
+        if (pendiente.lte(0)) { errores.push({ id: reqId, error: "Ya despachado completo" }); continue; }
 
         // ─── Items MAC (con material catálogo): flujo normal ──────────
         const material = await tx.material.findUnique({ where: { material_id: rep.material_id } });
