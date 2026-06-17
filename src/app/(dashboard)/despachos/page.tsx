@@ -159,9 +159,14 @@ export default function DespachosPage() {
     }
   };
 
-  // Filtrado client-side por el input de búsqueda. Si la OT matchea (por OT
-  // número o cliente), se conserva tal cual. Si solo matchean algunos items
-  // (código/np/descripción), conservamos la OT pero recortamos sus items.
+  // Filtrado client-side por el input de búsqueda. Reglas:
+  //   - Si la OT matchea (por OT, cliente, código reparación, o nro de OC de
+  //     cualquiera de sus items), se conserva la OT entera.
+  //   - Si solo matchean algunos items (código/np/descripción/OC), conservamos
+  //     la OT pero recortamos sus items.
+  // Buscar por OC: el match a nivel OT es OR sobre todos los `compra.numero_po`
+  // distintos del grupo — así escribir "260055" muestra cualquier OT que tenga
+  // un item asociado a esa OC.
   const gruposFiltrados = (() => {
     const term = filtro.trim().toLowerCase();
     if (!term) return grupos;
@@ -170,8 +175,16 @@ export default function DespachosPage() {
         const otStr = `${g.ot ?? g.ot_id}`.toLowerCase();
         const clienteStr = (g.cliente ?? "").toLowerCase();
         const codRepStr = (g.codigo_reparacion ?? "").toLowerCase();
+        // Set de OCs presentes en este grupo (un mismo nro_po puede aparecer
+        // en varios items — usamos Set para deduplicar el match).
+        const ocsDelGrupo = new Set(
+          g.items.map((it) => (it.compra?.numero_po ?? "").toLowerCase()).filter(Boolean),
+        );
         const otMatch =
-          otStr.includes(term) || clienteStr.includes(term) || codRepStr.includes(term);
+          otStr.includes(term)
+          || clienteStr.includes(term)
+          || codRepStr.includes(term)
+          || [...ocsDelGrupo].some((oc) => oc.includes(term));
         const itemsMatch = g.items.filter((it) => {
           const m = it.material;
           const haystacks = [
@@ -179,6 +192,7 @@ export default function DespachosPage() {
             m?.descripcion ?? "",
             it.descripcion ?? "",
             it.nro_req ?? "",
+            it.compra?.numero_po ?? "",
           ].map((x) => x.toLowerCase());
           return haystacks.some((h) => h.includes(term));
         });
@@ -207,7 +221,7 @@ export default function DespachosPage() {
         </Title>
         <Space wrap>
           <Input
-            placeholder="Buscar OT, cliente, código o N° parte..."
+            placeholder="Buscar OT, OC, cliente, código o N° parte..."
             prefix={<SearchOutlined />}
             value={filtro}
             onChange={(e) => setFiltro(e.target.value)}
