@@ -300,6 +300,9 @@ function RequerimientosDetalleInner() {
   const [filtroOt, setFiltroOt] = useState<string | undefined>(undefined);
   const [filtroEstado, setFiltroEstado] = useState<string | undefined>(undefined);
   const [filtroRapido, setFiltroRapido] = useState<string>("todos");
+  // Filtro por tipo de material/repuesto: MAC (material catálogo), CAD
+  // (cargo directo / item libre sin catálogo), SER (servicio externo).
+  const [filtroTipoMat, setFiltroTipoMat] = useState<"todos" | "MAC" | "CAD" | "SER">("todos");
   // Filtro general por tipo de OT — granular:
   //   "todas"   → sin filtro
   //   "BIE"     → OT externa de tipo Bien/Venta (prefijo V)
@@ -377,6 +380,16 @@ function RequerimientosDetalleInner() {
   const [consumirCantidad, setConsumirCantidad] = useState<number | null>(null);
   const [consumirObs, setConsumirObs] = useState("");
   const [consumiendo, setConsumiendo] = useState(false);
+
+  // Modal de "Caja chica" — paga el item con efectivo del fondo fijo y cierra
+  // el req inmediatamente (no pasa por OC ni por despacho).
+  const [modalCajaChica, setModalCajaChica] = useState<Requerimiento | null>(null);
+  const [cajaMonto, setCajaMonto] = useState<number | null>(null);
+  const [cajaMoneda, setCajaMoneda] = useState<string>("PEN");
+  const [cajaProveedor, setCajaProveedor] = useState<string>("");
+  const [cajaComprobante, setCajaComprobante] = useState<string>("");
+  const [cajaObs, setCajaObs] = useState<string>("");
+  const [pagandoCaja, setPagandoCaja] = useState(false);
   interface AlmacenZonaOpt {
     id: number;
     codigo: string;
@@ -497,16 +510,26 @@ function RequerimientosDetalleInner() {
     // Filtro rapido
     if (filtroRapido === "listos_oc") {
       // Items APROBADOS aún sin OC, listos para crear orden de compra.
-      // Excluye los que ya salieron del stock (CONSUMIDO_ALMACEN) — ya no
-      // necesitan OC, fueron entregados desde almacén interno.
-      rows = rows.filter(
-        (r) =>
-          r.status_req === "APROBADO" &&
-          r.po_id == null &&
-          r.status_oc !== "CONSUMIDO_ALMACEN",
-      );
+      // Excluye items que ya fueron consumidos (de almacén o de OC abierta) —
+      // esos ya están resueltos, no necesitan una nueva OC. También excluye
+      // los que tienen observación de consumo aunque el status_oc todavía
+      // no se haya actualizado (caso defensivo para consumos parciales o
+      // legacy donde status_oc quedó null pero la observación lo registra).
+      rows = rows.filter((r) => {
+        if (r.status_req !== "APROBADO") return false;
+        if (r.po_id != null) return false;
+        if (r.status_oc === "CONSUMIDO_ALMACEN" || r.status_oc === "CONSUMIDO_OC_ABIERTA") return false;
+        if (r.observaciones && /consumi(do|d.{0,3})\s+(de|del)\s+(almac[eé]n|oc\s+abierta)/i.test(r.observaciones)) return false;
+        return true;
+      });
     } else if (filtroRapido === "en_oc") {
       rows = rows.filter((r) => r.po_id != null);
+    }
+
+    // Tipo de material — defalt MAC para items sin tipo declarado, igual que
+    // en otras vistas. CAD = item libre, SER = servicio externo.
+    if (filtroTipoMat !== "todos") {
+      rows = rows.filter((r) => (r.tipo_codigo ?? "MAC").toUpperCase() === filtroTipoMat);
     }
 
     // Estado REQ
@@ -527,7 +550,7 @@ function RequerimientosDetalleInner() {
     }
 
     return rows;
-  }, [allData, filtroTipoOT, filtroOt, filtroNroReq, filtroRapido, filtroEstado, search, rangoSol, rangoReq]);
+  }, [allData, filtroTipoOT, filtroTipoMat, filtroOt, filtroNroReq, filtroRapido, filtroEstado, search, rangoSol, rangoReq]);
 
   const otOptions = useMemo(() => {
     const map = new Map<number, string>();
@@ -893,6 +916,44 @@ function RequerimientosDetalleInner() {
       message.error(err instanceof Error ? err.message : "Error al consumir de almacén");
     } finally {
       setConsumiendo(false);
+    }
+  };
+
+  // ── Caja chica ──
+  // Cierra el req como pagado con efectivo del fondo fijo. NO crea OC, NO
+  // toca stock, NO pasa por despacho — marca ENTREGADO inmediatamente.
+  const abrirModalCajaChica = (r: Requerimiento) => {
+    setModalCajaChica(r);
+    setCajaMonto(typeof r.precio_unitario === "number" ? r.precio_unitario : (r.precio_unitario != null ? Number(r.precio_unitario) : null));
+    setCajaMoneda(r.moneda || "PEN");
+    setCajaProveedor("");
+    setCajaComprobante("");
+    setCajaObs("");
+  };
+  const confirmarCajaChica = async () => {
+    if (!modalCajaChica) return;
+    setPagandoCaja(true);
+    try {
+      const res = await fetch(`/api/requerimientos/${modalCajaChica.id}/consumir-caja-chica`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          monto_unitario: cajaMonto ?? undefined,
+          moneda: cajaMoneda || undefined,
+          proveedor: cajaProveedor.trim() || undefined,
+          comprobante: cajaComprobante.trim() || undefined,
+          observacion: cajaObs.trim() || undefined,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Error al pagar con caja chica");
+      message.success(json.message || "Pagado con caja chica");
+      setModalCajaChica(null);
+      await fetchData();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : "Error al pagar con caja chica");
+    } finally {
+      setPagandoCaja(false);
     }
   };
 
@@ -1557,6 +1618,27 @@ function RequerimientosDetalleInner() {
                 onClick={() => abrirModalConsumir(r)}
               />
             </Tooltip>
+            {(() => {
+              // Caja chica: cierra el req con efectivo. Aplica si NO tiene OC
+              // y NO está anulado. No requiere material catálogo (puede ser
+              // cargo directo).
+              const puedeCajaChica = sinOC && noStockEstado && noAnulado && r.status_oc !== "ENTREGADO";
+              const motivoCaja = !sinOC
+                ? "Ya tiene OC asignada"
+                : !noAnulado || r.status_oc === "ENTREGADO"
+                ? `Estado ${r.status_oc ?? sr} no permite caja chica`
+                : "";
+              return (
+                <Tooltip title={puedeCajaChica ? "Pagar con caja chica (cierra el req inmediatamente)" : motivoCaja}>
+                  <Button
+                    size="small"
+                    icon={<DollarOutlined />}
+                    disabled={!puedeCajaChica}
+                    onClick={() => abrirModalCajaChica(r)}
+                  />
+                </Tooltip>
+              );
+            })()}
           </Space>
         );
       },
@@ -1794,6 +1876,30 @@ function RequerimientosDetalleInner() {
                     { label: `Servicio · S (${totalSER})`, value: "SER" },
                     { label: `Reparación (${totalREP})`, value: "REP" },
                     { label: `Interna · OI (${totalInt})`, value: "INT" },
+                  ]}
+                />
+              );
+            })()}
+          </Space>
+          {/* Filtro por tipo de material/repuesto */}
+          <Space wrap size={8} align="center" style={{ marginTop: 8 }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              <FilterOutlined /> Tipo de material:
+            </Text>
+            {(() => {
+              const totalMAC = allData.filter((r) => (r.tipo_codigo ?? "MAC").toUpperCase() === "MAC").length;
+              const totalCAD = allData.filter((r) => (r.tipo_codigo ?? "").toUpperCase() === "CAD").length;
+              const totalSER_mat = allData.filter((r) => (r.tipo_codigo ?? "").toUpperCase() === "SER").length;
+              return (
+                <Segmented
+                  size="small"
+                  value={filtroTipoMat}
+                  onChange={(v) => setFiltroTipoMat(v as "todos" | "MAC" | "CAD" | "SER")}
+                  options={[
+                    { label: `Todos (${allData.length})`, value: "todos" },
+                    { label: `MAC · catálogo (${totalMAC})`, value: "MAC" },
+                    { label: `CAD · libre (${totalCAD})`, value: "CAD" },
+                    { label: `SER · servicio (${totalSER_mat})`, value: "SER" },
                   ]}
                 />
               );
@@ -2416,6 +2522,105 @@ function RequerimientosDetalleInner() {
               type="info"
               showIcon
               title="El requerimiento pasará a estado CONSUMIDO_ALMACEN y ya no podrá volver a sacarse de stock."
+            />
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Modal Caja Chica ── */}
+      <Modal
+        title={
+          <Space>
+            <DollarOutlined style={{ color: brand.success }} />
+            <span>Pagar con Caja Chica — {modalCajaChica?.material_codigo || modalCajaChica?.descripcion?.slice(0, 30) || "Item"}</span>
+          </Space>
+        }
+        open={!!modalCajaChica}
+        onCancel={() => setModalCajaChica(null)}
+        onOk={confirmarCajaChica}
+        confirmLoading={pagandoCaja}
+        okText="Marcar como pagado"
+        okButtonProps={{ type: "primary" }}
+        cancelText="Cancelar"
+        destroyOnHidden
+        width={520}
+      >
+        {modalCajaChica && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ background: "#fafafa", padding: 10, borderRadius: 4, fontSize: 12 }}>
+              <div>
+                <b>{modalCajaChica.material_codigo ?? "—"}</b> · {modalCajaChica.material_nombre ?? modalCajaChica.descripcion ?? ""}
+              </div>
+              <div style={{ color: brand.textSecondary, marginTop: 4 }}>
+                Cantidad: <b>{modalCajaChica.cantidad} {modalCajaChica.unidad_medida ?? ""}</b>
+                {modalCajaChica.numero_ot && (
+                  <> · OT: <Tag color={brand.navy}>{modalCajaChica.numero_ot}</Tag></>
+                )}
+              </div>
+            </div>
+
+            <Row gutter={8}>
+              <Col span={14}>
+                <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 2 }}>Monto unitario pagado</div>
+                <InputNumber
+                  value={cajaMonto}
+                  onChange={(v) => setCajaMonto(v == null ? null : Number(v))}
+                  min={0}
+                  step={0.01}
+                  precision={2}
+                  style={{ width: "100%" }}
+                  placeholder="0.00"
+                />
+              </Col>
+              <Col span={10}>
+                <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 2 }}>Moneda</div>
+                <Select
+                  value={cajaMoneda}
+                  onChange={setCajaMoneda}
+                  style={{ width: "100%" }}
+                  options={[
+                    { value: "PEN", label: "PEN (S/)" },
+                    { value: "USD", label: "USD (US$)" },
+                  ]}
+                />
+              </Col>
+            </Row>
+
+            <div>
+              <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 2 }}>Proveedor (opcional)</div>
+              <Input
+                value={cajaProveedor}
+                onChange={(e) => setCajaProveedor(e.target.value)}
+                placeholder="Ej. Ferretería La Esquina"
+                maxLength={200}
+              />
+            </div>
+
+            <div>
+              <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 2 }}>N° comprobante / boleta (opcional)</div>
+              <Input
+                value={cajaComprobante}
+                onChange={(e) => setCajaComprobante(e.target.value)}
+                placeholder="Ej. B001-12345"
+                maxLength={100}
+              />
+            </div>
+
+            <div>
+              <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 2 }}>Observación (opcional)</div>
+              <Input.TextArea
+                value={cajaObs}
+                onChange={(e) => setCajaObs(e.target.value)}
+                rows={2}
+                maxLength={500}
+                showCount
+              />
+            </div>
+
+            <Alert
+              type="success"
+              showIcon
+              title="Se marcará como ENTREGADO inmediatamente. No pasa por OC ni por despacho — el técnico ya recibió el material."
             />
           </div>
         )}

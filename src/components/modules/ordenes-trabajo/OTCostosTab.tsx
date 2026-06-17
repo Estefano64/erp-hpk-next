@@ -69,6 +69,15 @@ interface CostosResponse {
     hh: { items: HHRow[]; total_por_moneda: MonedaTotales };
     total_por_moneda: MonedaTotales;
   };
+  // Estimado = plan total (siempre visible aunque ya se haya ejecutado).
+  // A diferencia de `proyectado` (solo lo pendiente), este nunca se vacía.
+  estimado: {
+    materiales: { total_por_moneda: MonedaTotales };
+    cargo_directo: { total_por_moneda: MonedaTotales };
+    servicios: { total_por_moneda: MonedaTotales };
+    hh: { total_por_moneda: MonedaTotales };
+    total_por_moneda: MonedaTotales;
+  };
   trabajadores: { estimado: number; real: number };
 }
 
@@ -197,23 +206,24 @@ export default function OTCostosTab({ otId, kind = "externa" }: Props) {
     );
   }
 
-  // Matriz Estimado × Real pedida por el usuario: cinco filas
-  // (materiales, cargo directo, servicio, QtY, HH). Para items monetarios
-  // mostramos totales por moneda; para QtY mostramos el conteo de trabajadores.
+  // Matriz Estimado × Real: el ESTIMADO viene del plan inicial (siempre
+  // visible aunque el item ya se haya ejecutado) y el REAL del ejecutado
+  // hasta el momento. Antes Estimado = proyectado (lo pendiente) y se
+  // vaciaba al ejecutarse — el user pedía que el estimado siempre figure.
   const matrizRows = [
     {
       key: "materiales", label: "Materiales",
-      estimado: data.proyectado.materiales.total_por_moneda,
+      estimado: data.estimado.materiales.total_por_moneda,
       real: data.ejecutado.materiales.total_por_moneda,
     },
     {
       key: "cargo_directo", label: "Cargo directo",
-      estimado: data.proyectado.cargo_directo.total_por_moneda,
+      estimado: data.estimado.cargo_directo.total_por_moneda,
       real: data.ejecutado.cargo_directo.total_por_moneda,
     },
     {
       key: "servicio", label: "Servicio",
-      estimado: data.proyectado.servicios.total_por_moneda,
+      estimado: data.estimado.servicios.total_por_moneda,
       real: data.ejecutado.servicios.total_por_moneda,
     },
     {
@@ -224,7 +234,7 @@ export default function OTCostosTab({ otId, kind = "externa" }: Props) {
     },
     {
       key: "hh", label: "HH",
-      estimado: data.proyectado.hh.total_por_moneda,
+      estimado: data.estimado.hh.total_por_moneda,
       real: data.ejecutado.hh.total_por_moneda,
     },
   ] as Array<{
@@ -271,8 +281,8 @@ export default function OTCostosTab({ otId, kind = "externa" }: Props) {
           </Col>
           <Col xs={24} sm={8}>
             <Statistic
-              title={<Text type="secondary" style={{ fontSize: 12 }}>Costo proyectado</Text>}
-              valueRender={() => <MonedasTotalesInline totales={data.proyectado.total_por_moneda} />}
+              title={<Text type="secondary" style={{ fontSize: 12 }}>Costo estimado (plan total)</Text>}
+              valueRender={() => <MonedasTotalesInline totales={data.estimado.total_por_moneda} />}
             />
           </Col>
           <Col xs={24} sm={8}>
