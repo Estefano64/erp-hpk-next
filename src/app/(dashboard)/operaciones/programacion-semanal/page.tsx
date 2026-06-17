@@ -135,23 +135,43 @@ function buildWeekDays(monday: Dayjs): Dayjs[] {
   return Array.from({ length: 5 }, (_, i) => monday.add(i, "day"));
 }
 
-function detectarConflictos(filas: PlanRow[]): Set<number> {
-  const conflictos = new Set<number>();
+interface ConflictoInfo { recurso: string; otras: string[]; }
+// Etiqueta corta de una tarea para el mensaje de conflicto.
+function etiquetaTarea(r: PlanRow): string {
+  return r.orden_trabajo?.ot ? `OT-${r.orden_trabajo.ot}` : (r.operacion_codigo || `#${r.id}`);
+}
+// Devuelve, por id de tarea en conflicto, el recurso compartido y con qué otra(s)
+// tarea(s) se solapa. Es un Map (compatible con .has/.size donde se usaba Set).
+//
+// SOLO participan tareas NO empezadas y no canceladas (abierto/programado): una
+// tarea iniciada/pausada/realizada ya es "historia" (su tiempo real se trackea
+// aparte) y una cancelada no ocupa nada → no deben generar conflicto en el plan.
+// Antes se contaban TODAS, así que una tarea nueva chocaba contra slots de
+// tareas ya realizadas o en pausa (falsos conflictos).
+function detectarConflictos(filas: PlanRow[]): Map<number, ConflictoInfo> {
+  const conflictos = new Map<number, ConflictoInfo>();
   const byResource = new Map<string, PlanRow[]>();
   for (const r of filas) {
     if (!r.fecha_inicio || !r.fecha_fin) continue;
+    if (["en_proceso", "pausado", "realizado", "cancelado"].includes(r.estado ?? "")) continue;
     const tec = (r.tecnico ?? "").trim();
     const maq = (r.maquina ?? "").trim();
-    // Sin recurso asignado (ni operario ni equipo) no hay nada con qué chocar:
-    // no se agrupan ni se marcan como conflicto. Antes todas las tareas sin
-    // recurso caían bajo la misma key "|" y se marcaban entre sí como
-    // "conflicto del mismo recurso" aunque no compartieran ninguno.
+    // Sin recurso asignado (ni operario ni equipo) no hay nada con qué chocar.
     if (!tec && !maq) continue;
     const key = `${tec}|${maq}`;
     if (!byResource.has(key)) byResource.set(key, []);
     byResource.get(key)!.push(r);
   }
-  for (const arr of byResource.values()) {
+  const reg = (r: PlanRow, recurso: string, otra: PlanRow) => {
+    const info = conflictos.get(r.id) ?? { recurso, otras: [] };
+    const et = etiquetaTarea(otra);
+    if (!info.otras.includes(et)) info.otras.push(et);
+    conflictos.set(r.id, info);
+  };
+  for (const [key, arr] of byResource) {
+    const sep = key.indexOf("|");
+    const tec = key.slice(0, sep), maq = key.slice(sep + 1);
+    const recurso = tec && maq ? `${tec} / ${maq}` : (tec || maq);
     const sorted = arr.sort((a, b) => new Date(a.fecha_inicio!).getTime() - new Date(b.fecha_inicio!).getTime());
     for (let i = 0; i < sorted.length; i++) {
       const a = sorted[i];
@@ -163,8 +183,8 @@ function detectarConflictos(filas: PlanRow[]): Set<number> {
         if (bIni >= aFin) break;
         const bFin = new Date(b.fecha_fin!).getTime();
         if (bIni < aFin && bFin > aIni) {
-          conflictos.add(a.id);
-          conflictos.add(b.id);
+          reg(a, recurso, b);
+          reg(b, recurso, a);
         }
       }
     }
@@ -2891,7 +2911,9 @@ export default function ProgramacionSemanalPage() {
             </Descriptions.Item>
             {conflictos.has(selectedTask.id) && (
               <Descriptions.Item label="">
-                <Tag color="error">⚠ Conflicto con otra tarea del mismo recurso</Tag>
+                <Tag color="error">
+                  ⚠ Solape de {conflictos.get(selectedTask.id)!.recurso} con {conflictos.get(selectedTask.id)!.otras.join(", ")}
+                </Tag>
               </Descriptions.Item>
             )}
           </Descriptions>
