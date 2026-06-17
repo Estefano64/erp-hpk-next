@@ -291,12 +291,17 @@ export default function ProgramacionSemanalPage() {
     blockWidth: number;
     // Para multi-select: deltas en minutos del taskId base hacia las otras tareas seleccionadas
     multiOffsets: { id: number; offsetMin: number; recurso: string | null }[];
+    // true cuando se arrastra una tarea de la semana sobre la zona de pools
+    // (para sacarla de la semana). Solo aplica si NO viene del pool.
+    sobrePool?: boolean;
   } | null>(null);
   const [messageApi, contextHolder] = message.useMessage();
   const { screens } = useResponsive();
   const isMobile = !screens.md;
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const stripsRef = useRef<Map<string, HTMLElement>>(new Map());
+  // Zona de pools (pendientes): drop target para SACAR una tarea de la semana.
+  const poolDropRef = useRef<HTMLDivElement | null>(null);
 
   const dayPx = HORAS_DIA * hourPx;
 
@@ -1368,6 +1373,14 @@ export default function ProgramacionSemanalPage() {
     return { row: foundRow, date: null };
   }, [lunes, hourPx]);
 
+  // ¿El cursor está sobre la zona de pools? (para sacar una tarea de la semana)
+  function estaSobrePool(x: number, y: number): boolean {
+    const el = poolDropRef.current;
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  }
+
   // Antes el drag marcaba en rojo (conflicto) cuando se soltaba sobre otra tarea
   // del mismo operario. Ahora ese caso NO bloquea: al soltar se empuja a las
   // siguientes (ver persistMove → empujar). Los choques de MÁQUINA (recurso
@@ -1385,7 +1398,10 @@ export default function ProgramacionSemanalPage() {
 
     function onMove(ev: MouseEvent) {
       const target = getDropTarget(ev.clientX, ev.clientY, drag!.grabOffsetX);
-      setDrag((d) => d ? { ...d, cursorX: ev.clientX, cursorY: ev.clientY, snappedDate: target.date, targetRow: target.row } : d);
+      // Si la tarea viene de la semana (no del pool) y se arrastra sobre la zona
+      // de pendientes (fuera de cualquier carril), se prepara para SACARLA.
+      const sobrePool = !drag!.fromPool && !target.row && estaSobrePool(ev.clientX, ev.clientY);
+      setDrag((d) => d ? { ...d, cursorX: ev.clientX, cursorY: ev.clientY, snappedDate: target.date, targetRow: target.row, sobrePool } : d);
 
       // Auto-scroll: si el cursor está cerca del borde derecho/izquierdo del wrap, scroll
       const wrap = timelineRef.current;
@@ -1410,6 +1426,12 @@ export default function ProgramacionSemanalPage() {
         } else {
           persistMove(drag!.taskId, drag!.snappedDate, drag!.targetRow);
         }
+      } else if (!drag!.fromPool && estaSobrePool(drag!.cursorX, drag!.cursorY)) {
+        // Soltó una tarea de la semana sobre los pendientes → sacarla de la
+        // semana (libera fecha + semana, vuelve al pool). startDrag ya impide
+        // arrastrar tareas iniciadas o enviadas, así que acá solo llegan las
+        // programadas/abiertas en borrador.
+        persistRemoveFromWeek(drag!.taskId);
       }
       setDrag(null);
     }
@@ -2507,7 +2529,18 @@ export default function ProgramacionSemanalPage() {
 
       {/* Pools de pendientes: ocultos en la vista Enviado (es una foto congelada,
           no hay nada que programar sobre ella). */}
-      {!enviadoMode && (<>
+      {!enviadoMode && (
+      <div
+        ref={poolDropRef}
+        className={`psg-pooldrop${drag && !drag.fromPool ? " activo" : ""}${drag?.sobrePool ? " sobre" : ""}`}
+      >
+      {/* Al arrastrar una tarea de la semana, esta zona resalta como destino
+          para sacarla (volver al pool). */}
+      {drag && !drag.fromPool && (
+        <div className="psg-pooldrop-hint">
+          Soltá aquí para sacar la tarea de la semana
+        </div>
+      )}
       {/* Buscador del pool de pendientes (parte / cilindro / OT / descripción). */}
       <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <Input
@@ -2593,7 +2626,7 @@ export default function ProgramacionSemanalPage() {
           {sinSemanaMostrar.map((t) => renderPoolCard(t, false))}
         </div>
       )}
-      </>)}
+      </div>)}
 
       {/* Ghost del drag (sigue al cursor) */}
       {drag && (
@@ -3288,6 +3321,33 @@ export default function ProgramacionSemanalPage() {
           background: #FAFAFA;
           border: 1px solid ${brand.border};
           border-radius: 6px;
+        }
+        /* Zona de pools como destino de drop para SACAR tareas de la semana. */
+        .psg-pooldrop {
+          border-radius: 8px;
+          transition: outline-color .15s, background .15s;
+          outline: 2px dashed transparent;
+          outline-offset: 2px;
+        }
+        .psg-pooldrop.activo { outline-color: ${brand.cyan}; }
+        .psg-pooldrop.activo.sobre {
+          outline-style: solid;
+          background: rgba(34,211,238,0.08);
+        }
+        .psg-pooldrop-hint {
+          margin-top: 8px;
+          padding: 6px 10px;
+          border: 1px dashed ${brand.cyan};
+          border-radius: 6px;
+          background: rgba(34,211,238,0.06);
+          color: ${brand.navy};
+          font-size: 12px;
+          font-weight: 600;
+          text-align: center;
+        }
+        .psg-pooldrop.sobre .psg-pooldrop-hint {
+          background: ${brand.cyan};
+          color: ${brand.white};
         }
         .psg-pool-card {
           padding: 8px 10px;
