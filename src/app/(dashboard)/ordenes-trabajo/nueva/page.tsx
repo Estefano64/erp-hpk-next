@@ -166,6 +166,8 @@ export default function NuevaOTPage() {
         horas: undefined,
         tipo_reparacion_codigo: undefined,
         base_metalica: false,
+        // Código de Material: solo Reparación → se limpia en BIE y SER.
+        material_codigo: undefined,
       });
       setPorcentajePcr(null);
     }
@@ -177,7 +179,6 @@ export default function NuevaOTPage() {
         plaqueteo: undefined,
         wo_cliente: undefined,
         equipo_codigo: undefined,
-        material_codigo: undefined,
         ns: undefined,
       });
     }
@@ -312,9 +313,10 @@ export default function NuevaOTPage() {
         id_fabricante: estrategia ? null : (values.id_fabricante || null),
         cod_rep_flota: estrategia ? null : (values.cod_rep_flota || null),
         cod_rep_posicion: estrategia ? null : (values.cod_rep_posicion || null),
-        // Equipo / N/S / Código de Material: REP y SER (null solo en Bien).
+        // Equipo / N/S: REP y SER (null solo en Bien). Código de Material:
+        // solo Reparación (null en Bien y Servicio).
         equipo_codigo: esBien ? null : (values.equipo_codigo || null),
-        material_codigo: esBien ? null : (values.material_codigo || null),
+        material_codigo: bloqueoBien ? null : (values.material_codigo || null),
         ns: esBien ? null : (values.ns || null),
         // Plaqueteo / WO Cliente: REP y SER (null solo en Bien).
         // PO Item: los 3 tipos. ID Viajero / Guía / Empresa / Fecha Recepción /
@@ -560,7 +562,7 @@ export default function NuevaOTPage() {
             el equipo reparado es también un material en stock. */}
         <Card title="Datos" style={{ marginBottom: 16 }} styles={{ body: { paddingBottom: 0 } }}>
           <Row gutter={16}>
-            {/* Equipo / Código de Material / N/S: REP y SER. En Bien se ocultan. */}
+            {/* Equipo / N/S: REP y SER. En Bien se ocultan. */}
             {!esBien && (
               <>
                 <Col xs={12} md={6}>
@@ -573,24 +575,27 @@ export default function NuevaOTPage() {
                   </Form.Item>
                 </Col>
                 <Col xs={12} md={6}>
-                  <Form.Item name="material_codigo" label="Código de Material">
-                    <Select
-                      showSearch allowClear
-                      placeholder="Buscar material..."
-                      optionFilterProp="label"
-                      options={materiales.map((m) => ({
-                        value: m.codigo,
-                        label: `${m.codigo} — ${m.descripcion}`,
-                      }))}
-                    />
-                  </Form.Item>
-                </Col>
-                <Col xs={12} md={6}>
                   <Form.Item name="ns" label="N/S (Número de Serie)">
                     <Input />
                   </Form.Item>
                 </Col>
               </>
+            )}
+            {/* Código de Material: solo Reparación (oculto en Bien y Servicio). */}
+            {!bloqueoBien && (
+              <Col xs={12} md={6}>
+                <Form.Item name="material_codigo" label="Código de Material">
+                  <Select
+                    showSearch allowClear
+                    placeholder="Buscar material..."
+                    optionFilterProp="label"
+                    options={materiales.map((m) => ({
+                      value: m.codigo,
+                      label: `${m.codigo} — ${m.descripcion}`,
+                    }))}
+                  />
+                </Form.Item>
+              </Col>
             )}
             {!esBien && (
               <Col xs={12} md={6}>

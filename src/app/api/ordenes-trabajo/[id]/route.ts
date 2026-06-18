@@ -98,13 +98,14 @@ export async function PUT(req: NextRequest, { params }: Params) {
       body.guia_remision = null;
       body.empresa_entrega = null;
       body.base_metalica_codigo = null;
+      // Código de Material: solo Reparación → null en BIE y SER.
+      body.material_codigo = null;
     }
     if (body.tipo_codigo === "BIE") {
-      // Bien: sin Datos del Equipo (Equipo, N/S, Código de Material), sin
-      // Plaqueteo ni WO Cliente. (PO Item, Garantía, Fecha Req. SÍ aplican a Bien.)
+      // Bien: sin Datos del Equipo (Equipo, N/S), sin Plaqueteo ni WO Cliente.
+      // (PO Item, Garantía, Fecha Req. SÍ aplican a Bien.)
       body.equipo_codigo = null;
       body.ns = null;
-      body.material_codigo = null;
       body.plaqueteo = null;
       body.wo_cliente = null;
     }
