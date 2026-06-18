@@ -100,9 +100,11 @@ export async function PUT(req: NextRequest, { params }: Params) {
       body.base_metalica_codigo = null;
     }
     if (body.tipo_codigo === "BIE") {
-      // Bien: sin Datos del Equipo, sin Plaqueteo ni WO Cliente.
+      // Bien: sin Datos del Equipo (Equipo, N/S, Código de Material), sin
+      // Plaqueteo ni WO Cliente. (PO Item, Garantía, Fecha Req. SÍ aplican a Bien.)
       body.equipo_codigo = null;
       body.ns = null;
+      body.material_codigo = null;
       body.plaqueteo = null;
       body.wo_cliente = null;
     }
