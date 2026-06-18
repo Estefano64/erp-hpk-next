@@ -1076,7 +1076,11 @@ export default function OrdenesTrabajoInternasPage() {
                  - EN_REVISION si lo es
                 El estado avanzado (PROGRAMADO / REPROGRAMADO) se respeta al editar. */}
             <Col xs={12} md={12}>
-              <Form.Item name="fecha_inicio_plan" label="Inicio planificado">
+              <Form.Item
+                name="fecha_inicio_plan"
+                label="Inicio planificado"
+                rules={[{ required: true, message: "Inicio planificado obligatorio" }]}
+              >
                 <DatePicker
                   showTime
                   format="DD/MM/YY HH:mm"
@@ -1094,7 +1098,11 @@ export default function OrdenesTrabajoInternasPage() {
               </Form.Item>
             </Col>
             <Col xs={12} md={12}>
-              <Form.Item name="fecha_fin_plan" label="Fin planificado">
+              <Form.Item
+                name="fecha_fin_plan"
+                label="Fin planificado"
+                rules={[{ required: true, message: "Fin planificado obligatorio" }]}
+              >
                 <DatePicker
                   showTime
                   format="DD/MM/YY HH:mm"
@@ -1171,7 +1179,11 @@ export default function OrdenesTrabajoInternasPage() {
               </>
             )}
             <Col xs={24} md={12}>
-              <Form.Item name="asignado_a" label="Asignado a">
+              <Form.Item
+                name="asignado_a"
+                label="Asignado a"
+                rules={[{ required: true, message: "Operario obligatorio" }]}
+              >
                 <Select
                   allowClear
                   showSearch
