@@ -148,10 +148,13 @@ export default function NuevaOTPage() {
   }, []);
 
   // Al cambiar Tipo OT, limpiamos los campos que no aplican al nuevo tipo
-  // (evita valores fantasma del tipo anterior). Para BIE: limpiamos los
-  // específicos de Reparación (PCR, horas, guía, plaqueteo, etc.) pero
-  // conservamos atención y fecha de requerimiento porque BIE los usa también.
-  // Para SER limpiamos todo lo de BIE más Atención y Fecha Req.
+  // (evita valores fantasma del tipo anterior).
+  //  - bloqueoBien (BIE o SER): limpia lo exclusivo de Reparación (recepción,
+  //    PCR/horas, tipo reparación, ID viajero/guía/empresa, base metálica).
+  //  - esBien: además limpia Plaqueteo/WO Cliente/PO Item — esos SÍ los usa
+  //    Servicio, así que solo se borran al pasar a Bien (no a Servicio).
+  //  - esServicio: limpia Atención. La Fecha de Requerimiento del Cliente SÍ
+  //    aplica a Servicio (no se limpia).
   useEffect(() => {
     if (bloqueoBien) {
       form.setFieldsValue({
@@ -163,11 +166,11 @@ export default function NuevaOTPage() {
         horas: undefined,
         tipo_reparacion_codigo: undefined,
         base_metalica: false,
-        plaqueteo: undefined,
-        wo_cliente: undefined,
-        po_item: undefined,
       });
       setPorcentajePcr(null);
+    }
+    if (esBien) {
+      form.setFieldsValue({ plaqueteo: undefined, wo_cliente: undefined, po_item: undefined });
     }
     if (esServicio) {
       // SER no usa Atención reparación. La Fecha de Requerimiento del Cliente
@@ -303,13 +306,13 @@ export default function NuevaOTPage() {
         equipo_codigo: values.equipo_codigo || null,
         material_codigo: values.material_codigo || null,
         ns: values.ns || null,
-        // Plaqueteo / WO Cliente / PO Item / ID Viajero / Guía / Empresa /
-        // Fecha Recepción / PCR / Horas: solo aplican a Reparación. En BIE
-        // o SER se fuerzan null aunque el form los haya tenido cargados.
-        plaqueteo: bloqueoBien ? null : (values.plaqueteo || null),
-        wo_cliente: bloqueoBien ? null : (values.wo_cliente || null),
+        // Plaqueteo / WO Cliente / PO Item aplican a Reparación Y Servicio
+        // (se anulan solo en Bien). ID Viajero / Guía / Empresa / Fecha
+        // Recepción / PCR / Horas: solo Reparación (null en BIE y SER).
+        plaqueteo: esBien ? null : (values.plaqueteo || null),
+        wo_cliente: esBien ? null : (values.wo_cliente || null),
         po_cliente: values.po_cliente || null,
-        po_item: bloqueoBien ? null : (values.po_item || null),
+        po_item: esBien ? null : (values.po_item || null),
         id_viajero: bloqueoBien ? null : (values.id_viajero || null),
         guia_remision: bloqueoBien ? null : (values.guia_remision || null),
         empresa_entrega: bloqueoBien ? null : (values.empresa_entrega || null),
@@ -574,7 +577,7 @@ export default function NuevaOTPage() {
                 <Input />
               </Form.Item>
             </Col>
-            {!bloqueoBien && (
+            {!esBien && (
               <Col xs={12} md={6}>
                 <Form.Item name="plaqueteo" label="Plaqueteo">
                   <Input />
@@ -587,7 +590,7 @@ export default function NuevaOTPage() {
         {/* ── SECCIÓN: Documentos del cliente ── */}
         <Card title="Documentos y Logística" style={{ marginBottom: 16 }} styles={{ body: { paddingBottom: 0 } }}>
           <Row gutter={16}>
-            {!bloqueoBien && (
+            {!esBien && (
               <Col xs={12} md={6}>
                 <Form.Item name="wo_cliente" label="WO Cliente">
                   <Input />
@@ -599,7 +602,7 @@ export default function NuevaOTPage() {
                 <Input />
               </Form.Item>
             </Col>
-            {!bloqueoBien && (
+            {!esBien && (
               <Col xs={12} md={6}>
                 <Form.Item name="po_item" label="PO Item">
                   <Input />
