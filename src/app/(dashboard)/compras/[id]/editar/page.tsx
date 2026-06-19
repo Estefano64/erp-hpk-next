@@ -10,6 +10,7 @@ import {
 import {
   SaveOutlined, PlusOutlined, DeleteOutlined, RollbackOutlined,
   EditOutlined, FileTextOutlined, ImportOutlined,
+  ArrowUpOutlined, ArrowDownOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
@@ -335,6 +336,24 @@ export default function EditarOCPage() {
     setImportOpen(false);
   };
 
+  // Mover una fila arriba/abajo dentro de la lista visible. La posición se
+  // persiste como oc_orden_item al guardar — así el PDF y el editor siempre
+  // muestran los items en el orden que el user dejó.
+  const moveRow = (localId: string, direction: "up" | "down") => {
+    setRows((prev) => {
+      const visible = prev.filter((r) => !r._deleted);
+      const idx = visible.findIndex((r) => r._localId === localId);
+      if (idx === -1) return prev;
+      const targetIdx = direction === "up" ? idx - 1 : idx + 1;
+      if (targetIdx < 0 || targetIdx >= visible.length) return prev;
+      const reordered = [...visible];
+      [reordered[idx], reordered[targetIdx]] = [reordered[targetIdx], reordered[idx]];
+      // Reconstruir prev intercalando los deleted en sus posiciones originales.
+      const deleted = prev.filter((r) => r._deleted);
+      return [...reordered, ...deleted];
+    });
+  };
+
   const deleteRow = (localId: string) => {
     setRows((prev) => prev.map((r) => {
       if (r._localId !== localId) return r;
@@ -520,12 +539,34 @@ export default function EditarOCPage() {
       ),
     },
     {
-      title: "Acciones", key: "acc", width: 80, align: "center", fixed: "right",
-      render: (_v, r) => (
-        <Popconfirm title="¿Eliminar este item?" onConfirm={() => deleteRow(r._localId)} okType="danger" okText="Eliminar">
-          <Button type="text" danger icon={<DeleteOutlined />} size="small" />
-        </Popconfirm>
-      ),
+      title: "Acciones", key: "acc", width: 130, align: "center", fixed: "right",
+      render: (_v, r, idx) => {
+        const esUltimo = idx === visibleRows.length - 1;
+        const esPrimero = idx === 0;
+        return (
+          <Space size={2}>
+            <Tooltip title="Subir">
+              <Button
+                type="text" size="small"
+                icon={<ArrowUpOutlined />}
+                disabled={esPrimero}
+                onClick={() => moveRow(r._localId, "up")}
+              />
+            </Tooltip>
+            <Tooltip title="Bajar">
+              <Button
+                type="text" size="small"
+                icon={<ArrowDownOutlined />}
+                disabled={esUltimo}
+                onClick={() => moveRow(r._localId, "down")}
+              />
+            </Tooltip>
+            <Popconfirm title="¿Eliminar este item?" onConfirm={() => deleteRow(r._localId)} okType="danger" okText="Eliminar">
+              <Button type="text" danger icon={<DeleteOutlined />} size="small" />
+            </Popconfirm>
+          </Space>
+        );
+      },
     },
   ];
 

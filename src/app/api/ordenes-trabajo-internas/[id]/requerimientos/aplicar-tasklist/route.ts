@@ -29,7 +29,7 @@ const Schema = z.object({
   estrategia: z.enum(["keep_all", "replace_pending", "skip_if_any"]).default("replace_pending"),
 });
 
-// Cascada PM acumulativo: para cada nivel, qué actividad_codigo incluye.
+// Cascada PM acumulativa: PM1 ⊂ PM2 ⊂ PM3 ⊂ PM4. Convención oficial HPK.
 const CASCADA_PM: Record<string, string[]> = {
   PM1: ["PM1"],
   PM2: ["PM1", "PM2"],
@@ -58,16 +58,18 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         select: {
           id: true,
           equipo_codigo: true,
-          estrategia: { select: { codigo: true } },
+          // El nivel PM/MP vive en actividad_codigo, no en codigo
+          // (`codigo` es el ID arbitrario "EST-0059").
+          estrategia: { select: { codigo: true, actividad_codigo: true } },
         },
       });
       if (!ot) return { error: "NOT_FOUND_OT" } as const;
       if (!ot.equipo_codigo) {
         return { error: "SIN_EQUIPO" } as const;
       }
-      const estrCodigo = ot.estrategia?.codigo;
+      const estrCodigo = ot.estrategia?.actividad_codigo;
       if (!estrCodigo) return { error: "SIN_ESTRATEGIA" } as const;
-      const cascada = CASCADA_PM[estrCodigo];
+      const cascada = CASCADA_PM[estrCodigo.toUpperCase()];
       if (!cascada) {
         return { error: "ESTRATEGIA_NO_PM", codigo: estrCodigo } as const;
       }

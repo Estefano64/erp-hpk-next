@@ -16,7 +16,9 @@ export async function GET(_req: NextRequest, { params }: Params) {
         equipo: { select: { codigo: true, descripcion: true } },
         tipo_ot_interna: true,
         prioridad_atencion: true,
-        estrategia: { select: { estrategia_id: true, codigo: true, descripcion: true } },
+        // `actividad_codigo` (MP1-4 o PM1-4) es el nivel real de mantenimiento
+        // preventivo — el frontend lo necesita para hacer match con TaskList.
+        estrategia: { select: { estrategia_id: true, codigo: true, descripcion: true, actividad_codigo: true } },
         user_status: true,
         ot_status: true,
         recursos_status: true,

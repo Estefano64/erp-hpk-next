@@ -53,7 +53,7 @@ function parseRow(row: unknown[]): RawRow {
   };
   return {
     usuario: s(0),         // A=1 → idx 0
-    actividad: s(3),       // D=4 (N/P cod 1) tiene el código MP1/MP2/MP3/MP4 según hoja
+    actividad: s(3),       // D=4 (N/P cod 1): código PM1/PM2/PM3/PM4 (MP*→PM* al guardar)
     maquinaTaller: s(4),   // E=5 (N/P cod 2) tiene el nombre de la máquina
     descripcion: s(7),     // H=8
     item: n(8),            // I=9
@@ -122,9 +122,17 @@ export async function POST(req: NextRequest) {
     const grupos = new Map<string, AgrupadoKey & { items: ItemNorm[] }>();
 
     let saltadas = 0;
+    // Normalizador: el Excel puede traer MP1-4 o PM1-4 — siempre persistimos
+    // como PM* (convención oficial HPK).
+    const normActividad = (v: string | null): string | null => {
+      if (!v) return v;
+      const t = v.trim().toUpperCase();
+      if (/^MP[1-4]$/.test(t)) return "PM" + t.substring(2);
+      return t;
+    };
     for (const r of dataRows) {
       if (r.maquinaTaller) lastMaquina = r.maquinaTaller;
-      if (r.actividad) lastActividad = r.actividad;
+      if (r.actividad) lastActividad = normActividad(r.actividad);
       if (r.descripcion) lastDescripcion = r.descripcion;
       if (r.usuario) lastUsuario = r.usuario;
 

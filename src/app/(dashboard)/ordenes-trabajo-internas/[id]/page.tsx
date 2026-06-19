@@ -66,7 +66,7 @@ interface OTInternaDetalle {
   planta: { codigo: string; nombre: string } | null;
   tipo_ot_interna: { codigo: string; nombre: string } | null;
   prioridad_atencion: { codigo: string; nombre: string } | null;
-  estrategia: { estrategia_id: number; codigo: string; descripcion: string } | null;
+  estrategia: { estrategia_id: number; codigo: string; descripcion: string; actividad_codigo?: string | null } | null;
   user_status: { codigo: string; nombre: string } | null;
   ot_status: { codigo: string; nombre: string } | null;
   recursos_status: { codigo: string; nombre: string } | null;
@@ -965,8 +965,10 @@ function TareasTab({ ot }: {
   const [cascada, setCascada] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const estrCodigo = ot.estrategia?.codigo;
-  const esPM = !!estrCodigo && /^PM[1-4]$/.test(estrCodigo);
+  // El nivel PM está en `actividad_codigo` — `codigo` es el ID arbitrario
+  // tipo "EST-0059". Convención oficial: PM1/PM2/PM3/PM4.
+  const estrCodigo = ot.estrategia?.actividad_codigo;
+  const esPM = !!estrCodigo && /^PM[1-4]$/i.test(estrCodigo);
   const puedeListar = !!ot.equipo_codigo && esPM;
 
   useEffect(() => {

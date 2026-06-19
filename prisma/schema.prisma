@@ -1510,6 +1510,10 @@ model OTRepuesto {
   oc_cantidad                 Decimal?             @db.Decimal(12, 4)
   oc_precio_unitario          Decimal?             @db.Decimal(15, 4)
   oc_unidad_medida            String?              @db.VarChar(20)
+  // Posición visual del item en el editor de OC y en el PDF. Independiente
+  // de item_req (que es del template del req). Permite reordenar dentro de
+  // la OC sin alterar la numeración original del req del técnico.
+  oc_orden_item               Int?
   // Items "libres" agregados desde el editor de OC. Cuando es true, el item
   // SOLO debe figurar en el PDF y editor de OC — el resto de vistas
   // (/requerimientos, /detalle, /despachos, aprobaciones, tabs de OT) los

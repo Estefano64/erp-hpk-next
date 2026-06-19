@@ -87,7 +87,13 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
       // Campos que SÍ siguen modificándose en el req: material_id,
       // material_codigo, fabricante_codigo, moneda y fecha_entrega_esperada
       // — son "metadatos" del item que naturalmente cambian al armar la OC.
-      for (const it of items) {
+      // El orden visual del editor es la fuente de verdad para la OC y el
+      // PDF. Asignamos `oc_orden_item` = índice+1 a CADA item del payload
+      // (tanto updates como creates) para que el orden persista y los
+      // endpoints lo respeten en orderBy.
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        const ordenItem = i + 1;
         const fecha = parseDateOnly(it.fecha_entrega_esperada);
         if (it.id && itemsIds.has(it.id)) {
           // Update existente — solo override (no toca cantidad/precio/desc/UM del req).
@@ -104,6 +110,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
               oc_cantidad: new Prisma.Decimal(it.cantidad),
               oc_precio_unitario: new Prisma.Decimal(it.precio_unitario),
               oc_unidad_medida: it.unidad_medida ?? "UNIDAD",
+              oc_orden_item: ordenItem,
             },
           });
         } else {
@@ -146,6 +153,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
               oc_cantidad: new Prisma.Decimal(it.cantidad),
               oc_precio_unitario: new Prisma.Decimal(it.precio_unitario),
               oc_unidad_medida: it.unidad_medida ?? "UNIDAD",
+              oc_orden_item: ordenItem,
             },
           });
         }
