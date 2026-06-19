@@ -35,6 +35,16 @@ export async function GET(_req: NextRequest, { params }: Params) {
             // debe mostrar el código OIXXXXYY y el área del taller.
             orden_trabajo_interna: { select: { ot: true, area_taller: true } },
           },
+          // Orden reproducible — mismo criterio que el editor de OC. Primero
+          // `oc_orden_item` (posición que el user dejó al guardar en el
+          // editor), luego fallback a `nro_req` → `item_req` → `id` para
+          // OCs legacy que aún no tienen oc_orden_item seteado.
+          orderBy: [
+            { oc_orden_item: { sort: "asc", nulls: "last" } },
+            { nro_req: "asc" },
+            { item_req: "asc" },
+            { id: "asc" },
+          ],
         },
         // Items directos sin OT (catálogo): OCs "abiertas", OCs sueltas, etc.
         // Antes el PDF solo leía ot_repuestos → si la OC tenía sus items en
@@ -49,6 +59,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
               },
             },
           },
+          orderBy: { id: "asc" },
         },
       },
     });

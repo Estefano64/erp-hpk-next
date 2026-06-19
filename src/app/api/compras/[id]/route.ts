@@ -49,6 +49,16 @@ export async function GET(_req: NextRequest, { params }: Params) {
             // para que el aprobador de OC los pueda revisar antes de aceptar.
             adjuntos: { select: { id: true, nombre_archivo: true, r2_key: true, tamano: true } },
           },
+          // Orden reproducible (mismo criterio que el PDF): primero
+          // `oc_orden_item` (la posición que el user dejó en el editor),
+          // luego fallback a `nro_req` → `item_req` → `id` para items legacy
+          // que aún no tienen oc_orden_item seteado.
+          orderBy: [
+            { oc_orden_item: { sort: "asc", nulls: "last" } },
+            { nro_req: "asc" },
+            { item_req: "asc" },
+            { id: "asc" },
+          ],
         },
         // Adjuntos múltiples de la OC (guías, facturas, comprobantes de pago).
         adjuntos: {

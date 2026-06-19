@@ -24,6 +24,8 @@ import { prisma } from "@/lib/prisma";
 
 type Ctx = { params: Promise<{ id: string }> };
 
+// Niveles de Mantenimiento Preventivo. Convención oficial HPK: PM1-4
+// (Preventive Maintenance). Cascada acumulativa PM1 ⊂ PM2 ⊂ PM3 ⊂ PM4.
 const CASCADA_PM: Record<string, string[]> = {
   PM1: ["PM1"],
   PM2: ["PM1", "PM2"],
@@ -44,7 +46,9 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
       select: {
         id: true,
         equipo_codigo: true,
-        estrategia: { select: { codigo: true } },
+        // `Estrategia.codigo` es el ID arbitrario "EST-0059"; el nivel PM/MP
+        // está en `actividad_codigo` (MP1/MP2/MP3/MP4 en HPK).
+        estrategia: { select: { codigo: true, actividad_codigo: true } },
       },
     });
     if (!ot) {
@@ -53,11 +57,11 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
     if (!ot.equipo_codigo) {
       return NextResponse.json({ error: "La OT no tiene equipo asignado." }, { status: 400 });
     }
-    const estrCodigo = ot.estrategia?.codigo;
+    const estrCodigo = ot.estrategia?.actividad_codigo;
     if (!estrCodigo) {
       return NextResponse.json({ error: "La OT no tiene estrategia asignada." }, { status: 400 });
     }
-    const cascada = CASCADA_PM[estrCodigo];
+    const cascada = CASCADA_PM[estrCodigo.toUpperCase()];
     if (!cascada) {
       return NextResponse.json(
         { error: `La estrategia "${estrCodigo}" no es un nivel PM (PM1/PM2/PM3/PM4).` },
