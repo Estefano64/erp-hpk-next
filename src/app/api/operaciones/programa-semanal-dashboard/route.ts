@@ -14,9 +14,10 @@ const TZ = "America/Lima";
 //
 // Definiciones (Fase 1):
 //  - Tareas de la semana = planificacion_ot con semana_plan = <semana>.
-//  - "Evaluación" = tarea cuyo centro (maquina) contiene "EVALUAC"; resto = "Reparación".
+//  - "Evaluación" = TAREA con operacion_codigo = "EVAL" (operación "Evaluacion");
+//    el resto = "Reparación". (No es un tipo de OT, son las tareas de evaluación.)
 //  - HH programado = horas_estimadas × qty_personal; HH realizado = horas_reales.
-//  - Correctivo = es_correctivo.
+//  - Correctivo = es_correctivo. Equipos: se muestra el NOMBRE del equipo (catálogo).
 function semanaActualCodigo(): string {
   const d = dayjs().tz(TZ);
   return `${d.isoWeekYear()}W${String(d.isoWeek()).padStart(2, "0")}`;
@@ -30,7 +31,7 @@ function lunesDeSemana(cod: string): dayjs.Dayjs {
   const lunesW1 = dayjs().tz(TZ).year(Number(m[1])).month(0).date(4).isoWeekday(1);
   return lunesW1.add(Number(m[2]) - 1, "week").startOf("day");
 }
-const esEval = (maq: string | null) => /evaluac/i.test(maq ?? "");
+const esEval = (op: string | null) => (op ?? "").trim().toUpperCase() === "EVAL";
 const hhProg = (r: { horas_estimadas: unknown; qty_personal: number | null }) =>
   Number(r.horas_estimadas ?? 0) * Math.max(1, Number(r.qty_personal ?? 1));
 
@@ -43,11 +44,15 @@ export async function GET(req: NextRequest) {
     const tareas = await prisma.planificacionOT.findMany({
       where: { semana_plan: semana },
       select: {
-        ot_id: true, maquina: true, estado: true, es_correctivo: true,
+        ot_id: true, maquina: true, operacion_codigo: true, estado: true, es_correctivo: true,
         horas_estimadas: true, qty_personal: true, horas_reales: true,
         fecha_inicio: true, fecha_fin_real: true,
       },
     });
+
+    // Catálogo de equipos: maquina guarda el CÓDIGO (MAQ002) → mostramos el nombre.
+    const eqCat = await prisma.equipo.findMany({ select: { codigo: true, descripcion: true } });
+    const equipoNombre = new Map(eqCat.map((e) => [e.codigo, e.descripcion ?? e.codigo]));
 
     const diaIdx = (d: Date | null): number => {
       if (!d) return -1;
@@ -58,16 +63,16 @@ export async function GET(req: NextRequest) {
     const realizado = (t: { estado: string | null }) => t.estado === "realizado";
 
     // ── KPIs eval/reparación (por QTY de tareas) ──
-    const evalT = tareas.filter((t) => esEval(t.maquina));
-    const repT = tareas.filter((t) => !esEval(t.maquina));
+    const evalT = tareas.filter((t) => esEval(t.operacion_codigo));
+    const repT = tareas.filter((t) => !esEval(t.operacion_codigo));
     const resumenDe = (arr: typeof tareas) => {
       const prog = arr.length;
       const real = arr.filter(realizado).length;
       return { programado: prog, realizado: real, pct: prog ? Math.round((real / prog) * 100) : 0 };
     };
     const kpis = {
-      otsEvaluacion: new Set(evalT.map((t) => t.ot_id).filter(Boolean)).size,
-      otsReparacion: new Set(repT.map((t) => t.ot_id).filter(Boolean)).size,
+      tareasEvaluacion: evalT.length,
+      tareasReparacion: repT.length,
       evaluacion: resumenDe(evalT),
       reparacion: resumenDe(repT),
     };
@@ -103,11 +108,12 @@ export async function GET(req: NextRequest) {
       if (eqs.length === 0) continue;
       const prog = hhProg(t), real = Number(t.horas_reales ?? 0);
       for (const eq of eqs) {
-        const e = mapEq.get(eq) ?? { equipo: eq, programado: 0, realizado: 0, correctivo: 0 };
+        const nombre = equipoNombre.get(eq) ?? eq; // código -> nombre del equipo
+        const e = mapEq.get(nombre) ?? { equipo: nombre, programado: 0, realizado: 0, correctivo: 0 };
         e.programado += prog;
         if (realizado(t)) e.realizado += real;
         if (t.es_correctivo) e.correctivo += prog;
-        mapEq.set(eq, e);
+        mapEq.set(nombre, e);
       }
     }
     const hhPorEquipo = [...mapEq.values()]

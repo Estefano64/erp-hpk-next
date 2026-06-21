@@ -13,7 +13,7 @@ const { Title, Text } = Typography;
 interface Resp {
   semana: string;
   kpis: {
-    otsEvaluacion: number; otsReparacion: number;
+    tareasEvaluacion: number; tareasReparacion: number;
     evaluacion: { programado: number; realizado: number; pct: number };
     reparacion: { programado: number; realizado: number; pct: number };
   };
@@ -84,8 +84,8 @@ export default function PlannerProgramaDashboard() {
       {/* ── KPIs ── */}
       <Row gutter={[16, 16]} style={{ marginBottom: 8 }}>
         <Col xs={12} md={6}><Card size="small"><Statistic title="Semana" value={data.semana} valueStyle={{ color: brand.navy }} /></Card></Col>
-        <Col xs={12} md={6}><Card size="small"><Statistic title="OT's Evaluación" value={kpis.otsEvaluacion} valueStyle={{ color: brand.cyan }} /></Card></Col>
-        <Col xs={12} md={6}><Card size="small"><Statistic title="OT's Reparación" value={kpis.otsReparacion} valueStyle={{ color: brand.navy }} /></Card></Col>
+        <Col xs={12} md={6}><Card size="small"><Statistic title="Tareas Evaluación" value={kpis.tareasEvaluacion} valueStyle={{ color: brand.cyan }} /></Card></Col>
+        <Col xs={12} md={6}><Card size="small"><Statistic title="Tareas Reparación" value={kpis.tareasReparacion} valueStyle={{ color: brand.navy }} /></Card></Col>
         <Col xs={12} md={6}>
           <Card size="small">
             <Table
