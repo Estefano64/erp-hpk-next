@@ -120,6 +120,23 @@ export async function GET(req: NextRequest) {
       .map((e) => ({ ...e, programado: +e.programado.toFixed(1), realizado: +e.realizado.toFixed(1), correctivo: +e.correctivo.toFixed(1) }))
       .sort((a, b) => b.programado - a.programado);
 
+    // ── Utilización HH – Taller (global) ──
+    // HH Disponibles = horas-hombre = (operarios con rol "tecnico" activos) ×
+    // jornada (9h = 08-18 menos 1h almuerzo). Programadas por día (HH plan a su
+    // día de inicio). Libres = disponibles − programadas.
+    const JORNADA_HH = 9;
+    const nTecnicos = await prisma.usuario.count({ where: { activo: true, roles: { has: "tecnico" } } });
+    const utilizacionTaller = dias.map((d, i) => {
+      const prog = tareas.filter((t) => diaIdx(t.fecha_inicio) === i).reduce((sum, t) => sum + hhProg(t), 0);
+      const disp = nTecnicos * JORNADA_HH;
+      return {
+        dia: d.format("DD/MM"),
+        disponibles: disp,
+        programadas: +prog.toFixed(1),
+        libres: +Math.max(0, disp - prog).toFixed(1),
+      };
+    });
+
     // ── Semanas disponibles (para el selector) ──
     const semanasRaw = await prisma.planificacionOT.findMany({
       where: { semana_plan: { not: null } },
@@ -129,7 +146,7 @@ export async function GET(req: NextRequest) {
     });
     const semanas = semanasRaw.map((s) => s.semana_plan).filter(Boolean) as string[];
 
-    return NextResponse.json({ semana, kpis, curvaS, qtyPorDia, hhPorEquipo, semanas });
+    return NextResponse.json({ semana, kpis, curvaS, qtyPorDia, hhPorEquipo, utilizacionTaller, totalTecnicos: nTecnicos, jornadaHoras: JORNADA_HH, semanas });
   } catch (error) {
     console.error("GET programa-semanal-dashboard error:", error);
     return NextResponse.json({ error: "Error al cargar el dashboard de programación" }, { status: 500 });

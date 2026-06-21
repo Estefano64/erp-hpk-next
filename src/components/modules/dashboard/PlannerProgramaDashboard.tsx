@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Card, Row, Col, Select, Typography, Statistic, Table, Spin, Empty, Space } from "antd";
 import {
-  ResponsiveContainer, LineChart, Line, BarChart, Bar,
+  ResponsiveContainer, LineChart, Line, BarChart, Bar, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
 import { brand } from "@/lib/theme";
@@ -20,6 +20,9 @@ interface Resp {
   curvaS: { dia: string; pctProgramado: number; pctRealizado: number }[];
   qtyPorDia: { dia: string; programado: number; realizado: number; correctivo: number }[];
   hhPorEquipo: { equipo: string; programado: number; realizado: number; correctivo: number }[];
+  utilizacionTaller: { dia: string; disponibles: number; programadas: number; libres: number }[];
+  totalTecnicos: number;
+  jornadaHoras: number;
   semanas: string[];
 }
 
@@ -61,7 +64,7 @@ export default function PlannerProgramaDashboard() {
   if (loading && !data) return <div style={{ padding: 24 }}><Spin /> Cargando programación…</div>;
   if (!data) return <Empty description="No se pudo cargar el dashboard de programación" />;
 
-  const { kpis, curvaS, qtyPorDia, hhPorEquipo } = data;
+  const { kpis, curvaS, qtyPorDia, hhPorEquipo, utilizacionTaller } = data;
 
   return (
     <div>
@@ -139,6 +142,20 @@ export default function PlannerProgramaDashboard() {
           </ChartCard>
         </Col>
       </Row>
+
+      <ChartCard title={`Utilización HH – Taller (Disponibles = ${data.totalTecnicos} téc × ${data.jornadaHoras}h)`}>
+        <ResponsiveContainer>
+          <AreaChart data={utilizacionTaller} margin={{ top: 8, right: 16, bottom: 4, left: -8 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="dia" fontSize={11} />
+            <YAxis fontSize={11} />
+            <Tooltip />
+            <Legend />
+            <Area type="monotone" dataKey="programadas" name="HH Programadas" stackId="1" stroke={C_PROG} fill={C_PROG} fillOpacity={0.75} />
+            <Area type="monotone" dataKey="libres" name="HH Libres" stackId="1" stroke={brand.cyan} fill={brand.cyan} fillOpacity={0.4} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </ChartCard>
 
       <ChartCard title="Programado / Realizado / Correctivo (HH por equipo)">
         <ResponsiveContainer>
