@@ -26,6 +26,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
+import { recalcularRecursosStatusOT, recalcularRecursosStatusOTInterna } from "@/lib/recursos-ot";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -97,6 +98,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 
       const ok: number[] = [];
       const errores: { requerimiento_id: number; error: string }[] = [];
+      // OTs tocadas — al final recalculamos su recursos_status.
+      const otsTocadas = new Set<number>();
+      const otsInternasTocadas = new Set<number>();
 
       for (const it of parsed.data.items) {
         try {
@@ -226,6 +230,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           });
 
           ok.push(rep.id);
+          if (rep.ot_id != null) otsTocadas.add(rep.ot_id);
+          else if (rep.orden_trabajo_interna_id != null) otsInternasTocadas.add(rep.orden_trabajo_interna_id);
         } catch (e) {
           errores.push({
             requerimiento_id: it.requerimiento_id,
@@ -233,6 +239,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           });
         }
       }
+
+      // Recalc del estado de recursos de cada OT afectada.
+      for (const otId of otsTocadas) await recalcularRecursosStatusOT(tx, otId);
+      for (const otIntId of otsInternasTocadas) await recalcularRecursosStatusOTInterna(tx, otIntId);
 
       // 4. Si quedó sin stock total la OC abierta, marcarla COMPLETO.
       const detallesAct = await tx.compraDetalle.findMany({

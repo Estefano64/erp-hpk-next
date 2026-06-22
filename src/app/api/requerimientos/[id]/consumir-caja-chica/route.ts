@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { recalcularRecursosStatusDesdeRep } from "@/lib/recursos-ot";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -101,6 +102,9 @@ export async function POST(req: NextRequest, { params }: Params) {
         },
       });
 
+      // Auto-update del estado de recursos de la OT (el user pidió que
+      // refleje el avance de logística sin intervención manual).
+      await recalcularRecursosStatusDesdeRep(tx, rep);
       return updated;
     });
 

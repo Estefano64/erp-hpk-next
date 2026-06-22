@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { parseDateOnly } from "@/lib/dates";
 import { getAuditUser } from "@/lib/audit";
+import { recalcularRecursosStatusOT, recalcularRecursosStatusOTInterna } from "@/lib/recursos-ot";
 
 const Schema = z.object({
   repuesto_ids: z.array(z.coerce.number().int().positive()).min(1),
@@ -286,6 +287,14 @@ export async function POST(req: NextRequest) {
           },
         });
       }
+
+      // Auto-update del estado de recursos de cada OT tocada — al crear
+      // la OC, los reqs pasan de "Recursos solicitados" → "En espera de
+      // recursos" automáticamente.
+      const otsExt = [...new Set(repuestos.map((r) => r.ot_id).filter((x): x is number => x != null))];
+      const otsInt = [...new Set(repuestos.map((r) => r.orden_trabajo_interna_id).filter((x): x is number => x != null))];
+      for (const oid of otsExt) await recalcularRecursosStatusOT(tx, oid);
+      for (const oid of otsInt) await recalcularRecursosStatusOTInterna(tx, oid);
 
       return { compra, items: repuestos.length };
     });
