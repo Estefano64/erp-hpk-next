@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { resolverPrecioSalida } from "@/lib/inventario";
+import { recalcularRecursosStatusOT } from "@/lib/recursos-ot";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -226,6 +227,10 @@ export async function POST(req: NextRequest, { params }: Ctx) {
           },
         });
       }
+
+      // Auto-update recursos_status de la OT (el despacho es la última
+      // etapa logística — todos los items ENTREGADOS = Recursos completos).
+      await recalcularRecursosStatusOT(tx, otId);
 
       return { ok, parciales, errores };
     }, {

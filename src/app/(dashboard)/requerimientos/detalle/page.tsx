@@ -518,8 +518,29 @@ function RequerimientosDetalleInner() {
       rows = rows.filter((r) => {
         if (r.status_req !== "APROBADO") return false;
         if (r.po_id != null) return false;
-        if (r.status_oc === "CONSUMIDO_ALMACEN" || r.status_oc === "CONSUMIDO_OC_ABIERTA") return false;
-        if (r.observaciones && /consumi(do|d.{0,3})\s+(de|del)\s+(almac[eé]n|oc\s+abierta)/i.test(r.observaciones)) return false;
+        // Cualquier item ya resuelto (consumido, entregado, pagado por caja
+        // chica) NO debe seguir apareciendo en "Listos para OC".
+        if (
+          r.status_oc === "CONSUMIDO_ALMACEN"
+          || r.status_oc === "CONSUMIDO_OC_ABIERTA"
+          || r.status_oc === "ENTREGADO"
+          || r.status_oc === "ANULADO"
+        ) return false;
+        // Defensa por si el status_oc no se actualizó pero la observación
+        // sí registra el cierre (consumos parciales, caja chica, legacy).
+        if (
+          r.observaciones
+          && /(consumi(do|d.{0,3})\s+(de|del)\s+(almac[eé]n|oc\s+abierta)|pagado\s+con\s+caja\s+chica)/i.test(r.observaciones)
+        ) return false;
+        // Si hay STOCK suficiente del material en inventario, el item no
+        // requiere OC — debe consumirse de almacén. La fuente de verdad es
+        // Material.stock_actual del catálogo (no la cant. del req asignada a
+        // OTs). El user puede igual ver estos items con el filtro "Con stock".
+        if (
+          r.material_id != null
+          && (r.stock_actual ?? 0) >= Number(r.cantidad ?? 0)
+          && (r.stock_actual ?? 0) > 0
+        ) return false;
         return true;
       });
     } else if (filtroRapido === "en_oc") {

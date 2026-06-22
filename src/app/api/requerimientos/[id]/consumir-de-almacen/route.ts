@@ -3,6 +3,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { resolverPrecioSalida } from "@/lib/inventario";
+import { recalcularRecursosStatusDesdeRep } from "@/lib/recursos-ot";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -163,6 +164,8 @@ export async function POST(req: NextRequest, { params }: Params) {
         },
       });
 
+      // Auto-update del estado de recursos de la OT.
+      await recalcularRecursosStatusDesdeRep(tx, rep);
       return {
         requerimiento_id: rep.id,
         nuevo_estado: nuevoEstado,
