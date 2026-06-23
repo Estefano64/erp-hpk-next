@@ -26,6 +26,11 @@ export async function GET(req: NextRequest) {
         orderBy: { updatedAt: "desc" },
         skip: (page - 1) * limit,
         take: limit,
+        // `datos_formulario` es el formulario completo de la evaluación (JSON):
+        // promedia ~540 kB por fila y llega a 2.7 MB. El listado NO lo usa, así
+        // que omitirlo baja el payload de ~34 MB a <1 MB y el query de 30 s a
+        // <1 s. La pantalla de edición sí lo carga vía /api/evaluaciones/[id].
+        omit: { datos_formulario: true },
         include: {
           orden_trabajo: {
             select: { id: true, ot: true, descripcion: true, tipo: true, estrategia: true },
