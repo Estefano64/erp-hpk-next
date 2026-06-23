@@ -91,17 +91,26 @@ export function formatOtCodigoPorNombre(
 //
 // Devuelve null si no matchea ningún patrón conocido (el caller debería caer
 // a buscar por otros campos en ese caso).
+//
+// La columna `ot` es INTEGER (INT4) en BD. Cualquier valor fuera de rango no
+// puede matchear y, peor, hace fallar la query de Prisma con un overflow
+// ("Unable to fit integer value ... into an INT4"). Por eso devolvemos null
+// para valores fuera de rango: el caller cae a buscar por otros campos.
+const INT4_MAX = 2147483647;
+const inInt4 = (n: number): number | null =>
+  Number.isFinite(n) && n >= 0 && n <= INT4_MAX ? n : null;
+
 export function parseOtCodigoSearch(search: string): number | null {
   const s = search.trim();
   if (!s) return null;
-  if (/^\d+$/.test(s)) return Number(s);
+  if (/^\d+$/.test(s)) return inInt4(Number(s));
   const m = s.match(/^(V|S|OI)0*(\d+)$/i);
   if (!m) return null;
   const resto = m[2];
   // Necesitamos al menos 2 dígitos para inferir el año. Si tiene 1 sólo,
   // asumimos correlativo 0 + ese dígito como año (improbable pero defensivo).
-  if (resto.length < 2) return Number(resto);
+  if (resto.length < 2) return inInt4(Number(resto));
   const yy = Number(resto.slice(-2));
   const corr = Number(resto.slice(0, -2) || "0");
-  return corr * 100 + yy;
+  return inInt4(corr * 100 + yy);
 }
