@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { normalizarNombreRecurso } from "@/lib/recursos";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 const UpdateSchema = z.object({
@@ -26,7 +27,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       return NextResponse.json({ error: "Validación", detail: parsed.error.flatten() }, { status: 400 });
     }
     const updated = await prisma.trabajador.update({
-      where: { trabajador_id: Number(id) },
+      where: { trabajador_id: (parseInt4Safe(id) ?? 0) },
       data: parsed.data,
     });
     return NextResponse.json({ data: updated });
@@ -41,7 +42,7 @@ export async function DELETE(_req: NextRequest, ctx: Ctx) {
     const { id } = await ctx.params;
     // Soft delete: marca inactivo (preserva referencias en planificacion_ot)
     await prisma.trabajador.update({
-      where: { trabajador_id: Number(id) },
+      where: { trabajador_id: (parseInt4Safe(id) ?? 0) },
       data: { activo: false },
     });
     return NextResponse.json({ success: true });

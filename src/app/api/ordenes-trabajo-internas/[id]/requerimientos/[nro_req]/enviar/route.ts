@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string; nro_req: string }> };
 
 // POST /api/ordenes-trabajo-internas/[id]/requerimientos/[nro_req]/enviar
@@ -11,8 +12,8 @@ type Ctx = { params: Promise<{ id: string; nro_req: string }> };
 export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     const { id, nro_req } = await ctx.params;
-    const otInternaId = Number(id);
-    if (!Number.isFinite(otInternaId) || otInternaId <= 0) {
+    const otInternaId = parseInt4Safe(id) ?? 0;
+    if (otInternaId == null || otInternaId <= 0) {
       return NextResponse.json({ error: "ID de OT interna inválido" }, { status: 400 });
     }
     const nroReq = decodeURIComponent(nro_req).trim();

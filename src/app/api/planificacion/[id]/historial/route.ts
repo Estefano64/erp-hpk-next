@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 // GET /api/planificacion/[id]/historial — eventos de ejecución de la tarea:
@@ -9,7 +10,7 @@ type Ctx = { params: Promise<{ id: string }> };
 export async function GET(_req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
-    const planId = Number(id);
+    const planId = parseInt4Safe(id) ?? 0;
     const tarea = await prisma.planificacionOT.findUnique({
       where: { id: planId },
       select: { id: true, es_correctivo: true, observaciones: true, fecha_inicio_real: true, fecha_fin_real: true },

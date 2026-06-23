@@ -4,6 +4,7 @@ import { auditOTChange, AUDIT_OT_SELECT_FIELDS, getAuditUser, isAdmin } from "@/
 import { parseDateOnly } from "@/lib/dates";
 import { deleteObject } from "@/lib/r2-helpers";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
 
 // GET — obtener una OT por id
@@ -11,7 +12,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
   try {
     const { id } = await params;
     const record = await prisma.ordenTrabajo.findUnique({
-      where: { id: Number(id) },
+      where: { id: (parseInt4Safe(id) ?? 0) },
       include: {
         cliente: true,
         codigo_reparacion: { include: { tipo: true, flota: true, fabricante: true, posicion: true } },
@@ -118,7 +119,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
     const result = await prisma.$transaction(async (tx) => {
       const before = await tx.ordenTrabajo.findUnique({
-        where: { id: Number(id) },
+        where: { id: (parseInt4Safe(id) ?? 0) },
         select: {
           version: true,
           monto_cotizacion: true,
@@ -205,7 +206,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
       // Auto-fill audit fields y bump de version
       const record = await tx.ordenTrabajo.update({
-        where: { id: Number(id) },
+        where: { id: (parseInt4Safe(id) ?? 0) },
         data: {
           ...body,
           usuario_actualiza: usuario,
@@ -274,7 +275,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Solo un administrador puede desactivar/reactivar OTs" }, { status: 403 });
     }
     const { id } = await params;
-    const otId = Number(id);
+    const otId = parseInt4Safe(id) ?? 0;
     const body = await req.json().catch(() => ({})) as Record<string, unknown>;
     if (typeof body.activo !== "boolean") {
       return NextResponse.json({ error: "Falta 'activo' (boolean)" }, { status: 400 });
@@ -317,7 +318,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Solo un administrador puede eliminar OTs" }, { status: 403 });
     }
     const { id } = await params;
-    const otId = Number(id);
+    const otId = parseInt4Safe(id) ?? 0;
     const existing = await prisma.ordenTrabajo.findUnique({ where: { id: otId }, select: { id: true } });
     if (!existing) return NextResponse.json({ error: "OT no encontrada" }, { status: 404 });
 

@@ -12,6 +12,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 const Schema = z.object({
@@ -23,8 +24,8 @@ const Schema = z.object({
 export async function PATCH(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
-    const itemId = Number(id);
-    if (!Number.isFinite(itemId) || itemId <= 0) {
+    const itemId = parseInt4Safe(id) ?? 0;
+    if (itemId == null || itemId <= 0) {
       return NextResponse.json({ error: "ID inválido" }, { status: 400 });
     }
     const body = await req.json();

@@ -7,6 +7,7 @@ import { calcularFinEstimado, normalizarAInicioHabil } from "@/lib/planification
 import { splitRecursos } from "@/lib/recursos";
 import { cascadeEmergencia, cascadeReprogramar } from "@/lib/emergencia-cascade";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 dayjs.extend(isoWeek);
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -71,7 +72,7 @@ function semanaCodigoFromDate(d: Date): string {
 export async function GET(_req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const item = await prisma.planificacionOT.findUnique({
-    where: { id: Number(id) },
+    where: { id: (parseInt4Safe(id) ?? 0) },
     include: {
       operacion_cod_rep: true,
       capturas: { orderBy: { id: "asc" } },
@@ -85,7 +86,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
 export async function PUT(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
-    const planId = Number(id);
+    const planId = parseInt4Safe(id) ?? 0;
     const body = await req.json();
     const parsed = UpdateSchema.safeParse(body);
     if (!parsed.success) {
@@ -383,7 +384,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 export async function DELETE(_req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
-    await prisma.planificacionOT.delete({ where: { id: Number(id) } });
+    await prisma.planificacionOT.delete({ where: { id: (parseInt4Safe(id) ?? 0) } });
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     const err = error as { code?: string };

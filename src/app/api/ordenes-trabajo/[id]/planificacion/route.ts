@@ -3,12 +3,13 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 // GET — lista planificación de una OT
 export async function GET(_req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
-  const otId = Number(id);
+  const otId = parseInt4Safe(id) ?? 0;
   const data = await prisma.planificacionOT.findMany({
     where: { ot_id: otId },
     include: {
@@ -36,7 +37,7 @@ const BulkSchema = z.object({
 export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
-    const otId = Number(id);
+    const otId = parseInt4Safe(id) ?? 0;
     const body = await req.json().catch(() => ({}));
     const parsed = BulkSchema.safeParse(body);
     if (!parsed.success) {

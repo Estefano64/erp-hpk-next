@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { parseInt4Safe } from "@/lib/ot-formato";
 
 // GET /api/requerimientos/stats — KPIs agregados sobre TODO el conjunto filtrado,
 // no sólo la página actual. Replica el `where` de GET /api/requerimientos.
@@ -9,11 +10,12 @@ export async function GET(req: NextRequest) {
     const where: Record<string, unknown> = {};
 
     const otId = sp.get("ot_id");
-    if (otId) where.ot_id = Number(otId);
+    const otIdNum = parseInt4Safe(otId);
+    if (otIdNum != null) where.ot_id = otIdNum;
 
     const ot = sp.get("ot")?.trim();
     if (ot) {
-      const otNum = /^\d+$/.test(ot) ? Number(ot) : null;
+      const otNum = parseInt4Safe(ot);
       if (otNum != null) where.orden_trabajo = { ot: otNum };
     }
 

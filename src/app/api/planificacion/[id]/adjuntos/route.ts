@@ -9,6 +9,7 @@ import { deleteObject } from "@/lib/r2-helpers";
 import { R2Keys, otCodigoFor } from "@/lib/r2";
 import { splitRecursos } from "@/lib/recursos";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 // Carga la tarea + valida que el usuario sea el técnico asignado o admin.
@@ -33,8 +34,8 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
   const { id } = await ctx.params;
-  const planId = Number(id);
-  if (!Number.isFinite(planId) || planId <= 0) {
+  const planId = parseInt4Safe(id) ?? 0;
+  if (planId == null || planId <= 0) {
     return NextResponse.json({ error: "ID inválido" }, { status: 400 });
   }
   const data = await prisma.planificacionOTAdjunto.findMany({
@@ -49,8 +50,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
   const { id } = await ctx.params;
-  const planId = Number(id);
-  if (!Number.isFinite(planId) || planId <= 0) {
+  const planId = parseInt4Safe(id) ?? 0;
+  if (planId == null || planId <= 0) {
     return NextResponse.json({ error: "ID inválido" }, { status: 400 });
   }
 
@@ -96,7 +97,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
   const { id } = await ctx.params;
-  const planId = Number(id);
+  const planId = parseInt4Safe(id) ?? 0;
   const body = await req.json().catch(() => ({}));
   const adjuntoId = Number(body.adjunto_id);
   if (!Number.isFinite(adjuntoId)) {

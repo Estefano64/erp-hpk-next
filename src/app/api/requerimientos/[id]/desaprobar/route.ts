@@ -3,6 +3,7 @@ import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 // POST /api/requerimientos/[id]/desaprobar
@@ -21,7 +22,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const usuario = (await getAuditUser(req)) ?? "sistema";
 
     const current = await prisma.oTRepuesto.findUnique({
-      where: { id: Number(id) },
+      where: { id: (parseInt4Safe(id) ?? 0) },
       select: { status_requerimiento_codigo: true, po_id: true, ot_id: true, orden_trabajo_interna_id: true, nro_req: true, observaciones: true },
     });
     if (!current) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
@@ -36,7 +37,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 
     const updated = await prisma.$transaction(async (tx) => {
       const r = await tx.oTRepuesto.update({
-        where: { id: Number(id) },
+        where: { id: (parseInt4Safe(id) ?? 0) },
         data: {
           status_requerimiento_codigo: "DESAPROBADO",
           usuario_aprueba: usuario,

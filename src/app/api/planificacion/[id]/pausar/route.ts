@@ -6,6 +6,7 @@ import { duracionRealTarea, rollupEstadoTarea } from "@/lib/plan-sesion";
 import { splitRecursos } from "@/lib/recursos";
 import { esMotivoPausaValido, motivoPausa } from "@/lib/motivos-pausa";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 // POST /api/planificacion/:id/pausar — el técnico interrumpe la tarea.
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const tecnicoNombre = me.trabajador.nombre;
 
     const { id } = await ctx.params;
-    const planId = Number(id);
+    const planId = parseInt4Safe(id) ?? 0;
 
     const abierta = await prisma.planificacionOTSesion.findFirst({
       where: { planificacion_ot_id: planId, tecnico: tecnicoNombre, fin: null },

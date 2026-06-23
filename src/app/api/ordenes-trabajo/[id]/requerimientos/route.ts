@@ -6,14 +6,15 @@ import { getAuditUser } from "@/lib/audit";
 import { nextNroReqExterna, nextItemReq } from "@/lib/requerimientos";
 import { parseDateOnly } from "@/lib/dates";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 // GET /api/ordenes-trabajo/[id]/requerimientos
 export async function GET(_req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
-    const otId = Number(id);
-    if (!Number.isFinite(otId) || otId <= 0) {
+    const otId = parseInt4Safe(id) ?? 0;
+    if (otId == null || otId <= 0) {
       return NextResponse.json({ error: "ID inválido" }, { status: 400 });
     }
     const data = await prisma.oTRepuesto.findMany({
@@ -62,8 +63,8 @@ const CreateSchema = z.object({
 export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
-    const otId = Number(id);
-    if (!Number.isFinite(otId) || otId <= 0) {
+    const otId = parseInt4Safe(id) ?? 0;
+    if (otId == null || otId <= 0) {
       return NextResponse.json({ error: "ID de OT inválido" }, { status: 400 });
     }
     const body = await req.json();

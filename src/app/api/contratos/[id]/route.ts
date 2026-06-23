@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parseDateOnly } from "@/lib/dates";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(_req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const item = await prisma.contrato.findUnique({
-    where: { id: Number(id) },
+    where: { id: (parseInt4Safe(id) ?? 0) },
     include: { cliente: true, codigo_reparacion: true },
   });
   if (!item) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
@@ -19,7 +20,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     const { id } = await ctx.params;
     const body = await req.json();
     const updated = await prisma.contrato.update({
-      where: { id: Number(id) },
+      where: { id: (parseInt4Safe(id) ?? 0) },
       data: {
         codigo: body.codigo,
         cliente_id: body.cliente_id,
@@ -42,7 +43,7 @@ export async function DELETE(_req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
     await prisma.contrato.update({
-      where: { id: Number(id) },
+      where: { id: (parseInt4Safe(id) ?? 0) },
       data: { activo: false },
     });
     return NextResponse.json({ success: true });

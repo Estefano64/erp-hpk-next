@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { calcularLinea, recalcCompraTotals } from "@/lib/compra-utils";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 const UpdateDetalleSchema = z.object({
   material_id: z.number().int().positive().optional(),
   cantidad: z.coerce.number().positive().optional(),
@@ -18,8 +19,8 @@ type Ctx = { params: Promise<{ id: string; detId: string }> };
 export async function PUT(req: NextRequest, ctx: Ctx) {
   try {
     const { id, detId } = await ctx.params;
-    const compraId = Number(id);
-    const detalleId = Number(detId);
+    const compraId = parseInt4Safe(id) ?? 0;
+    const detalleId = (parseInt4Safe(detId) ?? 0);
     const body = await req.json();
     const parsed = UpdateDetalleSchema.safeParse(body);
     if (!parsed.success) {
@@ -92,8 +93,8 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 export async function DELETE(_req: NextRequest, ctx: Ctx) {
   try {
     const { id, detId } = await ctx.params;
-    const compraId = Number(id);
-    const detalleId = Number(detId);
+    const compraId = parseInt4Safe(id) ?? 0;
+    const detalleId = (parseInt4Safe(detId) ?? 0);
 
     await prisma.$transaction(async (tx) => {
       const current = await tx.compraDetalle.findUnique({

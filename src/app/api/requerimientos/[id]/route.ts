@@ -6,6 +6,7 @@ import { isAdmin } from "@/lib/audit";
 import { ESTADOS_REQ_LOCKED_DELETE } from "@/lib/requerimientos";
 import { parseDateOnly } from "@/lib/dates";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 const UpdateSchema = z.object({
@@ -37,7 +38,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     const admin = await isAdmin(req);
 
     const current = await prisma.oTRepuesto.findUnique({
-      where: { id: Number(id) },
+      where: { id: (parseInt4Safe(id) ?? 0) },
       select: {
         id: true, status_requerimiento_codigo: true, status_oc_codigo: true,
         po_id: true, material_id: true, material_codigo: true, tipo_codigo: true,
@@ -89,7 +90,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     }
 
     const updated = await prisma.oTRepuesto.update({
-      where: { id: Number(id) },
+      where: { id: (parseInt4Safe(id) ?? 0) },
       data: updates,
       include: {
         material: { select: { codigo: true, descripcion: true } },
@@ -115,7 +116,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
     const current = await prisma.oTRepuesto.findUnique({
-      where: { id: Number(id) },
+      where: { id: (parseInt4Safe(id) ?? 0) },
       select: { status_requerimiento_codigo: true, po_id: true },
     });
     if (!current) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
@@ -132,7 +133,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
       }, { status: 409 });
     }
 
-    await prisma.oTRepuesto.delete({ where: { id: Number(id) } });
+    await prisma.oTRepuesto.delete({ where: { id: (parseInt4Safe(id) ?? 0) } });
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {

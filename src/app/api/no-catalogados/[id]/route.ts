@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 // DELETE — Dar de baja (soft delete) un material no catalogado.
@@ -8,7 +9,7 @@ type Ctx = { params: Promise<{ id: string }> };
 export async function DELETE(req: NextRequest, { params }: Ctx) {
   try {
     const { id } = await params;
-    const matId = Number(id);
+    const matId = parseInt4Safe(id) ?? 0;
     const force = new URL(req.url).searchParams.get("force") === "true";
 
     const mat = await prisma.materialNoCatalogado.findUnique({

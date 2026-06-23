@@ -6,6 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasRole } from "@/lib/permisos";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 async function requireAdmin() {
   const session = await getServerSession(authOptions);
   if (!hasRole(session, "admin")) return null;
@@ -40,7 +41,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   const { id } = await ctx.params;
   try {
     const u = await prisma.usuario.findUnique({
-      where: { id: Number(id) },
+      where: { id: (parseInt4Safe(id) ?? 0) },
       select: {
         id: true, codigoEmpleado: true, email: true, dni: true,
         nombre: true, roles: true, activo: true, trabajadorId: true,
@@ -73,7 +74,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
 
     if (d.trabajadorId) {
       const dup = await prisma.usuario.findFirst({
-        where: { trabajadorId: d.trabajadorId, NOT: { id: Number(id) } },
+        where: { trabajadorId: d.trabajadorId, NOT: { id: (parseInt4Safe(id) ?? 0) } },
       });
       if (dup) {
         return NextResponse.json({ error: `Ese trabajador ya está vinculado a ${dup.codigoEmpleado}` }, { status: 409 });
@@ -94,7 +95,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
     if (d.password) data.password = await bcrypt.hash(d.password, 10);
 
     const updated = await prisma.usuario.update({
-      where: { id: Number(id) },
+      where: { id: (parseInt4Safe(id) ?? 0) },
       data,
       select: {
         id: true, codigoEmpleado: true, email: true, dni: true,
@@ -124,7 +125,7 @@ export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: str
   const { id } = await ctx.params;
   try {
     await prisma.usuario.update({
-      where: { id: Number(id) },
+      where: { id: (parseInt4Safe(id) ?? 0) },
       data: { activo: false },
     });
     return NextResponse.json({ ok: true });

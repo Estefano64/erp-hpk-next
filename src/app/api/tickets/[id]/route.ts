@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuditUser, isAdmin } from "@/lib/audit";
 import { deleteObject } from "@/lib/r2-helpers";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
 
 const ESTADOS_VALIDOS = ["ABIERTO", "EN_PROCESO", "RESUELTO", "CERRADO"] as const;
@@ -11,7 +12,7 @@ const ESTADOS_VALIDOS = ["ABIERTO", "EN_PROCESO", "RESUELTO", "CERRADO"] as cons
 export async function GET(req: NextRequest, { params }: Params) {
   try {
     const { id } = await params;
-    const ticket = await prisma.ticket.findUnique({ where: { id: Number(id) } });
+    const ticket = await prisma.ticket.findUnique({ where: { id: (parseInt4Safe(id) ?? 0) } });
     if (!ticket) return NextResponse.json({ error: "Ticket no encontrado" }, { status: 404 });
     if (!(await isAdmin(req))) {
       const usuario = await getAuditUser(req);
@@ -37,7 +38,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Solo un administrador puede gestionar tickets" }, { status: 403 });
     }
     const { id } = await params;
-    const ticketId = Number(id);
+    const ticketId = parseInt4Safe(id) ?? 0;
     const existing = await prisma.ticket.findUnique({ where: { id: ticketId } });
     if (!existing) return NextResponse.json({ error: "Ticket no encontrado" }, { status: 404 });
 
@@ -88,7 +89,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Solo un administrador puede eliminar tickets" }, { status: 403 });
     }
     const { id } = await params;
-    const ticketId = Number(id);
+    const ticketId = parseInt4Safe(id) ?? 0;
     const existing = await prisma.ticket.findUnique({ where: { id: ticketId } });
     if (!existing) return NextResponse.json({ error: "Ticket no encontrado" }, { status: 404 });
 

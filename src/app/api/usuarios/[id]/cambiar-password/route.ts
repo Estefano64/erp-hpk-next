@@ -6,6 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasRole } from "@/lib/permisos";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 // POST /api/usuarios/[id]/cambiar-password
 // Reset de contraseña por un admin. NO requiere la contraseña actual (es un
 // reset de soporte: el admin no la conoce). Solo se permite a roles "admin".
@@ -30,8 +31,8 @@ export async function POST(req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
     const { id } = await params;
-    const userId = Number(id);
-    if (!Number.isFinite(userId)) {
+    const userId = parseInt4Safe(id) ?? 0;
+    if (userId == null) {
       return NextResponse.json({ error: "ID inválido" }, { status: 400 });
     }
     const body = await req.json().catch(() => ({}));

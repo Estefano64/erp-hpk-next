@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { parseInt4Safe } from "@/lib/ot-formato";
 
 // GET /api/aprobaciones — devuelve, en una sola llamada:
 //   - ocs_pendientes:  Compras en estado PEND_OC
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest) {
       if (ot) {
         // `ot` ahora es INTEGER. Si la búsqueda es un número, hacemos match
         // exacto; si no, no se filtra por OT.
-        const otNum = /^\d+$/.test(ot) ? Number(ot) : null;
+        const otNum = parseInt4Safe(ot);
         if (otNum != null) whereOC.orden_trabajo = { ot: otNum };
       }
       ocs_pendientes = await prisma.compra.findMany({
@@ -66,7 +67,7 @@ export async function GET(req: NextRequest) {
         OR: [{ solo_para_oc: false }, { solo_para_oc: null }],
       };
       if (ot) {
-        const otNum = /^\d+$/.test(ot) ? Number(ot) : null;
+        const otNum = parseInt4Safe(ot);
         if (otNum != null) whereRQ.orden_trabajo = { ot: otNum };
       }
       reqs_pendientes = await prisma.oTRepuesto.findMany({

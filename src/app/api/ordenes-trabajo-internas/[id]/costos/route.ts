@@ -10,13 +10,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { calcularCostosOT } from "@/lib/costos-ot";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
 
 export async function GET(_req: NextRequest, { params }: Params) {
   try {
     const { id } = await params;
-    const otInternaId = Number(id);
-    if (!Number.isFinite(otInternaId) || otInternaId <= 0) {
+    const otInternaId = parseInt4Safe(id) ?? 0;
+    if (otInternaId == null || otInternaId <= 0) {
       return NextResponse.json({ error: "ID inválido" }, { status: 400 });
     }
     const data = await calcularCostosOT(prisma, { otInternaId });

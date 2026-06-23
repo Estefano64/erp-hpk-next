@@ -21,6 +21,7 @@ import { deleteObject } from "@/lib/r2-helpers";
 import { R2Keys, otCodigoFor } from "@/lib/r2";
 import { getAuditUser } from "@/lib/audit";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
 type Tipo = "guia" | "factura" | "pago";
 
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
   try {
     const { id } = await params;
-    const compraId = Number(id);
+    const compraId = parseInt4Safe(id) ?? 0;
     const tipo = parseTipo(req);
 
     const compra = await prisma.compra.findUnique({
@@ -177,7 +178,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
 
   try {
     const { id } = await params;
-    const compraId = Number(id);
+    const compraId = parseInt4Safe(id) ?? 0;
     const tipo = parseTipo(req);
 
     const compra = await prisma.compra.findUnique({ where: { id: compraId } });

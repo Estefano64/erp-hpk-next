@@ -6,7 +6,7 @@ import {
   drawLabelValueRow,
   drawTextBlock,
 } from "@/lib/pdf/hpk-header";
-import { formatReporteCorrectivoCodigo } from "@/lib/ot-formato";
+import {  formatReporteCorrectivoCodigo, parseInt4Safe } from "@/lib/ot-formato";
 
 // pdfkit requiere APIs de Node (Buffer, fs, etc.) — fuerza el runtime Node.
 export const runtime = "nodejs";
@@ -18,8 +18,8 @@ export async function GET(
 ) {
   try {
     const { id } = await ctx.params;
-    const idNum = Number(id);
-    if (!Number.isFinite(idNum)) {
+    const idNum = parseInt4Safe(id) ?? 0;
+    if (idNum == null) {
       return NextResponse.json({ error: "id inválido" }, { status: 400 });
     }
     const rep = await prisma.reporteCorrectivo.findUnique({

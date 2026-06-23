@@ -19,15 +19,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sugerirUbicacionPorOT } from "@/lib/almacen-ubicacion";
-import { formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
+import {  formatOtCodigo, formatOtInternaCodigo, parseInt4Safe } from "@/lib/ot-formato";
 
 type Params = { params: Promise<{ id: string }> };
 
 export async function GET(_req: NextRequest, { params }: Params) {
   try {
     const { id } = await params;
-    const poId = Number(id);
-    if (!Number.isFinite(poId) || poId <= 0) {
+    const poId = parseInt4Safe(id) ?? 0;
+    if (poId == null || poId <= 0) {
       return NextResponse.json({ error: "ID inválido" }, { status: 400 });
     }
 

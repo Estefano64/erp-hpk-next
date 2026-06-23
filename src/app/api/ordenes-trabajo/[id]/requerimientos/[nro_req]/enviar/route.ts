@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { maybePromoveOTaRecursosSolicitados } from "@/lib/ot-status";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string; nro_req: string }> };
 
 // POST /api/ordenes-trabajo/[id]/requerimientos/[nro_req]/enviar
@@ -11,8 +12,8 @@ type Ctx = { params: Promise<{ id: string; nro_req: string }> };
 export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     const { id, nro_req } = await ctx.params;
-    const otId = Number(id);
-    if (!Number.isFinite(otId) || otId <= 0) {
+    const otId = parseInt4Safe(id) ?? 0;
+    if (otId == null || otId <= 0) {
       return NextResponse.json({ error: "ID de OT inválido" }, { status: 400 });
     }
     const nroReq = decodeURIComponent(nro_req).trim();

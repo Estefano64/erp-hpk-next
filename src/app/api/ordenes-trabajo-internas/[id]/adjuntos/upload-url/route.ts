@@ -10,6 +10,7 @@ import { generateUploadUrl } from "@/lib/r2-helpers";
 import { R2Keys, otInternaCodigoFor } from "@/lib/r2";
 import { assertOTInternaAccess, readJsonBody, validateUploadBody } from "@/lib/r2-server";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
 
 const ETAPAS_VALIDAS = ["recepcion", "evaluacion", "cotizacion", "po_cliente", "termino", "despacho", "facturacion", "general"] as const;
@@ -20,7 +21,7 @@ function isEtapa(v: unknown): v is Etapa {
 
 export async function POST(req: NextRequest, { params }: Params) {
   const { id } = await params;
-  const otId = Number(id);
+  const otId = parseInt4Safe(id) ?? 0;
 
   const access = await assertOTInternaAccess(req, otId);
   if (!access.ok) return access.response;

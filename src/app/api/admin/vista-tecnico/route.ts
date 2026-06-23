@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasRole } from "@/lib/permisos";
+import { parseInt4Safe } from "@/lib/ot-formato";
 
 // GET /api/admin/vista-tecnico?dni=XXXX[&page=1&limit=50&estado=...&search=...&fecha_desde=...&fecha_hasta=...]
 // Vista de gerente: dado un DNI (o trabajadorId), devuelve la información que
@@ -83,8 +84,8 @@ export async function GET(req: NextRequest) {
         { componente: { contains: search, mode: "insensitive" } },
         { operacion_codigo: { contains: search, mode: "insensitive" } },
       ];
-      const otNum = Number(search);
-      if (search.trim() !== "" && Number.isInteger(otNum)) {
+      const otNum = parseInt4Safe(search);
+      if (otNum != null) {
         or.push({ orden_trabajo: { is: { ot: otNum } } });
       }
       and.push({ OR: or });

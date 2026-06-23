@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { calcularLinea, recalcCompraTotals } from "@/lib/compra-utils";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 const CreateDetalleSchema = z.object({
   material_id: z.number().int().positive(),
   cantidad: z.coerce.number().positive(),
@@ -18,7 +19,7 @@ type Ctx = { params: Promise<{ id: string }> };
 export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
-    const compraId = Number(id);
+    const compraId = parseInt4Safe(id) ?? 0;
     const body = await req.json();
     const parsed = CreateDetalleSchema.safeParse(body);
     if (!parsed.success) {

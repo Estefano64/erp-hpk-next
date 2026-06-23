@@ -15,6 +15,7 @@ import { generateUploadUrl } from "@/lib/r2-helpers";
 import { R2Keys, otCodigoFor } from "@/lib/r2";
 import { assertOTAccess, readJsonBody, validateUploadBody } from "@/lib/r2-server";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
 type Tipo = "guia" | "factura" | "pago";
 
@@ -27,8 +28,8 @@ function parseTipo(req: NextRequest): Tipo {
 
 export async function POST(req: NextRequest, { params }: Params) {
   const { id } = await params;
-  const compraId = Number(id);
-  if (!Number.isFinite(compraId) || compraId <= 0) {
+  const compraId = parseInt4Safe(id) ?? 0;
+  if (compraId == null || compraId <= 0) {
     return NextResponse.json({ error: "ID inválido" }, { status: 400 });
   }
   const tipo = parseTipo(req);

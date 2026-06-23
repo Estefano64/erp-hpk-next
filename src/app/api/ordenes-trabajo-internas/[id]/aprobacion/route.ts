@@ -15,6 +15,7 @@ import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
 type Accion = "enviar" | "aprobar" | "rechazar" | "reabrir";
 
@@ -31,8 +32,8 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
   try {
     const { id } = await params;
-    const otId = Number(id);
-    if (!Number.isFinite(otId) || otId <= 0) {
+    const otId = parseInt4Safe(id) ?? 0;
+    if (otId == null || otId <= 0) {
       return NextResponse.json({ error: "ID inválido" }, { status: 400 });
     }
 

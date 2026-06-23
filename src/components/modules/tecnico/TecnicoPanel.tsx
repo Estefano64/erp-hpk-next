@@ -273,6 +273,7 @@ export default function TecnicoPanel() {
   // ── Ver hoja de evaluación de la OT (solo lectura, solo APROBADAS) ──
   interface EvalView {
     id: number;
+    ot_id: number;
     modelo_evaluacion: string;
     sistema_medicion: string;
     datos_formulario: Record<string, unknown>;
@@ -838,6 +839,7 @@ export default function TecnicoPanel() {
               np={evalData.orden_trabajo?.np ?? null}
               descripcionCilindro={evalData.orden_trabajo?.descripcion ?? null}
               modeloCilindro={evalData.orden_trabajo?.cod_rep_flota ?? null}
+              otId={evalData.ot_id}
             />
             {(evalData.resultado_general || evalData.recomendaciones_general) && (
               <Card size="small" style={{ marginTop: 12 }} title="Resultado y recomendaciones">

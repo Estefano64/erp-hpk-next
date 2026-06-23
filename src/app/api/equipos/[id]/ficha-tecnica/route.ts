@@ -5,7 +5,7 @@ import {
   drawHPKHeader,
   drawLabelValueRow,
 } from "@/lib/pdf/hpk-header";
-import { formatOtInternaCodigo } from "@/lib/ot-formato";
+import {  formatOtInternaCodigo, parseInt4Safe } from "@/lib/ot-formato";
 
 // pdfkit requiere APIs de Node (Buffer, fs, etc.) — fuerza el runtime Node.
 export const runtime = "nodejs";
@@ -25,7 +25,7 @@ export async function GET(
       where: {
         OR: [
           // numérico (equipo_id) — soporta llegar desde el ID interno
-          ...(/^\d+$/.test(id) ? [{ equipo_id: Number(id) }] : []),
+          ...(/^\d+$/.test(id) ? [{ equipo_id: (parseInt4Safe(id) ?? 0) }] : []),
           { codigo: id },
         ],
       },

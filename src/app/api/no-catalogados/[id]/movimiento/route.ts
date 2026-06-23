@@ -3,6 +3,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 const Schema = z.object({
@@ -18,7 +19,7 @@ const Schema = z.object({
 export async function POST(req: NextRequest, { params }: Ctx) {
   try {
     const { id } = await params;
-    const matId = Number(id);
+    const matId = parseInt4Safe(id) ?? 0;
     const body = await req.json();
     const parsed = Schema.safeParse(body);
     if (!parsed.success) {
@@ -76,7 +77,7 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
   try {
     const { id } = await params;
     const movimientos = await prisma.movimientoNoCatalogado.findMany({
-      where: { material_no_cat_id: Number(id) },
+      where: { material_no_cat_id: (parseInt4Safe(id) ?? 0) },
       orderBy: { fecha_movimiento: "desc" },
     });
     return NextResponse.json({ data: movimientos });

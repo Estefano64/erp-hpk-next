@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getPlantilla } from "@/lib/evaluacion-templates";
 import { detectarTipoCilindro } from "@/lib/cod-rep-tipos";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 // Código especial para la fila PlanificacionOT que contiene las capturas de evaluación.
@@ -20,7 +21,7 @@ const EVAL_OPERACION_CODIGO = "EVAL";
 export async function GET(_req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
-    const otId = Number(id);
+    const otId = parseInt4Safe(id) ?? 0;
 
     const ot = await prisma.ordenTrabajo.findUnique({
       where: { id: otId },

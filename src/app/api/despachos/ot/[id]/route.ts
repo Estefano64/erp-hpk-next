@@ -6,6 +6,7 @@ import { getAuditUser } from "@/lib/audit";
 import { resolverPrecioSalida } from "@/lib/inventario";
 import { recalcularRecursosStatusOT } from "@/lib/recursos-ot";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 const Schema = z.object({
@@ -21,8 +22,8 @@ const Schema = z.object({
 export async function POST(req: NextRequest, { params }: Ctx) {
   try {
     const { id } = await params;
-    const otId = Number(id);
-    if (!Number.isFinite(otId)) {
+    const otId = parseInt4Safe(id) ?? 0;
+    if (otId == null) {
       return NextResponse.json({ error: "OT inválida" }, { status: 400 });
     }
     const body = await req.json().catch(() => ({}));

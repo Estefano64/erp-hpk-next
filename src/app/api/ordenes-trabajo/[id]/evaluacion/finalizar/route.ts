@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auditOTStatusChange, getAuditUser } from "@/lib/audit";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 const EVAL_OPERACION_CODIGO = "EVAL";
@@ -19,7 +20,7 @@ const TALLER_STATUS_AL_FINALIZAR = "Pdt proceso";
 export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
-    const otId = Number(id);
+    const otId = parseInt4Safe(id) ?? 0;
     const usuario = (await getAuditUser(req)) ?? "sistema";
 
     const result = await prisma.$transaction(async (tx) => {

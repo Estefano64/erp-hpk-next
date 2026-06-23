@@ -28,6 +28,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { recalcularRecursosStatusOT, recalcularRecursosStatusOTInterna } from "@/lib/recursos-ot";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 const Schema = z.object({
@@ -53,8 +54,8 @@ interface CompraRow {
 export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
-    const compraId = Number(id);
-    if (!Number.isFinite(compraId) || compraId <= 0) {
+    const compraId = parseInt4Safe(id) ?? 0;
+    if (compraId == null || compraId <= 0) {
       return NextResponse.json({ error: "ID de Compra inválido" }, { status: 400 });
     }
     const body = await req.json().catch(() => ({}));

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
 
 const Schema = z.object({
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const result = await prisma.$transaction(
       async (tx) => {
-        const original = await tx.oTRepuesto.findUnique({ where: { id: Number(id) } });
+        const original = await tx.oTRepuesto.findUnique({ where: { id: (parseInt4Safe(id) ?? 0) } });
         if (!original) {
           throw Object.assign(new Error("Requerimiento no encontrado"), { code: "NOT_FOUND" });
         }
