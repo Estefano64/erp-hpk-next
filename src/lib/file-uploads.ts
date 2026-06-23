@@ -31,7 +31,15 @@ const TYPE_INFORMES = {
   ]),
 };
 
-export type CategoriaUpload = "documentos" | "informes";
+// Solo imágenes (fotos de evaluación técnica). El cliente comprime la imagen
+// a ~300px de alto antes de subir, así que el JPEG resultante es pequeño
+// (<300KB típico); aún así dejamos 15MB de cap por si suben una foto original.
+const TYPE_IMAGENES = {
+  ext: new Set([".png", ".jpg", ".jpeg", ".webp"]),
+  mime: new Set(["image/png", "image/jpeg", "image/webp"]),
+};
+
+export type CategoriaUpload = "documentos" | "informes" | "imagenes";
 
 export function validarArchivo(
   file: File,
@@ -43,7 +51,10 @@ export function validarArchivo(
   if (file.size > maxSize) {
     return { ok: false, error: `El archivo excede ${Math.round(maxSize / 1024 / 1024)} MB` };
   }
-  const allowed = categoria === "informes" ? TYPE_INFORMES : TYPE_DOCUMENTOS;
+  const allowed =
+    categoria === "informes" ? TYPE_INFORMES
+    : categoria === "imagenes" ? TYPE_IMAGENES
+    : TYPE_DOCUMENTOS;
   const lowerName = (file.name || "").toLowerCase();
   const dot = lowerName.lastIndexOf(".");
   const ext = dot >= 0 ? lowerName.slice(dot) : "";

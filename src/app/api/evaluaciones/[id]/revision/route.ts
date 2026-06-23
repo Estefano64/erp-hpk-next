@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
 
 // POST — ejecuta accion sobre la evaluacion
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     // Comentario opcional. Si viene se guarda en `comentarios_revision`.
     const comentarioTrim = typeof comentarios === "string" ? comentarios.trim() : "";
 
-    const evalActual = await prisma.evaluacionTecnica.findUnique({ where: { id: Number(id) } });
+    const evalActual = await prisma.evaluacionTecnica.findUnique({ where: { id: (parseInt4Safe(id) ?? 0) } });
     if (!evalActual) {
       return NextResponse.json({ error: "Evaluacion no encontrada" }, { status: 404 });
     }
@@ -110,7 +111,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const updated = await prisma.$transaction(async (tx) => {
       const u = await tx.evaluacionTecnica.update({
-        where: { id: Number(id) },
+        where: { id: (parseInt4Safe(id) ?? 0) },
         data,
       });
       // Espejo a la cabecera de la OT (Evaluador/Aprobado por + fechas). Estos

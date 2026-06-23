@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { cascadeEmergencia } from "@/lib/emergencia-cascade";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 // POST /api/planificacion/[id]/emergencia
@@ -10,7 +11,7 @@ type Ctx = { params: Promise<{ id: string }> };
 export async function POST(_req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
-    const planId = Number(id);
+    const planId = parseInt4Safe(id) ?? 0;
     const result = await prisma.$transaction((tx) => cascadeEmergencia(tx, planId));
     return NextResponse.json(result);
   } catch (error) {

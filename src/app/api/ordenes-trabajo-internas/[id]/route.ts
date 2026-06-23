@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuditUser, isAdmin, auditOTInternaChange, AUDIT_OT_INTERNA_SELECT_FIELDS } from "@/lib/audit";
 import { deleteObject } from "@/lib/r2-helpers";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
 
 // GET — detalle de una OT interna con todas las relaciones.
@@ -10,7 +11,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
   try {
     const { id } = await params;
     const ot = await prisma.ordenTrabajoInterna.findUnique({
-      where: { id: Number(id) },
+      where: { id: (parseInt4Safe(id) ?? 0) },
       include: {
         planta: true,
         equipo: { select: { codigo: true, descripcion: true } },
@@ -40,7 +41,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
   try {
     const { id } = await params;
     const body = await req.json();
-    const otId = Number(id);
+    const otId = parseInt4Safe(id) ?? 0;
 
     // Optimistic concurrency: cliente envía la version que tenía leída.
     if (body.version !== undefined) {
@@ -142,7 +143,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Solo un administrador puede desactivar/reactivar OTs internas" }, { status: 403 });
     }
     const { id } = await params;
-    const otId = Number(id);
+    const otId = parseInt4Safe(id) ?? 0;
     const body = await req.json().catch(() => ({})) as Record<string, unknown>;
     if (typeof body.activo !== "boolean") {
       return NextResponse.json({ error: "Falta 'activo' (boolean)" }, { status: 400 });
@@ -181,7 +182,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Solo un administrador puede eliminar OTs internas" }, { status: 403 });
     }
     const { id } = await params;
-    const otId = Number(id);
+    const otId = parseInt4Safe(id) ?? 0;
     const existing = await prisma.ordenTrabajoInterna.findUnique({ where: { id: otId }, select: { id: true } });
     if (!existing) return NextResponse.json({ error: "No encontrada" }, { status: 404 });
 

@@ -396,6 +396,7 @@ export default function EvaluacionPage() {
         datos: datosFormulario,
         resultadoGeneral: values.resultado_general || "",
         recomendacionesGeneral: values.recomendaciones_general || "",
+        otId,
       });
       message.success("Word generado correctamente");
     } catch (err: unknown) {
@@ -803,6 +804,7 @@ export default function EvaluacionPage() {
         descripcionCilindro={ot.codigo_reparacion?.descripcion ?? ot.descripcion}
         marca={ot.fabricante?.nombre ?? null}
         modeloCilindro={ot.cod_rep_flota}
+        otId={otId}
       />
 
       {/* ── Seccion final: Resultado y Recomendaciones ── */}

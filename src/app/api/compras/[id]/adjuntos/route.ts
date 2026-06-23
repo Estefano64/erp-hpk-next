@@ -16,6 +16,7 @@ import { sanitizarNombreArchivo } from "@/lib/file-uploads";
 import { R2Keys, otCodigoFor } from "@/lib/r2";
 import { getAuditUser } from "@/lib/audit";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
 type Tipo = "guia" | "factura" | "pago";
 
@@ -35,8 +36,8 @@ export async function GET(req: NextRequest, { params }: Params) {
   if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   try {
     const { id } = await params;
-    const compraId = Number(id);
-    if (!Number.isFinite(compraId) || compraId <= 0) {
+    const compraId = parseInt4Safe(id) ?? 0;
+    if (compraId == null || compraId <= 0) {
       return NextResponse.json({ error: "ID inválido" }, { status: 400 });
     }
     const tipoQ = new URL(req.url).searchParams.get("tipo");
@@ -59,8 +60,8 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   try {
     const { id } = await params;
-    const compraId = Number(id);
-    if (!Number.isFinite(compraId) || compraId <= 0) {
+    const compraId = parseInt4Safe(id) ?? 0;
+    if (compraId == null || compraId <= 0) {
       return NextResponse.json({ error: "ID inválido" }, { status: 400 });
     }
 

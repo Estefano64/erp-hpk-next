@@ -7,6 +7,7 @@ import { hasAnyRole } from "@/lib/permisos";
 import { duracionRealTarea, rollupEstadoTarea } from "@/lib/plan-sesion";
 import { splitRecursos } from "@/lib/recursos";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 // POST /api/planificacion/:id/reabrir — acción EXTRAORDINARIA del planner/admin.
@@ -23,8 +24,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     }
 
     const { id } = await ctx.params;
-    const planId = Number(id);
-    if (!Number.isFinite(planId) || planId <= 0) {
+    const planId = parseInt4Safe(id) ?? 0;
+    if (planId == null || planId <= 0) {
       return NextResponse.json({ error: "ID inválido" }, { status: 400 });
     }
 

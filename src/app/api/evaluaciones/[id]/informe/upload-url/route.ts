@@ -10,13 +10,14 @@ import { generateUploadUrl } from "@/lib/r2-helpers";
 import { R2Keys, otCodigoFor } from "@/lib/r2";
 import { assertOTAccess, readJsonBody, validateUploadBody } from "@/lib/r2-server";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
 const ESTADOS_BLOQUEADOS = new Set(["APROBADA", "PENDIENTE_APROBACION"]);
 
 export async function POST(req: NextRequest, { params }: Params) {
   const { id } = await params;
-  const evalId = Number(id);
-  if (!Number.isFinite(evalId) || evalId <= 0) {
+  const evalId = parseInt4Safe(id) ?? 0;
+  if (evalId == null || evalId <= 0) {
     return NextResponse.json({ error: "ID inválido" }, { status: 400 });
   }
 

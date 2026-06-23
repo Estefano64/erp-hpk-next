@@ -3,6 +3,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 const Schema = z.object({
@@ -24,7 +25,7 @@ const Schema = z.object({
 export async function POST(req: NextRequest, { params }: Ctx) {
   try {
     const { id } = await params;
-    const matNoCatId = Number(id);
+    const matNoCatId = parseInt4Safe(id) ?? 0;
     const body = await req.json();
     const parsed = Schema.safeParse(body);
     if (!parsed.success) {

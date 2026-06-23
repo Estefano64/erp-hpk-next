@@ -13,6 +13,7 @@ import { deleteObject } from "@/lib/r2-helpers";
 import { R2Keys, otCodigoFor } from "@/lib/r2";
 import { getAuditUser } from "@/lib/audit";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
 
 const ESTADOS_BLOQUEADOS = ["APROBADA", "PENDIENTE_APROBACION"];
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
   try {
     const { id } = await params;
-    const evalId = Number(id);
+    const evalId = parseInt4Safe(id) ?? 0;
 
     const existing = await prisma.evaluacionTecnica.findUnique({
       where: { id: evalId },
@@ -116,7 +117,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
 
   try {
     const { id } = await params;
-    const evalId = Number(id);
+    const evalId = parseInt4Safe(id) ?? 0;
 
     const existing = await prisma.evaluacionTecnica.findUnique({ where: { id: evalId } });
     if (!existing || !existing.informe_key) {

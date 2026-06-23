@@ -79,6 +79,32 @@ export function formatOtCodigoPorNombre(
   return formatOtCodigo(ot, codigo, fallback);
 }
 
+// Postgres INT4 (signed): rango [-2^31, 2^31-1]. Cualquier número fuera de
+// este rango rompe Prisma con `ConversionError("Unable to fit integer value
+// '...' into an INT4")` y tumba la query entera (incluido el .count()).
+//
+// Las columnas `ot` (correlativo NNNNYY) y los `id` autogenerados de OTs,
+// reqs, compras, etc. son INT4. Validar el input ANTES de pasarlo a Prisma
+// es la única defensa — `Number.isFinite` no detecta overflow porque
+// 316725316725 ES finito.
+export const INT4_MAX = 2_147_483_647;
+export const INT4_MIN = -2_147_483_648;
+
+// Parsea un string a número entero seguro para columnas INT4. Devuelve null
+// si el string es vacío, no es un entero (decimales, letras, signos extra),
+// o queda fuera del rango INT4. Defensa central contra inputs maliciosos o
+// pegados accidentalmente que tumban queries de Prisma.
+export function parseInt4Safe(s: string | number | null | undefined): number | null {
+  if (s == null) return null;
+  const t = String(s).trim();
+  if (!t || !/^-?\d+$/.test(t)) return null;
+  // Number() de un string de solo dígitos no produce NaN — el regex ya
+  // garantiza que es parseable. Solo nos falta validar rango y entero.
+  const n = Number(t);
+  if (!Number.isInteger(n) || n < INT4_MIN || n > INT4_MAX) return null;
+  return n;
+}
+
 // Inverso de formatOtCodigo: parsea un código que el usuario tipea/copia y
 // devuelve el número raw (NNNNYY) que matchea contra la columna `ot` en BD.
 //
@@ -90,18 +116,21 @@ export function formatOtCodigoPorNombre(
 //   "v126"     → 126    (case-insensitive, padding opcional)
 //
 // Devuelve null si no matchea ningún patrón conocido (el caller debería caer
-// a buscar por otros campos en ese caso).
+// a buscar por otros campos en ese caso) O si el número resultante excede
+// INT4 — esto evita el bug que tumba el listado de OTs cuando alguien pega
+// un código gigante como "316725316725" en la barra de búsqueda.
 export function parseOtCodigoSearch(search: string): number | null {
   const s = search.trim();
   if (!s) return null;
-  if (/^\d+$/.test(s)) return Number(s);
+  if (/^\d+$/.test(s)) return parseInt4Safe(s);
   const m = s.match(/^(V|S|OI)0*(\d+)$/i);
   if (!m) return null;
   const resto = m[2];
   // Necesitamos al menos 2 dígitos para inferir el año. Si tiene 1 sólo,
   // asumimos correlativo 0 + ese dígito como año (improbable pero defensivo).
-  if (resto.length < 2) return Number(resto);
+  if (resto.length < 2) return parseInt4Safe(resto);
   const yy = Number(resto.slice(-2));
   const corr = Number(resto.slice(0, -2) || "0");
-  return corr * 100 + yy;
+  const result = corr * 100 + yy;
+  return result > INT4_MAX || result < INT4_MIN ? null : result;
 }

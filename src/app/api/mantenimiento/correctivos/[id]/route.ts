@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 // GET — detalle del reporte correctivo con todas las relaciones.
 export async function GET(
   _req: NextRequest,
@@ -9,8 +10,8 @@ export async function GET(
 ) {
   try {
     const { id } = await ctx.params;
-    const idNum = Number(id);
-    if (!Number.isFinite(idNum)) {
+    const idNum = parseInt4Safe(id) ?? 0;
+    if (idNum == null) {
       return NextResponse.json({ error: "id inválido" }, { status: 400 });
     }
 
@@ -64,8 +65,8 @@ export async function PATCH(
 ) {
   try {
     const { id } = await ctx.params;
-    const idNum = Number(id);
-    if (!Number.isFinite(idNum)) {
+    const idNum = parseInt4Safe(id) ?? 0;
+    if (idNum == null) {
       return NextResponse.json({ error: "id inválido" }, { status: 400 });
     }
     const body = await req.json();
@@ -141,8 +142,8 @@ export async function DELETE(
 ) {
   try {
     const { id } = await ctx.params;
-    const idNum = Number(id);
-    if (!Number.isFinite(idNum)) {
+    const idNum = parseInt4Safe(id) ?? 0;
+    if (idNum == null) {
       return NextResponse.json({ error: "id inválido" }, { status: 400 });
     }
     const usuario = (await getAuditUser(req)) ?? "sistema";

@@ -15,6 +15,7 @@ import { deleteObject } from "@/lib/r2-helpers";
 import { R2Keys, otCodigoFor } from "@/lib/r2";
 import { getAuditUser } from "@/lib/audit";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
 
 const ETAPAS_VALIDAS = ["recepcion", "evaluacion", "cotizacion", "po_cliente", "termino", "despacho", "facturacion"] as const;
@@ -33,7 +34,7 @@ export async function GET(req: NextRequest, { params }: Params) {
     const { id } = await params;
     const etapa = req.nextUrl.searchParams.get("etapa");
 
-    const where: Record<string, unknown> = { orden_trabajo_id: Number(id) };
+    const where: Record<string, unknown> = { orden_trabajo_id: (parseInt4Safe(id) ?? 0) };
     if (etapa && isEtapa(etapa)) {
       where.etapa_codigo = etapa;
     }
@@ -58,7 +59,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
   try {
     const { id } = await params;
-    const otId = Number(id);
+    const otId = parseInt4Safe(id) ?? 0;
 
     const ot = await prisma.ordenTrabajo.findUnique({
       where: { id: otId },
@@ -179,7 +180,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     }
 
     const adjunto = await prisma.otAdjunto.findFirst({
-      where: { id: Number(adjuntoId), orden_trabajo_id: Number(id) },
+      where: { id: (parseInt4Safe(adjuntoId) ?? 0), orden_trabajo_id: (parseInt4Safe(id) ?? 0) },
     });
     if (!adjunto) {
       return NextResponse.json({ error: "Adjunto no encontrado" }, { status: 404 });
@@ -193,7 +194,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "No se pudo eliminar el archivo de R2" }, { status: 500 });
     }
 
-    await prisma.otAdjunto.delete({ where: { id: Number(adjuntoId) } });
+    await prisma.otAdjunto.delete({ where: { id: (parseInt4Safe(adjuntoId) ?? 0) } });
     return NextResponse.json({ data: { deleted: true } });
   } catch (error) {
     console.error("DELETE adjuntos error:", error);

@@ -6,6 +6,7 @@ import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { deleteObject } from "@/lib/r2-helpers";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string; adjId: string }> };
 
 export async function DELETE(req: NextRequest, { params }: Params) {
@@ -13,9 +14,9 @@ export async function DELETE(req: NextRequest, { params }: Params) {
   if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   try {
     const { id, adjId } = await params;
-    const compraId = Number(id);
+    const compraId = parseInt4Safe(id) ?? 0;
     const adjuntoId = Number(adjId);
-    if (!Number.isFinite(compraId) || !Number.isFinite(adjuntoId)) {
+    if (compraId == null || !Number.isFinite(adjuntoId)) {
       return NextResponse.json({ error: "ID inválido" }, { status: 400 });
     }
 

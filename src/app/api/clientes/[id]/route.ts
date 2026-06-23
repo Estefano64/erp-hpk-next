@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser, isAdmin } from "@/lib/audit";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(_req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const item = await prisma.cliente.findUnique({
-    where: { cliente_id: Number(id) },
+    where: { cliente_id: (parseInt4Safe(id) ?? 0) },
   });
   if (!item) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   return NextResponse.json({ data: item });
@@ -19,7 +20,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     const body = await req.json();
     const usuario = await getAuditUser(req);
     const updated = await prisma.cliente.update({
-      where: { cliente_id: Number(id) },
+      where: { cliente_id: (parseInt4Safe(id) ?? 0) },
       data: {
         codigo: body.codigo,
         razon_social: body.razon_social,
@@ -43,7 +44,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 export async function DELETE(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
-    const clienteId = Number(id);
+    const clienteId = parseInt4Safe(id) ?? 0;
     const force = new URL(req.url).searchParams.get("force") === "true";
 
     if (force) {

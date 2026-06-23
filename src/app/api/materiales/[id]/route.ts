@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isAdmin } from "@/lib/audit";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 // GET — detalle
 export async function GET(_req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const item = await prisma.material.findUnique({
-    where: { material_id: Number(id) },
+    where: { material_id: (parseInt4Safe(id) ?? 0) },
     include: {
       planta: true,
       area: true,
@@ -29,7 +30,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     const { id } = await ctx.params;
     const body = await req.json();
     const updated = await prisma.material.update({
-      where: { material_id: Number(id) },
+      where: { material_id: (parseInt4Safe(id) ?? 0) },
       data: {
         descripcion: body.descripcion,
         planta_codigo: body.planta_codigo,
@@ -87,7 +88,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
       return NextResponse.json({ error: "Sin cambios" }, { status: 400 });
     }
     const updated = await prisma.material.update({
-      where: { material_id: Number(id) },
+      where: { material_id: (parseInt4Safe(id) ?? 0) },
       data,
     });
     return NextResponse.json({ data: updated });
@@ -100,7 +101,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
 export async function DELETE(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
-    const materialId = Number(id);
+    const materialId = parseInt4Safe(id) ?? 0;
     const force = new URL(req.url).searchParams.get("force") === "true";
 
     if (force) {

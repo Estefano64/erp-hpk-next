@@ -10,6 +10,7 @@ import { R2Keys, otCodigoFor } from "@/lib/r2";
 import { readJsonBody, validateUploadBody } from "@/lib/r2-server";
 import { splitRecursos } from "@/lib/recursos";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function POST(req: NextRequest, ctx: Ctx) {
@@ -17,8 +18,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   if (!session?.user) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 
   const { id } = await ctx.params;
-  const planId = Number(id);
-  if (!Number.isFinite(planId) || planId <= 0) {
+  const planId = parseInt4Safe(id) ?? 0;
+  if (planId == null || planId <= 0) {
     return NextResponse.json({ error: "ID inválido" }, { status: 400 });
   }
 

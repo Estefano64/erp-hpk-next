@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuditUser, isAdmin } from "@/lib/audit";
 import { parseDateOnly } from "@/lib/dates";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
 
 const equipoIncludes = {
@@ -23,7 +24,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
   try {
     const { id } = await params;
     const record = await prisma.equipo.findUnique({
-      where: { equipo_id: Number(id) },
+      where: { equipo_id: (parseInt4Safe(id) ?? 0) },
       include: equipoIncludes,
     });
 
@@ -50,7 +51,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
     const usuario = await getAuditUser(req);
     const updated = await prisma.equipo.update({
-      where: { equipo_id: Number(id) },
+      where: { equipo_id: (parseInt4Safe(id) ?? 0) },
       data: { ...body, usuario_actualiza: usuario },
       include: equipoIncludes,
     });
@@ -65,7 +66,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
 export async function DELETE(req: NextRequest, { params }: Params) {
   try {
     const { id } = await params;
-    const equipoId = Number(id);
+    const equipoId = parseInt4Safe(id) ?? 0;
     const force = new URL(req.url).searchParams.get("force") === "true";
 
     const equipo = await prisma.equipo.findUnique({

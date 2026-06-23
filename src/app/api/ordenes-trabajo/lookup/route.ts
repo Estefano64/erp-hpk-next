@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { parseInt4Safe } from "@/lib/ot-formato";
 
 // GET /api/ordenes-trabajo/lookup — endpoint liviano de búsqueda de OTs.
 // Devuelve solo id, ot (número), descripcion y cliente (nombre corto). Útil
@@ -18,7 +19,7 @@ export async function GET(req: NextRequest) {
     // Filtro base: solo OTs activas (no anuladas) y con número de OT no nulo.
     const where: Record<string, unknown> = { activo: true, ot: { not: null } };
     if (q) {
-      const otNum = /^\d+$/.test(q) ? Number(q) : null;
+      const otNum = parseInt4Safe(q);
       if (otNum != null) {
         // Si es numérico, buscar OTs cuyo número comience con ese valor.
         // (No hay startsWith para int — usamos rango).

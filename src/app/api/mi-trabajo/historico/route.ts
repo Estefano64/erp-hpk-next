@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { parseInt4Safe } from "@/lib/ot-formato";
 
 export async function GET(req: NextRequest) {
   try {
@@ -52,8 +53,8 @@ export async function GET(req: NextRequest) {
         { componente: { contains: search, mode: "insensitive" } },
         { operacion_codigo: { contains: search, mode: "insensitive" } },
       ];
-      const otNum = Number(search);
-      if (search.trim() !== "" && Number.isInteger(otNum)) {
+      const otNum = parseInt4Safe(search);
+      if (otNum != null) {
         or.push({ orden_trabajo: { is: { ot: otNum } } });
       }
       and.push({ OR: or });

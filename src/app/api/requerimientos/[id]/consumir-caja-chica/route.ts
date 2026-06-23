@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { recalcularRecursosStatusDesdeRep } from "@/lib/recursos-ot";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
 
 const Schema = z.object({
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const usuario = parsed.data.usuario || "Logistica";
 
     const result = await prisma.$transaction(async (tx) => {
-      const rep = await tx.oTRepuesto.findUnique({ where: { id: Number(id) } });
+      const rep = await tx.oTRepuesto.findUnique({ where: { id: (parseInt4Safe(id) ?? 0) } });
       if (!rep) throw Object.assign(new Error("Requerimiento no encontrado"), { code: "NOT_FOUND" });
       if (rep.status_oc_codigo === "ENTREGADO") {
         throw Object.assign(new Error("Este requerimiento ya está entregado."), { code: "YA_ENTREGADO" });

@@ -12,13 +12,14 @@ import { generateUploadUrl } from "@/lib/r2-helpers";
 import { R2Keys, otCodigoFor } from "@/lib/r2";
 import { assertOTAccess, readJsonBody, validateUploadBody } from "@/lib/r2-server";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
 
 const ETAPAS_VALIDAS = new Set(["recepcion", "evaluacion", "cotizacion", "po_cliente", "termino", "despacho", "facturacion"]);
 
 export async function POST(req: NextRequest, { params }: Params) {
   const { id } = await params;
-  const otId = Number(id);
+  const otId = parseInt4Safe(id) ?? 0;
 
   const access = await assertOTAccess(req, otId);
   if (!access.ok) return access.response;

@@ -9,6 +9,7 @@ import { getAuditUser } from "@/lib/audit";
 import { nextNroReqInterna, nextItemReqInterna } from "@/lib/requerimientos";
 import { parseDateOnly } from "@/lib/dates";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 const ItemSchema = z.object({
@@ -35,8 +36,8 @@ const BulkSchema = z.object({
 export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
-    const otInternaId = Number(id);
-    if (!Number.isFinite(otInternaId) || otInternaId <= 0) {
+    const otInternaId = parseInt4Safe(id) ?? 0;
+    if (otInternaId == null || otInternaId <= 0) {
       return NextResponse.json({ error: "ID de OT interna inválido" }, { status: 400 });
     }
     const body = await req.json();

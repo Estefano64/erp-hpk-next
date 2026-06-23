@@ -7,6 +7,7 @@ import { getAuditUser } from "@/lib/audit";
 import { deleteObject } from "@/lib/r2-helpers";
 import { R2Keys, otCodigoFor, otInternaCodigoFor } from "@/lib/r2";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 // GET — lista adjuntos de un item de requerimiento (ot_repuesto)
@@ -16,8 +17,8 @@ export async function GET(req: NextRequest, ctx: Ctx) {
 
   try {
     const { id } = await ctx.params;
-    const itemId = Number(id);
-    if (!Number.isFinite(itemId) || itemId <= 0) {
+    const itemId = parseInt4Safe(id) ?? 0;
+    if (itemId == null || itemId <= 0) {
       return NextResponse.json({ error: "ID inválido" }, { status: 400 });
     }
     const data = await prisma.oTRepuestoAdjunto.findMany({
@@ -39,8 +40,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 
   try {
     const { id } = await ctx.params;
-    const itemId = Number(id);
-    if (!Number.isFinite(itemId) || itemId <= 0) {
+    const itemId = parseInt4Safe(id) ?? 0;
+    if (itemId == null || itemId <= 0) {
       return NextResponse.json({ error: "ID inválido" }, { status: 400 });
     }
     const item = await prisma.oTRepuesto.findUnique({
@@ -133,7 +134,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
 
   try {
     const { id } = await ctx.params;
-    const itemId = Number(id);
+    const itemId = parseInt4Safe(id) ?? 0;
     const body = await req.json().catch(() => ({}));
     const adjuntoId = Number(body.adjunto_id);
     if (!Number.isFinite(adjuntoId)) {

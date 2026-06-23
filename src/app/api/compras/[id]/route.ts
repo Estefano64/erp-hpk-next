@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { parseDateOnly } from "@/lib/dates";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
 
 // ── Mapeos status (POs2 ↔ current) ─────────────────────────────
@@ -28,7 +29,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
   try {
     const { id } = await params;
     const r = await prisma.compra.findUnique({
-      where: { id: Number(id) },
+      where: { id: (parseInt4Safe(id) ?? 0) },
       include: {
         proveedor: true,
         ubicacion: true,
@@ -188,7 +189,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     if (usuario && data.usuario_aprueba === undefined) data.usuario_aprueba = usuario;
 
     const record = await prisma.compra.update({
-      where: { id: Number(id) },
+      where: { id: (parseInt4Safe(id) ?? 0) },
       data,
     });
 
@@ -221,7 +222,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     const { id } = await params;
     const body = await req.json().catch(() => ({}));
     const motivo = typeof body?.motivo === "string" ? body.motivo.trim() : "";
-    const compra = await prisma.compra.findUnique({ where: { id: Number(id) } });
+    const compra = await prisma.compra.findUnique({ where: { id: (parseInt4Safe(id) ?? 0) } });
     if (!compra) return NextResponse.json({ error: "Compra no encontrada" }, { status: 404 });
     if (compra.status_oc_codigo !== "PEND_OC") {
       return NextResponse.json({ error: "Solo se pueden eliminar compras en estado Pendiente" }, { status: 400 });
@@ -233,12 +234,12 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     // historial nunca se creaba. Ahora primero capturamos las OTs y después
     // desvinculamos, dentro de una transacción para que sea atómico.
     const reqsVinculados = await prisma.oTRepuesto.findMany({
-      where: { po_id: Number(id) },
+      where: { po_id: (parseInt4Safe(id) ?? 0) },
       select: { ot_id: true, orden_trabajo_interna_id: true },
       distinct: ["ot_id", "orden_trabajo_interna_id"],
     });
     await prisma.oTRepuesto.updateMany({
-      where: { po_id: Number(id) },
+      where: { po_id: (parseInt4Safe(id) ?? 0) },
       data: { po_id: null, nro_oc: null, status_oc_codigo: null },
     });
     const otsExternasUnicas = [...new Set(reqsVinculados.map((r) => r.ot_id).filter((x): x is number => x != null))];
@@ -257,7 +258,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
       });
     }
 
-    await prisma.compra.delete({ where: { id: Number(id) } });
+    await prisma.compra.delete({ where: { id: (parseInt4Safe(id) ?? 0) } });
     return NextResponse.json({ message: "Compra eliminada" });
   } catch (error) {
     console.error("DELETE /api/compras/[id] error:", error);

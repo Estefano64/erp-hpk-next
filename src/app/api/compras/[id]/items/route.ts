@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { parseDateOnly } from "@/lib/dates";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 const IGV_PCT = new Prisma.Decimal("0.18");
 
 const ItemSchema = z.object({
@@ -45,7 +46,7 @@ type Ctx = { params: Promise<{ id: string }> };
 export async function PATCH(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
-    const compraId = Number(id);
+    const compraId = parseInt4Safe(id) ?? 0;
     const body = await req.json();
     const parsed = Schema.safeParse(body);
     if (!parsed.success) {

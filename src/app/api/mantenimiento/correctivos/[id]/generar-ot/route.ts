@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { nextNumeroOTInterna } from "@/lib/ot-numero";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 // POST — desde un reporte correctivo, genera la OT interna correctiva y la
 // vincula. Sólo permitido si el reporte está en REPORTADO (no tiene OT aún).
 //
@@ -20,8 +21,8 @@ export async function POST(
 ) {
   try {
     const { id } = await ctx.params;
-    const idNum = Number(id);
-    if (!Number.isFinite(idNum)) {
+    const idNum = parseInt4Safe(id) ?? 0;
+    if (idNum == null) {
       return NextResponse.json({ error: "id inválido" }, { status: 400 });
     }
     const body = await req.json().catch(() => ({}));

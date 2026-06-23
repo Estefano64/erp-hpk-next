@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 const CalculateSchema = z.object({
@@ -178,7 +179,7 @@ async function calcular(otId: number, monedaOverride?: string) {
 export async function GET(_req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
-    const result = await calcular(Number(id));
+    const result = await calcular((parseInt4Safe(id) ?? 0));
     return NextResponse.json({ data: result });
   } catch (error: unknown) {
     const err = error as { code?: string; message?: string };
@@ -194,7 +195,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
 export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
-    const otId = Number(id);
+    const otId = parseInt4Safe(id) ?? 0;
     const body = await req.json().catch(() => ({}));
     const parsed = CalculateSchema.safeParse(body);
     if (!parsed.success) {

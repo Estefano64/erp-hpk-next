@@ -1,9 +1,10 @@
 "use client";
 
-import { createContext, useContext, useMemo } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { Card, Row, Col, Input, Checkbox, Radio, InputNumber, Space, Typography, Divider, Image, Upload, Button, App, Tag, Alert } from "antd";
 import { CameraOutlined, UploadOutlined, DeleteOutlined } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
+import { uploadToR2 } from "@/lib/r2-client";
 import { findMedidasModelo, modeloForField, type MedidaModelo } from "@/lib/medidas-modelo";
 import {
   CATALOGOS_EVALUACION,
@@ -22,6 +23,12 @@ interface MedidasModeloContextValue {
   unidad: string;
 }
 const MedidasModeloContext = createContext<MedidasModeloContextValue>({ medida: null, unidad: "mm" });
+
+// ── Context de OT (para subida de fotos a R2) ───────────────
+// Evita prop drilling de otId a las ~24 instancias de ImagenesComponente.
+// El uploader y el preview lo necesitan para hablar con los endpoints
+// /api/ordenes-trabajo/[otId]/evaluacion/foto/*
+const OtIdContext = createContext<number | null>(null);
 
 // ── Modelos disponibles ─────────────────────────────────────
 // `codigo`: código corto del catálogo Excel "5. Cod Rep" (CHVS, CHP, etc.)
@@ -83,6 +90,9 @@ interface EvaluacionFormularioProps {
   descripcionCilindro?: string | null;
   marca?: string | null;
   modeloCilindro?: string | null;
+  /** ID de la OT externa. Requerido para subir fotos a R2 (necesario para
+   *  armar el path en R2Keys.otEvaluacion y validar acceso). */
+  otId: number;
 }
 
 // ── Helper: obtener y setear valor ─────────────────────────
@@ -622,7 +632,7 @@ function ResultadoComponente({
   );
 }
 
-// ── Comprimir imagen a base64 para almacenar en datos_formulario ──
+// ── Comprimir imagen a Blob (para subir a R2) ───────────────
 // Estandariza las fotos a una ALTURA fija (8 cm a 96 dpi ≈ 300 px) con
 // ancho proporcional para que aspect ratio se mantenga y la imagen no se
 // deforme. Decisión del user: todas las fotos del informe deben quedar a
@@ -632,19 +642,20 @@ function ResultadoComponente({
 // El CSS del Word usa height: 8cm + max-width: 100% (cell) — si una foto
 // panorámica se pasa del ancho del cell, ahí sí se cae a max-width y la
 // altura baja proporcionalmente. Por eso también limitamos el ANCHO MÁXIMO
-// a 800 px (≈ 21 cm) para no inflar el JSON con panorámicas absurdas.
-async function comprimirImagen(file: File, targetHeightPx = 300, maxWidthPx = 800, quality = 0.85): Promise<string> {
+// a 800 px (≈ 21 cm).
+//
+// Antes esta función devolvía un base64 (data URL) que iba inline al JSON
+// de la evaluación — eso infla la BD y los backups. Ahora devuelve un Blob
+// que el caller sube a R2 vía `uploadToR2`.
+async function comprimirImagen(file: File, targetHeightPx = 300, maxWidthPx = 800, quality = 0.85): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (ev) => {
       const img = new window.Image();
       img.onload = () => {
-        // Primero escalamos para que el alto matche el target (sin agrandar).
         const scaleH = Math.min(1, targetHeightPx / img.height);
         let w = Math.round(img.width * scaleH);
         let h = Math.round(img.height * scaleH);
-        // Si después de escalar por alto el ancho supera el cap, achicamos
-        // por ancho (aspect ratio se mantiene en ambos casos).
         if (w > maxWidthPx) {
           const scaleW = maxWidthPx / w;
           w = Math.round(w * scaleW);
@@ -656,7 +667,14 @@ async function comprimirImagen(file: File, targetHeightPx = 300, maxWidthPx = 80
         const ctx = canvas.getContext("2d");
         if (!ctx) return reject(new Error("Canvas no soportado"));
         ctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL("image/jpeg", quality));
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) return reject(new Error("Canvas toBlob falló"));
+            resolve(blob);
+          },
+          "image/jpeg",
+          quality,
+        );
       };
       img.onerror = () => reject(new Error("No se pudo cargar la imagen"));
       img.src = ev.target?.result as string;
@@ -667,10 +685,63 @@ async function comprimirImagen(file: File, targetHeightPx = 300, maxWidthPx = 80
 }
 
 // ── Uploader de fotos por componente ───────────────────────
+// Shape unión: las fotos legacy guardadas inline tienen `{ name, data }`
+// donde `data` es una data URL base64; las nuevas tienen `{ name, r2_key }`
+// donde r2_key apunta al objeto en Cloudflare R2 (cargado vía URL firmada
+// on-demand). El componente acepta y muestra ambos shapes para que las
+// evaluaciones viejas no se rompan mientras coexistan los dos modelos.
 interface FotoComponente {
   name: string;
-  data: string;
+  /** Legacy: data URL base64 inline en el JSON. */
+  data?: string;
+  /** Nuevo: key en R2 (preview vía URL firmada on-demand). */
+  r2_key?: string;
+  tamano?: number;
 }
+
+// Hook que dada una foto resuelve un `src` listo para usar en <Image>.
+// Si es legacy (`data`), devuelve directo el base64 (sin pasar por state).
+// Si es R2 (`r2_key`), fetcha la URL firmada de descarga al montar.
+// El state SOLO se usa para el caso R2 async — el legacy va por derivación
+// directa (evita cascading renders por setState sincrónico en effect).
+function useFotoSrc(otId: number | null, foto: FotoComponente): string | null {
+  // Solo necesita fetch async cuando NO hay base64 inline pero sí r2_key + ot.
+  // Si está en alguno de esos casos el hook devuelve directo el valor sin
+  // pasar por state (evita cascading renders y el warning del lint).
+  const necesitaFetch = !foto.data && !!foto.r2_key && !!otId;
+  const [r2Src, setR2Src] = useState<string | null>(null);
+  useEffect(() => {
+    if (!necesitaFetch) return;
+    let cancelado = false;
+    fetch(`/api/ordenes-trabajo/${otId}/evaluacion/foto?key=${encodeURIComponent(foto.r2_key!)}`)
+      .then((r) => r.ok ? r.json() : Promise.reject(new Error(`${r.status}`)))
+      .then((j: { downloadUrl: string }) => { if (!cancelado) setR2Src(j.downloadUrl); })
+      .catch(() => { /* deja r2Src en null → fallback "Cargando…" */ });
+    return () => { cancelado = true; };
+  }, [necesitaFetch, otId, foto.r2_key]);
+  return foto.data ?? r2Src;
+}
+
+function FotoPreview({ foto }: { foto: FotoComponente }) {
+  const otId = useContext(OtIdContext);
+  const src = useFotoSrc(otId, foto);
+  if (!src) {
+    return (
+      <div style={{ width: "100%", height: 80, background: "#f5f5f5", borderRadius: 2, display: "flex", alignItems: "center", justifyContent: "center", color: "#bbb", fontSize: 11 }}>
+        Cargando…
+      </div>
+    );
+  }
+  return (
+    <Image
+      src={src}
+      alt={foto.name}
+      style={{ width: "100%", height: 80, objectFit: "cover", borderRadius: 2 }}
+      preview={{ mask: "Ver" }}
+    />
+  );
+}
+
 function ImagenesComponente({
   prefix,
   etiqueta,
@@ -683,16 +754,21 @@ function ImagenesComponente({
   onChange: (d: Record<string, unknown>) => void;
 }) {
   const { message } = App.useApp();
+  const otId = useContext(OtIdContext);
   const key = `${prefix}_imagenes`;
   const imagenes = (datos[key] as FotoComponente[] | undefined) || [];
   const MAX_FOTOS = 6;
   const lleno = imagenes.length >= MAX_FOTOS;
 
-  // Procesa el lote ENTERO de un solo onChange para evitar la race condition
-  // donde cada beforeUpload por archivo lee `datos` desincronizado y pisa los
-  // anteriores. Acá comprimimos todas las imágenes en paralelo y hacemos UN solo
-  // setState con el array final.
+  // Procesa el lote ENTERO comprimiendo + subiendo a R2 en paralelo. Cada
+  // foto se sube primero (returns r2_key) y luego se hace UN solo setState
+  // con el array final, evitando race condition donde cada beforeUpload por
+  // archivo lee `datos` desincronizado y pisa los anteriores.
   const handleUploadBatch = async (files: File[]) => {
+    if (!otId) {
+      message.error("OT no disponible — no se pueden subir fotos.");
+      return;
+    }
     const tipos = files.filter((f) => !f.type.startsWith("image/"));
     if (tipos.length > 0) {
       message.warning(`${tipos.length} archivo(s) ignorado(s) — solo se permiten imágenes`);
@@ -715,27 +791,54 @@ function ImagenesComponente({
     }
     const aProcesar = validos.slice(0, espacioDisponible);
 
+    const loading = message.loading(`Subiendo ${aProcesar.length} foto(s)…`, 0);
     try {
       const resultados = await Promise.allSettled(
-        aProcesar.map(async (f) => ({ name: f.name, data: await comprimirImagen(f) })),
+        aProcesar.map(async (f): Promise<FotoComponente> => {
+          // 1. Comprimir a 300px alto / 800px ancho / JPEG 0.85 → Blob.
+          const blob = await comprimirImagen(f);
+          // 2. Empaquetar el Blob como File para reusar uploadToR2.
+          const fileComprimido = new File([blob], `${f.name.replace(/\.[^.]+$/, "")}.jpg`, { type: "image/jpeg" });
+          // 3. Subir a R2 con presigned URL.
+          const meta = await uploadToR2({
+            file: fileComprimido,
+            uploadUrlEndpoint: `/api/ordenes-trabajo/${otId}/evaluacion/foto/upload-url`,
+          });
+          return { name: f.name, r2_key: meta.key, tamano: meta.tamano };
+        }),
       );
       const nuevas = resultados
         .filter((r): r is PromiseFulfilledResult<FotoComponente> => r.status === "fulfilled")
         .map((r) => r.value);
       const fallidas = resultados.length - nuevas.length;
       if (fallidas > 0) {
-        message.error(`${fallidas} imagen(es) fallaron al procesar`);
+        const errores = resultados
+          .filter((r): r is PromiseRejectedResult => r.status === "rejected")
+          .map((r) => r.reason instanceof Error ? r.reason.message : "Error");
+        console.error("Fallaron al subir fotos:", errores);
+        message.error(`${fallidas} imagen(es) fallaron al subir`);
       }
       if (nuevas.length > 0) {
         onChange({ ...datos, [key]: [...actuales, ...nuevas] });
       }
     } catch (err) {
       message.error(err instanceof Error ? err.message : "Error al procesar imágenes");
+    } finally {
+      loading();
     }
   };
 
-  const handleDelete = (idx: number) => {
+  const handleDelete = async (idx: number) => {
+    const foto = imagenes[idx];
+    // Borrar del estado primero (UI responsiva); el R2 se limpia best-effort.
     onChange({ ...datos, [key]: imagenes.filter((_, i) => i !== idx) });
+    if (foto?.r2_key && otId) {
+      // Best-effort: si falla el delete remoto el archivo queda huérfano en
+      // R2 pero el JSON ya no lo referencia. No bloqueamos al user.
+      fetch(`/api/ordenes-trabajo/${otId}/evaluacion/foto?key=${encodeURIComponent(foto.r2_key)}`, {
+        method: "DELETE",
+      }).catch((e) => console.warn("Best-effort delete R2 falló:", e));
+    }
   };
 
   return (
@@ -787,12 +890,7 @@ function ImagenesComponente({
                   background: brand.white,
                 }}
               >
-                <Image
-                  src={img.data}
-                  alt={img.name}
-                  style={{ width: "100%", height: 80, objectFit: "cover", borderRadius: 2 }}
-                  preview={{ mask: "Ver" }}
-                />
+                <FotoPreview foto={img} />
                 <Button
                   danger
                   type="primary"
@@ -1395,6 +1493,7 @@ export default function EvaluacionFormulario({
   descripcionCilindro = null,
   marca = null,
   modeloCilindro = null,
+  otId,
 }: EvaluacionFormularioProps) {
   // Normalizamos sistemaMedicion antes de comparar — antes la comparación
   // strict `=== "Imperial"` fallaba si el valor venía con espacios, en otro
@@ -2576,30 +2675,34 @@ export default function EvaluacionFormulario({
     // Bloquear todos los inputs internos (Input, InputNumber, Checkbox, Radio, button/Upload)
     // usando <fieldset disabled> que desactiva a nivel DOM.
     return (
-      <MedidasModeloContext.Provider value={contextValue}>
-        <fieldset
-          disabled
-          style={{
-            border: "none",
-            padding: 0,
-            margin: 0,
-            minWidth: 0,
-            opacity: 0.85,
-          }}
-        >
-          {bannerModelo}
-          {bannerTipoReparacion}
-          {renderSecciones()}
-        </fieldset>
-      </MedidasModeloContext.Provider>
+      <OtIdContext.Provider value={otId}>
+        <MedidasModeloContext.Provider value={contextValue}>
+          <fieldset
+            disabled
+            style={{
+              border: "none",
+              padding: 0,
+              margin: 0,
+              minWidth: 0,
+              opacity: 0.85,
+            }}
+          >
+            {bannerModelo}
+            {bannerTipoReparacion}
+            {renderSecciones()}
+          </fieldset>
+        </MedidasModeloContext.Provider>
+      </OtIdContext.Provider>
     );
   }
 
   return (
-    <MedidasModeloContext.Provider value={contextValue}>
-      {bannerModelo}
-      {bannerTipoReparacion}
-      {renderSecciones()}
-    </MedidasModeloContext.Provider>
+    <OtIdContext.Provider value={otId}>
+      <MedidasModeloContext.Provider value={contextValue}>
+        {bannerModelo}
+        {bannerTipoReparacion}
+        {renderSecciones()}
+      </MedidasModeloContext.Provider>
+    </OtIdContext.Provider>
   );
 }

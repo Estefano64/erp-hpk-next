@@ -3,13 +3,14 @@ import { prisma } from "@/lib/prisma";
 import { isAdmin } from "@/lib/audit";
 import { ensureFlotaCodigo } from "@/lib/flota";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 // GET — detalle
 export async function GET(_req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
   const item = await prisma.codigoReparacion.findUnique({
-    where: { cod_rep_id: Number(id) },
+    where: { cod_rep_id: (parseInt4Safe(id) ?? 0) },
     include: { tipo: true, categoria: true, flota: true, fabricante: true, posicion: true, moneda: true },
   });
   if (!item) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
@@ -26,7 +27,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       return NextResponse.json({ error: "La flota es requerida" }, { status: 400 });
     }
     const updated = await prisma.codigoReparacion.update({
-      where: { cod_rep_id: Number(id) },
+      where: { cod_rep_id: (parseInt4Safe(id) ?? 0) },
       data: {
         descripcion: body.descripcion,
         tipo_codigo: body.tipo_codigo,
@@ -50,7 +51,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 export async function DELETE(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
-    const codRepId = Number(id);
+    const codRepId = parseInt4Safe(id) ?? 0;
     const force = new URL(req.url).searchParams.get("force") === "true";
 
     if (force) {

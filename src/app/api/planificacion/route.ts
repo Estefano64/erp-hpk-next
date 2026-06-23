@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { parseInt4Safe } from "@/lib/ot-formato";
 
 // GET /api/planificacion — lista global con filtros + joins
 export async function GET(req: NextRequest) {
@@ -60,7 +61,7 @@ export async function GET(req: NextRequest) {
       ],
     });
     if (search) {
-      const otNum = /^\d+$/.test(search) ? Number(search) : null;
+      const otNum = parseInt4Safe(search);
       and.push({
         OR: [
           { descripcion: { contains: search, mode: "insensitive" } },

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { parseDateOnly } from "@/lib/dates";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 const Schema = z.object({
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     const usuario = (await getAuditUser(req)) ?? "sistema";
 
     const result = await prisma.$transaction(async (tx) => {
-      const p = await tx.prestamoHerramienta.findUnique({ where: { id: Number(id) } });
+      const p = await tx.prestamoHerramienta.findUnique({ where: { id: (parseInt4Safe(id) ?? 0) } });
       if (!p) throw Object.assign(new Error("Préstamo no encontrado"), { status: 404 });
       if (p.estado === "DEVUELTA") {
         throw Object.assign(new Error("Este préstamo ya fue devuelto."), { status: 400 });
@@ -37,7 +38,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         : p.observaciones;
 
       const updated = await tx.prestamoHerramienta.update({
-        where: { id: Number(id) },
+        where: { id: (parseInt4Safe(id) ?? 0) },
         data: {
           estado: "DEVUELTA",
           fecha_devolucion_real: fechaReal,

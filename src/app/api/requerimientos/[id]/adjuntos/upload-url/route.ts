@@ -10,12 +10,13 @@ import { generateUploadUrl } from "@/lib/r2-helpers";
 import { R2Keys, otCodigoFor, otInternaCodigoFor } from "@/lib/r2";
 import { assertOTAccess, readJsonBody, validateUploadBody } from "@/lib/r2-server";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
 
 export async function POST(req: NextRequest, { params }: Params) {
   const { id } = await params;
-  const reqId = Number(id);
-  if (!Number.isFinite(reqId) || reqId <= 0) {
+  const reqId = parseInt4Safe(id) ?? 0;
+  if (reqId == null || reqId <= 0) {
     return NextResponse.json({ error: "ID inválido" }, { status: 400 });
   }
 

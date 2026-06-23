@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { duracionRealTarea, rollupEstadoTarea } from "@/lib/plan-sesion";
 import { splitRecursos } from "@/lib/recursos";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 // POST /api/planificacion/:id/finalizar — el técnico da por terminada la tarea.
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const tecnicoNombre = me.trabajador.nombre;
 
     const { id } = await ctx.params;
-    const planId = Number(id);
+    const planId = parseInt4Safe(id) ?? 0;
 
     const plan = await prisma.planificacionOT.findUnique({
       where: { id: planId },

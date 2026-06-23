@@ -32,6 +32,38 @@ interface GenerarWordArgs {
   datos: Record<string, unknown>;
   resultadoGeneral: string;
   recomendacionesGeneral: string;
+  /** ID de OT — necesario para fetchear las fotos almacenadas en R2 (las nuevas
+   *  guardan `r2_key` en vez de `data` inline). Si está ausente, solo se
+   *  procesan fotos legacy con base64 inline. */
+  otId?: number | null;
+}
+
+// Descarga una foto desde R2 y la convierte a data URL para embebber en el
+// Word. Devuelve null si falla (la foto se omite del documento). Usado solo
+// para fotos nuevas con `r2_key`; las legacy traen `data` inline.
+async function fetchR2FotoAsDataUrl(otId: number, r2_key: string): Promise<string | null> {
+  try {
+    // 1. Pedir URL firmada al backend.
+    const res = await fetch(
+      `/api/ordenes-trabajo/${otId}/evaluacion/foto?key=${encodeURIComponent(r2_key)}`,
+    );
+    if (!res.ok) throw new Error(`download-url ${res.status}`);
+    const { downloadUrl } = (await res.json()) as { downloadUrl: string };
+    // 2. Descargar el blob desde R2 (URL firmada).
+    const imgRes = await fetch(downloadUrl);
+    if (!imgRes.ok) throw new Error(`fetch R2 ${imgRes.status}`);
+    const blob = await imgRes.blob();
+    // 3. Convertir a data URL (lo que necesita el HTML del Word).
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error("FileReader fallo"));
+      reader.readAsDataURL(blob);
+    });
+  } catch (e) {
+    console.warn("fetchR2FotoAsDataUrl falló:", e);
+    return null;
+  }
 }
 
 const AZUL = "#1C2B5B";
@@ -103,7 +135,7 @@ async function resizeABaseWidth(dataUrl: string, targetWidthPx: number): Promise
 }
 
 export async function generarWordEvaluacion(args: GenerarWordArgs) {
-  const { ot, modeloEvaluacion, sistemaMedicion, fechaEvaluacion, evaluadoPor, supervisor = "", datos: datosRaw, resultadoGeneral, recomendacionesGeneral } = args;
+  const { ot, modeloEvaluacion, sistemaMedicion, fechaEvaluacion, evaluadoPor, supervisor = "", datos: datosRaw, resultadoGeneral, recomendacionesGeneral, otId = null } = args;
 
   // PRE-PROCESO: re-escalar TODAS las fotos a 8 cm de ANCHO antes de generar
   // el HTML. Esto es lo que finalmente fuerza el tamaño en Word — el píxel
@@ -114,21 +146,36 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
   // grandes) — eso es lo que el user pidió: que las viejas también se
   // achiquen al generar el Word.
   //
+  // Soporta dos shapes de foto coexistiendo:
+  //   - Legacy: `{ name, data }` donde `data` es data URL base64 inline.
+  //   - Nuevo:  `{ name, r2_key }` donde la foto vive en R2 — la descargamos
+  //             al vuelo via URL firmada y la convertimos a data URL para
+  //             embebber en el docx (Word no puede referenciar URLs externas).
   // Copiamos `datos` (no mutamos el original) porque el caller sigue
   // usándolo después del Word.
   const TARGET_W_PX = 302; // 8 cm @ 96 dpi
   const datos: Record<string, unknown> = { ...datosRaw };
+  type FotoInput = { name: string; data?: string; r2_key?: string };
   type FotoConDims = { name: string; data: string; w: number; h: number };
   for (const key of Object.keys(datosRaw)) {
     if (!key.endsWith("_imagenes")) continue;
     const arr = datosRaw[key];
     if (!Array.isArray(arr)) continue;
-    datos[key] = await Promise.all(
-      (arr as { name: string; data: string }[]).map(async (img): Promise<FotoConDims> => {
-        const r = await resizeABaseWidth(img.data, TARGET_W_PX);
+    const procesadas = await Promise.all(
+      (arr as FotoInput[]).map(async (img): Promise<FotoConDims | null> => {
+        // 1. Resolver el data URL: legacy → directo; R2 → fetch + convert.
+        let dataUrl: string | null = img.data ?? null;
+        if (!dataUrl && img.r2_key && otId) {
+          dataUrl = await fetchR2FotoAsDataUrl(otId, img.r2_key);
+        }
+        if (!dataUrl) return null;
+        // 2. Resize a 8 cm de ancho.
+        const r = await resizeABaseWidth(dataUrl, TARGET_W_PX);
         return { name: img.name, data: r.dataUrl, w: r.w, h: r.h };
       }),
     );
+    // Filtrar las que fallaron (foto omitida del Word — no rompemos el doc).
+    datos[key] = procesadas.filter((x): x is FotoConDims => x != null);
   }
 
   const modelo = MODELOS_EVALUACION.find((m) => m.value === modeloEvaluacion);

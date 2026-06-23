@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 const UpdateSchema = z.object({
@@ -14,7 +15,7 @@ const UpdateSchema = z.object({
 
 export async function GET(_req: NextRequest, { params }: Ctx) {
   const { id } = await params;
-  const r = await prisma.herramienta.findUnique({ where: { id: Number(id) } });
+  const r = await prisma.herramienta.findUnique({ where: { id: (parseInt4Safe(id) ?? 0) } });
   if (!r) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   return NextResponse.json({ data: r });
 }
@@ -27,7 +28,7 @@ export async function PUT(req: NextRequest, { params }: Ctx) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Validación", detail: parsed.error.flatten() }, { status: 400 });
     }
-    const r = await prisma.herramienta.update({ where: { id: Number(id) }, data: parsed.data });
+    const r = await prisma.herramienta.update({ where: { id: (parseInt4Safe(id) ?? 0) }, data: parsed.data });
     return NextResponse.json({ data: r });
   } catch (error: unknown) {
     const err = error as { code?: string };
@@ -41,7 +42,7 @@ export async function PUT(req: NextRequest, { params }: Ctx) {
 export async function DELETE(_req: NextRequest, { params }: Ctx) {
   try {
     const { id } = await params;
-    await prisma.herramienta.delete({ where: { id: Number(id) } });
+    await prisma.herramienta.delete({ where: { id: (parseInt4Safe(id) ?? 0) } });
     return NextResponse.json({ message: "Eliminada" });
   } catch (error: unknown) {
     const err = error as { code?: string };

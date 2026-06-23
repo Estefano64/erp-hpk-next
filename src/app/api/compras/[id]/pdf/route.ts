@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rutaFirmaDe, nombreParaFirma } from "@/lib/firmas";
-import { formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
+import {  formatOtCodigo, formatOtInternaCodigo, parseInt4Safe } from "@/lib/ot-formato";
 import { areaTallerLabel } from "@/lib/areas-taller";
 
 type Params = { params: Promise<{ id: string }> };
@@ -12,7 +12,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
     const { id } = await params;
 
     const compra = await prisma.compra.findUnique({
-      where: { id: Number(id) },
+      where: { id: (parseInt4Safe(id) ?? 0) },
       include: {
         proveedor: true,
         ubicacion: true,

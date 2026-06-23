@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser, isAdmin } from "@/lib/audit";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 const UpdateSchema = z.object({
@@ -18,7 +19,7 @@ const UpdateSchema = z.object({
 
 export async function GET(_req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
-  const item = await prisma.proveedor.findUnique({ where: { id: Number(id) } });
+  const item = await prisma.proveedor.findUnique({ where: { id: (parseInt4Safe(id) ?? 0) } });
   if (!item) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   return NextResponse.json({ data: item });
 }
@@ -41,7 +42,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         data[k] = v === "" ? null : v;
       }
     }
-    const updated = await prisma.proveedor.update({ where: { id: Number(id) }, data });
+    const updated = await prisma.proveedor.update({ where: { id: (parseInt4Safe(id) ?? 0) }, data });
     return NextResponse.json({ data: updated });
   } catch (error: unknown) {
     const err = error as { code?: string };
@@ -55,7 +56,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
 export async function DELETE(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
-    const provId = Number(id);
+    const provId = parseInt4Safe(id) ?? 0;
     const force = new URL(req.url).searchParams.get("force") === "true";
 
     if (force) {

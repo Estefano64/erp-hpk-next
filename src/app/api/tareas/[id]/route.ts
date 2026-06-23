@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { isAdmin } from "@/lib/audit";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 const UpdateSchema = z.object({
@@ -38,7 +39,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       return NextResponse.json({ error: "Validación", detail: parsed.error.flatten() }, { status: 400 });
     }
     const updated = await prisma.tarea.update({
-      where: { tarea_id: Number(id) },
+      where: { tarea_id: (parseInt4Safe(id) ?? 0) },
       data: parsed.data,
       include: { material: true, tipo: true, fabricante: true },
     });
@@ -60,7 +61,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   }
   try {
     const { id } = await ctx.params;
-    await prisma.tarea.delete({ where: { tarea_id: Number(id) } });
+    await prisma.tarea.delete({ where: { tarea_id: (parseInt4Safe(id) ?? 0) } });
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {

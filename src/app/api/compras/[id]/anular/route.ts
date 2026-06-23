@@ -3,6 +3,7 @@ import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
 
 // POST /api/compras/[id]/anular
@@ -27,8 +28,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
     const usuario = (await getAuditUser(req)) ?? "sistema";
     const { id } = await params;
-    const compraId = Number(id);
-    if (!Number.isFinite(compraId)) {
+    const compraId = parseInt4Safe(id) ?? 0;
+    if (compraId == null) {
       return NextResponse.json({ error: "ID inválido" }, { status: 400 });
     }
     const body = await req.json().catch(() => ({}));

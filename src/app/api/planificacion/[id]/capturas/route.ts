@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 
+import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 const TipoCapturaEnum = z.enum(["MEDIDA_NUMERICA", "CHECKLIST_BMN", "FOTO", "TEXTO", "TOLERANCIA", "BOOLEAN"]);
@@ -19,7 +20,7 @@ const CapturaSchema = z.object({
 // GET — listar capturas de una planificación
 export async function GET(_req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params;
-  const planId = Number(id);
+  const planId = parseInt4Safe(id) ?? 0;
   const data = await prisma.planificacionOTCaptura.findMany({
     where: { planificacion_ot_id: planId },
     orderBy: { id: "asc" },
@@ -31,7 +32,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
 export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
-    const planId = Number(id);
+    const planId = parseInt4Safe(id) ?? 0;
     const body = await req.json();
     const parsed = CapturaSchema.safeParse(body);
     if (!parsed.success) {
@@ -80,7 +81,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 export async function DELETE(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
-    const planId = Number(id);
+    const planId = parseInt4Safe(id) ?? 0;
     const campoKey = req.nextUrl.searchParams.get("campo_key");
     if (!campoKey) {
       return NextResponse.json({ error: "Falta ?campo_key=..." }, { status: 400 });
