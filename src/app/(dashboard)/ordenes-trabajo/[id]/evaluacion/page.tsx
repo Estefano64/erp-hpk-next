@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   Typography,
   Card,
@@ -133,10 +133,16 @@ const estadoIconPage: Record<string, React.ReactNode> = {
 export default function EvaluacionPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { message } = App.useApp();
   const { screens } = useResponsive();
   const [form] = Form.useForm();
   const otId = Number(params.id);
+  // De dónde se entró: desde la lista de Hojas de Evaluación el "Volver" debe
+  // regresar ahí (antes siempre iba a Órdenes de Trabajo, perdiendo el origen).
+  const desdeEvaluaciones = searchParams.get("from") === "evaluaciones";
+  const volverHref = desdeEvaluaciones ? "/evaluaciones" : "/ordenes-trabajo";
+  const volverLabel = desdeEvaluaciones ? "Volver a Hojas de Evaluación" : "Volver a Ordenes de Trabajo";
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -269,11 +275,11 @@ export default function EvaluacionPage() {
   //   - "Supervisor"   → rol "aprobador_evaluacion" (solo los que pueden
   //     aprobar la hoja una vez llenada).
   useEffect(() => {
-    fetch("/api/trabajadores?limit=200&paraEvaluacion=1")
+    fetch("/api/trabajadores?limit=10000&paraEvaluacion=1")
       .then((r) => r.ok ? r.json() : null)
       .then((j) => { if (j?.data) setTrabajadores(j.data); })
       .catch(() => { /* noop */ });
-    fetch("/api/trabajadores?limit=200&paraSupervisor=1")
+    fetch("/api/trabajadores?limit=10000&paraSupervisor=1")
       .then((r) => r.ok ? r.json() : null)
       .then((j) => { if (j?.data) setSupervisores(j.data); })
       .catch(() => { /* noop */ });
@@ -468,10 +474,10 @@ export default function EvaluacionPage() {
         <Button
           type="text"
           icon={<ArrowLeftOutlined />}
-          onClick={() => { if (confirmLeave()) router.push("/ordenes-trabajo"); }}
+          onClick={() => { if (confirmLeave()) router.push(volverHref); }}
           style={{ marginBottom: 8 }}
         >
-          Volver a Ordenes de Trabajo
+          {volverLabel}
         </Button>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
           <div>
@@ -887,7 +893,7 @@ export default function EvaluacionPage() {
       {/* Boton guardar al final */}
       <div style={{ textAlign: "right", marginBottom: 40 }}>
         <Space wrap>
-          <Button onClick={() => { if (confirmLeave()) router.push("/ordenes-trabajo"); }}>Cancelar</Button>
+          <Button onClick={() => { if (confirmLeave()) router.push(volverHref); }}>Cancelar</Button>
           <Button icon={<FileWordOutlined />} onClick={handleGenerarWord}>
             Descargar Word
           </Button>

@@ -1,5 +1,6 @@
 import { MODELOS_EVALUACION } from "./EvaluacionFormulario";
 import { CATALOGOS_EVALUACION } from "@/lib/evaluacion-catalogos";
+import { VAS, type CampoMedida } from "@/lib/evaluacion-campos";
 
 interface OTDetalle {
   ot: string | null;
@@ -519,6 +520,22 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
   };
   const p = prefijos[modeloEvaluacion] || "t1";
 
+  // Renderiza un CampoMedida del esquema compartido (`@/lib/evaluacion-campos`)
+  // a fila(s) HTML. Para "puntos" emite una fila por punto (B1, B2, B3...).
+  // Es la MISMA definición que consume el formulario → clave y tipo no se
+  // pueden desincronizar.
+  const renderCampoMedida = (c: CampoMedida): string => {
+    const full = `${p}_${c.key}`;
+    if (c.tipo === "puntos") {
+      return Array.from({ length: c.puntos ?? 0 }, (_, i) => i + 1)
+        .map((n) => renderMedida(`${full}_${c.sufijo}${n}`, `${c.label} ${c.letra}${n}`, "xy"))
+        .join("");
+    }
+    return renderMedida(full, c.label, c.tipo);
+  };
+  // Atajo: renderiza el campo de vástago por su key.
+  const C = (k: string) => renderCampoMedida(VAS[k]);
+
   // Armar secciones
   let seccionesHTML = "";
   let numSec = 2;
@@ -545,7 +562,7 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
           renderMedida(`${p}_cil_dojo_f`, "Diámetro Ojo F", "xy"),
           renderRadioLinea(`${p}_cil_elem_sujecion`, "Elemento de sujeción"),
           renderMedida(`${p}_cil_dint_g`, "Diám. Int. G", "xy"),
-          renderMedida(`${p}_cil_ancho_ojo`, "Ancho de Ojo", "xy"),
+          renderMedida(`${p}_cil_ancho_ojo`, "Ancho de Ojo", "single"),
         ].join("")
       : "";
     seccionesHTML += renderSeccionComponente(
@@ -582,19 +599,20 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
     }
 
     // ─── Vastago principal ───
+    // Medidas del vástago desde el esquema compartido (single source con el form).
+    // El "Diámetro Vástago" se emite como 3 puntos (B1-B3) via tipo "puntos".
     const medidasVasTel = [
-      renderMedida(`${p}_vas_desp`, "Diametro Espiga (A)", "xy"),
-      renderMedida(`${p}_vas_dext`, "Diametro Exterior (B)", "xy"),
-      renderMedida(`${p}_vas_dsell`, "Diametro Sellado (C)", "xy"),
-      renderMedida(`${p}_vas_dcoj`, "Diametro Cojinete (D)", "xy"),
-      renderMedida(`${p}_vas_lcro`, "Longitud Cromo (E)", "single"),
-      renderMedida(`${p}_vas_ltot`, "Longitud Total (F)", "single"),
-      renderMedida(`${p}_vas_long_espiga_g`, "Longitud de Espiga G", "single"),
-      renderMedida(`${p}_vas_dext_ojo_h`, "Diám. Ext. Ojo H", "xy"),
+      C("vas_desp"),
+      C("vas_dext"),
+      C("vas_dcoj"),
+      C("vas_lcro"),
+      C("vas_ltot"),
+      C("vas_long_espiga_g"),
+      C("vas_dext_ojo_h"),
       renderRadioLinea(`${p}_vas_elem_sujecion`, "Elemento de sujeción"),
-      renderMedida(`${p}_vas_dint_ojo_i`, "Diám. Int. Ojo I", "xy"),
-      renderMedida(`${p}_vas_dint_j`, "Diám. Int. J", "xy"),
-      renderMedida(`${p}_vas_ancho_ojo`, "Ancho de Ojo", "xy"),
+      C("vas_dint_ojo_i"),
+      C("vas_dint_j"),
+      C("vas_ancho_ojo"),
     ].join("");
     seccionesHTML += renderSeccionComponente(
       numSec++,
@@ -750,7 +768,7 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
         renderMedida(`${p}_tapa_post_dsell`, "Diám. Sellado", "single"),
         renderMedida(`${p}_tapa_post_dint_ojo`, "Diám. Int. Ojo", "single"),
         renderMedida(`${p}_tapa_post_dint_rotula`, "Diám. Int. Rótula", "single"),
-        renderMedida(`${p}_tapa_post_ancho_ojo`, "Ancho de Ojo", "single"),
+        renderMedida(`${p}_tapa_post_ancho_ojo`, "Ancho de Ojo", "xy"),
       ].join(""),
       `${p}_tapa_post`,
       []
@@ -1002,7 +1020,7 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
           renderMedida(`${p}_cil_dojo_f`, "Diámetro Ojo F", "xy"),
           renderRadioLinea(`${p}_cil_elem_sujecion`, "Elemento de sujeción"),
           renderMedida(`${p}_cil_dint_g`, "Diám. Int. G", "xy"),
-          renderMedida(`${p}_cil_ancho_ojo`, "Ancho de Ojo", "xy"),
+          renderMedida(`${p}_cil_ancho_ojo`, "Ancho de Ojo", "single"),
         ].join("")
       : "";
     const medidasCil = medidasCilBase + medidasCilExtra;
@@ -1080,22 +1098,22 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
     // Vastago
     if (!modeloEvaluacion.startsWith("acum")) {
       const muestraCancamoVastago = esCilHidraulico; // CHVS/CHP/CHPDV
+      // Medidas del vástago desde el esquema compartido (single source con el form).
       const medidasVasBase = [
-        renderMedida(`${p}_vas_desp`, "Diametro Espiga (A)", "xy"),
-        renderMedida(`${p}_vas_dext`, "Diametro Exterior (B)", "xy"),
-        renderMedida(`${p}_vas_dsell`, "Diametro Sellado (C)", "xy"),
-        renderMedida(`${p}_vas_dcoj`, "Diametro Cojinete (D)", "xy"),
-        renderMedida(`${p}_vas_lcro`, "Longitud Cromo (E)", "single"),
-        renderMedida(`${p}_vas_ltot`, "Longitud Total (F)", "single"),
-        renderMedida(`${p}_vas_long_espiga_g`, "Longitud de Espiga G", "single"),
+        C("vas_desp"),
+        C("vas_dext"),
+        C("vas_dcoj"),
+        C("vas_lcro"),
+        C("vas_ltot"),
+        C("vas_long_espiga_g"),
       ].join("");
       const medidasVasExtra = [
         ...(muestraCancamoVastago ? [renderRadioLinea(`${p}_vas_tipo_cancamo`, "Tipo de cáncamo")] : []),
-        renderMedida(`${p}_vas_dext_ojo_h`, "Diám. Ext. Ojo H", "xy"),
+        C("vas_dext_ojo_h"),
         renderRadioLinea(`${p}_vas_elem_sujecion`, "Elemento de sujeción"),
-        renderMedida(`${p}_vas_dint_ojo_i`, "Diám. Int. Ojo I", "xy"),
-        renderMedida(`${p}_vas_dint_j`, "Diám. Int. J", "xy"),
-        renderMedida(`${p}_vas_ancho_ojo`, "Ancho de Ojo", "xy"),
+        C("vas_dint_ojo_i"),
+        C("vas_dint_j"),
+        C("vas_ancho_ojo"),
       ].join("");
       const medidasVas = medidasVasBase + medidasVasExtra;
       seccionesHTML += renderSeccionComponente(numSec++, "Vastago", imgVastago, "Vastago (A-J)", medidasVas, `${p}_vas`, []);

@@ -145,8 +145,8 @@ export default function OCAbiertaEditorPage() {
   useEffect(() => {
     (async () => {
       const [provRes, matRes] = await Promise.all([
-        fetch("/api/proveedores?limit=2000"),
-        fetch("/api/materiales?limit=2000"),
+        fetch("/api/proveedores?limit=10000"),
+        fetch("/api/materiales?limit=10000"),
       ]);
       if (provRes.ok) {
         const j = await provRes.json();

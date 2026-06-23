@@ -370,7 +370,7 @@ export default function TrabajadoresPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ limit: "500" });
+      const params = new URLSearchParams({ limit: "10000" });
       if (search) params.set("search", search);
       if (filtroArea) params.set("area", filtroArea);
       params.set("activos", verInactivos ? "false" : "true");
@@ -388,7 +388,7 @@ export default function TrabajadoresPage() {
   useEffect(() => { fetchUsuarios(); }, [fetchUsuarios]);
 
   useEffect(() => {
-    fetch("/api/equipos?limit=500&tipo=MAQ")
+    fetch("/api/equipos?limit=10000&tipo=MAQ")
       .then((r) => r.ok ? r.json() : null)
       .then((j) => { if (j?.data) setEquipos(j.data); })
       .catch(() => { /* noop */ });

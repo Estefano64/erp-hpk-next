@@ -24,6 +24,7 @@ import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import { catalogosById, type FieldDef } from "@/lib/catalogos-config";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
+import { invalidateCachePrefix } from "@/lib/useCachedFetch";
 
 const { Title, Text } = Typography;
 
@@ -154,6 +155,10 @@ export default function CatalogoCrudPage() {
       messageApi.success(editingId == null ? "Registro creado." : "Registro actualizado.");
       setModalOpen(false);
       fetchData();
+      // El catálogo lo consumen otros forms (p.ej. "nuevo requerimiento") vía
+      // useCachedFetch, un cache a nivel módulo que NO refresca solo. Sin esto,
+      // un servicio/registro nuevo no aparecía en esos forms hasta recargar.
+      invalidateCachePrefix(`/api/catalogos?tabla=${cfg.id}`);
     } finally {
       setSaving(false);
     }
@@ -179,6 +184,7 @@ export default function CatalogoCrudPage() {
     }
     messageApi.success(soft ? "Registro desactivado." : "Registro eliminado.");
     fetchData();
+    invalidateCachePrefix(`/api/catalogos?tabla=${cfg.id}`);
   }
 
   // Columnas dinámicas — todas con filtro tipo Excel basado en los datos cargados.

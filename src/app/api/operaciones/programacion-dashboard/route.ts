@@ -74,37 +74,68 @@ export async function GET() {
     type OT = (typeof otsRaw)[number];
     type Plan = OT["planificaciones"][number];
 
-    // ── Extender catálogo con (componente, op) presentes en planificaciones
-    // pero NO en el catálogo maestro. Esto cubre tareas que el usuario agrega
-    // manualmente desde el tab Planificación con códigos no catalogados.
-    //
-    // Normalizamos (trim + uppercase) para comparar — sin esto, "General",
-    // "GENERAL" y " general " aparecen como 3 columnas duplicadas en la matriz
-    // (los `componente`/`operacion_codigo` de PlanificacionOT son strings libres).
+    // ── Resolver cada tarea contra el catálogo y extenderlo solo con lo que
+    // realmente NO existe. Las planificaciones traen `componente`/`operacion_codigo`
+    // como TEXTO LIBRE: a veces el NOMBRE como "código" ("Desarmado" en vez de
+    // "DES"), a veces otra capitalización ("Cilindro" vs "CILINDRO"). Sin resolver,
+    // cada variante generaba una columna "extra" duplicada (Desarmado×2) y el filtro
+    // por componente perdía las de distinto casing. Resolvemos por código O por
+    // nombre (normalizado) al código CANÓNICO del catálogo.
     const norm = (s: string | null | undefined): string => (s ?? "").trim().toUpperCase();
+    // `mkey`: clave de EMPAREJAMIENTO contra el catálogo — además de trim+upper,
+    // ignora tildes ("Preparacion" vs "Preparación"). Solo para MATCHEAR; las claves
+    // finales del planMap usan `norm` sobre el código canónico (sin tildes), así
+    // coinciden con las que arma el frontend.
+    const mkey = (s: string | null | undefined): string =>
+      norm(s).normalize("NFD").replace(/\p{Diacritic}/gu, "");
     const compsCatSet = new Set(componentesCat.map((c) => norm(c.codigo)));
-    const opsCatKey = new Set(
-      operacionesCat.map((o) => `${norm(o.componente_codigo) || "__SIN_COMP__"}__${norm(o.codigo)}`),
-    );
+    // Componente: por código y por nombre → código canónico.
+    const compCanonByKey = new Map<string, string>();
+    for (const c of componentesCat) {
+      compCanonByKey.set(mkey(c.codigo), c.codigo);
+      compCanonByKey.set(mkey(c.nombre), c.codigo);
+    }
+    // Operación: `${mkeyCompCanon}__${mkeyCódigoONombre}` → código canónico.
+    const opCanonByKey = new Map<string, string>();
+    for (const o of operacionesCat) {
+      const cc = mkey(o.componente_codigo);
+      opCanonByKey.set(`${cc}__${mkey(o.codigo)}`, o.codigo);
+      opCanonByKey.set(`${cc}__${mkey(o.nombre)}`, o.codigo);
+    }
+    // Devuelve los códigos canónicos de una planificación. `opCanon` es null si la
+    // operación no existe en el catálogo (ni por código ni por nombre) → es un extra.
+    const resolver = (p: Plan) => {
+      const rawComp = (p.componente ?? "").trim();
+      const rawOp = (p.operacion_codigo ?? "").trim();
+      const compCanon = compCanonByKey.get(mkey(rawComp)) ?? rawComp;
+      const cc = mkey(compCanon);
+      const opCanon =
+        opCanonByKey.get(`${cc}__${mkey(rawOp)}`) ??
+        opCanonByKey.get(`${cc}__${mkey((p.descripcion ?? "").trim())}`) ??
+        null;
+      return { rawComp, rawOp, compCanon, opCanon };
+    };
+
     const compsExtra = new Map<string, { codigo: string; nombre: string }>();
     const opsExtra = new Map<string, { codigo: string; nombre: string; componente_codigo: string; clasificacion: string }>();
 
     for (const ot of otsRaw) {
       for (const p of ot.planificaciones as Plan[]) {
-        const compCod = (p.componente ?? "").trim();
-        const opCod = (p.operacion_codigo ?? "").trim();
-        if (!compCod || !opCod) continue;
-        const compKey = norm(compCod);
+        const { rawComp, rawOp, compCanon, opCanon } = resolver(p);
+        if (!rawComp || !rawOp) continue;
+        const compKey = norm(compCanon);
         if (!compsCatSet.has(compKey) && !compsExtra.has(compKey)) {
-          compsExtra.set(compKey, { codigo: compCod, nombre: compCod });
+          compsExtra.set(compKey, { codigo: compCanon, nombre: compCanon });
         }
-        const fullKey = `${compKey}__${norm(opCod)}`;
-        if (!opsCatKey.has(fullKey) && !opsExtra.has(fullKey)) {
+        // Resolvió a una operación del catálogo: su columna ya existe, no es extra.
+        if (opCanon) continue;
+        const fullKey = `${compKey}__${norm(rawOp)}`;
+        if (!opsExtra.has(fullKey)) {
           opsExtra.set(fullKey, {
-            codigo: opCod,
+            codigo: rawOp,
             // Usamos la descripción de la propia planificación si está, sino el código.
-            nombre: (p.descripcion ?? "").trim() || opCod,
-            componente_codigo: compCod,
+            nombre: (p.descripcion ?? "").trim() || rawOp,
+            componente_codigo: compCanon,
             clasificacion: "STD",
           });
         }
@@ -129,11 +160,19 @@ export async function GET() {
       let total = 0;
       let realizadas = 0;
       for (const p of o.planificaciones as Plan[]) {
-        // Clave normalizada (trim + upper) para que coincida con la clave
-        // que el frontend construye desde el catálogo, incluso si la
-        // planificación quedó con casing/whitespace distinto.
-        const key = `${norm(p.componente)}__${norm(p.operacion_codigo)}`;
-        planMap[key] = { estado: p.estado ?? null, externo: p.trabajo_externo ?? null };
+        // Clave CANÓNICA (resuelta contra el catálogo): coincide con la columna
+        // del catálogo o con la extra. Varias tareas de la misma operación caen
+        // en la misma celda; conservamos un estado representativo que prioriza lo
+        // NO realizado (una celda solo queda "verde" si todas están realizadas).
+        const { compCanon, opCanon, rawOp } = resolver(p);
+        const key = `${norm(compCanon)}__${norm(opCanon ?? rawOp)}`;
+        const estado = p.estado ?? null;
+        const prev = planMap[key];
+        if (!prev) {
+          planMap[key] = { estado, externo: p.trabajo_externo ?? null };
+        } else if (prev.estado === "realizado" && estado && estado !== "realizado") {
+          planMap[key] = { estado, externo: p.trabajo_externo ?? null };
+        }
         total++;
         if ((p.estado ?? "").trim().toLowerCase() === "realizado") realizadas++;
       }

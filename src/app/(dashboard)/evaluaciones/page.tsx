@@ -75,7 +75,9 @@ interface Evaluacion {
   updatedAt: string;
   orden_trabajo: {
     id: number;
-    ot: string | null;
+    // `ot` se migró a INTEGER en Railway: llega como número (no string). Tratarlo
+    // como texto (p.ej. .toLowerCase() en el buscador) crasheaba la página.
+    ot: number | null;
     descripcion: string | null;
     tipo: string | null;
     estrategia: boolean | null;
@@ -156,7 +158,7 @@ export default function EvaluacionesPage() {
     if (!search) return true;
     const lc = search.toLowerCase();
     return (
-      (ev.orden_trabajo?.ot || "").toLowerCase().includes(lc) ||
+      String(ev.orden_trabajo?.ot ?? "").toLowerCase().includes(lc) ||
       (ev.orden_trabajo?.descripcion || "").toLowerCase().includes(lc) ||
       (ev.evaluado_por || "").toLowerCase().includes(lc) ||
       (ev.modelo_evaluacion || "").toLowerCase().includes(lc)
@@ -328,7 +330,7 @@ export default function EvaluacionesPage() {
             <Button
               type="text"
               icon={<EyeOutlined />}
-              onClick={() => router.push(`/ordenes-trabajo/${r.ot_id}/evaluacion`)}
+              onClick={() => router.push(`/ordenes-trabajo/${r.ot_id}/evaluacion?from=evaluaciones`)}
             />
           </Tooltip>
           {(r.estado === "BORRADOR" || r.estado === "RECHAZADA") && (

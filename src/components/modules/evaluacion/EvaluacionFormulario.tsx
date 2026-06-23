@@ -11,6 +11,7 @@ import {
   type HallazgoItem,
   type RecomendacionItem,
 } from "@/lib/evaluacion-catalogos";
+import { VAS, tituloPuntos, type CampoMedida } from "@/lib/evaluacion-campos";
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -341,6 +342,14 @@ interface FilaMedida {
   prefix: string;
   label: string;
   tipo: "xy" | "single";
+}
+// Construye una fila de TablaMedidas desde un CampoMedida del esquema compartido
+// (`@/lib/evaluacion-campos`), que es la MISMA fuente que consume el generador
+// de Word → clave y tipo no se pueden desincronizar. El label base recibe la
+// unidad; la clave recibe el prefijo del modelo. Solo para tipo xy/single
+// (los "puntos" se renderizan con TablaPuntos).
+function filaDeCampo(c: CampoMedida, p: string, unidad: string): FilaMedida {
+  return { prefix: `${p}_${c.key}`, label: `${c.label} [${unidad}]`, tipo: c.tipo as "xy" | "single" };
 }
 // Tabla compacta para Flexión + Espesor de Cromo del vástago (3 puntos: B/C/D).
 // Reemplaza la versión anterior de inputs sueltos en columnas.
@@ -1659,31 +1668,29 @@ export default function EvaluacionFormulario({
                     → E (Cromo) → F (Total) → G (Espiga). Longitud de Espiga (G)
                     ahora vive dentro de la tabla principal (antes era input suelto). */}
                 <TablaMedidas
-                  filas={[
-                    { prefix: `${p}_vas_desp`, label: `Diametro Espiga (A) [${unidad}]`, tipo: "xy" },
-                  ]}
+                  filas={[filaDeCampo(VAS.vas_desp, p, unidad)]}
                   datos={datos}
                   onChange={onChange}
                 />
                 {/* Diámetro Vástago (B) — 3 puntos de medida según Excel de evaluación. */}
                 <div style={{ marginTop: 8 }}>
                   <TablaPuntos
-                    prefix={`${p}_vas_dext`}
+                    prefix={`${p}_${VAS.vas_dext.key}`}
                     datos={datos}
                     onChange={onChange}
-                    titulo={`Diametro Vástago (B1-B3) [${unidad}]`}
-                    puntos={3}
-                    letra="B"
-                    sufijo="b"
+                    titulo={`${tituloPuntos(VAS.vas_dext)} [${unidad}]`}
+                    puntos={VAS.vas_dext.puntos}
+                    letra={VAS.vas_dext.letra}
+                    sufijo={VAS.vas_dext.sufijo}
                   />
                 </div>
                 <div style={{ marginTop: 8 }}>
                   <TablaMedidas
                     filas={[
-                      { prefix: `${p}_vas_dcoj`, label: `Diametro Cojinete (D) [${unidad}]`, tipo: "xy" },
-                      { prefix: `${p}_vas_lcro`, label: `Longitud Cromo (E) [${unidad}]`, tipo: "single" },
-                      { prefix: `${p}_vas_ltot`, label: `Longitud Total (F) [${unidad}]`, tipo: "single" },
-                      { prefix: `${p}_vas_long_espiga_g`, label: `Longitud de Espiga (G) [${unidad}]`, tipo: "single" },
+                      filaDeCampo(VAS.vas_dcoj, p, unidad),
+                      filaDeCampo(VAS.vas_lcro, p, unidad),
+                      filaDeCampo(VAS.vas_ltot, p, unidad),
+                      filaDeCampo(VAS.vas_long_espiga_g, p, unidad),
                     ]}
                     datos={datos}
                     onChange={onChange}
@@ -2383,31 +2390,29 @@ export default function EvaluacionFormulario({
                   → E (Cromo) → F (Total) → G (Espiga). Longitud de Espiga (G)
                   ahora vive dentro de la tabla principal (antes era un input suelto). */}
               <TablaMedidas
-                filas={[
-                  { prefix: `${p}_vas_desp`, label: `Diametro Espiga (A) [${unidad}]`, tipo: "xy" },
-                ]}
+                filas={[filaDeCampo(VAS.vas_desp, p, unidad)]}
                 datos={datos}
                 onChange={onChange}
               />
               {/* Diámetro Vástago (B) — 3 puntos según Excel de evaluación. */}
               <div style={{ marginTop: 8 }}>
                 <TablaPuntos
-                  prefix={`${p}_vas_dext`}
+                  prefix={`${p}_${VAS.vas_dext.key}`}
                   datos={datos}
                   onChange={onChange}
-                  titulo={`Diametro Vástago (B1-B3) [${unidad}]`}
-                  puntos={3}
-                  letra="B"
-                  sufijo="b"
+                  titulo={`${tituloPuntos(VAS.vas_dext)} [${unidad}]`}
+                  puntos={VAS.vas_dext.puntos}
+                  letra={VAS.vas_dext.letra}
+                  sufijo={VAS.vas_dext.sufijo}
                 />
               </div>
               <div style={{ marginTop: 8 }}>
                 <TablaMedidas
                   filas={[
-                    { prefix: `${p}_vas_dcoj`, label: `Diametro Cojinete (D) [${unidad}]`, tipo: "xy" },
-                    { prefix: `${p}_vas_lcro`, label: `Longitud Cromo (E) [${unidad}]`, tipo: "single" },
-                    { prefix: `${p}_vas_ltot`, label: `Longitud Total (F) [${unidad}]`, tipo: "single" },
-                    { prefix: `${p}_vas_long_espiga_g`, label: `Longitud de Espiga (G) [${unidad}]`, tipo: "single" },
+                    filaDeCampo(VAS.vas_dcoj, p, unidad),
+                    filaDeCampo(VAS.vas_lcro, p, unidad),
+                    filaDeCampo(VAS.vas_ltot, p, unidad),
+                    filaDeCampo(VAS.vas_long_espiga_g, p, unidad),
                   ]}
                   datos={datos}
                   onChange={onChange}

@@ -11,15 +11,23 @@ import { splitRecursos } from "@/lib/recursos";
 //
 // LÍNEA BASE: al publicar (publicado=true) se congela un snapshot del plan
 // (fecha_inicio/fin, horas_estimadas, tecnico, semana) en las columnas *_base.
-// Solo se setea si está vacío, para no perder el plan original cuando luego la
-// tarea se mueva o un correctivo la empuje. `rebasar:true` fuerza re-snapshot.
+// Por defecto solo se setea si está vacío, para no perder el plan original. Hay
+// dos formas de FORZAR el re-snapshot: `rebasar:true` (toda la semana, incluso
+// ya ejecutadas) o `rebasarIds:[...]` (subconjunto puntual: tareas no empezadas
+// que el planner movió tras el envío y cuya foto quedó vieja).
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json().catch(() => ({})) as { semana?: string; tecnico?: string; publicado?: boolean; ids?: unknown; rebasar?: boolean };
+    const body = await req.json().catch(() => ({})) as { semana?: string; tecnico?: string; publicado?: boolean; ids?: unknown; rebasar?: boolean; rebasarIds?: unknown };
     const semana = (body.semana ?? "").trim();
     const tecnico = (body.tecnico ?? "").trim();
     const publicado = !!body.publicado;
     const rebasar = !!body.rebasar;
+    // Subconjunto cuya foto hay que REFRESCAR a la fuerza aunque ya estuviera
+    // enviada. Puede incluir ids que no están en `ids` (ya publicadas): igual se
+    // re-fotografían. Solo aplica al enviar (publicado=true).
+    const rebasarIds = Array.isArray(body.rebasarIds)
+      ? (body.rebasarIds as unknown[]).filter((n): n is number => Number.isInteger(n))
+      : [];
 
     // Resolver el conjunto de IDs a publicar.
     let idsToPublish: number[] = [];
@@ -48,20 +56,27 @@ export async function POST(req: NextRequest) {
       idsToPublish = candidatas.filter((t) => splitRecursos(t.tecnico).includes(tecnico)).map((t) => t.id);
     }
 
-    if (idsToPublish.length === 0) {
+    // Al enviar, también tocamos las de rebasarIds que ya estaban publicadas
+    // (no vienen en `ids` pero hay que setearles publicado=true y re-fotografiar).
+    const toUpdate = publicado
+      ? Array.from(new Set([...idsToPublish, ...rebasarIds]))
+      : idsToPublish;
+    if (toUpdate.length === 0) {
       return NextResponse.json({ count: 0, publicado });
     }
 
     const res = await prisma.planificacionOT.updateMany({
-      where: { id: { in: idsToPublish } },
+      where: { id: { in: toUpdate } },
       data: { publicado },
     });
 
-    // Snapshot de línea base solo al publicar. Copia columna→columna vía SQL.
-    let baseCount = 0;
-    if (publicado) {
-      const cond = rebasar ? Prisma.empty : Prisma.sql`AND "fecha_inicio_base" IS NULL`;
-      baseCount = await prisma.$executeRaw`
+    // Snapshot de línea base (foto del plan) solo al publicar. Copia col→col vía SQL.
+    //   force=true  → pisa la foto con el plan actual (rebasar / mover ya enviada).
+    //   force=false → solo escribe si está vacía (primera foto; no pisa la original).
+    const fotografiar = (targetIds: number[], force: boolean): Promise<number> => {
+      if (targetIds.length === 0) return Promise.resolve(0);
+      const cond = force ? Prisma.empty : Prisma.sql`AND "fecha_inicio_base" IS NULL`;
+      return prisma.$executeRaw`
         UPDATE "planificacion_ot"
            SET "fecha_inicio_base"    = "fecha_inicio",
                "fecha_fin_base"       = "fecha_fin",
@@ -69,9 +84,23 @@ export async function POST(req: NextRequest) {
                "tecnico_base"         = "tecnico",
                "semana_base"          = "semana_plan",
                "publicado_at"         = NOW()
-         WHERE "id" = ANY(${idsToPublish})
+         WHERE "id" = ANY(${targetIds})
            ${cond}
       `;
+    };
+
+    let baseCount = 0;
+    if (publicado) {
+      if (rebasar) {
+        // Re-enviar: rehace la foto de TODO lo publicado (incluso ya ejecutadas).
+        baseCount = await fotografiar(idsToPublish, true);
+      } else {
+        // Enviar normal: refresca a la fuerza las de rebasarIds (no empezadas,
+        // movidas tras el envío) y congela por primera vez el resto.
+        const rebasarSet = new Set(rebasarIds);
+        baseCount += await fotografiar(rebasarIds, true);
+        baseCount += await fotografiar(idsToPublish.filter((id) => !rebasarSet.has(id)), false);
+      }
     }
 
     return NextResponse.json({ count: res.count, publicado, baseCount });
