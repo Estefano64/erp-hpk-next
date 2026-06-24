@@ -690,7 +690,7 @@ function RequerimientosDetalleInner() {
             ? (values.fecha_entrega_esperada as Dayjs).format("YYYY-MM-DD")
             : null,
           observaciones: values.observaciones,
-          nombre: values.nombre ?? null,
+          nombre: null,
           usuario: "Logistica",
         }),
       });
@@ -2030,21 +2030,41 @@ function RequerimientosDetalleInner() {
             (s, r) => s + (preciosModal[r.id] ?? 0) * Number(r.cantidad ?? 0),
             0,
           );
+          const igvModal = totalSubModal * 0.18;
+          const totalConIgvModal = totalSubModal + igvModal;
           const simbolo = monedaModal === "SOL" || monedaModal === "PEN" ? "S/ " : "$ ";
           return (
             <div style={{ marginBottom: 16 }}>
               <Card size="small" style={{ background: brand.bgPage }}>
                 <Row gutter={16}>
-                  <Col span={12}>
+                  <Col xs={12} md={6}>
                     <Statistic title="Items" value={selectedRows.length} />
                   </Col>
-                  <Col span={12}>
+                  <Col xs={12} md={6}>
                     <Statistic
                       title="Subtotal"
                       value={totalSubModal}
                       precision={2}
                       prefix={simbolo}
-                      styles={{ content: { color: brand.navy, fontWeight: 700 } }}
+                      styles={{ content: { color: brand.textSecondary, fontWeight: 500 } }}
+                    />
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <Statistic
+                      title="IGV (18%)"
+                      value={igvModal}
+                      precision={2}
+                      prefix={simbolo}
+                      styles={{ content: { color: brand.textSecondary, fontWeight: 500 } }}
+                    />
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <Statistic
+                      title="Total cotización"
+                      value={totalConIgvModal}
+                      precision={2}
+                      prefix={simbolo}
+                      styles={{ content: { color: brand.navy, fontWeight: 700, fontSize: 20 } }}
                     />
                   </Col>
                 </Row>
@@ -2127,6 +2147,15 @@ function RequerimientosDetalleInner() {
                   );
                 },
               },
+              {
+                // Fecha de entrega esperada por item — se jala de fecha_requerida
+                // del requerimiento. Read-only en este modal: si necesita ajuste
+                // por item, se edita después en /compras/[id]/editar.
+                title: "F. Entrega", key: "fent", width: 110, align: "center",
+                render: (_, r: Requerimiento) => r.fecha_requerida
+                  ? <Text style={{ fontSize: 11 }}>{dayjs(r.fecha_requerida).format("DD/MM/YYYY")}</Text>
+                  : <Text type="secondary" style={{ fontSize: 11 }}>—</Text>,
+              },
             ]}
           />
         </div>
@@ -2163,13 +2192,6 @@ function RequerimientosDetalleInner() {
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item
-            label="Nombre OC"
-            name="nombre"
-            tooltip="Si lo dejás vacío, se autogenera como 'OT {códigos} · {Proveedor}'."
-          >
-            <Input placeholder="Ej: Repuestos cilindro hidráulico - OT 12345" maxLength={300} />
-          </Form.Item>
           <Form.Item label="Observaciones" name="observaciones">
             <TextArea rows={2} placeholder="Notas adicionales..." />
           </Form.Item>
