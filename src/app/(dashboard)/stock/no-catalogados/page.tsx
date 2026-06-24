@@ -270,15 +270,6 @@ export default function NoCatalogadosPage() {
         Registro manual de materiales que NO están en el catálogo, con control de stock (entradas / salidas / ajustes).
       </Text>
 
-      <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
-        <Col xs={12} md={4}><Card size="small"><Statistic title="Materiales" value={kpis.total} styles={{ content: { color: brand.navy } }} /></Card></Col>
-        <Col xs={12} md={4}><Card size="small"><Statistic title="Sin stock" value={kpis.sinStock} styles={{ content: { color: kpis.sinStock > 0 ? "#cf1322" : "#bfbfbf" } }} /></Card></Col>
-        <Col xs={12} md={4}><Card size="small"><Statistic title="Ingresos" value={kpis.totalEntradas} precision={2} prefix={<ArrowUpOutlined style={{ color: "#52c41a" }} />} styles={{ content: { color: "#52c41a" } }} /></Card></Col>
-        <Col xs={12} md={4}><Card size="small"><Statistic title="Salidas" value={kpis.totalSalidas} precision={2} prefix={<ArrowDownOutlined style={{ color: "#cf1322" }} />} styles={{ content: { color: "#cf1322" } }} /></Card></Col>
-        <Col xs={12} md={4}><Card size="small"><Statistic title="Ajustes" value={kpis.totalAjustes} precision={2} styles={{ content: { color: "#722ed1" } }} /></Card></Col>
-        <Col xs={12} md={4}><Card size="small"><Statistic title="Balance" value={kpis.balance} precision={2} styles={{ content: { color: kpis.balance >= 0 ? "#52c41a" : "#cf1322", fontWeight: 700 } }} /></Card></Col>
-      </Row>
-
       <Card size="small" style={{ marginBottom: 12 }} styles={{ body: { padding: 10 } }}>
         <Space wrap>
           <Input placeholder="Buscar código o descripción…" prefix={<SearchOutlined />} allowClear value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 320, maxWidth: "100%" }} />

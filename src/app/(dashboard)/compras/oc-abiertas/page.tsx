@@ -212,37 +212,6 @@ export default function OCAbiertasListPage() {
         ajustar header, proveedor, fechas o los items de cada OC.
       </Text>
 
-      <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
-        <Col xs={12} md={6}>
-          <Card size="small">
-            <Statistic title="OCs abiertas" value={kpis.totalOCs} styles={{ content: { color: brand.navy } }} />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card size="small">
-            <Statistic title="Ítems totales" value={kpis.totalItems} />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card size="small">
-            <Statistic
-              title="Ítems con stock"
-              value={kpis.itemsConStock}
-              styles={{ content: { color: kpis.itemsConStock === kpis.totalItems ? "#52c41a" : "#fa8c16" } }}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card size="small">
-            <Statistic
-              title="Stock disponible (unidades)"
-              value={kpis.stockTotal}
-              styles={{ content: { color: brand.cyan } }}
-            />
-          </Card>
-        </Col>
-      </Row>
-
       <Card size="small" style={{ marginBottom: 12 }} styles={{ body: { padding: 10 } }}>
         <Input
           placeholder="Buscar por nro OC, fuente, proveedor…"
