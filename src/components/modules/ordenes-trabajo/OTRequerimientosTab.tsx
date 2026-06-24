@@ -59,6 +59,10 @@ interface RequerimientoRow {
   adjuntos?: { id: number; nombre_archivo: string; r2_key: string; tamano: number }[];
   po_id: number | null;
   nro_oc: string | null;
+  // Precio override desde el editor de OC: cuando el comprador modifica el
+  // precio en la OC, queda acá sin pisar `precio_unitario` (el estimado del
+  // requerimiento). Es el precio REAL al que se compró.
+  oc_precio_unitario: string | null;
   es_adicional: boolean | null;
   observaciones: string | null;
   usuario_solicita: string;
@@ -103,6 +107,37 @@ const COT_COLOR: Record<string, string> = {
   COMPLETO: "success",
   ANULADO: "error",
 };
+
+// Deriva el estado de cotización a partir de los datos relacionados del item
+// (precio, OC vinculada, status del requerimiento). El campo `status_cotizacion_codigo`
+// en BD se quedaba congelado en "PEND_COT" porque no había triggers que lo
+// avancen — esta función calcula el estado "real" al vuelo desde lo que se
+// observa: ¿tiene OC? ¿está entregada? ¿tiene precio?
+//
+// Reglas (en orden de evaluación):
+//   1. Requerimiento ANULADO/DESAPROBADO → ANULADO
+//   2. Tiene compra (OC) entregada/completa → COMPLETO
+//   3. Tiene compra (OC) en cualquier otro estado → APROBADO
+//   4. Tiene precio_unitario > 0 pero sin OC → PEND_APROB
+//   5. Sin precio y sin OC → PEND_COT
+function deriveCot(r: RequerimientoRow): { codigo: string; nombre: string } {
+  const reqStatus = r.status_requerimiento_codigo ?? "";
+  if (reqStatus === "ANULADO" || reqStatus === "DESAPROBADO") {
+    return { codigo: "ANULADO", nombre: "Anulado" };
+  }
+  if (r.compra) {
+    const ocCodigo = r.status_oc?.codigo ?? "";
+    if (ocCodigo === "ENTREGADO" || ocCodigo === "COMPLETO") {
+      return { codigo: "COMPLETO", nombre: "Completo" };
+    }
+    return { codigo: "APROBADO", nombre: "Aprobado" };
+  }
+  const precio = r.precio_unitario != null ? Number(r.precio_unitario) : 0;
+  if (Number.isFinite(precio) && precio > 0) {
+    return { codigo: "PEND_APROB", nombre: "Pendiente de aprobación" };
+  }
+  return { codigo: "PEND_COT", nombre: "Pendiente de cotización" };
+}
 const OC_COLOR: Record<string, string> = {
   PEND_OC: "default",
   PROCESO: "processing",
@@ -423,7 +458,13 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
       const res = await fetch(`/api/ordenes-trabajo/${otId}/requerimientos`);
       if (res.ok) {
         const j = await res.json();
-        setRows(j.data ?? []);
+        // Sobreescribimos status_cotizacion con el derivado porque el campo en
+        // BD no se actualiza tras crear el req (ver deriveCot arriba).
+        const enriched: RequerimientoRow[] = (j.data ?? []).map((r: RequerimientoRow) => {
+          const cot = deriveCot(r);
+          return { ...r, status_cotizacion: cot, status_cotizacion_codigo: cot.codigo };
+        });
+        setRows(enriched);
       }
     } finally {
       setLoading(false);
@@ -533,15 +574,19 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
     if (!codigo) return;
     const m = materiales.find((x) => x.codigo === codigo);
     if (!m) return;
-    // Autocomplete: pisa descripcion/fabricante/unidad con los datos del
-    // material seleccionado, tanto en CREAR como en EDITAR (mismo
-    // comportamiento — al cambiar de material, el item refleja el nuevo).
-    // No tocamos precio/moneda, eso se maneja en el módulo de Compras.
-    form.setFieldsValue({
+    // Autocomplete: pisa descripcion/fabricante/unidad/precio/moneda con el
+    // material seleccionado. El precio del catálogo se usa como estimado
+    // inicial del requerimiento. Compras puede sobreescribirlo después.
+    const patch: Record<string, unknown> = {
       descripcion: m.descripcion,
       fabricante_codigo: m.fabricante_codigo ?? undefined,
       unidad_medida: m.unidad_medida_codigo ?? undefined,
-    });
+    };
+    if (m.precio != null) {
+      patch.precio_unitario = Number(m.precio);
+      patch.moneda = m.moneda_codigo === "SOL" ? "SOL" : "USD";
+    }
+    form.setFieldsValue(patch);
   }
   function onServicioSelect(codigo: string | undefined) {
     if (!codigo) return;
@@ -701,10 +746,19 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
   }, [rows]);
   const hayBorradores = stats.borrador > 0;
   // Helper para mostrar precio efectivo de un item (real o catálogo).
+  // Jerarquía de precio:
+  //   1. oc_precio_unitario  → REAL: el comprador lo seteó en la OC
+  //   2. precio_unitario con po_id → REAL: precio del req copiado a CompraDetalle al crear OC
+  //   3. precio_unitario sin OC → ESTIMADO: cotización pendiente
+  //   4. material.precio → ESTIMADO: precio de catálogo (fallback)
   function precioEfectivo(r: RequerimientoRow): { precio: number; moneda: string; esEstimado: boolean } | null {
+    if (r.oc_precio_unitario != null) {
+      const pu = Number(r.oc_precio_unitario);
+      if (Number.isFinite(pu)) return { precio: pu, moneda: r.moneda ?? "USD", esEstimado: false };
+    }
     if (r.precio_unitario != null) {
       const pu = Number(r.precio_unitario);
-      if (Number.isFinite(pu)) return { precio: pu, moneda: r.moneda ?? "USD", esEstimado: false };
+      if (Number.isFinite(pu)) return { precio: pu, moneda: r.moneda ?? "USD", esEstimado: r.po_id == null };
     }
     if (r.material?.precio != null) {
       const pu = Number(r.material.precio);
@@ -1141,7 +1195,15 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
                         // Después de seleccionar muestra solo el código (la descripción ya va en su propio campo).
                         optionLabelProp="value"
                         value={r.material_codigo}
-                        onChange={(v) => actualizarDraftItem(r.id, { material_codigo: v })}
+                        onChange={(v) => {
+                          const m = v ? materiales.find((x) => x.codigo === v) : undefined;
+                          const patch: Partial<DraftItem> = { material_codigo: v };
+                          if (m?.precio != null) {
+                            patch.precio_unitario = Number(m.precio);
+                            patch.moneda = m.moneda_codigo === "SOL" ? "SOL" : "USD";
+                          }
+                          actualizarDraftItem(r.id, patch);
+                        }}
                         options={materiales.map((m) => ({
                           value: m.codigo,
                           label: `${m.codigo} — ${m.descripcion}${m.np ? ` · NP ${m.np}` : ""}`,
@@ -1693,7 +1755,9 @@ function RequerimientosAgrupados({
         );
         const isRealReq = nro !== "(sin nro)";
         const cantBorradores = items.filter((i) => i.status_requerimiento_codigo === "BORRADOR").length;
-        // Subtotal del grupo por moneda (real + estimado catálogo, excluye ANULADO/DESAPROBADO)
+        // Subtotal del grupo por moneda. Misma jerarquía que precioEfectivo:
+        // oc_precio_unitario (real) > precio_unitario > material.precio (estimado).
+        // Excluye ANULADO/DESAPROBADO.
         const subtotalGrupo: Record<string, number> = {};
         for (const it of items) {
           const sr = it.status_requerimiento_codigo;
@@ -1701,7 +1765,9 @@ function RequerimientosAgrupados({
           const cant = Number(it.cantidad);
           let pu: number | null = null;
           let moneda = it.moneda ?? "USD";
-          if (it.precio_unitario != null) {
+          if (it.oc_precio_unitario != null) {
+            pu = Number(it.oc_precio_unitario);
+          } else if (it.precio_unitario != null) {
             pu = Number(it.precio_unitario);
           } else if (it.material?.precio != null) {
             pu = Number(it.material.precio);
@@ -1714,6 +1780,20 @@ function RequerimientosAgrupados({
         const subtotalTexto = Object.entries(subtotalGrupo)
           .map(([m, t]) => `${m} ${t.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
           .join(" · ");
+        // Fecha del header: la más lejana de llegada de OC (fecha_entrega_esperada
+        // de las OCs vinculadas a los items del grupo). Sirve para saber cuándo
+        // llegará el requerimiento completo. Si ningún item tiene OC todavía,
+        // cae a fecha_solicitud del primer item.
+        const fechasOC = items
+          .map((i) => i.compra?.fecha_entrega_esperada)
+          .filter((d): d is string => !!d);
+        const fechaMaxOC = fechasOC.length > 0
+          ? fechasOC.reduce((a, b) => (a > b ? a : b))
+          : null;
+        const fechaHeader = fechaMaxOC ?? first?.fecha_solicitud ?? null;
+        const fechaHeaderTooltip = fechaMaxOC
+          ? "Fecha de llegada más lejana entre las OCs del requerimiento"
+          : "Fecha de solicitud (aún no hay OCs vinculadas)";
         return (
           <Card
             key={nro}
@@ -1729,7 +1809,11 @@ function RequerimientosAgrupados({
                 <Text strong style={{ fontSize: 13 }}>{nro}</Text>
                 <Text type="secondary" style={{ fontSize: 12 }}>
                   {items.length} ítem{items.length !== 1 ? "s" : ""}
-                  {first?.fecha_solicitud ? ` · ${formatDateOnly(first.fecha_solicitud)}` : ""}
+                  {fechaHeader && (
+                    <Tooltip title={fechaHeaderTooltip}>
+                      <span style={{ marginLeft: 4 }}>· {formatDateOnly(fechaHeader)}</span>
+                    </Tooltip>
+                  )}
                 </Text>
                 {subtotalTexto && (
                   <Tooltip title="Subtotal del requerimiento (precio real + estimado catálogo)">

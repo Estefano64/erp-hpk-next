@@ -91,6 +91,53 @@ export async function PUT(req: NextRequest, { params }: Params) {
     // El "quién editó" se conserva en el historial, NO en la fila principal.
     const usuarioActualiza = (await getAuditUser(req)) ?? "sistema";
 
+    // Guard de cierre: la OT solo se puede pasar a "Cerrada" cuando todos los
+    // campos clave estén completos (fechas reales + responsable + recursos +
+    // aprobación). Evita cerrar OTs con datos huérfanos.
+    if (data.ot_status_codigo === "Cerrada") {
+      const actual = await prisma.ordenTrabajoInterna.findUnique({
+        where: { id: otId },
+        select: {
+          ot_status_codigo: true,
+          fecha_inicio_real: true,
+          fecha_fin_real: true,
+          asignado_a: true,
+          recursos_status_codigo: true,
+          aprobacion_status_codigo: true,
+        },
+      });
+      if (!actual) {
+        return NextResponse.json({ error: "No encontrada" }, { status: 404 });
+      }
+      // Solo valida en la transición Abierta → Cerrada. Si ya está cerrada
+      // (re-save idempotente), no bloquea.
+      if (actual.ot_status_codigo !== "Cerrada") {
+        // El update es parcial: si el body NO trae un campo, vale el actual.
+        const merged = {
+          fecha_inicio_real: "fecha_inicio_real" in data ? data.fecha_inicio_real : actual.fecha_inicio_real,
+          fecha_fin_real: "fecha_fin_real" in data ? data.fecha_fin_real : actual.fecha_fin_real,
+          asignado_a: "asignado_a" in data ? data.asignado_a : actual.asignado_a,
+          recursos_status_codigo: "recursos_status_codigo" in data ? data.recursos_status_codigo : actual.recursos_status_codigo,
+          aprobacion_status_codigo: "aprobacion_status_codigo" in data ? data.aprobacion_status_codigo : actual.aprobacion_status_codigo,
+        };
+        const faltantes: string[] = [];
+        if (!merged.fecha_inicio_real) faltantes.push("Fecha de inicio real");
+        if (!merged.fecha_fin_real) faltantes.push("Fecha de fin real");
+        if (!merged.asignado_a) faltantes.push("Asignado a");
+        if (merged.recursos_status_codigo !== "Recursos completos") faltantes.push("Recursos completos");
+        if (merged.aprobacion_status_codigo !== "APROBADA") faltantes.push("Aprobación (debe estar APROBADA)");
+        if (faltantes.length > 0) {
+          return NextResponse.json(
+            {
+              error: `No se puede cerrar la OT — faltan: ${faltantes.join(", ")}.`,
+              faltantes,
+            },
+            { status: 409 },
+          );
+        }
+      }
+    }
+
     data.version = { increment: 1 };
 
     const updated = await prisma.$transaction(async (tx) => {

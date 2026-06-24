@@ -878,6 +878,9 @@ function DetalleTab({ ot, editing, form, catalogos }: {
               />
             </Form.Item>
           </Col>
+          <Col span={24}>
+            <CierreGuardAlert form={form} ot={ot} />
+          </Col>
         </Row>
       </Card>
 
@@ -1058,6 +1061,48 @@ function TareasTab({ ot }: {
         ]}
       />
     </Card>
+  );
+}
+
+// Alert que aparece al intentar cerrar la OT y faltan campos. Espeja la
+// validación del backend (PUT /api/ordenes-trabajo-internas/[id]) — feedback
+// inmediato sin esperar el 409.
+function CierreGuardAlert({
+  form,
+  ot,
+}: {
+  form: FormInstance<EditValues>;
+  ot: OTInternaDetalle;
+}) {
+  const otStatus = Form.useWatch("ot_status_codigo", form);
+  const recursos = Form.useWatch("recursos_status_codigo", form);
+  const asignado = Form.useWatch("asignado_a", form);
+  const fInicioReal = Form.useWatch("fecha_inicio_real", form);
+  const fFinReal = Form.useWatch("fecha_fin_real", form);
+
+  if (otStatus !== "Cerrada" || ot.ot_status?.codigo === "Cerrada") return null;
+
+  const faltantes: string[] = [];
+  if (!fInicioReal) faltantes.push("Fecha de inicio real");
+  if (!fFinReal) faltantes.push("Fecha de fin real");
+  if (!asignado) faltantes.push("Asignado a");
+  if (recursos !== "Recursos completos") faltantes.push("Recursos completos");
+  if (ot.aprobacion_status_codigo !== "APROBADA") faltantes.push("Aprobación (debe estar APROBADA)");
+
+  if (faltantes.length === 0) return null;
+
+  return (
+    <Alert
+      type="warning"
+      showIcon
+      style={{ marginTop: 8 }}
+      message="Para cerrar la OT faltan campos"
+      description={
+        <ul style={{ margin: 0, paddingLeft: 18 }}>
+          {faltantes.map((f) => <li key={f}>{f}</li>)}
+        </ul>
+      }
+    />
   );
 }
 

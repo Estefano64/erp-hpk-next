@@ -1,18 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { nextNumeroOTInterna } from "@/lib/ot-numero";
-import { nextNroReqInterna } from "@/lib/requerimientos";
 import { parseOtCodigoSearch } from "@/lib/ot-formato";
-
-// Cascada PM acumulativa: PM1 ⊂ PM2 ⊂ PM3 ⊂ PM4. Convención oficial HPK.
-const CASCADA_PM_OT: Record<string, string[]> = {
-  PM1: ["PM1"],
-  PM2: ["PM1", "PM2"],
-  PM3: ["PM1", "PM2", "PM3"],
-  PM4: ["PM1", "PM2", "PM3", "PM4"],
-};
 
 // GET — lista con filtros y paginación.
 export async function GET(req: NextRequest) {
@@ -232,93 +222,11 @@ export async function POST(req: NextRequest) {
       return nueva;
     });
 
-    // Auto-aplicar Task List (espejo del comportamiento de OT externa con
-    // cod_rep): si la OT interna se creó con equipo + estrategia preventiva
-    // (MP1-4 o PM1-4), materializamos los requerimientos del TaskList del
-    // equipo automáticamente — sin requerir un click extra en el detalle.
-    // Falla silenciosa (try/catch externo): si algo sale mal, la OT queda
-    // creada y el user puede aplicar manualmente desde el tab Requerimientos.
-    if (created.equipo_codigo && created.estrategia_id) {
-      try {
-        const estr = await prisma.estrategia.findUnique({
-          where: { estrategia_id: created.estrategia_id },
-          select: { actividad_codigo: true },
-        });
-        const actCodigo = estr?.actividad_codigo?.toUpperCase();
-        const cascada = actCodigo ? CASCADA_PM_OT[actCodigo] : null;
-        if (cascada) {
-          const taskLists = await prisma.taskList.findMany({
-            where: {
-              equipo_codigo: created.equipo_codigo,
-              actividad_codigo: { in: cascada },
-              activo: true,
-            },
-            include: { items: { orderBy: { item: "asc" } } },
-            orderBy: [{ actividad_codigo: "asc" }, { id: "asc" }],
-          });
-          if (taskLists.length > 0) {
-            const totalItems = taskLists.reduce((s, tl) => s + tl.items.length, 0);
-            if (totalItems > 0) {
-              await prisma.$transaction(async (tx) => {
-                const nroReq = await nextNroReqInterna(tx, created.id);
-                const codigosMat = [
-                  ...new Set(
-                    taskLists
-                      .flatMap((tl) => tl.items)
-                      .filter((it) => it.material_codigo)
-                      .map((it) => it.material_codigo!),
-                  ),
-                ];
-                const materiales = codigosMat.length
-                  ? await tx.material.findMany({
-                      where: { codigo: { in: codigosMat } },
-                      select: { material_id: true, codigo: true, unidad_medida_codigo: true },
-                    })
-                  : [];
-                const matByCodigo = new Map(materiales.map((m) => [m.codigo, m]));
-                let itemIdx = 1;
-                const data: Prisma.OTRepuestoUncheckedCreateInput[] = [];
-                for (const tl of taskLists) {
-                  for (const it of tl.items) {
-                    const mat = it.material_codigo ? matByCodigo.get(it.material_codigo) : null;
-                    const descBase = it.ref_descripcion ?? tl.descripcion ?? "(sin descripción)";
-                    data.push({
-                      orden_trabajo_interna_id: created.id,
-                      material_id: mat?.material_id ?? null,
-                      material_codigo: it.material_codigo ?? null,
-                      tipo_codigo: it.tipo,
-                      cantidad: it.requerimiento != null ? new Prisma.Decimal(it.requerimiento) : new Prisma.Decimal(1),
-                      descripcion: `[${tl.actividad_codigo}] ${descBase}`,
-                      texto: it.texto ?? null,
-                      unidad_medida: it.um ?? mat?.unidad_medida_codigo ?? "UNIDAD",
-                      precio_unitario: it.precio != null ? new Prisma.Decimal(it.precio) : null,
-                      moneda: "USD",
-                      es_adicional: false,
-                      nro_req: nroReq,
-                      item_req: itemIdx++,
-                      status_requerimiento_codigo: "BORRADOR",
-                      usuario_solicita: usuarioCrea,
-                    });
-                  }
-                }
-                await tx.oTRepuesto.createMany({ data });
-                await tx.oTHistorial.create({
-                  data: {
-                    orden_trabajo_interna_id: created.id,
-                    tipo_operacion: "REQUERIMIENTO",
-                    descripcion: `Task list auto-aplicado al crear OT (${actCodigo}, equipo ${created.equipo_codigo}, cascada ${cascada.join("+")}): ${nroReq} con ${data.length} item(s).`,
-                    usuario: usuarioCrea,
-                  },
-                });
-              }, { maxWait: 10_000, timeout: 30_000 });
-            }
-          }
-        }
-      } catch (e) {
-        console.error("Auto-aplicar TaskList en OT interna falló:", e);
-      }
-    }
-
+    // Nota: NO auto-generamos requerimientos desde el TaskList al crear la OT.
+    // El tab "Tareas" muestra las tareas (read-only) desde el catálogo, pero
+    // los OTRepuesto se generan manualmente con el botón "Aplicar Task List"
+    // del tab Requerimientos, una vez que el usuario verificó qué materiales
+    // del task list están catalogados en Material.
     return NextResponse.json({ data: created }, { status: 201 });
   } catch (e) {
     return NextResponse.json(

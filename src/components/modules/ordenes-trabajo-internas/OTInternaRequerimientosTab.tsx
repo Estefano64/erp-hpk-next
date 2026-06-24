@@ -72,6 +72,10 @@ interface RequerimientoRow {
   adjuntos?: { id: number; nombre_archivo: string; r2_key: string; tamano: number }[];
   po_id: number | null;
   nro_oc: string | null;
+  // Precio override desde el editor de OC: cuando el comprador modifica el
+  // precio en la OC, queda acá sin pisar `precio_unitario` (el estimado del
+  // requerimiento). Es el precio REAL al que se compró.
+  oc_precio_unitario: string | null;
   es_adicional: boolean | null;
   observaciones: string | null;
   usuario_solicita: string;
@@ -605,14 +609,19 @@ export default function OTInternaRequerimientosTab({ otInternaId, onUpdated }: P
     if (!codigo) return;
     const m = materiales.find((x) => x.codigo === codigo);
     if (!m) return;
-    // Autocomplete: pisa descripcion/fabricante/unidad con los datos del
-    // material seleccionado (al cambiar de material, el item refleja el nuevo).
-    // No tocamos precio/moneda, eso se maneja en el módulo de Compras.
-    form.setFieldsValue({
+    // Autocomplete: pisa descripcion/fabricante/unidad/precio/moneda con el
+    // material seleccionado. El precio del catálogo se usa como estimado
+    // inicial del requerimiento. Compras puede sobreescribirlo después.
+    const patch: Record<string, unknown> = {
       descripcion: m.descripcion,
       fabricante_codigo: m.fabricante_codigo ?? undefined,
       unidad_medida: m.unidad_medida_codigo ?? undefined,
-    });
+    };
+    if (m.precio != null) {
+      patch.precio_unitario = Number(m.precio);
+      patch.moneda = m.moneda_codigo === "SOL" ? "SOL" : "USD";
+    }
+    form.setFieldsValue(patch);
   }
   function onServicioSelect(codigo: string | undefined) {
     if (!codigo) return;
@@ -769,10 +778,19 @@ export default function OTInternaRequerimientosTab({ otInternaId, onUpdated }: P
   }, [rows]);
   const hayBorradores = stats.borrador > 0;
   // Helper para mostrar precio efectivo de un item (real o catálogo).
+  // Jerarquía de precio:
+  //   1. oc_precio_unitario  → REAL: el comprador lo seteó en la OC
+  //   2. precio_unitario con po_id → REAL: precio del req copiado a CompraDetalle al crear OC
+  //   3. precio_unitario sin OC → ESTIMADO: cotización pendiente
+  //   4. material.precio → ESTIMADO: precio de catálogo (fallback)
   function precioEfectivo(r: RequerimientoRow): { precio: number; moneda: string; esEstimado: boolean } | null {
+    if (r.oc_precio_unitario != null) {
+      const pu = Number(r.oc_precio_unitario);
+      if (Number.isFinite(pu)) return { precio: pu, moneda: r.moneda ?? "USD", esEstimado: false };
+    }
     if (r.precio_unitario != null) {
       const pu = Number(r.precio_unitario);
-      if (Number.isFinite(pu)) return { precio: pu, moneda: r.moneda ?? "USD", esEstimado: false };
+      if (Number.isFinite(pu)) return { precio: pu, moneda: r.moneda ?? "USD", esEstimado: r.po_id == null };
     }
     if (r.material?.precio != null) {
       const pu = Number(r.material.precio);
@@ -1240,7 +1258,15 @@ export default function OTInternaRequerimientosTab({ otInternaId, onUpdated }: P
                         // Después de seleccionar muestra solo el código (la descripción ya va en su propio campo).
                         optionLabelProp="value"
                         value={r.material_codigo}
-                        onChange={(v) => actualizarDraftItem(r.id, { material_codigo: v })}
+                        onChange={(v) => {
+                          const m = v ? materiales.find((x) => x.codigo === v) : undefined;
+                          const patch: Partial<DraftItem> = { material_codigo: v };
+                          if (m?.precio != null) {
+                            patch.precio_unitario = Number(m.precio);
+                            patch.moneda = m.moneda_codigo === "SOL" ? "SOL" : "USD";
+                          }
+                          actualizarDraftItem(r.id, patch);
+                        }}
                         options={materiales.map((m) => ({
                           value: m.codigo,
                           label: `${m.codigo} — ${m.descripcion}${m.np ? ` · NP ${m.np}` : ""}`,
@@ -1808,7 +1834,10 @@ function RequerimientosAgrupados({
           const cant = Number(it.cantidad);
           let pu: number | null = null;
           let moneda = it.moneda ?? "USD";
-          if (it.precio_unitario != null) {
+          // Misma jerarquía que precioEfectivo: oc_precio_unitario > precio_unitario > material.precio.
+          if (it.oc_precio_unitario != null) {
+            pu = Number(it.oc_precio_unitario);
+          } else if (it.precio_unitario != null) {
             pu = Number(it.precio_unitario);
           } else if (it.material?.precio != null) {
             pu = Number(it.material.precio);

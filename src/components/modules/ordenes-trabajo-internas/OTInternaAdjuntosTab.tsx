@@ -1,18 +1,19 @@
 "use client";
 
-// Adjuntos de OT Interna — refactor 2026-06: ahora replica las 7 etapas de
-// OT externa (Recepción, Evaluación, Cotización, PO Cliente, Término,
-// Guía de Remisión Despacho, Facturación) + una etapa "Otros" para los
-// adjuntos legacy que se cargaron con la etapa fija "general". Pedido del
-// user: que el tab se vea igual en ambos módulos.
+// Adjuntos de OT Interna — versión simplificada (2026-06): un solo bucket
+// sin pestañas por etapa. Pedido del user: que sea "solo subir adjuntos", no
+// la grilla de 8 etapas que usa OT externa.
 //
-// Espejo de OTAdjuntosTab — mismas etapas, mismo layout, mismas funciones.
-// La única diferencia es el endpoint base (/ordenes-trabajo-internas/...)
-// y el resource de R2 ("ot-interna-adjunto" en vez de "ot-adjunto").
+// Implementación:
+//   - GET sin ?etapa= → trae TODOS los adjuntos (preserva visibilidad de los
+//     ya subidos con etapa específica antes del cambio).
+//   - POST con etapa fija "general" → todo lo nuevo cae en el mismo bucket.
+//
+// El endpoint sigue aceptando todas las etapas válidas, así no rompimos los
+// adjuntos legacy ni hay migración de datos.
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  Tabs,
   Button,
   Upload,
   message,
@@ -34,12 +35,7 @@ import {
   FileWordOutlined,
   FileExcelOutlined,
   FileUnknownOutlined,
-  CameraOutlined,
-  FileTextOutlined,
-  CheckCircleOutlined,
-  CarOutlined,
   FolderOpenOutlined,
-  SolutionOutlined,
 } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
 import { uploadToR2, getDownloadUrl, openR2File } from "@/lib/r2-client";
@@ -62,60 +58,9 @@ interface Props {
   otId: number;
 }
 
-const ETAPAS = [
-  {
-    key: "recepcion",
-    label: "Recepción y GR",
-    icon: <CameraOutlined />,
-    description: "Fotos y documentos del inicio del trabajo — guía de remisión si aplica",
-  },
-  {
-    key: "evaluacion",
-    label: "Evaluación",
-    icon: <FileTextOutlined />,
-    description: "Fotos de inspección, informes técnicos y diagnóstico del equipo",
-  },
-  {
-    key: "cotizacion",
-    label: "Cotización",
-    icon: <FileTextOutlined />,
-    description: "Cotizaciones de servicios externos, presupuestos y propuestas",
-  },
-  {
-    key: "po_cliente",
-    label: "PO Cliente",
-    icon: <SolutionOutlined />,
-    description: "Orden de compra interna o de tercero relacionada con esta OT",
-  },
-  {
-    key: "termino",
-    label: "Término de Reparación",
-    icon: <CheckCircleOutlined />,
-    description: "Fotos y documentos del término del trabajo realizado",
-  },
-  {
-    key: "despacho",
-    label: "Guía de Remisión Despacho",
-    icon: <CarOutlined />,
-    description: "Fotos y documentos del despacho — guía de remisión si aplica",
-  },
-  {
-    key: "facturacion",
-    label: "Facturación",
-    icon: <FileTextOutlined />,
-    description: "Facturas relacionadas con el trabajo realizado",
-  },
-  // Etapa especial para archivos legacy que se subieron antes de tener etapas
-  // diferenciadas. Se mantiene visible para no perder visibilidad de archivos
-  // ya cargados. El user puede usarla también para "otros documentos generales"
-  // que no encajen en ninguna etapa específica.
-  {
-    key: "general",
-    label: "Otros",
-    icon: <FolderOpenOutlined />,
-    description: "Archivos generales o legacy sin etapa específica",
-  },
-];
+// Etapa fija para todo lo nuevo. El endpoint soporta otras (legacy) pero el
+// frontend ya no expone esa elección.
+const ETAPA = "general";
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -135,8 +80,7 @@ function isImage(mime: string) {
   return mime.startsWith("image/");
 }
 
-/* ── Sub-panel por etapa ── */
-function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number] }) {
+export default function OTInternaAdjuntosTab({ otId }: Props) {
   const [adjuntos, setAdjuntos] = useState<Adjunto[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -146,7 +90,8 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
   const fetchAdjuntos = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/ordenes-trabajo-internas/${otId}/adjuntos?etapa=${etapa.key}`);
+      // Sin ?etapa= → el endpoint devuelve TODOS los adjuntos de la OT.
+      const res = await fetch(`/api/ordenes-trabajo-internas/${otId}/adjuntos`);
       if (res.ok) {
         const json = await res.json();
         setAdjuntos(json.data ?? []);
@@ -156,7 +101,7 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
     } finally {
       setLoading(false);
     }
-  }, [otId, etapa.key]);
+  }, [otId]);
 
   useEffect(() => {
     fetchAdjuntos();
@@ -168,12 +113,12 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
       const meta = await uploadToR2({
         file,
         uploadUrlEndpoint: `/api/ordenes-trabajo-internas/${otId}/adjuntos/upload-url`,
-        extra: { etapa: etapa.key },
+        extra: { etapa: ETAPA },
       });
       const res = await fetch(`/api/ordenes-trabajo-internas/${otId}/adjuntos`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...meta, etapa: etapa.key }),
+        body: JSON.stringify({ ...meta, etapa: ETAPA }),
       });
 
       if (!res.ok) {
@@ -221,14 +166,15 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
     <div>
       {contextHolder}
 
-      {/* Header de etapa */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-            <span style={{ fontSize: 18, color: brand.cyan }}>{etapa.icon}</span>
-            <Text strong style={{ fontSize: 16 }}>{etapa.label}</Text>
+          <Text strong style={{ fontSize: 16 }}>Adjuntos</Text>
+          <div>
+            <Text type="secondary" style={{ fontSize: 13 }}>
+              Documentos, fotos e informes de la OT interna
+            </Text>
           </div>
-          <Text type="secondary" style={{ fontSize: 13 }}>{etapa.description}</Text>
         </div>
         <div>
           <input
@@ -251,13 +197,13 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
         </div>
       </div>
 
-      {/* Zona de drag & drop */}
+      {/* Drag & drop */}
       <Dragger
         multiple
         showUploadList={false}
         beforeUpload={(file) => {
           uploadFile(file);
-          return false; // prevenir upload automático de antd
+          return false;
         }}
         style={{
           borderColor: brand.cyan,
@@ -276,7 +222,7 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
         </p>
       </Dragger>
 
-      {/* Lista de archivos */}
+      {/* Lista */}
       {loading ? (
         <div style={{ textAlign: "center", padding: 40 }}>
           <Spin />
@@ -285,9 +231,7 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
         <Empty
           image={<FolderOpenOutlined style={{ fontSize: 48, color: brand.textSecondary }} />}
           styles={{ image: { height: 60 } }}
-          description={
-            <Text type="secondary">Sin archivos de {etapa.label.toLowerCase()}</Text>
-          }
+          description={<Text type="secondary">Sin archivos</Text>}
         />
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
@@ -304,7 +248,6 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
               onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.boxShadow = "0 2px 8px rgba(0,0,0,0.12)"; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.boxShadow = "none"; }}
             >
-              {/* Preview area */}
               <div
                 style={{
                   height: 140,
@@ -322,7 +265,6 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
                 )}
               </div>
 
-              {/* Info area */}
               <div style={{ padding: "8px 10px" }}>
                 <Tooltip title={adj.nombre_archivo}>
                   <Text
@@ -386,26 +328,7 @@ function EtapaPanel({ otId, etapa }: { otId: number; etapa: typeof ETAPAS[number
   );
 }
 
-/* ── Tab principal con Tabs por etapa ── */
-export default function OTInternaAdjuntosTab({ otId }: Props) {
-  return (
-    <Tabs
-      defaultActiveKey={ETAPAS[0].key}
-      items={ETAPAS.map((etapa) => ({
-        key: etapa.key,
-        label: (
-          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            {etapa.icon}
-            <span>{etapa.label}</span>
-          </span>
-        ),
-        children: <EtapaPanel otId={otId} etapa={etapa} />,
-      }))}
-    />
-  );
-}
-
-/* ── Imagen R2 con presigned URL renovada por cada r2_key ── */
+/* ── Imagen R2 con presigned URL ── */
 function R2AntdImage({
   adjuntoId,
   r2Key,
