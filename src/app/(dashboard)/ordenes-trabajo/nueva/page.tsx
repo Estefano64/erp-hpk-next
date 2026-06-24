@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Typography,
   Form,
@@ -112,8 +112,18 @@ export default function NuevaOTPage() {
   const [porcentajePcr, setPorcentajePcr] = useState<number | null>(null);
   const [contratoDias, setContratoDias] = useState<number | null>(null);
   const [fechaReqCalculada, setFechaReqCalculada] = useState<string | null>(null);
-  const [diasCalculados, setDiasCalculados] = useState<number | null>(null);
   const [tieneContrato, setTieneContrato] = useState(false);
+  // "Días calculados" = días entre fecha_recepcion y fecha_requerimiento_cliente.
+  // Computed reactivo via Form.useWatch para que se actualice automáticamente
+  // cuando cambien cualquiera de las dos fechas — antes dependía de los
+  // onChange de cada DatePicker y se quedaba en "-" si se hidrataba el form
+  // o si el usuario cambiaba el orden de carga.
+  const fechaRecepcionWatch = Form.useWatch("fecha_recepcion", form);
+  const fechaRequerimientoWatch = Form.useWatch("fecha_requerimiento_cliente", form);
+  const diasCalculados = useMemo(() => {
+    if (!fechaRecepcionWatch || !fechaRequerimientoWatch) return null;
+    return dayjs(fechaRequerimientoWatch).diff(dayjs(fechaRecepcionWatch), "day");
+  }, [fechaRecepcionWatch, fechaRequerimientoWatch]);
 
   useEffect(() => {
     async function loadCatalogs() {
@@ -189,7 +199,6 @@ export default function NuevaOTPage() {
         atencion_reparacion_codigo: undefined,
       });
       setAtencionCodigo("");
-      setDiasCalculados(null);
       setFechaReqCalculada(null);
       setContratoDias(null);
       setTieneContrato(false);
@@ -275,22 +284,8 @@ export default function NuevaOTPage() {
     if (fechaRecepcion && fechaReq && dayjs(fechaReq).isBefore(dayjs(fechaRecepcion), "day")) {
       form.setFieldValue("fecha_requerimiento_cliente", null);
     }
-    // Recalcular días para Presupuesto/Emergencia
-    if (atencion !== "Contrato") {
-      calcularDiasRequerimiento();
-    }
-  }
-
-  // Calcula días entre fecha recepción y fecha requerimiento (Presupuesto/Emergencia)
-  function calcularDiasRequerimiento() {
-    const fechaRecepcion = form.getFieldValue("fecha_recepcion");
-    const fechaReq = form.getFieldValue("fecha_requerimiento_cliente");
-    if (fechaRecepcion && fechaReq) {
-      const diff = dayjs(fechaReq).diff(dayjs(fechaRecepcion), "day");
-      setDiasCalculados(diff);
-    } else {
-      setDiasCalculados(null);
-    }
+    // El cálculo de "Días calculados" ahora es reactivo (useMemo +
+    // Form.useWatch) — no requiere llamarlo manualmente acá.
   }
 
   async function handleSave() {
@@ -451,7 +446,7 @@ export default function NuevaOTPage() {
             <Col xs={24} md={12}>
               <Form.Item
                 name="id_cod_rep"
-                label="Código Reparable"
+                label="Código Estratégico"
                 extra={
                   tieneContrato ? (
                     <Text style={{ color: brand.success, fontSize: 12 }}>
@@ -799,7 +794,7 @@ export default function NuevaOTPage() {
             </Col>
             {/* Cotización (monto + moneda): opcional al crear; obligatorio al cerrar. Todos los tipos. */}
             <Col xs={12} md={5}>
-              <Form.Item name="monto_cotizacion" label="Monto cotización">
+              <Form.Item name="monto_cotizacion" label="Monto cotización total">
                 <InputNumber style={{ width: "100%" }} min={0} placeholder="0.00" />
               </Form.Item>
             </Col>
@@ -864,7 +859,6 @@ export default function NuevaOTPage() {
                     <DatePicker
                       style={{ width: "100%" }}
                       format="DD/MM/YYYY"
-                      onChange={() => calcularDiasRequerimiento()}
                       disabledDate={(current) => {
                         const recepcion = form.getFieldValue("fecha_recepcion");
                         return !!(recepcion && current && current.isBefore(dayjs(recepcion), "day"));
