@@ -41,7 +41,6 @@ export const AREAS_TALLER: AreaTallerOpt[] = [
   { value: "1.4.1", label: "EVALUACIÓN", parent: "1.4" },
   { value: "1.4.2", label: "BRUÑIDO",    parent: "1.4" },
   { value: "1.4.3", label: "SOLDADURA",  parent: "1.4" },
-  { value: "1.4.4", label: "MAQUINADO",  parent: "1.4" },
   { value: "1.4.5", label: "PINTURA",    parent: "1.4" },
   { value: "1.4.6", label: "CROMADO",    parent: "1.4" },
 

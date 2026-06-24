@@ -1139,6 +1139,15 @@ export default function OrdenesTrabajoInternasPage() {
                         ? "Elegí estrategia del equipo (o una genérica)"
                         : "Elegí una estrategia"}
                       optionFilterProp="label"
+                      onChange={(value) => {
+                        if (value == null) return;
+                        const est = estrategias.find((e) => e.estrategia_id === value);
+                        if (!est) return;
+                        form.setFieldValue(
+                          "descripcion",
+                          `${est.codigo} — ${est.descripcion} - ${dayjs().format("HH:mm")}`,
+                        );
+                      }}
                       // AntD Select acepta o un array plano de {value,label}
                       // o un array de grupos {label, options:[]}. Para que
                       // TypeScript no se queje de la unión, casteamos a un
