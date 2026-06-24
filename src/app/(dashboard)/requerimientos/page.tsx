@@ -250,6 +250,10 @@ export default function RequerimientosPage() {
   // Usamos un tipo mínimo porque la interfaz `GrupoReq` está declarada
   // más abajo en este mismo componente — un tipo estructural sirve igual.
   const [vistaActual, setVistaActual] = useState<readonly { items: RequerimientoRow[] }[] | null>(null);
+  // Modo de visualización: agrupado por requerimiento (cada fila es un nro_req,
+  // se expande para ver items) o plano por item (cada fila es un OTRepuesto).
+  // Persistido en localStorage para que la elección sobreviva a refresh.
+  const [vistaModo, setVistaModo] = usePersistedState<"grupos" | "items">("requerimientos-vista-modo", "grupos");
   const { rango: rangoSol, setRango: setRangoSol } = useRangoFechasPersistente("req-list-rango-sol");
   const { rango: rangoReq, setRango: setRangoReq } = useRangoFechasPersistente("req-list-rango-req");
   const [semanaSel, setSemanaSel] = useState<dayjs.Dayjs | null>(null);
@@ -578,6 +582,9 @@ export default function RequerimientosPage() {
     fecha_solicitud: string | null;
     fecha_requerida: string | null;
     fecha_entrega_esperada: string | null;
+    // Fecha de aprobación del requerimiento: la más reciente entre los items
+    // del grupo (un grupo puede tener items aprobados en distintos momentos).
+    fecha_aprobacion: string | null;
     total_items: number;
     cantidad_total: number;
     // Total estimado del grupo = Σ (cantidad × material.precio).
@@ -639,6 +646,7 @@ export default function RequerimientosPage() {
       let fSol: string | null = null;
       let fReq: string | null = null;
       let fEnt: string | null = null;
+      let fAprob: string | null = null;
       for (const i of items) {
         // Fecha WO/Solicitud: la más LEJADA del grupo (último pedido emitido).
         fSol = latest(fSol, i.fecha_solicitud);
@@ -646,6 +654,8 @@ export default function RequerimientosPage() {
         fReq = earliest(fReq, i.fecha_requerida);
         // Fecha entrega esperada: la más cercana (la primera entrega prevista).
         fEnt = earliest(fEnt, i.fecha_entrega_esperada);
+        // Fecha aprobación: la más LEJADA del grupo (la última en aprobarse).
+        fAprob = latest(fAprob, i.fecha_aprobacion);
       }
       return {
         key,
@@ -657,6 +667,7 @@ export default function RequerimientosPage() {
         fecha_solicitud: fSol,
         fecha_requerida: fReq,
         fecha_entrega_esperada: fEnt,
+        fecha_aprobacion: fAprob,
         total_items: items.length,
         cantidad_total,
         total_estimado_usd,
@@ -712,6 +723,17 @@ export default function RequerimientosPage() {
   const itemsVisibles = useMemo(() => {
     const base: readonly { items: RequerimientoRow[] }[] = vistaActual ?? gruposFiltrados;
     return base.flatMap((g) => g.items);
+  }, [vistaActual, gruposFiltrados]);
+
+  // Conteo de RQ + items visibles. El KPI "Total" lo usa para reflejar lo que
+  // realmente se está viendo en la tabla — los stats del backend solo conocen
+  // los filtros server-side (búsqueda, status, fechas), no los filtros de
+  // columna in-table ni los rangos client-side. Sin esto, el user veía
+  // "Total: 87" mientras la tabla mostraba solo 2 filas filtradas.
+  const visiblesCount = useMemo(() => {
+    const base = vistaActual ?? gruposFiltrados;
+    const items = base.flatMap((g) => g.items);
+    return { rqs: base.length, items: items.length };
   }, [vistaActual, gruposFiltrados]);
 
   // Helper local: filtros únicos sobre una proyección arbitraria (rutas anidadas).
@@ -890,6 +912,20 @@ export default function RequerimientosPage() {
         - (b.fecha_solicitud ? new Date(b.fecha_solicitud).getTime() : 0),
       render: (_, g) => g.fecha_solicitud
         ? <Text style={{ fontSize: 11 }}>{formatDateOnlyShort(g.fecha_solicitud)}</Text>
+        : <Text type="secondary">—</Text>,
+    },
+    {
+      title: (
+        <Tooltip title="Fecha en que se aprobó el requerimiento (la más reciente del grupo)">
+          <span>F. Aprobación</span>
+        </Tooltip>
+      ),
+      key: "faprob", width: 110, align: "center",
+      ...filtroProyectado(gruposFiltrados, (g) => g.fecha_aprobacion ? formatDateOnlyShort(g.fecha_aprobacion) : null),
+      sorter: (a, b) => (a.fecha_aprobacion ? new Date(a.fecha_aprobacion).getTime() : 0)
+        - (b.fecha_aprobacion ? new Date(b.fecha_aprobacion).getTime() : 0),
+      render: (_, g) => g.fecha_aprobacion
+        ? <Text style={{ fontSize: 11 }}>{formatDateOnlyShort(g.fecha_aprobacion)}</Text>
         : <Text type="secondary">—</Text>,
     },
     {
@@ -1213,6 +1249,12 @@ export default function RequerimientosPage() {
       },
     },
     {
+      title: "F. Aprobación", key: "faprob", width: 110,
+      render: (_, r) => r.fecha_aprobacion
+        ? <Text style={{ fontSize: 11 }}>{formatDateOnlyShort(r.fecha_aprobacion)}</Text>
+        : <Text type="secondary">—</Text>,
+    },
+    {
       title: "F. Requerida", key: "freq", width: 100,
       render: (_, r) => r.fecha_requerida
         ? <Text style={{ fontSize: 11 }}>{formatDateOnlyShort(r.fecha_requerida)}</Text>
@@ -1316,109 +1358,6 @@ export default function RequerimientosPage() {
           />
         </Space>
       </div>
-
-      {/* KPIs visuales — resumen de requerimientos (global / item), varían con los filtros */}
-      <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
-        <Col xs={12} sm={8} md={4}>
-          <Card styles={{ body: { padding: 12 } }}>
-            <KpiRqItem
-              title="Total"
-              icon={<UnorderedListOutlined style={{ color: brand.navy }} />}
-              color={brand.navy}
-              rq={stats.rqActivos}
-              items={stats.itemsActivos}
-            />
-            <Text type="secondary" style={{ fontSize: 10, display: "block", marginTop: 4 }}>
-              Cant: <b>{stats.cantidadTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}</b>
-              {" · "}
-              Prom: <b>{stats.cantidadPromedio.toLocaleString(undefined, { maximumFractionDigits: 2 })}</b>
-            </Text>
-          </Card>
-        </Col>
-        <Col xs={12} sm={8} md={4}>
-          <Card styles={{ body: { padding: 12 } }}>
-            <KpiRqItem
-              title="Pend. aprobación"
-              icon={<ClockCircleOutlined style={{ color: "#faad14" }} />}
-              color="#faad14"
-              rq={stats.rqSinAprob}
-              items={stats.sinAprob}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={8} md={4}>
-          <Card styles={{ body: { padding: 12 } }}>
-            <KpiRqItem
-              title="Pend. generar PO"
-              icon={<FileAddOutlined style={{ color: "#1890ff" }} />}
-              color="#1890ff"
-              rq={stats.rqPorSolicitar}
-              items={stats.porSolicitar}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={8} md={4}>
-          <Card styles={{ body: { padding: 12 } }}>
-            <KpiRqItem
-              title="Por llegar"
-              icon={<TruckOutlined style={{ color: "#722ed1" }} />}
-              color="#722ed1"
-              rq={stats.rqPorLlegar}
-              items={stats.porLlegar}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={8} md={4}>
-          <Card styles={{ body: { padding: 12 } }}>
-            <div>
-              <div style={{ fontSize: 12, color: "rgba(0,0,0,0.65)", marginBottom: 4, display: "flex", alignItems: "center", gap: 4 }}>
-                <InboxOutlined style={{ color: brand.cyan }} /><span>OTs</span>
-              </div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: brand.cyan, lineHeight: 1.1 }}>
-                {stats.otsDistintas}
-              </div>
-              <div style={{ fontSize: 10, color: "rgba(0,0,0,0.45)", marginTop: 4, lineHeight: 1.4 }}>
-                RQ/OT: <b>{stats.rqPorOtProm.toLocaleString(undefined, { maximumFractionDigits: 2 })}</b><br />
-                Items/OT: <b>{stats.itemsPorOtProm.toLocaleString(undefined, { maximumFractionDigits: 2 })}</b>
-              </div>
-            </div>
-          </Card>
-        </Col>
-        <Col xs={12} sm={8} md={4}>
-          <Card styles={{ body: { padding: 12 } }}>
-            <div>
-              <div style={{ fontSize: 12, color: "rgba(0,0,0,0.65)", marginBottom: 4, display: "flex", alignItems: "center", gap: 4 }}>
-                <ClockCircleOutlined style={{ color: "#722ed1" }} /><span>Tiempos (días)</span>
-              </div>
-              <div style={{ fontSize: 11, lineHeight: 1.5 }}>
-                <div>
-                  <b style={{ fontSize: 16, color: "#722ed1" }}>
-                    {stats.tiempoAtencionProm.toLocaleString(undefined, { maximumFractionDigits: 1 })}
-                  </b>{" "}
-                  <span style={{ color: "rgba(0,0,0,0.45)" }}>atención prom.</span>
-                  <span style={{ color: "rgba(0,0,0,0.35)", fontSize: 10 }}> ({stats.tiempoAtencionMuestras})</span>
-                </div>
-                <div>
-                  <b style={{ fontSize: 16, color: brand.navy }}>
-                    {stats.tiempoAprobOcProm.toLocaleString(undefined, { maximumFractionDigits: 1 })}
-                  </b>{" "}
-                  <span style={{ color: "rgba(0,0,0,0.45)" }}>aprob.→OC</span>
-                  <span style={{ color: "rgba(0,0,0,0.35)", fontSize: 10 }}> ({stats.tiempoAprobOcMuestras})</span>
-                </div>
-              </div>
-            </div>
-          </Card>
-        </Col>
-        <Col xs={24} sm={16} md={8}>
-          <Card styles={{ body: { padding: 12 } }}>
-            <KpiPrecioGlobal
-              total={stats.precioPorMoneda}
-              catalogo={stats.precioCatalogoPorMoneda}
-              real={stats.precioRealPorMoneda}
-            />
-          </Card>
-        </Col>
-      </Row>
 
       {/* Selector de vista por estado del requerimiento */}
       <Card size="small" style={{ marginBottom: 12 }} styles={{ body: { padding: 12 } }}>
@@ -1615,8 +1554,39 @@ export default function RequerimientosPage() {
         </Col>
       </Row>
 
+      {/* Toggle vista: agrupada por requerimiento vs plana por ítem. */}
+      <div style={{ marginBottom: 8, display: "flex", justifyContent: "flex-end" }}>
+        <Segmented
+          size="small"
+          value={vistaModo}
+          onChange={(v) => setVistaModo(v as "grupos" | "items")}
+          options={[
+            { value: "grupos", label: "Por requerimiento" },
+            { value: "items", label: "Por ítem" },
+          ]}
+        />
+      </div>
+
       {rows.length === 0 && !loading ? (
         <Empty description="No hay requerimientos con esos filtros." />
+      ) : vistaModo === "items" ? (
+        <Table<RequerimientoRow>
+          rowKey="id"
+          columns={itemColumns}
+          dataSource={itemsVisibles}
+          loading={loading}
+          size="small"
+          pagination={paginacionEstandar({
+            current: page,
+            pageSize,
+            total: itemsVisibles.length,
+            onChange: (p, s) => { setPage(p); setPageSize(s); },
+            label: "items",
+            placement: ["topEnd", "bottomEnd"],
+          })}
+          scroll={{ x: 1500 }}
+          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+        />
       ) : (
         <TableDragWrapper>
           <Table<GrupoReq>
