@@ -1796,7 +1796,7 @@ function RequerimientosAgrupados({
           : null;
         const fechaHeader = fechaMaxOC ?? first?.fecha_solicitud ?? null;
         const fechaHeaderTooltip = fechaMaxOC
-          ? "Fecha de llegada más lejana entre las OCs del requerimiento"
+          ? "Fecha de llegada del último requerimiento en llegar"
           : "Fecha de solicitud (aún no hay OCs vinculadas)";
         return (
           <Card

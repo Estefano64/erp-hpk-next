@@ -1846,6 +1846,20 @@ function RequerimientosAgrupados({
         const subtotalTexto = Object.entries(subtotalGrupo)
           .map(([m, t]) => `${m} ${t.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
           .join(" · ");
+        // Fecha del header: la más lejana de llegada de OC (fecha_entrega_esperada
+        // de las OCs vinculadas a los items del grupo). Sirve para saber cuándo
+        // llegará el requerimiento completo. Si ningún item tiene OC todavía,
+        // cae a fecha_solicitud del primer item.
+        const fechasOC = items
+          .map((i) => i.compra?.fecha_entrega_esperada)
+          .filter((d): d is string => !!d);
+        const fechaMaxOC = fechasOC.length > 0
+          ? fechasOC.reduce((a, b) => (a > b ? a : b))
+          : null;
+        const fechaHeader = fechaMaxOC ?? first?.fecha_solicitud ?? null;
+        const fechaHeaderTooltip = fechaMaxOC
+          ? "Fecha de llegada del último requerimiento en llegar"
+          : "Fecha de solicitud (aún no hay OCs vinculadas)";
         return (
           <Card
             key={nro}
@@ -1861,7 +1875,11 @@ function RequerimientosAgrupados({
                 <Text strong style={{ fontSize: 13 }}>{nro}</Text>
                 <Text type="secondary" style={{ fontSize: 12 }}>
                   {items.length} ítem{items.length !== 1 ? "s" : ""}
-                  {first?.fecha_solicitud ? ` · ${formatDateOnly(first.fecha_solicitud)}` : ""}
+                  {fechaHeader && (
+                    <Tooltip title={fechaHeaderTooltip}>
+                      <span style={{ marginLeft: 4 }}>· {formatDateOnly(fechaHeader)}</span>
+                    </Tooltip>
+                  )}
                 </Text>
                 {subtotalTexto && (
                   <Tooltip title="Subtotal del requerimiento (precio real + estimado catálogo)">
