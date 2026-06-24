@@ -59,7 +59,7 @@ function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
         { key: "/ordenes-trabajo", label: "OTs Externas" },
         { key: "/ordenes-trabajo-internas", label: "OTs Internas" },
         { key: "/evaluaciones", label: "Hojas de Evaluación" },
-        { key: "/codigos-reparacion", label: "Cod. Reparables" },
+        { key: "/codigos-reparacion", label: "Cod. Estratégicos" },
         { key: "/contratos", label: "Contratos" },
         {
           key: "ops-planificacion",

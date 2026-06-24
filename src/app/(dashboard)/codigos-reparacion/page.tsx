@@ -358,7 +358,7 @@ export default function CodigosReparacionPage() {
       {contextHolder}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
         <Title level={3} style={{ margin: 0 }}>
-          Códigos Reparables
+          Códigos Estratégicos
         </Title>
         <Space wrap>
           <ColumnasToggleButton<CodRep>
@@ -529,7 +529,7 @@ export default function CodigosReparacionPage() {
       </TableDragWrapper>
 
       <Modal
-        title={editing ? `Editar ${editing.codigo}` : "Nuevo Código Reparable"}
+        title={editing ? `Editar ${editing.codigo}` : "Nuevo Código Estratégico"}
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
         onOk={handleSave}

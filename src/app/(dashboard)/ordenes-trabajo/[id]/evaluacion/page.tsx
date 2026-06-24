@@ -656,7 +656,7 @@ export default function EvaluacionPage() {
             <div>{ot.cod_rep_posicion || "-"}</div>
           </Col>
           <Col xs={24} sm={12} md={8}>
-            <Text type="secondary" style={{ fontSize: 12 }}>Codigo Reparable</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>Código Estratégico</Text>
             <div>{ot.codigo_reparacion?.codigo || "-"}</div>
           </Col>
           <Col xs={24} sm={12} md={8}>

@@ -955,7 +955,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                   >Sí</Checkbox>
                 </Col>
                 <Col xs={24} md={12}>
-                  <FieldLabel>Código Reparable</FieldLabel>
+                  <FieldLabel>Código Estratégico</FieldLabel>
                   <Select
                     showSearch optionFilterProp="label" style={{ width: "100%" }}
                     disabled={bloqueoServicio || !editData.estrategia}

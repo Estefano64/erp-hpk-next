@@ -35,7 +35,7 @@ const AUDITED_FIELDS: AuditField[] = [
   { key: "fecha_recepcion", label: "Fecha Recepción", op: "EDICION", isDate: true },
   // Identificación
   { key: "id_cliente", label: "Cliente", op: "EDICION" },
-  { key: "id_cod_rep", label: "Código Reparable", op: "EDICION" },
+  { key: "id_cod_rep", label: "Código Estratégico", op: "EDICION" },
   { key: "equipo_codigo", label: "Equipo", op: "EDICION" },
   { key: "descripcion", label: "Descripción", op: "EDICION" },
   // Atención / Reparación / Garantía
