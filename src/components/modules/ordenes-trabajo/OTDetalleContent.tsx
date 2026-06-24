@@ -239,8 +239,8 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   const otStatusesRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=otStatus");
   const recursosStatusesRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=recursosStatus");
   const tallerStatusesRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=tallerStatus");
-  const clientesRes = useCachedFetch<Wrapped<ClienteOption>>("/api/clientes?limit=100");
-  const codRepsRes = useCachedFetch<Wrapped<CodRepOption>>("/api/codigos-reparacion?limit=500");
+  const clientesRes = useCachedFetch<Wrapped<ClienteOption>>("/api/clientes?limit=10000");
+  const codRepsRes = useCachedFetch<Wrapped<CodRepOption>>("/api/codigos-reparacion?limit=10000");
   const tipoReparacionesRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=tipoReparacion");
   const atencionReparacionesRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=atencionReparacion");
   const prioridadesRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=prioridadAtencion");
@@ -252,7 +252,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   const posicionesRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=posicion");
   // Proveedores para el Select de "Vendor Externo" — reusa la tabla proveedor
   // existente (decisión del user, evita crear nuevo catálogo).
-  const proveedoresRes = useCachedFetch<Wrapped<{ id: number; razon_social: string; nombre_comercial: string | null }>>("/api/proveedores?limit=500");
+  const proveedoresRes = useCachedFetch<Wrapped<{ id: number; razon_social: string; nombre_comercial: string | null }>>("/api/proveedores?limit=10000");
 
   const otStatuses = otStatusesRes?.data ?? [];
   const recursosStatuses = recursosStatusesRes?.data ?? [];
@@ -913,15 +913,15 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
               <Row gutter={[16, 4]}>
                 <Col xs={12} md={6}><Field label="Flota" value={ot.cod_rep_flota} /></Col>
                 <Col xs={12} md={6}><Field label="Posición" value={ot.cod_rep_posicion} /></Col>
-                <Col xs={12} md={6}><Field label="Equipo" value={ot.equipo_codigo} /></Col>
-                <Col xs={12} md={6}><Field label="N/S" value={ot.ns} /></Col>
+                {!esBien && <Col xs={12} md={6}><Field label="Equipo" value={ot.equipo_codigo} /></Col>}
+                {!esBien && <Col xs={12} md={6}><Field label="N/S" value={ot.ns} /></Col>}
               </Row>
               {/* Plaqueteo al lado de N/S — antes vivía en "Documentos y
                   Logística"; el user pidió pegarlo a N/S porque son del cilindro
                   físico. También sumamos "Característica" (ESTANDAR / NO_ESTANDAR)
                   acá porque es info del componente, no de logística. */}
               <Row gutter={[16, 4]}>
-                <Col xs={12} md={6}><Field label="Plaqueteo" value={ot.plaqueteo} /></Col>
+                {!esBien && <Col xs={12} md={6}><Field label="Plaqueteo" value={ot.plaqueteo} /></Col>}
                 <Col xs={12} md={6}>
                   <Field
                     label="Característica Cilindro"
@@ -1034,20 +1034,23 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                   />
                 </Col>
               </Row>
-              <Row gutter={[16, 12]} style={{ marginTop: 8 }}>
-                <Col xs={12} md={6}>
-                  <FieldLabel>Equipo</FieldLabel>
-                  <Input value={(editData.equipo_codigo as string) ?? ""} onChange={(e) => setField("equipo_codigo", e.target.value)} />
-                </Col>
-                <Col xs={12} md={6}>
-                  <FieldLabel>N/S</FieldLabel>
-                  <Input value={(editData.ns as string) ?? ""} onChange={(e) => setField("ns", e.target.value)} />
-                </Col>
-                <Col xs={12} md={6}>
-                  <FieldLabel>Plaqueteo</FieldLabel>
-                  <Input value={(editData.plaqueteo as string) ?? ""} onChange={(e) => setField("plaqueteo", e.target.value)} />
-                </Col>
-              </Row>
+              {/* Equipo / N/S / Plaqueteo: REP y SER; ocultos en Bien. */}
+              {!esBien && (
+                <Row gutter={[16, 12]} style={{ marginTop: 8 }}>
+                  <Col xs={12} md={6}>
+                    <FieldLabel>Equipo</FieldLabel>
+                    <Input value={(editData.equipo_codigo as string) ?? ""} onChange={(e) => setField("equipo_codigo", e.target.value)} />
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <FieldLabel>N/S</FieldLabel>
+                    <Input value={(editData.ns as string) ?? ""} onChange={(e) => setField("ns", e.target.value)} />
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <FieldLabel>Plaqueteo</FieldLabel>
+                    <Input value={(editData.plaqueteo as string) ?? ""} onChange={(e) => setField("plaqueteo", e.target.value)} />
+                  </Col>
+                </Row>
+              )}
             </>
           )}
         </Card>
@@ -1062,9 +1065,9 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
           {!editing ? (
             <>
               <Row gutter={[16, 4]}>
-                {!bloqueoBien && <Col xs={12} md={6}><Field label="WO Cliente" value={ot.wo_cliente} /></Col>}
+                {!esBien && <Col xs={12} md={6}><Field label="WO Cliente" value={ot.wo_cliente} /></Col>}
                 <Col xs={12} md={6}><Field label="PO Cliente" value={ot.po_cliente} /></Col>
-                {!bloqueoBien && <Col xs={12} md={6}><Field label="PO Item" value={ot.po_item} /></Col>}
+                <Col xs={12} md={6}><Field label="PO Item" value={ot.po_item} /></Col>
                 {esBien && <Col xs={12} md={6}><Field label="Lugar de entrega" value={ot.lugar_entrega} /></Col>}
                 {!bloqueoBien && <Col xs={12} md={6}><Field label="ID Viajero" value={ot.id_viajero} /></Col>}
               </Row>
@@ -1109,7 +1112,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
               {/* Sincronizado con el form de creación por tipo: para Bien/Servicio
                   se ocultan WO/PO Item/Viajero/Guía/Empresa/Fecha Recepción. */}
               <Row gutter={[16, 12]}>
-                {!bloqueoBien && (
+                {!esBien && (
                   <Col xs={12} md={6}>
                     <FieldLabel>WO Cliente</FieldLabel>
                     <Input value={(editData.wo_cliente as string) ?? ""} onChange={(e) => setField("wo_cliente", e.target.value)} />
@@ -1119,12 +1122,11 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                   <FieldLabel>PO Cliente</FieldLabel>
                   <Input value={(editData.po_cliente as string) ?? ""} onChange={(e) => setField("po_cliente", e.target.value)} />
                 </Col>
-                {!bloqueoBien && (
-                  <Col xs={12} md={6}>
-                    <FieldLabel>PO Item</FieldLabel>
-                    <Input value={(editData.po_item as string) ?? ""} onChange={(e) => setField("po_item", e.target.value)} />
-                  </Col>
-                )}
+                {/* PO Item: los 3 tipos. */}
+                <Col xs={12} md={6}>
+                  <FieldLabel>PO Item</FieldLabel>
+                  <Input value={(editData.po_item as string) ?? ""} onChange={(e) => setField("po_item", e.target.value)} />
+                </Col>
                 {/* Lugar de entrega: solo Bien. */}
                 {esBien && (
                   <Col xs={12} md={8}>
@@ -1254,7 +1256,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                 <FieldLabel>Atención Reparación</FieldLabel>
                 <Select showSearch optionFilterProp="label"
                   style={{ width: "100%" }}
-                  disabled={bloqueoBien}
+                  disabled={esServicio}
                   value={editData.atencion_reparacion_codigo as string}
                   onChange={(v) => setField("atencion_reparacion_codigo", v)}
                   options={atencionReparaciones.map((a) => ({ value: a.codigo, label: a.nombre }))}

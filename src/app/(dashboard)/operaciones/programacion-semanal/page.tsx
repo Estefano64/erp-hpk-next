@@ -135,16 +135,43 @@ function buildWeekDays(monday: Dayjs): Dayjs[] {
   return Array.from({ length: 5 }, (_, i) => monday.add(i, "day"));
 }
 
-function detectarConflictos(filas: PlanRow[]): Set<number> {
-  const conflictos = new Set<number>();
+interface ConflictoInfo { recurso: string; otras: string[]; }
+// Etiqueta corta de una tarea para el mensaje de conflicto.
+function etiquetaTarea(r: PlanRow): string {
+  return r.orden_trabajo?.ot ? `OT-${r.orden_trabajo.ot}` : (r.operacion_codigo || `#${r.id}`);
+}
+// Devuelve, por id de tarea en conflicto, el recurso compartido y con qué otra(s)
+// tarea(s) se solapa. Es un Map (compatible con .has/.size donde se usaba Set).
+//
+// SOLO participan tareas NO empezadas y no canceladas (abierto/programado): una
+// tarea iniciada/pausada/realizada ya es "historia" (su tiempo real se trackea
+// aparte) y una cancelada no ocupa nada → no deben generar conflicto en el plan.
+// Antes se contaban TODAS, así que una tarea nueva chocaba contra slots de
+// tareas ya realizadas o en pausa (falsos conflictos).
+function detectarConflictos(filas: PlanRow[]): Map<number, ConflictoInfo> {
+  const conflictos = new Map<number, ConflictoInfo>();
   const byResource = new Map<string, PlanRow[]>();
   for (const r of filas) {
     if (!r.fecha_inicio || !r.fecha_fin) continue;
-    const key = `${r.tecnico ?? ""}|${r.maquina ?? ""}`;
+    if (["en_proceso", "pausado", "realizado", "cancelado"].includes(r.estado ?? "")) continue;
+    const tec = (r.tecnico ?? "").trim();
+    const maq = (r.maquina ?? "").trim();
+    // Sin recurso asignado (ni operario ni equipo) no hay nada con qué chocar.
+    if (!tec && !maq) continue;
+    const key = `${tec}|${maq}`;
     if (!byResource.has(key)) byResource.set(key, []);
     byResource.get(key)!.push(r);
   }
-  for (const arr of byResource.values()) {
+  const reg = (r: PlanRow, recurso: string, otra: PlanRow) => {
+    const info = conflictos.get(r.id) ?? { recurso, otras: [] };
+    const et = etiquetaTarea(otra);
+    if (!info.otras.includes(et)) info.otras.push(et);
+    conflictos.set(r.id, info);
+  };
+  for (const [key, arr] of byResource) {
+    const sep = key.indexOf("|");
+    const tec = key.slice(0, sep), maq = key.slice(sep + 1);
+    const recurso = tec && maq ? `${tec} / ${maq}` : (tec || maq);
     const sorted = arr.sort((a, b) => new Date(a.fecha_inicio!).getTime() - new Date(b.fecha_inicio!).getTime());
     for (let i = 0; i < sorted.length; i++) {
       const a = sorted[i];
@@ -156,8 +183,8 @@ function detectarConflictos(filas: PlanRow[]): Set<number> {
         if (bIni >= aFin) break;
         const bFin = new Date(b.fecha_fin!).getTime();
         if (bIni < aFin && bFin > aIni) {
-          conflictos.add(a.id);
-          conflictos.add(b.id);
+          reg(a, recurso, b);
+          reg(b, recurso, a);
         }
       }
     }
@@ -272,12 +299,17 @@ export default function ProgramacionSemanalPage() {
     blockWidth: number;
     // Para multi-select: deltas en minutos del taskId base hacia las otras tareas seleccionadas
     multiOffsets: { id: number; offsetMin: number; recurso: string | null }[];
+    // true cuando se arrastra una tarea de la semana sobre la zona de pools
+    // (para sacarla de la semana). Solo aplica si NO viene del pool.
+    sobrePool?: boolean;
   } | null>(null);
   const [messageApi, contextHolder] = message.useMessage();
   const { screens } = useResponsive();
   const isMobile = !screens.md;
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const stripsRef = useRef<Map<string, HTMLElement>>(new Map());
+  // Zona de pools (pendientes): drop target para SACAR una tarea de la semana.
+  const poolDropRef = useRef<HTMLDivElement | null>(null);
 
   const dayPx = HORAS_DIA * hourPx;
 
@@ -330,8 +362,8 @@ export default function ProgramacionSemanalPage() {
   useEffect(() => {
     (async () => {
       const [resT, resE, resS] = await Promise.all([
-        fetch("/api/trabajadores?limit=200&soloOperarios=1"),
-        fetch("/api/equipos?limit=200&tipo=MAQ"),
+        fetch("/api/trabajadores?limit=10000&soloOperarios=1"),
+        fetch("/api/equipos?limit=10000&tipo=MAQ"),
         fetch("/api/catalogos?tabla=statusTarea"),
       ]);
       if (resT.ok) setTrabajadores((await resT.json()).data ?? []);
@@ -797,26 +829,17 @@ export default function ProgramacionSemanalPage() {
     const finCalc = inicio ? calcularFin(inicio, horasPorPersona * qty, !!original.horas_extras) : null;
 
     // Si la nueva duración pisa a la(s) siguiente(s) del recurso, empujamos la
-    // cola (cascada en el server). Solo bloqueamos si la que choca ya fue
-    // iniciada/realizada por el técnico (su horario es ejecución real y no se mueve).
+    // cola (cascada en el server). Si la que choca ya fue iniciada/realizada, el
+    // server NO la mueve (cascadeReprogramar excluye realizado/iniciadas: su
+    // horario es ejecución real) y queda un solape visible — mismo criterio que
+    // el drag (persistMove): los solapes se dejan a propósito.
     // Excepción: una EMERGENCIA (correctiva) cae encima a propósito (el server
     // corre cascadeEmergencia al reprogramar), así que no chequeamos choque acá.
     let empujar = false;
     if (inicio && finCalc && !original.es_correctivo) {
       const recurso = view === "equipo" ? original.maquina : original.tecnico;
       const choque = tareaSuperpuesta(id, inicio.getTime(), finCalc.getTime(), recurso);
-      if (choque) {
-        if (haEmpezado(choque.task.estado)) {
-          const t = choque.task;
-          const cliente = t.orden_trabajo?.cliente?.nombre_comercial
-            ?? t.orden_trabajo?.cliente?.razon_social
-            ?? `OT ${t.orden_trabajo?.ot ?? "#?"}`;
-          const prefijoOculta = choque.oculta ? "[Tarea no visible en esta semana/filtro] " : "";
-          messageApi.error(`${prefijoOculta}No se puede agrandar: la siguiente (${cliente} — ${t.descripcion ?? t.operacion_codigo}) ya fue iniciada/realizada por el técnico.`);
-          return;
-        }
-        empujar = true;
-      }
+      if (choque) empujar = true;
     }
 
     beginSave();
@@ -926,20 +949,25 @@ export default function ProgramacionSemanalPage() {
   }
 
   // ── Enviar la SEMANA COMPLETA (todos los operarios de una) ──
-  // Congela la foto del plan (semana planificada) de todas las tareas AGENDADAS
-  // de la semana mostrada que sigan en borrador. Las del pool (sin fecha) quedan
-  // en borrador, igual que en el envío por operario. La foto solo se escribe la
-  // primera vez por tarea: re-enviar después de reabrir NO la pisa.
+  // Publica y congela la foto SOLO de las tareas AGENDADAS que todavía no fueron
+  // enviadas, a su posición actual. Lo ya enviado NO se toca: queda congelado en
+  // la Semana planificada aunque después se mueva (eso vive en la Semana real,
+  // marcado con ↷). Para reescribir la foto de lo ya enviado, a propósito, está
+  // "Re-enviar". Las del pool (sin fecha) quedan en borrador.
   async function enviarSemanaCompleta() {
     if (!editMode) {
       messageApi.warning("Activá Modo Edición para enviar la semana.");
       return;
     }
-    const ids = allRows
-      .filter((r) => perteneceASemana(r) && !!r.fecha_inicio && splitTecnicos(r.tecnico).length > 0 && !r.publicado)
-      .map((r) => r.id);
-    if (ids.length === 0) {
-      messageApi.info("No hay tareas agendadas pendientes de enviar en esta semana.");
+    const agendadas = allRows.filter((r) => perteneceASemana(r) && !!r.fecha_inicio && splitTecnicos(r.tecnico).length > 0);
+    // Solo se ENVÍA lo que aún no fue enviado. Lo ya enviado queda CONGELADO en
+    // la foto (Semana planificada) aunque después lo muevas; para reescribir esa
+    // foto a propósito está "Re-enviar". Cada tarea publicada se fotografía a su
+    // posición ACTUAL (rebasarIds = idsPublicar): así una reabierta-y-movida toma
+    // su nueva ubicación, pero NUNCA se pisa la foto de otra que ya estaba enviada.
+    const idsPublicar = agendadas.filter((r) => !r.publicado).map((r) => r.id);
+    if (idsPublicar.length === 0) {
+      messageApi.info("No hay tareas sin enviar en esta semana.");
       return;
     }
     beginSave();
@@ -947,11 +975,11 @@ export default function ProgramacionSemanalPage() {
       const res = await fetch("/api/planificacion/publicar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ semana: semanaActual, publicado: true, ids }),
+        body: JSON.stringify({ semana: semanaActual, publicado: true, ids: idsPublicar, rebasarIds: idsPublicar }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Error");
       endSave();
-      messageApi.success(`Semana ${semanaActual} enviada: ${ids.length} tarea(s). La foto del plan quedó congelada.`);
+      messageApi.success(`Semana ${semanaActual} enviada: ${idsPublicar.length} tarea(s). La foto del plan quedó congelada.`);
       notifySync();
       fetchData();
     } catch (e) {
@@ -1080,26 +1108,18 @@ export default function ProgramacionSemanalPage() {
     const qty = Math.max(1, Number(selectedTask.qty_personal ?? 1));
     const inicio = selectedTask.fecha_inicio ? new Date(selectedTask.fecha_inicio) : null;
     const finCalc = inicio ? calcularFin(inicio, horasPorPersona * qty, !!selectedTask.horas_extras) : null;
-    // Si al agrandar la tarea pisa a la(s) siguiente(s) del recurso, en vez de
-    // bloquear empujamos la cola (igual que el drag: persistMove). El server
-    // reacomoda las tareas del mismo operario; solo frena si choca con una
-    // máquina ocupada por OTRO operario (recurso compartido que no se mueve).
+    // Si al agrandar la tarea pisa a la(s) siguiente(s) del recurso, empujamos la
+    // cola (igual que el drag: persistMove). El server reacomoda las tareas del
+    // mismo operario; las ya iniciadas/realizadas NO las mueve (cascadeReprogramar
+    // las excluye: su horario es ejecución real) y simplemente queda un solape
+    // visible — los solapes se dejan a propósito.
     // Excepción: una EMERGENCIA (correctiva) cae encima a propósito; el server
     // corre cascadeEmergencia al reprogramar, así que no chequeamos choque acá.
     let empujar = false;
     if (inicio && finCalc && !selectedTask.es_correctivo) {
       const recurso = view === "equipo" ? selectedTask.maquina : selectedTask.tecnico;
       const choque = tareaSuperpuesta(selectedTask.id, inicio.getTime(), finCalc.getTime(), recurso);
-      if (choque) {
-        // Si la siguiente ya fue iniciada/pausada/realizada por el técnico, su
-        // horario es ejecución real y la cascada NO la mueve: bloqueamos.
-        if (haEmpezado(choque.task.estado)) {
-          messageApi.error(`No se puede agrandar: la siguiente tarea (${choque.task.descripcion ?? choque.task.operacion_codigo}) ya fue iniciada/realizada por el técnico.`);
-          setDurModal(selectedTask.horas_estimadas != null ? Number(selectedTask.horas_estimadas) : null);
-          return;
-        }
-        empujar = true;
-      }
+      if (choque) empujar = true;
     }
     guardarCampoDetalle(
       {
@@ -1363,6 +1383,14 @@ export default function ProgramacionSemanalPage() {
     return { row: foundRow, date: null };
   }, [lunes, hourPx]);
 
+  // ¿El cursor está sobre la zona de pools? (para sacar una tarea de la semana)
+  function estaSobrePool(x: number, y: number): boolean {
+    const el = poolDropRef.current;
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  }
+
   // Antes el drag marcaba en rojo (conflicto) cuando se soltaba sobre otra tarea
   // del mismo operario. Ahora ese caso NO bloquea: al soltar se empuja a las
   // siguientes (ver persistMove → empujar). Los choques de MÁQUINA (recurso
@@ -1380,7 +1408,10 @@ export default function ProgramacionSemanalPage() {
 
     function onMove(ev: MouseEvent) {
       const target = getDropTarget(ev.clientX, ev.clientY, drag!.grabOffsetX);
-      setDrag((d) => d ? { ...d, cursorX: ev.clientX, cursorY: ev.clientY, snappedDate: target.date, targetRow: target.row } : d);
+      // Si la tarea viene de la semana (no del pool) y se arrastra sobre la zona
+      // de pendientes (fuera de cualquier carril), se prepara para SACARLA.
+      const sobrePool = !drag!.fromPool && !target.row && estaSobrePool(ev.clientX, ev.clientY);
+      setDrag((d) => d ? { ...d, cursorX: ev.clientX, cursorY: ev.clientY, snappedDate: target.date, targetRow: target.row, sobrePool } : d);
 
       // Auto-scroll: si el cursor está cerca del borde derecho/izquierdo del wrap, scroll
       const wrap = timelineRef.current;
@@ -1405,6 +1436,12 @@ export default function ProgramacionSemanalPage() {
         } else {
           persistMove(drag!.taskId, drag!.snappedDate, drag!.targetRow);
         }
+      } else if (!drag!.fromPool && estaSobrePool(drag!.cursorX, drag!.cursorY)) {
+        // Soltó una tarea de la semana sobre los pendientes → sacarla de la
+        // semana (libera fecha + semana, vuelve al pool). startDrag ya impide
+        // arrastrar tareas iniciadas o enviadas, así que acá solo llegan las
+        // programadas/abiertas en borrador.
+        persistRemoveFromWeek(drag!.taskId);
       }
       setDrag(null);
     }
@@ -1932,6 +1969,13 @@ export default function ProgramacionSemanalPage() {
                 El envío congela la foto del plan = semana planificada. */}
             {view === "operario" && vistaTiempo === "plan" && (() => {
               const agendadas = allRows.filter((r) => perteneceASemana(r) && !!r.fecha_inicio && splitTecnicos(r.tecnico).length > 0);
+              // "Pendiente de enviar" = nunca enviada O ya enviada pero movida
+              // después (foto desfasada) y aún no empezada → "Enviar semana" la
+              // re-fotografía. Las iniciadas/realizadas no cuentan (foto fija).
+              // Pendiente de enviar = solo lo NO publicado. Lo ya enviado queda
+              // congelado (mover no lo vuelve a marcar como pendiente; para
+              // reescribir la foto a propósito está "Re-enviar"). Coincide con el
+              // indicador por operario, que también mira solo `publicado`.
               const pendientes = agendadas.filter((r) => !r.publicado);
               if (agendadas.length === 0) return null;
               const estadoEnvio = pendientes.length === 0 ? "enviada" : pendientes.length < agendadas.length ? "parcial" : "borrador";
@@ -1955,8 +1999,9 @@ export default function ProgramacionSemanalPage() {
                           Las del pool (sin fecha) quedan en borrador. Después de enviar, los cambios de la semana cuentan como semana real.
                           {estadoEnvio === "parcial" && (
                             <div style={{ marginTop: 6 }}>
-                              Las tareas que ya tienen foto NO se re-fotografían: esto solo congela las pendientes
-                              (sirve como <strong>publicar todo</strong> después de editar a varios operarios).
+                              Incluye las tareas que se movieron después de un envío anterior: se les
+                              <strong> refresca la foto</strong> al plan actual. Las ya iniciadas/realizadas
+                              conservan su foto original.
                             </div>
                           )}
                         </div>
@@ -2498,7 +2543,18 @@ export default function ProgramacionSemanalPage() {
 
       {/* Pools de pendientes: ocultos en la vista Enviado (es una foto congelada,
           no hay nada que programar sobre ella). */}
-      {!enviadoMode && (<>
+      {!enviadoMode && (
+      <div
+        ref={poolDropRef}
+        className={`psg-pooldrop${drag && !drag.fromPool ? " activo" : ""}${drag?.sobrePool ? " sobre" : ""}`}
+      >
+      {/* Al arrastrar una tarea de la semana, esta zona resalta como destino
+          para sacarla (volver al pool). */}
+      {drag && !drag.fromPool && (
+        <div className="psg-pooldrop-hint">
+          Soltá aquí para sacar la tarea de la semana
+        </div>
+      )}
       {/* Buscador del pool de pendientes (parte / cilindro / OT / descripción). */}
       <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <Input
@@ -2584,7 +2640,7 @@ export default function ProgramacionSemanalPage() {
           {sinSemanaMostrar.map((t) => renderPoolCard(t, false))}
         </div>
       )}
-      </>)}
+      </div>)}
 
       {/* Ghost del drag (sigue al cursor) */}
       {drag && (
@@ -2849,7 +2905,9 @@ export default function ProgramacionSemanalPage() {
             </Descriptions.Item>
             {conflictos.has(selectedTask.id) && (
               <Descriptions.Item label="">
-                <Tag color="error">⚠ Conflicto con otra tarea del mismo recurso</Tag>
+                <Tag color="error">
+                  ⚠ Solape de {conflictos.get(selectedTask.id)!.recurso} con {conflictos.get(selectedTask.id)!.otras.join(", ")}
+                </Tag>
               </Descriptions.Item>
             )}
           </Descriptions>
@@ -3279,6 +3337,33 @@ export default function ProgramacionSemanalPage() {
           background: #FAFAFA;
           border: 1px solid ${brand.border};
           border-radius: 6px;
+        }
+        /* Zona de pools como destino de drop para SACAR tareas de la semana. */
+        .psg-pooldrop {
+          border-radius: 8px;
+          transition: outline-color .15s, background .15s;
+          outline: 2px dashed transparent;
+          outline-offset: 2px;
+        }
+        .psg-pooldrop.activo { outline-color: ${brand.cyan}; }
+        .psg-pooldrop.activo.sobre {
+          outline-style: solid;
+          background: rgba(34,211,238,0.08);
+        }
+        .psg-pooldrop-hint {
+          margin-top: 8px;
+          padding: 6px 10px;
+          border: 1px dashed ${brand.cyan};
+          border-radius: 6px;
+          background: rgba(34,211,238,0.06);
+          color: ${brand.navy};
+          font-size: 12px;
+          font-weight: 600;
+          text-align: center;
+        }
+        .psg-pooldrop.sobre .psg-pooldrop-hint {
+          background: ${brand.cyan};
+          color: ${brand.white};
         }
         .psg-pool-card {
           padding: 8px 10px;

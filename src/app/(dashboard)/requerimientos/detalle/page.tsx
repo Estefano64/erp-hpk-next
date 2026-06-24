@@ -442,7 +442,7 @@ function RequerimientosDetalleInner() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/requerimientos?limit=500");
+      const res = await fetch("/api/requerimientos?limit=10000");
       const json = await res.json();
       const raw = (json.data ?? []) as RequerimientoApi[];
       setAllData(raw.map(normalize));
@@ -476,7 +476,7 @@ function RequerimientosDetalleInner() {
   }, [filtroTipoOT]);
 
   useEffect(() => {
-    fetch("/api/proveedores?limit=500")
+    fetch("/api/proveedores?limit=10000")
       .then(async (pr) => {
         if (pr.ok) setProveedores((await pr.json()).data ?? []);
       })

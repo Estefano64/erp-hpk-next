@@ -15,7 +15,7 @@ import dayjs from "dayjs";
 import { formatDateOnly } from "@/lib/dates";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
-import { useCachedFetch } from "@/lib/useCachedFetch";
+import { useCachedFetch, invalidateCachePrefix } from "@/lib/useCachedFetch";
 import {
   useColumnasOcultas,
   ColumnasToggleButton,
@@ -315,11 +315,10 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
       if (!it.descripcion?.trim()) errors.push(`Item ${idx + 1}: descripción requerida`);
       if (!it.cantidad || it.cantidad <= 0) errors.push(`Item ${idx + 1}: cantidad debe ser > 0`);
       if (it.tipo_codigo === "MAC" && !it.material_codigo) errors.push(`Item ${idx + 1}: tipo MAC requiere material`);
-      // F. requerida es OBLIGATORIA — sin ella el flujo de aprobación no
-      // puede planificar entrega, así que rechazamos al guardar.
-      if (!it.fecha_requerida) {
-        errors.push(`Item ${idx + 1}: fecha requerida es obligatoria (sin ella no se puede enviar a aprobación)`);
-      } else if (fechaRecepcion && it.fecha_requerida.isBefore(fechaRecepcion, "day")) {
+      // F. requerida es OPCIONAL al CREAR. Se vuelve obligatoria al ENVIAR a
+      // aprobación (lo valida el endpoint /enviar). Si la cargan ahora, solo
+      // validamos que no sea anterior a la recepción de la OT.
+      if (it.fecha_requerida && fechaRecepcion && it.fecha_requerida.isBefore(fechaRecepcion, "day")) {
         errors.push(`Item ${idx + 1}: F. requerida no puede ser anterior a la recepción de la OT.`);
       }
     }
@@ -404,6 +403,12 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
           }
         } catch { /* falla silenciosa: no bloquear el flujo principal */ }
       }
+      // Si se registró algún servicio nuevo, invalidar el cache compartido del
+      // catálogo (useCachedFetch no refresca solo) para que aparezca en el
+      // próximo montaje del form sin necesidad de recargar la página.
+      if (serviciosNuevos.size > 0) {
+        invalidateCachePrefix("/api/catalogos?tabla=servicioReparacion");
+      }
       messageApi.success(
         (draftAppendToNroReq
           ? `Agregados ${j.creados} item(s) a ${j.nro_req}.`
@@ -436,7 +441,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
 
   // Catálogos cacheados
   type Wrapped<T> = { data: T[] } | null;
-  const matsRes = useCachedFetch<Wrapped<MaterialOpt>>("/api/materiales?limit=2000");
+  const matsRes = useCachedFetch<Wrapped<MaterialOpt>>("/api/materiales?limit=10000");
   const materiales = matsRes?.data ?? [];
   const fabsRes = useCachedFetch<Wrapped<{ codigo: string; nombre: string }>>("/api/catalogos?tabla=fabricante");
   const fabricantes = fabsRes?.data ?? [];
@@ -1333,7 +1338,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
                 },
               },
               {
-                title: <span>F. requerida <Text type="danger">*</Text></span>, key: "freq", width: 130,
+                title: <span>F. requerida</span>, key: "freq", width: 130,
                 render: (_: unknown, r: DraftItem) => (
                   <DatePicker
                     size="small" style={{ width: "100%" }}
@@ -1615,9 +1620,8 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
           <Form.Item
             name="fecha_requerida"
             label="Fecha requerida"
-            tooltip="Obligatoria para poder enviar el requerimiento a aprobación."
+            tooltip="Opcional al crear. Se vuelve obligatoria al enviar el requerimiento a aprobación."
             rules={[
-              { required: true, message: "Fecha requerida obligatoria" },
               () => ({
                 validator(_, value) {
                   if (!value || !otFechaRecepcion) return Promise.resolve();

@@ -105,9 +105,17 @@ export async function cascadeReprogramar(
       continue;
     }
     const inicioHabil = normalizarAInicioHabil(cursor);
-    // Sin cruzarDias (emergencia): lo que no entra en el día va al pool.
-    // Con cruzarDias (empujar): se sigue ubicando en el siguiente día hábil.
-    if (!opts.cruzarDias && !dayjs(inicioHabil).isSame(dia, "day")) {
+    // ¿La tarea reubicada se sale de la ventana permitida?
+    //  - Emergencia (sin cruzarDias): si no entra en el MISMO día → al pool.
+    //  - Empujar (cruzarDias): encadena entre días pero SOLO dentro de la misma
+    //    semana de la tarea soltada; lo que cruzaría a otra semana va al pool
+    //    "esta semana sin hora" en vez de saltar solo a la próxima semana
+    //    (decisión del usuario 2026-06-17). Antes encadenaba a las semanas
+    //    siguientes sin tope, pateando tareas (incluso chicas) a la próxima.
+    const fueraDeVentana = opts.cruzarDias
+      ? semanaCodigo(inicioHabil) !== semanaCodigo(S)
+      : !dayjs(inicioHabil).isSame(dia, "day");
+    if (fueraDeVentana) {
       // Al pool: además de las fechas se resetea el estado (programado → abierto)
       // y el flag publicado (sin agenda no hay plan congelado). Conserva su
       // semana_plan: queda en la bandeja "esta semana sin hora" para reubicarla.

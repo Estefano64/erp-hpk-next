@@ -249,9 +249,9 @@ export default function OrdenesTrabajoInternasPage() {
         fetch("/api/catalogos?tabla=estrategia"),
         // No usamos soloOperarios=1 acá: necesitamos incluir JEFE DE LOGISTICA
         // y COMPRAS (que sí pueden ser asignados de OTs internas).
-        fetch("/api/trabajadores?limit=200"),
+        fetch("/api/trabajadores?limit=10000"),
         // Catálogo de Task Lists del taller (291 entradas importadas del Excel).
-        fetch("/api/mantenimiento/task-lists?limit=2000"),
+        fetch("/api/mantenimiento/task-lists?limit=10000"),
       ]);
       if (tRes.ok) setTiposOTInterna((await tRes.json()).data ?? []);
       // NOTA: los equipos se cargan dinámicamente según el área del taller
@@ -275,7 +275,7 @@ export default function OrdenesTrabajoInternasPage() {
     const ctrl = new AbortController();
     (async () => {
       try {
-        const res = await fetch(`/api/equipos?limit=500&tipo=${tipoEquipoForm}`, {
+        const res = await fetch(`/api/equipos?limit=10000&tipo=${tipoEquipoForm}`, {
           signal: ctrl.signal,
         });
         if (res.ok) setEquipos((await res.json()).data ?? []);

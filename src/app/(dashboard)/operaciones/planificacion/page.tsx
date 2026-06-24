@@ -304,7 +304,11 @@ export default function PlanificacionPage() {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams({ limit: "500" });
+    // La lista ordena por ot_id desc en el server: con un límite chico las OTs de
+    // ot_id bajo caían fuera del corte y sus tareas desaparecían (p.ej. OT 383926
+    // con >700 tareas abiertas en total). 10000 = tope de la API. Mismo criterio
+    // que Programación Semanal.
+    const params = new URLSearchParams({ limit: "10000" });
     if (search) params.set("search", search);
     if (filterSemana) params.set("semana", filterSemana);
     if (filterEstado) params.set("estado", filterEstado);
@@ -372,10 +376,10 @@ export default function PlanificacionPage() {
     (async () => {
       const anioActual = new Date().getFullYear() % 100; // ej. 26 → solo OTs del año
       const [resT, resE, resS, resO, resC, resOp] = await Promise.all([
-        fetch("/api/trabajadores?limit=200&soloOperarios=1"),
-        fetch("/api/equipos?limit=200&tipo=MAQ"),
+        fetch("/api/trabajadores?limit=10000&soloOperarios=1"),
+        fetch("/api/equipos?limit=10000&tipo=MAQ"),
         fetch("/api/catalogos?tabla=statusTarea"),
-        fetch(`/api/ordenes-trabajo?limit=1000&anios=${anioActual}`),
+        fetch(`/api/ordenes-trabajo?limit=10000&anios=${anioActual}`),
         fetch("/api/catalogos?tabla=componente"),
         fetch("/api/catalogos?tabla=operacionReparacion"),
       ]);

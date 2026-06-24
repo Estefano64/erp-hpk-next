@@ -112,8 +112,8 @@ export default function ContratosPage() {
   useEffect(() => {
     async function loadOptions() {
       const [cliRes, crRes] = await Promise.all([
-        fetch("/api/clientes?limit=100"),
-        fetch("/api/codigos-reparacion?limit=200"),
+        fetch("/api/clientes?limit=10000"),
+        fetch("/api/codigos-reparacion?limit=10000"),
       ]);
       if (cliRes.ok) {
         const json = await cliRes.json();

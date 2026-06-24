@@ -361,14 +361,18 @@ export async function POST(req: NextRequest) {
           id_fabricante: idFabricante,
           cod_rep_flota: codRepFlota,
           cod_rep_posicion: codRepPosicion,
-          equipo_codigo: body.equipo_codigo || null,
-          material_codigo: body.material_codigo || null,
-          ns: body.ns || null,
-          // Plaqueteo / WO / PO Item / ID Viajero / Guía / Empresa: solo REP.
-          plaqueteo: esBienOServicio ? null : (body.plaqueteo || null),
-          wo_cliente: esBienOServicio ? null : (body.wo_cliente || null),
+          // Equipo / N/S: REP y SER (null solo en BIE). Código de Material:
+          // solo Reparación (null en BIE y SER).
+          equipo_codigo: esBien ? null : (body.equipo_codigo || null),
+          material_codigo: esBienOServicio ? null : (body.material_codigo || null),
+          ns: esBien ? null : (body.ns || null),
+          // Plaqueteo / WO Cliente: REP y SER (null solo en BIE).
+          plaqueteo: esBien ? null : (body.plaqueteo || null),
+          wo_cliente: esBien ? null : (body.wo_cliente || null),
           po_cliente: body.po_cliente || null,
-          po_item: esBienOServicio ? null : (body.po_item || null),
+          // PO Item: los 3 tipos.
+          po_item: body.po_item || null,
+          // ID Viajero / Guía / Empresa / Fecha Recep. / PCR / Horas: solo REP.
           id_viajero: esBienOServicio ? null : (body.id_viajero || null),
           guia_remision: esBienOServicio ? null : (body.guia_remision || null),
           empresa_entrega: esBienOServicio ? null : (body.empresa_entrega || null),
@@ -378,19 +382,20 @@ export async function POST(req: NextRequest) {
           pcr: esBienOServicio ? null : (body.pcr ?? null),
           horas: esBienOServicio ? null : (body.horas ?? null),
           porcentaje_pcr: esBienOServicio ? null : porcentajePcr,
-          garantia_codigo: esBienOServicio ? null : (body.garantia_codigo || null),
+          // Garantía / Tipo Garantía: los 3 tipos (REP, BIE, SER).
+          garantia_codigo: body.garantia_codigo || null,
           // Atención Reparación: REP + BIE; nulo solo en SER.
           atencion_reparacion_codigo: esServicio ? null : (body.atencion_reparacion_codigo || null),
           tipo_reparacion_codigo: esBienOServicio ? null : (body.tipo_reparacion_codigo || null),
-          tipo_garantia_codigo: esBienOServicio ? null : tipoGarantiaCodigo,
+          tipo_garantia_codigo: tipoGarantiaCodigo,
           prioridad_atencion_codigo: body.prioridad_atencion_codigo || null,
           contrato_dias: esBienOServicio ? null : contratoDias,
           base_metalica_codigo: esBienOServicio ? null : (body.base_metalica_codigo || null),
           comentarios: body.comentarios || null,
           monto_cotizacion: body.monto_cotizacion != null && body.monto_cotizacion !== "" ? body.monto_cotizacion : null,
           moneda_cotizacion_codigo: body.moneda_cotizacion_codigo || null,
-          // Fecha Requerimiento Cliente: REP + BIE; null solo en SER.
-          fecha_requerimiento_cliente: esServicio ? null : fechaRequerimiento,
+          // Fecha Requerimiento Cliente: los 3 tipos.
+          fecha_requerimiento_cliente: fechaRequerimiento,
           ot_status_codigo: "Abierta",
           recursos_status_codigo: "En revision procesos",
           taller_status_codigo: "Pdt Evaluación",

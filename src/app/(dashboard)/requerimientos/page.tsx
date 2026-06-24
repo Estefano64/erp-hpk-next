@@ -321,9 +321,9 @@ export default function RequerimientosPage() {
   const srRes = useCachedFetch<Wrapped<CatalogOpt>>("/api/catalogos?tabla=statusRequerimiento");
   const scRes = useCachedFetch<Wrapped<CatalogOpt>>("/api/catalogos?tabla=statusCotizacion");
   const soRes = useCachedFetch<Wrapped<CatalogOpt>>("/api/catalogos?tabla=statusOc");
-  const provRes = useCachedFetch<Wrapped<ProveedorOpt>>("/api/proveedores?limit=500");
+  const provRes = useCachedFetch<Wrapped<ProveedorOpt>>("/api/proveedores?limit=10000");
   const ubicRes = useCachedFetch<Wrapped<UbicacionOpt>>("/api/catalogos?tabla=ubicacion");
-  const matsRes = useCachedFetch<Wrapped<{ codigo: string; descripcion: string; fabricante_codigo: string | null; unidad_medida_codigo: string | null }>>("/api/materiales?limit=2000");
+  const matsRes = useCachedFetch<Wrapped<{ codigo: string; descripcion: string; fabricante_codigo: string | null; unidad_medida_codigo: string | null }>>("/api/materiales?limit=10000");
   const materiales = matsRes?.data ?? [];
   const fabsRes = useCachedFetch<Wrapped<{ codigo: string; nombre: string }>>("/api/catalogos?tabla=fabricante");
   const fabricantes = fabsRes?.data ?? [];
