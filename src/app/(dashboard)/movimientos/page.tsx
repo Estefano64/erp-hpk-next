@@ -842,25 +842,6 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
 
   return (
     <div>
-      {/* KPIs */}
-      <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
-        <Col xs={12} md={8}>
-          <Card styles={{ body: { padding: 12 } }}>
-            <Statistic title="OCs pendientes" value={totalPOsPendientes} prefix={<InboxOutlined style={{ color: brand.cyan }} />} styles={{ content: { color: brand.cyan } }} />
-          </Card>
-        </Col>
-        <Col xs={12} md={8}>
-          <Card styles={{ body: { padding: 12 } }}>
-            <Statistic title="Items por recibir" value={totalItemsPendientes} prefix={<FileDoneOutlined style={{ color: "#fa8c16" }} />} styles={{ content: { color: "#fa8c16" } }} />
-          </Card>
-        </Col>
-        <Col xs={24} md={8}>
-          <Card styles={{ body: { padding: 12 } }}>
-            <Statistic title="Valor total pendiente" value={valorTotalPendiente} precision={2} prefix="$" styles={{ content: { color: brand.navy } }} />
-          </Card>
-        </Col>
-      </Row>
-
       {/* Filtros */}
       <Card styles={{ body: { padding: 16 } }} style={{ marginBottom: 12 }}>
         <Row gutter={[12, 12]}>

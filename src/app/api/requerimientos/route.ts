@@ -98,7 +98,8 @@ export async function GET(req: NextRequest) {
       ];
     }
 
-    const [data, total] = await Promise.all([
+    const soloAprobadosSinOC = sp.get("solo_aprobados_sin_oc") === "1";
+    const [dataRaw, totalRaw] = await Promise.all([
       prisma.oTRepuesto.findMany({
         where,
         include: {
@@ -143,6 +144,24 @@ export async function GET(req: NextRequest) {
       }),
       prisma.oTRepuesto.count({ where }),
     ]);
+
+    // Cuando el flag "solo aprobados sin OC" está activo (lo usa el tab
+    // "Requerimientos Aprobados" del editor de OC), excluímos los items que
+    // ya fueron despachados completamente desde almacén. El despacho-OT y el
+    // ingreso-po ambos incrementan cantidad_recibida; si llegó a cantidad
+    // ya no hay nada que comprar — no debe aparecer como elegible para OC.
+    // Prisma no soporta bien comparar dos columnas del mismo modelo en `where`,
+    // así que filtramos post-fetch y ajustamos el total acorde.
+    let data = dataRaw;
+    let total = totalRaw;
+    if (soloAprobadosSinOC) {
+      data = dataRaw.filter((r) => {
+        const cantidad = Number(r.cantidad);
+        const recibida = Number(r.cantidad_recibida ?? 0);
+        return Number.isFinite(cantidad) && recibida < cantidad;
+      });
+      total = data.length;
+    }
 
     return NextResponse.json({ data, total, page });
   } catch (error) {

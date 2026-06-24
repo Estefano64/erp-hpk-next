@@ -164,11 +164,11 @@ const SECCIONES: Seccion[] = [
   },
   {
     id: "codigos-rep",
-    titulo: "Códigos Reparables",
+    titulo: "Códigos Estratégicos",
     items: [
-      { id: "cr.list", label: "Listar códigos reparables con filtros (Tipo, Flota, Fabricante)", ruta: "/codigos-reparacion" },
-      { id: "cr.crear", label: "Crear / editar código reparable" },
-      { id: "cr.operaciones", label: "Definir operaciones del cód. reparable" },
+      { id: "cr.list", label: "Listar códigos estratégicos con filtros (Tipo, Flota, Fabricante)", ruta: "/codigos-reparacion" },
+      { id: "cr.crear", label: "Crear / editar código estratégico" },
+      { id: "cr.operaciones", label: "Definir operaciones del cód. estratégico" },
       { id: "cr.template-req", label: "Definir template de requerimientos" },
       { id: "cr.export-excel", label: "Export Excel con filtros (Tipo, Categoría, Flota, Fabricante)" },
     ],

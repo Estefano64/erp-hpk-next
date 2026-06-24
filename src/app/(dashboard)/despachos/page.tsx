@@ -268,14 +268,6 @@ export default function DespachosPage() {
         </Space>
       </div>
 
-      <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
-        <Col xs={12} md={4}><Card><Statistic title="OTs pendientes" value={gruposFiltrados.length} prefix={<InboxOutlined style={{ color: brand.navy }} />} /></Card></Col>
-        <Col xs={12} md={5}><Card><Statistic title="OTs completas" value={otsCompletas} styles={{ content: { color: "#52c41a" } }} prefix={<CheckCircleOutlined style={{ color: "#52c41a" }} />} /></Card></Col>
-        <Col xs={12} md={5}><Card><Statistic title="OTs incompletas" value={otsIncompletas} styles={{ content: { color: otsIncompletas > 0 ? "#fa8c16" : "#bfbfbf" } }} prefix={<WarningOutlined style={{ color: otsIncompletas > 0 ? "#fa8c16" : "#bfbfbf" }} />} /></Card></Col>
-        <Col xs={12} md={5}><Card><Statistic title="Items listos" value={totalConStock} styles={{ content: { color: "#52c41a" } }} /></Card></Col>
-        <Col xs={12} md={5}><Card><Statistic title="Items sin stock" value={totalSinStock} styles={{ content: { color: totalSinStock > 0 ? "#cf1322" : "#bfbfbf" } }} /></Card></Col>
-      </Row>
-
       {gruposFiltrados.length === 0 && !loading ? (
         <Empty description={filtro ? `Sin resultados para "${filtro}".` : "No hay despachos pendientes."} />
       ) : (

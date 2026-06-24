@@ -415,7 +415,7 @@ export default function ContratosPage() {
               </Form.Item>
             </Col>
             <Col span={24}>
-              <Form.Item name="cod_rep_id" label="Código Reparable">
+              <Form.Item name="cod_rep_id" label="Código Estratégico">
                 <Select
                   allowClear
                   showSearch
