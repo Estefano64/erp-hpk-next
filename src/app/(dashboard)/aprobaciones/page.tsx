@@ -1492,6 +1492,7 @@ export default function AceptacionesPage() {
                             { key: "ot", label: "OT", value: (r) => r.orden_trabajo?.ot ?? "" },
                             { key: "cliente", label: "Mina / Cliente", value: (r) => r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "" },
                             { key: "flota", label: "Flota", value: (r) => r.orden_trabajo?.cod_rep_flota ?? "" },
+                            { key: "estado_po", label: "Estado PO", value: (r) => ((r.orden_trabajo?.adjuntos?.length ?? 0) > 0 ? "Con PO" : "Pdt de PO") },
                             { key: "descripcion_ot", label: "Descripción OT", value: (r) => r.orden_trabajo?.descripcion ?? "" },
                             { key: "cod_material", label: "Código material", value: (r) => r.material?.codigo ?? "" },
                             { key: "descripcion", label: "Material / Descripción", value: (r) => r.material?.descripcion ?? r.descripcion ?? "" },
