@@ -41,6 +41,8 @@ import {
   SettingOutlined,
   InboxOutlined,
   LinkOutlined,
+  CopyOutlined,
+  DeleteOutlined,
   SendOutlined,
   CheckOutlined,
   CloseOutlined,
@@ -337,6 +339,26 @@ function RequerimientosDetalleInner() {
   // del req. Hay un botón "Aplicar a todos" para pisar todas con la fecha
   // global del header.
   const [fechasItemsModal, setFechasItemsModal] = useState<Record<number, Dayjs | null>>({});
+  // Items libres del modal: filas que NO vienen de un OTRepuesto existente —
+  // el user las agrega directamente en el editor. Se crean en BD como
+  // OTRepuesto con solo_para_oc=true al confirmar la OC (no aparecen en
+  // ningún otro listado de reqs, solo en el PDF/editor de OC).
+  interface ItemLibreModal {
+    id: string;            // local UUID
+    codigo?: string;
+    descripcion: string;
+    unidad_medida: string;
+    cantidad: number;
+    precio_unitario: number;
+    fecha_entrega?: Dayjs | null;
+  }
+  const [itemsLibresModal, setItemsLibresModal] = useState<ItemLibreModal[]>([]);
+  const genIdLibre = () => `lib-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  // Sub-modal "Importar desde otra OC".
+  const [modalImportarOC, setModalImportarOC] = useState(false);
+  const [ocsImportables, setOcsImportables] = useState<Array<{ id: number; numero_po: string; proveedor_nombre: string | null; nombre: string | null; fecha_solicitud: string; n_items: number }>>([]);
+  const [ocImportarSel, setOcImportarSel] = useState<number | null>(null);
+  const [cargandoImportar, setCargandoImportar] = useState(false);
   // Campos extra del modal Crear OC — equivalentes al editor /compras/[id]/editar:
   // ref. pedido (texto libre que va en la cabecera del PDF de la OC),
   // tipo de pago / días crédito, flag IGV, descuento y "otros" (cargo extra
@@ -668,6 +690,7 @@ function RequerimientosDetalleInner() {
     setPreciosModal(precios);
     setCantidadesModal(cantidades);
     setFechasItemsModal(fechas);
+    setItemsLibresModal([]);
     // Reset de los campos extra al abrir un modal nuevo.
     setRefPedidoModal("");
     setTipoPagoModal(null);
@@ -764,6 +787,18 @@ function RequerimientosDetalleInner() {
           otros_signo: otrosSignoModal,
           cantidades_override: cantidadesOverride,
           fechas_override: fechasOverride,
+          // Items libres del editor — se persisten como OTRepuesto
+          // solo_para_oc=true (no aparecen en otros listados de reqs).
+          items_libres: itemsLibresModal
+            .filter((i) => i.descripcion.trim() && i.cantidad > 0)
+            .map((i) => ({
+              codigo: i.codigo?.trim() || null,
+              descripcion: i.descripcion.trim(),
+              unidad_medida: i.unidad_medida || "UNIDAD",
+              cantidad: i.cantidad,
+              precio_unitario: i.precio_unitario,
+              fecha_entrega: i.fecha_entrega ? i.fecha_entrega.format("YYYY-MM-DD") : null,
+            })),
         }),
       });
       const json = await res.json();
@@ -2150,10 +2185,17 @@ function RequerimientosDetalleInner() {
           // para reflejar los precios + cantidades editados antes de generar
           // la OC. IGV opcional según `aplicaIgvModal`. Descuento se resta
           // del subtotal; "otros" se suma o resta según su signo.
-          const totalSubModal = selectedRecords.reduce(
+          // Subtotal = items vinculados a req + items libres del editor.
+          const subReqs = selectedRecords.reduce(
             (s, r) => s + (preciosModal[r.id] ?? 0) * (cantidadesModal[r.id] ?? Number(r.cantidad ?? 0)),
             0,
           );
+          const subLibres = itemsLibresModal.reduce(
+            (s, i) => s + (i.precio_unitario || 0) * (i.cantidad || 0),
+            0,
+          );
+          const totalSubModal = subReqs + subLibres;
+          const itemsCount = selectedRows.length + itemsLibresModal.length;
           const baseImponible = Math.max(0, totalSubModal - (descuentoModal || 0));
           const igvModal = aplicaIgvModal ? baseImponible * 0.18 : 0;
           const otrosAplicados = otrosSignoModal === "-" ? -(otrosModal || 0) : (otrosModal || 0);
@@ -2164,7 +2206,7 @@ function RequerimientosDetalleInner() {
               <Card size="small" style={{ background: brand.bgPage }}>
                 <Row gutter={[12, 8]}>
                   <Col xs={12} md={4}>
-                    <Statistic title="Items" value={selectedRows.length} />
+                    <Statistic title="Items" value={itemsCount} />
                   </Col>
                   <Col xs={12} md={4}>
                     <Statistic
@@ -2364,6 +2406,156 @@ function RequerimientosDetalleInner() {
               },
             ]}
           />
+
+          {/* Items libres del editor — filas que el user agrega sin venir de
+              un req. Se persisten como OTRepuesto con solo_para_oc=true. */}
+          {itemsLibresModal.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <Text strong style={{ fontSize: 12 }}>Items libres (agregados en el editor)</Text>
+              <Table<ItemLibreModal>
+                size="small"
+                rowKey="id"
+                dataSource={itemsLibresModal}
+                pagination={false}
+                style={{ marginTop: 4 }}
+                columns={[
+                  {
+                    title: "Código", key: "codigo", width: 120,
+                    render: (_, r) => (
+                      <Input
+                        size="small"
+                        value={r.codigo ?? ""}
+                        onChange={(e) => setItemsLibresModal((prev) => prev.map((x) => x.id === r.id ? { ...x, codigo: e.target.value } : x))}
+                        placeholder="(opcional)"
+                      />
+                    ),
+                  },
+                  {
+                    title: "Descripción *", key: "descripcion",
+                    render: (_, r) => (
+                      <Input
+                        size="small"
+                        value={r.descripcion}
+                        onChange={(e) => setItemsLibresModal((prev) => prev.map((x) => x.id === r.id ? { ...x, descripcion: e.target.value } : x))}
+                        placeholder="Descripción del item"
+                      />
+                    ),
+                  },
+                  {
+                    title: "UM", key: "um", width: 80,
+                    render: (_, r) => (
+                      <Input
+                        size="small"
+                        value={r.unidad_medida}
+                        onChange={(e) => setItemsLibresModal((prev) => prev.map((x) => x.id === r.id ? { ...x, unidad_medida: e.target.value } : x))}
+                      />
+                    ),
+                  },
+                  {
+                    title: "Cant.", key: "cant", width: 90, align: "right",
+                    render: (_, r) => (
+                      <InputNumber
+                        size="small"
+                        value={r.cantidad || null}
+                        min={0.0001}
+                        step={1}
+                        precision={2}
+                        style={{ width: "100%" }}
+                        onChange={(v) => setItemsLibresModal((prev) => prev.map((x) => x.id === r.id ? { ...x, cantidad: v == null ? 0 : Number(v) } : x))}
+                      />
+                    ),
+                  },
+                  {
+                    title: "Precio unit.", key: "precio", width: 110, align: "right",
+                    render: (_, r) => (
+                      <InputNumber
+                        size="small"
+                        value={r.precio_unitario || null}
+                        min={0}
+                        step={0.01}
+                        precision={2}
+                        style={{ width: "100%" }}
+                        onChange={(v) => setItemsLibresModal((prev) => prev.map((x) => x.id === r.id ? { ...x, precio_unitario: v == null ? 0 : Number(v) } : x))}
+                      />
+                    ),
+                  },
+                  {
+                    title: "Subtotal", key: "sub", width: 100, align: "right",
+                    render: (_, r) => (
+                      <Text strong style={{ fontSize: 12, color: brand.navy }}>
+                        {((r.cantidad || 0) * (r.precio_unitario || 0)).toFixed(2)}
+                      </Text>
+                    ),
+                  },
+                  {
+                    title: "F. Entrega", key: "fent", width: 140, align: "center",
+                    render: (_, r) => (
+                      <DatePicker
+                        size="small"
+                        value={r.fecha_entrega ?? null}
+                        onChange={(d) => setItemsLibresModal((prev) => prev.map((x) => x.id === r.id ? { ...x, fecha_entrega: d } : x))}
+                        format="DD/MM/YYYY"
+                        style={{ width: "100%" }}
+                      />
+                    ),
+                  },
+                  {
+                    title: "", key: "acc", width: 50, align: "center",
+                    render: (_, r) => (
+                      <Tooltip title="Eliminar fila">
+                        <Button
+                          size="small"
+                          type="text"
+                          danger
+                          icon={<DeleteOutlined />}
+                          onClick={() => setItemsLibresModal((prev) => prev.filter((x) => x.id !== r.id))}
+                        />
+                      </Tooltip>
+                    ),
+                  },
+                ]}
+              />
+            </div>
+          )}
+
+          {/* Acciones de tabla: agregar fila libre + importar desde otra OC */}
+          <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 8, padding: "8px 0", borderTop: `1px dashed ${brand.border}` }}>
+            <Button
+              type="dashed"
+              icon={<PlusOutlined />}
+              onClick={() => setItemsLibresModal((prev) => [...prev, {
+                id: genIdLibre(),
+                descripcion: "",
+                unidad_medida: "UNIDAD",
+                cantidad: 1,
+                precio_unitario: 0,
+                fecha_entrega: null,
+              }])}
+            >
+              Agregar fila (item libre)
+            </Button>
+            <Button
+              type="dashed"
+              icon={<CopyOutlined />}
+              onClick={async () => {
+                setModalImportarOC(true);
+                setOcImportarSel(null);
+                setCargandoImportar(true);
+                try {
+                  const res = await fetch("/api/compras?limit=50");
+                  const j = await res.json();
+                  setOcsImportables((j.data ?? []).map((c: { id: number; numero_po: string; proveedor_nombre: string | null; nombre: string | null; fecha_solicitud: string; cantidad_items: number }) => ({
+                    id: c.id, numero_po: c.numero_po, proveedor_nombre: c.proveedor_nombre,
+                    nombre: c.nombre, fecha_solicitud: c.fecha_solicitud, n_items: c.cantidad_items,
+                  })));
+                } finally {
+                  setCargandoImportar(false);
+                }
+              }}
+            >
+              Importar desde otra OC (usar como plantilla)
+            </Button>
+          </div>
         </div>
 
         <Form form={ocForm} layout="vertical">
@@ -2772,6 +2964,75 @@ function RequerimientosDetalleInner() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* ── Modal Importar desde otra OC (sub-modal del Crear OC) ──────── */}
+      <Modal
+        title={
+          <Space>
+            <CopyOutlined style={{ color: brand.cyan }} />
+            Importar items desde otra OC
+          </Space>
+        }
+        open={modalImportarOC}
+        onCancel={() => setModalImportarOC(false)}
+        okText="Importar"
+        cancelText="Cancelar"
+        okButtonProps={{ disabled: ocImportarSel == null }}
+        confirmLoading={cargandoImportar}
+        onOk={async () => {
+          if (ocImportarSel == null) return;
+          setCargandoImportar(true);
+          try {
+            const res = await fetch(`/api/compras/${ocImportarSel}`);
+            const j = await res.json();
+            const items = j.data?.detalles ?? [];
+            // Cada CompraDetalle (catalogado) o repuesto se convierte en item libre.
+            const nuevos: ItemLibreModal[] = items.map((det: { material?: { codigo?: string; descripcion?: string } | null; cantidad: number | string; precio_unitario: number | string }) => ({
+              id: genIdLibre(),
+              codigo: det.material?.codigo ?? "",
+              descripcion: det.material?.descripcion ?? "",
+              unidad_medida: "UNIDAD",
+              cantidad: Number(det.cantidad ?? 0),
+              precio_unitario: Number(det.precio_unitario ?? 0),
+              fecha_entrega: null,
+            }));
+            if (nuevos.length === 0) {
+              message.warning("Esa OC no tiene items para importar");
+              return;
+            }
+            setItemsLibresModal((prev) => [...prev, ...nuevos]);
+            message.success(`${nuevos.length} item(s) importados como filas libres. Podés editarlos antes de generar la OC.`);
+            setModalImportarOC(false);
+          } catch (e) {
+            message.error(e instanceof Error ? e.message : "Error al importar");
+          } finally {
+            setCargandoImportar(false);
+          }
+        }}
+        width={modalWidth(screens, 640)}
+        destroyOnHidden
+      >
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          Selecciona una OC de plantilla. Sus items se copiarán como filas
+          libres editables. No se vinculan a ningún req — son nuevos items
+          de esta OC.
+        </Text>
+        <div style={{ marginTop: 12 }}>
+          <Select
+            showSearch
+            placeholder="Buscar OC por número, proveedor o nombre…"
+            optionFilterProp="label"
+            value={ocImportarSel ?? undefined}
+            onChange={setOcImportarSel}
+            loading={cargandoImportar}
+            style={{ width: "100%" }}
+            options={ocsImportables.map((o) => ({
+              value: o.id,
+              label: `${o.numero_po}${o.proveedor_nombre ? " · " + o.proveedor_nombre : ""}${o.nombre ? " — " + o.nombre : ""} (${o.n_items} items)`,
+            }))}
+          />
+        </div>
       </Modal>
 
       {/* ── Modal Consumir de Almacén ─────────────────────────────────── */}

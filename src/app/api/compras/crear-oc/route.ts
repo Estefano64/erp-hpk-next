@@ -38,6 +38,18 @@ const Schema = z.object({
   // Fechas de entrega override por OTRepuesto.id → ISO date (YYYY-MM-DD).
   // Si no viene para un item, se usa la fecha_entrega_esperada global.
   fechas_override: z.record(z.string(), z.string()).optional(),
+  // Items "libres" agregados desde el editor de OC — no vienen de un
+  // OTRepuesto existente. Se crean como OTRepuesto con solo_para_oc=true
+  // (no aparecen en /requerimientos ni vistas de OT, solo en el editor/PDF
+  // de la OC).
+  items_libres: z.array(z.object({
+    codigo: z.string().trim().nullable().optional(),
+    descripcion: z.string().trim().min(1),
+    unidad_medida: z.string().trim().optional(),
+    cantidad: z.coerce.number().positive(),
+    precio_unitario: z.coerce.number().min(0),
+    fecha_entrega: z.string().nullable().optional(),
+  })).optional(),
 });
 
 const IGV_PCT = new Prisma.Decimal("0.18");
@@ -159,6 +171,14 @@ export async function POST(req: NextRequest) {
             total: itemTotal,
           });
         }
+      }
+
+      // Sumar items libres al subtotal (no crean CompraDetalle, son OTRepuesto
+      // con solo_para_oc=true creados después del compra.create).
+      const itemsLibres = d.items_libres ?? [];
+      for (const il of itemsLibres) {
+        const itemSub = new Prisma.Decimal(il.precio_unitario).mul(new Prisma.Decimal(il.cantidad));
+        subtotal = subtotal.plus(itemSub);
       }
 
       // Descuento + "otros" (signo configurable) se aplican a nivel cabecera.
@@ -316,6 +336,39 @@ export async function POST(req: NextRequest) {
           new Error("Conflicto: otro proceso asignó parte de los requerimientos"),
           { code: "RACE" },
         );
+      }
+
+      // Crear items libres (solo_para_oc=true) — no vienen de un req, son
+      // filas que el user agregó en el editor de OC. NO aparecen en
+      // /requerimientos ni vistas de OT, solo en el editor y PDF de la OC.
+      if (itemsLibres.length > 0) {
+        // ot_id requerido (FK no-null en algunos casos). Tomamos el de la
+        // primera OT externa entre los reqs vinculados. Si no hay reqs
+        // externos, queda null — el item libre vive desvinculado de OT.
+        const otIdLibres = repuestos.find((r) => r.ot_id != null)?.ot_id ?? null;
+        for (const il of itemsLibres) {
+          await tx.oTRepuesto.create({
+            data: {
+              ot_id: otIdLibres,
+              po_id: compra.id,
+              nro_oc: compra.numero_po,
+              fecha_oc: new Date(),
+              status_oc_codigo: "PROCESO",
+              status_requerimiento_codigo: "APROBADO",
+              tipo_codigo: "CAD",
+              material_codigo: il.codigo ?? null,
+              descripcion: il.descripcion,
+              unidad_medida: il.unidad_medida ?? "UNIDAD",
+              cantidad: new Prisma.Decimal(il.cantidad),
+              precio_unitario: new Prisma.Decimal(il.precio_unitario),
+              moneda: moneda_codigo,
+              fecha_entrega_esperada: il.fecha_entrega ? parseDateOnly(il.fecha_entrega) : parseDateOnly(d.fecha_entrega_esperada),
+              solo_para_oc: true,
+              es_adicional: true,
+              usuario_solicita: usuario,
+            },
+          });
+        }
       }
 
       // Historial polimórfico: separar OTs externas e internas.
