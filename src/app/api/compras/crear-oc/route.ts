@@ -258,6 +258,41 @@ export async function POST(req: NextRequest) {
         });
       }
 
+      // Autolearn: si el proveedor NO tiene defaults configurados, los
+      // persistimos con los valores usados en esta OC. La próxima vez que
+      // se cree una OC con este proveedor, el form los pre-rellenará.
+      // Solo se setean los campos que estaban null — los configurados
+      // manualmente NO se pisan. El user los puede editar después desde
+      // /proveedores.
+      const provActual = await tx.proveedor.findUnique({
+        where: { id: d.proveedor_id },
+        select: {
+          moneda_default: true, tipo_pago_default: true,
+          dias_credito_default: true, aplica_igv_default: true,
+        },
+      });
+      if (provActual) {
+        const updateProv: Record<string, unknown> = {};
+        if (provActual.moneda_default == null && moneda_codigo) {
+          updateProv.moneda_default = moneda_codigo;
+        }
+        if (provActual.tipo_pago_default == null && d.tipo_pago) {
+          updateProv.tipo_pago_default = d.tipo_pago;
+        }
+        if (provActual.dias_credito_default == null && d.dias_credito != null && d.tipo_pago !== "CONTADO") {
+          updateProv.dias_credito_default = d.dias_credito;
+        }
+        if (provActual.aplica_igv_default == null) {
+          updateProv.aplica_igv_default = aplicaIgv;
+        }
+        if (Object.keys(updateProv).length > 0) {
+          await tx.proveedor.update({
+            where: { id: d.proveedor_id },
+            data: updateProv,
+          });
+        }
+      }
+
       // Actualizar el histórico de precios por proveedor (cotizacion_proveedor).
       // Esto deja registrado el precio efectivo de compra en el histórico de
       // /compras/historico, evitando que una cotización manual obsoleta pise el
