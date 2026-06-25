@@ -1,21 +1,40 @@
 // GET /api/facturacion/ot
 //
-// Lista OTs que están en estado "Entregado" (ya tienen guía de remisión emitida)
-// y por lo tanto están listas para facturar al cliente. Para cada OT calcula
-// si tiene TODOS los adjuntos requeridos (guía de remisión + al menos un
-// archivo en etapa "despacho") como pre-requisito para emitir la factura.
+// Lista las OTs que YA fueron despachadas (tienen guía de remisión emitida)
+// y que todavía NO se han facturado. Para cada OT devuelve los 5 PDFs
+// requeridos para facturar — agrupados por etapa — para que el frontend
+// los muestre como chips clickeables (verde = subido, rojo = falta):
+//
+//   1. Guía de llegada    → adjunto etapa "recepcion"
+//   2. Cotización         → adjunto etapa "cotizacion"
+//   3. PO cliente         → adjunto etapa "po_cliente"
+//   4. Informe            → adjunto etapa "termino"
+//   5. Guía de despacho   → adjunto etapa "despacho"
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-const ESTADO_ENTREGADO = "Entregado";
-const ESTADO_COBRANZA = "Cobranza";
+const ETAPAS_REQUERIDAS = [
+  "recepcion", "cotizacion", "po_cliente", "termino", "despacho",
+] as const;
+type Etapa = (typeof ETAPAS_REQUERIDAS)[number];
+
+const ETAPA_LABELS: Record<Etapa, string> = {
+  recepcion: "Guía de llegada",
+  cotizacion: "Cotización",
+  po_cliente: "PO cliente",
+  termino: "Informe",
+  despacho: "Guía de despacho",
+};
 
 export async function GET(_req: NextRequest) {
   try {
     const ots = await prisma.ordenTrabajo.findMany({
       where: {
-        taller_status_codigo: { in: [ESTADO_ENTREGADO, ESTADO_COBRANZA] },
+        // Solo OTs que ya pasaron por /despachos/mina (guía emitida).
+        guia_entrega_salida: { not: null },
+        // Solo pendientes de facturar — una vez facturadas desaparecen.
+        nro_factura: null,
       },
       select: {
         id: true, ot: true, descripcion: true,
@@ -27,8 +46,8 @@ export async function GET(_req: NextRequest) {
         codigo_reparacion: { select: { codigo: true, descripcion: true } },
         ot_status: true, taller_status: true,
         adjuntos: {
-          where: { etapa_codigo: { in: ["despacho", "termino"] } },
-          select: { id: true, etapa_codigo: true, nombre_archivo: true, r2_key: true, fecha_subida: true },
+          where: { etapa_codigo: { in: [...ETAPAS_REQUERIDAS] } },
+          select: { id: true, etapa_codigo: true, nombre_archivo: true, r2_key: true, fecha_subida: true, tamano: true },
           orderBy: { fecha_subida: "desc" },
         },
       },
@@ -36,16 +55,18 @@ export async function GET(_req: NextRequest) {
     });
 
     const data = ots.map((o) => {
-      const tieneGuia = !!o.guia_entrega_salida;
-      const adjDespacho = o.adjuntos.filter((a) => a.etapa_codigo === "despacho");
-      const tieneAdjuntoGuia = adjDespacho.length > 0;
-      // Requisitos mínimos para facturar a la mina:
-      //  1) N° guía de remisión emitido
-      //  2) Al menos un archivo en etapa "despacho" (la guía firmada o el cargo)
-      const adjuntosOk = tieneGuia && tieneAdjuntoGuia;
-      const faltantes: string[] = [];
-      if (!tieneGuia) faltantes.push("N° guía de remisión");
-      if (!tieneAdjuntoGuia) faltantes.push("Archivo de guía firmada (adjunto etapa despacho)");
+      // Agrupamos adjuntos por etapa para que el frontend tenga acceso a la
+      // lista por categoría (puede haber más de un PDF por etapa).
+      const pdfs: Record<Etapa, typeof o.adjuntos> = {
+        recepcion: [], cotizacion: [], po_cliente: [], termino: [], despacho: [],
+      };
+      for (const a of o.adjuntos) {
+        if (a.etapa_codigo in pdfs) {
+          pdfs[a.etapa_codigo as Etapa].push(a);
+        }
+      }
+      const faltantes = ETAPAS_REQUERIDAS.filter((et) => pdfs[et].length === 0);
+      const pdfs_ok = faltantes.length === 0;
 
       return {
         id: o.id,
@@ -64,9 +85,11 @@ export async function GET(_req: NextRequest) {
         nro_factura: o.nro_factura,
         monto_cotizacion: o.monto_cotizacion,
         taller_status: o.taller_status?.nombre ?? null,
-        adjuntos: o.adjuntos,
-        adjuntos_ok: adjuntosOk,
-        faltantes,
+        // PDFs requeridos agrupados por etapa — el frontend renderiza 5 chips.
+        pdfs,
+        pdfs_ok,
+        // Labels humanos de los faltantes para mostrar en tooltips/alertas.
+        faltantes: faltantes.map((et) => ETAPA_LABELS[et]),
       };
     });
 

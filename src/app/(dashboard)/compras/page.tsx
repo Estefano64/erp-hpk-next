@@ -22,7 +22,6 @@ import {
   Upload,
   Select,
 } from "antd";
-import RequerimientosAprobadosTab from "@/components/modules/compras/RequerimientosAprobadosTab";
 import { TabIngresoPO } from "@/app/(dashboard)/movimientos/page";
 import { OCAbiertasTab } from "@/app/(dashboard)/compras/oc-abiertas/page";
 import {
@@ -228,13 +227,21 @@ export default function ComprasPage() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ motivo: txt || null }),
           });
-          const json = await res.json();
-          if (!res.ok) throw new Error(json.error || "Error al eliminar");
-          message.success("Compra eliminada");
-          fetchData();
+          const json = await res.json().catch(() => ({} as { error?: string; message?: string }));
+          if (!res.ok) {
+            // Surface server's actual error message — antes mostraba el
+            // genérico "Error al eliminar" y el user no sabía qué fallaba.
+            throw new Error(json.error || `Error al eliminar (HTTP ${res.status})`);
+          }
+          message.success(json.message || "OC anulada y requerimientos liberados");
         } catch (err: unknown) {
-          message.error(err instanceof Error ? err.message : "Error");
+          message.error(err instanceof Error ? err.message : "Error desconocido");
           throw err;
+        } finally {
+          // Siempre refrescar: el backend puede haber cambiado el estado aún
+          // cuando la respuesta llegó mal. Esto evita ver la fila vieja
+          // como "Pendiente" después de un soft-delete exitoso.
+          fetchData();
         }
       },
     });
@@ -1042,15 +1049,6 @@ export default function ComprasPage() {
               </span>
             ),
             children: ocsContent,
-          },
-          {
-            key: "aprobados",
-            label: (
-              <span>
-                <InfoCircleOutlined /> Requerimientos aprobados
-              </span>
-            ),
-            children: <RequerimientosAprobadosTab onOCCreated={fetchData} />,
           },
           {
             key: "ingreso",
