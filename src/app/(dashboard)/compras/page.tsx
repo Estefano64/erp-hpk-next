@@ -20,6 +20,7 @@ import {
   Tabs,
   Badge,
   Upload,
+  Select,
 } from "antd";
 import RequerimientosAprobadosTab from "@/components/modules/compras/RequerimientosAprobadosTab";
 import {
@@ -513,44 +514,39 @@ export default function ComprasPage() {
     }
   };
 
-  // Componente local de edición inline: muestra el texto + click → input
-  // con onPressEnter/onBlur que guarda. Usado para nro_guia y nro_factura.
+  // Componente local de edición inline multi-valor. Cada número (guía o
+  // factura) es un Tag con botón X para eliminarlo individualmente. Para
+  // agregar uno nuevo: escribir y Enter (o blur con texto).
+  //
+  // La BD persiste como string coma-separado; convertimos array<->string
+  // al cargar/guardar para que el endpoint PUT no necesite cambiar.
   const NroEditable = ({ compraId, campo, valor }: { compraId: number; campo: "nro_guia" | "nro_factura"; valor: string | null }) => {
-    const [editing, setEditing] = useState(false);
-    const [draft, setDraft] = useState(valor ?? "");
-    if (editing) {
-      return (
-        <Input
-          size="small"
-          autoFocus
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onPressEnter={() => { setEditing(false); if (draft !== (valor ?? "")) guardarNro(compraId, campo, draft); }}
-          onBlur={() => { setEditing(false); if (draft !== (valor ?? "")) guardarNro(compraId, campo, draft); }}
-          placeholder="Comma-separated si son varios"
-          style={{ fontSize: 12 }}
-        />
-      );
-    }
-    const partes = (valor ?? "").split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
+    const partes = useMemo(
+      () => (valor ?? "").split(/[,\n]/).map((s) => s.trim()).filter(Boolean),
+      [valor],
+    );
+    const [savingLocal, setSavingLocal] = useState(false);
+    const guardarLista = async (nueva: string[]) => {
+      setSavingLocal(true);
+      try {
+        await guardarNro(compraId, campo, nueva.join(", "));
+      } finally {
+        setSavingLocal(false);
+      }
+    };
     return (
-      <Tooltip title="Click para editar">
-        <div
-          onClick={() => { setDraft(valor ?? ""); setEditing(true); }}
-          style={{ cursor: "pointer", minHeight: 22, padding: "2px 4px", borderRadius: 3 }}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "#f5f5f5"; }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
-        >
-          {partes.length === 0
-            ? <span style={{ color: "#bbb", fontSize: 12 }}>— click para agregar</span>
-            : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                {partes.map((p, i) => <span key={i} style={{ fontSize: 12 }}>{p}</span>)}
-              </div>
-            )
-          }
-        </div>
-      </Tooltip>
+      <Select
+        mode="tags"
+        size="small"
+        value={partes}
+        onChange={(vals) => guardarLista(vals as string[])}
+        placeholder="Tipeá y Enter para agregar"
+        tokenSeparators={[",", "\n"]}
+        suffixIcon={null}
+        style={{ width: "100%", fontSize: 12 }}
+        disabled={savingLocal}
+        notFoundContent={null}
+      />
     );
   };
 
