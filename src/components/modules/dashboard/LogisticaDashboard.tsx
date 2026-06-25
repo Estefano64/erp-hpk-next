@@ -198,13 +198,7 @@ export default function LogisticaDashboard() {
           <SeccionRequerimientos modo={modo} anio={anio} mes={mes} sem={semana} />
         </Col>
         <Col span={24}>
-          <SeccionPlaceholder
-            icon={<ShoppingCartOutlined style={{ fontSize: 17, color: "#3C3489" }} />}
-            iconBg="#EEEDFE"
-            label="Ciclo de compras"
-            titulo="Orden de compra"
-            descripcion="OCs colocadas / costo / ticket promedio + estado + top proveedores + 3 gráficos (cantidad, costo, tiempo)"
-          />
+          <SeccionOC modo={modo} anio={anio} mes={mes} sem={semana} />
         </Col>
         <Col span={24}>
           <SeccionPlaceholder
@@ -455,6 +449,277 @@ function SeccionRequerimientos({
                       <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                         {porTiempoData.map((_, i) => (
                           <Cell key={i} fill={COLORS_DEGRADADOS[i] ?? brand.navy} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+            </Col>
+          </Row>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Sección: Orden de compra (OC)
+//
+// Fetch a /api/dashboard/logistica/oc con los filtros del header + toggle de
+// tipo (Todos/Repuestos/Servicios).
+//
+// Renderiza: 3 KPIs (colocadas/costo/ticket) + barra apilada de estado +
+// top 5 proveedores + 3 charts (cantidad mes, costo mes, tiempo) + tiempo
+// promedio para colocar OC.
+// ───────────────────────────────────────────────────────────────────────────
+interface OCResp {
+  kpis: { colocadas: number; costoTotal: number; ticketPromedio: number; moneda: string };
+  estado: { recibidas: number; enProceso: number; pendientes: number; anuladas: number };
+  topProveedores: { nombre: string; monto: number }[];
+  porMesCantidad: number[];
+  porMesCosto: number[];
+  porTiempo: number[];
+  tiempoPromedio: number;
+}
+
+const TIEMPO_OC_LABELS = ["Mismo día", "1-2d", "3-5d", "6-10d", "+10d"];
+
+function fmtMoneda(n: number, moneda: string): string {
+  const simbolo = moneda === "SOL" || moneda === "PEN" ? "S/" : "$";
+  return `${simbolo} ${n.toLocaleString("es-PE", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+}
+
+function SeccionOC({
+  modo, anio, mes, sem,
+}: {
+  modo: Modo; anio: number; mes: number; sem: number;
+}) {
+  const [tipo, setTipo] = useState<"all" | "rep" | "serv">("all");
+  const [data, setData] = useState<OCResp | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ modo, anio: String(anio), tipo });
+      if (modo === "mes") params.set("mes", String(mes));
+      if (modo === "sem") params.set("sem", String(sem));
+      const res = await fetch(`/api/dashboard/logistica/oc?${params}`);
+      if (res.ok) setData(await res.json());
+    } finally {
+      setLoading(false);
+    }
+  }, [modo, anio, mes, sem, tipo]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const porMesCantData = useMemo(
+    () => (data?.porMesCantidad ?? []).map((v, i) => ({ name: MES_LABELS[i], value: v })),
+    [data?.porMesCantidad],
+  );
+  const porMesCostoData = useMemo(
+    () => (data?.porMesCosto ?? []).map((v, i) => ({ name: MES_LABELS[i], value: v })),
+    [data?.porMesCosto],
+  );
+  const porTiempoData = useMemo(
+    () => (data?.porTiempo ?? []).map((v, i) => ({ name: TIEMPO_OC_LABELS[i], value: v })),
+    [data?.porTiempo],
+  );
+
+  const COLORS_TIEMPO = ["#1D9E75", "#97C459", "#EF9F27", "#E24B4A", "#791F1F"];
+  const estadoTotal = data ? (data.estado.recibidas + data.estado.enProceso + data.estado.pendientes + data.estado.anuladas) : 0;
+  const maxProv = data && data.topProveedores.length > 0 ? data.topProveedores[0].monto : 0;
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 9,
+        marginBottom: 12, paddingBottom: 8,
+        borderBottom: `1px solid ${brand.border}`, flexWrap: "wrap",
+      }}>
+        <div style={{
+          width: 28, height: 28, borderRadius: 8, background: "#EEEDFE",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <ShoppingCartOutlined style={{ fontSize: 17, color: "#3C3489" }} />
+        </div>
+        <div>
+          <div style={{
+            fontSize: 10, fontWeight: 600, letterSpacing: "0.06em",
+            textTransform: "uppercase", color: brand.textSecondary,
+          }}>
+            Ciclo de compras
+          </div>
+          <Title level={5} style={{ margin: 0 }}>Orden de compra</Title>
+        </div>
+        <Segmented
+          size="small"
+          value={tipo}
+          onChange={(v) => setTipo(v as "all" | "rep" | "serv")}
+          options={[
+            { value: "all", label: "Todos" },
+            { value: "rep", label: "Repuestos" },
+            { value: "serv", label: "Servicios" },
+          ]}
+          style={{ marginLeft: "auto" }}
+        />
+      </div>
+
+      {loading && !data ? (
+        <div style={{ textAlign: "center", padding: 40 }}><Spin /></div>
+      ) : !data ? (
+        <Empty />
+      ) : (
+        <>
+          {/* KPIs + Estado */}
+          <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+            <Col xs={24} md={6}>
+              <Card>
+                <Statistic
+                  title="OCs colocadas"
+                  value={data.kpis.colocadas}
+                  prefix={<ShoppingCartOutlined style={{ color: "#3C3489" }} />}
+                  styles={{ content: { color: "#3C3489", fontSize: 22, fontWeight: 600 } }}
+                />
+              </Card>
+            </Col>
+            <Col xs={12} md={6}>
+              <Card>
+                <Statistic
+                  title="Costo total"
+                  value={data.kpis.costoTotal}
+                  precision={0}
+                  prefix={data.kpis.moneda === "SOL" || data.kpis.moneda === "PEN" ? "S/" : "$"}
+                  styles={{ content: { color: brand.navy, fontSize: 20, fontWeight: 600 } }}
+                />
+              </Card>
+            </Col>
+            <Col xs={12} md={6}>
+              <Card>
+                <Statistic
+                  title="Ticket promedio"
+                  value={data.kpis.ticketPromedio}
+                  precision={0}
+                  prefix={data.kpis.moneda === "SOL" || data.kpis.moneda === "PEN" ? "S/" : "$"}
+                  styles={{ content: { color: brand.textSecondary, fontSize: 18, fontWeight: 500 } }}
+                />
+              </Card>
+            </Col>
+            <Col xs={24} md={6}>
+              <Card>
+                <Statistic
+                  title="Tiempo prom. para colocar OC"
+                  value={data.tiempoPromedio}
+                  precision={1}
+                  suffix="d"
+                  prefix={<ClockCircleOutlined style={{ color: "#1D9E75" }} />}
+                  styles={{ content: { color: "#1D9E75", fontSize: 20, fontWeight: 600 } }}
+                />
+              </Card>
+            </Col>
+          </Row>
+
+          {/* Barra apilada de estado + Top proveedores */}
+          <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+            <Col xs={24} md={12}>
+              <Card title="Estado de las OC" size="small">
+                {estadoTotal === 0 ? (
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Sin OCs en el rango" />
+                ) : (
+                  <>
+                    <Space size={14} style={{ marginBottom: 8 }} wrap>
+                      <span style={{ fontSize: 12 }}><span style={{ display: "inline-block", width: 10, height: 10, background: "#1D9E75", borderRadius: 2, marginRight: 4 }} />Recibidas: <b>{data.estado.recibidas}</b></span>
+                      <span style={{ fontSize: 12 }}><span style={{ display: "inline-block", width: 10, height: 10, background: brand.navy, borderRadius: 2, marginRight: 4 }} />En proceso: <b>{data.estado.enProceso}</b></span>
+                      <span style={{ fontSize: 12 }}><span style={{ display: "inline-block", width: 10, height: 10, background: "#EF9F27", borderRadius: 2, marginRight: 4 }} />Pendientes: <b>{data.estado.pendientes}</b></span>
+                      <span style={{ fontSize: 12 }}><span style={{ display: "inline-block", width: 10, height: 10, background: "#E24B4A", borderRadius: 2, marginRight: 4 }} />Anuladas: <b>{data.estado.anuladas}</b></span>
+                    </Space>
+                    <div style={{ display: "flex", height: 34, borderRadius: 6, overflow: "hidden" }}>
+                      <div style={{ background: "#1D9E75", width: `${(data.estado.recibidas / estadoTotal) * 100}%`, display: "flex", alignItems: "center", justifyContent: "center", color: "#04342C", fontSize: 12, fontWeight: 600 }}>{data.estado.recibidas || ""}</div>
+                      <div style={{ background: brand.navy, width: `${(data.estado.enProceso / estadoTotal) * 100}%`, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 12, fontWeight: 600 }}>{data.estado.enProceso || ""}</div>
+                      <div style={{ background: "#EF9F27", width: `${(data.estado.pendientes / estadoTotal) * 100}%`, display: "flex", alignItems: "center", justifyContent: "center", color: "#412402", fontSize: 12, fontWeight: 600 }}>{data.estado.pendientes || ""}</div>
+                      <div style={{ background: "#E24B4A", width: `${(data.estado.anuladas / estadoTotal) * 100}%`, display: "flex", alignItems: "center", justifyContent: "center", color: "#501313", fontSize: 12, fontWeight: 600 }}>{data.estado.anuladas || ""}</div>
+                    </div>
+                  </>
+                )}
+              </Card>
+            </Col>
+            <Col xs={24} md={12}>
+              <Card title="Top 5 proveedores por monto" size="small">
+                {data.topProveedores.length === 0 ? (
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                ) : (
+                  <div>
+                    {data.topProveedores.map((p, i) => (
+                      <div key={p.nombre} style={{
+                        display: "flex", alignItems: "center", gap: 10,
+                        padding: "7px 0", borderBottom: i < data.topProveedores.length - 1 ? `1px solid ${brand.border}` : "none",
+                      }}>
+                        <div style={{
+                          width: 21, height: 21, borderRadius: 6, background: "#DCF0F5", color: "#0090B4",
+                          fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center",
+                        }}>
+                          {i + 1}
+                        </div>
+                        <div style={{ flex: 1, fontSize: 12 }}>{p.nombre}</div>
+                        <div style={{ flex: 1, height: 6, background: "#f0f0f0", borderRadius: 3, overflow: "hidden" }}>
+                          <div style={{ background: "#0090B4", height: "100%", width: `${maxProv > 0 ? (p.monto / maxProv) * 100 : 0}%` }} />
+                        </div>
+                        <div style={{ fontSize: 12, fontWeight: 600, minWidth: 90, textAlign: "right" }}>
+                          {fmtMoneda(p.monto, data.kpis.moneda)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            </Col>
+          </Row>
+
+          {/* Charts mensuales + tiempo */}
+          <Row gutter={[12, 12]}>
+            <Col xs={24} md={8}>
+              <Card title="OC colocadas por mes · cantidad" size="small" styles={{ body: { padding: 12 } }}>
+                <div style={{ width: "100%", height: 200 }}>
+                  <ResponsiveContainer>
+                    <BarChart data={porMesCantData}>
+                      <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <ReTooltip />
+                      <Bar dataKey="value" fill="#3C3489" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+            </Col>
+            <Col xs={24} md={8}>
+              <Card title={`OC colocadas por mes · costo (${data.kpis.moneda})`} size="small" styles={{ body: { padding: 12 } }}>
+                <div style={{ width: "100%", height: 200 }}>
+                  <ResponsiveContainer>
+                    <BarChart data={porMesCostoData}>
+                      <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
+                      <ReTooltip formatter={(v) => fmtMoneda(Number(v), data.kpis.moneda)} />
+                      <Bar dataKey="value" fill="#EF9F27" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+            </Col>
+            <Col xs={24} md={8}>
+              <Card title="Tiempo para colocar OC" size="small" styles={{ body: { padding: 12 } }}>
+                <div style={{ width: "100%", height: 200 }}>
+                  <ResponsiveContainer>
+                    <BarChart data={porTiempoData}>
+                      <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <ReTooltip />
+                      <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                        {porTiempoData.map((_, i) => (
+                          <Cell key={i} fill={COLORS_TIEMPO[i] ?? brand.navy} />
                         ))}
                       </Bar>
                     </BarChart>
