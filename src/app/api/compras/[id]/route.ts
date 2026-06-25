@@ -215,53 +215,122 @@ export async function PUT(req: NextRequest, { params }: Params) {
   }
 }
 
-// DELETE — solo si está en estado Pendiente (PEND_OC)
+// DELETE — soft-delete: cambia el estado de la OC a ANULADO y LIBERA los
+// requerimientos (po_id=null, status_oc=null) para que vuelvan a estar
+// disponibles para asignar a una nueva OC.
+//
+// Antes hacía .delete() físico, que fallaba con FK constraints (compra_detalle
+// → compra, movimientos, etc.) — y mientras tanto los reqs ya quedaban
+// desvinculados, dejándolos en un estado inconsistente. El pedido del user
+// es que sea soft + atómico.
+//
 // `motivo` opcional en el body; si viene se loguea en el historial.
+//
+// Estados desde donde se permite anular: PEND_OC y PROCESO. Si la OC ya
+// está ENTREGADO/COMPLETO/INCOMPLETO hay movimientos de inventario y no
+// se puede anular sin revertir. ANULADO ya está anulada.
+const ESTADOS_ANULABLES = new Set(["PEND_OC", "PROCESO"]);
+
 export async function DELETE(req: NextRequest, { params }: Params) {
   try {
     const { id } = await params;
+    const compraId = parseInt4Safe(id) ?? 0;
+    if (compraId <= 0) return NextResponse.json({ error: "ID inválido" }, { status: 400 });
     const body = await req.json().catch(() => ({}));
     const motivo = typeof body?.motivo === "string" ? body.motivo.trim() : "";
-    const compra = await prisma.compra.findUnique({ where: { id: (parseInt4Safe(id) ?? 0) } });
-    if (!compra) return NextResponse.json({ error: "Compra no encontrada" }, { status: 404 });
-    if (compra.status_oc_codigo !== "PEND_OC") {
-      return NextResponse.json({ error: "Solo se pueden eliminar compras en estado Pendiente" }, { status: 400 });
-    }
     const usuario = (await getAuditUser(req)) ?? "sistema";
 
-    // BUG fix: antes hacíamos updateMany (po_id=null) ANTES de capturar las
-    // OTs vinculadas — entonces la siguiente query devolvía vacío y el
-    // historial nunca se creaba. Ahora primero capturamos las OTs y después
-    // desvinculamos, dentro de una transacción para que sea atómico.
-    const reqsVinculados = await prisma.oTRepuesto.findMany({
-      where: { po_id: (parseInt4Safe(id) ?? 0) },
-      select: { ot_id: true, orden_trabajo_interna_id: true },
-      distinct: ["ot_id", "orden_trabajo_interna_id"],
-    });
-    await prisma.oTRepuesto.updateMany({
-      where: { po_id: (parseInt4Safe(id) ?? 0) },
-      data: { po_id: null, nro_oc: null, status_oc_codigo: null },
-    });
-    const otsExternasUnicas = [...new Set(reqsVinculados.map((r) => r.ot_id).filter((x): x is number => x != null))];
-    const otsInternasUnicas = [...new Set(reqsVinculados.map((r) => r.orden_trabajo_interna_id).filter((x): x is number => x != null))];
-    const descripcionHist = motivo
-      ? `OC ${compra.numero_po} eliminada por ${usuario} — ${motivo}`
-      : `OC ${compra.numero_po} eliminada por ${usuario}`;
-    for (const otId of otsExternasUnicas) {
-      await prisma.oTHistorial.create({
-        data: { ot_id: otId, tipo_operacion: "Otro", descripcion: descripcionHist, usuario },
+    const result = await prisma.$transaction(async (tx) => {
+      const compra = await tx.compra.findUnique({
+        where: { id: compraId },
+        select: { id: true, numero_po: true, status_oc_codigo: true },
       });
-    }
-    for (const otInternaId of otsInternasUnicas) {
-      await prisma.oTHistorial.create({
-        data: { orden_trabajo_interna_id: otInternaId, tipo_operacion: "Otro", descripcion: descripcionHist, usuario },
-      });
-    }
+      if (!compra) {
+        throw Object.assign(new Error("Compra no encontrada"), { status: 404 });
+      }
+      if (compra.status_oc_codigo === "ANULADO") {
+        throw Object.assign(new Error("Esta OC ya está anulada"), { status: 400 });
+      }
+      if (!compra.status_oc_codigo || !ESTADOS_ANULABLES.has(compra.status_oc_codigo)) {
+        throw Object.assign(
+          new Error(`No se puede anular una OC en estado ${compra.status_oc_codigo ?? "—"}. Solo se permite desde PEND_OC o PROCESO (sin movimientos de inventario).`),
+          { status: 400 },
+        );
+      }
 
-    await prisma.compra.delete({ where: { id: (parseInt4Safe(id) ?? 0) } });
-    return NextResponse.json({ message: "Compra eliminada" });
-  } catch (error) {
+      // 1) Capturar OTs vinculadas ANTES de modificar los reqs (sino el
+      //    distinct queda vacío y el historial no se crea).
+      const reqsVinculados = await tx.oTRepuesto.findMany({
+        where: { po_id: compraId },
+        select: { ot_id: true, orden_trabajo_interna_id: true },
+      });
+      const otsExternas = [...new Set(reqsVinculados.map((r) => r.ot_id).filter((x): x is number => x != null))];
+      const otsInternas = [...new Set(reqsVinculados.map((r) => r.orden_trabajo_interna_id).filter((x): x is number => x != null))];
+
+      // 2) Soft-delete: estado de la OC pasa a ANULADO. NO la borramos
+      //    físicamente — quedaría rota si hay compra_detalle, items free,
+      //    movimientos, etc.
+      const actualizada = await tx.compra.update({
+        where: { id: compraId },
+        data: {
+          status_oc_codigo: "ANULADO",
+          usuario_aprueba: usuario,
+          comentario_aprobacion: motivo || null,
+        },
+      });
+
+      // 3) Liberar los reqs vinculados: desvincular po_id y status_oc para
+      //    que vuelvan a estar disponibles en /requerimientos (tab Aprobados
+      //    sin OC). Items "libres" (solo_para_oc=true) se borran porque NO
+      //    tienen lugar fuera de esta OC.
+      await tx.oTRepuesto.deleteMany({
+        where: { po_id: compraId, solo_para_oc: true },
+      });
+      await tx.oTRepuesto.updateMany({
+        where: { po_id: compraId },
+        data: {
+          po_id: null,
+          nro_oc: null,
+          fecha_oc: null,
+          status_oc_codigo: null,
+          // Limpiar overrides — al volver a la pool, ya no son válidos.
+          oc_cantidad: null,
+          oc_precio_unitario: null,
+          oc_descripcion: null,
+          oc_unidad_medida: null,
+          oc_orden_item: null,
+          fecha_entrega_esperada: null,
+        },
+      });
+
+      // 4) Historial por cada OT afectada.
+      const descripcionHist = motivo
+        ? `OC ${compra.numero_po} ANULADA por ${usuario} — ${motivo} (requerimientos liberados)`
+        : `OC ${compra.numero_po} ANULADA por ${usuario} (requerimientos liberados)`;
+      for (const ot_id of otsExternas) {
+        await tx.oTHistorial.create({
+          data: { ot_id, tipo_operacion: "Otro", descripcion: descripcionHist, usuario },
+        });
+      }
+      for (const orden_trabajo_interna_id of otsInternas) {
+        await tx.oTHistorial.create({
+          data: { orden_trabajo_interna_id, tipo_operacion: "Otro", descripcion: descripcionHist, usuario },
+        });
+      }
+
+      return { compra: actualizada, reqsLiberados: reqsVinculados.length };
+    });
+
+    return NextResponse.json({
+      message: `OC anulada. ${result.reqsLiberados} requerimiento(s) liberados para nueva OC.`,
+      data: result.compra,
+    });
+  } catch (error: unknown) {
+    const err = error as { status?: number; message?: string };
+    if (err?.status) {
+      return NextResponse.json({ error: err.message ?? "Error" }, { status: err.status });
+    }
     console.error("DELETE /api/compras/[id] error:", error);
-    return NextResponse.json({ error: "Error al eliminar" }, { status: 500 });
+    return NextResponse.json({ error: "Error al anular la OC" }, { status: 500 });
   }
 }
