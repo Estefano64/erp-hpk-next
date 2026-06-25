@@ -60,6 +60,13 @@ interface ProveedorRecord {
   email: string | null;
   direccion: string | null;
   activo: boolean;
+  // Defaults para Órdenes de Compra (autolearn en la primera OC del proveedor).
+  moneda_default: string | null;
+  tipo_pago_default: string | null;
+  dias_credito_default: number | null;
+  tiempo_entrega_dias: number | null;
+  precios_incluyen_igv_default: boolean | null;
+  aplica_igv_default: boolean | null;
 }
 
 function RazonSocialDupHint({ form, excludeId }: { form: ReturnType<typeof Form.useForm>[0]; excludeId?: number }) {
@@ -83,7 +90,13 @@ export default function ProveedoresPage() {
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
-  const { ocultas, setOcultas } = useColumnasOcultas("proveedores-list-cols-v2", ["direccion"]);
+  const { ocultas, setOcultas } = useColumnasOcultas("proveedores-list-cols-v3", [
+    "direccion",
+    // Defaults para OC — ocultas por default para no inflar el ancho de la
+    // tabla; el user las activa desde el botón "Columnas".
+    "moneda_default", "tipo_pago_default", "dias_credito_default",
+    "tiempo_entrega_dias", "precios_incluyen_igv_default", "aplica_igv_default",
+  ]);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ProveedorRecord | null>(null);
@@ -233,6 +246,50 @@ export default function ProveedoresPage() {
       ...filtroPorColumna(data, "direccion"),
       render: (v: string | null) => v ?? "-",
     },
+    // ── Defaults de OC (autolearn de la primera OC del proveedor) ──
+    // Ocultas por default; el user las activa desde el botón "Columnas".
+    {
+      key: "moneda_default", title: "Moneda", dataIndex: "moneda_default", width: 90, align: "center",
+      ...filtroPorColumna(data, "moneda_default"),
+      render: (v: string | null) => v
+        ? <Tag color={brand.cyan} style={{ margin: 0 }}>{v}</Tag>
+        : <span style={{ color: "#bbb" }}>—</span>,
+    },
+    {
+      key: "tipo_pago_default", title: "Tipo pago", dataIndex: "tipo_pago_default", width: 130, align: "center",
+      ...filtroPorColumna(data, "tipo_pago_default"),
+      render: (v: string | null) => v ?? <span style={{ color: "#bbb" }}>—</span>,
+    },
+    {
+      key: "dias_credito_default", title: "Días crédito", dataIndex: "dias_credito_default", width: 110, align: "right",
+      sorter: (a, b) => (a.dias_credito_default ?? -1) - (b.dias_credito_default ?? -1),
+      render: (v: number | null) => v != null
+        ? <span style={{ fontWeight: 500 }}>{v}</span>
+        : <span style={{ color: "#bbb" }}>—</span>,
+    },
+    {
+      key: "tiempo_entrega_dias", title: "T. entrega (días)", dataIndex: "tiempo_entrega_dias", width: 130, align: "right",
+      sorter: (a, b) => (a.tiempo_entrega_dias ?? -1) - (b.tiempo_entrega_dias ?? -1),
+      render: (v: number | null) => v != null
+        ? <span style={{ fontWeight: 500 }}>{v}</span>
+        : <span style={{ color: "#bbb" }}>—</span>,
+    },
+    {
+      key: "precios_incluyen_igv_default", title: "Precios c/IGV", dataIndex: "precios_incluyen_igv_default", width: 120, align: "center",
+      render: (v: boolean | null) => v == null
+        ? <span style={{ color: "#bbb" }}>—</span>
+        : v
+          ? <Tag color="green" style={{ margin: 0 }}>Sí</Tag>
+          : <Tag style={{ margin: 0 }}>No</Tag>,
+    },
+    {
+      key: "aplica_igv_default", title: "Aplica IGV", dataIndex: "aplica_igv_default", width: 110, align: "center",
+      render: (v: boolean | null) => v == null
+        ? <span style={{ color: "#bbb" }}>—</span>
+        : v
+          ? <Tag color="green" style={{ margin: 0 }}>Sí</Tag>
+          : <Tag color="orange" style={{ margin: 0 }}>Exonerado</Tag>,
+    },
     {
       key: "acciones",
       title: "Acciones",
@@ -293,6 +350,12 @@ export default function ProveedoresPage() {
               { label: "Teléfono", value: (r) => r.telefono ?? "" },
               { label: "Email", value: (r) => r.email ?? "" },
               { label: "Dirección", value: (r) => r.direccion ?? "" },
+              { label: "Moneda default", value: (r) => r.moneda_default ?? "" },
+              { label: "Tipo pago default", value: (r) => r.tipo_pago_default ?? "" },
+              { label: "Días crédito default", value: (r) => r.dias_credito_default ?? "" },
+              { label: "T. entrega (días)", value: (r) => r.tiempo_entrega_dias ?? "" },
+              { label: "Precios incluyen IGV", value: (r) => r.precios_incluyen_igv_default == null ? "" : r.precios_incluyen_igv_default ? "Sí" : "No" },
+              { label: "Aplica IGV", value: (r) => r.aplica_igv_default == null ? "" : r.aplica_igv_default ? "Sí" : "No" },
             ]}
           />
           {isAdminUser && (
