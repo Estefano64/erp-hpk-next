@@ -249,7 +249,11 @@ export async function DELETE(req: NextRequest, { params }: Params) {
         throw Object.assign(new Error("Compra no encontrada"), { status: 404 });
       }
       if (compra.status_oc_codigo === "ANULADO") {
-        throw Object.assign(new Error("Esta OC ya está anulada"), { status: 400 });
+        // Idempotente: si ya está anulada, devolvemos éxito sin tocar nada.
+        // Antes lanzábamos 400 y el user veía "Error al eliminar" al re-clickear
+        // sobre una fila stale del listado. El efecto buscado (anulada + reqs
+        // liberados) ya está cumplido.
+        return { compra, reqsLiberados: 0, yaEstaba: true };
       }
       if (!compra.status_oc_codigo || !ESTADOS_ANULABLES.has(compra.status_oc_codigo)) {
         throw Object.assign(
@@ -318,11 +322,13 @@ export async function DELETE(req: NextRequest, { params }: Params) {
         });
       }
 
-      return { compra: actualizada, reqsLiberados: reqsVinculados.length };
+      return { compra: actualizada, reqsLiberados: reqsVinculados.length, yaEstaba: false };
     });
 
     return NextResponse.json({
-      message: `OC anulada. ${result.reqsLiberados} requerimiento(s) liberados para nueva OC.`,
+      message: result.yaEstaba
+        ? "Esta OC ya estaba anulada (sin cambios)."
+        : `OC anulada. ${result.reqsLiberados} requerimiento(s) liberados para nueva OC.`,
       data: result.compra,
     });
   } catch (error: unknown) {
