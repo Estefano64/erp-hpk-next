@@ -234,7 +234,8 @@ const SECCIONES: Seccion[] = [
       { id: "df.facturacion-ot", label: "Facturación de OT (mina)", ruta: "/facturacion/ot" },
       { id: "df.facturacion-modal", label: "Modal de facturación con todos los adjuntos por categoría" },
       { id: "df.facturacion-upload", label: "Subir factura + guía de remisión desde el mismo modal" },
-      { id: "df.contabilidad-oc", label: "Guía y factura de OC (cuentas por pagar)", ruta: "/compras/contabilidad" },
+      // "Guía y factura de OC" removida — la funcionalidad vive ahora dentro
+      // de /compras (columnas Nro Guía/Factura editables + subir archivos).
     ],
   },
   {

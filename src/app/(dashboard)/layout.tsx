@@ -138,7 +138,10 @@ function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
           children: [
             { key: "/despachos/mina", label: "Despacho a mina (Guía de remisión)" },
             { key: "/facturacion/ot", label: "Facturación de OT (mina)" },
-            { key: "/compras/contabilidad", label: "Guía y factura de OC" },
+            // "Guía y factura de OC" se removió del menú: la misma funcionalidad
+            // (Nro Guía/Nro Factura editables + subir archivos) ya está en la
+            // tabla principal de /compras. La ruta /compras/contabilidad sigue
+            // existiendo por si se quiere acceder directo, pero no se enlaza.
           ],
         },
       ],
