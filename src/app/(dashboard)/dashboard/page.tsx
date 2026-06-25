@@ -4,6 +4,7 @@ import { Typography, Spin } from "antd";
 import { useSession } from "next-auth/react";
 import TecnicoPanel from "@/components/modules/tecnico/TecnicoPanel";
 import PlannerProgramaDashboard from "@/components/modules/dashboard/PlannerProgramaDashboard";
+import LogisticaDashboard from "@/components/modules/dashboard/LogisticaDashboard";
 
 const { Title, Text } = Typography;
 
@@ -20,6 +21,12 @@ export default function DashboardPage() {
   // operaciones, planificación, etc. ya viven en sus propias rutas).
   if (roles.includes("tecnico")) {
     return <TecnicoPanel />;
+  }
+
+  // Trabajadores de logística ven el dashboard del área (KPIs de
+  // requerimientos, OC, inventario, OT y facturación).
+  if (roles.includes("logistica")) {
+    return <LogisticaDashboard />;
   }
 
   // El planner ve su dashboard de programación semanal (gráficos) acá mismo.
