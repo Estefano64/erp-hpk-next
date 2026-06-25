@@ -24,6 +24,28 @@ import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
 const { Title, Text } = Typography;
 
+// Los 5 PDFs que se requieren para emitir factura. Cada uno corresponde a
+// una etapa del flujo de la OT. El orden es el del flujo (llegada → despacho).
+const PDFS_REQUERIDOS: Array<{
+  etapa: "recepcion" | "cotizacion" | "po_cliente" | "termino" | "despacho";
+  label: string;
+  abrev: string;
+}> = [
+  { etapa: "recepcion",  label: "Guía de llegada",  abrev: "G. Llegada" },
+  { etapa: "cotizacion", label: "Cotización",       abrev: "Cotiz." },
+  { etapa: "po_cliente", label: "PO del cliente",   abrev: "PO" },
+  { etapa: "termino",    label: "Informe",          abrev: "Informe" },
+  { etapa: "despacho",   label: "Guía de despacho", abrev: "G. Despacho" },
+];
+
+type PdfsPorEtapa = {
+  recepcion: Array<{ id: number; r2_key: string; nombre_archivo: string; fecha_subida: string }>;
+  cotizacion: Array<{ id: number; r2_key: string; nombre_archivo: string; fecha_subida: string }>;
+  po_cliente: Array<{ id: number; r2_key: string; nombre_archivo: string; fecha_subida: string }>;
+  termino: Array<{ id: number; r2_key: string; nombre_archivo: string; fecha_subida: string }>;
+  despacho: Array<{ id: number; r2_key: string; nombre_archivo: string; fecha_subida: string }>;
+};
+
 interface OTLista {
   id: number;
   ot: string | null;
@@ -39,8 +61,8 @@ interface OTLista {
   nro_factura: string | null;
   monto_cotizacion: number | string | null;
   taller_status: string | null;
-  adjuntos: Array<{ id: number; etapa_codigo: string; nombre_archivo: string }>;
-  adjuntos_ok: boolean;
+  pdfs: PdfsPorEtapa;
+  pdfs_ok: boolean;
   faltantes: string[];
 }
 
@@ -206,9 +228,10 @@ export default function FacturacionOTPage() {
     }
   };
 
-  const conFactura = data.filter((o) => o.nro_factura).length;
-  const sinFactura = data.length - conFactura;
-  const conAdjuntosOk = data.filter((o) => o.adjuntos_ok).length;
+  // Como el API ya filtra por "despachadas + sin factura", todas las filas
+  // son pendientes — los stats reflejan ese subconjunto.
+  const listas = data.filter((o) => o.pdfs_ok).length;
+  const faltanPdfs = data.length - listas;
 
   const columns: ColumnsType<OTLista> = useMemo(() => [
     {
@@ -247,13 +270,42 @@ export default function FacturacionOTPage() {
         : <Tag color="default">—</Tag>,
     },
     {
-      key: "adjuntos", title: "Adjuntos", width: 120, align: "center",
+      // 5 chips compactos, uno por PDF requerido. Verde = subido (click para
+      // descargar); rojo punteado = falta. El tooltip dice qué PDF es.
+      key: "pdfs", title: "PDFs requeridos", width: 340,
       render: (_v, r) => (
-        <Tooltip title={r.adjuntos_ok ? "Todos los adjuntos requeridos están" : `Faltan: ${r.faltantes.join(", ")}`}>
-          {r.adjuntos_ok
-            ? <Tag icon={<CheckCircleOutlined />} color="green">OK ({r.adjuntos.length})</Tag>
-            : <Tag icon={<WarningOutlined />} color="error">Faltan</Tag>}
-        </Tooltip>
+        <Space size={4} wrap>
+          {PDFS_REQUERIDOS.map((p) => {
+            const archivos = r.pdfs[p.etapa];
+            const tiene = archivos.length > 0;
+            const primero = archivos[0];
+            return (
+              <Tooltip
+                key={p.etapa}
+                title={tiene
+                  ? `${p.label}: ${primero.nombre_archivo}${archivos.length > 1 ? ` (+${archivos.length - 1} más)` : ""} — click para abrir`
+                  : `Falta: ${p.label}. Subilo desde el botón "Adjuntar y facturar".`}
+              >
+                <Tag
+                  color={tiene ? "green" : "default"}
+                  style={{
+                    margin: 0, fontSize: 11,
+                    cursor: tiene ? "pointer" : "not-allowed",
+                    borderStyle: tiene ? "solid" : "dashed",
+                    opacity: tiene ? 1 : 0.7,
+                  }}
+                  icon={tiene ? <CheckCircleOutlined /> : <WarningOutlined />}
+                  onClick={tiene
+                    ? () => openR2File({ key: primero.r2_key, resource: "ot-adjunto", resourceId: r.id })
+                        .catch((e) => msg.error(e instanceof Error ? e.message : "Error al abrir"))
+                    : undefined}
+                >
+                  {p.abrev}{archivos.length > 1 ? ` (${archivos.length})` : ""}
+                </Tag>
+              </Tooltip>
+            );
+          })}
+        </Space>
       ),
     },
     {
@@ -279,14 +331,14 @@ export default function FacturacionOTPage() {
           <Tooltip title="Ver OT">
             <Button size="small" icon={<EyeOutlined />} onClick={() => router.push(`/ordenes-trabajo/${r.id}`)} />
           </Tooltip>
-          <Tooltip title={r.adjuntos_ok ? "Abrir factura + adjuntos" : `Adjuntos faltantes: ${r.faltantes.join(", ")}. Podés subirlos desde la ventana.`}>
+          <Tooltip title={r.pdfs_ok ? "Abrir factura + PDFs" : `Faltan PDFs: ${r.faltantes.join(", ")}. Podés subirlos desde la ventana.`}>
             <Button
               size="small"
               type="primary"
               icon={<FileDoneOutlined />}
               onClick={() => abrirModal(r)}
             >
-              {r.nro_factura ? "Editar factura" : (r.adjuntos_ok ? "Facturar" : "Adjuntar y facturar")}
+              {r.nro_factura ? "Editar factura" : (r.pdfs_ok ? "Facturar" : "Adjuntar y facturar")}
             </Button>
           </Tooltip>
         </Space>
@@ -318,7 +370,7 @@ export default function FacturacionOTPage() {
               { key: "guia", label: "Guía", value: (r) => r.guia_entrega_salida ?? "" },
               {
                 key: "adjuntos", label: "Adjuntos",
-                value: (r) => r.adjuntos_ok ? `OK (${r.adjuntos.length})` : `Faltan: ${r.faltantes.join(", ")}`,
+                value: (r) => r.pdfs_ok ? "5/5 PDFs OK" : `Faltan: ${r.faltantes.join(", ")}`,
               },
               { key: "fact", label: "N° Factura", value: (r) => r.nro_factura ?? "Pendiente" },
               { key: "fecha_fact", label: "F. Facturación", value: (r) => r.fecha_facturacion ? formatDateOnly(r.fecha_facturacion) : "" },
@@ -331,14 +383,13 @@ export default function FacturacionOTPage() {
       <Alert
         type="info" showIcon icon={<PaperClipOutlined />} style={{ marginBottom: 12 }}
         title="Requisitos para facturar"
-        description="Cada OT entregada debe tener el N° de guía de remisión emitido y al menos un archivo adjunto en la etapa “despacho” (la guía firmada / cargo del cliente). Solo entonces se habilita el botón “Facturar”."
+        description="Solo figuran las OTs ya despachadas (con guía emitida) que aún no se facturan. Cada OT necesita 5 PDFs subidos para habilitar la factura: Guía de llegada, Cotización, PO cliente, Informe y Guía de despacho. Una vez facturada, la OT desaparece de este listado."
       />
 
       <Row gutter={12} style={{ marginBottom: 12 }}>
-        <Col xs={12} md={6}><Card size="small"><Statistic title="OTs entregadas" value={data.length} styles={{ content: { color: brand.navy } }} /></Card></Col>
-        <Col xs={12} md={6}><Card size="small"><Statistic title="Listas para facturar" value={conAdjuntosOk} styles={{ content: { color: "#52c41a" } }} /></Card></Col>
-        <Col xs={12} md={6}><Card size="small"><Statistic title="Ya facturadas" value={conFactura} styles={{ content: { color: brand.cyan } }} /></Card></Col>
-        <Col xs={12} md={6}><Card size="small"><Statistic title="Sin factura" value={sinFactura} styles={{ content: { color: sinFactura > 0 ? "#fa8c16" : "#bfbfbf" } }} /></Card></Col>
+        <Col xs={12} md={8}><Card size="small"><Statistic title="Pendientes de facturar" value={data.length} styles={{ content: { color: brand.navy } }} /></Card></Col>
+        <Col xs={12} md={8}><Card size="small"><Statistic title="Listas (5 PDFs OK)" value={listas} styles={{ content: { color: "#52c41a" } }} /></Card></Col>
+        <Col xs={12} md={8}><Card size="small"><Statistic title="Faltan PDFs" value={faltanPdfs} styles={{ content: { color: faltanPdfs > 0 ? "#fa8c16" : "#bfbfbf" } }} /></Card></Col>
       </Row>
 
       {data.length === 0 && !loading ? (
@@ -364,7 +415,7 @@ export default function FacturacionOTPage() {
         okText={otSel?.nro_factura ? "Actualizar factura" : "Registrar factura"}
         cancelText="Cerrar"
         confirmLoading={saving}
-        okButtonProps={{ disabled: !!(otSel && !otSel.adjuntos_ok) }}
+        okButtonProps={{ disabled: !!(otSel && !otSel.pdfs_ok) }}
         width={modalWidth(screens, 860)}
         destroyOnHidden
       >
@@ -377,12 +428,12 @@ export default function FacturacionOTPage() {
               </div>
             </div>
 
-            {!otSel.adjuntos_ok && (
+            {!otSel.pdfs_ok && (
               <Alert
                 showIcon
                 type="warning"
                 style={{ marginBottom: 12 }}
-                title="Faltan adjuntos para poder facturar"
+                title="Faltan PDFs requeridos para poder facturar"
                 description={`Faltantes: ${otSel.faltantes.join(", ")}. Subilos desde la sección "Subir archivo a esta OT" más abajo. Una vez completos, el botón "Registrar factura" se habilita.`}
               />
             )}
@@ -423,45 +474,57 @@ export default function FacturacionOTPage() {
               </Space>
             </Divider>
 
-            <Space wrap style={{ marginBottom: 12 }}>
-              <Upload
-                accept="application/pdf,image/*"
-                showUploadList={false}
-                beforeUpload={(file) => {
-                  void handleUpload(file, "facturacion");
-                  return false;
-                }}
-                disabled={uploadingEtapa !== null}
-              >
-                <Button
-                  icon={<UploadOutlined />}
-                  type="primary"
-                  loading={uploadingEtapa === "facturacion"}
-                  style={{ background: "#1d6f42", borderColor: "#1d6f42" }}
-                >
-                  Subir factura (PDF)
-                </Button>
-              </Upload>
-              <Upload
-                accept="application/pdf,image/*"
-                showUploadList={false}
-                beforeUpload={(file) => {
-                  void handleUpload(file, "despacho");
-                  return false;
-                }}
-                disabled={uploadingEtapa !== null}
-              >
-                <Button
-                  icon={<UploadOutlined />}
-                  loading={uploadingEtapa === "despacho"}
-                >
-                  Subir guía de remisión
-                </Button>
-              </Upload>
-              <Text type="secondary" style={{ fontSize: 11 }}>
-                La factura se guarda en la etapa <b>Facturación</b>. La guía firmada va a <b>Despacho</b> (la requiere el bloqueo de facturación).
+            <div style={{ marginBottom: 12 }}>
+              <Text type="secondary" style={{ fontSize: 11, display: "block", marginBottom: 6 }}>
+                Subí los PDFs que falten — cada botón guarda el archivo en su etapa correspondiente.
+                El verde indica que ya hay al menos un archivo subido en esa etapa.
               </Text>
-            </Space>
+              <Space wrap>
+                {PDFS_REQUERIDOS.map((p) => {
+                  const yaTiene = (otSel.pdfs[p.etapa] ?? []).length > 0;
+                  return (
+                    <Upload
+                      key={p.etapa}
+                      accept="application/pdf,image/*"
+                      showUploadList={false}
+                      beforeUpload={(file) => {
+                        void handleUpload(file, p.etapa);
+                        return false;
+                      }}
+                      disabled={uploadingEtapa !== null}
+                    >
+                      <Button
+                        icon={yaTiene ? <CheckCircleOutlined /> : <UploadOutlined />}
+                        loading={uploadingEtapa === p.etapa}
+                        style={yaTiene
+                          ? { background: "#f6ffed", borderColor: "#52c41a", color: "#389e0d" }
+                          : undefined}
+                      >
+                        {p.label}
+                      </Button>
+                    </Upload>
+                  );
+                })}
+                <Upload
+                  accept="application/pdf,image/*"
+                  showUploadList={false}
+                  beforeUpload={(file) => {
+                    void handleUpload(file, "facturacion");
+                    return false;
+                  }}
+                  disabled={uploadingEtapa !== null}
+                >
+                  <Button
+                    icon={<UploadOutlined />}
+                    type="primary"
+                    loading={uploadingEtapa === "facturacion"}
+                    style={{ background: "#1d6f42", borderColor: "#1d6f42" }}
+                  >
+                    Factura emitida (PDF)
+                  </Button>
+                </Upload>
+              </Space>
+            </div>
 
             <Divider titlePlacement="start">
               <Space size={4}>

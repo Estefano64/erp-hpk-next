@@ -1,9 +1,11 @@
 // POST /api/facturacion/ot/[id]
 //
-// Registra la factura emitida al cliente para una OT entregada. Valida que la
-// OT tenga TODOS los adjuntos requeridos antes de aceptar la operación:
+// Registra la factura emitida al cliente para una OT despachada. Valida que
+// la OT tenga TODOS los adjuntos requeridos antes de aceptar la operación:
 //   - N° guía de remisión emitido (guia_entrega_salida)
-//   - Al menos un archivo en etapa "despacho" (guía firmada/cargo)
+//   - Al menos un archivo en cada una de las 5 etapas requeridas:
+//       recepcion (Guía de llegada), cotizacion (Cotización),
+//       po_cliente (PO cliente), termino (Informe), despacho (Guía despacho)
 //
 // Al guardar:
 //   - nro_factura, fecha_facturacion en OrdenTrabajo
@@ -43,14 +45,25 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const d = parsed.data;
     const usuario = (await getAuditUser(req)) ?? "Facturacion";
 
+    const ETAPAS_REQUERIDAS = [
+      "recepcion", "cotizacion", "po_cliente", "termino", "despacho",
+    ] as const;
+    const ETAPA_LABELS: Record<string, string> = {
+      recepcion: "Guía de llegada",
+      cotizacion: "Cotización",
+      po_cliente: "PO cliente",
+      termino: "Informe",
+      despacho: "Guía de despacho",
+    };
+
     const ot = await prisma.ordenTrabajo.findUnique({
       where: { id: otId },
       select: {
         id: true, ot: true, taller_status_codigo: true,
         guia_entrega_salida: true,
         adjuntos: {
-          where: { etapa_codigo: "despacho" },
-          select: { id: true },
+          where: { etapa_codigo: { in: [...ETAPAS_REQUERIDAS] } },
+          select: { id: true, etapa_codigo: true },
         },
       },
     });
@@ -62,10 +75,13 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       }, { status: 409 });
     }
 
-    // Validación de adjuntos requeridos
+    // Validación de adjuntos requeridos — los 5 PDFs deben estar.
     const faltantes: string[] = [];
     if (!ot.guia_entrega_salida) faltantes.push("N° guía de remisión");
-    if (ot.adjuntos.length === 0) faltantes.push("Archivo de guía firmada (adjunto etapa despacho)");
+    const etapasPresentes = new Set(ot.adjuntos.map((a) => a.etapa_codigo));
+    for (const et of ETAPAS_REQUERIDAS) {
+      if (!etapasPresentes.has(et)) faltantes.push(ETAPA_LABELS[et]);
+    }
     if (faltantes.length > 0) {
       return NextResponse.json({
         error: `Faltan documentos requeridos para facturar: ${faltantes.join(", ")}`,
