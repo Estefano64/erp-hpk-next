@@ -201,13 +201,7 @@ export default function LogisticaDashboard() {
           <SeccionOC modo={modo} anio={anio} mes={mes} sem={semana} />
         </Col>
         <Col span={24}>
-          <SeccionPlaceholder
-            icon={<InboxOutlined style={{ fontSize: 17, color: "#3B6D11" }} />}
-            iconBg="#EAF3DE"
-            label="Almacén"
-            titulo="Inventario"
-            descripcion="Stock / valorización / ingresos / salidas + 2 gráficos (valorización mensual + top productos movidos)"
-          />
+          <SeccionInventario modo={modo} anio={anio} mes={mes} sem={semana} />
         </Col>
         <Col span={24}>
           <SeccionPlaceholder
@@ -725,6 +719,242 @@ function SeccionOC({
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
+              </Card>
+            </Col>
+          </Row>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Sección: Inventario
+//
+// Fetch a /api/dashboard/logistica/inventario con los filtros del header +
+// dos toggles propios:
+//   - cat: "all" / "cat" / "nocat"
+//   - unidad: "np" / "cant"
+//
+// Renderiza: 4 KPIs (stock, valorización, ingresos, salidas) + chart de
+// valorización/ingresos/salidas por mes + top 10 productos más movidos.
+// ───────────────────────────────────────────────────────────────────────────
+interface InvResp {
+  kpis: {
+    stock: number; valorizacion: number; ingresos: number; ingresosQ: number;
+    salidas: number; salidasQ: number; moneda: string;
+  };
+  porMesValorizacion: number[];
+  porMesIngresos: number[];
+  porMesSalidas: number[];
+  topProductos: { codigo: string; descripcion: string; salidaQ: number; salidaMonto: number }[];
+}
+
+function SeccionInventario({
+  modo, anio, mes, sem,
+}: {
+  modo: Modo; anio: number; mes: number; sem: number;
+}) {
+  const [catFilter, setCatFilter] = useState<"all" | "cat" | "nocat">("all");
+  const [unidad, setUnidad] = useState<"np" | "cant">("np");
+  const [data, setData] = useState<InvResp | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        modo, anio: String(anio), cat: catFilter, unidad,
+      });
+      if (modo === "mes") params.set("mes", String(mes));
+      if (modo === "sem") params.set("sem", String(sem));
+      const res = await fetch(`/api/dashboard/logistica/inventario?${params}`);
+      if (res.ok) setData(await res.json());
+    } finally {
+      setLoading(false);
+    }
+  }, [modo, anio, mes, sem, catFilter, unidad]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const porMesData = useMemo(() => {
+    if (!data) return [];
+    return MES_LABELS.map((name, i) => ({
+      name,
+      valorizacion: data.porMesValorizacion[i] ?? 0,
+      ingresos: data.porMesIngresos[i] ?? 0,
+      salidas: data.porMesSalidas[i] ?? 0,
+    }));
+  }, [data]);
+
+  const topData = useMemo(() => {
+    if (!data) return [];
+    return data.topProductos.map((p) => ({
+      name: p.codigo, descripcion: p.descripcion, value: p.salidaQ,
+    }));
+  }, [data]);
+
+  const unidadLbl = unidad === "np" ? "(NP únicos)" : "(cantidad)";
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 9,
+        marginBottom: 12, paddingBottom: 8,
+        borderBottom: `1px solid ${brand.border}`, flexWrap: "wrap",
+      }}>
+        <div style={{
+          width: 28, height: 28, borderRadius: 8, background: "#EAF3DE",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <InboxOutlined style={{ fontSize: 17, color: "#3B6D11" }} />
+        </div>
+        <div>
+          <div style={{
+            fontSize: 10, fontWeight: 600, letterSpacing: "0.06em",
+            textTransform: "uppercase", color: brand.textSecondary,
+          }}>
+            Almacén
+          </div>
+          <Title level={5} style={{ margin: 0 }}>Inventario</Title>
+        </div>
+        <Space style={{ marginLeft: "auto" }} size={10} wrap>
+          <Segmented
+            size="small"
+            value={catFilter}
+            onChange={(v) => setCatFilter(v as "all" | "cat" | "nocat")}
+            options={[
+              { value: "all", label: "Todos" },
+              { value: "cat", label: "Catalogados" },
+              { value: "nocat", label: "No catalogados" },
+            ]}
+          />
+          <Segmented
+            size="small"
+            value={unidad}
+            onChange={(v) => setUnidad(v as "np" | "cant")}
+            options={[
+              { value: "np", label: "NP" },
+              { value: "cant", label: "Cantidad" },
+            ]}
+          />
+        </Space>
+      </div>
+
+      {loading && !data ? (
+        <div style={{ textAlign: "center", padding: 40 }}><Spin /></div>
+      ) : !data ? (
+        <Empty />
+      ) : (
+        <>
+          <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+            <Col xs={12} md={6}>
+              <Card>
+                <Statistic
+                  title={`Stock actual ${unidadLbl}`}
+                  value={data.kpis.stock}
+                  prefix={<InboxOutlined style={{ color: "#3B6D11" }} />}
+                  styles={{ content: { color: "#3B6D11", fontSize: 22, fontWeight: 600 } }}
+                />
+              </Card>
+            </Col>
+            <Col xs={12} md={6}>
+              <Card>
+                <Statistic
+                  title="Valorización actual"
+                  value={data.kpis.valorizacion}
+                  precision={0}
+                  prefix={data.kpis.moneda === "SOL" || data.kpis.moneda === "PEN" ? "S/" : "$"}
+                  styles={{ content: { color: brand.navy, fontSize: 20, fontWeight: 600 } }}
+                />
+              </Card>
+            </Col>
+            <Col xs={12} md={6}>
+              <Card>
+                <Statistic
+                  title={`Ingresos ${unidadLbl}`}
+                  value={data.kpis.ingresos}
+                  precision={0}
+                  prefix={data.kpis.moneda === "SOL" || data.kpis.moneda === "PEN" ? "S/" : "$"}
+                  styles={{ content: { color: "#1D9E75", fontSize: 18, fontWeight: 600 } }}
+                />
+                {data.kpis.ingresosQ > 0 && (
+                  <Text type="secondary" style={{ fontSize: 11 }}>
+                    {data.kpis.ingresosQ} {unidad === "np" ? "NP" : "piezas"}
+                  </Text>
+                )}
+              </Card>
+            </Col>
+            <Col xs={12} md={6}>
+              <Card>
+                <Statistic
+                  title={`Salidas ${unidadLbl}`}
+                  value={data.kpis.salidas}
+                  precision={0}
+                  prefix={data.kpis.moneda === "SOL" || data.kpis.moneda === "PEN" ? "S/" : "$"}
+                  styles={{ content: { color: "#854F0B", fontSize: 18, fontWeight: 600 } }}
+                />
+                {data.kpis.salidasQ > 0 && (
+                  <Text type="secondary" style={{ fontSize: 11 }}>
+                    {data.kpis.salidasQ} {unidad === "np" ? "NP" : "piezas"}
+                  </Text>
+                )}
+              </Card>
+            </Col>
+          </Row>
+
+          <Row gutter={[12, 12]}>
+            <Col xs={24} md={12}>
+              <Card
+                title={
+                  <Space size={12}>
+                    <span>Valorización y movimientos por mes</span>
+                    <Space size={8} style={{ fontSize: 11, color: brand.textSecondary, fontWeight: 400 }}>
+                      <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#97C459", borderRadius: 2, marginRight: 4 }} />Valoriz.</span>
+                      <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#1D9E75", borderRadius: 2, marginRight: 4 }} />Ingresos</span>
+                      <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#E24B4A", borderRadius: 2, marginRight: 4 }} />Salidas</span>
+                    </Space>
+                  </Space>
+                }
+                size="small"
+                styles={{ body: { padding: 12 } }}
+              >
+                <div style={{ width: "100%", height: 240 }}>
+                  <ResponsiveContainer>
+                    <BarChart data={porMesData}>
+                      <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
+                      <ReTooltip formatter={(v) => fmtMoneda(Number(v), data.kpis.moneda)} />
+                      <Bar dataKey="valorizacion" fill="#97C459" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="ingresos" fill="#1D9E75" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="salidas" fill="#E24B4A" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+            </Col>
+            <Col xs={24} md={12}>
+              <Card
+                title="Top 10 productos más movidos · salidas"
+                size="small"
+                styles={{ body: { padding: 12 } }}
+              >
+                {topData.length === 0 ? (
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Sin salidas en el rango" />
+                ) : (
+                  <div style={{ width: "100%", height: 240 }}>
+                    <ResponsiveContainer>
+                      <BarChart data={topData} layout="vertical">
+                        <CartesianGrid stroke="rgba(0,0,0,0.07)" horizontal={false} />
+                        <XAxis type="number" tick={{ fontSize: 11 }} />
+                        <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={90} />
+                        <ReTooltip />
+                        <Bar dataKey="value" fill="#0090B4" radius={[0, 4, 4, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
               </Card>
             </Col>
           </Row>
