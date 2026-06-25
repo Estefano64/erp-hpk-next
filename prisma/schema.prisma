@@ -1965,3 +1965,51 @@ model TaskListItem {
   @@index([material_codigo])
   @@map("task_list_item")
 }
+
+// ── Vehículos / Unidades de transporte HP&K ─────────────────────
+// Inventario de unidades de transporte de la empresa (camionetas, camiones,
+// autos) con tracking de vencimientos de SOAT, póliza y revisión técnica.
+// Origen: VEHÍCULOS.xlsx hoja "VEHICULOS HPK". Cada fila trae dos fechas
+// (emisión + vencimiento) para SOAT y póliza; modelamos solo el vencimiento
+// (el dato accionable). La emisión queda en `observaciones` si hace falta.
+model Vehiculo {
+  id                        Int       @id @default(autoincrement())
+  // Orden visual en el listado (1..N). No es FK ni único — el usuario lo
+  // ajusta para reordenar. Default = max(item)+1 al crear.
+  item                      Int       @default(0)
+  // Tipo de unidad. Valores actuales en el Excel: CAMIONETA, CAMION, AUTO.
+  // Texto libre para no encajar con un catálogo nuevo si aparece otro tipo.
+  tipo                      String    @db.VarChar(30)
+  marca                     String    @db.VarChar(50)
+  modelo                    String    @db.VarChar(100)
+  // Número de serie del chasis (VIN). Único — no se permiten duplicados.
+  serie                     String    @unique @db.VarChar(50)
+  // Placa peruana, formato libre (ej "V9M-357", "AFS-430", "BNS024").
+  placa                     String    @unique @db.VarChar(20)
+  anio                      Int?
+  // Revisión técnica vehicular. Modelamos solo el vencimiento — es lo que
+  // dispara la alerta "está por vencer".
+  revision_tecnica_vencimiento DateTime?
+  // SOAT (Seguro Obligatorio de Accidentes de Tránsito).
+  empresa_soat              String?   @db.VarChar(100)
+  soat_vencimiento          DateTime?
+  // Póliza de seguro vehicular (todo riesgo / responsabilidad civil).
+  empresa_poliza            String?   @db.VarChar(100)
+  poliza_vencimiento        DateTime?
+  // Monto de la póliza (algunas filas del Excel lo traen — referencial).
+  monto_poliza              Decimal?  @db.Decimal(12, 2)
+  // Almacén / ubicación operativa del vehículo. Para HP&K hoy todos están
+  // en "HPK AREQUIPA" pero queda libre por si crece.
+  almacen                   String?   @db.VarChar(100)
+  observaciones             String?
+  activo                    Boolean   @default(true)
+  usuario_crea              String?   @db.VarChar(100)
+  usuario_actualiza         String?   @db.VarChar(100)
+  created_at                DateTime  @default(now())
+  updated_at                DateTime  @default(now()) @updatedAt
+
+  @@index([placa])
+  @@index([soat_vencimiento])
+  @@index([revision_tecnica_vencimiento])
+  @@map("vehiculo")
+}
