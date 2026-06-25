@@ -1054,16 +1054,26 @@ export function usePersistedState<T>(
 
   const [value, setValue] = useState<T>(initial);
   const [hidratado, setHidratado] = useState(false);
+  // Ref para evitar re-hidratar el state si el effect vuelve a correr para
+  // el mismo storageKey. Antes: cuando next-auth refresca la sesión, el
+  // session.user.id puede cambiar momentáneamente (undefined→real→undefined),
+  // disparando el effect varias veces y PISANDO lo que el usuario acababa
+  // de escribir en el input. Causa el bug "hay que buscar 3 veces para
+  // que el filtro tome".
+  const ultimoKeyHidratado = useRef<string | null>(null);
 
   useEffect(() => {
+    if (ultimoKeyHidratado.current === storageKey) return;
+    ultimoKeyHidratado.current = storageKey;
     try {
       const stored = localStorage.getItem(storageKey);
       if (stored !== null) {
         const parsed = JSON.parse(stored) as unknown;
         setValue(deserialize ? deserialize(parsed) : (parsed as T));
-      } else {
-        setValue(initial);
       }
+      // Si no hay storage NO reseteamos a initial — el componente ya arrancó
+      // con initial y si el usuario escribió antes de que el effect corra,
+      // pisarlo destruiría su input.
     } catch { /* ignore */ }
     setHidratado(true);
     // initial/deserialize pueden cambiar entre renders sin afectar persistencia.
