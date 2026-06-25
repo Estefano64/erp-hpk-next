@@ -1611,8 +1611,12 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
                   name="precio_unitario"
                   label="Precio referencial"
                   tooltip="Precio orientativo de quien crea el requerimiento. El precio definitivo lo carga el área de compras en la OC."
+                  rules={[
+                    { required: true, message: "Precio referencial requerido" },
+                    { type: "number", min: 0.01, message: "Debe ser mayor a 0" },
+                  ]}
                 >
-                  <InputNumber min={0} step={0.01} style={{ width: "100%" }} placeholder="0.00" />
+                  <InputNumber min={0.01} step={0.01} style={{ width: "100%" }} placeholder="0.00" />
                 </Form.Item>
               </Col>
               <Col span={12}>
