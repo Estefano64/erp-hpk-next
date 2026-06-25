@@ -315,6 +315,17 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
       if (!it.descripcion?.trim()) errors.push(`Item ${idx + 1}: descripción requerida`);
       if (!it.cantidad || it.cantidad <= 0) errors.push(`Item ${idx + 1}: cantidad debe ser > 0`);
       if (it.tipo_codigo === "MAC" && !it.material_codigo) errors.push(`Item ${idx + 1}: tipo MAC requiere material`);
+      // Precio referencial OBLIGATORIO al crear. Excepción: MAC con precio en
+      // catálogo — ahí el precio sale del material (input read-only) y el
+      // backend lo resuelve por material_id, así que el draft va vacío y es
+      // válido. Para SER/CAD y MAC sin precio de catálogo, exigimos > 0.
+      const matCatalogo = it.tipo_codigo === "MAC" && it.material_codigo
+        ? materiales.find((m) => m.codigo === it.material_codigo)
+        : null;
+      const tienePrecioCatalogo = matCatalogo?.precio != null && Number(matCatalogo.precio) > 0;
+      if (!tienePrecioCatalogo && (it.precio_unitario == null || it.precio_unitario <= 0)) {
+        errors.push(`Item ${idx + 1}: precio referencial requerido (> 0)`);
+      }
       // F. requerida es OPCIONAL al CREAR. Se vuelve obligatoria al ENVIAR a
       // aprobación (lo valida el endpoint /enviar). Si la cargan ahora, solo
       // validamos que no sea anterior a la recepción de la OT.
@@ -1300,7 +1311,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
                 //   - MAC sin precio en catálogo (o sin material elegido aún)
                 //     → input editable, igual que SER/CAD.
                 //   - SER/CAD → siempre editable.
-                title: "Precio ref.", key: "precio", width: 150, align: "right",
+                title: "Precio ref. *", key: "precio", width: 150, align: "right",
                 render: (_: unknown, r: DraftItem) => {
                   const mat = r.tipo_codigo === "MAC" && r.material_codigo
                     ? materiales.find((m) => m.codigo === r.material_codigo)
