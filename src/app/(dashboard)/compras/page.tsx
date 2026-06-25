@@ -22,7 +22,6 @@ import {
   Upload,
   Select,
 } from "antd";
-import RequerimientosAprobadosTab from "@/components/modules/compras/RequerimientosAprobadosTab";
 import { TabIngresoPO } from "@/app/(dashboard)/movimientos/page";
 import { OCAbiertasTab } from "@/app/(dashboard)/compras/oc-abiertas/page";
 import {
@@ -1050,15 +1049,6 @@ export default function ComprasPage() {
               </span>
             ),
             children: ocsContent,
-          },
-          {
-            key: "aprobados",
-            label: (
-              <span>
-                <InfoCircleOutlined /> Requerimientos aprobados
-              </span>
-            ),
-            children: <RequerimientosAprobadosTab onOCCreated={fetchData} />,
           },
           {
             key: "ingreso",
