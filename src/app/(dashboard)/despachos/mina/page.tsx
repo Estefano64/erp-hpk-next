@@ -42,6 +42,8 @@ interface OTLista {
   plaqueteo: string | null;
   items_count: number;
   adjuntos_despacho: Array<{ id: number; nombre_archivo: string; r2_key: string; fecha_subida: string; tamano: number }>;
+  adjuntos_po_cliente: Array<{ id: number; nombre_archivo: string; r2_key: string; fecha_subida: string; tamano: number }>;
+  tiene_po_cliente: boolean;
 }
 
 export default function DespachoMinaPage() {
@@ -92,6 +94,18 @@ export default function DespachoMinaPage() {
 
   const handleGuardar = async () => {
     if (!otSel) return;
+    // Requisito de negocio: la OT debe tener PO del cliente cargada antes
+    // de generar la guía. Sin la PO no se puede emitir la guía de remisión.
+    if (!otSel.tiene_po_cliente) {
+      msg.error("Esta OT no tiene PO del cliente cargada. Subila en la sección Adjuntos (etapa PO Cliente) antes de generar la guía.");
+      return;
+    }
+    // El archivo de la guía firmada también es obligatorio — no se puede
+    // marcar la guía como emitida sin el PDF.
+    if (archivoGuia.length === 0 || !archivoGuia[0].originFileObj) {
+      msg.error("Subí el PDF de la guía de remisión firmada antes de confirmar.");
+      return;
+    }
     const values = await form.validateFields().catch(() => null);
     if (!values) return;
     setSaving(true);
@@ -143,8 +157,10 @@ export default function DespachoMinaPage() {
     }
   };
 
-  const conGuia = data.filter((o) => o.guia_entrega_salida).length;
-  const sinGuia = data.length - conGuia;
+  // Listado solo trae pendientes (guia_entrega_salida=null), así que el
+  // conteo de OTs pendientes es data.length. PO faltante = no se puede
+  // generar guía hasta subirla.
+  const sinPO = data.filter((o) => !o.tiene_po_cliente).length;
 
   const columns: ColumnsType<OTLista> = useMemo(() => [
     {
@@ -187,22 +203,12 @@ export default function DespachoMinaPage() {
       render: (_v, r) => r.fecha_recepcion ? formatDateOnly(r.fecha_recepcion) : "—",
     },
     {
-      key: "guia", title: "N° Guía remisión", width: 160,
-      render: (_v, r) => r.guia_entrega_salida
-        ? <Tag color="blue" style={{ margin: 0 }}>{r.guia_entrega_salida}</Tag>
-        : <Tag color="default">Pendiente</Tag>,
-    },
-    {
-      key: "fecha_entrega", title: "F. Entrega", width: 110,
-      render: (_v, r) => r.fecha_entrega ? formatDateOnly(r.fecha_entrega) : <Text type="secondary">—</Text>,
-    },
-    {
-      key: "adjuntos", title: "Archivos", width: 100, align: "center",
-      render: (_v, r) => r.adjuntos_despacho.length > 0
-        ? <Tooltip title={r.adjuntos_despacho.map((a) => a.nombre_archivo).join(", ")}>
-            <Tag icon={<PaperClipOutlined />} color="green">{r.adjuntos_despacho.length}</Tag>
-          </Tooltip>
-        : <Tag>—</Tag>,
+      key: "po_cliente_status", title: "PO Cliente", width: 130, align: "center",
+      render: (_v, r) => r.tiene_po_cliente
+        ? <Tag icon={<CheckCircleOutlined />} color="success">Cargada</Tag>
+        : <Tooltip title="Subir en la sección Adjuntos de la OT (etapa PO Cliente) antes de generar la guía">
+            <Tag color="warning">Falta PO</Tag>
+          </Tooltip>,
     },
     {
       key: "acc", title: "Acciones", width: 200, fixed: "right",
@@ -211,14 +217,17 @@ export default function DespachoMinaPage() {
           <Tooltip title="Ver OT">
             <Button size="small" icon={<EyeOutlined />} onClick={() => router.push(`/ordenes-trabajo/${r.id}`)} />
           </Tooltip>
-          <Button
-            size="small"
-            type="primary"
-            icon={<FileTextOutlined />}
-            onClick={() => abrirModal(r)}
-          >
-            {r.guia_entrega_salida ? "Editar guía" : "Generar guía"}
-          </Button>
+          <Tooltip title={!r.tiene_po_cliente ? "Subir primero la PO del cliente en Adjuntos de la OT" : ""}>
+            <Button
+              size="small"
+              type="primary"
+              icon={<FileTextOutlined />}
+              onClick={() => abrirModal(r)}
+              disabled={!r.tiene_po_cliente}
+            >
+              Generar guía
+            </Button>
+          </Tooltip>
         </Space>
       ),
     },
@@ -259,16 +268,16 @@ export default function DespachoMinaPage() {
         <Space size={8}>
           <CheckCircleOutlined style={{ color: "#52c41a" }} />
           <Text>
-            OTs en estado <Tag color="orange">Terminado</Tag> listas para emitir guía de remisión al cliente.
-            Una vez generada la guía, la OT pasa a <Tag color="blue">Entregado</Tag> y queda lista para facturación.
+            OTs en estado <Tag color="orange">Terminado</Tag> pendientes de guía de remisión.
+            Para emitir la guía hace falta el <b>PDF de la PO del cliente</b> cargado en Adjuntos.
+            Una vez emitida la guía, la OT desaparece de este listado y pasa a <Tag color="blue">Facturación</Tag>.
           </Text>
         </Space>
       </Card>
 
       <Row gutter={12} style={{ marginBottom: 12 }}>
-        <Col xs={12} md={6}><Card size="small"><Statistic title="OTs terminadas" value={data.length} styles={{ content: { color: brand.navy } }} /></Card></Col>
-        <Col xs={12} md={6}><Card size="small"><Statistic title="Con guía generada" value={conGuia} styles={{ content: { color: "#52c41a" } }} /></Card></Col>
-        <Col xs={12} md={6}><Card size="small"><Statistic title="Sin guía" value={sinGuia} styles={{ content: { color: sinGuia > 0 ? "#fa8c16" : "#bfbfbf" } }} /></Card></Col>
+        <Col xs={12} md={6}><Card size="small"><Statistic title="OTs pendientes de guía" value={data.length} styles={{ content: { color: brand.navy } }} /></Card></Col>
+        <Col xs={12} md={6}><Card size="small"><Statistic title="Sin PO del cliente" value={sinPO} styles={{ content: { color: sinPO > 0 ? "#fa8c16" : "#bfbfbf" } }} /></Card></Col>
       </Row>
 
       {data.length === 0 && !loading ? (
@@ -292,6 +301,9 @@ export default function DespachoMinaPage() {
         onCancel={() => setModalOpen(false)}
         onOk={handleGuardar}
         okText="Generar guía y marcar Entregado"
+        okButtonProps={{
+          disabled: !otSel?.tiene_po_cliente || archivoGuia.length === 0,
+        }}
         cancelText="Cancelar"
         confirmLoading={saving}
         width={modalWidth(screens, 640)}
@@ -330,7 +342,20 @@ export default function DespachoMinaPage() {
               <Form.Item name="nro_informe_entrega" label="N° Informe de entrega">
                 <Input placeholder="Si corresponde" maxLength={100} />
               </Form.Item>
-              <Form.Item label="Adjunto de la guía">
+              {/* PO del cliente — referencia visual: si está cargada,
+                  mostramos el archivo. Si no, alerta. */}
+              <Form.Item label={<span>PO del cliente <span style={{ color: "#cf1322" }}>*</span></span>}>
+                {otSel.tiene_po_cliente ? (
+                  <Tag icon={<CheckCircleOutlined />} color="success">
+                    Cargada · {otSel.adjuntos_po_cliente[0]?.nombre_archivo ?? "PO disponible"}
+                  </Tag>
+                ) : (
+                  <Tag color="warning" style={{ fontSize: 12, padding: "4px 8px" }}>
+                    Falta cargar la PO del cliente. Subila en Adjuntos de la OT (etapa PO Cliente) antes de continuar.
+                  </Tag>
+                )}
+              </Form.Item>
+              <Form.Item label={<span>Adjunto de la guía firmada <span style={{ color: "#cf1322" }}>*</span></span>} required>
                 <Upload
                   beforeUpload={() => false}
                   fileList={archivoGuia}
@@ -338,10 +363,12 @@ export default function DespachoMinaPage() {
                   maxCount={1}
                   accept=".pdf,.jpg,.jpeg,.png"
                 >
-                  <Button icon={<UploadOutlined />}>Subir guía escaneada / firmada</Button>
+                  <Button icon={<UploadOutlined />} type={archivoGuia.length === 0 ? "primary" : "default"}>
+                    Subir guía escaneada / firmada
+                  </Button>
                 </Upload>
                 <Text type="secondary" style={{ fontSize: 11, display: "block", marginTop: 4 }}>
-                  Se guarda como adjunto de la etapa “despacho” de la OT.
+                  Obligatorio. Se guarda como adjunto de la etapa &ldquo;despacho&rdquo; de la OT.
                 </Text>
               </Form.Item>
               <Form.Item name="observaciones" label="Observaciones">

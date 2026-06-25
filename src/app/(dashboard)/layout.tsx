@@ -111,7 +111,8 @@ function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
             { key: "/requerimientos", label: "Requerimientos" },
             { key: "/compras/historico", label: "Cotizaciones (precios históricos)" },
             { key: "/compras", label: "Órdenes de compra" },
-            { key: "/compras/oc-abiertas", label: "OCs Abiertas (almacén abierto)" },
+            // "OCs Abiertas" se movió como tab dentro de /compras. La ruta
+            // /compras/oc-abiertas sigue funcionando por URL directa.
           ],
         },
         {
@@ -120,8 +121,10 @@ function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
           children: [
             { key: "/movimientos", label: "Movimiento de repuestos" },
             { key: "/stock", label: "Inventario de stock" },
-            { key: "/stock/no-catalogados", label: "Inventario no catalogado" },
-            { key: "/despachos", label: "Inventario por OT (despachos)" },
+            // "Inventario no catalogado" se removió del menú: la misma vista
+            // se accede desde /stock con el filtro "No catalogado". La ruta
+            // /stock/no-catalogados sigue funcionando por URL directa.
+            { key: "/despachos", label: "Inventario por OT" },
           ],
         },
         {

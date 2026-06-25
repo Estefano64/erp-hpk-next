@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Typography, Card, Table, Tag, Space, Button, Row, Col, Statistic, Empty,
-  App, Tooltip, Modal, Form, Input, DatePicker,
+  App, Tooltip, Modal, Form, Input, DatePicker, Segmented,
 } from "antd";
 import {
   ExportOutlined, ReloadOutlined, CheckCircleOutlined, WarningOutlined,
@@ -17,6 +17,7 @@ import { useResponsive, modalWidth } from "@/lib/responsive";
 import {
   numeracionColumn, useColumnasOcultas, ColumnasToggleButton, visibleColumns,
   filtroPorColumna, STICKY_HEADER, useColumnasRedimensionables,
+  usePersistedState,
 } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
@@ -93,6 +94,9 @@ export default function DespachosPage() {
   // Búsqueda libre — filtra por OT, cliente, código reparación, código material,
   // N° de parte (np en descripción) o descripción del item.
   const [filtro, setFiltro] = useState("");
+  // Vista general (tabla resumen de OTs) vs Detalle (cards expandidas con items).
+  // Persistido en localStorage para que la elección sobreviva al refresh.
+  const [vistaModo, setVistaModo] = usePersistedState<"general" | "detalle">("despachos-vista-modo", "general");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -221,9 +225,17 @@ export default function DespachosPage() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 12 }}>
         <Title level={3} style={{ margin: 0 }}>
           <ExportOutlined style={{ marginRight: 8 }} />
-          Despachos por OT
+          Inventario por OT
         </Title>
         <Space wrap>
+          <Segmented
+            value={vistaModo}
+            onChange={(v) => setVistaModo(v as "general" | "detalle")}
+            options={[
+              { value: "general", label: "General" },
+              { value: "detalle", label: "Detalle" },
+            ]}
+          />
           <Input
             placeholder="Buscar OT, OC, cliente, código o N° parte..."
             prefix={<SearchOutlined />}
@@ -270,6 +282,79 @@ export default function DespachosPage() {
 
       {gruposFiltrados.length === 0 && !loading ? (
         <Empty description={filtro ? `Sin resultados para "${filtro}".` : "No hay despachos pendientes."} />
+      ) : vistaModo === "general" ? (
+        // Vista General: tabla resumen de TODAS las OTs abiertas con su
+        // estado (COMPLETO / INCOMPLETO). Click en el ojo cambia a Detalle
+        // para ver/despachar items de esa OT.
+        <Table<GrupoOT>
+          rowKey="ot_id"
+          dataSource={gruposFiltrados}
+          loading={loading}
+          size="small"
+          pagination={{ pageSize: 50, showSizeChanger: true }}
+          scroll={{ x: 1000 }}
+          sticky={STICKY_HEADER}
+          columns={[
+            {
+              key: "ot", title: "OT", dataIndex: "ot", width: 130,
+              sorter: (a, b) => (a.ot ?? "").localeCompare(b.ot ?? ""),
+              render: (v: string | null) => v ? <Tag color={brand.navy}>{v}</Tag> : <Text type="secondary">—</Text>,
+            },
+            {
+              key: "cliente", title: "Cliente", width: 220, ellipsis: true,
+              render: (_, g) => {
+                const c = g.items[0]?.orden_trabajo?.cliente;
+                return c?.nombre_comercial ?? c?.razon_social ?? <Text type="secondary">—</Text>;
+              },
+            },
+            {
+              key: "items", title: "Items", width: 90, align: "right",
+              sorter: (a, b) => a.items.length - b.items.length,
+              render: (_, g) => <Text strong>{g.items.length}</Text>,
+            },
+            {
+              key: "con_stock", title: "Con stock", width: 100, align: "right",
+              sorter: (a, b) => a.con_stock - b.con_stock,
+              render: (_, g) => (
+                <Text style={{ color: g.con_stock > 0 ? "#52c41a" : "#bbb" }}>{g.con_stock}</Text>
+              ),
+            },
+            {
+              key: "sin_stock", title: "Sin stock", width: 100, align: "right",
+              sorter: (a, b) => a.sin_stock - b.sin_stock,
+              render: (_, g) => (
+                <Text style={{ color: g.sin_stock > 0 ? "#cf1322" : "#bbb" }}>{g.sin_stock}</Text>
+              ),
+            },
+            {
+              key: "estado_ot", title: "Estado", width: 130, align: "center",
+              filters: [
+                { text: "COMPLETO", value: "completa" },
+                { text: "INCOMPLETO", value: "incompleta" },
+              ],
+              onFilter: (value, g) => g.estado_ot === value,
+              render: (_, g) => g.estado_ot === "completa"
+                ? <Tag icon={<CheckCircleOutlined />} color="success">COMPLETO</Tag>
+                : <Tag icon={<WarningOutlined />} color="warning">INCOMPLETO</Tag>,
+            },
+            {
+              key: "acciones", title: "Acciones", width: 100, fixed: "right", align: "center",
+              render: (_, g) => (
+                <Tooltip title="Ver detalle de la OT">
+                  <Button
+                    size="small"
+                    type="primary"
+                    icon={<EyeOutlined />}
+                    onClick={() => {
+                      setFiltro(g.ot ?? "");
+                      setVistaModo("detalle");
+                    }}
+                  />
+                </Tooltip>
+              ),
+            },
+          ]}
+        />
       ) : (
         gruposFiltrados.map((g) => <GrupoCard
           key={g.ot_id}

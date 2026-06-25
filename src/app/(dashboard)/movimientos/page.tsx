@@ -1500,8 +1500,19 @@ function TabSalida({ onRefresh }: { onRefresh: () => void }) {
             >
               <Select
                 showSearch
-                placeholder="Buscar por código o descripción..."
+                placeholder="Buscar por código, NP o descripción..."
                 optionFilterProp="label"
+                // El input principal del Select es angosto: si la descripción
+                // es larga se ve truncada. Dejamos que el dropdown se expanda
+                // libremente para que el usuario vea el material completo
+                // antes de elegir, y dentro de cada fila permitimos wrap.
+                popupMatchSelectWidth={false}
+                dropdownStyle={{ minWidth: 520, maxWidth: 760 }}
+                optionRender={(option) => (
+                  <div style={{ whiteSpace: "normal", lineHeight: 1.35, padding: "2px 0" }}>
+                    {option.label}
+                  </div>
+                )}
                 onChange={(v) => {
                   if (esNoCat) {
                     setNoCatSel(noCat.find((x) => x.id === v) || null);
@@ -1511,9 +1522,35 @@ function TabSalida({ onRefresh }: { onRefresh: () => void }) {
                 }}
                 options={esNoCat
                   ? noCat.map((m) => ({ value: m.id, label: `${m.codigo} — ${m.descripcion}` }))
-                  : materiales.map((m) => ({ value: m.material_id, label: `${m.codigo} — ${m.descripcion}` }))}
+                  : materiales.map((m) => ({
+                      value: m.material_id,
+                      label: `${m.codigo}${m.np ? ` · NP ${m.np}` : ""} — ${m.descripcion}`,
+                    }))}
                 notFoundContent={esNoCat && noCat.length === 0 ? "No hay materiales no catalogados. Creá uno en Inventario no catalogado." : undefined}
               />
+              {/* Descripción completa del material seleccionado — el input del
+                  Select trunca con … cuando la descripción es larga; este
+                  helper la muestra entera siempre. */}
+              {!esNoCat && matSel && (
+                <div style={{
+                  marginTop: -6, marginBottom: 12, padding: "6px 10px",
+                  background: "#FAFAFA", border: `1px solid ${brand.border}`,
+                  borderRadius: 6, fontSize: 12, lineHeight: 1.4,
+                }}>
+                  <div><b>{matSel.codigo}</b>{matSel.np ? <> · <span style={{ color: brand.textSecondary }}>NP</span> <b>{matSel.np}</b></> : null}</div>
+                  <div style={{ color: brand.textPrimary, whiteSpace: "normal" }}>{matSel.descripcion}</div>
+                </div>
+              )}
+              {esNoCat && noCatSel && (
+                <div style={{
+                  marginTop: -6, marginBottom: 12, padding: "6px 10px",
+                  background: "#FAFAFA", border: `1px solid ${brand.border}`,
+                  borderRadius: 6, fontSize: 12, lineHeight: 1.4,
+                }}>
+                  <div><b>{noCatSel.codigo}</b></div>
+                  <div style={{ color: brand.textPrimary, whiteSpace: "normal" }}>{noCatSel.descripcion}</div>
+                </div>
+              )}
             </Form.Item>
 
             {!esNoCat && matSel && (

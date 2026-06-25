@@ -15,6 +15,9 @@ export async function GET(_req: NextRequest) {
     const ots = await prisma.ordenTrabajo.findMany({
       where: {
         taller_status_codigo: ESTADO_LISTO_DESPACHO,
+        // Solo OTs pendientes de guía. Una vez emitida la guía, la OT
+        // desaparece de este listado y pasa a /facturacion/ot.
+        guia_entrega_salida: null,
       },
       select: {
         id: true,
@@ -33,9 +36,11 @@ export async function GET(_req: NextRequest) {
         codigo_reparacion: { select: { codigo: true, descripcion: true } },
         ot_status: true,
         taller_status: true,
+        // Adjuntos de etapa "despacho" (la guía cuando se sube) y "po_cliente"
+        // (PDF de la PO del cliente, requisito para generar la guía).
         adjuntos: {
-          where: { etapa_codigo: "despacho" },
-          select: { id: true, nombre_archivo: true, r2_key: true, fecha_subida: true, tamano: true },
+          where: { etapa_codigo: { in: ["despacho", "po_cliente"] } },
+          select: { id: true, nombre_archivo: true, r2_key: true, fecha_subida: true, tamano: true, etapa_codigo: true },
           orderBy: { fecha_subida: "desc" },
         },
         repuestos: {
@@ -66,7 +71,11 @@ export async function GET(_req: NextRequest) {
       ns: o.ns,
       plaqueteo: o.plaqueteo,
       items_count: o.repuestos.length,
-      adjuntos_despacho: o.adjuntos,
+      // Separar adjuntos por etapa para que el frontend pueda validar la PO
+      // del cliente (requisito para generar la guía).
+      adjuntos_despacho: o.adjuntos.filter((a) => a.etapa_codigo === "despacho"),
+      adjuntos_po_cliente: o.adjuntos.filter((a) => a.etapa_codigo === "po_cliente"),
+      tiene_po_cliente: o.adjuntos.some((a) => a.etapa_codigo === "po_cliente"),
     }));
 
     return NextResponse.json({ data });

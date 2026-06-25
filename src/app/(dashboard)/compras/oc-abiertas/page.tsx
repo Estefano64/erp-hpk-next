@@ -49,6 +49,12 @@ interface OCAbierta {
   }>;
 }
 
+// Exportado con nombre para que /compras pueda embeber esta vista como tab
+// "OCs Abiertas (almacén abierto)" sin navegar. Mismo patrón que
+// TabIngresoPO (commit fce79d6) y RequerimientosDetalleEmbebido (a79d348).
+// El default export sigue siendo la página, así Next.js no cambia el routing.
+export { OCAbiertasListPage as OCAbiertasTab };
+
 export default function OCAbiertasListPage() {
   const router = useRouter();
   const { message } = App.useApp();

@@ -474,7 +474,7 @@ export default function HistoricoComprasPage() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
         <Title level={4} style={{ margin: 0, color: brand.navy }}>
           <FileSearchOutlined style={{ marginRight: 8 }} />
-          Listado de Repuestos — Precios Unitarios por Proveedor
+          Cotizaciones
         </Title>
         <Space>
           <Button
@@ -500,12 +500,6 @@ export default function HistoricoComprasPage() {
       <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 12 }}>
         Matriz de precios. Cada celda muestra el precio de OC real o tu cotización manual (override). Hacé click en una celda para cotizar/editar — soporta cualquier número de proveedores. El proveedor con el menor precio se resalta en verde.
       </Text>
-
-      <Row gutter={12} style={{ marginBottom: 12 }}>
-        <Col xs={12} sm={8}><Card size="small"><Statistic title="Materiales" value={stats.materiales} styles={{ content: { color: brand.navy, fontSize: 22 } }} /></Card></Col>
-        <Col xs={12} sm={8}><Card size="small"><Statistic title="Proveedores" value={stats.proveedores} styles={{ content: { color: brand.cyan, fontSize: 22 } }} /></Card></Col>
-        <Col xs={12} sm={8}><Card size="small"><Statistic title="Cotizaciones manuales" value={stats.cotizaciones} styles={{ content: { color: "#fa8c16", fontSize: 22 } }} /></Card></Col>
-      </Row>
 
       <Card size="small" style={{ marginBottom: 12 }} styles={{ body: { padding: 10 } }}>
         <Space orientation="vertical" size={8} style={{ width: "100%" }}>

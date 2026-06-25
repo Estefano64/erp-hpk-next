@@ -735,7 +735,7 @@ interface InvResp {
   porMesValorizacion: number[];
   porMesIngresos: number[];
   porMesSalidas: number[];
-  topProductos: { codigo: string; descripcion: string; salidaQ: number; salidaMonto: number }[];
+  topProductos: { codigo: string; np: string | null; descripcion: string; salidaQ: number; salidaMonto: number }[];
 }
 
 function SeccionInventario({
@@ -778,7 +778,12 @@ function SeccionInventario({
   const topData = useMemo(() => {
     if (!data) return [];
     return data.topProductos.map((p) => ({
-      name: p.codigo, descripcion: p.descripcion, value: p.salidaQ,
+      name: p.codigo,
+      codigo: p.codigo,
+      np: p.np,
+      descripcion: p.descripcion,
+      monto: p.salidaMonto,
+      value: p.salidaQ,
     }));
   }, [data]);
 
@@ -931,17 +936,81 @@ function SeccionInventario({
                 {topData.length === 0 ? (
                   <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Sin salidas en el rango" />
                 ) : (
-                  <div style={{ width: "100%", height: 240 }}>
-                    <ResponsiveContainer>
-                      <BarChart data={topData} layout="vertical">
-                        <CartesianGrid stroke="rgba(0,0,0,0.07)" horizontal={false} />
-                        <XAxis type="number" tick={{ fontSize: 11 }} />
-                        <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={90} />
-                        <ReTooltip />
-                        <Bar dataKey="value" fill="#0090B4" radius={[0, 4, 4, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
+                  <>
+                    <div style={{ width: "100%", height: 240 }}>
+                      <ResponsiveContainer>
+                        <BarChart data={topData} layout="vertical" margin={{ top: 4, right: 12, bottom: 4, left: 0 }}>
+                          <CartesianGrid stroke="rgba(0,0,0,0.07)" horizontal={false} />
+                          <XAxis type="number" tick={{ fontSize: 11 }} />
+                          <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={90} />
+                          <ReTooltip
+                            content={({ active, payload }) => {
+                              if (!active || !payload?.length) return null;
+                              const p = payload[0].payload as {
+                                codigo: string; np: string | null; descripcion: string;
+                                value: number; monto: number;
+                              };
+                              return (
+                                <div style={{
+                                  background: "#fff", border: `1px solid ${brand.border}`,
+                                  borderRadius: 6, padding: "8px 10px", maxWidth: 280,
+                                  boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+                                }}>
+                                  <div style={{ fontWeight: 600, fontSize: 12, color: brand.navy }}>
+                                    {p.codigo}
+                                  </div>
+                                  {p.np && (
+                                    <div style={{ fontSize: 11, color: brand.textSecondary, marginTop: 2 }}>
+                                      <strong>NP:</strong> {p.np}
+                                    </div>
+                                  )}
+                                  {p.descripcion && (
+                                    <div style={{ fontSize: 11, color: brand.textPrimary, marginTop: 2, whiteSpace: "normal" }}>
+                                      {p.descripcion}
+                                    </div>
+                                  )}
+                                  <div style={{ fontSize: 11, color: "#0090B4", marginTop: 4, fontWeight: 600 }}>
+                                    Salidas: {p.value}
+                                    {p.monto > 0 && (
+                                      <span style={{ color: brand.textSecondary, fontWeight: 400, marginLeft: 6 }}>
+                                        ({fmtMoneda(p.monto, data.kpis.moneda)})
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            }}
+                          />
+                          <Bar dataKey="value" fill="#0090B4" radius={[0, 4, 4, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div style={{
+                      marginTop: 8, borderTop: `1px solid ${brand.border}`, paddingTop: 8,
+                      maxHeight: 140, overflowY: "auto",
+                    }}>
+                      {topData.map((p) => (
+                        <div key={p.codigo} style={{
+                          display: "flex", gap: 8, alignItems: "baseline",
+                          fontSize: 11, padding: "3px 0",
+                          borderBottom: `1px dashed ${brand.border}`,
+                        }}>
+                          <span style={{ fontWeight: 600, color: brand.navy, minWidth: 68 }}>{p.codigo}</span>
+                          {p.np && (
+                            <span style={{ color: brand.textSecondary, minWidth: 90 }}>
+                              <strong>NP:</strong> {p.np}
+                            </span>
+                          )}
+                          <span style={{ color: brand.textPrimary, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                            title={p.descripcion}
+                          >
+                            {p.descripcion || "—"}
+                          </span>
+                          <span style={{ color: "#0090B4", fontWeight: 600 }}>{p.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 )}
               </Card>
             </Col>

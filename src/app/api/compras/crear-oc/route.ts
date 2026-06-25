@@ -38,6 +38,10 @@ const Schema = z.object({
   // Fechas de entrega override por OTRepuesto.id → ISO date (YYYY-MM-DD).
   // Si no viene para un item, se usa la fecha_entrega_esperada global.
   fechas_override: z.record(z.string(), z.string()).optional(),
+  // Descripciones override por OTRepuesto.id → texto (lo que aparece en
+  // el PDF de la OC). Si no viene, se usa la descripción base del req.
+  // Espejo de lo que hace /compras/[id]/editar al modificar oc_descripcion.
+  descripciones_override: z.record(z.string(), z.string().trim().max(500)).optional(),
   // Items "libres" agregados desde el editor de OC — no vienen de un
   // OTRepuesto existente. Se crean como OTRepuesto con solo_para_oc=true
   // (no aparecen en /requerimientos ni vistas de OT, solo en el editor/PDF
@@ -364,6 +368,20 @@ export async function POST(req: NextRequest) {
         await tx.oTRepuesto.update({
           where: { id },
           data: { fecha_entrega_esperada: fecha },
+        });
+      }
+      // Descripciones override por item — persistimos en oc_descripcion.
+      // Cuando el editor de OC vuelva a abrir esta compra, leerá esos
+      // textos en vez de los originales del req.
+      const descripcionesOverride = d.descripciones_override ?? {};
+      for (const [idStr, descripcion] of Object.entries(descripcionesOverride)) {
+        const id = Number(idStr);
+        if (!Number.isFinite(id)) continue;
+        const limpio = (descripcion ?? "").trim();
+        if (!limpio) continue;
+        await tx.oTRepuesto.update({
+          where: { id },
+          data: { oc_descripcion: limpio },
         });
       }
       if (assigned.count !== repuestos.length) {

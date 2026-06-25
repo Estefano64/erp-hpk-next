@@ -600,29 +600,42 @@ export function useColumnasRedimensionables<T>(
   const pinnedKey = storageKey ? `${storageKey}-pinned` : undefined;
   const orderKey = storageKey ? `${storageKey}-order` : undefined;
 
-  const [anchos, setAnchos] = useState<Record<string, number>>({});
-  const [pinned, setPinned] = useState<Set<string>>(new Set());
-  const [orden, setOrden] = useState<string[] | null>(null);
-  const [hidratado, setHidratado] = useState(false);
-
-  // Lectura atómica de los 3 estados desde localStorage. Se ejecuta una vez
-  // al montar (o cuando cambia el storageKey, ej. en /catalogos/[tabla]).
-  useEffect(() => {
-    if (!storageKey) { setHidratado(true); return; }
+  // Init lazy: leemos localStorage al PRIMER render para que el state
+  // arranque con los valores persistidos. Antes el state arrancaba vacío
+  // y un useEffect lo seteaba después — pero el effect de escritura podía
+  // dispararse antes con el state vacío, pisando los anchos guardados.
+  // Especialmente notable cuando el componente se desmonta/remonta por
+  // cambios en data (ej: filtros que dejan la tabla vacía momentáneamente).
+  // El init lazy se ejecuta UNA sola vez (durante el primer render del
+  // componente), evitando el race.
+  const [anchos, setAnchos] = useState<Record<string, number>>(() => {
+    if (typeof window === "undefined" || !storageKey) return {};
     try {
-      const storedAnchos = localStorage.getItem(storageKey);
-      if (storedAnchos) setAnchos(JSON.parse(storedAnchos));
-      if (pinnedKey) {
-        const storedPinned = localStorage.getItem(pinnedKey);
-        if (storedPinned) setPinned(new Set(JSON.parse(storedPinned)));
-      }
-      if (orderKey) {
-        const storedOrden = localStorage.getItem(orderKey);
-        if (storedOrden) setOrden(JSON.parse(storedOrden));
-      }
+      const stored = localStorage.getItem(storageKey);
+      if (stored) return JSON.parse(stored);
     } catch { /* ignore */ }
-    setHidratado(true);
-  }, [storageKey, pinnedKey, orderKey]);
+    return {};
+  });
+  const [pinned, setPinned] = useState<Set<string>>(() => {
+    if (typeof window === "undefined" || !pinnedKey) return new Set();
+    try {
+      const stored = localStorage.getItem(pinnedKey);
+      if (stored) return new Set(JSON.parse(stored));
+    } catch { /* ignore */ }
+    return new Set();
+  });
+  const [orden, setOrden] = useState<string[] | null>(() => {
+    if (typeof window === "undefined" || !orderKey) return null;
+    try {
+      const stored = localStorage.getItem(orderKey);
+      if (stored) return JSON.parse(stored);
+    } catch { /* ignore */ }
+    return null;
+  });
+  // hidratado=true desde el principio porque init lazy ya hidrató.
+  // Mantenemos el flag (en true) por compatibilidad con los effects de
+  // escritura que lo chequean.
+  const [hidratado] = useState(true);
 
   // 3 efectos de escritura. CADA UNO chequea `hidratado` para no pisar
   // localStorage con el valor inicial antes de haber leído.
