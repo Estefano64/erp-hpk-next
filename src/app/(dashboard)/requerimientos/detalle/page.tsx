@@ -40,6 +40,7 @@ import {
   InfoCircleOutlined,
   SettingOutlined,
   InboxOutlined,
+  LinkOutlined,
   SendOutlined,
   CheckOutlined,
   CloseOutlined,
@@ -404,6 +405,13 @@ function RequerimientosDetalleInner() {
   // Modal de "Caja chica" — paga el item con efectivo del fondo fijo y cierra
   // el req inmediatamente (no pasa por OC ni por despacho).
   const [modalCajaChica, setModalCajaChica] = useState<Requerimiento | null>(null);
+  // Modal "Vincular material" para reqs que se crearon como CAD o sin
+  // material catalogado (material_id = null). Permite asociar el req a un
+  // Material del catálogo para poder consumirlo desde stock.
+  const [modalVincular, setModalVincular] = useState<Requerimiento | null>(null);
+  const [materialesVincular, setMaterialesVincular] = useState<{ material_id: number; codigo: string; descripcion: string; np: string | null }[]>([]);
+  const [materialIdAVincular, setMaterialIdAVincular] = useState<number | null>(null);
+  const [vinculando, setVinculando] = useState(false);
   const [cajaMonto, setCajaMonto] = useState<number | null>(null);
   const [cajaMoneda, setCajaMoneda] = useState<string>("PEN");
   const [cajaProveedor, setCajaProveedor] = useState<string>("");
@@ -1001,6 +1009,48 @@ function RequerimientosDetalleInner() {
       message.error(err instanceof Error ? err.message : "Error al consumir de almacén");
     } finally {
       setConsumiendo(false);
+    }
+  };
+
+  // ── Vincular material a un req que se creó como CAD o sin material ──
+  const abrirModalVincular = async (r: Requerimiento) => {
+    setModalVincular(r);
+    setMaterialIdAVincular(null);
+    // Fetch del catálogo bajo demanda. /api/materiales devuelve la lista
+    // paginada — usamos limit alto porque el Select hace búsqueda client-side.
+    try {
+      const res = await fetch("/api/materiales?limit=10000");
+      const j = await res.json();
+      setMaterialesVincular(
+        (j.data ?? []).map((m: { material_id: number; codigo: string; descripcion?: string | null; np?: string | null }) => ({
+          material_id: m.material_id,
+          codigo: m.codigo,
+          descripcion: m.descripcion ?? "",
+          np: m.np ?? null,
+        })),
+      );
+    } catch {
+      message.error("Error cargando catálogo de materiales");
+    }
+  };
+  const confirmarVincular = async () => {
+    if (!modalVincular || materialIdAVincular == null) return;
+    setVinculando(true);
+    try {
+      const res = await fetch(`/api/requerimientos/${modalVincular.id}/vincular-material`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ material_id: materialIdAVincular }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Error al vincular");
+      message.success(json.message || "Material vinculado");
+      setModalVincular(null);
+      await fetchData();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : "Error al vincular");
+    } finally {
+      setVinculando(false);
     }
   };
 
@@ -1703,6 +1753,15 @@ function RequerimientosDetalleInner() {
                 onClick={() => abrirModalConsumir(r)}
               />
             </Tooltip>
+            {!hayMaterial && sinOC && noAnulado && noStockEstado && (
+              <Tooltip title="Vincular este req a un material del catálogo (cambia a tipo MAC). Útil para reqs creados como CAD por error.">
+                <Button
+                  size="small"
+                  icon={<LinkOutlined />}
+                  onClick={() => abrirModalVincular(r)}
+                />
+              </Tooltip>
+            )}
             {(() => {
               // Caja chica: cierra el req con efectivo. Aplica si NO tiene OC
               // y NO está anulado. No requiere material catálogo (puede ser
@@ -2688,6 +2747,53 @@ function RequerimientosDetalleInner() {
       </Modal>
 
       {/* ── Modal Consumir de Almacén ─────────────────────────────────── */}
+      {/* Modal "Vincular material" — para reqs sin material_id (creados como CAD
+          o sin vincular). Permite asociarlos a un Material del catálogo. */}
+      <Modal
+        title={
+          <Space>
+            <LinkOutlined style={{ color: brand.cyan }} />
+            Vincular material — {modalVincular?.nro_req ?? `#${modalVincular?.id ?? ""}`}/{modalVincular?.item_req ?? ""}
+          </Space>
+        }
+        open={!!modalVincular}
+        onCancel={() => setModalVincular(null)}
+        onOk={confirmarVincular}
+        confirmLoading={vinculando}
+        okText="Vincular"
+        okButtonProps={{ disabled: materialIdAVincular == null }}
+        cancelText="Cancelar"
+        width={modalWidth(screens, 620)}
+        destroyOnHidden
+      >
+        <div style={{ marginBottom: 12 }}>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            Descripción actual del req: <b>{modalVincular?.descripcion ?? "—"}</b>
+          </Text>
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, marginBottom: 6 }}>Material del catálogo</div>
+          <Select
+            showSearch
+            placeholder="Buscar por código, descripción o N/P..."
+            optionFilterProp="label"
+            value={materialIdAVincular ?? undefined}
+            onChange={(v) => setMaterialIdAVincular(v)}
+            options={materialesVincular.map((m) => ({
+              value: m.material_id,
+              label: `${m.codigo} — ${m.descripcion}${m.np ? ` · NP ${m.np}` : ""}`,
+            }))}
+            style={{ width: "100%" }}
+            virtual
+          />
+        </div>
+        <Text type="secondary" style={{ fontSize: 11 }}>
+          Al vincular: el tipo del req cambia a <b>MAC</b>, se asigna el material
+          y se hereda unidad/fabricante. Si el req no tenía precio, se copia el
+          del catálogo.
+        </Text>
+      </Modal>
+
       <Modal
         title={
           <Space>
