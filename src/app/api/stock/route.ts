@@ -123,11 +123,19 @@ export async function GET(req: NextRequest) {
       const enReq = enReqMap.get(m.material_id);
       const cantPO = enPO?.cantidad ?? 0;
       const cantReq = enReq?.cantidad ?? 0;
-      // Stock proyectado = stock actual + lo que viene en POs - lo que pidieron en requerimientos
-      const proyectado = stock + cantPO - cantReq;
-      // Por solicitar = lo que se necesita para llegar al máximo (si bajo de reposición)
-      const porSolicitar = punto > 0 && proyectado <= punto && maximo > proyectado
-        ? Math.max(0, maximo - proyectado)
+      // "Disponible" engloba todo el material que existe o existirá ligado al
+      // NP: lo físico en almacén + lo en tránsito en POs + lo reservado para
+      // alguna OT (en REQ). Esta es la definición pedida por logística — antes
+      // se restaba En REQ pero por convención del área se suma porque ya está
+      // "comprometido" al NP (aunque asignado a una OT específica).
+      const proyectado = stock + cantPO + cantReq;
+      // "Por solicitar" usa Stock + En POs (sin sumar En REQ) — el material
+      // reservado a una OT NO debería evitar nuevas compras del NP. Si bajamos
+      // del punto de reposición considerando solo lo que efectivamente va a
+      // estar libre, sugerimos comprar hasta el máximo.
+      const proyectadoParaCompra = stock + cantPO;
+      const porSolicitar = punto > 0 && proyectadoParaCompra <= punto && maximo > proyectadoParaCompra
+        ? Math.max(0, maximo - proyectadoParaCompra)
         : 0;
 
       let alerta: "OK" | "BAJO" | "SIN" | "EXCESO" = "OK";

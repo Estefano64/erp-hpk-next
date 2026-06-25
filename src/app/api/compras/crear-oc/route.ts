@@ -21,6 +21,23 @@ const Schema = z.object({
   tipo_pago: z.string().trim().max(30).optional().nullable(),
   // Plazo en días (solo CREDITO/CHEQUE_FECHADO). null/0 para CONTADO.
   dias_credito: z.coerce.number().int().min(0).max(365).optional().nullable(),
+  // ── Campos extra del editor de OC, opcionales al crear ──────────────
+  // Ref. pedido (numero_req): texto libre que aparece en el header del PDF.
+  ref_pedido: z.string().trim().max(500).optional().nullable(),
+  // Flag IGV por-OC. Default true (estándar).
+  aplica_igv: z.boolean().optional(),
+  // Descuento en moneda de la OC, se RESTA del subtotal antes de calcular IGV.
+  descuento: z.coerce.number().min(0).optional(),
+  // "Otros" (flete, manipuleo, etc.). Se SUMA o RESTA al total según `otros_signo`.
+  otros: z.coerce.number().min(0).optional(),
+  otros_signo: z.enum(["+", "-"]).optional(),
+  // Cantidades override por OTRepuesto.id → cantidad. Si no viene, se usa
+  // la cantidad original del req. Permite ajustar al alza/baja en el momento
+  // de comprar sin modificar el req base.
+  cantidades_override: z.record(z.string(), z.coerce.number().min(0.0001)).optional(),
+  // Fechas de entrega override por OTRepuesto.id → ISO date (YYYY-MM-DD).
+  // Si no viene para un item, se usa la fecha_entrega_esperada global.
+  fechas_override: z.record(z.string(), z.string()).optional(),
 });
 
 const IGV_PCT = new Prisma.Decimal("0.18");
@@ -111,18 +128,27 @@ export async function POST(req: NextRequest) {
       }
 
       // Calcular totales con Prisma.Decimal para no perder precisión.
+      // `cantidades_override` permite usar una cantidad distinta a la del req
+      // (ajuste al alza/baja al momento de comprar). Solo se aplica si el id
+      // del req está en el mapa; si no, se usa rep.cantidad.
+      const overrideCant = d.cantidades_override ?? {};
+      const aplicaIgv = d.aplica_igv ?? true;
+      const igvFactor = aplicaIgv ? IGV_PCT : new Prisma.Decimal(0);
+      const onePlusIgv = aplicaIgv ? ONE_PLUS_IGV : new Prisma.Decimal(1);
+
       let subtotal = new Prisma.Decimal(0);
       const detallesData: Prisma.CompraDetalleCreateManyInput[] = [];
 
       for (const rep of repuestos) {
         const precio = new Prisma.Decimal(rep.precio_unitario ?? 0);
-        const cant = new Prisma.Decimal(rep.cantidad);
+        const cantSrc = overrideCant[String(rep.id)] ?? rep.cantidad;
+        const cant = new Prisma.Decimal(cantSrc);
         const itemSub = precio.mul(cant);
         subtotal = subtotal.plus(itemSub);
 
         if (rep.material_id) {
-          const itemImp = itemSub.mul(IGV_PCT);
-          const itemTotal = itemSub.mul(ONE_PLUS_IGV);
+          const itemImp = itemSub.mul(igvFactor);
+          const itemTotal = itemSub.mul(onePlusIgv);
           detallesData.push({
             compra_id: 0, // se setea tras crear la compra
             material_id: rep.material_id,
@@ -135,8 +161,14 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const impuesto = subtotal.mul(IGV_PCT);
-      const total = subtotal.mul(ONE_PLUS_IGV);
+      // Descuento + "otros" (signo configurable) se aplican a nivel cabecera.
+      const descuento = new Prisma.Decimal(d.descuento ?? 0);
+      const otrosVal = new Prisma.Decimal(d.otros ?? 0);
+      const otrosFirmado = d.otros_signo === "-" ? otrosVal.neg() : otrosVal;
+      // Base imponible = subtotal - descuento (no puede ir bajo 0).
+      const baseImponible = Prisma.Decimal.max(new Prisma.Decimal(0), subtotal.minus(descuento));
+      const impuesto = baseImponible.mul(igvFactor);
+      const total = baseImponible.plus(impuesto).plus(otrosFirmado);
 
       // Construir el nombre descriptivo: "OT-{codigos} · {Proveedor}".
       // Si vino del cliente lo respetamos; si no, lo auto-generamos.
@@ -164,6 +196,7 @@ export async function POST(req: NextRequest) {
           compraCreada = await tx.compra.create({
             data: {
               numero_po,
+              numero_req: d.ref_pedido?.trim() || null,
               nombre: nombreFinal,
               proveedor_id: d.proveedor_id,
               ubicacion_codigo,
@@ -171,9 +204,12 @@ export async function POST(req: NextRequest) {
               fecha_entrega_esperada: parseDateOnly(d.fecha_entrega_esperada),
               status_oc_codigo: "PEND_OC",
               subtotal,
+              descuento,
               impuesto,
+              otros: otrosFirmado,
               total,
               moneda_codigo,
+              aplica_igv: aplicaIgv,
               // Para CONTADO forzamos dias_credito a 0 aunque el cliente
               // mande otra cosa — evita disonancias en reportes.
               tipo_pago: d.tipo_pago || null,
@@ -249,6 +285,32 @@ export async function POST(req: NextRequest) {
           status_oc_codigo: "PROCESO",
         },
       });
+      // Persistir cantidades override (oc_cantidad) item por item. Solo
+      // se actualizan los que el front mandó en el mapa — el resto queda
+      // con cantidad = rep.cantidad original.
+      for (const [idStr, cant] of Object.entries(overrideCant)) {
+        const id = Number(idStr);
+        if (!Number.isFinite(id)) continue;
+        await tx.oTRepuesto.update({
+          where: { id },
+          data: { oc_cantidad: new Prisma.Decimal(cant) },
+        });
+      }
+      // Fechas de entrega override por item. Si vienen, pisan la fecha
+      // global que se aplicó en el updateMany anterior — el updateMany usa
+      // d.fecha_entrega_esperada como default cuando el item no tiene
+      // override propia.
+      const fechasOverride = d.fechas_override ?? {};
+      for (const [idStr, fechaISO] of Object.entries(fechasOverride)) {
+        const id = Number(idStr);
+        if (!Number.isFinite(id)) continue;
+        const fecha = parseDateOnly(fechaISO);
+        if (!fecha) continue;
+        await tx.oTRepuesto.update({
+          where: { id },
+          data: { fecha_entrega_esperada: fecha },
+        });
+      }
       if (assigned.count !== repuestos.length) {
         throw Object.assign(
           new Error("Conflicto: otro proceso asignó parte de los requerimientos"),

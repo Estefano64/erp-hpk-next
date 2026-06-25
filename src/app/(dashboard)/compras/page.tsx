@@ -19,6 +19,8 @@ import {
   Segmented,
   Tabs,
   Badge,
+  Upload,
+  Select,
 } from "antd";
 import RequerimientosAprobadosTab from "@/components/modules/compras/RequerimientosAprobadosTab";
 import {
@@ -38,6 +40,8 @@ import {
   FilePdfOutlined,
   MessageOutlined,
   CheckOutlined,
+  UploadOutlined,
+  FileTextOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import {
@@ -59,6 +63,8 @@ import { brand } from "@/lib/theme";
 import dayjs from "dayjs";
 import CompraDetalleModal from "@/components/modules/compras/CompraDetalleModal";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
+import { R2FileLink } from "@/components/R2FileLink";
+import { uploadToR2 } from "@/lib/r2-client";
 
 import { formatDateOnly, formatDateOnlyShort } from "@/lib/dates";
 const { Title, Text } = Typography;
@@ -81,6 +87,7 @@ interface Compra {
   impuesto: number;
   total: number;
   moneda: string;
+  tipo_pago: string | null;
   nro_factura: string | null;
   nro_guia: string | null;
   observaciones: string | null;
@@ -88,6 +95,16 @@ interface Compra {
   usuario_solicita: string;
   fecha_oc_creacion: string | null;
   fecha_req_creacion: string | null;
+  // Adjuntos físicos (R2). El patrón "legacy" guardaba 1 guía/factura/pago en
+  // los campos *_key de Compra. El nuevo permite N filas en compra_adjunto[].
+  // El endpoint GET /api/compras devuelve ambos shapes — los unimos en la UI.
+  guia_key: string | null;
+  guia_nombre: string | null;
+  factura_key: string | null;
+  factura_nombre: string | null;
+  pago_key: string | null;
+  pago_nombre: string | null;
+  adjuntos: { id: number; tipo: string; r2_key: string; nombre_archivo: string; tipo_mime: string | null; tamano: number | null; fecha_subida: string }[];
 }
 
 const estadoColor: Record<string, string> = {
@@ -367,6 +384,172 @@ export default function ComprasPage() {
     </div>
   );
 
+  // ── Helpers de adjuntos para las columnas Guía / Factura / Comprobante Pago ──
+  // Refactor (2026-06): se trajo la funcionalidad de /compras/contabilidad
+  // a la tabla principal de Compras, así el equipo sube/elimina guías y
+  // facturas sin cambiar de pantalla.
+  type TipoArchivo = "guia" | "factura" | "pago";
+  const ETIQUETA_TIPO: Record<TipoArchivo, string> = {
+    guia: "Guía",
+    factura: "Factura",
+    pago: "Comprobante de pago",
+  };
+  const [uploadingSlot, setUploadingSlot] = useState<string | null>(null);
+
+  const subirArchivo = async (compraId: number, tipo: TipoArchivo, file: File) => {
+    const slot = `${compraId}-${tipo}`;
+    setUploadingSlot(slot);
+    try {
+      const meta = await uploadToR2({
+        file,
+        uploadUrlEndpoint: `/api/compras/${compraId}/guia/upload-url?tipo=${tipo}`,
+      });
+      const res = await fetch(`/api/compras/${compraId}/adjuntos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tipo, ...meta }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Error al registrar archivo");
+      message.success(`${ETIQUETA_TIPO[tipo]} subida`);
+      fetchData();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Error al subir");
+    } finally {
+      setUploadingSlot(null);
+    }
+  };
+  const eliminarLegacy = async (compraId: number, tipo: TipoArchivo) => {
+    try {
+      const res = await fetch(`/api/compras/${compraId}/guia?tipo=${tipo}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Error al eliminar archivo");
+      message.success("Archivo eliminado");
+      fetchData();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Error al eliminar");
+    }
+  };
+  const eliminarAdjunto = async (compraId: number, adjuntoId: number) => {
+    try {
+      const res = await fetch(`/api/compras/${compraId}/adjuntos/${adjuntoId}`, { method: "DELETE" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Error al eliminar adjunto");
+      message.success("Archivo eliminado");
+      fetchData();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Error al eliminar");
+    }
+  };
+
+  // Renderiza la lista de archivos del tipo (legacy + multi) + botón "Subir".
+  const archivoCell = (
+    r: Compra,
+    tipo: TipoArchivo,
+    resource: "compra-guia" | "compra-factura" | "compra-pago",
+  ) => {
+    const label = ETIQUETA_TIPO[tipo];
+    const slot = `${r.id}-${tipo}`;
+    const uploading = uploadingSlot === slot;
+    const legacyKey = tipo === "guia" ? r.guia_key : tipo === "factura" ? r.factura_key : r.pago_key;
+    const legacyNombre = tipo === "guia" ? r.guia_nombre : tipo === "factura" ? r.factura_nombre : r.pago_nombre;
+    const multi = (r.adjuntos ?? []).filter((a) => a.tipo === tipo);
+    const filas: Array<{ adjId: number | null; r2Key: string; nombre: string | null }> = [];
+    if (legacyKey) filas.push({ adjId: null, r2Key: legacyKey, nombre: legacyNombre });
+    for (const a of multi) filas.push({ adjId: a.id, r2Key: a.r2_key, nombre: a.nombre_archivo });
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {filas.length === 0 ? (
+          <Tag color="default" style={{ margin: 0, fontSize: 10 }}>Sin {label.toLowerCase()}</Tag>
+        ) : (
+          filas.map((f) => (
+            <Space key={f.adjId ?? `legacy-${f.r2Key}`} size={4}>
+              <R2FileLink resource={resource} resourceId={r.id} r2Key={f.r2Key} style={{ fontSize: 11 }}>
+                <FileTextOutlined style={{ color: brand.cyan, marginRight: 4 }} />
+                {f.nombre || `Ver ${label.toLowerCase()}`}
+              </R2FileLink>
+              <Popconfirm
+                title={`¿Eliminar este ${label.toLowerCase()}?`}
+                onConfirm={() => (f.adjId == null ? eliminarLegacy(r.id, tipo) : eliminarAdjunto(r.id, f.adjId))}
+                okType="danger"
+                okText="Eliminar"
+                cancelText="Cancelar"
+              >
+                <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+              </Popconfirm>
+            </Space>
+          ))
+        )}
+        <Upload
+          showUploadList={false}
+          accept=".pdf,image/*"
+          beforeUpload={(file) => { subirArchivo(r.id, tipo, file as File); return false; }}
+          disabled={uploading}
+        >
+          <Button size="small" icon={<UploadOutlined />} loading={uploading}>
+            {filas.length > 0 ? "Subir otra" : "Subir"}
+          </Button>
+        </Upload>
+      </div>
+    );
+  };
+
+  // Guarda nro_guia / nro_factura desde la tabla. Patch al endpoint general
+  // de compras (que ya acepta esos campos).
+  const guardarNro = async (compraId: number, campo: "nro_guia" | "nro_factura", valor: string) => {
+    try {
+      const res = await fetch(`/api/compras/${compraId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [campo]: valor.trim() || null }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error ?? "Error al guardar");
+      }
+      message.success(`${campo === "nro_guia" ? "Nro de guía" : "Nro de factura"} actualizado`);
+      fetchData();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Error al guardar");
+    }
+  };
+
+  // Componente local de edición inline multi-valor. Cada número (guía o
+  // factura) es un Tag con botón X para eliminarlo individualmente. Para
+  // agregar uno nuevo: escribir y Enter (o blur con texto).
+  //
+  // La BD persiste como string coma-separado; convertimos array<->string
+  // al cargar/guardar para que el endpoint PUT no necesite cambiar.
+  const NroEditable = ({ compraId, campo, valor }: { compraId: number; campo: "nro_guia" | "nro_factura"; valor: string | null }) => {
+    const partes = useMemo(
+      () => (valor ?? "").split(/[,\n]/).map((s) => s.trim()).filter(Boolean),
+      [valor],
+    );
+    const [savingLocal, setSavingLocal] = useState(false);
+    const guardarLista = async (nueva: string[]) => {
+      setSavingLocal(true);
+      try {
+        await guardarNro(compraId, campo, nueva.join(", "));
+      } finally {
+        setSavingLocal(false);
+      }
+    };
+    return (
+      <Select
+        mode="tags"
+        size="small"
+        value={partes}
+        onChange={(vals) => guardarLista(vals as string[])}
+        placeholder="Tipeá y Enter para agregar"
+        tokenSeparators={[",", "\n"]}
+        suffixIcon={null}
+        style={{ width: "100%", fontSize: 12 }}
+        disabled={savingLocal}
+        notFoundContent={null}
+      />
+    );
+  };
+
   const columns: ColumnsType<Compra> = [
     numeracionColumn<Compra>({ current: page, pageSize }),
     {
@@ -521,21 +704,49 @@ export default function ComprasPage() {
     },
     {
       key: "nro_guia",
-      title: "Guía",
+      title: "Nro Guía",
       dataIndex: "nro_guia",
-      width: 110,
+      width: 150,
       ...filtroPorColumna(data, "nro_guia"),
-      render: (v: string | null) =>
-        v ? <Tag color="cyan">{v}</Tag> : <span style={{ color: "#bbb" }}>—</span>,
+      render: (v: string | null, r) => <NroEditable compraId={r.id} campo="nro_guia" valor={v} />,
+    },
+    {
+      key: "archivos_guia",
+      title: "Archivos Guía",
+      width: 230,
+      render: (_v, r) => archivoCell(r, "guia", "compra-guia"),
     },
     {
       key: "nro_factura",
-      title: "Factura",
+      title: "Nro Factura",
       dataIndex: "nro_factura",
-      width: 130,
+      width: 150,
       ...filtroPorColumna(data, "nro_factura"),
-      render: (v: string | null) =>
-        v ? <Tag color="purple">{v}</Tag> : <span style={{ color: "#bbb" }}>—</span>,
+      render: (v: string | null, r) => <NroEditable compraId={r.id} campo="nro_factura" valor={v} />,
+    },
+    {
+      key: "archivos_factura",
+      title: "Archivos Factura",
+      width: 230,
+      render: (_v, r) => archivoCell(r, "factura", "compra-factura"),
+    },
+    {
+      key: "comprobante_pago",
+      title: "Comprobante Pago",
+      width: 230,
+      render: (_v, r) => {
+        // Solo aplica a OCs CONTADO o TRANSFERENCIA. Para CRÉDITO se muestra
+        // marcador para que la columna no quede ambigua.
+        const aplica = r.tipo_pago === "CONTADO" || r.tipo_pago === "TRANSFERENCIA";
+        if (!aplica) {
+          return (
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              {r.tipo_pago === "CREDITO" ? "N/A (crédito)" : "—"}
+            </Text>
+          );
+        }
+        return archivoCell(r, "pago", "compra-pago");
+      },
     },
     {
       key: "observaciones",

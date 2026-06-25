@@ -333,19 +333,6 @@ export default function StockPage() {
     },
     { key: "np", title: "N/P", dataIndex: "np", width: 110, ...filtroPorColumna(data, "np") },
     {
-      key: "stock_actual",
-      title: "Stock",
-      dataIndex: "stock_actual",
-      width: 80,
-      align: "right",
-      sorter: (a, b) => a.stock_actual - b.stock_actual,
-      render: (v: number, r: StockItem) => (
-        <span style={{ fontWeight: 600, color: r.alerta === "SIN" ? "#ff4d4f" : r.alerta === "BAJO" ? "#faad14" : r.alerta === "EXCESO" ? "#722ed1" : "#52c41a" }}>
-          {v.toLocaleString("en", { maximumFractionDigits: 2 })}
-        </span>
-      ),
-    },
-    {
       key: "stock_proyectado",
       title: "Disponible",
       dataIndex: "stock_proyectado",
@@ -353,10 +340,25 @@ export default function StockPage() {
       align: "right",
       sorter: (a, b) => a.stock_proyectado - b.stock_proyectado,
       render: (v: number) => (
-        <Tooltip title="Stock + lo entrante en POs − lo solicitado en REQ">
+        <Tooltip title="Disponible total = Stock físico + En POs (en tránsito) + En REQ (asignado a OTs)">
           <b style={{ color: v < 0 ? "#cf1322" : v === 0 ? "#faad14" : brand.cyan }}>
             {v.toLocaleString("en", { maximumFractionDigits: 2 })}
           </b>
+        </Tooltip>
+      ),
+    },
+    {
+      key: "stock_actual",
+      title: "Stock",
+      dataIndex: "stock_actual",
+      width: 80,
+      align: "right",
+      sorter: (a, b) => a.stock_actual - b.stock_actual,
+      render: (v: number, r: StockItem) => (
+        <Tooltip title="Stock físico libre en almacén (sin contar lo en tránsito ni lo reservado a OTs)">
+          <span style={{ fontWeight: 600, color: r.alerta === "SIN" ? "#ff4d4f" : r.alerta === "BAJO" ? "#faad14" : r.alerta === "EXCESO" ? "#722ed1" : "#52c41a" }}>
+            {v.toLocaleString("en", { maximumFractionDigits: 2 })}
+          </span>
         </Tooltip>
       ),
     },
