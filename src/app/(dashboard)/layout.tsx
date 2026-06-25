@@ -121,8 +121,10 @@ function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
           children: [
             { key: "/movimientos", label: "Movimiento de repuestos" },
             { key: "/stock", label: "Inventario de stock" },
-            { key: "/stock/no-catalogados", label: "Inventario no catalogado" },
-            { key: "/despachos", label: "Inventario por OT (despachos)" },
+            // "Inventario no catalogado" se removió del menú: la misma vista
+            // se accede desde /stock con el filtro "No catalogado". La ruta
+            // /stock/no-catalogados sigue funcionando por URL directa.
+            { key: "/despachos", label: "Inventario por OT" },
           ],
         },
         {
