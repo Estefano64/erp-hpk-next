@@ -89,6 +89,9 @@ interface ReqPendiente {
     descripcion: string | null;
     cod_rep_flota: string | null;
     cliente: { codigo: string; razon_social: string; nombre_comercial: string | null } | null;
+    // Adjuntos de etapa 'po_cliente' de la OT (array con 0 o 1 id) — flag para
+    // derivar la columna "Estado PO" (Con PO / Pdt de PO).
+    adjuntos?: { id: number }[];
   } | null;
   observaciones: string | null;
   material: { codigo: string; descripcion: string; precio: number | string | null; moneda_codigo: string | null; stock_actual: number | string | null } | null;
@@ -1012,28 +1015,21 @@ export default function AceptacionesPage() {
         : <Text type="secondary">—</Text>,
     },
     {
-      // El aprobador necesita saber si el req ya está pegado a una OC: si
-      // sí, la aprobación es solo formal (la compra ya está emitida).
-      key: "po", title: "OC", width: 140, align: "center",
+      // Estado del PO del Cliente: deriva de si la OT tiene un adjunto de etapa
+      // 'po_cliente' (mismo criterio que la columna "Estado PO" del listado de
+      // OTs externas). Reemplazó a la antigua columna "OC" (compra a proveedor).
+      key: "estado_po", title: "Estado PO", width: 120, align: "center",
       filters: [
-        { text: "Con OC", value: "con" },
-        { text: "Sin OC", value: "sin" },
+        { text: "Con PO", value: "con" },
+        { text: "Pdt de PO", value: "sin" },
       ],
-      onFilter: (value, r) => (value === "con") === !!(r.compra?.numero_po ?? r.nro_oc),
+      onFilter: (value, r) => (value === "con") === ((r.orden_trabajo?.adjuntos?.length ?? 0) > 0),
       render: (_, r) => {
-        const numero = r.compra?.numero_po ?? r.nro_oc;
-        if (!numero) {
-          return <Tag style={{ margin: 0 }} color="default">Sin OC</Tag>;
-        }
-        const status = r.compra?.status_oc_codigo ?? null;
-        const color = status === "ENTREGADO" || status === "COMPLETO"
-          ? "green" : status === "ANULADO" ? "red" : "blue";
+        const conPo = (r.orden_trabajo?.adjuntos?.length ?? 0) > 0;
         return (
-          <Tooltip title={status ? `Estado: ${status}` : "Compra emitida"}>
-            <Tag color={color} style={{ margin: 0, fontFamily: "monospace" }}>
-              {numero}
-            </Tag>
-          </Tooltip>
+          <Tag color={conPo ? "green" : "orange"} style={{ margin: 0 }}>
+            {conPo ? "Con PO" : "Pdt de PO"}
+          </Tag>
         );
       },
     },
