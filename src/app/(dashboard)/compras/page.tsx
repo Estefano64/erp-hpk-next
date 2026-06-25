@@ -875,7 +875,7 @@ export default function ComprasPage() {
         <Row gutter={[12, 12]}>
           <Col xs={24} sm={16} md={10}>
             <Input
-              placeholder="Buscar por OC, factura..."
+              placeholder="Buscar por OC, OT, proveedor, factura, guía, nombre…"
               prefix={<SearchOutlined />}
               allowClear
               value={search}

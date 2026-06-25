@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
-import { formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
+import { formatOtCodigo, formatOtInternaCodigo, parseOtCodigoSearch } from "@/lib/ot-formato";
 
 // ── Mapeos de status entre POs2 (UI) y current (DB) ─────────────
 const codeToLabel: Record<string, string> = {
@@ -68,11 +68,28 @@ export async function GET(req: NextRequest) {
       where.status_oc_codigo = code;
     }
     if (search) {
-      where.OR = [
+      const orFilters: Record<string, unknown>[] = [
         { numero_po: { contains: search, mode: "insensitive" } },
         { numero_req: { contains: search, mode: "insensitive" } },
         { nro_factura: { contains: search, mode: "insensitive" } },
+        { nro_guia: { contains: search, mode: "insensitive" } },
+        { nombre: { contains: search, mode: "insensitive" } },
+        { observaciones: { contains: search, mode: "insensitive" } },
+        { proveedor: { razon_social: { contains: search, mode: "insensitive" } } },
+        { proveedor: { nombre_comercial: { contains: search, mode: "insensitive" } } },
+        { proveedor: { ruc: { contains: search, mode: "insensitive" } } },
       ];
+      // Buscar por código de OT (externa o interna). parseOtCodigoSearch
+      // acepta tanto el formato raw (390126) como con prefijo (V000126,
+      // S000126, OI000126) — devuelve el Int que matchea contra
+      // OrdenTrabajo.ot o OrdenTrabajoInterna.ot.
+      const otInt = parseOtCodigoSearch(search);
+      if (otInt != null) {
+        orFilters.push({ orden_trabajo: { ot: otInt } });
+        // OT internas no setean compra.ot_id — se llega vía los ot_repuestos.
+        orFilters.push({ ot_repuestos: { some: { orden_trabajo_interna: { ot: otInt } } } });
+      }
+      where.OR = orFilters;
     }
 
     const records = await prisma.compra.findMany({
