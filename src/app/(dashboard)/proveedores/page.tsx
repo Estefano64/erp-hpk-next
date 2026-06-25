@@ -16,6 +16,9 @@ import {
   Row,
   Col,
   Card,
+  Select,
+  InputNumber,
+  Switch,
 } from "antd";
 import {
   PlusOutlined,
@@ -441,6 +444,72 @@ export default function ProveedoresPage() {
             <Col xs={12} sm={8}>
               <Form.Item name="email" label="Email" rules={[{ type: "email", message: "Email inválido" }]}>
                 <Input />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          {/* Defaults para auto-rellenar el modal Crear OC con este proveedor.
+              Si están vacíos, el sistema los aprende automáticamente con los
+              valores usados en la primera OC. Después se pueden editar acá. */}
+          <Typography.Text strong style={{ fontSize: 13, display: "block", marginTop: 8, marginBottom: 8 }}>
+            Defaults para Órdenes de Compra
+          </Typography.Text>
+          <Row gutter={12}>
+            <Col xs={12} sm={6}>
+              <Form.Item name="moneda_default" label="Moneda">
+                <Select
+                  allowClear
+                  placeholder="Auto"
+                  options={[
+                    { value: "USD", label: "USD" },
+                    { value: "SOL", label: "SOL (PEN)" },
+                  ]}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={12} sm={6}>
+              <Form.Item name="tipo_pago_default" label="Tipo de pago">
+                <Select
+                  allowClear
+                  placeholder="Auto"
+                  options={[
+                    { value: "CONTADO", label: "Contado" },
+                    { value: "CREDITO", label: "Crédito" },
+                    { value: "CHEQUE_FECHADO", label: "Cheque fechado" },
+                    { value: "TRANSFERENCIA", label: "Transferencia" },
+                    { value: "ADELANTO", label: "Adelanto" },
+                  ]}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={12} sm={6}>
+              <Form.Item name="dias_credito_default" label="Días de crédito">
+                <InputNumber min={0} max={365} style={{ width: "100%" }} placeholder="Auto" />
+              </Form.Item>
+            </Col>
+            <Col xs={12} sm={6}>
+              <Form.Item name="tiempo_entrega_dias" label="Tiempo entrega (días)">
+                <InputNumber min={0} max={365} style={{ width: "100%" }} placeholder="Auto" />
+              </Form.Item>
+            </Col>
+            <Col xs={12} sm={6}>
+              <Form.Item
+                name="precios_incluyen_igv_default"
+                label="Precios incluyen IGV"
+                valuePropName="checked"
+                tooltip="Si está activado, el editor de OC asume que los precios ingresados ya incluyen IGV (el cálculo lo separa al final). Default OFF."
+              >
+                <Switch checkedChildren="Con IGV" unCheckedChildren="Sin IGV" />
+              </Form.Item>
+            </Col>
+            <Col xs={12} sm={6}>
+              <Form.Item
+                name="aplica_igv_default"
+                label="Aplicar IGV a la OC"
+                valuePropName="checked"
+                tooltip="Si está activado, las OCs de este proveedor llevan IGV 18%. Para proveedores exonerados (importaciones, no domiciliados, etc.), desactivar."
+              >
+                <Switch checkedChildren="Sí" unCheckedChildren="No" />
               </Form.Item>
             </Col>
           </Row>

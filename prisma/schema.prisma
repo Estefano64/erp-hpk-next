@@ -1203,11 +1203,15 @@ model Proveedor {
   activo            Boolean      @default(true)
   // Defaults para auto-rellenar al crear/editar una OC con este proveedor.
   // Si están NULL, el endpoint /api/proveedores/[id]/defaults-oc infiere
-  // del historial (última OC). El user los puede setear desde /proveedores.
-  moneda_default       String?  @db.VarChar(10)
-  tipo_pago_default    String?  @db.VarChar(30)
-  dias_credito_default Int?
-  tiempo_entrega_dias  Int?
+  // del historial (última OC) y /api/compras/crear-oc los persiste con los
+  // valores usados en esa OC (autolearn — solo la primera vez). El user
+  // los puede editar manualmente desde /proveedores.
+  moneda_default               String?  @db.VarChar(10)
+  tipo_pago_default            String?  @db.VarChar(30)
+  dias_credito_default         Int?
+  tiempo_entrega_dias          Int?
+  precios_incluyen_igv_default Boolean?
+  aplica_igv_default           Boolean?
   usuario_crea      String?      @db.VarChar(100)
   usuario_actualiza String?      @db.VarChar(100)
   created_at        DateTime     @default(now())

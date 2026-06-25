@@ -15,6 +15,14 @@ const UpdateSchema = z.object({
   email: z.string().trim().email().optional().nullable().or(z.literal("")),
   direccion: z.string().trim().optional().nullable(),
   activo: z.boolean().optional(),
+  // Defaults para auto-rellenar el modal Crear OC con este proveedor.
+  // Si están NULL, el sistema los aprende con los valores de la primera OC.
+  moneda_default: z.string().trim().optional().nullable(),
+  tipo_pago_default: z.string().trim().optional().nullable(),
+  dias_credito_default: z.coerce.number().int().min(0).max(365).optional().nullable(),
+  tiempo_entrega_dias: z.coerce.number().int().min(0).max(365).optional().nullable(),
+  precios_incluyen_igv_default: z.boolean().optional().nullable(),
+  aplica_igv_default: z.boolean().optional().nullable(),
 });
 
 export async function GET(_req: NextRequest, ctx: Ctx) {
@@ -36,7 +44,11 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     const data: Record<string, unknown> = {
       usuario_actualiza: usuario,
     };
-    for (const k of ["ruc", "razon_social", "nombre_comercial", "contacto", "telefono", "email", "direccion", "activo"] as const) {
+    for (const k of [
+      "ruc", "razon_social", "nombre_comercial", "contacto", "telefono", "email", "direccion", "activo",
+      "moneda_default", "tipo_pago_default", "dias_credito_default", "tiempo_entrega_dias",
+      "precios_incluyen_igv_default", "aplica_igv_default",
+    ] as const) {
       if (k in parsed.data) {
         const v = parsed.data[k];
         data[k] = v === "" ? null : v;

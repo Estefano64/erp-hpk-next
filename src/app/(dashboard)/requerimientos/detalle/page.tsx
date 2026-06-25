@@ -286,6 +286,18 @@ export default function RequerimientosDetallePage() {
   );
 }
 
+// Exportado para que /requerimientos pueda embeber esta vista cuando el
+// toggle "Por ítem" esté activo (sin navegar de página). Wrappeado en
+// Suspense porque internamente usa useSearchParams (Next.js requiere
+// Suspense para hooks de client navigation).
+export function RequerimientosDetalleEmbebido() {
+  return (
+    <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>
+      <RequerimientosDetalleInner />
+    </Suspense>
+  );
+}
+
 function RequerimientosDetalleInner() {
   const router = useRouter();
   const params = useSearchParams();
@@ -2638,6 +2650,11 @@ function RequerimientosDetalleInner() {
                       if (d.observaciones_sugeridas && !cur.observaciones) {
                         patch.observaciones = d.observaciones_sugeridas;
                       }
+                      // Aplica IGV: el default de provider gana solo si el user
+                      // no lo cambió ya. aplicaIgvModal arranca true; lo
+                      // sobrescribimos solo si el provider dice explícitamente
+                      // false (proveedores exonerados de IGV).
+                      if (d.aplica_igv === false) setAplicaIgvModal(false);
                       if (Object.keys(patch).length > 0) ocForm.setFieldsValue(patch);
                     } catch {
                       // silencioso — el form sigue funcionando sin defaults

@@ -26,6 +26,7 @@ import { formatDateOnly, formatDateOnlyShort } from "@/lib/dates";
 import { formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
 import { R2FileLink } from "@/components/R2FileLink";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
+import { RequerimientosDetalleEmbebido } from "@/app/(dashboard)/requerimientos/detalle/page";
 import {
   numeracionColumn,
   paginacionEstandar,
@@ -1567,26 +1568,14 @@ export default function RequerimientosPage() {
         />
       </div>
 
-      {rows.length === 0 && !loading ? (
+      {vistaModo === "items" ? (
+        // En modo "Por ítem" embedeamos la vista completa de detalle (la
+        // misma que vive en /requerimientos/detalle) sin navegar de página.
+        // Trae todas las acciones por ítem: consumir almacén, caja chica,
+        // vincular material, dividir, generar OC, etc.
+        <RequerimientosDetalleEmbebido />
+      ) : rows.length === 0 && !loading ? (
         <Empty description="No hay requerimientos con esos filtros." />
-      ) : vistaModo === "items" ? (
-        <Table<RequerimientoRow>
-          rowKey="id"
-          columns={itemColumns}
-          dataSource={itemsVisibles}
-          loading={loading}
-          size="small"
-          pagination={paginacionEstandar({
-            current: page,
-            pageSize,
-            total: itemsVisibles.length,
-            onChange: (p, s) => { setPage(p); setPageSize(s); },
-            label: "items",
-            placement: ["topEnd", "bottomEnd"],
-          })}
-          scroll={{ x: 1500 }}
-          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-        />
       ) : (
         <TableDragWrapper>
           <Table<GrupoReq>
