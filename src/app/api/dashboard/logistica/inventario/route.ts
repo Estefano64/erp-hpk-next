@@ -207,7 +207,7 @@ export async function GET(req: NextRequest) {
     }
 
     // ── Top 10 productos más movidos por cantidad de SALIDA ────────────
-    const topProductos: { codigo: string; descripcion: string; salidaQ: number; salidaMonto: number }[] = [];
+    const topProductos: { codigo: string; np: string | null; descripcion: string; salidaQ: number; salidaMonto: number }[] = [];
     if (cat === "all" || cat === "cat") {
       const movsSalida = await prisma.movimientoInventario.findMany({
         where: { tipo_movimiento: "SALIDA", fecha_movimiento: { gte: desde, lt: hasta } },
@@ -215,10 +215,10 @@ export async function GET(req: NextRequest) {
           material_id: true,
           cantidad: true,
           precio_unitario: true,
-          material: { select: { codigo: true, descripcion: true, precio: true } },
+          material: { select: { codigo: true, descripcion: true, np: true, precio: true } },
         },
       });
-      const porMat: Record<number, { codigo: string; descripcion: string; q: number; monto: number }> = {};
+      const porMat: Record<number, { codigo: string; np: string | null; descripcion: string; q: number; monto: number }> = {};
       for (const m of movsSalida) {
         if (!m.material) continue;
         const c = Number(m.cantidad ?? 0);
@@ -227,7 +227,9 @@ export async function GET(req: NextRequest) {
         const monto = Number.isFinite(p) ? c * p : 0;
         if (!porMat[m.material_id]) {
           porMat[m.material_id] = {
-            codigo: m.material.codigo, descripcion: m.material.descripcion ?? "",
+            codigo: m.material.codigo,
+            np: m.material.np ?? null,
+            descripcion: m.material.descripcion ?? "",
             q: 0, monto: 0,
           };
         }
@@ -235,7 +237,7 @@ export async function GET(req: NextRequest) {
         porMat[m.material_id].monto += monto;
       }
       Object.values(porMat).forEach((v) => {
-        topProductos.push({ codigo: v.codigo, descripcion: v.descripcion, salidaQ: v.q, salidaMonto: v.monto });
+        topProductos.push({ codigo: v.codigo, np: v.np, descripcion: v.descripcion, salidaQ: v.q, salidaMonto: v.monto });
       });
     }
     topProductos.sort((a, b) => b.salidaQ - a.salidaQ);
