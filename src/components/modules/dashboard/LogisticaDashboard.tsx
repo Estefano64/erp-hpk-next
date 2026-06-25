@@ -1,14 +1,15 @@
 "use client";
 
-// Dashboard de Logística — Fase 1: solo layout + filtros (sin data).
-// Las 6 secciones (Requerimientos, OC, Inventario, OT, Facturación) están
-// renderizadas como Cards placeholder. La data se conecta en fases siguientes
-// vía endpoints /api/dashboard/logistica/* y charts con recharts.
+// Dashboard de Logística.
+// Fase 1: layout + filtros (sin data).
+// Fase 2 (this commit): sección Requerimientos conectada al endpoint
+//   /api/dashboard/logistica/requerimientos con KPIs + 4 charts + toggles
+//   (vista General/Ítem + tipo Todos/Repuestos/Servicios).
 //
 // Basado en mockup dashboard_logistica.html (Chart.js + Tabler icons).
 
-import { useMemo, useState } from "react";
-import { Card, Typography, Segmented, Select, Tag, Row, Col, Empty, Space } from "antd";
+import { useEffect, useMemo, useState, useCallback } from "react";
+import { Card, Typography, Segmented, Select, Tag, Row, Col, Empty, Space, Spin, Statistic } from "antd";
 import {
   FileTextOutlined,
   ShoppingCartOutlined,
@@ -17,7 +18,12 @@ import {
   DollarOutlined,
   CalendarOutlined,
   FilterOutlined,
+  CheckCircleOutlined,
+  ClockCircleOutlined,
 } from "@ant-design/icons";
+import {
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, Cell,
+} from "recharts";
 import dayjs from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
 import { brand } from "@/lib/theme";
@@ -186,16 +192,10 @@ export default function LogisticaDashboard() {
         <FilterOutlined /> Filtro activo · {ctxTexto}
       </Tag>
 
-      {/* Secciones (placeholders por ahora) */}
+      {/* Secciones */}
       <Row gutter={[16, 0]}>
         <Col span={24}>
-          <SeccionPlaceholder
-            icon={<FileTextOutlined style={{ fontSize: 17, color: brand.navy }} />}
-            iconBg="#E7E9F2"
-            label="Ciclo de compras"
-            titulo="Requerimientos"
-            descripcion="Emitidos / aprobados / en proceso + 4 gráficos (mensual, semanal, por OT, tiempo de aprobación)"
-          />
+          <SeccionRequerimientos modo={modo} anio={anio} mes={mes} sem={semana} />
         </Col>
         <Col span={24}>
           <SeccionPlaceholder
@@ -234,6 +234,237 @@ export default function LogisticaDashboard() {
           />
         </Col>
       </Row>
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Sección: Requerimientos
+//
+// Fetch a /api/dashboard/logistica/requerimientos con los filtros del header
+// + dos toggles propios:
+//   - vista: "gen" (por nro_req único) vs "item" (por OTRepuesto.id)
+//   - tipo: "all" / "rep" (MAC+CAD) / "serv" (SER)
+//
+// Renderiza 3 KPI Cards + 4 BarCharts horizontales con recharts.
+// ───────────────────────────────────────────────────────────────────────────
+interface ReqResp {
+  kpis: { emitidos: number; aprobados: number; enProceso: number; l1Label: string };
+  porMes: number[];
+  porSemana: { label: string; value: number }[];
+  porOt: number[];
+  porTiempo: number[];
+}
+
+const MES_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+const TIEMPO_LABELS = ["1-3d", "4-6d", "7-10d", "+10d"];
+const OT_LABELS = ["1", "2", "3", "4", "5+"];
+
+function SeccionRequerimientos({
+  modo, anio, mes, sem,
+}: {
+  modo: Modo; anio: number; mes: number; sem: number;
+}) {
+  const [vista, setVista] = useState<"gen" | "item">("gen");
+  const [tipo, setTipo] = useState<"all" | "rep" | "serv">("all");
+  const [data, setData] = useState<ReqResp | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        modo, anio: String(anio), vista, tipo,
+      });
+      if (modo === "mes") params.set("mes", String(mes));
+      if (modo === "sem") params.set("sem", String(sem));
+      const res = await fetch(`/api/dashboard/logistica/requerimientos?${params}`);
+      if (res.ok) setData(await res.json());
+    } finally {
+      setLoading(false);
+    }
+  }, [modo, anio, mes, sem, vista, tipo]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const porMesData = useMemo(
+    () => (data?.porMes ?? []).map((v, i) => ({ name: MES_LABELS[i], value: v })),
+    [data?.porMes],
+  );
+  const porOtData = useMemo(
+    () => (data?.porOt ?? []).map((v, i) => ({ name: OT_LABELS[i], value: v })),
+    [data?.porOt],
+  );
+  const porTiempoData = useMemo(
+    () => (data?.porTiempo ?? []).map((v, i) => ({ name: TIEMPO_LABELS[i], value: v })),
+    [data?.porTiempo],
+  );
+
+  // Colores degradados para el chart "por OT" (mejor → peor) y "por tiempo"
+  const COLORS_DEGRADADOS = ["#1D9E75", "#97C459", "#EF9F27", "#E24B4A", "#791F1F"];
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 9,
+        marginBottom: 12, paddingBottom: 8,
+        borderBottom: `1px solid ${brand.border}`, flexWrap: "wrap",
+      }}>
+        <div style={{
+          width: 28, height: 28, borderRadius: 8, background: "#E7E9F2",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <FileTextOutlined style={{ fontSize: 17, color: brand.navy }} />
+        </div>
+        <div>
+          <div style={{
+            fontSize: 10, fontWeight: 600, letterSpacing: "0.06em",
+            textTransform: "uppercase", color: brand.textSecondary,
+          }}>
+            Ciclo de compras
+          </div>
+          <Title level={5} style={{ margin: 0 }}>Requerimientos</Title>
+        </div>
+        <Space style={{ marginLeft: "auto" }} size={10} wrap>
+          <Segmented
+            size="small"
+            value={vista}
+            onChange={(v) => setVista(v as "gen" | "item")}
+            options={[
+              { value: "gen", label: "General" },
+              { value: "item", label: "Ítem" },
+            ]}
+          />
+          <Segmented
+            size="small"
+            value={tipo}
+            onChange={(v) => setTipo(v as "all" | "rep" | "serv")}
+            options={[
+              { value: "all", label: "Todos" },
+              { value: "rep", label: "Repuestos" },
+              { value: "serv", label: "Servicios" },
+            ]}
+          />
+        </Space>
+      </div>
+
+      {loading && !data ? (
+        <div style={{ textAlign: "center", padding: 40 }}><Spin /></div>
+      ) : !data ? (
+        <Empty />
+      ) : (
+        <>
+          {/* KPIs */}
+          <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+            <Col xs={24} md={8}>
+              <Card>
+                <Statistic
+                  title={data.kpis.l1Label}
+                  value={data.kpis.emitidos}
+                  prefix={<FileTextOutlined style={{ color: brand.navy }} />}
+                  styles={{ content: { color: brand.navy, fontSize: 22, fontWeight: 600 } }}
+                />
+              </Card>
+            </Col>
+            <Col xs={12} md={8}>
+              <Card>
+                <Statistic
+                  title="Aprobados"
+                  value={data.kpis.aprobados}
+                  prefix={<CheckCircleOutlined style={{ color: "#1D9E75" }} />}
+                  styles={{ content: { color: "#1D9E75", fontSize: 22, fontWeight: 600 } }}
+                />
+              </Card>
+            </Col>
+            <Col xs={12} md={8}>
+              <Card>
+                <Statistic
+                  title="En proceso"
+                  value={data.kpis.enProceso}
+                  prefix={<ClockCircleOutlined style={{ color: "#EF9F27" }} />}
+                  styles={{ content: { color: "#EF9F27", fontSize: 22, fontWeight: 600 } }}
+                />
+              </Card>
+            </Col>
+          </Row>
+
+          {/* Charts */}
+          <Row gutter={[12, 12]}>
+            <Col xs={24} md={12}>
+              <Card title="Emitidos por mes" size="small" styles={{ body: { padding: 12 } }}>
+                <div style={{ width: "100%", height: 200 }}>
+                  <ResponsiveContainer>
+                    <BarChart data={porMesData}>
+                      <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <ReTooltip />
+                      <Bar dataKey="value" fill={brand.navy} radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+            </Col>
+            <Col xs={24} md={12}>
+              <Card title="Emitidos por semana (mes seleccionado)" size="small" styles={{ body: { padding: 12 } }}>
+                <div style={{ width: "100%", height: 200 }}>
+                  {(data.porSemana?.length ?? 0) === 0 ? (
+                    <Empty description="Cambiá a modo Mes para ver el detalle semanal" />
+                  ) : (
+                    <ResponsiveContainer>
+                      <BarChart data={data.porSemana}>
+                        <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                        <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <ReTooltip />
+                        <Bar dataKey="value" fill="#1D9E75" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </Card>
+            </Col>
+            <Col xs={24} md={12}>
+              <Card title="Reqs/Ítems por OT" size="small" styles={{ body: { padding: 12 } }}>
+                <div style={{ width: "100%", height: 200 }}>
+                  <ResponsiveContainer>
+                    <BarChart data={porOtData}>
+                      <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <ReTooltip />
+                      <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                        {porOtData.map((_, i) => (
+                          <Cell key={i} fill={COLORS_DEGRADADOS[i] ?? brand.navy} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+            </Col>
+            <Col xs={24} md={12}>
+              <Card title="Tiempo de aprobación" size="small" styles={{ body: { padding: 12 } }}>
+                <div style={{ width: "100%", height: 200 }}>
+                  <ResponsiveContainer>
+                    <BarChart data={porTiempoData}>
+                      <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <ReTooltip />
+                      <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                        {porTiempoData.map((_, i) => (
+                          <Cell key={i} fill={COLORS_DEGRADADOS[i] ?? brand.navy} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+            </Col>
+          </Row>
+        </>
+      )}
     </div>
   );
 }
