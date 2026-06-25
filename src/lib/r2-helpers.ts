@@ -5,6 +5,7 @@ import {
   GetObjectCommand,
   DeleteObjectCommand,
   HeadObjectCommand,
+  CopyObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { randomUUID } from "crypto";
@@ -54,6 +55,31 @@ export async function generateDownloadUrl(key: string): Promise<string> {
 // Errores reales (red, credenciales) lanzan.
 export async function deleteObject(key: string): Promise<void> {
   await getR2Client().send(new DeleteObjectCommand({ Bucket: getR2Bucket(), Key: key }));
+}
+
+// Copia un objeto existente a una NUEVA key dentro de la misma carpeta destino,
+// generando un nombre único (timestamp+uuid+nombre). Devuelve la key destino.
+// Se usa para "espejar" un archivo entre dos secciones que viven en carpetas
+// distintas (ej: informe de evaluación <-> adjunto de etapa evaluación), de
+// modo que cada lado tenga su propio objeto y ciclo de vida independiente
+// (borrar/reemplazar en un lado no afecta al otro).
+export async function copyObjectToFolder(params: {
+  sourceKey: string;
+  folderPrefix: string;
+  fileName: string;
+}): Promise<string> {
+  const safeName = sanitizeFileName(params.fileName);
+  const destKey = `${params.folderPrefix}/${Date.now()}-${randomUUID()}-${safeName}`;
+  const bucket = getR2Bucket();
+  // CopySource debe ir URL-encoded conservando los "/" entre segmentos.
+  const copySource = `${bucket}/${params.sourceKey}`
+    .split("/")
+    .map((seg) => encodeURIComponent(seg))
+    .join("/");
+  await getR2Client().send(
+    new CopyObjectCommand({ Bucket: bucket, CopySource: copySource, Key: destKey }),
+  );
+  return destKey;
 }
 
 export async function objectExists(key: string): Promise<boolean> {
