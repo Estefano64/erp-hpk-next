@@ -58,8 +58,13 @@ import {
   dentroDeRango,
   paginacionEstandar,
 } from "@/lib/tables";
-import { Popover, InputNumber, Divider, Checkbox, Switch } from "antd";
+import { Popover, InputNumber, Divider, Checkbox, Switch, Upload } from "antd";
+import {
+  UploadOutlined,
+  PaperClipOutlined,
+} from "@ant-design/icons";
 import { brand } from "@/lib/theme";
+import { uploadToR2 } from "@/lib/r2-client";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import dayjs, { Dayjs } from "dayjs";
 
@@ -293,12 +298,12 @@ export default function RequerimientosDetallePage() {
 export function RequerimientosDetalleEmbebido() {
   return (
     <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>
-      <RequerimientosDetalleInner />
+      <RequerimientosDetalleInner embebido />
     </Suspense>
   );
 }
 
-function RequerimientosDetalleInner() {
+function RequerimientosDetalleInner({ embebido = false }: { embebido?: boolean } = {}) {
   const router = useRouter();
   const params = useSearchParams();
   const { message } = App.useApp();
@@ -346,6 +351,14 @@ function RequerimientosDetalleInner() {
   // se usa la cantidad original del requerimiento. Permite ajustar al alza
   // (ej: comprar más para stock) o a la baja sin tocar el req base.
   const [cantidadesModal, setCantidadesModal] = useState<Record<number, number>>({});
+  // Descripciones editadas por item (id_requerimiento → descripcion). Si no
+  // hay entrada, se mantiene la descripción original del req. Espejo del
+  // editor /compras/[id]/editar, donde se permite ajustar el texto que va
+  // al PDF de la OC sin tocar la descripción base del material/req.
+  const [descripcionesModal, setDescripcionesModal] = useState<Record<number, string>>({});
+  // Guía de remisión opcional — si el user adjunta un archivo, después de
+  // crear la OC se sube a R2 y se registra en compra_adjunto con tipo="guia".
+  const [archivoGuiaModal, setArchivoGuiaModal] = useState<File | null>(null);
   // Fechas de entrega por item (id_requerimiento → Dayjs). Permite override
   // a la fecha global. Al abrir el modal se inicializa con fecha_requerida
   // del req. Hay un botón "Aplicar a todos" para pisar todas con la fecha
@@ -692,17 +705,25 @@ function RequerimientosDetalleInner() {
     const precios: Record<number, number> = {};
     const cantidades: Record<number, number> = {};
     const fechas: Record<number, Dayjs | null> = {};
+    const descripciones: Record<number, string> = {};
     for (const r of selectedRecords) {
       const p = Number(r.precio_unitario ?? 0);
       precios[r.id] = Number.isFinite(p) && p > 0 ? p : 0;
       const c = Number(r.cantidad ?? 0);
       cantidades[r.id] = Number.isFinite(c) ? c : 0;
       fechas[r.id] = r.fecha_requerida ? dayjs(r.fecha_requerida) : null;
+      // Descripción inicial: la que va a aparecer en el PDF de la OC. Por
+      // defecto = código + descripción del material (igual que el render
+      // de columna antes).
+      const baseDesc = `${r.material_codigo ? `${r.material_codigo} — ` : ""}${r.descripcion ?? ""}`.trim();
+      descripciones[r.id] = baseDesc;
     }
     setPreciosModal(precios);
     setCantidadesModal(cantidades);
     setFechasItemsModal(fechas);
+    setDescripcionesModal(descripciones);
     setItemsLibresModal([]);
+    setArchivoGuiaModal(null);
     // Reset de los campos extra al abrir un modal nuevo.
     setRefPedidoModal("");
     setTipoPagoModal(null);
@@ -775,6 +796,17 @@ function RequerimientosDetalleInner() {
         const f = fechasItemsModal[r.id];
         if (f) fechasOverride[String(r.id)] = f.format("YYYY-MM-DD");
       }
+      // Descripciones override por item: solo enviamos las que difieren de
+      // la descripción base (codigo + descripcion). Persisten en
+      // OTRepuesto.oc_descripcion y son las que aparecen en el PDF de la OC.
+      const descripcionesOverride: Record<string, string> = {};
+      for (const r of selectedRecords) {
+        const local = (descripcionesModal[r.id] ?? "").trim();
+        const baseDesc = `${r.material_codigo ? `${r.material_codigo} — ` : ""}${r.descripcion ?? ""}`.trim();
+        if (local && local !== baseDesc) {
+          descripcionesOverride[String(r.id)] = local;
+        }
+      }
 
       const res = await fetch("/api/compras/crear-oc", {
         method: "POST",
@@ -799,6 +831,7 @@ function RequerimientosDetalleInner() {
           otros_signo: otrosSignoModal,
           cantidades_override: cantidadesOverride,
           fechas_override: fechasOverride,
+          descripciones_override: descripcionesOverride,
           // Items libres del editor — se persisten como OTRepuesto
           // solo_para_oc=true (no aparecen en otros listados de reqs).
           items_libres: itemsLibresModal
@@ -815,10 +848,37 @@ function RequerimientosDetalleInner() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Error al crear OC");
-      message.success(`OC ${json.compra?.numero_po} creada con éxito`);
+
+      // Subir guía de remisión (opcional). Si el user adjuntó un archivo,
+      // ahora que tenemos compra_id lo subimos a R2 y lo registramos.
+      // Si la subida falla NO revertimos la OC (ya está creada); avisamos
+      // y el user puede subirla después desde /compras.
+      const nuevaCompraId = json.compra?.id;
+      if (archivoGuiaModal && nuevaCompraId) {
+        try {
+          const meta = await uploadToR2({
+            file: archivoGuiaModal,
+            uploadUrlEndpoint: `/api/compras/${nuevaCompraId}/guia/upload-url?tipo=guia`,
+          });
+          const resAdj = await fetch(`/api/compras/${nuevaCompraId}/adjuntos`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tipo: "guia", ...meta }),
+          });
+          if (!resAdj.ok) throw new Error("No se pudo registrar la guía en el sistema");
+          message.success(`OC ${json.compra?.numero_po} creada con guía adjunta`);
+        } catch (errGuia) {
+          message.warning(
+            `OC ${json.compra?.numero_po} creada, pero falló la subida de la guía: ${errGuia instanceof Error ? errGuia.message : "error desconocido"}. Subila desde /compras.`,
+          );
+        }
+      } else {
+        message.success(`OC ${json.compra?.numero_po} creada con éxito`);
+      }
+
       setModalOpen(false);
       setSelectedRows([]);
-      setSelectedRows([]);
+      setArchivoGuiaModal(null);
       await fetchData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Error desconocido";
@@ -1642,6 +1702,40 @@ function RequerimientosDetalleInner() {
       onFilter: (value, r) => r.unidad_medida === value,
     },
     {
+      // Stock físico actual del material catalogado. Si el stock alcanza
+      // para cubrir la cantidad pedida, se pinta verde + tag "OK" (este
+      // item se puede consumir de almacén en vez de generar OC). Si hay
+      // algo pero no cubre, queda en ámbar (parcial). Si es 0 o el item
+      // no tiene material catalogado, queda en gris.
+      key: "stock_actual",
+      title: "Stock",
+      dataIndex: "stock_actual",
+      width: 90,
+      align: "right",
+      sorter: (a, b) => (a.stock_actual ?? -1) - (b.stock_actual ?? -1),
+      render: (_v: unknown, r: Requerimiento) => {
+        if (r.material_id == null) {
+          return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
+        }
+        const stock = Number(r.stock_actual ?? 0);
+        const necesario = Number(r.cantidad ?? 0);
+        let color: string = brand.textSecondary;
+        let tip = "Sin stock";
+        if (stock > 0 && stock >= necesario) {
+          color = "#52c41a";
+          tip = `Stock suficiente (${stock} ≥ ${necesario}) — se puede consumir de almacén`;
+        } else if (stock > 0) {
+          color = "#faad14";
+          tip = `Stock parcial (${stock} de ${necesario} pedidos)`;
+        }
+        return (
+          <Tooltip title={tip}>
+            <span style={{ fontWeight: 600, color }}>{stock}</span>
+          </Tooltip>
+        );
+      },
+    },
+    {
       key: "fabricante_codigo",
       title: "Fabricante",
       dataIndex: "fabricante_codigo",
@@ -1909,20 +2003,24 @@ function RequerimientosDetalleInner() {
 
   return (
     <div>
-      {/* Header */}
-      <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => router.push("/requerimientos")} style={{ marginBottom: 8 }}>
-        Volver a Requerimientos
-      </Button>
+      {/* Header — solo cuando NO está embebida en /requerimientos */}
+      {!embebido && (
+        <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => router.push("/requerimientos")} style={{ marginBottom: 8 }}>
+          Volver a Requerimientos
+        </Button>
+      )}
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
-        <div>
-          <Title level={3} style={{ margin: 0 }}>
-            Detalle de Requerimientos
-          </Title>
-          <Text type="secondary">
-            {filteredData.length} items de {new Set(filteredData.map((r) => r.ot_id)).size} OT(s)
-          </Text>
-        </div>
+      <div style={{ display: "flex", justifyContent: embebido ? "flex-end" : "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+        {!embebido && (
+          <div>
+            <Title level={3} style={{ margin: 0 }}>
+              Detalle de Requerimientos
+            </Title>
+            <Text type="secondary">
+              {filteredData.length} items de {new Set(filteredData.map((r) => r.ot_id)).size} OT(s)
+            </Text>
+          </div>
+        )}
         <Space wrap>
           <Popover
             content={contenidoColumnas}
@@ -1957,41 +2055,43 @@ function RequerimientosDetalleInner() {
         </Space>
       </div>
 
-      {/* KPI Cards */}
-      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-        <Col xs={12} md={6}>
-          <Card styles={{ body: { padding: 12 } }}>
-            <Statistic title="Items visibles" value={filteredData.length} />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card styles={{ body: { padding: 12 } }}>
-            <Statistic title="Seleccionados" value={selectedRows.length} styles={{ content: { color: brand.cyan } }} />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card styles={{ body: { padding: 12 } }}>
-            <Statistic
-              title="Subtotal Seleccion"
-              value={totalSub}
-              precision={2}
-              prefix="$"
-              styles={{ content: { color: brand.navy } }}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card styles={{ body: { padding: 12 } }}>
-            <Statistic
-              title="Total + IGV 18%"
-              value={totalFinal}
-              precision={2}
-              prefix="$"
-              styles={{ content: { color: "#722ed1" } }}
-            />
-          </Card>
-        </Col>
-      </Row>
+      {/* KPI Cards — solo en la vista standalone, no en la embebida */}
+      {!embebido && (
+        <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+          <Col xs={12} md={6}>
+            <Card styles={{ body: { padding: 12 } }}>
+              <Statistic title="Items visibles" value={filteredData.length} />
+            </Card>
+          </Col>
+          <Col xs={12} md={6}>
+            <Card styles={{ body: { padding: 12 } }}>
+              <Statistic title="Seleccionados" value={selectedRows.length} styles={{ content: { color: brand.cyan } }} />
+            </Card>
+          </Col>
+          <Col xs={12} md={6}>
+            <Card styles={{ body: { padding: 12 } }}>
+              <Statistic
+                title="Subtotal Seleccion"
+                value={totalSub}
+                precision={2}
+                prefix="$"
+                styles={{ content: { color: brand.navy } }}
+              />
+            </Card>
+          </Col>
+          <Col xs={12} md={6}>
+            <Card styles={{ body: { padding: 12 } }}>
+              <Statistic
+                title="Total + IGV 18%"
+                value={totalFinal}
+                precision={2}
+                prefix="$"
+                styles={{ content: { color: "#722ed1" } }}
+              />
+            </Card>
+          </Col>
+        </Row>
+      )}
 
       {/* Filtros */}
       <Card styles={{ body: { padding: 16 } }} style={{ marginBottom: 16 }}>
@@ -2343,11 +2443,19 @@ function RequerimientosDetalleInner() {
                 ),
               },
               {
-                title: "Descripción", key: "desc", ellipsis: true,
+                // Editable como en /compras/[id]/editar — el user puede ajustar
+                // el texto que va al PDF de la OC. Persistido en
+                // OTRepuesto.oc_descripcion vía descripciones_override.
+                title: "Descripción", key: "desc",
                 render: (_, r: Requerimiento) => (
-                  <Text style={{ fontSize: 12 }}>
-                    {r.material_codigo ? `${r.material_codigo} — ` : ""}{r.descripcion ?? "—"}
-                  </Text>
+                  <Input
+                    size="small"
+                    value={descripcionesModal[r.id] ?? ""}
+                    placeholder="Descripción para el PDF de la OC"
+                    onChange={(e) =>
+                      setDescripcionesModal((prev) => ({ ...prev, [r.id]: e.target.value }))
+                    }
+                  />
                 ),
               },
               {
@@ -2719,6 +2827,40 @@ function RequerimientosDetalleInner() {
               </Form.Item>
             </Col>
           </Row>
+
+          {/* Guía de remisión opcional. Se sube DESPUÉS de crear la OC
+              (necesitamos compra_id). Si el usuario no adjunta nada, la OC
+              se crea normalmente sin guía. */}
+          <Divider style={{ margin: "12px 0" }} />
+          <div style={{ marginTop: 8 }}>
+            <Text strong style={{ fontSize: 13 }}>
+              <PaperClipOutlined /> Guía de remisión <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>(opcional)</Text>
+            </Text>
+            <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <Upload
+                beforeUpload={(file) => {
+                  setArchivoGuiaModal(file);
+                  return false;
+                }}
+                onRemove={() => setArchivoGuiaModal(null)}
+                fileList={archivoGuiaModal ? [{
+                  uid: "-1",
+                  name: archivoGuiaModal.name,
+                  status: "done" as const,
+                  size: archivoGuiaModal.size,
+                }] : []}
+                accept=".pdf,.jpg,.jpeg,.png"
+                maxCount={1}
+              >
+                <Button icon={<UploadOutlined />}>
+                  {archivoGuiaModal ? "Cambiar archivo" : "Adjuntar guía (PDF / imagen)"}
+                </Button>
+              </Upload>
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                Si la cargás acá, queda asociada a la OC apenas se cree. Si no, podés subirla después desde <b>Compras</b>.
+              </Text>
+            </div>
+          </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
             <Button onClick={() => setModalOpen(false)}>Cancelar</Button>
