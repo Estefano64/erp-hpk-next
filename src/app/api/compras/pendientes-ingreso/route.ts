@@ -42,6 +42,10 @@ export async function GET() {
             cantidad: true,
             cantidad_recibida: true,
             precio_unitario: true,
+            // Necesario para diferenciar SERVICIOS (SER) en el modal de
+            // recepción — los servicios no requieren zona de almacén y se
+            // auto-marcan en bloque.
+            tipo_codigo: true,
           },
         },
       },
@@ -54,6 +58,17 @@ export async function GET() {
 
     const data = compras
       .map((c: C) => {
+        // Mapa material_id → tipo_codigo derivado de los OTRepuestos vinculados
+        // a la compra. CompraDetalle no tiene tipo_codigo, así que lo inferimos
+        // desde el req (MAC/CAD/SER). Si no matchea queda como null y el
+        // frontend lo trata como MAC (default seguro).
+        const tipoPorMaterialId = new Map<number, string>();
+        for (const r of c.ot_repuestos) {
+          if (r.material_id != null && r.tipo_codigo) {
+            tipoPorMaterialId.set(r.material_id, r.tipo_codigo);
+          }
+        }
+
         // Caso 1 (mayoritario): la OC tiene CompraDetalle → items vienen de ahí.
         // Cada item con `cantidad` = pendiente (cantidad − cantidad_recibida).
         const itemsDetalles = c.detalles
@@ -68,6 +83,7 @@ export async function GET() {
               unidad_medida: d.material?.unidad_medida_codigo ?? "und",
               cantidad: pendiente,
               precio_unitario: d.precio_unitario != null ? Number(d.precio_unitario) : null,
+              tipo_codigo: (d.material_id != null ? tipoPorMaterialId.get(d.material_id) : null) ?? null,
             };
           })
           .filter((it) => it.cantidad > 0);
@@ -90,6 +106,7 @@ export async function GET() {
               unidad_medida: r.unidad_medida ?? "und",
               cantidad: pendiente,
               precio_unitario: r.precio_unitario != null ? Number(r.precio_unitario) : null,
+              tipo_codigo: r.tipo_codigo ?? null,
             };
           })
           .filter((it) => it.cantidad > 0);

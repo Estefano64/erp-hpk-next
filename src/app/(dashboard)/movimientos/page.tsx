@@ -160,6 +160,10 @@ interface POPendiente {
     unidad_medida: string;
     cantidad: number;
     precio_unitario: number | null;
+    // Tipo del item (MAC = material, CAD = cargo directo, SER = servicio).
+    // Para items CompraDetalle se infiere del OTRepuesto vinculado en backend.
+    // Servicios (SER) no requieren zona de almacén — son cargos.
+    tipo_codigo: string | null;
   }>;
 }
 
@@ -675,6 +679,7 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
           cantidad: cantidadesRecibidas[i.id],
           almacen_zona_id: u?.zona_id ?? null,
           almacen_posicion_id: u?.posicion_id ?? null,
+          tipo_codigo: i.tipo_codigo,
         };
       });
 
@@ -682,15 +687,11 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
       message.warning("Ingresa al menos una cantidad");
       return;
     }
-    // El campo "Ubicación física" de arriba es OPCIONAL desde que cada item
-    // ya guarda su zona del almacén HP&K en `almacen_zona_id`. Si el user
-    // no lo llena, simplemente no se setea `ubicacion_codigo` en la OT.
-    // Cada material recibido debe tener zona del almacén HP&K asignada
-    // (HER / SUM / REP / STO) — la posición es opcional. Solo validamos las
-    // zonas de items que efectivamente se están recibiendo (cantidad > 0).
-    const sinZona = items.filter((it) => !it.almacen_zona_id);
+    // Validar zona solo para items físicos. Los SERVICIOS (SER) no requieren
+    // ubicación porque no entran al stock — son cargos facturados.
+    const sinZona = items.filter((it) => it.tipo_codigo !== "SER" && !it.almacen_zona_id);
     if (sinZona.length > 0) {
-      message.warning(`Faltan zonas de almacén en ${sinZona.length} item(s) que estás recibiendo. Elegí la zona en cada fila.`);
+      message.warning(`Faltan zonas de almacén en ${sinZona.length} item(s) que estás recibiendo. Elegí la zona en cada fila. (Los servicios no requieren zona.)`);
       return;
     }
 
@@ -1190,16 +1191,52 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                       min={0}
                       max={r.cantidad}
                       value={cantidadesRecibidas[r.id] ?? 0}
-                      onChange={(v) => setCantidadesRecibidas({ ...cantidadesRecibidas, [r.id]: Number(v) || 0 })}
+                      onChange={(v) => {
+                        const nuevoValor = Number(v) || 0;
+                        // Si se marca un SERVICIO como recibido, auto-marcar
+                        // todos los demás servicios de la OC también — los
+                        // servicios suelen liquidarse en bloque (un único hito
+                        // facturable, no en partes). Solo se aplica cuando va
+                        // de 0 → algo > 0 (no al cambio de cantidad parcial).
+                        const eraCero = (cantidadesRecibidas[r.id] ?? 0) === 0;
+                        if (
+                          r.tipo_codigo === "SER"
+                          && nuevoValor > 0
+                          && eraCero
+                          && poSeleccionada
+                        ) {
+                          const next = { ...cantidadesRecibidas, [r.id]: nuevoValor };
+                          let otros = 0;
+                          for (const it of poSeleccionada.items) {
+                            if (it.id === r.id) continue;
+                            if (it.tipo_codigo !== "SER") continue;
+                            if ((next[it.id] ?? 0) > 0) continue;
+                            next[it.id] = it.cantidad;
+                            otros++;
+                          }
+                          setCantidadesRecibidas(next);
+                          if (otros > 0) {
+                            message.info(`${otros} servicio(s) adicional(es) marcados como recibidos automáticamente.`);
+                          }
+                          return;
+                        }
+                        setCantidadesRecibidas({ ...cantidadesRecibidas, [r.id]: nuevoValor });
+                      }}
                       style={{ width: "100%" }}
                     />
                   ),
                 },
                 { title: "UM", dataIndex: "unidad_medida", width: 55, align: "center" },
                 {
-                  title: <span>Zona almacén <span style={{ color: "#cf1322" }}>*</span></span>,
+                  title: "Zona almacén",
                   width: 160,
                   render: (_, r) => {
+                    // Servicios (SER): no requieren zona — son cargos, no
+                    // entran al stock físico. Mostramos N/A para evitar
+                    // confusión.
+                    if (r.tipo_codigo === "SER") {
+                      return <Text type="secondary" style={{ fontSize: 11 }}>N/A (servicio)</Text>;
+                    }
                     // Para items free (material_id null), usamos el id del item
                     // como key — así cada item tiene su propio slot de zona.
                     const matKey = r.material_id ?? r.id;
