@@ -1201,6 +1201,13 @@ model Proveedor {
   email             String?      @db.VarChar(100)
   direccion         String?
   activo            Boolean      @default(true)
+  // Defaults para auto-rellenar al crear/editar una OC con este proveedor.
+  // Si están NULL, el endpoint /api/proveedores/[id]/defaults-oc infiere
+  // del historial (última OC). El user los puede setear desde /proveedores.
+  moneda_default       String?  @db.VarChar(10)
+  tipo_pago_default    String?  @db.VarChar(30)
+  dias_credito_default Int?
+  tiempo_entrega_dias  Int?
   usuario_crea      String?      @db.VarChar(100)
   usuario_actualiza String?      @db.VarChar(100)
   created_at        DateTime     @default(now())

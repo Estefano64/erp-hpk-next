@@ -2415,6 +2415,34 @@ function RequerimientosDetalleInner() {
                   showSearch
                   optionFilterProp="label"
                   options={proveedores.map((p) => ({ value: p.id, label: p.razon_social }))}
+                  onChange={async (provId) => {
+                    // Al elegir proveedor: fetch a /api/proveedores/[id]/defaults-oc
+                    // y pre-rellenar moneda, tipo_pago, dias_credito, fecha_entrega
+                    // y observaciones. El user puede editar después.
+                    if (!provId) return;
+                    try {
+                      const res = await fetch(`/api/proveedores/${provId}/defaults-oc`);
+                      if (!res.ok) return;
+                      const j = await res.json();
+                      const d = j.defaults ?? {};
+                      // Solo pisar si el campo está vacío — no destruir lo que
+                      // el user ya editó manualmente.
+                      const cur = ocForm.getFieldsValue();
+                      const patch: Record<string, unknown> = {};
+                      if (d.moneda && !cur.moneda) patch.moneda = d.moneda === "SOL" || d.moneda === "PEN" ? "PEN" : "USD";
+                      if (d.tipo_pago && tipoPagoModal == null) setTipoPagoModal(d.tipo_pago);
+                      if (d.dias_credito != null && diasCreditoModal == null) setDiasCreditoModal(d.dias_credito);
+                      if (d.tiempo_entrega_dias != null && !cur.fecha_entrega_esperada) {
+                        patch.fecha_entrega_esperada = dayjs().add(d.tiempo_entrega_dias, "day");
+                      }
+                      if (d.observaciones_sugeridas && !cur.observaciones) {
+                        patch.observaciones = d.observaciones_sugeridas;
+                      }
+                      if (Object.keys(patch).length > 0) ocForm.setFieldsValue(patch);
+                    } catch {
+                      // silencioso — el form sigue funcionando sin defaults
+                    }
+                  }}
                 />
               </Form.Item>
             </Col>
