@@ -35,6 +35,9 @@ const Schema = z.object({
   // la cantidad original del req. Permite ajustar al alza/baja en el momento
   // de comprar sin modificar el req base.
   cantidades_override: z.record(z.string(), z.coerce.number().min(0.0001)).optional(),
+  // Fechas de entrega override por OTRepuesto.id → ISO date (YYYY-MM-DD).
+  // Si no viene para un item, se usa la fecha_entrega_esperada global.
+  fechas_override: z.record(z.string(), z.string()).optional(),
 });
 
 const IGV_PCT = new Prisma.Decimal("0.18");
@@ -291,6 +294,21 @@ export async function POST(req: NextRequest) {
         await tx.oTRepuesto.update({
           where: { id },
           data: { oc_cantidad: new Prisma.Decimal(cant) },
+        });
+      }
+      // Fechas de entrega override por item. Si vienen, pisan la fecha
+      // global que se aplicó en el updateMany anterior — el updateMany usa
+      // d.fecha_entrega_esperada como default cuando el item no tiene
+      // override propia.
+      const fechasOverride = d.fechas_override ?? {};
+      for (const [idStr, fechaISO] of Object.entries(fechasOverride)) {
+        const id = Number(idStr);
+        if (!Number.isFinite(id)) continue;
+        const fecha = parseDateOnly(fechaISO);
+        if (!fecha) continue;
+        await tx.oTRepuesto.update({
+          where: { id },
+          data: { fecha_entrega_esperada: fecha },
         });
       }
       if (assigned.count !== repuestos.length) {

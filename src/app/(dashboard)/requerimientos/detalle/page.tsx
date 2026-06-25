@@ -331,6 +331,11 @@ function RequerimientosDetalleInner() {
   // se usa la cantidad original del requerimiento. Permite ajustar al alza
   // (ej: comprar más para stock) o a la baja sin tocar el req base.
   const [cantidadesModal, setCantidadesModal] = useState<Record<number, number>>({});
+  // Fechas de entrega por item (id_requerimiento → Dayjs). Permite override
+  // a la fecha global. Al abrir el modal se inicializa con fecha_requerida
+  // del req. Hay un botón "Aplicar a todos" para pisar todas con la fecha
+  // global del header.
+  const [fechasItemsModal, setFechasItemsModal] = useState<Record<number, Dayjs | null>>({});
   // Campos extra del modal Crear OC — equivalentes al editor /compras/[id]/editar:
   // ref. pedido (texto libre que va en la cabecera del PDF de la OC),
   // tipo de pago / días crédito, flag IGV, descuento y "otros" (cargo extra
@@ -644,14 +649,17 @@ function RequerimientosDetalleInner() {
     // modal permite ajustar ambos antes de generar la OC.
     const precios: Record<number, number> = {};
     const cantidades: Record<number, number> = {};
+    const fechas: Record<number, Dayjs | null> = {};
     for (const r of selectedRecords) {
       const p = Number(r.precio_unitario ?? 0);
       precios[r.id] = Number.isFinite(p) && p > 0 ? p : 0;
       const c = Number(r.cantidad ?? 0);
       cantidades[r.id] = Number.isFinite(c) ? c : 0;
+      fechas[r.id] = r.fecha_requerida ? dayjs(r.fecha_requerida) : null;
     }
     setPreciosModal(precios);
     setCantidadesModal(cantidades);
+    setFechasItemsModal(fechas);
     // Reset de los campos extra al abrir un modal nuevo.
     setRefPedidoModal("");
     setTipoPagoModal(null);
@@ -717,6 +725,13 @@ function RequerimientosDetalleInner() {
           cantidadesOverride[String(r.id)] = local;
         }
       }
+      // Fechas de entrega por item: solo enviamos las que existen (no nulas).
+      // El endpoint las usa para sobreescribir fecha_entrega_esperada por item.
+      const fechasOverride: Record<string, string> = {};
+      for (const r of selectedRecords) {
+        const f = fechasItemsModal[r.id];
+        if (f) fechasOverride[String(r.id)] = f.format("YYYY-MM-DD");
+      }
 
       const res = await fetch("/api/compras/crear-oc", {
         method: "POST",
@@ -740,6 +755,7 @@ function RequerimientosDetalleInner() {
           otros: otrosModal || 0,
           otros_signo: otrosSignoModal,
           cantidades_override: cantidadesOverride,
+          fechas_override: fechasOverride,
         }),
       });
       const json = await res.json();
@@ -2163,13 +2179,32 @@ function RequerimientosDetalleInner() {
           );
         })()}
 
-        {/* Tabla editable de precios — el usuario completa/ajusta el precio
-            unitario de cada item antes de generar la OC. */}
+        {/* Tabla editable de items — el usuario ajusta precio, cantidad y
+            fecha de entrega antes de generar la OC. */}
         <div style={{ marginBottom: 16 }}>
-          <Text strong style={{ fontSize: 13 }}>Precios por item</Text>
-          <Text type="secondary" style={{ fontSize: 11, marginLeft: 8 }}>
-            (editá el precio unitario en el que comprarás cada ítem)
-          </Text>
+          <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
+            <Text strong style={{ fontSize: 13 }}>Items de la OC</Text>
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              (editá precio, cantidad y fecha de entrega de cada ítem)
+            </Text>
+            <Button
+              size="small"
+              onClick={() => {
+                const fGlobal = ocForm.getFieldValue("fecha_entrega_esperada") as Dayjs | null | undefined;
+                if (!fGlobal) {
+                  message.warning("Definí primero la 'Fecha entrega esperada' del header.");
+                  return;
+                }
+                const nuevas: Record<number, Dayjs | null> = {};
+                for (const r of selectedRecords) nuevas[r.id] = fGlobal;
+                setFechasItemsModal(nuevas);
+                message.success(`Fecha aplicada a ${selectedRecords.length} item(s).`);
+              }}
+              style={{ marginLeft: "auto" }}
+            >
+              Aplicar F. Entrega global a todos los items
+            </Button>
+          </div>
           <Table
             size="small"
             rowKey="id"
@@ -2253,13 +2288,20 @@ function RequerimientosDetalleInner() {
                 },
               },
               {
-                // Fecha de entrega esperada por item — se jala de fecha_requerida
-                // del requerimiento. Read-only en este modal: si necesita ajuste
-                // por item, se edita después en /compras/[id]/editar.
-                title: "F. Entrega", key: "fent", width: 110, align: "center",
-                render: (_, r: Requerimiento) => r.fecha_requerida
-                  ? <Text style={{ fontSize: 11 }}>{dayjs(r.fecha_requerida).format("DD/MM/YYYY")}</Text>
-                  : <Text type="secondary" style={{ fontSize: 11 }}>—</Text>,
+                // Fecha de entrega esperada por item — editable. Inicializada
+                // con fecha_requerida del req. El botón "Aplicar a todos" del
+                // header de la tabla pisa todas con la fecha de cabecera.
+                title: "F. Entrega", key: "fent", width: 150, align: "center",
+                render: (_, r: Requerimiento) => (
+                  <DatePicker
+                    size="small"
+                    value={fechasItemsModal[r.id] ?? null}
+                    onChange={(d) => setFechasItemsModal((prev) => ({ ...prev, [r.id]: d }))}
+                    format="DD/MM/YYYY"
+                    style={{ width: "100%" }}
+                    placeholder="Seleccionar fecha"
+                  />
+                ),
               },
             ]}
           />
