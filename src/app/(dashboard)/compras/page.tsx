@@ -23,6 +23,7 @@ import {
   Select,
 } from "antd";
 import RequerimientosAprobadosTab from "@/components/modules/compras/RequerimientosAprobadosTab";
+import { TabIngresoPO } from "@/app/(dashboard)/movimientos/page";
 import {
   SearchOutlined,
   ReloadOutlined,
@@ -37,6 +38,7 @@ import {
   HourglassOutlined,
   ExclamationCircleOutlined,
   InfoCircleOutlined,
+  InboxOutlined,
   FilePdfOutlined,
   MessageOutlined,
   CheckOutlined,
@@ -1000,6 +1002,18 @@ export default function ComprasPage() {
               </span>
             ),
             children: <RequerimientosAprobadosTab onOCCreated={fetchData} />,
+          },
+          {
+            key: "ingreso",
+            label: (
+              <span>
+                <InboxOutlined /> Ingreso de POs
+              </span>
+            ),
+            // Componente importado desde /movimientos — el tab fue movido
+            // acá para que el equipo de logística reciba las OCs sin cambiar
+            // de módulo. onRefresh recarga la lista de OCs después de un ingreso.
+            children: <TabIngresoPO onRefresh={fetchData} />,
           },
         ]}
       />

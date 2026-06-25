@@ -507,7 +507,10 @@ interface ItemFila {
   compra_id: number;
 }
 
-function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
+// Exportado para que /compras pueda reusarlo como tab "Ingreso de POs"
+// al lado de "Requerimientos Aprobados". El default export sigue siendo
+// la página de Movimientos (Next.js usa solo el default para routing).
+export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
   const { message } = App.useApp();
   const { screens } = useResponsive();
   const [pos, setPos] = useState<POPendiente[]>([]);
@@ -1645,7 +1648,7 @@ function TabSalida({ onRefresh }: { onRefresh: () => void }) {
               <Text strong style={{ color: "#389e0d" }}>⬇ ENTRADA</Text>
               <div style={{ fontSize: 12, color: "#666" }}>
                 Úsala para registrar devoluciones o material recibido manualmente
-                (sin una OC). Para recibir una OC completa usa la pestaña &quot;Ingreso de POs&quot;.
+                (sin una OC). Para recibir una OC completa usá la pestaña &quot;Ingreso de POs&quot; dentro de /compras.
               </div>
             </div>
             <Divider style={{ margin: 0 }} />
@@ -1680,16 +1683,10 @@ export default function MovimientosPage() {
       ),
       children: <TabMovimientos key={`mov-${refreshKey}`} onRefresh={() => setRefreshKey((k) => k + 1)} />,
     },
-    {
-      key: "ingreso",
-      label: (
-        <Space>
-          <InboxOutlined />
-          Ingreso de POs
-        </Space>
-      ),
-      children: <TabIngresoPO key={`po-${refreshKey}`} onRefresh={() => setRefreshKey((k) => k + 1)} />,
-    },
+    // El tab "Ingreso de POs" se movió a /compras al lado de
+    // "Requerimientos Aprobados" — sigue exportado desde acá (TabIngresoPO)
+    // y se importa desde /compras/page.tsx. Mantenemos el componente local
+    // por si después se quiere ofrecer también en este módulo.
     {
       key: "salida",
       label: (
