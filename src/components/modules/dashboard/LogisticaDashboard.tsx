@@ -204,22 +204,10 @@ export default function LogisticaDashboard() {
           <SeccionInventario modo={modo} anio={anio} mes={mes} sem={semana} />
         </Col>
         <Col span={24}>
-          <SeccionPlaceholder
-            icon={<ToolOutlined style={{ fontSize: 17, color: "#854F0B" }} />}
-            iconBg="#FAEEDA"
-            label="Logística"
-            titulo="Órdenes de trabajo"
-            descripcion="OT abiertas (estado almacén) + tiempo en almacén + avance del mes"
-          />
+          <SeccionOT modo={modo} anio={anio} mes={mes} sem={semana} />
         </Col>
         <Col span={24}>
-          <SeccionPlaceholder
-            icon={<DollarOutlined style={{ fontSize: 17, color: "#A32D2D" }} />}
-            iconBg="#FCEBEB"
-            label="Ciclo de compras"
-            titulo="Facturación"
-            descripcion="Total + por tipo de OT (Reparación / Bien / Servicio) + gráfico mensual con filtros"
-          />
+          <SeccionFacturacion modo={modo} anio={anio} mes={mes} sem={semana} />
         </Col>
       </Row>
     </div>
@@ -958,6 +946,318 @@ function SeccionInventario({
               </Card>
             </Col>
           </Row>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Sección: Órdenes de trabajo (OT)
+// ───────────────────────────────────────────────────────────────────────────
+interface OTResp {
+  estadoAlmacen: { completas: number; incompletas: number };
+  tiempoAlmacen: number[];
+  avanceMes: { entregadasArmado: number; despachadas: number; facturadas: number };
+}
+
+const TIEMPO_ALMACEN_LABELS = ["1-3d", "4-7d", "8-14d", "15-30d", "+30d"];
+
+function SeccionOT({
+  modo, anio, mes, sem,
+}: {
+  modo: Modo; anio: number; mes: number; sem: number;
+}) {
+  const [data, setData] = useState<OTResp | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ modo, anio: String(anio) });
+      if (modo === "mes") params.set("mes", String(mes));
+      if (modo === "sem") params.set("sem", String(sem));
+      const res = await fetch(`/api/dashboard/logistica/ot?${params}`);
+      if (res.ok) setData(await res.json());
+    } finally {
+      setLoading(false);
+    }
+  }, [modo, anio, mes, sem]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const tiempoData = useMemo(
+    () => (data?.tiempoAlmacen ?? []).map((v, i) => ({ name: TIEMPO_ALMACEN_LABELS[i], value: v })),
+    [data?.tiempoAlmacen],
+  );
+  const avanceData = useMemo(() => {
+    if (!data) return [];
+    return [
+      { name: "Entregadas armado", value: data.avanceMes.entregadasArmado },
+      { name: "Despachadas", value: data.avanceMes.despachadas },
+      { name: "Facturadas", value: data.avanceMes.facturadas },
+    ];
+  }, [data]);
+  const estadoData = useMemo(() => {
+    if (!data) return [];
+    return [
+      { name: "Completas", value: data.estadoAlmacen.completas },
+      { name: "Incompletas", value: data.estadoAlmacen.incompletas },
+    ];
+  }, [data]);
+
+  const COLORS_TIEMPO_ALM = ["#1D9E75", "#97C459", "#EF9F27", "#E24B4A", "#791F1F"];
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 9,
+        marginBottom: 12, paddingBottom: 8,
+        borderBottom: `1px solid ${brand.border}`,
+      }}>
+        <div style={{
+          width: 28, height: 28, borderRadius: 8, background: "#FAEEDA",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <ToolOutlined style={{ fontSize: 17, color: "#854F0B" }} />
+        </div>
+        <div>
+          <div style={{
+            fontSize: 10, fontWeight: 600, letterSpacing: "0.06em",
+            textTransform: "uppercase", color: brand.textSecondary,
+          }}>
+            Logística
+          </div>
+          <Title level={5} style={{ margin: 0 }}>Órdenes de trabajo</Title>
+        </div>
+      </div>
+
+      {loading && !data ? (
+        <div style={{ textAlign: "center", padding: 40 }}><Spin /></div>
+      ) : !data ? (
+        <Empty />
+      ) : (
+        <Row gutter={[12, 12]}>
+          <Col xs={24} md={8}>
+            <Card
+              title={`OT abiertas · estado almacén (${data.estadoAlmacen.completas + data.estadoAlmacen.incompletas})`}
+              size="small"
+              styles={{ body: { padding: 12 } }}
+            >
+              <div style={{ width: "100%", height: 220 }}>
+                <ResponsiveContainer>
+                  <BarChart data={estadoData}>
+                    <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <ReTooltip />
+                    <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                      <Cell fill="#1D9E75" />
+                      <Cell fill="#EF9F27" />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </Card>
+          </Col>
+          <Col xs={24} md={8}>
+            <Card title="OT despachadas · tiempo en almacén" size="small" styles={{ body: { padding: 12 } }}>
+              <div style={{ width: "100%", height: 220 }}>
+                <ResponsiveContainer>
+                  <BarChart data={tiempoData}>
+                    <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <ReTooltip />
+                    <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                      {tiempoData.map((_, i) => (
+                        <Cell key={i} fill={COLORS_TIEMPO_ALM[i] ?? brand.navy} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </Card>
+          </Col>
+          <Col xs={24} md={8}>
+            <Card title="Avance del rango (hitos)" size="small" styles={{ body: { padding: 12 } }}>
+              <div style={{ width: "100%", height: 220 }}>
+                <ResponsiveContainer>
+                  <BarChart data={avanceData}>
+                    <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <ReTooltip />
+                    <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                      <Cell fill="#3C3489" />
+                      <Cell fill="#0090B4" />
+                      <Cell fill="#1D9E75" />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </Card>
+          </Col>
+        </Row>
+      )}
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Sección: Facturación
+// ───────────────────────────────────────────────────────────────────────────
+interface FactResp {
+  kpis: { total: number; rep: number; bien: number; serv: number; moneda: string; repPct: number; bienPct: number; servPct: number };
+  porMes: { rep: number[]; bien: number[]; serv: number[] };
+}
+
+function SeccionFacturacion({
+  modo, anio, mes, sem,
+}: {
+  modo: Modo; anio: number; mes: number; sem: number;
+}) {
+  const [tipo, setTipo] = useState<"all" | "rep" | "bien" | "serv">("all");
+  const [data, setData] = useState<FactResp | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ modo, anio: String(anio), tipo });
+      if (modo === "mes") params.set("mes", String(mes));
+      if (modo === "sem") params.set("sem", String(sem));
+      const res = await fetch(`/api/dashboard/logistica/facturacion?${params}`);
+      if (res.ok) setData(await res.json());
+    } finally {
+      setLoading(false);
+    }
+  }, [modo, anio, mes, sem, tipo]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const porMesData = useMemo(() => {
+    if (!data) return [];
+    return MES_LABELS.map((name, i) => ({
+      name,
+      rep: data.porMes.rep[i] ?? 0,
+      bien: data.porMes.bien[i] ?? 0,
+      serv: data.porMes.serv[i] ?? 0,
+    }));
+  }, [data]);
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 9,
+        marginBottom: 12, paddingBottom: 8,
+        borderBottom: `1px solid ${brand.border}`, flexWrap: "wrap",
+      }}>
+        <div style={{
+          width: 28, height: 28, borderRadius: 8, background: "#FCEBEB",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <DollarOutlined style={{ fontSize: 17, color: "#A32D2D" }} />
+        </div>
+        <div>
+          <div style={{
+            fontSize: 10, fontWeight: 600, letterSpacing: "0.06em",
+            textTransform: "uppercase", color: brand.textSecondary,
+          }}>
+            Ciclo de compras
+          </div>
+          <Title level={5} style={{ margin: 0 }}>Facturación</Title>
+        </div>
+        <Segmented
+          size="small"
+          value={tipo}
+          onChange={(v) => setTipo(v as "all" | "rep" | "bien" | "serv")}
+          options={[
+            { value: "all", label: "Todas" },
+            { value: "rep", label: "Reparación" },
+            { value: "bien", label: "Bien" },
+            { value: "serv", label: "Servicio" },
+          ]}
+          style={{ marginLeft: "auto" }}
+        />
+      </div>
+
+      {loading && !data ? (
+        <div style={{ textAlign: "center", padding: 40 }}><Spin /></div>
+      ) : !data ? (
+        <Empty />
+      ) : (
+        <>
+          <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+            <Col xs={24} md={6}>
+              <Card>
+                <Statistic
+                  title="Facturación del rango (sin IGV)"
+                  value={data.kpis.total}
+                  precision={0}
+                  prefix={data.kpis.moneda === "SOL" || data.kpis.moneda === "PEN" ? "S/" : "$"}
+                  styles={{ content: { color: "#A32D2D", fontSize: 20, fontWeight: 700 } }}
+                />
+              </Card>
+            </Col>
+            <Col xs={12} md={6}>
+              <Card>
+                <Statistic
+                  title="OT Reparación"
+                  value={data.kpis.rep}
+                  precision={0}
+                  prefix={data.kpis.moneda === "SOL" || data.kpis.moneda === "PEN" ? "S/" : "$"}
+                  styles={{ content: { color: "#185FA5", fontSize: 18, fontWeight: 600 } }}
+                />
+                <Text type="secondary" style={{ fontSize: 11 }}>Participación: {data.kpis.repPct.toFixed(0)}%</Text>
+              </Card>
+            </Col>
+            <Col xs={12} md={6}>
+              <Card>
+                <Statistic
+                  title="OT Bien"
+                  value={data.kpis.bien}
+                  precision={0}
+                  prefix={data.kpis.moneda === "SOL" || data.kpis.moneda === "PEN" ? "S/" : "$"}
+                  styles={{ content: { color: "#0F6E56", fontSize: 18, fontWeight: 600 } }}
+                />
+                <Text type="secondary" style={{ fontSize: 11 }}>Participación: {data.kpis.bienPct.toFixed(0)}%</Text>
+              </Card>
+            </Col>
+            <Col xs={12} md={6}>
+              <Card>
+                <Statistic
+                  title="OT Servicio"
+                  value={data.kpis.serv}
+                  precision={0}
+                  prefix={data.kpis.moneda === "SOL" || data.kpis.moneda === "PEN" ? "S/" : "$"}
+                  styles={{ content: { color: "#854F0B", fontSize: 18, fontWeight: 600 } }}
+                />
+                <Text type="secondary" style={{ fontSize: 11 }}>Participación: {data.kpis.servPct.toFixed(0)}%</Text>
+              </Card>
+            </Col>
+          </Row>
+
+          <Card title="Facturación mensual · sin IGV" size="small" styles={{ body: { padding: 12 } }}>
+            <Space size={14} style={{ marginBottom: 6, fontSize: 12, color: brand.textSecondary }}>
+              <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#185FA5", borderRadius: 2, marginRight: 4 }} />Reparación</span>
+              <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#0F6E56", borderRadius: 2, marginRight: 4 }} />Bien</span>
+              <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#854F0B", borderRadius: 2, marginRight: 4 }} />Servicio</span>
+            </Space>
+            <div style={{ width: "100%", height: 240 }}>
+              <ResponsiveContainer>
+                <BarChart data={porMesData}>
+                  <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
+                  <ReTooltip formatter={(v) => fmtMoneda(Number(v), data.kpis.moneda)} />
+                  <Bar dataKey="rep" stackId="a" fill="#185FA5" />
+                  <Bar dataKey="bien" stackId="a" fill="#0F6E56" />
+                  <Bar dataKey="serv" stackId="a" fill="#854F0B" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
         </>
       )}
     </div>
