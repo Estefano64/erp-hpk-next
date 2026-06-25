@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
 
 // GET — listar OCs pendientes de recepción.
 // Sólo se incluyen OCs ya APROBADAS por el admin: estado PROCESO (aceptadas y
@@ -46,6 +47,12 @@ export async function GET() {
             // recepción — los servicios no requieren zona de almacén y se
             // auto-marcan en bloque.
             tipo_codigo: true,
+            // OT externa (vía ot_id) o interna (vía orden_trabajo_interna_id)
+            // — se usan para mostrar el código de OT en la tabla de Ingreso.
+            ot_id: true,
+            orden_trabajo_interna_id: true,
+            orden_trabajo: { select: { ot: true, tipo_codigo: true } },
+            orden_trabajo_interna: { select: { ot: true } },
           },
         },
       },
@@ -58,14 +65,34 @@ export async function GET() {
 
     const data = compras
       .map((c: C) => {
-        // Mapa material_id → tipo_codigo derivado de los OTRepuestos vinculados
-        // a la compra. CompraDetalle no tiene tipo_codigo, así que lo inferimos
-        // desde el req (MAC/CAD/SER). Si no matchea queda como null y el
-        // frontend lo trata como MAC (default seguro).
+        // Mapas derivados de los OTRepuestos de la compra. CompraDetalle no
+        // tiene tipo_codigo ni OT ni la descripción específica de la OC —
+        // los enriquecemos buscando el OTRepuesto vinculado por material_id.
         const tipoPorMaterialId = new Map<number, string>();
+        const otCodigoPorMaterialId = new Map<number, string>();
+        const descripcionPorMaterialId = new Map<number, string>();
         for (const r of c.ot_repuestos) {
-          if (r.material_id != null && r.tipo_codigo) {
-            tipoPorMaterialId.set(r.material_id, r.tipo_codigo);
+          if (r.material_id == null) continue;
+          if (r.tipo_codigo) tipoPorMaterialId.set(r.material_id, r.tipo_codigo);
+          // OT código: externa (con tipo) o interna (siempre OI). Formateado
+          // listo para mostrar como tag — el frontend lo usa as-is.
+          if (r.orden_trabajo?.ot != null) {
+            otCodigoPorMaterialId.set(
+              r.material_id,
+              formatOtCodigo(r.orden_trabajo.ot, r.orden_trabajo.tipo_codigo ?? ""),
+            );
+          } else if (r.orden_trabajo_interna?.ot != null) {
+            otCodigoPorMaterialId.set(
+              r.material_id,
+              formatOtInternaCodigo(r.orden_trabajo_interna.ot),
+            );
+          }
+          // Descripción específica de la OC: la del OTRepuesto (lo que el
+          // técnico escribió al pedir el item), no la genérica del catálogo.
+          // Solo seteamos si tiene contenido — sino dejamos null para que el
+          // fallback use la del material.
+          if (r.descripcion && r.descripcion.trim()) {
+            descripcionPorMaterialId.set(r.material_id, r.descripcion.trim());
           }
         }
 
@@ -84,6 +111,10 @@ export async function GET() {
               cantidad: pendiente,
               precio_unitario: d.precio_unitario != null ? Number(d.precio_unitario) : null,
               tipo_codigo: (d.material_id != null ? tipoPorMaterialId.get(d.material_id) : null) ?? null,
+              // OT y descripción específica del OC, inferidas del OTRepuesto vinculado.
+              ot_codigo: (d.material_id != null ? otCodigoPorMaterialId.get(d.material_id) : null) ?? null,
+              descripcion_oc: (d.material_id != null ? descripcionPorMaterialId.get(d.material_id) : null) ?? null,
+              compra_id: c.id,
             };
           })
           .filter((it) => it.cantidad > 0);
@@ -107,6 +138,14 @@ export async function GET() {
               cantidad: pendiente,
               precio_unitario: r.precio_unitario != null ? Number(r.precio_unitario) : null,
               tipo_codigo: r.tipo_codigo ?? null,
+              // OT del free-item: directo del OTRepuesto.
+              ot_codigo: r.orden_trabajo?.ot != null
+                ? formatOtCodigo(r.orden_trabajo.ot, r.orden_trabajo.tipo_codigo ?? "")
+                : (r.orden_trabajo_interna?.ot != null
+                    ? formatOtInternaCodigo(r.orden_trabajo_interna.ot)
+                    : null),
+              descripcion_oc: r.descripcion ?? null,
+              compra_id: c.id,
             };
           })
           .filter((it) => it.cantidad > 0);

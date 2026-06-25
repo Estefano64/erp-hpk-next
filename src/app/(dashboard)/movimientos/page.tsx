@@ -42,6 +42,7 @@ import {
   InfoCircleOutlined,
   SwapOutlined,
   UploadOutlined,
+  EyeOutlined,
   DeleteOutlined,
   PaperClipOutlined,
 } from "@ant-design/icons";
@@ -492,10 +493,18 @@ interface ItemFila {
   material_id: number | null;
   codigo: string | null;
   descripcion: string | null;
+  // Descripción específica de la OC (la del OTRepuesto): para servicios y
+  // cargos directos suele ser distinta a la del catálogo. Si está vacía,
+  // cae al fallback `descripcion`.
+  descripcion_oc: string | null;
   cantidad: number;
   unidad_medida: string;
   precio_unitario: number | null;
   moneda: string;
+  // OT (externa o interna) formateada. Null si el item está desvinculado.
+  ot_codigo: string | null;
+  tipo_codigo: string | null;
+  compra_id: number;
 }
 
 function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
@@ -591,10 +600,14 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
       material_id: i.material_id,
       codigo: i.codigo,
       descripcion: i.descripcion,
+      descripcion_oc: (i as { descripcion_oc?: string | null }).descripcion_oc ?? null,
       cantidad: Number(i.cantidad),
       unidad_medida: i.unidad_medida,
       precio_unitario: i.precio_unitario != null ? Number(i.precio_unitario) : null,
       moneda: po.moneda,
+      ot_codigo: (i as { ot_codigo?: string | null }).ot_codigo ?? null,
+      tipo_codigo: i.tipo_codigo ?? null,
+      compra_id: po.id,
     }))
   );
 
@@ -762,19 +775,40 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
       onFilter: (value, r) => r.proveedor_nombre === value,
       render: (v: string | null) => v || "-",
     },
+    {
+      key: "ot_codigo",
+      title: "OT",
+      dataIndex: "ot_codigo",
+      width: 110,
+      ...filtroPorColumna(filasAplanadas, "ot_codigo"),
+      render: (v: string | null) =>
+        v ? <Tag color={brand.cyan} style={{ margin: 0 }}>{v}</Tag> : <Text type="secondary">—</Text>,
+    },
     { key: "codigo", title: "Código", dataIndex: "codigo", width: 110, ...filtroPorColumna(filasAplanadas, "codigo") },
     {
       key: "descripcion",
-      title: "Material",
+      title: "Material / Servicio",
       dataIndex: "descripcion",
       width: 280,
       ellipsis: true,
       ...filtroPorColumna(filasAplanadas, "descripcion"),
-      render: (v: string | null, r) => (
-        <Tooltip title={r.observaciones_compra ? `Comentarios OC: ${r.observaciones_compra}` : v}>
-          <span>{v || "-"}</span>
-        </Tooltip>
-      ),
+      render: (v: string | null, r) => {
+        // Preferir la descripción específica de la OC (la que escribió el
+        // técnico en el OTRepuesto) sobre la genérica del catálogo. Útil
+        // para servicios (SVC Reparación → "Reparación de cilindro hidráulico
+        // OT 393526").
+        const principal = r.descripcion_oc?.trim() || v || "-";
+        const ambasDistintas = r.descripcion_oc && v && r.descripcion_oc.trim() !== v.trim();
+        return (
+          <Tooltip title={
+            r.observaciones_compra ? `Comentarios OC: ${r.observaciones_compra}` :
+            ambasDistintas ? `Catálogo: ${v}` :
+            principal
+          }>
+            <span>{principal}</span>
+          </Tooltip>
+        );
+      },
     },
     {
       key: "cantidad",
@@ -835,6 +869,23 @@ function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
       width: 110,
       sorter: (a, b) => (a.fecha_entrega_esperada || "").localeCompare(b.fecha_entrega_esperada || ""),
       render: (v: string | null) => (v ? formatDateOnly(v) : "-"),
+    },
+    {
+      key: "acciones",
+      title: "Acciones",
+      width: 90,
+      fixed: "right",
+      align: "center",
+      render: (_: unknown, r) => (
+        <Tooltip title="Ver OC en el editor">
+          <Button
+            size="small"
+            type="text"
+            icon={<EyeOutlined style={{ color: brand.cyan }} />}
+            onClick={() => window.open(`/compras/${r.compra_id}/editar`, "_blank")}
+          />
+        </Tooltip>
+      ),
     },
   ];
 
