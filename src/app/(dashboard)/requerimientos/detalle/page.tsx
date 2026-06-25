@@ -1102,13 +1102,21 @@ function RequerimientosDetalleInner() {
   };
   const confirmarCajaChica = async () => {
     if (!modalCajaChica) return;
+    // Monto obligatorio: caja chica registra un gasto real con efectivo —
+    // sin precio no hay forma de cuadrar la liquidación. Validación dura
+    // antes de llamar al backend (el botón también está deshabilitado pero
+    // doble guard por si acaso).
+    if (cajaMonto == null || !(cajaMonto > 0)) {
+      message.error("El monto unitario es obligatorio y debe ser mayor a 0.");
+      return;
+    }
     setPagandoCaja(true);
     try {
       const res = await fetch(`/api/requerimientos/${modalCajaChica.id}/consumir-caja-chica`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          monto_unitario: cajaMonto ?? undefined,
+          monto_unitario: cajaMonto,
           moneda: cajaMoneda || undefined,
           proveedor: cajaProveedor.trim() || undefined,
           comprobante: cajaComprobante.trim() || undefined,
@@ -3198,7 +3206,9 @@ function RequerimientosDetalleInner() {
         onOk={confirmarCajaChica}
         confirmLoading={pagandoCaja}
         okText="Marcar como pagado"
-        okButtonProps={{ type: "primary" }}
+        // Botón deshabilitado mientras el monto no sea válido. La validación
+        // dura está en confirmarCajaChica + backend (defensa en profundidad).
+        okButtonProps={{ type: "primary", disabled: cajaMonto == null || !(cajaMonto > 0) }}
         cancelText="Cancelar"
         destroyOnHidden
         width={520}
@@ -3219,15 +3229,18 @@ function RequerimientosDetalleInner() {
 
             <Row gutter={8}>
               <Col span={14}>
-                <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 2 }}>Monto unitario pagado</div>
+                <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 2 }}>
+                  Monto unitario pagado <span style={{ color: "#cf1322" }}>*</span>
+                </div>
                 <InputNumber
                   value={cajaMonto}
                   onChange={(v) => setCajaMonto(v == null ? null : Number(v))}
-                  min={0}
+                  min={0.01}
                   step={0.01}
                   precision={2}
                   style={{ width: "100%" }}
                   placeholder="0.00"
+                  status={cajaMonto == null || !(cajaMonto > 0) ? "error" : undefined}
                 />
               </Col>
               <Col span={10}>

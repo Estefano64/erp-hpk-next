@@ -8,9 +8,10 @@ import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
 
 const Schema = z.object({
-  // Monto unitario (opcional): si viene, actualiza precio_unitario del req.
-  // Útil para reflejar el costo real pagado por caja chica vs el estimado.
-  monto_unitario: z.coerce.number().min(0).optional().nullable(),
+  // Monto unitario OBLIGATORIO y > 0 — sin el precio real, caja chica no
+  // tiene forma de cuadrar la liquidación contra el efectivo. El UI también
+  // bloquea el botón si no hay monto, este es el guard server-side.
+  monto_unitario: z.coerce.number().positive("El monto unitario debe ser mayor a 0"),
   moneda: z.string().trim().max(10).optional().nullable(),
   proveedor: z.string().trim().max(200).optional().nullable(),
   comprobante: z.string().trim().max(100).optional().nullable(),
