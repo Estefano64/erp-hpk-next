@@ -55,7 +55,7 @@ import {
   dentroDeRango,
   paginacionEstandar,
 } from "@/lib/tables";
-import { Popover, InputNumber, Divider, Checkbox } from "antd";
+import { Popover, InputNumber, Divider, Checkbox, Switch } from "antd";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import dayjs, { Dayjs } from "dayjs";
@@ -327,6 +327,21 @@ function RequerimientosDetalleInner() {
   // Precios editados dentro del modal (id_requerimiento → precio). Se persisten
   // al confirmar "Generar OC" vía PATCH /api/requerimientos/[id]/precio.
   const [preciosModal, setPreciosModal] = useState<Record<number, number>>({});
+  // Cantidades editadas (id_requerimiento → cantidad). Si no hay entrada,
+  // se usa la cantidad original del requerimiento. Permite ajustar al alza
+  // (ej: comprar más para stock) o a la baja sin tocar el req base.
+  const [cantidadesModal, setCantidadesModal] = useState<Record<number, number>>({});
+  // Campos extra del modal Crear OC — equivalentes al editor /compras/[id]/editar:
+  // ref. pedido (texto libre que va en la cabecera del PDF de la OC),
+  // tipo de pago / días crédito, flag IGV, descuento y "otros" (cargo extra
+  // como flete, manipuleo, etc. con signo +/-).
+  const [refPedidoModal, setRefPedidoModal] = useState<string>("");
+  const [tipoPagoModal, setTipoPagoModal] = useState<string | null>(null);
+  const [diasCreditoModal, setDiasCreditoModal] = useState<number | null>(null);
+  const [aplicaIgvModal, setAplicaIgvModal] = useState<boolean>(true);
+  const [descuentoModal, setDescuentoModal] = useState<number>(0);
+  const [otrosModal, setOtrosModal] = useState<number>(0);
+  const [otrosSignoModal, setOtrosSignoModal] = useState<"+" | "-">("+");
 
   // Modal de Dividir
   const [modalDividir, setModalDividir] = useState<Requerimiento | null>(null);
@@ -624,14 +639,27 @@ function RequerimientosDetalleInner() {
       message.warning("Selecciona al menos un requerimiento");
       return;
     }
-    // Inicializa el mapa de precios editables con el precio actual de cada
-    // requerimiento (0 si no tiene). La tabla del modal permite ajustarlos.
+    // Inicializa precios editables con el precio actual de cada requerimiento
+    // (0 si no tiene) y cantidades con la cantidad original. La tabla del
+    // modal permite ajustar ambos antes de generar la OC.
     const precios: Record<number, number> = {};
+    const cantidades: Record<number, number> = {};
     for (const r of selectedRecords) {
       const p = Number(r.precio_unitario ?? 0);
       precios[r.id] = Number.isFinite(p) && p > 0 ? p : 0;
+      const c = Number(r.cantidad ?? 0);
+      cantidades[r.id] = Number.isFinite(c) ? c : 0;
     }
     setPreciosModal(precios);
+    setCantidadesModal(cantidades);
+    // Reset de los campos extra al abrir un modal nuevo.
+    setRefPedidoModal("");
+    setTipoPagoModal(null);
+    setDiasCreditoModal(null);
+    setAplicaIgvModal(true);
+    setDescuentoModal(0);
+    setOtrosModal(0);
+    setOtrosSignoModal("+");
     ocForm.setFieldsValue({
       moneda: "USD",
       fecha_entrega_esperada: dayjs().add(15, "day"),
@@ -679,6 +707,17 @@ function RequerimientosDetalleInner() {
         }
       }
 
+      // Cantidades override: solo enviamos las que difieren de la cantidad
+      // original del requerimiento (para no inflar el payload).
+      const cantidadesOverride: Record<string, number> = {};
+      for (const r of selectedRecords) {
+        const local = cantidadesModal[r.id];
+        const orig = Number(r.cantidad ?? 0);
+        if (local != null && Math.abs(local - orig) > 0.0001) {
+          cantidadesOverride[String(r.id)] = local;
+        }
+      }
+
       const res = await fetch("/api/compras/crear-oc", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -692,6 +731,15 @@ function RequerimientosDetalleInner() {
           observaciones: values.observaciones,
           nombre: null,
           usuario: "Logistica",
+          // Campos extra del editor de OC (Fase 2 del refactor del modal):
+          ref_pedido: refPedidoModal || null,
+          tipo_pago: tipoPagoModal,
+          dias_credito: tipoPagoModal === "CONTADO" ? 0 : diasCreditoModal,
+          aplica_igv: aplicaIgvModal,
+          descuento: descuentoModal || 0,
+          otros: otrosModal || 0,
+          otros_signo: otrosSignoModal,
+          cantidades_override: cantidadesOverride,
         }),
       });
       const json = await res.json();
@@ -2023,49 +2071,91 @@ function RequerimientosDetalleInner() {
         footer={null}
       >
         {(() => {
-          // Subtotal recalculado en vivo sobre `preciosModal` para que refleje
-          // los precios editados antes de generar la OC. El IGV se aplica recién
-          // al imprimir la OC (ver plantilla en /api/compras/[id]/pdf).
+          // Subtotal recalculado en vivo sobre `preciosModal` y `cantidadesModal`
+          // para reflejar los precios + cantidades editados antes de generar
+          // la OC. IGV opcional según `aplicaIgvModal`. Descuento se resta
+          // del subtotal; "otros" se suma o resta según su signo.
           const totalSubModal = selectedRecords.reduce(
-            (s, r) => s + (preciosModal[r.id] ?? 0) * Number(r.cantidad ?? 0),
+            (s, r) => s + (preciosModal[r.id] ?? 0) * (cantidadesModal[r.id] ?? Number(r.cantidad ?? 0)),
             0,
           );
-          const igvModal = totalSubModal * 0.18;
-          const totalConIgvModal = totalSubModal + igvModal;
+          const baseImponible = Math.max(0, totalSubModal - (descuentoModal || 0));
+          const igvModal = aplicaIgvModal ? baseImponible * 0.18 : 0;
+          const otrosAplicados = otrosSignoModal === "-" ? -(otrosModal || 0) : (otrosModal || 0);
+          const totalFinal = baseImponible + igvModal + otrosAplicados;
           const simbolo = monedaModal === "SOL" || monedaModal === "PEN" ? "S/ " : "$ ";
           return (
             <div style={{ marginBottom: 16 }}>
               <Card size="small" style={{ background: brand.bgPage }}>
-                <Row gutter={16}>
-                  <Col xs={12} md={6}>
+                <Row gutter={[12, 8]}>
+                  <Col xs={12} md={4}>
                     <Statistic title="Items" value={selectedRows.length} />
                   </Col>
-                  <Col xs={12} md={6}>
+                  <Col xs={12} md={4}>
                     <Statistic
                       title="Subtotal"
                       value={totalSubModal}
                       precision={2}
                       prefix={simbolo}
-                      styles={{ content: { color: brand.textSecondary, fontWeight: 500 } }}
+                      styles={{ content: { color: brand.textSecondary, fontWeight: 500, fontSize: 16 } }}
                     />
                   </Col>
-                  <Col xs={12} md={6}>
+                  <Col xs={12} md={4}>
+                    <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 4 }}>Descuento</div>
+                    <InputNumber
+                      size="small"
+                      value={descuentoModal || null}
+                      min={0}
+                      step={0.01}
+                      precision={2}
+                      prefix={simbolo}
+                      placeholder="0.00"
+                      style={{ width: "100%" }}
+                      onChange={(v) => setDescuentoModal(v == null ? 0 : Number(v))}
+                    />
+                  </Col>
+                  <Col xs={12} md={4}>
                     <Statistic
-                      title="IGV (18%)"
+                      title={aplicaIgvModal ? "IGV (18%)" : "Sin IGV"}
                       value={igvModal}
                       precision={2}
                       prefix={simbolo}
-                      styles={{ content: { color: brand.textSecondary, fontWeight: 500 } }}
+                      styles={{ content: { color: aplicaIgvModal ? brand.textSecondary : "#aaa", fontWeight: 500, fontSize: 16 } }}
                     />
                   </Col>
-                  <Col xs={12} md={6}>
-                    <Statistic
-                      title="Total cotización"
-                      value={totalConIgvModal}
-                      precision={2}
-                      prefix={simbolo}
-                      styles={{ content: { color: brand.navy, fontWeight: 700, fontSize: 20 } }}
-                    />
+                  <Col xs={12} md={4}>
+                    <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 4 }}>
+                      Otros
+                      <Tooltip title="Cargo extra (flete, manipuleo, etc.). El signo +/- determina si suma o resta del total.">
+                        <InfoCircleOutlined style={{ fontSize: 10, marginLeft: 4, color: brand.textSecondary }} />
+                      </Tooltip>
+                    </div>
+                    <Space.Compact size="small" style={{ width: "100%" }}>
+                      <Select
+                        size="small"
+                        value={otrosSignoModal}
+                        onChange={(v) => setOtrosSignoModal(v)}
+                        options={[{ value: "+", label: "+" }, { value: "-", label: "−" }]}
+                        style={{ width: 55 }}
+                      />
+                      <InputNumber
+                        size="small"
+                        value={otrosModal || null}
+                        min={0}
+                        step={0.01}
+                        precision={2}
+                        prefix={simbolo}
+                        placeholder="0.00"
+                        style={{ width: "100%" }}
+                        onChange={(v) => setOtrosModal(v == null ? 0 : Number(v))}
+                      />
+                    </Space.Compact>
+                  </Col>
+                  <Col xs={24} md={4} style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 4 }}>TOTAL</div>
+                    <div style={{ color: brand.navy, fontWeight: 700, fontSize: 22, lineHeight: 1.1 }}>
+                      {simbolo}{totalFinal.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
                   </Col>
                 </Row>
               </Card>
@@ -2105,10 +2195,25 @@ function RequerimientosDetalleInner() {
                 ),
               },
               {
-                title: "Cant.", key: "cant", width: 80, align: "right",
-                render: (_, r: Requerimiento) => (
-                  <Text style={{ fontSize: 12 }}>{Number(r.cantidad).toLocaleString()} {r.unidad_medida ?? ""}</Text>
-                ),
+                title: "Cant.", key: "cant", width: 110, align: "right",
+                render: (_, r: Requerimiento) => {
+                  const cant = cantidadesModal[r.id] ?? Number(r.cantidad ?? 0);
+                  return (
+                    <Space.Compact size="small" style={{ width: "100%" }}>
+                      <InputNumber
+                        size="small"
+                        value={cant || null}
+                        min={0.0001}
+                        step={1}
+                        precision={2}
+                        style={{ width: "100%" }}
+                        onChange={(v) =>
+                          setCantidadesModal((prev) => ({ ...prev, [r.id]: v == null ? 0 : Number(v) }))
+                        }
+                      />
+                    </Space.Compact>
+                  );
+                },
               },
               {
                 title: "Precio unit.", key: "precio", width: 130, align: "right",
@@ -2139,7 +2244,7 @@ function RequerimientosDetalleInner() {
                 title: "Subtotal", key: "sub", width: 110, align: "right",
                 render: (_, r: Requerimiento) => {
                   const p = preciosModal[r.id] ?? 0;
-                  const c = Number(r.cantidad);
+                  const c = cantidadesModal[r.id] ?? Number(r.cantidad ?? 0);
                   return (
                     <Text strong style={{ fontSize: 12, color: brand.navy }}>
                       {(p * c).toFixed(2)}
@@ -2162,6 +2267,42 @@ function RequerimientosDetalleInner() {
 
         <Form form={ocForm} layout="vertical">
           <Row gutter={16}>
+            <Col xs={24} md={16}>
+              <Form.Item
+                label={
+                  <Space size={4}>
+                    <span>Ref. Pedido</span>
+                    <Tooltip title="Texto que aparece en la cabecera del PDF de la OC. Ej: REQ-2026-001">
+                      <InfoCircleOutlined style={{ color: brand.textSecondary, fontSize: 11 }} />
+                    </Tooltip>
+                  </Space>
+                }
+              >
+                <Input
+                  value={refPedidoModal}
+                  onChange={(e) => setRefPedidoModal(e.target.value)}
+                  placeholder="Ej: REQ-2026-001 (aparece en la cabecera del PDF)"
+                  maxLength={300}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={8}>
+              <div style={{ fontSize: 14, marginBottom: 8 }}>Aplicar IGV a esta OC</div>
+              <Space>
+                <Switch
+                  checked={aplicaIgvModal}
+                  onChange={setAplicaIgvModal}
+                  checkedChildren="Con IGV"
+                  unCheckedChildren="Sin IGV"
+                />
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  {aplicaIgvModal ? "Estándar: IGV 18% se suma al total" : "IGV no aplica (exonerado)"}
+                </Text>
+              </Space>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
             <Col xs={24} md={12}>
               <Form.Item
                 label="Proveedor"
@@ -2176,7 +2317,7 @@ function RequerimientosDetalleInner() {
                 />
               </Form.Item>
             </Col>
-            <Col xs={12} md={8}>
+            <Col xs={12} md={6}>
               <Form.Item label="Moneda" name="moneda">
                 <Select showSearch optionFilterProp="label"
                   options={[
@@ -2186,15 +2327,52 @@ function RequerimientosDetalleInner() {
                 />
               </Form.Item>
             </Col>
-            <Col xs={12} md={8}>
+            <Col xs={12} md={6}>
               <Form.Item label="Fecha entrega esperada" name="fecha_entrega_esperada">
                 <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" />
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item label="Observaciones" name="observaciones">
-            <TextArea rows={2} placeholder="Notas adicionales..." />
-          </Form.Item>
+
+          <Row gutter={16}>
+            <Col xs={12} md={6}>
+              <div style={{ fontSize: 14, marginBottom: 8 }}>Tipo de pago</div>
+              <Select
+                value={tipoPagoModal ?? undefined}
+                onChange={(v) => {
+                  setTipoPagoModal(v);
+                  if (v === "CONTADO") setDiasCreditoModal(0);
+                }}
+                placeholder="Elegí (opcional)"
+                allowClear
+                options={[
+                  { value: "CONTADO", label: "Contado" },
+                  { value: "CREDITO", label: "Crédito" },
+                  { value: "CHEQUE_FECHADO", label: "Cheque fechado" },
+                  { value: "TRANSFERENCIA", label: "Transferencia" },
+                  { value: "ADELANTO", label: "Adelanto" },
+                ]}
+                style={{ width: "100%" }}
+              />
+            </Col>
+            <Col xs={12} md={6}>
+              <div style={{ fontSize: 14, marginBottom: 8 }}>Días de crédito</div>
+              <Select
+                value={diasCreditoModal ?? undefined}
+                onChange={(v) => setDiasCreditoModal(v == null ? null : Number(v))}
+                placeholder="—"
+                allowClear
+                disabled={tipoPagoModal !== "CREDITO" && tipoPagoModal !== "CHEQUE_FECHADO"}
+                options={[15, 30, 45, 60, 90, 120].map((d) => ({ value: d, label: `${d} días` }))}
+                style={{ width: "100%" }}
+              />
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item label="Observaciones" name="observaciones" style={{ marginBottom: 0 }}>
+                <TextArea rows={2} placeholder="Notas adicionales..." />
+              </Form.Item>
+            </Col>
+          </Row>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
             <Button onClick={() => setModalOpen(false)}>Cancelar</Button>
