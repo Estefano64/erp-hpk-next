@@ -69,10 +69,50 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
       const otIdDefault = compra.ot_repuestos[0]?.ot_id ?? compra.ot_id ?? null;
       const itemsIds = new Set(compra.ot_repuestos.map((r) => r.id));
 
-      // 1) Eliminar
-      const aEliminar = deleteIds.filter((dId) => itemsIds.has(dId));
-      if (aEliminar.length > 0) {
-        await tx.oTRepuesto.deleteMany({ where: { id: { in: aEliminar }, po_id: compraId } });
+      // 1) Eliminar de la OC.
+      //
+      // Distinción importante: hay dos tipos de "eliminar de la OC":
+      //  (a) Items "libres" (solo_para_oc=true): se crearon dentro del editor
+      //      de OC y no representan un req del flujo normal — eliminarlos de
+      //      la OC implica eliminarlos completamente (no hay nada que devolver
+      //      al pool de reqs pendientes).
+      //  (b) Items que vienen de un req real (solo_para_oc=false): el user los
+      //      asignó a la OC desde Requerimientos. Al eliminarlos de la OC
+      //      hay que DESVINCULARLOS (po_id=null) para que vuelvan a estar
+      //      disponibles para asignar a otra OC. NUNCA borrar el OTRepuesto,
+      //      porque pertenece a la OT.
+      //
+      // Antes el código hacía deleteMany sin distinguir — eso eliminaba reqs
+      // reales (caso b), que el técnico ya no podía recuperar.
+      const aProcesar = deleteIds.filter((dId) => itemsIds.has(dId));
+      if (aProcesar.length > 0) {
+        const itemsAProcesar = await tx.oTRepuesto.findMany({
+          where: { id: { in: aProcesar }, po_id: compraId },
+          select: { id: true, solo_para_oc: true },
+        });
+        const aBorrar = itemsAProcesar.filter((i) => i.solo_para_oc === true).map((i) => i.id);
+        const aDesvincular = itemsAProcesar.filter((i) => i.solo_para_oc !== true).map((i) => i.id);
+        if (aBorrar.length > 0) {
+          await tx.oTRepuesto.deleteMany({ where: { id: { in: aBorrar } } });
+        }
+        if (aDesvincular.length > 0) {
+          await tx.oTRepuesto.updateMany({
+            where: { id: { in: aDesvincular } },
+            data: {
+              po_id: null,
+              nro_oc: null,
+              fecha_oc: null,
+              status_oc_codigo: "PEND_OC",
+              // Limpiar overrides — al volver a la pool, ya no son válidos.
+              oc_cantidad: null,
+              oc_precio_unitario: null,
+              oc_descripcion: null,
+              oc_unidad_medida: null,
+              oc_orden_item: null,
+              fecha_entrega_esperada: null,
+            },
+          });
+        }
       }
 
       // 2) Update / create
