@@ -86,7 +86,6 @@ function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
       label: "Mantenimiento",
       children: [
         { key: "/mantenimiento/equipos", label: "Equipos" },
-        { key: "/mantenimiento/correctivos", label: "Correctivos" },
         { key: "/mantenimiento/task-lists", label: "Task Lists" },
       ],
     },
