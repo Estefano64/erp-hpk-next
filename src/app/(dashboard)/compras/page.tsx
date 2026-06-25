@@ -128,6 +128,11 @@ export default function ComprasPage() {
   // Filtros persistidos por usuario.
   const [search, setSearch] = usePersistedState<string>("compras-list-search", "");
   const [estado, setEstado] = usePersistedState<string>("compras-list-estado", "");
+  // Filtro por estado de documentación (guía + factura). "todos" = no filtra,
+  // "completos" = ambas cargadas, "incompletos" = falta al menos una.
+  const [filtroDocs, setFiltroDocs] = usePersistedState<"todos" | "completos" | "incompletos">(
+    "compras-list-filtro-docs", "todos",
+  );
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
 
@@ -345,10 +350,17 @@ export default function ComprasPage() {
   // El Table.onChange aplica encima los filtros de columna y lo persistimos
   // en `vistaActual` para que el export respete esos filtros también.
   const filasMostradas = useMemo(
-    () => data.filter((r) =>
-      dentroDeRango(r, "fecha_solicitud", rangoSolicitud) &&
-      dentroDeRango(r, "fecha_entrega_esperada", rangoEntrega)),
-    [data, rangoSolicitud, rangoEntrega],
+    () => data.filter((r) => {
+      if (!dentroDeRango(r, "fecha_solicitud", rangoSolicitud)) return false;
+      if (!dentroDeRango(r, "fecha_entrega_esperada", rangoEntrega)) return false;
+      if (filtroDocs !== "todos") {
+        const completa = !!(r.nro_guia && r.nro_factura);
+        if (filtroDocs === "completos" && !completa) return false;
+        if (filtroDocs === "incompletos" && completa) return false;
+      }
+      return true;
+    }),
+    [data, rangoSolicitud, rangoEntrega, filtroDocs],
   );
 
   // Reset cuando cambian datos o rangos: el Table reaplica filtros sobre el
@@ -897,6 +909,32 @@ export default function ComprasPage() {
           <Col xs={24} md={12}>
             <RangoFechasFiltro label="Fecha entrega esperada" value={rangoEntrega} onChange={setRangoEntrega} />
           </Col>
+          <Col xs={24}>
+            <Space size={10} wrap align="center">
+              <span style={{ fontSize: 12, color: brand.textSecondary, fontWeight: 500 }}>
+                Documentación:
+              </span>
+              <Segmented
+                value={filtroDocs}
+                onChange={(v) => setFiltroDocs(v as "todos" | "completos" | "incompletos")}
+                options={[
+                  { value: "todos", label: "Todos" },
+                  { value: "completos", label: "Con guía + factura" },
+                  { value: "incompletos", label: "Falta guía o factura" },
+                ]}
+              />
+              <span style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                fontSize: 11, color: brand.textSecondary,
+              }}>
+                <span style={{
+                  display: "inline-block", width: 12, height: 12, borderRadius: 3,
+                  background: "#E8F5E9", border: "1px solid #A5D6A7",
+                }} />
+                Filas en verde tienen guía + factura cargadas
+              </span>
+            </Space>
+          </Col>
         </Row>
       </Card>
 
@@ -907,6 +945,7 @@ export default function ComprasPage() {
           components={tableComponents}
           dataSource={filasMostradas}
           loading={loading}
+          rowClassName={(r) => (r.nro_guia && r.nro_factura) ? "compra-row-completa" : ""}
           pagination={paginacionEstandar({
             current: page,
             pageSize,
@@ -920,6 +959,14 @@ export default function ComprasPage() {
           onChange={(_p, _f, _s, extra) => setVistaActual(extra.currentDataSource)}
         />
       </TableDragWrapper>
+      <style jsx>{`
+        :global(.compra-row-completa > td) {
+          background: #E8F5E9 !important;
+        }
+        :global(.compra-row-completa:hover > td) {
+          background: #D8EBDA !important;
+        }
+      `}</style>
     </>
   );
 
