@@ -24,6 +24,7 @@ import {
 } from "antd";
 import RequerimientosAprobadosTab from "@/components/modules/compras/RequerimientosAprobadosTab";
 import { TabIngresoPO } from "@/app/(dashboard)/movimientos/page";
+import { OCAbiertasTab } from "@/app/(dashboard)/compras/oc-abiertas/page";
 import {
   SearchOutlined,
   ReloadOutlined,
@@ -39,6 +40,7 @@ import {
   ExclamationCircleOutlined,
   InfoCircleOutlined,
   InboxOutlined,
+  DatabaseOutlined,
   FilePdfOutlined,
   MessageOutlined,
   CheckOutlined,
@@ -1014,6 +1016,18 @@ export default function ComprasPage() {
             // acá para que el equipo de logística reciba las OCs sin cambiar
             // de módulo. onRefresh recarga la lista de OCs después de un ingreso.
             children: <TabIngresoPO onRefresh={fetchData} />,
+          },
+          {
+            key: "oc-abiertas",
+            label: (
+              <span>
+                <DatabaseOutlined /> OCs Abiertas
+              </span>
+            ),
+            // Componente importado desde /compras/oc-abiertas/page.tsx
+            // (export con nombre OCAbiertasTab). Embebido como tab acá para
+            // que el almacén abierto se gestione desde el mismo módulo.
+            children: <OCAbiertasTab />,
           },
         ]}
       />

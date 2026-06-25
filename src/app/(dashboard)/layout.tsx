@@ -111,7 +111,8 @@ function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
             { key: "/requerimientos", label: "Requerimientos" },
             { key: "/compras/historico", label: "Cotizaciones (precios históricos)" },
             { key: "/compras", label: "Órdenes de compra" },
-            { key: "/compras/oc-abiertas", label: "OCs Abiertas (almacén abierto)" },
+            // "OCs Abiertas" se movió como tab dentro de /compras. La ruta
+            // /compras/oc-abiertas sigue funcionando por URL directa.
           ],
         },
         {
