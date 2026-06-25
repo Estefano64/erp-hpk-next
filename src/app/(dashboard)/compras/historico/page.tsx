@@ -363,9 +363,22 @@ export default function HistoricoComprasPage() {
       render: (v: string | null) => <span style={{ fontSize: 11 }}>{v ?? "—"}</span>,
     },
     {
-      key: "descripcion", title: "Descripción", dataIndex: "descripcion", width: 240, align: "left", ellipsis: true,
+      // El ancho lo controla el usuario (resize) y se persiste en localStorage
+      // vía useColumnasRedimensionables. Con tableLayout="fixed" abajo el
+      // ancho NO se recalcula cuando se ordena por descripción asc/desc.
+      // Para textos largos truncamos con ellipsis dentro de un div + title
+      // nativo del browser (hover muestra el texto completo).
+      key: "descripcion", title: "Descripción", dataIndex: "descripcion", width: 240, align: "left",
       sorter: (a, b) => (a.descripcion || "").localeCompare(b.descripcion || ""),
       ...filtroPorColumna(filtradas, "descripcion"),
+      render: (v: string | null) => (
+        <div
+          title={v ?? ""}
+          style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+        >
+          {v ?? "—"}
+        </div>
+      ),
     },
     {
       key: "marca", title: "Marca", dataIndex: "marca", width: 90, align: "center",
@@ -732,6 +745,12 @@ function TablaHistorico({
         rowKey="material_id"
         size="small"
         bordered
+        // tableLayout="fixed" → respeta estrictamente los anchos declarados.
+        // Antes (auto), antd recalculaba anchos cuando cambiaba el contenido
+        // visible (ej. al ordenar por descripción) y la columna se ensanchaba
+        // o reducía sola. Con fixed, el ancho lo manda el usuario via resize
+        // (persistido por useColumnasRedimensionables) y no cambia con sorts.
+        tableLayout="fixed"
         columns={columnas}
         components={components}
         dataSource={data}
