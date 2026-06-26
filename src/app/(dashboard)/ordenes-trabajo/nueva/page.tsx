@@ -176,8 +176,6 @@ export default function NuevaOTPage() {
         horas: undefined,
         tipo_reparacion_codigo: undefined,
         base_metalica: false,
-        // Código de Material: solo Reparación → se limpia en BIE y SER.
-        material_codigo: undefined,
       });
       setPorcentajePcr(null);
     }
@@ -195,8 +193,10 @@ export default function NuevaOTPage() {
     if (esServicio) {
       // SER no usa Atención reparación. La Fecha de Requerimiento del Cliente
       // SÍ aplica a servicio (no se limpia al cambiar de tipo).
+      // Código de Material aplica a Reparación y Bien → solo se limpia en SER.
       form.setFieldsValue({
         atencion_reparacion_codigo: undefined,
+        material_codigo: undefined,
       });
       setAtencionCodigo("");
       setFechaReqCalculada(null);
@@ -309,9 +309,9 @@ export default function NuevaOTPage() {
         cod_rep_flota: estrategia ? null : (values.cod_rep_flota || null),
         cod_rep_posicion: estrategia ? null : (values.cod_rep_posicion || null),
         // Equipo / N/S: REP y SER (null solo en Bien). Código de Material:
-        // solo Reparación (null en Bien y Servicio).
+        // Reparación y Bien (null solo en Servicio).
         equipo_codigo: esBien ? null : (values.equipo_codigo || null),
-        material_codigo: bloqueoBien ? null : (values.material_codigo || null),
+        material_codigo: esServicio ? null : (values.material_codigo || null),
         ns: esBien ? null : (values.ns || null),
         // Plaqueteo / WO Cliente: REP y SER (null solo en Bien).
         // PO Item: los 3 tipos. ID Viajero / Guía / Empresa / Fecha Recepción /
@@ -576,8 +576,11 @@ export default function NuevaOTPage() {
                 </Col>
               </>
             )}
-            {/* Código de Material: solo Reparación (oculto en Bien y Servicio). */}
-            {!bloqueoBien && (
+            {/* Código de Material: Reparación y Bien (oculto solo en Servicio).
+                Es un Select ligado al catálogo (FK) — se tipea para buscar y
+                debe elegirse un material existente. Para agregar uno nuevo se
+                crea antes en el módulo Materiales. */}
+            {!esServicio && (
               <Col xs={12} md={6}>
                 <Form.Item name="material_codigo" label="Código de Material">
                   <Select

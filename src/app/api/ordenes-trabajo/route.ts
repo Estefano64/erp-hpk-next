@@ -362,9 +362,9 @@ export async function POST(req: NextRequest) {
           cod_rep_flota: codRepFlota,
           cod_rep_posicion: codRepPosicion,
           // Equipo / N/S: REP y SER (null solo en BIE). Código de Material:
-          // solo Reparación (null en BIE y SER).
+          // Reparación y BIE (null solo en SER).
           equipo_codigo: esBien ? null : (body.equipo_codigo || null),
-          material_codigo: esBienOServicio ? null : (body.material_codigo || null),
+          material_codigo: esServicio ? null : (body.material_codigo || null),
           ns: esBien ? null : (body.ns || null),
           // Plaqueteo / WO Cliente: REP y SER (null solo en BIE).
           plaqueteo: esBien ? null : (body.plaqueteo || null),
