@@ -99,6 +99,11 @@ export async function POST(req: NextRequest) {
     // Antes era "D26", ahora solo "26" (los 2 dígitos del año).
     const prefix = new Date().getFullYear().toString().slice(-2);
 
+    // Timeout extendido — la transacción puede tener decenas de operaciones
+    // (1 createMany + N upserts cotizacion + N updates de override + creates
+    // de historial + recalcular estado por OT). Con el default de 5s se
+    // disparaba el bug "hay que intentar 3 veces para que cree la OC".
+    // maxWait sube a 10s porque el pool puede tardar bajo carga.
     const result = await prisma.$transaction(async (tx) => {
       // Cargamos sólo requerimientos que NO estén ya asignados a una OC.
       const repuestos = await tx.oTRepuesto.findMany({
@@ -465,6 +470,12 @@ export async function POST(req: NextRequest) {
       for (const oid of otsInt) await recalcularRecursosStatusOTInterna(tx, oid);
 
       return { compra, items: repuestos.length };
+    }, {
+      // Subimos el timeout del default (5s) a 30s para alojar tx grandes
+      // (muchos items + autolearn proveedor + recalcular OTs). maxWait sube
+      // a 10s porque el pool puede tardar bajo carga concurrente.
+      timeout: 30_000,
+      maxWait: 10_000,
     });
 
     return NextResponse.json(
