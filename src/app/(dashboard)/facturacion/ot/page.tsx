@@ -296,7 +296,7 @@ export default function FacturacionOTPage() {
                   }}
                   icon={tiene ? <CheckCircleOutlined /> : <WarningOutlined />}
                   onClick={tiene
-                    ? () => openR2File({ key: primero.r2_key, resource: "ot-adjunto", resourceId: r.id })
+                    ? () => openR2File({ key: primero.r2_key, resource: "ot-adjunto", resourceId: primero.id })
                         .catch((e) => msg.error(e instanceof Error ? e.message : "Error al abrir"))
                     : undefined}
                 >
@@ -571,7 +571,7 @@ export default function FacturacionOTPage() {
                                   openR2File({
                                     key: a.r2_key,
                                     resource: "ot-adjunto",
-                                    resourceId: a.orden_trabajo_id,
+                                    resourceId: a.id,
                                   }).catch((e) => msg.error(e instanceof Error ? e.message : "Error al descargar"))
                                 }
                               >
