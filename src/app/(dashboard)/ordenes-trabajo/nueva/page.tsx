@@ -23,6 +23,7 @@ import { brand } from "@/lib/theme";
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 import { useUnsavedChangesWarning, confirmLeave } from "@/lib/unsaved-changes";
+import { MaterialQuickCreateModal } from "@/components/modules/materiales/MaterialQuickCreateModal";
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -87,6 +88,10 @@ export default function NuevaOTPage() {
   // Cargados una sola vez con límite alto (~2k materiales). El Select
   // permite búsqueda por código y descripción.
   const [materiales, setMateriales] = useState<MaterialOption[]>([]);
+  // Texto tipeado en el Select de material + control del modal "crear material".
+  // Permiten ofrecer "+ Crear: <texto>" cuando el código no existe en catálogo.
+  const [matSearch, setMatSearch] = useState("");
+  const [matModalOpen, setMatModalOpen] = useState(false);
 
   // Estado del form para lógica condicional
   const [estrategia, setEstrategia] = useState(false);
@@ -578,19 +583,38 @@ export default function NuevaOTPage() {
             )}
             {/* Código de Material: Reparación y Bien (oculto solo en Servicio).
                 Es un Select ligado al catálogo (FK) — se tipea para buscar y
-                debe elegirse un material existente. Para agregar uno nuevo se
-                crea antes en el módulo Materiales. */}
+                debe elegirse un material existente. Si el código no está, se
+                puede crear al vuelo con "+ Crear: <texto>" (abre el modal de
+                creación de material; al guardar queda seleccionado). */}
             {!esServicio && (
               <Col xs={12} md={6}>
                 <Form.Item name="material_codigo" label="Código de Material">
                   <Select
                     showSearch allowClear
-                    placeholder="Buscar material..."
+                    placeholder="Buscar o crear material..."
                     optionFilterProp="label"
+                    onSearch={(v) => setMatSearch(v)}
+                    onBlur={() => setMatSearch("")}
                     options={materiales.map((m) => ({
                       value: m.codigo,
                       label: `${m.codigo} — ${m.descripcion}`,
                     }))}
+                    dropdownRender={(menu) => (
+                      <div>
+                        {menu}
+                        {matSearch.trim() && (
+                          <div style={{ borderTop: "1px solid #f0f0f0", padding: "6px 8px" }}>
+                            <Button
+                              type="link" size="small" block
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => setMatModalOpen(true)}
+                            >
+                              + Crear: <b>{`"${matSearch.trim()}"`}</b>
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   />
                 </Form.Item>
               </Col>
@@ -900,6 +924,19 @@ export default function NuevaOTPage() {
           </Button>
         </div>
       </Form>
+
+      {/* Crear material al vuelo desde el Select "Código de Material". Al crear,
+          lo agregamos a la lista y lo dejamos seleccionado en el form. */}
+      <MaterialQuickCreateModal
+        open={matModalOpen}
+        initialDescripcion={matSearch.trim()}
+        onClose={() => setMatModalOpen(false)}
+        onCreated={(mat) => {
+          setMateriales((prev) => [{ codigo: mat.codigo, descripcion: mat.descripcion }, ...prev]);
+          form.setFieldValue("material_codigo", mat.codigo);
+          setMatSearch("");
+        }}
+      />
     </div>
   );
 }
