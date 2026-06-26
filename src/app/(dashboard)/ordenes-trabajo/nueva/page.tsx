@@ -126,9 +126,15 @@ export default function NuevaOTPage() {
   const fechaRecepcionWatch = Form.useWatch("fecha_recepcion", form);
   const fechaRequerimientoWatch = Form.useWatch("fecha_requerimiento_cliente", form);
   const diasCalculados = useMemo(() => {
-    if (!fechaRecepcionWatch || !fechaRequerimientoWatch) return null;
-    return dayjs(fechaRequerimientoWatch).diff(dayjs(fechaRecepcionWatch), "day");
-  }, [fechaRecepcionWatch, fechaRequerimientoWatch]);
+    if (!fechaRequerimientoWatch) return null;
+    // REP: días entre recepción y requerimiento. BIE/SER: no tienen recepción,
+    // así que se cuentan desde HOY (la fecha en que se crea la OT).
+    const base = (esBien || esServicio)
+      ? dayjs().startOf("day")
+      : (fechaRecepcionWatch ? dayjs(fechaRecepcionWatch) : null);
+    if (!base) return null;
+    return dayjs(fechaRequerimientoWatch).diff(base, "day");
+  }, [fechaRecepcionWatch, fechaRequerimientoWatch, esBien, esServicio]);
 
   useEffect(() => {
     async function loadCatalogs() {
@@ -640,13 +646,22 @@ export default function NuevaOTPage() {
               </Col>
             )}
             <Col xs={12} md={6}>
-              <Form.Item name="po_cliente" label="PO Cliente">
+              {/* PO Cliente: obligatorio solo en Bien (opcional en REP/SER). */}
+              <Form.Item
+                name="po_cliente"
+                label="PO Cliente"
+                rules={[{ required: esBien, message: "Requerido para Bien" }]}
+              >
                 <Input />
               </Form.Item>
             </Col>
-            {/* PO Item: los 3 tipos (REP, BIE, SER). */}
+            {/* PO Item: los 3 tipos (REP, BIE, SER); obligatorio solo en Bien. */}
             <Col xs={12} md={6}>
-              <Form.Item name="po_item" label="PO Item">
+              <Form.Item
+                name="po_item"
+                label="PO Item"
+                rules={[{ required: esBien, message: "Requerido para Bien" }]}
+              >
                 <Input />
               </Form.Item>
             </Col>
@@ -893,17 +908,15 @@ export default function NuevaOTPage() {
                     />
                   </Form.Item>
                 </Col>
-                {/* "Días calculados" = días entre recepción y requerimiento.
-                    No aplica a Servicio (no hay recepción) → se oculta. */}
-                {!esServicio && (
-                  <Col xs={12} md={6}>
-                    <Form.Item label="Días calculados">
-                      <Text strong style={{ fontSize: 16 }}>
-                        {diasCalculados != null ? `${diasCalculados} días` : "-"}
-                      </Text>
-                    </Form.Item>
-                  </Col>
-                )}
+                {/* "Días calculados": REP usa la fecha de recepción; BIE/SER la
+                    fecha de creación (hoy). Aplica a los 3 tipos. */}
+                <Col xs={12} md={6}>
+                  <Form.Item label="Días calculados">
+                    <Text strong style={{ fontSize: 16 }}>
+                      {diasCalculados != null ? `${diasCalculados} días` : "-"}
+                    </Text>
+                  </Form.Item>
+                </Col>
               </>
             )}
           </Row>

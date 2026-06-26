@@ -93,13 +93,18 @@ export async function PUT(req: NextRequest, { params }: Params) {
       body.horas = null;
       body.porcentaje_pcr = null;
       body.tipo_reparacion_codigo = null;
-      body.contrato_dias = null;
       body.fecha_reprogramada = null;
       body.id_viajero = null;
       body.guia_remision = null;
       body.empresa_entrega = null;
       body.base_metalica_codigo = null;
-      // Código de Material: solo Reparación → null en BIE y SER.
+      // Estado Taller NO aplica a BIE/SER (queda null; el listado muestra "No aplica").
+      body.taller_status_codigo = null;
+      // contrato_dias para BIE/SER se recalcula desde fecha_creacion dentro de la
+      // transacción (ver abajo). material_codigo se conserva en BIE (null solo SER).
+    }
+    if (body.tipo_codigo === "SER") {
+      // Código de Material aplica a REP y BIE; null solo en Servicio.
       body.material_codigo = null;
     }
     if (body.tipo_codigo === "BIE") {
@@ -133,11 +138,28 @@ export async function PUT(req: NextRequest, { params }: Params) {
           fecha_aprobacion: true,
           fecha_entrega: true,
           fecha_facturacion: true,
+          // Necesaria para calcular los días de BIE/SER (fecha req − creación).
+          fecha_creacion: true,
         },
       });
 
       if (!before) {
         return { conflict: false, notFound: true } as const;
+      }
+
+      // Días para BIE/SER: no tienen fecha de recepción, así que se cuentan
+      // desde la fecha de CREACIÓN de la OT hasta la fecha de requerimiento.
+      // (REP conserva su comportamiento: los días se calculan con la recepción.)
+      if (
+        (body.tipo_codigo === "BIE" || body.tipo_codigo === "SER") &&
+        body.fecha_requerimiento_cliente
+      ) {
+        const fechaCreacion = (before as { fecha_creacion?: Date | null }).fecha_creacion;
+        if (fechaCreacion) {
+          const reqMs = new Date(body.fecha_requerimiento_cliente as Date).getTime();
+          const creMs = new Date(fechaCreacion).getTime();
+          body.contrato_dias = Math.ceil((reqMs - creMs) / (1000 * 60 * 60 * 24));
+        }
       }
 
       // Gates para CERRAR la OT (ot_status_codigo → "Cerrada"):

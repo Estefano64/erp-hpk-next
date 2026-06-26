@@ -544,7 +544,11 @@ export default function OrdenesTrabajoPage() {
         .sort().map((v) => ({ text: v, value: v })),
       filterSearch: true,
       onFilter: (value, r) => r.taller_status?.nombre === value,
-      render: (_: unknown, r: OTRecord) => r.taller_status?.nombre ?? "-",
+      // Estado Taller no aplica a Bien/Servicio → "No aplica" en vez de "-".
+      render: (_: unknown, r: OTRecord) =>
+        r.tipo_codigo === "BIE" || r.tipo_codigo === "SER"
+          ? <Typography.Text type="secondary">No aplica</Typography.Text>
+          : (r.taller_status?.nombre ?? "-"),
     },
     {
       key: "estado_po",
