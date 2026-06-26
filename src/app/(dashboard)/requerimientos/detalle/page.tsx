@@ -392,6 +392,12 @@ function RequerimientosDetalleInner({ embebido = false }: { embebido?: boolean }
   const [tipoPagoModal, setTipoPagoModal] = useState<string | null>(null);
   const [diasCreditoModal, setDiasCreditoModal] = useState<number | null>(null);
   const [aplicaIgvModal, setAplicaIgvModal] = useState<boolean>(true);
+  // Algunos proveedores cotizan con IGV ya incluido en sus PU's. Si este
+  // toggle está ON, cada precio de la tabla se divide por 1.18 al guardar
+  // (la BD/PDF esperan precios sin IGV). El TOTAL final queda igual al
+  // monto con IGV que ingresó el usuario. Es un toggle DISTINTO al de
+  // "Aplicar IGV a esta OC" (exonerar IGV — caso EEUU/importaciones).
+  const [preciosConIgvModal, setPreciosConIgvModal] = useState<boolean>(false);
   const [descuentoModal, setDescuentoModal] = useState<number>(0);
   const [otrosModal, setOtrosModal] = useState<number>(0);
   const [otrosSignoModal, setOtrosSignoModal] = useState<"+" | "-">("+");
@@ -729,6 +735,7 @@ function RequerimientosDetalleInner({ embebido = false }: { embebido?: boolean }
     setTipoPagoModal(null);
     setDiasCreditoModal(null);
     setAplicaIgvModal(true);
+    setPreciosConIgvModal(false);
     setDescuentoModal(0);
     setOtrosModal(0);
     setOtrosSignoModal("+");
@@ -756,10 +763,17 @@ function RequerimientosDetalleInner({ embebido = false }: { embebido?: boolean }
 
       setCreatingOC(true);
 
+      // Si los precios ingresados ya incluyen IGV, dividimos por 1.18 antes
+      // de persistirlos — la BD y el PDF esperan precios sin IGV. Mismo
+      // comportamiento que el editor /compras/[id]/editar.
+      const normalizarPrecio = (p: number): number => preciosConIgvModal
+        ? Number((p / 1.18).toFixed(4))
+        : p;
+
       // Persistir cambios de precio antes de crear la OC. Solo se PATCHean los
       // items cuyo precio del modal difiere del precio original.
       const cambios = selectedRecords.filter((r) => {
-        const local = preciosModal[r.id];
+        const local = normalizarPrecio(preciosModal[r.id]);
         const orig = Number(r.precio_unitario ?? 0);
         return Math.abs(local - orig) > 0.0001;
       });
@@ -768,7 +782,7 @@ function RequerimientosDetalleInner({ embebido = false }: { embebido?: boolean }
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            precio_unitario: preciosModal[r.id],
+            precio_unitario: normalizarPrecio(preciosModal[r.id]),
             moneda: values.moneda ?? "USD",
             proveedor_id: values.proveedor_id ?? undefined,
           }),
@@ -841,7 +855,7 @@ function RequerimientosDetalleInner({ embebido = false }: { embebido?: boolean }
               descripcion: i.descripcion.trim(),
               unidad_medida: i.unidad_medida || "UNIDAD",
               cantidad: i.cantidad,
-              precio_unitario: i.precio_unitario,
+              precio_unitario: normalizarPrecio(i.precio_unitario),
               fecha_entrega: i.fecha_entrega ? i.fecha_entrega.format("YYYY-MM-DD") : null,
             })),
         }),
@@ -2306,15 +2320,18 @@ function RequerimientosDetalleInner({ embebido = false }: { embebido?: boolean }
           // la OC. IGV opcional según `aplicaIgvModal`. Descuento se resta
           // del subtotal; "otros" se suma o resta según su signo.
           // Subtotal = items vinculados a req + items libres del editor.
-          const subReqs = selectedRecords.reduce(
+          const sumaIngresadaReqs = selectedRecords.reduce(
             (s, r) => s + (preciosModal[r.id] ?? 0) * (cantidadesModal[r.id] ?? Number(r.cantidad ?? 0)),
             0,
           );
-          const subLibres = itemsLibresModal.reduce(
+          const sumaIngresadaLibres = itemsLibresModal.reduce(
             (s, i) => s + (i.precio_unitario || 0) * (i.cantidad || 0),
             0,
           );
-          const totalSubModal = subReqs + subLibres;
+          const sumaIngresada = sumaIngresadaReqs + sumaIngresadaLibres;
+          // Si los precios ya incluyen IGV, el subtotal real es la suma / 1.18.
+          // De lo contrario, la suma ES el subtotal sin IGV.
+          const totalSubModal = preciosConIgvModal ? sumaIngresada / 1.18 : sumaIngresada;
           const itemsCount = selectedRows.length + itemsLibresModal.length;
           const baseImponible = Math.max(0, totalSubModal - (descuentoModal || 0));
           const igvModal = aplicaIgvModal ? baseImponible * 0.18 : 0;
@@ -2688,7 +2705,7 @@ function RequerimientosDetalleInner({ embebido = false }: { embebido?: boolean }
 
         <Form form={ocForm} layout="vertical">
           <Row gutter={16}>
-            <Col xs={24} md={16}>
+            <Col xs={24} md={12}>
               <Form.Item
                 label={
                   <Space size={4}>
@@ -2707,8 +2724,35 @@ function RequerimientosDetalleInner({ embebido = false }: { embebido?: boolean }
                 />
               </Form.Item>
             </Col>
-            <Col xs={24} md={8}>
-              <div style={{ fontSize: 14, marginBottom: 8 }}>Aplicar IGV a esta OC</div>
+            {/* Toggle 1: precios cargados ya incluyen IGV. Si ON, los PU's
+                de la tabla se dividen por 1.18 al guardar (BD/PDF esperan
+                sin IGV). Para proveedores que cotizan con IGV adentro. */}
+            <Col xs={24} md={6}>
+              <div style={{ fontSize: 14, marginBottom: 8 }}>
+                <Tooltip title="ON: los precios cargados en la tabla incluyen IGV (se dividen por 1.18 al guardar). OFF (estándar): los precios son SIN IGV y el 18% se suma al final.">
+                  Precios ingresados incluyen IGV
+                </Tooltip>
+              </div>
+              <Space>
+                <Switch
+                  checked={preciosConIgvModal}
+                  onChange={setPreciosConIgvModal}
+                  checkedChildren="Con IGV"
+                  unCheckedChildren="Sin IGV"
+                />
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  {preciosConIgvModal ? "PU's traen IGV adentro" : "Modo estándar"}
+                </Text>
+              </Space>
+            </Col>
+            {/* Toggle 2: la OC entera está exonerada de IGV (importaciones,
+                proveedores no domiciliados, etc.). Persistido por-OC. */}
+            <Col xs={24} md={6}>
+              <div style={{ fontSize: 14, marginBottom: 8 }}>
+                <Tooltip title="ON (estándar): el total incluye IGV (18%). OFF: la OC es EXONERADA — no se suma el 18% (caso EEUU / importaciones / proveedores no domiciliados).">
+                  Aplicar IGV a esta OC
+                </Tooltip>
+              </div>
               <Space>
                 <Switch
                   checked={aplicaIgvModal}
@@ -2716,8 +2760,8 @@ function RequerimientosDetalleInner({ embebido = false }: { embebido?: boolean }
                   checkedChildren="Con IGV"
                   unCheckedChildren="Sin IGV"
                 />
-                <Text type="secondary" style={{ fontSize: 11 }}>
-                  {aplicaIgvModal ? "Estándar: IGV 18% se suma al total" : "IGV no aplica (exonerado)"}
+                <Text type={aplicaIgvModal ? "secondary" : "warning"} style={{ fontSize: 11 }}>
+                  {aplicaIgvModal ? "Estándar: 18% al total" : "EXONERADA"}
                 </Text>
               </Space>
             </Col>
@@ -2782,8 +2826,25 @@ function RequerimientosDetalleInner({ embebido = false }: { embebido?: boolean }
               </Form.Item>
             </Col>
             <Col xs={12} md={6}>
-              <Form.Item label="Fecha entrega esperada" name="fecha_entrega_esperada">
-                <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" />
+              <Form.Item
+                label="Fecha entrega esperada"
+                name="fecha_entrega_esperada"
+                tooltip="Al cambiarla acá se aplica automáticamente a TODOS los items de arriba. Si necesitás una fecha distinta por item, editala en la fila."
+              >
+                <DatePicker
+                  style={{ width: "100%" }}
+                  format="DD/MM/YYYY"
+                  // Al cambiar la fecha del header, propagamos a TODOS los
+                  // items — pedido del user. Antes había que usar el botón
+                  // "Aplicar F. Entrega global a todos los items" arriba de
+                  // la tabla. Igual ese botón queda como atajo redundante.
+                  onChange={(d) => {
+                    if (!d) return;
+                    const nuevas: Record<number, Dayjs | null> = {};
+                    for (const r of selectedRecords) nuevas[r.id] = d;
+                    setFechasItemsModal(nuevas);
+                  }}
+                />
               </Form.Item>
             </Col>
           </Row>
