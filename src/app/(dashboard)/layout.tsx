@@ -32,42 +32,69 @@ import { esTecnicoRestringido, rutaPermitidaTecnico } from "@/lib/tecnico-acceso
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
 
+// Envolver el label de una hoja del menú en un <a href> hace que el browser
+// trate la entrada como link real: middle-click / Ctrl+click / "Abrir en
+// nueva pestaña" desde el menú contextual funcionan de forma nativa. El
+// onClick previene la navegación full-page del browser SOLO en click
+// izquierdo simple — la navegación real la sigue manejando el `onClick`
+// del Menu (vía router.push) para conservar el chequeo de unsaved-changes
+// y el cierre del drawer en mobile.
+function linkLabel(href: string, label: React.ReactNode): React.ReactNode {
+  return (
+    <a
+      href={href}
+      onClick={(e) => {
+        // Middle/ctrl/meta/shift-click → no llega acá (browser lo maneja).
+        // En click normal, prevenimos el full-page reload y dejamos que
+        // el onClick del Menu haga la navegación cliente.
+        if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) {
+          e.preventDefault();
+        }
+      }}
+      // color "heredado" para que no se vea como link azul subrayado.
+      style={{ color: "inherit", display: "block" }}
+    >
+      {label}
+    </a>
+  );
+}
+
 function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
   // El técnico (rol "tecnico" sin "admin") solo ve su panel, sus tareas y los
   // tickets. El resto de apartados ni aparecen. Ver lib/tecnico-acceso.ts.
   if (tecnicoRestringido) {
     return [
-      { key: "/dashboard", icon: <DashboardOutlined />, label: "Dashboard" },
-      { key: "/mis-tareas", icon: <ToolOutlined />, label: "Mis Tareas" },
-      { key: "/tickets", icon: <BugOutlined />, label: "Tickets" },
+      { key: "/dashboard", icon: <DashboardOutlined />, label: linkLabel("/dashboard", "Dashboard") },
+      { key: "/mis-tareas", icon: <ToolOutlined />, label: linkLabel("/mis-tareas", "Mis Tareas") },
+      { key: "/tickets", icon: <BugOutlined />, label: linkLabel("/tickets", "Tickets") },
     ];
   }
   const configChildren: NonNullable<MenuProps["items"]> = [
-    { key: "/configuracion-cotizacion", label: "Configuración cotización" },
-    { key: "/catalogos", label: "Catálogos maestros" },
-    { key: "/configuracion/checklist", label: "Checklist de funcionalidades" },
+    { key: "/configuracion-cotizacion", label: linkLabel("/configuracion-cotizacion", "Configuración cotización") },
+    { key: "/catalogos", label: linkLabel("/catalogos", "Catálogos maestros") },
+    { key: "/configuracion/checklist", label: linkLabel("/configuracion/checklist", "Checklist de funcionalidades") },
   ];
   return [
-    { key: "/dashboard", icon: <DashboardOutlined />, label: "Dashboard" },
-    { key: "/aprobaciones", icon: <FileProtectOutlined />, label: "Aprobaciones" },
-    { key: "/tickets", icon: <BugOutlined />, label: "Tickets" },
+    { key: "/dashboard", icon: <DashboardOutlined />, label: linkLabel("/dashboard", "Dashboard") },
+    { key: "/aprobaciones", icon: <FileProtectOutlined />, label: linkLabel("/aprobaciones", "Aprobaciones") },
+    { key: "/tickets", icon: <BugOutlined />, label: linkLabel("/tickets", "Tickets") },
     {
       key: "operaciones",
       icon: <ToolOutlined />,
       label: "Operaciones",
       children: [
-        { key: "/ordenes-trabajo", label: "OTs Externas" },
-        { key: "/ordenes-trabajo-internas", label: "OTs Internas" },
-        { key: "/evaluaciones", label: "Hojas de Evaluación" },
-        { key: "/codigos-reparacion", label: "Cod. Estratégicos" },
-        { key: "/contratos", label: "Contratos" },
+        { key: "/ordenes-trabajo", label: linkLabel("/ordenes-trabajo", "OTs Externas") },
+        { key: "/ordenes-trabajo-internas", label: linkLabel("/ordenes-trabajo-internas", "OTs Internas") },
+        { key: "/evaluaciones", label: linkLabel("/evaluaciones", "Hojas de Evaluación") },
+        { key: "/codigos-reparacion", label: linkLabel("/codigos-reparacion", "Cod. Estratégicos") },
+        { key: "/contratos", label: linkLabel("/contratos", "Contratos") },
         {
           key: "ops-planificacion",
           label: "Planificación de tareas",
           children: [
-            { key: "/operaciones/planificacion", label: "Planificación" },
-            { key: "/operaciones/programacion-semanal", label: "Programación semanal" },
-            { key: "/operaciones/programacion-dashboard", label: "Dashboard Planificación" },
+            { key: "/operaciones/planificacion", label: linkLabel("/operaciones/planificacion", "Planificación") },
+            { key: "/operaciones/programacion-semanal", label: linkLabel("/operaciones/programacion-semanal", "Programación semanal") },
+            { key: "/operaciones/programacion-dashboard", label: linkLabel("/operaciones/programacion-dashboard", "Dashboard Planificación") },
           ],
         },
       ],
@@ -77,7 +104,7 @@ function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
       icon: <TeamOutlined />,
       label: "RR/HH",
       children: [
-        { key: "/rrhh/trabajadores", label: "Trabajadores" },
+        { key: "/rrhh/trabajadores", label: linkLabel("/rrhh/trabajadores", "Trabajadores") },
       ],
     },
     {
@@ -85,9 +112,9 @@ function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
       icon: <ControlOutlined />,
       label: "Mantenimiento",
       children: [
-        { key: "/mantenimiento/equipos", label: "Equipos" },
-        { key: "/mantenimiento/vehiculos", label: "Vehículos" },
-        { key: "/mantenimiento/task-lists", label: "Task Lists" },
+        { key: "/mantenimiento/equipos", label: linkLabel("/mantenimiento/equipos", "Equipos") },
+        { key: "/mantenimiento/vehiculos", label: linkLabel("/mantenimiento/vehiculos", "Vehículos") },
+        { key: "/mantenimiento/task-lists", label: linkLabel("/mantenimiento/task-lists", "Task Lists") },
       ],
     },
     {
@@ -99,18 +126,18 @@ function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
           key: "log-maestros",
           label: "Maestros",
           children: [
-            { key: "/clientes", label: "Clientes" },
-            { key: "/proveedores", label: "Proveedores" },
-            { key: "/materiales", label: "Materiales" },
+            { key: "/clientes", label: linkLabel("/clientes", "Clientes") },
+            { key: "/proveedores", label: linkLabel("/proveedores", "Proveedores") },
+            { key: "/materiales", label: linkLabel("/materiales", "Materiales") },
           ],
         },
         {
           key: "log-ciclo-compras",
           label: "Ciclo de compras",
           children: [
-            { key: "/requerimientos", label: "Requerimientos" },
-            { key: "/compras/historico", label: "Cotizaciones (precios históricos)" },
-            { key: "/compras", label: "Órdenes de compra" },
+            { key: "/requerimientos", label: linkLabel("/requerimientos", "Requerimientos") },
+            { key: "/compras/historico", label: linkLabel("/compras/historico", "Cotizaciones (precios históricos)") },
+            { key: "/compras", label: linkLabel("/compras", "Órdenes de compra") },
             // "OCs Abiertas" se movió como tab dentro de /compras. La ruta
             // /compras/oc-abiertas sigue funcionando por URL directa.
           ],
@@ -119,28 +146,28 @@ function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
           key: "log-almacen-repuestos",
           label: "Almacén de repuestos",
           children: [
-            { key: "/movimientos", label: "Movimiento de repuestos" },
-            { key: "/stock", label: "Inventario de stock" },
+            { key: "/movimientos", label: linkLabel("/movimientos", "Movimiento de repuestos") },
+            { key: "/stock", label: linkLabel("/stock", "Inventario de stock") },
             // "Inventario no catalogado" se removió del menú: la misma vista
             // se accede desde /stock con el filtro "No catalogado". La ruta
             // /stock/no-catalogados sigue funcionando por URL directa.
-            { key: "/despachos", label: "Inventario por OT" },
+            { key: "/despachos", label: linkLabel("/despachos", "Inventario por OT") },
           ],
         },
         {
           key: "log-herramientas-suministros",
           label: "Almacén de herramientas y suministros",
           children: [
-            { key: "/herramientas", label: "Herramientas" },
-            { key: "/suministros", label: "Suministros" },
+            { key: "/herramientas", label: linkLabel("/herramientas", "Herramientas") },
+            { key: "/suministros", label: linkLabel("/suministros", "Suministros") },
           ],
         },
         {
           key: "log-despacho-facturacion",
           label: "Despacho y facturación",
           children: [
-            { key: "/despachos/mina", label: "Despacho a mina (Guía de remisión)" },
-            { key: "/facturacion/ot", label: "Facturación de OT (mina)" },
+            { key: "/despachos/mina", label: linkLabel("/despachos/mina", "Despacho a mina (Guía de remisión)") },
+            { key: "/facturacion/ot", label: linkLabel("/facturacion/ot", "Facturación de OT (mina)") },
             // "Guía y factura de OC" se removió del menú: la misma funcionalidad
             // (Nro Guía/Nro Factura editables + subir archivos) ya está en la
             // tabla principal de /compras. La ruta /compras/contabilidad sigue
@@ -149,7 +176,7 @@ function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
         },
       ],
     },
-    { key: "/reportes", icon: <BarChartOutlined />, label: "Reportes" },
+    { key: "/reportes", icon: <BarChartOutlined />, label: linkLabel("/reportes", "Reportes") },
     {
       key: "configuracion",
       icon: <SettingOutlined />,
