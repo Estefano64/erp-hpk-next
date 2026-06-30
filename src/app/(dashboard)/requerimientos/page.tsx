@@ -1380,7 +1380,9 @@ export default function RequerimientosPage() {
         />
       </Card>
 
-      {/* Filtros */}
+      {/* Filtros — solo en vista "Por requerimiento". En "Por ítem" se usa
+          el set de filtros del embebido (evita duplicar el panel). */}
+      {vistaModo !== "items" && (
       <Card size="small" style={{ marginBottom: 12 }} styles={{ body: { padding: 12 } }}>
         <Row gutter={[8, 8]}>
           <Col xs={24} md={6}>
@@ -1466,6 +1468,7 @@ export default function RequerimientosPage() {
           </Col>
         </Row>
       </Card>
+      )}
 
       {/* Bulk toolbar */}
       {selectedKeys.length > 0 && (
@@ -1511,49 +1514,54 @@ export default function RequerimientosPage() {
         />
       )}
 
-      <Row gutter={[12, 8]} style={{ marginBottom: 8 }} align="middle">
-        <Col xs={24} md={14}>
-          <Space size={6} wrap>
-            <Text type="secondary" style={{ fontSize: 12 }}>Semana:</Text>
-            <DatePicker
-              picker="week"
-              value={semanaSel}
-              onChange={onSemanaChange}
-              placeholder="Elegí una semana"
-              format={(v) => `Semana ${v.isoWeek()}, ${v.isoWeekYear()}`}
-              style={{ minWidth: 180 }}
-              allowClear
-            />
-            <Segmented
-              size="small"
-              value={semanaCampo}
-              onChange={(v) => onSemanaCampoChange(v as "solicitud" | "requerida")}
-              options={[
-                { value: "solicitud", label: "Solicitud" },
-                { value: "requerida", label: "Requerida" },
-              ]}
-            />
-            {semanaSel && (
+      {/* Semana + rangos de fechas — también solo en vista "Por requerimiento" */}
+      {vistaModo !== "items" && (
+        <>
+          <Row gutter={[12, 8]} style={{ marginBottom: 8 }} align="middle">
+            <Col xs={24} md={14}>
+              <Space size={6} wrap>
+                <Text type="secondary" style={{ fontSize: 12 }}>Semana:</Text>
+                <DatePicker
+                  picker="week"
+                  value={semanaSel}
+                  onChange={onSemanaChange}
+                  placeholder="Elegí una semana"
+                  format={(v) => `Semana ${v.isoWeek()}, ${v.isoWeekYear()}`}
+                  style={{ minWidth: 180 }}
+                  allowClear
+                />
+                <Segmented
+                  size="small"
+                  value={semanaCampo}
+                  onChange={(v) => onSemanaCampoChange(v as "solicitud" | "requerida")}
+                  options={[
+                    { value: "solicitud", label: "Solicitud" },
+                    { value: "requerida", label: "Requerida" },
+                  ]}
+                />
+                {semanaSel && (
+                  <Text type="secondary" style={{ fontSize: 11 }}>
+                    {semanaSel.startOf("isoWeek").format("DD/MM")} – {semanaSel.endOf("isoWeek").format("DD/MM/YY")}
+                  </Text>
+                )}
+              </Space>
+            </Col>
+            <Col xs={24} md={10}>
               <Text type="secondary" style={{ fontSize: 11 }}>
-                {semanaSel.startOf("isoWeek").format("DD/MM")} – {semanaSel.endOf("isoWeek").format("DD/MM/YY")}
+                La semana filtra por <b>Fecha {semanaCampo}</b> (rango lun–dom).
               </Text>
-            )}
-          </Space>
-        </Col>
-        <Col xs={24} md={10}>
-          <Text type="secondary" style={{ fontSize: 11 }}>
-            La semana filtra por <b>Fecha {semanaCampo}</b> (rango lun–dom).
-          </Text>
-        </Col>
-      </Row>
-      <Row gutter={[12, 8]} style={{ marginBottom: 12 }}>
-        <Col xs={24} md={12}>
-          <RangoFechasFiltro label="Fecha solicitud" value={rangoSol} onChange={(r) => { setRangoSol(r); setSemanaSel(null); }} />
-        </Col>
-        <Col xs={24} md={12}>
-          <RangoFechasFiltro label="Fecha requerida" value={rangoReq} onChange={setRangoReq} />
-        </Col>
-      </Row>
+            </Col>
+          </Row>
+          <Row gutter={[12, 8]} style={{ marginBottom: 12 }}>
+            <Col xs={24} md={12}>
+              <RangoFechasFiltro label="Fecha solicitud" value={rangoSol} onChange={(r) => { setRangoSol(r); setSemanaSel(null); }} />
+            </Col>
+            <Col xs={24} md={12}>
+              <RangoFechasFiltro label="Fecha requerida" value={rangoReq} onChange={setRangoReq} />
+            </Col>
+          </Row>
+        </>
+      )}
 
       {/* Toggle vista: agrupada por requerimiento vs plana por ítem. */}
       <div style={{ marginBottom: 8, display: "flex", justifyContent: "flex-end" }}>

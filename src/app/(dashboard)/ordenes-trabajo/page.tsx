@@ -238,12 +238,12 @@ export default function OrdenesTrabajoPage() {
   const [aniosSel, setAniosSel] = usePersistedState<number[]>("ot-list-anios", [new Date().getFullYear() % 100]);
   // Admin: ver también las OTs desactivadas (para reactivarlas).
   const [verInactivas, setVerInactivas] = usePersistedState<boolean>("ot-list-ver-inactivas", false);
-  // v3: "evaluador" y "fecha_evaluacion" pasan a VISIBLES por default (pedido
-  // del equipo: ver quién hizo la hoja de evaluación y cuándo, sin configurar).
-  // El bump v2→v3 resetea una vez la preferencia de columnas guardada.
-  const { ocultas, setOcultas } = useColumnasOcultas("ordenes-trabajo-list-cols-v3", [
+  // v4: "po_cliente" pasa a VISIBLE por default (pedido del equipo —
+  // necesitan ver el N° de OC del cliente sin tener que activarla).
+  // El bump v3→v4 resetea una vez la preferencia de columnas guardada.
+  const { ocultas, setOcultas } = useColumnasOcultas("ordenes-trabajo-list-cols-v4", [
     "tipo", "np", "cod_rep_flota", "fabricante",
-    "plaqueteo", "wo_cliente", "po_cliente", "po_item", "id_viajero", "guia_remision", "empresa_entrega",
+    "plaqueteo", "wo_cliente", "po_item", "id_viajero", "guia_remision", "empresa_entrega",
     "usuario_crea", "fecha_creacion",
     "pcr", "horas", "contrato_dias",
     "fecha_requerimiento_cliente", "fecha_reprogramada",
