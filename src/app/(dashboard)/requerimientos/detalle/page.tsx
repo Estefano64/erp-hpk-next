@@ -2807,6 +2807,11 @@ function RequerimientosDetalleInner({ embebido = false }: { embebido?: boolean }
                       // sobrescribimos solo si el provider dice explícitamente
                       // false (proveedores exonerados de IGV).
                       if (d.aplica_igv === false) setAplicaIgvModal(false);
+                      // Precios incluyen IGV — algunos proveedores cotizan con
+                      // IGV adentro. preciosConIgvModal arranca false; lo
+                      // ponemos true solo si el provider dice explícitamente
+                      // true.
+                      if (d.precios_incluyen_igv === true) setPreciosConIgvModal(true);
                       if (Object.keys(patch).length > 0) ocForm.setFieldsValue(patch);
                     } catch {
                       // silencioso — el form sigue funcionando sin defaults
