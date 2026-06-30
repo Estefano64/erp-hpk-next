@@ -93,7 +93,7 @@ const ETAPAS = [
   },
   {
     key: "evaluacion",
-    label: "Evaluación",
+    label: "Informe de Evaluación",
     icon: <FileTextOutlined />,
     description: "Fotos de evaluación, informes técnicos y hoja de evaluación del componente",
   },
@@ -111,7 +111,7 @@ const ETAPAS = [
   },
   {
     key: "termino",
-    label: "Término de Reparación",
+    label: "Informe Término de Reparación",
     icon: <CheckCircleOutlined />,
     description: "Fotos y documentos del término de reparación del componente",
   },
@@ -556,8 +556,9 @@ export default function OTAdjuntosTab({ otId, meta, onMetaSaved }: Props) {
   const tabItems = ETAPAS.map((etapa) => ({
     key: etapa.key,
     label: (
-      <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        {etapa.icon} {etapa.label}
+      <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, whiteSpace: "normal", lineHeight: 1.2 }}>
+        {etapa.icon}
+        <span>{etapa.label}</span>
       </span>
     ),
     children: <EtapaPanel otId={otId} etapa={etapa} meta={meta} onMetaSaved={onMetaSaved} />,
@@ -585,8 +586,15 @@ export default function OTAdjuntosTab({ otId, meta, onMetaSaved }: Props) {
           flex: 1;
           justify-content: center;
           margin: 0 !important;
-          padding: 10px 0;
+          padding: 10px 4px;
           font-weight: 500;
+        }
+        /* Permite que los nombres largos (Informe de Evaluación, Informe Término
+           de Reparación, Guía de Remisión Despacho) se acomoden en dos líneas. */
+        .adjuntos-etapas-tabs > .ant-tabs-nav .ant-tabs-tab .ant-tabs-tab-btn {
+          white-space: normal;
+          text-align: center;
+          line-height: 1.2;
         }
         .adjuntos-etapas-tabs > .ant-tabs-nav .ant-tabs-tab-active {
           border-bottom: 2px solid ${brand.cyan} !important;
