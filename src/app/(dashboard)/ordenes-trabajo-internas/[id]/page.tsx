@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
@@ -12,7 +12,8 @@ import { useEditLock } from "@/lib/useEditLock";
 import { useUnsavedChangesWarning } from "@/lib/unsaved-changes";
 import {
   ArrowLeftOutlined, EditOutlined, SaveOutlined, CloseOutlined, ToolOutlined,
-  FilePdfOutlined,
+  FilePdfOutlined, InfoCircleOutlined, UnorderedListOutlined, InboxOutlined,
+  DollarOutlined, PaperClipOutlined, HistoryOutlined, WarningOutlined,
 } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
@@ -126,6 +127,7 @@ export default function OTInternaDetallePage() {
     const validos = new Set(["detalle", "tareas", "requerimientos", "costos", "adjuntos", "historial"]);
     return t && validos.has(t) ? t : "detalle";
   })();
+  const [activeTab, setActiveTab] = useState<string>(tabInicial);
   const { message } = App.useApp();
   const otId = Number(params?.id);
   const [form] = Form.useForm<EditValues>();
@@ -137,6 +139,19 @@ export default function OTInternaDetallePage() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Dirty: refleja si el form fue tocado tras entrar en edición. Se actualiza
+  // en `onValuesChange` del Form (más abajo). Idéntico patrón a la OT externa
+  // para mostrar el badge "CAMBIOS SIN GUARDAR" en el header.
+  const [dirty, setDirty] = useState(false);
+
+  // Fast-save de estados: réplica de la OT externa. Estados locales
+  // separados del `form` de edición completa para poder guardar solo estados
+  // sin entrar al flujo de "Editar OT". Se hidratan desde `ot` en cada fetch.
+  const [otStatusFS, setOtStatusFS] = useState<string | null>(null);
+  const [recursosStatusFS, setRecursosStatusFS] = useState<string | null>(null);
+  const [userStatusFS, setUserStatusFS] = useState<string | null>(null);
+  const [comentariosFS, setComentariosFS] = useState<string>("");
+  const [savingStatus, setSavingStatus] = useState(false);
   // Flujo de aprobación: modal abierto + acción objetivo + textarea de comentario.
   // Mantenemos un único modal y cambiamos el copy/severidad según la acción.
   const [aprobacionModal, setAprobacionModal] = useState<{
@@ -199,6 +214,16 @@ export default function OTInternaDetallePage() {
     if (!Number.isFinite(otId) || otId <= 0) return;
     fetchOt();
   }, [otId, fetchOt]);
+
+  // Sincroniza los estados del fast-save cuando la OT se recarga. Solo si
+  // NO estamos editando (para no pisar cambios locales en curso).
+  useEffect(() => {
+    if (!ot || editing) return;
+    setOtStatusFS(ot.ot_status?.codigo ?? null);
+    setRecursosStatusFS(ot.recursos_status?.codigo ?? null);
+    setUserStatusFS(ot.user_status?.codigo ?? null);
+    setComentariosFS(ot.comentarios ?? "");
+  }, [ot, editing]);
 
   // Cargar costos en mount — solo lectura para mostrar en el header.
   // El tab Costos hace su propia carga, no compartimos estado para no
@@ -278,6 +303,7 @@ export default function OTInternaDetallePage() {
       fecha_fin_real: ot.fecha_fin_real ? dayjs(ot.fecha_fin_real) : null,
       fecha_cierre: ot.fecha_cierre ? dayjs(ot.fecha_cierre) : null,
     });
+    setDirty(false);
     setEditing(true);
   }
 
@@ -312,6 +338,7 @@ export default function OTInternaDetallePage() {
       }
       message.success("OT actualizada");
       setEditing(false);
+      setDirty(false);
       void lock.release();
       fetchOt();
     } catch (e) {
@@ -323,7 +350,38 @@ export default function OTInternaDetallePage() {
 
   function cancelEditing() {
     setEditing(false);
+    setDirty(false);
     void lock.release();
+  }
+
+  // Fast-save: guarda solo estados + comentarios sin entrar al flujo de
+  // "Editar OT" completo. Idéntico patrón a la OT externa.
+  async function handleSaveStatuses() {
+    if (!ot) return;
+    setSavingStatus(true);
+    try {
+      const res = await fetch(`/api/ordenes-trabajo-internas/${otId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ot_status_codigo: otStatusFS ?? null,
+          recursos_status_codigo: recursosStatusFS ?? null,
+          user_status_codigo: userStatusFS ?? null,
+          comentarios: comentariosFS,
+          version: ot.version,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Error" }));
+        throw new Error(err.error ?? "Error al guardar estados");
+      }
+      message.success("Estados actualizados");
+      fetchOt();
+    } catch (e) {
+      if (e instanceof Error) message.error(e.message);
+    } finally {
+      setSavingStatus(false);
+    }
   }
 
   function abrirAprobacion(accion: "enviar" | "aprobar" | "rechazar" | "reabrir") {
@@ -393,6 +451,14 @@ export default function OTInternaDetallePage() {
               <Title level={3} style={{ color: brand.white, margin: 0 }}>
                 {formatOtInternaCodigo(ot.ot, `#${ot.id}`)}
               </Title>
+              {dirty && (
+                <span style={{
+                  background: "#FAAD14", color: brand.white, fontSize: 10, fontWeight: 600,
+                  padding: "2px 8px", borderRadius: 10, letterSpacing: 0.4,
+                }}>
+                  CAMBIOS SIN GUARDAR
+                </span>
+              )}
               {tipoTag && <Tag color={tipoColor} style={{ fontSize: 12 }}>{ot.tipo_ot_interna?.nombre}</Tag>}
               {ot.ot_status && <Tag color={ot.ot_status.codigo === "Abierta" ? "processing" : "default"}>{ot.ot_status.nombre}</Tag>}
               {ot.prioridad_atencion && (
@@ -525,48 +591,187 @@ export default function OTInternaDetallePage() {
         />
       )}
 
+      {/* Alerts de validaciones. Espejo de la OT externa (fecha vencida,
+          aprobación pendiente). Se muestran fuera del modo edición. */}
+      {!editing && (() => {
+        const alerts: ReactNode[] = [];
+        const finPlan = ot.fecha_fin_plan ? dayjs(ot.fecha_fin_plan) : null;
+        const cerrada = ot.ot_status?.codigo === "Cerrada" || !!ot.fecha_cierre;
+        if (finPlan && finPlan.isBefore(dayjs(), "day") && !cerrada) {
+          alerts.push(
+            <Alert
+              key="fin-plan-vencida"
+              type="error"
+              showIcon
+              icon={<WarningOutlined />}
+              style={{ marginBottom: 12 }}
+              message={`Fecha fin plan vencida (${finPlan.format("DD/MM/YYYY")})`}
+              description="La OT interna pasó su fecha fin planificada y todavía no está cerrada."
+            />,
+          );
+        }
+        if (ot.aprobacion_status_codigo === "SIN_APROBACION") {
+          alerts.push(
+            <Alert
+              key="aprob-pend"
+              type="warning"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message="Aprobación pendiente"
+              description="La OT fue enviada a aprobación y espera decisión de un aprobador."
+            />,
+          );
+        }
+        return alerts;
+      })()}
+
+      {/* Estados y Comentarios — fast-save. Siempre visible fuera del modo
+          edición completo. Permite cambiar Estado OT / Recursos / User Status
+          y Comentarios sin pasar por "Editar OT". Espejo de la OT externa. */}
+      {!editing && (
+        <Card
+          size="small"
+          styles={{ body: { padding: 16 } }}
+          style={{ marginBottom: 16, borderColor: brand.border }}
+          title="Estados y Comentarios"
+          extra={
+            <Button
+              type="primary"
+              icon={<SaveOutlined />}
+              loading={savingStatus}
+              disabled={!lock.canEdit}
+              onClick={handleSaveStatuses}
+            >
+              Guardar Estados
+            </Button>
+          }
+        >
+          <Row gutter={[16, 12]}>
+            <Col xs={24} md={8}>
+              <Text style={{ fontSize: 11, color: brand.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                Estado OT
+              </Text>
+              <Select
+                showSearch optionFilterProp="label"
+                style={{ width: "100%", marginTop: 4 }}
+                value={otStatusFS ?? undefined}
+                onChange={(v) => setOtStatusFS(v ?? null)}
+                options={otStatuses.map((s) => ({ value: s.codigo, label: s.nombre }))}
+                allowClear
+              />
+            </Col>
+            <Col xs={24} md={8}>
+              <Text style={{ fontSize: 11, color: brand.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                Estado Recursos
+              </Text>
+              <Select
+                showSearch optionFilterProp="label"
+                style={{ width: "100%", marginTop: 4 }}
+                value={recursosStatusFS ?? undefined}
+                onChange={(v) => setRecursosStatusFS(v ?? null)}
+                options={recursosStatuses.map((s) => ({ value: s.codigo, label: s.nombre }))}
+                allowClear
+              />
+            </Col>
+            <Col xs={24} md={8}>
+              <Text style={{ fontSize: 11, color: brand.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                User Status
+              </Text>
+              <Select
+                showSearch optionFilterProp="label"
+                style={{ width: "100%", marginTop: 4 }}
+                value={userStatusFS ?? undefined}
+                onChange={(v) => setUserStatusFS(v ?? null)}
+                options={userStatuses.map((s) => ({ value: s.codigo, label: s.nombre }))}
+                allowClear
+              />
+            </Col>
+            <Col span={24}>
+              <Text style={{ fontSize: 11, color: brand.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                Comentarios
+              </Text>
+              <TextArea
+                rows={2}
+                value={comentariosFS}
+                onChange={(e) => setComentariosFS(e.target.value)}
+                placeholder="Observaciones, motivo de cambio de estado…"
+                style={{ marginTop: 4 }}
+              />
+            </Col>
+          </Row>
+        </Card>
+      )}
+
       <Tabs
-        defaultActiveKey={tabInicial}
+        activeKey={activeTab}
+        onChange={setActiveTab}
+        tabBarGutter={0}
+        tabBarStyle={{
+          display: "flex",
+          borderBottom: `2px solid ${brand.border}`,
+          marginBottom: 16,
+        }}
+        className="ot-detail-tabs"
         items={[
           {
             key: "detalle",
             label: "Detalle",
+            icon: <InfoCircleOutlined />,
             children: (
               <DetalleTab
                 ot={ot}
                 editing={editing}
                 form={form}
                 catalogos={{ tipos, equipos, plantas, prioridades, userStatuses, otStatuses, recursosStatuses, estrategias, trabajadores: trabajadoresAsignables }}
+                onDirty={() => setDirty(true)}
               />
             ),
           },
           {
             key: "tareas",
             label: "Tareas",
+            icon: <UnorderedListOutlined />,
             children: <TareasTab ot={ot} editing={editing} form={form} />,
           },
           {
             key: "requerimientos",
             label: "Requerimientos",
+            icon: <InboxOutlined />,
             children: <OTInternaRequerimientosTab otInternaId={otId} />,
           },
           {
             key: "costos",
             label: "Costos",
+            icon: <DollarOutlined />,
             children: <OTCostosTab otId={otId} kind="interna" />,
           },
           {
             key: "adjuntos",
             label: "Adjuntos",
+            icon: <PaperClipOutlined />,
             children: <OTInternaAdjuntosTab otId={otId} />,
           },
           {
             key: "historial",
             label: "Historial",
+            icon: <HistoryOutlined />,
             children: <OTInternaHistorialTab otId={otId} />,
           },
         ]}
       />
+      <style>{`
+        .ot-detail-tabs > .ant-tabs-nav .ant-tabs-nav-list {
+          width: 100%;
+          display: flex !important;
+        }
+        .ot-detail-tabs > .ant-tabs-nav .ant-tabs-tab {
+          flex: 1;
+          justify-content: center;
+          margin: 0 !important;
+          padding: 10px 0;
+          font-weight: 500;
+        }
+      `}</style>
 
       <Modal
         title={aprobacionModal ? ACCION_META[aprobacionModal.accion].titulo : ""}
@@ -685,7 +890,7 @@ const fmtFechaSolo = (d: string | null | undefined) => (d ? dayjs(d).format("DD/
 // Fechas / Comentarios). Mismo estilo visual que el detalle de OT externa
 // (OTDetalleContent.tsx) para consistencia entre ambos módulos.
 // ───────────────────────────────────────────────────────────────────────────
-function DetalleTab({ ot, editing, form, catalogos }: {
+function DetalleTab({ ot, editing, form, catalogos, onDirty }: {
   ot: OTInternaDetalle;
   editing: boolean;
   form: ReturnType<typeof Form.useForm<EditValues>>[0];
@@ -694,6 +899,7 @@ function DetalleTab({ ot, editing, form, catalogos }: {
     prioridades: CatalogOption[]; userStatuses: CatalogOption[]; otStatuses: CatalogOption[];
     recursosStatuses: CatalogOption[]; estrategias: EstrategiaOption[]; trabajadores: TrabajadorOpt[];
   };
+  onDirty?: () => void;
 }) {
   const cardStyle = { marginBottom: 16, borderColor: brand.border };
   const cardBody = { body: { padding: 16 } };
@@ -822,7 +1028,7 @@ function DetalleTab({ ot, editing, form, catalogos }: {
 
   // ── Vista EDICIÓN — mismas secciones, pero con inputs editables ──
   return (
-    <Form form={form} layout="vertical">
+    <Form form={form} layout="vertical" onValuesChange={() => onDirty?.()}>
       {/* Identificación */}
       <Card size="small" styles={cardBody} style={cardStyle}>
         <SectionTitle>Identificación</SectionTitle>
