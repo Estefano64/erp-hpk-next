@@ -48,7 +48,8 @@ import OTTareasTab from "./OTTareasTab";
 import OTHistorialTab from "./OTHistorialTab";
 import OTRequerimientosTab from "./OTRequerimientosTab";
 import OTCostosTab from "./OTCostosTab";
-import { DescargarOTExcelButton } from "@/components/DescargarOTExcelButton";
+// DescargarOTExcelButton se eliminó en Cloudflare — el botón Imprimir (via
+// setPrintOpen + OTPrintDoc) ya cubre la exportación a PDF. No hay Word/Excel.
 import { MaterialQuickCreateModal } from "@/components/modules/materiales/MaterialQuickCreateModal";
 import OTPrintDoc from "@/components/modules/ordenes-trabajo/OTPrintDoc";
 
@@ -777,7 +778,12 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
 
         {/* ── Barra de acciones ── */}
         <div className="ot-print-hide" style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 16 }}>
-          {ot && <DescargarOTExcelButton otId={ot.id} tipo="externa" />}
+          {/* No hay export a Word / Excel — la descarga en PDF se hace vía
+              el modal de impresión (OTPrintDoc) que abre 'Imprimir'.
+              El botón 'Reporte Correctivo (PDF)' no aparece acá porque las
+              OTs externas son para reparación de repuestos del cliente y NO
+              son mantenimiento correctivo — ese formato (HPK-M-F-07) solo
+              aplica a OTs internas del taller. */}
           <Button icon={<PrinterOutlined />} onClick={() => setPrintOpen(true)}>
             Imprimir
           </Button>

@@ -600,45 +600,46 @@ export function useColumnasRedimensionables<T>(
   const pinnedKey = storageKey ? `${storageKey}-pinned` : undefined;
   const orderKey = storageKey ? `${storageKey}-order` : undefined;
 
-  // Init lazy: leemos localStorage al PRIMER render para que el state
-  // arranque con los valores persistidos. Antes el state arrancaba vacío
-  // y un useEffect lo seteaba después — pero el effect de escritura podía
-  // dispararse antes con el state vacío, pisando los anchos guardados.
-  // Especialmente notable cuando el componente se desmonta/remonta por
-  // cambios en data (ej: filtros que dejan la tabla vacía momentáneamente).
-  // El init lazy se ejecuta UNA sola vez (durante el primer render del
-  // componente), evitando el race.
-  const [anchos, setAnchos] = useState<Record<string, number>>(() => {
-    if (typeof window === "undefined" || !storageKey) return {};
-    try {
-      const stored = localStorage.getItem(storageKey);
-      if (stored) return JSON.parse(stored);
-    } catch { /* ignore */ }
-    return {};
-  });
-  const [pinned, setPinned] = useState<Set<string>>(() => {
-    if (typeof window === "undefined" || !pinnedKey) return new Set();
-    try {
-      const stored = localStorage.getItem(pinnedKey);
-      if (stored) return new Set(JSON.parse(stored));
-    } catch { /* ignore */ }
-    return new Set();
-  });
-  const [orden, setOrden] = useState<string[] | null>(() => {
-    if (typeof window === "undefined" || !orderKey) return null;
-    try {
-      const stored = localStorage.getItem(orderKey);
-      if (stored) return JSON.parse(stored);
-    } catch { /* ignore */ }
-    return null;
-  });
-  // hidratado=true desde el principio porque init lazy ya hidrató.
-  // Mantenemos el flag (en true) por compatibilidad con los effects de
-  // escritura que lo chequean.
-  const [hidratado] = useState(true);
+  // BUG 2026-07 (hydration mismatch): Antes usábamos `useState(() => ...)` con
+  // lectura de localStorage — el server-render devolvía {} pero el primer
+  // client-render devolvía el ancho persistido, causando "hydration mismatch"
+  // en <col style="width:...">.
+  //
+  // Fix: state arranca en vacío EN AMBOS lados (server + client), la
+  // primera pintada matchea, y un useEffect post-hidratación lee localStorage
+  // y sincroniza el state. `hidratado` empieza false y se pone true recién
+  // después de leer — los write effects lo chequean para no pisar los
+  // valores guardados con el estado vacío inicial.
+  const [anchos, setAnchos] = useState<Record<string, number>>({});
+  const [pinned, setPinned] = useState<Set<string>>(new Set());
+  const [orden, setOrden] = useState<string[] | null>(null);
+  const [hidratado, setHidratado] = useState(false);
+
+  // Efecto de lectura atómico — corre UNA vez al mount del cliente.
+  useEffect(() => {
+    if (storageKey) {
+      try {
+        const s = localStorage.getItem(storageKey);
+        if (s) setAnchos(JSON.parse(s));
+      } catch { /* ignore */ }
+    }
+    if (pinnedKey) {
+      try {
+        const s = localStorage.getItem(pinnedKey);
+        if (s) setPinned(new Set(JSON.parse(s)));
+      } catch { /* ignore */ }
+    }
+    if (orderKey) {
+      try {
+        const s = localStorage.getItem(orderKey);
+        if (s) setOrden(JSON.parse(s));
+      } catch { /* ignore */ }
+    }
+    setHidratado(true);
+  }, [storageKey, pinnedKey, orderKey]);
 
   // 3 efectos de escritura. CADA UNO chequea `hidratado` para no pisar
-  // localStorage con el valor inicial antes de haber leído.
+  // localStorage con el valor inicial vacío antes de haber leído.
   useEffect(() => {
     if (!storageKey || !hidratado) return;
     try { localStorage.setItem(storageKey, JSON.stringify(anchos)); } catch { /* ignore */ }
