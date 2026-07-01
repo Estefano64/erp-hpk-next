@@ -6,8 +6,7 @@ import {
 } from "antd";
 import { SearchOutlined, ReloadOutlined, CalendarOutlined, InfoCircleOutlined, SaveOutlined, UndoOutlined, ThunderboltOutlined, PlusOutlined, DeleteOutlined, HistoryOutlined, CloseOutlined, PrinterOutlined } from "@ant-design/icons";
 import { createPortal } from "react-dom";
-import PlanificacionPrintDoc, { PLAN_PRINT_COLS, exportarPlanificacionSemanaExcel } from "@/components/modules/operaciones/PlanificacionPrintDoc";
-import { FileExcelOutlined } from "@ant-design/icons";
+import PlanificacionPrintDoc, { PLAN_PRINT_COLS } from "@/components/modules/operaciones/PlanificacionPrintDoc";
 import { OperacionCombo } from "@/components/modules/ordenes-trabajo/OTTareasTab";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import type { ColumnsType } from "antd/es/table";
@@ -255,7 +254,6 @@ export default function PlanificacionPage() {
   const [printCols, setPrintCols] = useState<string[]>(PLAN_PRINT_COLS.map((c) => c.key));
   const [printHoriz, setPrintHoriz] = useState(true);
   const [printJob, setPrintJob] = useState<{ id: number; semana: string; columnas: string[]; orient: "vertical" | "horizontal" } | null>(null);
-  const [descargandoExcel, setDescargandoExcel] = useState(false);
   // Al cerrar el diálogo de impresión, desmontar el área de impresión.
   useEffect(() => {
     const done = () => setPrintJob(null);
@@ -1618,12 +1616,6 @@ export default function PlanificacionPage() {
               Imprimir
             </Button>
           </Tooltip>
-          <Tooltip title={filterSemana ? "Descargar la programación de la semana en Excel" : "Elegí una semana primero"}>
-            <Button icon={<FileExcelOutlined />} onClick={() => setPrintOpen(true)} disabled={!filterSemana}
-              style={filterSemana ? { background: "#1d6f42", color: "#fff", borderColor: "#1d6f42" } : undefined}>
-              Descargar Excel
-            </Button>
-          </Tooltip>
           <Button
             type={editMode ? "default" : "primary"}
             danger={editMode}
@@ -2179,28 +2171,13 @@ export default function PlanificacionPage() {
         )}
       </Modal>
 
-      {/* Imprimir / Exportar programación de la semana: elegir columnas → imprime o baja Excel. */}
+      {/* Imprimir programación de la semana: elegir columnas → imprime. */}
       <Modal
-        title={`Imprimir / Exportar programación — Semana ${filterSemana ?? ""}`}
+        title={`Imprimir programación — Semana ${filterSemana ?? ""}`}
         open={printOpen}
         onCancel={() => setPrintOpen(false)}
         footer={[
           <Button key="cancel" onClick={() => setPrintOpen(false)}>Cancelar</Button>,
-          <Button
-            key="excel" icon={<FileExcelOutlined />} loading={descargandoExcel}
-            disabled={printCols.length === 0 || !filterSemana}
-            style={{ background: "#1d6f42", color: "#fff", borderColor: "#1d6f42" }}
-            onClick={async () => {
-              if (!filterSemana || printCols.length === 0) return;
-              setDescargandoExcel(true);
-              try {
-                const n = await exportarPlanificacionSemanaExcel(filterSemana, printCols);
-                message.success(`Excel descargado: ${n} tarea(s)`);
-                setPrintOpen(false);
-              } catch { message.error("Error al exportar"); }
-              finally { setDescargandoExcel(false); }
-            }}
-          >Descargar Excel</Button>,
           <Button
             key="print" type="primary" icon={<PrinterOutlined />}
             disabled={printCols.length === 0 || !filterSemana}
