@@ -3,6 +3,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { recalcularCostoPromedio } from "@/lib/inventario";
+import { recalcularRecursosStatusOT, recalcularRecursosStatusOTInterna } from "@/lib/recursos-ot";
 
 // Para recepción por req individual (recomendado): el caller pasa el id del
 // OTRepuesto a recibir + la zona/posición del almacén físico donde se guarda.
@@ -417,53 +418,27 @@ export async function POST(req: NextRequest) {
         ? await tx.ubicacion.findUnique({ where: { codigo: d.ubicacion_codigo }, select: { codigo: true } })
         : null;
 
-      // Calcula el código de recursos status según las OCs vinculadas a una OT.
-      // Códigos válidos del catálogo recursos_status (verificados en BD):
-      //   "Recursos completos"      → todas las OCs vinculadas a la OT están
-      //                               ENTREGADO o COMPLETO.
-      //   "Recursos en recepción"   → al menos una OC sigue parcial/pendiente
-      //                               (la OC actual está siendo recepcionada).
-      // Antes este código devolvía "Recursos entregados", que NO existe en el
-      // catálogo → la FK orden_trabajo_recursos_status_codigo_fkey rompía y
-      // toda la transacción de recepción se rollbackeaba.
-      async function calcularRecursosStatus(where: Record<string, unknown>): Promise<string> {
-        const reqs = await tx.oTRepuesto.findMany({
-          where: { ...where, po_id: { not: null } },
-          select: { po_id: true },
-        });
-        const poIds = [...new Set(reqs.map((r) => r.po_id).filter((x): x is number => x != null))];
-        if (poIds.length === 0) return "Recursos en recepción";
-        const comprasOT = await tx.compra.findMany({
-          where: { id: { in: poIds } },
-          select: { status_oc_codigo: true },
-        });
-        const todasEntregadas = comprasOT.every(
-          (c) => c.status_oc_codigo === "ENTREGADO" || c.status_oc_codigo === "COMPLETO",
-        );
-        return todasEntregadas ? "Recursos completos" : "Recursos en recepción";
-      }
-
+      // Recálculo unificado del recursos_status. Antes acá había una función
+      // local que ponía "Recursos completos" cuando la OC estaba entregada,
+      // sin diferenciar si el material había llegado a almacén o si ya se
+      // entregó al técnico. Ahora usamos el state machine de recursos-ot
+      // que introduce el estado intermedio "Recursos en almacén" (material
+      // recibido pero pendiente de entrega formal al técnico). Ese helper
+      // también registra el cambio en OTHistorial cuando corresponde.
       for (const otId of otIds) {
-        const recursosCodigo = await calcularRecursosStatus({ ot_id: otId });
-        await tx.ordenTrabajo.update({
-          where: { id: otId },
-          data: {
-            recursos_status_codigo: recursosCodigo,
-            ...(ubicacionValida ? { ubicacion_codigo: ubicacionValida.codigo } : {}),
-          },
-        });
+        await recalcularRecursosStatusOT(tx, otId);
+        // La ubicación sigue actualizándose por acá (no depende del state).
+        if (ubicacionValida) {
+          await tx.ordenTrabajo.update({
+            where: { id: otId },
+            data: { ubicacion_codigo: ubicacionValida.codigo },
+          });
+        }
       }
 
-      // OT internas: solo tienen `recursos_status_codigo` (no ubicacion_codigo
-      // todavía — el modelo no lo declara). Aplicamos la misma regla.
+      // OT internas: mismo recálculo unificado.
       for (const otInternaId of otInternaIds) {
-        const recursosCodigo = await calcularRecursosStatus({
-          orden_trabajo_interna_id: otInternaId,
-        });
-        await tx.ordenTrabajoInterna.update({
-          where: { id: otInternaId },
-          data: { recursos_status_codigo: recursosCodigo },
-        });
+        await recalcularRecursosStatusOTInterna(tx, otInternaId);
       }
 
       return { numero_po: compra.numero_po, nuevo_estado: nuevoEstado, movimientos: movimientosCreados };
