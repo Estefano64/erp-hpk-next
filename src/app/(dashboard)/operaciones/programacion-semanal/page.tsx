@@ -249,6 +249,11 @@ export default function ProgramacionSemanalPage() {
   const [verTodasPendientes, setVerTodasPendientes] = useState(false);
   // Búsqueda libre del pool de pendientes (parte / cilindro / OT / descripción).
   const [poolBusqueda, setPoolBusqueda] = useState("");
+  // Filtros de selección múltiple del pool (además del texto libre): permiten
+  // elegir varias OTs / partes / tareas a la vez.
+  const [poolOts, setPoolOts] = useState<string[]>([]);
+  const [poolPartes, setPoolPartes] = useState<string[]>([]);
+  const [poolTareas, setPoolTareas] = useState<string[]>([]);
   const [rows, setRows] = useState<PlanRow[]>([]);
   const [allRows, setAllRows] = useState<PlanRow[]>([]); // para "sin semana asignada"
   // Estado de guardado visible: contador de requests en vuelo + último error.
@@ -502,6 +507,20 @@ export default function ProgramacionSemanalPage() {
   // descripción y código de tarea. Le da al planner una forma rápida de encontrar
   // qué programar sin depender solo del filtro por recurso.
   const pasaBusquedaPool = useCallback((t: PlanRow): boolean => {
+    // Filtros de selección múltiple: dentro de cada uno es OR (cualquiera de los
+    // elegidos), entre ellos y el texto es AND (deben cumplirse todos).
+    if (poolOts.length > 0) {
+      const ot = String(t.orden_trabajo?.ot ?? t.ot_id ?? "");
+      if (!poolOts.includes(ot)) return false;
+    }
+    if (poolPartes.length > 0) {
+      const parte = (t.componente ?? "").toString();
+      if (!poolPartes.includes(parte)) return false;
+    }
+    if (poolTareas.length > 0) {
+      const tarea = (t.descripcion ?? t.operacion_codigo ?? "").toString();
+      if (!poolTareas.includes(tarea)) return false;
+    }
     const q = poolBusqueda.trim().toLowerCase();
     if (!q) return true;
     const flota = t.orden_trabajo?.codigo_reparacion?.flota?.nombre
@@ -516,7 +535,7 @@ export default function ProgramacionSemanalPage() {
       String(t.orden_trabajo?.ot ?? t.ot_id),
       t.orden_trabajo?.descripcion ?? "",
     ].some((v) => (v ?? "").toString().toLowerCase().includes(q));
-  }, [poolBusqueda]);
+  }, [poolBusqueda, poolOts, poolPartes, poolTareas]);
 
   // Pendientes (pools) mostrados: aplican el filtro por recurso (salvo "Ver todas")
   // y la búsqueda libre del pool.
@@ -529,6 +548,28 @@ export default function ProgramacionSemanalPage() {
     if (pa !== pb) return pa - pb;
     return Number(a.orden_trabajo?.ot ?? 0) - Number(b.orden_trabajo?.ot ?? 0);
   }), []);
+  // Opciones de los selects múltiples del pool (OT / parte / tarea), derivadas de
+  // los pendientes reales para no ofrecer valores que no existen.
+  const poolOpciones = useMemo(() => {
+    const todos = [...sinSemanaLista, ...sinFechaListaSemana];
+    const ots = new Set<string>();
+    const partes = new Set<string>();
+    const tareas = new Set<string>();
+    for (const t of todos) {
+      const ot = String(t.orden_trabajo?.ot ?? t.ot_id ?? "").trim();
+      if (ot) ots.add(ot);
+      const parte = (t.componente ?? "").toString().trim();
+      if (parte) partes.add(parte);
+      const tarea = (t.descripcion ?? t.operacion_codigo ?? "").toString().trim();
+      if (tarea) tareas.add(tarea);
+    }
+    return {
+      ots: [...ots].sort((a, b) => Number(a) - Number(b)).map((v) => ({ value: v, label: `OT ${v}` })),
+      partes: [...partes].sort((a, b) => a.localeCompare(b)).map((v) => ({ value: v, label: v })),
+      tareas: [...tareas].sort((a, b) => a.localeCompare(b)).map((v) => ({ value: v, label: v })),
+    };
+  }, [sinSemanaLista, sinFechaListaSemana]);
+
   const sinSemanaMostrar = useMemo(() => {
     const l = filtrarPendientes ? sinSemanaLista.filter(pasaFiltroRecurso) : sinSemanaLista;
     return ordenarPool(l.filter(pasaBusquedaPool));
@@ -2572,7 +2613,8 @@ export default function ProgramacionSemanalPage() {
           Soltá aquí para sacar la tarea de la semana
         </div>
       )}
-      {/* Buscador del pool de pendientes (parte / cilindro / OT / descripción). */}
+      {/* Buscador del pool de pendientes (parte / cilindro / OT / descripción) +
+          filtros de selección múltiple por OT / parte / tarea. */}
       <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <Input
           allowClear
@@ -2583,7 +2625,52 @@ export default function ProgramacionSemanalPage() {
           style={{ maxWidth: 420 }}
           size="small"
         />
-        {poolBusqueda.trim() && (
+        <Select
+          mode="multiple"
+          allowClear
+          placeholder="OT (todas)"
+          value={poolOts}
+          onChange={setPoolOts}
+          options={poolOpciones.ots}
+          optionFilterProp="label"
+          maxTagCount="responsive"
+          size="small"
+          style={{ minWidth: 160, maxWidth: 300 }}
+        />
+        <Select
+          mode="multiple"
+          allowClear
+          placeholder="Parte (todas)"
+          value={poolPartes}
+          onChange={setPoolPartes}
+          options={poolOpciones.partes}
+          optionFilterProp="label"
+          maxTagCount="responsive"
+          size="small"
+          style={{ minWidth: 180, maxWidth: 320 }}
+        />
+        <Select
+          mode="multiple"
+          allowClear
+          placeholder="Tarea (todas)"
+          value={poolTareas}
+          onChange={setPoolTareas}
+          options={poolOpciones.tareas}
+          optionFilterProp="label"
+          maxTagCount="responsive"
+          size="small"
+          style={{ minWidth: 180, maxWidth: 320 }}
+        />
+        {(poolOts.length > 0 || poolPartes.length > 0 || poolTareas.length > 0) && (
+          <Button
+            size="small"
+            icon={<ClearOutlined />}
+            onClick={() => { setPoolOts([]); setPoolPartes([]); setPoolTareas([]); }}
+          >
+            Limpiar
+          </Button>
+        )}
+        {(poolBusqueda.trim() || poolOts.length > 0 || poolPartes.length > 0 || poolTareas.length > 0) && (
           <span style={{ fontSize: 12, color: brand.textSecondary }}>
             {sinFechaMostrar.length + sinSemanaMostrar.length} pendiente(s) coinciden
           </span>
