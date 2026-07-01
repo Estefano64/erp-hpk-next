@@ -14,6 +14,10 @@ const ESTADOS_AVANZADOS = new Set([
   "En cotización",
   "En aprobación",
   "En espera de recursos",
+  // Nuevo estado intermedio — material físicamente disponible pero pendiente
+  // de entrega formal al técnico. Tampoco debemos regresarlo a "solicitados".
+  "Recursos en almacén",
+  "Recursos en recepción",
   "Recursos completos",
 ]);
 

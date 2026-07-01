@@ -7,7 +7,7 @@ import {
   Modal, Form, Input, DatePicker, App, Tooltip, Upload, message,
 } from "antd";
 import {
-  ExportOutlined, ReloadOutlined, CheckCircleOutlined, EyeOutlined,
+  ExportOutlined, ReloadOutlined, CheckCircleOutlined, EyeOutlined, DownloadOutlined,
   FileTextOutlined, UploadOutlined, PaperClipOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
@@ -17,7 +17,7 @@ import { paginacionEstandar } from "@/lib/tables";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import { formatDateOnly } from "@/lib/dates";
-import { uploadToR2 } from "@/lib/r2-client";
+import { uploadToR2, openR2File } from "@/lib/r2-client";
 import { useColumnasRedimensionables, STICKY_HEADER } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
@@ -203,12 +203,36 @@ export default function DespachoMinaPage() {
       render: (_v, r) => r.fecha_recepcion ? formatDateOnly(r.fecha_recepcion) : "—",
     },
     {
-      key: "po_cliente_status", title: "PO Cliente", width: 130, align: "center",
-      render: (_v, r) => r.tiene_po_cliente
-        ? <Tag icon={<CheckCircleOutlined />} color="success">Cargada</Tag>
-        : <Tooltip title="Subir en la sección Adjuntos de la OT (etapa PO Cliente) antes de generar la guía">
-            <Tag color="warning">Falta PO</Tag>
-          </Tooltip>,
+      key: "po_cliente_status", title: "PO Cliente", width: 160, align: "center",
+      render: (_v, r) => {
+        if (!r.tiene_po_cliente) {
+          return (
+            <Tooltip title="Subir en la sección Adjuntos de la OT (etapa PO Cliente) antes de generar la guía">
+              <Tag color="warning">Falta PO</Tag>
+            </Tooltip>
+          );
+        }
+        const primero = r.adjuntos_po_cliente[0];
+        return (
+          <Space size={4}>
+            <Tag icon={<CheckCircleOutlined />} color="success" style={{ margin: 0 }}>Cargada</Tag>
+            {primero && (
+              <Tooltip title={`Descargar PO cliente: ${primero.nombre_archivo}`}>
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<DownloadOutlined />}
+                  onClick={() => openR2File({
+                    key: primero.r2_key,
+                    resource: "ot-adjunto",
+                    resourceId: primero.id,
+                  }).catch((e) => msg.error(e instanceof Error ? e.message : "Error al descargar"))}
+                />
+              </Tooltip>
+            )}
+          </Space>
+        );
+      },
     },
     {
       key: "acc", title: "Acciones", width: 200, fixed: "right",
@@ -231,7 +255,7 @@ export default function DespachoMinaPage() {
         </Space>
       ),
     },
-  ], [router]);
+  ], [router, msg]);
 
   return (
     <div>
