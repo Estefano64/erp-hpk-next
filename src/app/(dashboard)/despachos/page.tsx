@@ -280,6 +280,49 @@ export default function DespachosPage() {
         </Space>
       </div>
 
+      <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+        <Col xs={12} sm={12} md={6}>
+          <Card size="small">
+            <Statistic
+              title="OTs completas"
+              value={otsCompletas}
+              prefix={<CheckCircleOutlined style={{ color: "#52c41a" }} />}
+              valueStyle={{ color: "#52c41a" }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={12} md={6}>
+          <Card size="small">
+            <Statistic
+              title="OTs incompletas"
+              value={otsIncompletas}
+              prefix={<WarningOutlined style={{ color: "#faad14" }} />}
+              valueStyle={{ color: "#faad14" }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={12} md={6}>
+          <Card size="small">
+            <Statistic
+              title="Items con stock"
+              value={totalConStock}
+              prefix={<InboxOutlined style={{ color: "#52c41a" }} />}
+              valueStyle={{ color: "#52c41a" }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={12} md={6}>
+          <Card size="small">
+            <Statistic
+              title="Items sin stock"
+              value={totalSinStock}
+              prefix={<WarningOutlined style={{ color: "#cf1322" }} />}
+              valueStyle={{ color: "#cf1322" }}
+            />
+          </Card>
+        </Col>
+      </Row>
+
       {gruposFiltrados.length === 0 && !loading ? (
         <Empty description={filtro ? `Sin resultados para "${filtro}".` : "No hay despachos pendientes."} />
       ) : vistaModo === "general" ? (

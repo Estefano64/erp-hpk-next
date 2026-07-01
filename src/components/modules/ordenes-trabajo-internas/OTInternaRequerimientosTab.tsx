@@ -28,7 +28,7 @@ import dayjs from "dayjs";
 import { formatDateOnly } from "@/lib/dates";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
-import { useCachedFetch } from "@/lib/useCachedFetch";
+import { useCachedFetch, invalidateCachePrefix } from "@/lib/useCachedFetch";
 import {
   useColumnasOcultas,
   ColumnasToggleButton,
@@ -148,6 +148,38 @@ const COT_COLOR: Record<string, string> = {
   COMPLETO: "success",
   ANULADO: "error",
 };
+
+// Deriva el estado de cotización a partir de los datos relacionados del item
+// (precio, OC vinculada, status del requerimiento). El campo
+// `status_cotizacion_codigo` en BD se congela en "PEND_COT" porque no hay
+// triggers que lo avancen — esta función calcula el estado "real" al vuelo
+// desde lo que se observa: ¿tiene OC? ¿está entregada? ¿tiene precio?
+//
+// Reglas (en orden de evaluación):
+//   1. Requerimiento ANULADO/DESAPROBADO → ANULADO
+//   2. Tiene compra (OC) entregada/completa → COMPLETO
+//   3. Tiene compra (OC) en cualquier otro estado → APROBADO
+//   4. Tiene precio_unitario > 0 pero sin OC → PEND_APROB
+//   5. Sin precio y sin OC → PEND_COT
+function deriveCot(r: RequerimientoRow): { codigo: string; nombre: string } {
+  const reqStatus = r.status_requerimiento_codigo ?? "";
+  if (reqStatus === "ANULADO" || reqStatus === "DESAPROBADO") {
+    return { codigo: "ANULADO", nombre: "Anulado" };
+  }
+  if (r.compra) {
+    const ocCodigo = r.status_oc?.codigo ?? "";
+    if (ocCodigo === "ENTREGADO" || ocCodigo === "COMPLETO") {
+      return { codigo: "COMPLETO", nombre: "Completo" };
+    }
+    return { codigo: "APROBADO", nombre: "Aprobado" };
+  }
+  const precio = r.precio_unitario != null ? Number(r.precio_unitario) : 0;
+  if (Number.isFinite(precio) && precio > 0) {
+    return { codigo: "PEND_APROB", nombre: "Pendiente de aprobación" };
+  }
+  return { codigo: "PEND_COT", nombre: "Pendiente de cotización" };
+}
+
 const OC_COLOR: Record<string, string> = {
   PEND_OC: "default",
   PROCESO: "processing",
@@ -484,6 +516,12 @@ export default function OTInternaRequerimientosTab({ otInternaId, onUpdated }: P
           }
         } catch { /* falla silenciosa: no bloquear el flujo principal */ }
       }
+      // Si se registró algún servicio nuevo, invalidar el cache compartido del
+      // catálogo (useCachedFetch no refresca solo) para que aparezca en el
+      // próximo montaje del form sin necesidad de recargar la página.
+      if (serviciosNuevos.size > 0) {
+        invalidateCachePrefix("/api/catalogos?tabla=servicioReparacion");
+      }
       messageApi.success(
         (draftAppendToNroReq
           ? `Agregados ${j.creados} item(s) a ${j.nro_req}.`
@@ -536,7 +574,13 @@ export default function OTInternaRequerimientosTab({ otInternaId, onUpdated }: P
       const res = await fetch(`/api/ordenes-trabajo-internas/${otInternaId}/requerimientos`);
       if (res.ok) {
         const j = await res.json();
-        setRows(j.data ?? []);
+        // Sobreescribimos status_cotizacion con el derivado porque el campo en
+        // BD no se actualiza tras crear el req (ver deriveCot arriba).
+        const enriched: RequerimientoRow[] = (j.data ?? []).map((r: RequerimientoRow) => {
+          const cot = deriveCot(r);
+          return { ...r, status_cotizacion: cot, status_cotizacion_codigo: cot.codigo };
+        });
+        setRows(enriched);
       }
     } finally {
       setLoading(false);
@@ -1774,8 +1818,12 @@ export default function OTInternaRequerimientosTab({ otInternaId, onUpdated }: P
                   name="precio_unitario"
                   label="Precio referencial"
                   tooltip="Precio orientativo de quien crea el requerimiento. El precio definitivo lo carga el área de compras en la OC."
+                  rules={[
+                    { required: true, message: "Precio referencial requerido" },
+                    { type: "number", min: 0.01, message: "Debe ser mayor a 0" },
+                  ]}
                 >
-                  <InputNumber min={0} step={0.01} style={{ width: "100%" }} placeholder="0.00" />
+                  <InputNumber min={0.01} step={0.01} style={{ width: "100%" }} placeholder="0.00" />
                 </Form.Item>
               </Col>
               <Col span={12}>
