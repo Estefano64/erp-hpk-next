@@ -12,6 +12,7 @@ import { useEditLock } from "@/lib/useEditLock";
 import { useUnsavedChangesWarning } from "@/lib/unsaved-changes";
 import {
   ArrowLeftOutlined, EditOutlined, SaveOutlined, CloseOutlined, ToolOutlined,
+  FilePdfOutlined,
 } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
@@ -491,6 +492,15 @@ export default function OTInternaDetallePage() {
               </>
             )}
             <DescargarOTExcelButton otId={ot.id} tipo="interna" />
+            <Tooltip title="Descarga el PDF en formato HPK-M-F-07 (Reporte de Mantenimiento Correctivo) con los datos de esta OT interna. Los adjuntos se listan por nombre.">
+              <Button
+                icon={<FilePdfOutlined />}
+                onClick={() => window.open(`/api/ordenes-trabajo-internas/${ot.id}/reporte-correctivo/pdf`, "_blank")}
+                style={{ background: "#cf1322", color: "#fff", borderColor: "#cf1322" }}
+              >
+                Reporte Correctivo (PDF)
+              </Button>
+            </Tooltip>
             <Button
               icon={<ArrowLeftOutlined />}
               onClick={() => router.push("/ordenes-trabajo-internas")}

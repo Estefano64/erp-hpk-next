@@ -24,6 +24,7 @@ import {
   Alert,
   Space,
   Modal,
+  Tooltip,
 } from "antd";
 import {
   SaveOutlined,
@@ -37,6 +38,7 @@ import {
   PrinterOutlined,
   PaperClipOutlined,
   HistoryOutlined,
+  FilePdfOutlined,
 } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
 import dayjs from "dayjs";
@@ -749,6 +751,17 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
         {/* ── Barra de acciones ── */}
         <div className="ot-print-hide" style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 16 }}>
           {ot && <DescargarOTExcelButton otId={ot.id} tipo="externa" />}
+          {ot && (
+            <Tooltip title="Descarga el PDF en formato HPK-M-F-07 (Reporte de Mantenimiento Correctivo) con los datos de esta OT. Los adjuntos se listan por nombre.">
+              <Button
+                icon={<FilePdfOutlined />}
+                onClick={() => window.open(`/api/ordenes-trabajo/${ot.id}/reporte-correctivo/pdf`, "_blank")}
+                style={{ background: "#cf1322", color: "#fff", borderColor: "#cf1322" }}
+              >
+                Reporte Correctivo (PDF)
+              </Button>
+            </Tooltip>
+          )}
           <Button
             icon={<PrinterOutlined />}
             onClick={() => {
