@@ -11,7 +11,6 @@ type Ctx = { params: Promise<{ id: string }> };
 
 const UpdateSchema = z.object({
   material_codigo: z.string().trim().optional().nullable(),
-  tipo_codigo: z.enum(["MAC", "CAD", "SER"]).optional(),
   cantidad: z.coerce.number().min(0.01).optional(),
   descripcion: z.string().trim().min(1).max(500).optional(),
   texto: z.string().trim().optional().nullable(),
@@ -89,13 +88,6 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         updates.material_id = null;
       }
     }
-    // Cambio de tipo: CAD/SER no usan material, así que al salir de MAC se limpia
-    // el vínculo. Al pasar a MAC se deja el material vacío (se carga después).
-    if (d.tipo_codigo !== undefined && d.tipo_codigo !== "MAC") {
-      updates.material_id = null;
-      updates.material_codigo = null;
-    }
-
     const updated = await prisma.oTRepuesto.update({
       where: { id: (parseInt4Safe(id) ?? 0) },
       data: updates,

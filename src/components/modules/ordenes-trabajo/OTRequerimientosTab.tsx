@@ -256,6 +256,42 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
     setDraftOpen(false);
     setDraftItems([]);
     setDraftAppendToNroReq(null);
+    setDraftSelected([]);
+    setDraftBulkUM(undefined);
+    setDraftBulkTipo(undefined);
+  }
+  // Aplica U.M. y/o Tipo a los items del borrador seleccionados (edición masiva
+  // al momento de crear). Cambiar el tipo reusa la limpieza de actualizarDraftItem.
+  function aplicarBulkDraft() {
+    if (draftSelected.length === 0) return;
+    if (!draftBulkUM && !draftBulkTipo) {
+      messageApi.info("Elegí U.M. y/o Tipo para aplicar.");
+      return;
+    }
+    const sel = new Set(draftSelected);
+    setDraftItems((prev) => prev.map((it) => {
+      if (!sel.has(it.id)) return it;
+      let next = { ...it };
+      // Tipo primero (limpia campos dependientes al cambiar de tipo).
+      if (draftBulkTipo && draftBulkTipo !== it.tipo_codigo) {
+        next = {
+          ...next,
+          tipo_codigo: draftBulkTipo,
+          material_codigo: undefined,
+          servicio_codigo: undefined,
+          descripcion: "",
+          fabricante_codigo: undefined,
+          cantidad: 1,
+          unidad_medida: undefined,
+        };
+      }
+      if (draftBulkUM) next.unidad_medida = draftBulkUM;
+      return next;
+    }));
+    messageApi.success(`Aplicado a ${draftSelected.length} item(s).`);
+    setDraftSelected([]);
+    setDraftBulkUM(undefined);
+    setDraftBulkTipo(undefined);
   }
   function agregarItemDraft() {
     setDraftItems((prev) => [
@@ -461,11 +497,10 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
   const umsRes = useCachedFetch<Wrapped<{ codigo: string; nombre: string; abreviatura?: string }>>("/api/catalogos?tabla=unidadMedida");
   const unidades = umsRes?.data ?? [];
 
-  // ── Edición masiva (U.M. / Tipo) sobre items en BORRADOR ──
-  const [selectedReqKeys, setSelectedReqKeys] = useState<number[]>([]);
-  const [bulkUM, setBulkUM] = useState<string | undefined>();
-  const [bulkTipo, setBulkTipo] = useState<"MAC" | "CAD" | "SER" | undefined>();
-  const [applyingBulk, setApplyingBulk] = useState(false);
+  // ── Edición masiva de items del BORRADOR (al crear un nuevo requerimiento) ──
+  const [draftSelected, setDraftSelected] = useState<string[]>([]);
+  const [draftBulkUM, setDraftBulkUM] = useState<string | undefined>();
+  const [draftBulkTipo, setDraftBulkTipo] = useState<"MAC" | "CAD" | "SER" | undefined>();
 
   // Roles del usuario (para acciones admin/aprobador)
   useEffect(() => {
@@ -494,43 +529,6 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
   }, [otId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
-
-  // Aplica U.M. y/o Tipo a todas las filas seleccionadas (solo BORRADOR).
-  const aplicarBulkReq = useCallback(async () => {
-    const patch: Record<string, unknown> = {};
-    if (bulkUM) patch.unidad_medida = bulkUM;
-    if (bulkTipo) patch.tipo_codigo = bulkTipo;
-    if (Object.keys(patch).length === 0) {
-      messageApi.info("Elegí U.M. y/o Tipo para aplicar.");
-      return;
-    }
-    // La selección ya se restringe a BORRADOR, pero revalidamos por las dudas.
-    const ids = selectedReqKeys.filter(
-      (id) => rows.find((r) => r.id === id)?.status_requerimiento_codigo === "BORRADOR",
-    );
-    if (ids.length === 0) return;
-    setApplyingBulk(true);
-    let ok = 0, fail = 0;
-    try {
-      for (const id of ids) {
-        const res = await fetch(`/api/requerimientos/${id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(patch),
-        });
-        if (res.ok) ok++; else fail++;
-      }
-    } finally {
-      setApplyingBulk(false);
-    }
-    if (ok > 0) messageApi.success(`${ok} item(s) actualizados.`);
-    if (fail > 0) messageApi.warning(`${fail} item(s) con error.`);
-    setSelectedReqKeys([]);
-    setBulkUM(undefined);
-    setBulkTipo(undefined);
-    fetchData();
-    onUpdated?.();
-  }, [bulkUM, bulkTipo, selectedReqKeys, rows, messageApi, fetchData, onUpdated]);
 
   // ── Aplicar template ──
   async function aplicarTemplate(estrategia: "replace_pending" | "keep_all" | "skip_if_any") {
@@ -1216,12 +1214,65 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
             <Button size="small" type="text" icon={<CloseOutlined />} onClick={cerrarDraft} aria-label="Cerrar" />
           }
         >
+          {/* Edición masiva: marcá varios items y asignales U.M. y/o Tipo de una. */}
+          {draftSelected.length > 0 && (
+            <div style={{ marginBottom: 12, padding: 8, borderRadius: 6, background: "#E6FFFB", border: `1px solid ${brand.cyan}` }}>
+              <Row gutter={[8, 8]} align="middle">
+                <Col flex="0 0 auto">
+                  <Tag color={brand.cyan} style={{ fontWeight: 600, margin: 0 }}>
+                    {draftSelected.length} seleccionado{draftSelected.length === 1 ? "" : "s"}
+                  </Tag>
+                </Col>
+                <Col flex="1 1 200px">
+                  <Select
+                    size="small"
+                    placeholder="Cambiar U.M. a…"
+                    value={draftBulkUM}
+                    onChange={setDraftBulkUM}
+                    options={unidades.map((u) => ({ value: u.codigo, label: u.abreviatura ? `${u.nombre} (${u.abreviatura})` : u.nombre }))}
+                    allowClear showSearch optionFilterProp="label"
+                    style={{ width: "100%" }}
+                  />
+                </Col>
+                <Col flex="1 1 180px">
+                  <Select
+                    size="small"
+                    placeholder="Cambiar Tipo a…"
+                    value={draftBulkTipo}
+                    onChange={(v) => setDraftBulkTipo(v as "MAC" | "CAD" | "SER" | undefined)}
+                    options={[
+                      { value: "MAC", label: "MAC (material)" },
+                      { value: "CAD", label: "CAD" },
+                      { value: "SER", label: "SER (servicio)" },
+                    ]}
+                    allowClear
+                    style={{ width: "100%" }}
+                  />
+                </Col>
+                <Col flex="0 0 auto">
+                  <Space size={6}>
+                    <Button size="small" type="primary" onClick={aplicarBulkDraft}>Aplicar</Button>
+                    <Button size="small" onClick={() => { setDraftSelected([]); setDraftBulkUM(undefined); setDraftBulkTipo(undefined); }}>Cancelar</Button>
+                  </Space>
+                </Col>
+              </Row>
+              {draftBulkTipo && (
+                <Text type="secondary" style={{ fontSize: 11, display: "block", marginTop: 6 }}>
+                  Cambiar el tipo reinicia material / descripción / cantidad de esos items.
+                </Text>
+              )}
+            </div>
+          )}
           <Table
             dataSource={draftItems}
             rowKey="id"
             pagination={false}
             size="small"
             scroll={{ x: 1200 }}
+            rowSelection={{
+              selectedRowKeys: draftSelected,
+              onChange: (keys) => setDraftSelected(keys as string[]),
+            }}
             columns={[
               {
                 title: "Ítem", key: "n", width: 50, align: "center",
@@ -1495,62 +1546,6 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
         </Col>
       </Row>
 
-      {/* Barra de edición masiva (aparece al seleccionar items en BORRADOR). */}
-      {selectedReqKeys.length > 0 && (
-        <Card
-          size="small"
-          styles={{ body: { padding: 12 } }}
-          style={{ marginBottom: 12, borderColor: brand.cyan, background: "#E6FFFB" }}
-        >
-          <Row gutter={[12, 8]} align="middle">
-            <Col flex="0 0 auto">
-              <Tag color={brand.cyan} style={{ fontWeight: 600, fontSize: 13, padding: "4px 10px" }}>
-                {selectedReqKeys.length} seleccionado{selectedReqKeys.length === 1 ? "" : "s"}
-              </Tag>
-            </Col>
-            <Col flex="1 1 220px">
-              <Select
-                placeholder="Cambiar U.M. a…"
-                value={bulkUM}
-                onChange={setBulkUM}
-                options={unidades.map((u) => ({ value: u.codigo, label: u.abreviatura ? `${u.nombre} (${u.abreviatura})` : u.nombre }))}
-                allowClear showSearch optionFilterProp="label"
-                style={{ width: "100%" }}
-              />
-            </Col>
-            <Col flex="1 1 200px">
-              <Select
-                placeholder="Cambiar Tipo a…"
-                value={bulkTipo}
-                onChange={(v) => setBulkTipo(v as "MAC" | "CAD" | "SER" | undefined)}
-                options={[
-                  { value: "MAC", label: "MAC (material)" },
-                  { value: "CAD", label: "CAD" },
-                  { value: "SER", label: "SER (servicio)" },
-                ]}
-                allowClear
-                style={{ width: "100%" }}
-              />
-            </Col>
-            <Col flex="0 0 auto">
-              <Space>
-                <Button type="primary" loading={applyingBulk} onClick={aplicarBulkReq}>
-                  Aplicar
-                </Button>
-                <Button onClick={() => { setSelectedReqKeys([]); setBulkUM(undefined); setBulkTipo(undefined); }}>
-                  Cancelar
-                </Button>
-              </Space>
-            </Col>
-          </Row>
-          {bulkTipo === "MAC" && (
-            <Text type="secondary" style={{ fontSize: 11, display: "block", marginTop: 6 }}>
-              Al pasar a MAC el material queda vacío; cargalo después item por item.
-            </Text>
-          )}
-        </Card>
-      )}
-
       {rows.length === 0 ? (
         <Empty description="Sin requerimientos. Aplicá el template o agregá uno nuevo." />
       ) : (
@@ -1566,8 +1561,6 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
           onEnviarGrupo={enviarGrupo}
           onSetFechaRequerida={setFechaRequeridaGrupo}
           otFechaRecepcion={otFechaRecepcion}
-          selectedKeys={selectedReqKeys}
-          onSelectChange={setSelectedReqKeys}
         />
       )}
 
@@ -1826,8 +1819,6 @@ function RequerimientosAgrupados({
   onEnviarGrupo,
   onSetFechaRequerida,
   otFechaRecepcion,
-  selectedKeys,
-  onSelectChange,
 }: {
   rows: RequerimientoRow[];
   columns: ColumnsType<RequerimientoRow>;
@@ -1838,9 +1829,6 @@ function RequerimientosAgrupados({
   onEnviarGrupo?: (nroReq: string) => void;
   onSetFechaRequerida?: (nroReq: string, fecha: dayjs.Dayjs | null) => Promise<void>;
   otFechaRecepcion?: string | Date | null;
-  // Selección masiva (opcional): claves seleccionadas globales + callback.
-  selectedKeys?: number[];
-  onSelectChange?: (keys: number[]) => void;
 }) {
   // Agrupar por nro_req (preservando orden por fecha desc del primer item de cada grupo)
   const groups = useMemo(() => {
@@ -1991,17 +1979,6 @@ function RequerimientosAgrupados({
                 size="small"
                 scroll={{ x: 2160 }}
                 rowClassName={(r) => r.status_requerimiento_codigo === "ANULADO" ? "req-anulado" : ""}
-                rowSelection={onSelectChange ? {
-                  // Selección compartida entre grupos: cada sub-tabla reporta solo
-                  // sus filas; mergeamos con lo seleccionado en los demás grupos.
-                  selectedRowKeys: (selectedKeys ?? []).filter((k) => items.some((i) => i.id === k)),
-                  onChange: (keys) => {
-                    const groupIds = new Set(items.map((i) => i.id));
-                    const otros = (selectedKeys ?? []).filter((k) => !groupIds.has(k));
-                    onSelectChange([...otros, ...(keys as number[])]);
-                  },
-                  getCheckboxProps: (r) => ({ disabled: r.status_requerimiento_codigo !== "BORRADOR" }),
-                } : undefined}
               />
             )}
           </Card>
