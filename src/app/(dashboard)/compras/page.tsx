@@ -60,6 +60,7 @@ import {
   useColumnasRedimensionables,
   usePersistedState,
   useRangoFechasPersistente,
+  useAbortableFetch,
 } from "@/lib/tables";
 import { Popover, Divider } from "antd";
 import { brand } from "@/lib/theme";
@@ -146,21 +147,25 @@ export default function ComprasPage() {
   // `data` filtrada solo por los rangos de fecha (sin filtros de columna).
   const [vistaActual, setVistaActual] = useState<Compra[] | null>(null);
 
+  const abortable = useAbortableFetch();
   const fetchData = useCallback(async () => {
+    const controller = abortable.start();
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (search) params.set("search", search);
       if (estado) params.set("estado", estado);
-      const res = await fetch(`/api/compras?${params}`);
+      const res = await fetch(`/api/compras?${params}`, { signal: controller.signal });
       const json = await res.json();
+      if (controller.signal.aborted) return;
       setData(json.data ?? []);
-    } catch {
+    } catch (e) {
+      if (abortable.isAbort(e)) return;
       message.error("Error al cargar compras");
     } finally {
-      setLoading(false);
+      if (abortable.isCurrent(controller)) setLoading(false);
     }
-  }, [search, estado, message]);
+  }, [search, estado, message, abortable]);
 
   useEffect(() => {
     fetchData();

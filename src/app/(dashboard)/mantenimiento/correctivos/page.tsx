@@ -24,6 +24,7 @@ import {
   filtroPorColumna,
   usePersistedState,
   useTablaFiltrada,
+  useAbortableFetch,
 } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import { formatDateOnly } from "@/lib/dates";
@@ -112,23 +113,27 @@ export default function CorrectivosPage() {
   const [verTarget, setVerTarget] = useState<CorrectivoRow | null>(null);
 
   // ── Fetchers ────────────────────────────────────────────
+  const abortable = useAbortableFetch();
   const fetchData = useCallback(async () => {
+    const controller = abortable.start();
     setLoading(true);
     try {
       const qs = new URLSearchParams();
       qs.set("limit", "500");
       if (search.trim()) qs.set("search", search.trim());
       if (estadoFiltro) qs.set("estado", estadoFiltro);
-      const res = await fetch(`/api/mantenimiento/correctivos?${qs}`);
+      const res = await fetch(`/api/mantenimiento/correctivos?${qs}`, { signal: controller.signal });
       if (!res.ok) throw new Error("Error al cargar");
       const json = await res.json();
+      if (controller.signal.aborted) return;
       setRows(json.data || []);
     } catch (e) {
+      if (abortable.isAbort(e)) return;
       message.error((e as Error).message);
     } finally {
-      setLoading(false);
+      if (abortable.isCurrent(controller)) setLoading(false);
     }
-  }, [search, estadoFiltro, message]);
+  }, [search, estadoFiltro, message, abortable]);
 
   useEffect(() => {
     fetchData();

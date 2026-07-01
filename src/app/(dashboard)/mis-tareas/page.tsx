@@ -13,7 +13,7 @@ import dayjs, { type Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
 import { brand } from "@/lib/theme";
 import { formatDateOnly } from "@/lib/dates";
-import { paginacionEstandar } from "@/lib/tables";
+import { paginacionEstandar, useAbortableFetch } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
 dayjs.extend(isoWeek);
@@ -83,7 +83,9 @@ export default function MisTareasPage() {
   const [searchInput, setSearchInput] = useState("");
   const [semana, setSemana] = useState<Dayjs | null>(null);
 
+  const abortable = useAbortableFetch();
   const fetchData = useCallback(async () => {
+    const controller = abortable.start();
     setLoading(true);
     try {
       const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
@@ -93,17 +95,19 @@ export default function MisTareasPage() {
         params.set("fecha_desde", semana.startOf("isoWeek").format("YYYY-MM-DD"));
         params.set("fecha_hasta", semana.endOf("isoWeek").format("YYYY-MM-DD") + "T23:59:59");
       }
-      const res = await fetch(`/api/mi-trabajo/historico?${params.toString()}`, { cache: "no-store" });
+      const res = await fetch(`/api/mi-trabajo/historico?${params.toString()}`, { cache: "no-store", signal: controller.signal });
       const json = await res.json();
+      if (controller.signal.aborted) return;
       if (!res.ok) throw new Error(json.error ?? "Error");
       setData(json.data ?? []);
       setTotal(json.total ?? 0);
     } catch (e) {
+      if (abortable.isAbort(e)) return;
       msg.error(e instanceof Error ? e.message : "Error al cargar tareas");
     } finally {
-      setLoading(false);
+      if (abortable.isCurrent(controller)) setLoading(false);
     }
-  }, [page, pageSize, estado, search, semana, msg]);
+  }, [page, pageSize, estado, search, semana, msg, abortable]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 

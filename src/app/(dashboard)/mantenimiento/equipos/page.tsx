@@ -46,6 +46,7 @@ import {
   RangoFechasFiltro,
   dentroDeRango,
   useColumnasRedimensionables,
+  useAbortableFetch,
 } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
@@ -154,21 +155,30 @@ export default function EquiposPage() {
   const [messageApi, contextHolder] = message.useMessage();
   const { screens } = useResponsive();
 
+  const abortable = useAbortableFetch();
   const fetchData = useCallback(async () => {
+    const controller = abortable.start();
     setLoading(true);
-    const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
-    if (search) params.set("search", search);
-    if (filterTipo) params.set("tipo", filterTipo);
-    if (filterArea) params.set("area", filterArea);
-    if (filterStatus) params.set("status", filterStatus);
-    if (filterCriticidad) params.set("criticidad", filterCriticidad);
+    try {
+      const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
+      if (search) params.set("search", search);
+      if (filterTipo) params.set("tipo", filterTipo);
+      if (filterArea) params.set("area", filterArea);
+      if (filterStatus) params.set("status", filterStatus);
+      if (filterCriticidad) params.set("criticidad", filterCriticidad);
 
-    const res = await fetch(`/api/equipos?${params}`);
-    const json = await res.json();
-    setData(json.data ?? []);
-    setTotal(json.total ?? 0);
-    setLoading(false);
-  }, [page, pageSize, search, filterTipo, filterArea, filterStatus, filterCriticidad]);
+      const res = await fetch(`/api/equipos?${params}`, { signal: controller.signal });
+      const json = await res.json();
+      if (controller.signal.aborted) return;
+      setData(json.data ?? []);
+      setTotal(json.total ?? 0);
+    } catch (e) {
+      if (abortable.isAbort(e)) return;
+      throw e;
+    } finally {
+      if (abortable.isCurrent(controller)) setLoading(false);
+    }
+  }, [page, pageSize, search, filterTipo, filterArea, filterStatus, filterCriticidad, abortable]);
 
   useEffect(() => {
     async function loadCatalogs() {

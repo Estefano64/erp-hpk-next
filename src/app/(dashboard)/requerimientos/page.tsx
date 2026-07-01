@@ -40,6 +40,7 @@ import {
   RangoFechasFiltro,
   dentroDeRango,
   filtroPorColumna,
+  useAbortableFetch,
 } from "@/lib/tables";
 
 const { Title, Text } = Typography;
@@ -403,7 +404,9 @@ export default function RequerimientosPage() {
     } catch { /* silencioso: las tarjetas mantienen el último valor */ }
   }, [buildStatsParams]);
 
+  const abortable = useAbortableFetch();
   const fetchData = useCallback(async () => {
+    const controller = abortable.start();
     setLoading(true);
     try {
       // Carga TODOS los requerimientos de una sola vez (limit alto). Sin esto,
@@ -425,7 +428,8 @@ export default function RequerimientosPage() {
       if (rangoReq.hasta) params.set("req_hasta", rangoReq.hasta.toISOString());
       if (soloAprobadosSinOC) params.set("solo_aprobados_sin_oc", "1");
 
-      const res = await fetch(`/api/requerimientos?${params}`);
+      const res = await fetch(`/api/requerimientos?${params}`, { signal: controller.signal });
+      if (controller.signal.aborted) return;
       if (res.ok) {
         const j = await res.json();
         setRows(j.data ?? []);
@@ -433,10 +437,13 @@ export default function RequerimientosPage() {
       }
       // Stats globales (toda la tabla, no sólo esta página).
       fetchStats();
+    } catch (e) {
+      if (abortable.isAbort(e)) return;
+      throw e;
     } finally {
-      setLoading(false);
+      if (abortable.isCurrent(controller)) setLoading(false);
     }
-  }, [search, filterOt, filterStatusReq, filterStatusCot, filterStatusOc, filterTipo, filterProveedor, filterFechas, rangoSol, rangoReq, soloAprobadosSinOC, fetchStats]);
+  }, [search, filterOt, filterStatusReq, filterStatusCot, filterStatusOc, filterTipo, filterProveedor, filterFechas, rangoSol, rangoReq, soloAprobadosSinOC, fetchStats, abortable]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 

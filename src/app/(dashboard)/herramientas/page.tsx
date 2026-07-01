@@ -17,7 +17,7 @@ import { formatDateOnly } from "@/lib/dates";
 import {
   numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE,
   useColumnasOcultas, ColumnasToggleButton, visibleColumns, filtroPorColumna,
-  STICKY_HEADER, useColumnasRedimensionables, useTablaFiltrada,
+  STICKY_HEADER, useColumnasRedimensionables, useTablaFiltrada, useAbortableFetch,
 } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
@@ -98,20 +98,24 @@ function TabCatalogo() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
 
+  const abortable = useAbortableFetch();
   const fetchData = useCallback(async () => {
+    const controller = abortable.start();
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (search) params.set("search", search);
-      const res = await fetch(`/api/herramientas?${params}`);
+      const res = await fetch(`/api/herramientas?${params}`, { signal: controller.signal });
       const json = await res.json();
+      if (controller.signal.aborted) return;
       setData(json.data ?? []);
-    } catch {
+    } catch (e) {
+      if (abortable.isAbort(e)) return;
       message.error("Error al cargar herramientas");
     } finally {
-      setLoading(false);
+      if (abortable.isCurrent(controller)) setLoading(false);
     }
-  }, [search, message]);
+  }, [search, message, abortable]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
