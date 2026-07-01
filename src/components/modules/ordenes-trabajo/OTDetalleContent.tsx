@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useSession } from "next-auth/react";
 import { useTabSync } from "@/lib/useTabSync";
 import { useCachedFetch } from "@/lib/useCachedFetch";
@@ -1696,11 +1697,13 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
         title={`Imprimir OT ${ot ? formatOtCodigo(ot.ot, ot.tipo_codigo, "") : ""}`}
         open={printOpen}
         onCancel={() => setPrintOpen(false)}
-        okText="Previsualizar"
+        okText="Imprimir"
         okButtonProps={{ icon: <PrinterOutlined />, disabled: printSecc.length === 0 }}
         onOk={() => {
           if (!ot || printSecc.length === 0) return;
-          setPrintPreview({ secciones: printSecc, orient: printHoriz ? "horizontal" : "vertical" });
+          // Copia del array para forzar re-fetch + re-print aunque se repita la
+          // misma selección (OTPrintDoc depende de la identidad de `secciones`).
+          setPrintPreview({ secciones: [...printSecc], orient: printHoriz ? "horizontal" : "vertical" });
           setPrintOpen(false);
         }}
       >
@@ -1724,47 +1727,28 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
         </div>
       </Modal>
 
-      {/* Previsualización de impresión (a pantalla completa). El CSS de print de
-          OTPrintDoc imprime SOLO el documento (oculta el resto). */}
-      <Modal
-        title="Vista previa de impresión"
-        open={!!printPreview}
-        onCancel={() => setPrintPreview(null)}
-        rootClassName="ot-print-modal-root"
-        width="90%"
-        style={{ top: 20 }}
-        styles={{ body: { maxHeight: "78vh", overflow: "auto", background: "#f5f5f5", padding: 16 } }}
-        footer={[
-          <Button key="cerrar" onClick={() => setPrintPreview(null)}>Cerrar</Button>,
-          <Button key="print" type="primary" icon={<PrinterOutlined />} onClick={() => window.print()}>Imprimir</Button>,
-        ]}
-      >
-        {printPreview && ot && (
-          <div style={{ background: "#fff", padding: 24, maxWidth: 900, margin: "0 auto", boxShadow: "0 1px 6px rgba(0,0,0,.15)" }}>
-            <OTPrintDoc otId={ot.id} secciones={printPreview.secciones} orient={printPreview.orient} />
-          </div>
+      {/* Impresión directa: el documento se renderiza en un área oculta porteada
+          a <body> y se imprime solo (OTPrintDoc autoPrint). En pantalla queda
+          display:none; al imprimir se oculta TODO lo demás (sin páginas en
+          blanco, sin recortes de modal). No hay preview del ERP — el navegador
+          ya muestra su propia vista previa en el diálogo de impresión. */}
+      {printPreview && ot && typeof document !== "undefined" &&
+        createPortal(
+          <div className="ot-print-area">
+            <OTPrintDoc
+              otId={ot.id}
+              secciones={printPreview.secciones}
+              orient={printPreview.orient}
+              autoPrint
+            />
+          </div>,
+          document.body,
         )}
-      </Modal>
       <style>{`
+        .ot-print-area { display: none; }
         @media print {
-          /* Imprimir SOLO el modal de vista previa: ocultar dashboard y demás
-             portales, y neutralizar el modal para que fluya como documento
-             (sin páginas en blanco ni recortes). */
-          body > *:not(.ot-print-modal-root) { display: none !important; }
-          .ot-print-modal-root .ant-modal-mask,
-          .ot-print-modal-root .ant-modal-header,
-          .ot-print-modal-root .ant-modal-footer,
-          .ot-print-modal-root .ant-modal-close { display: none !important; }
-          .ot-print-modal-root,
-          .ot-print-modal-root .ant-modal-wrap,
-          .ot-print-modal-root .ant-modal,
-          .ot-print-modal-root .ant-modal-content,
-          .ot-print-modal-root .ant-modal-body {
-            position: static !important; inset: auto !important; overflow: visible !important;
-            max-height: none !important; height: auto !important; width: auto !important;
-            padding: 0 !important; margin: 0 !important; box-shadow: none !important;
-            transform: none !important; background: #fff !important;
-          }
+          body > *:not(.ot-print-area) { display: none !important; }
+          .ot-print-area { display: block !important; }
         }
       `}</style>
 
