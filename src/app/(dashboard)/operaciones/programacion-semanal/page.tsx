@@ -5,7 +5,8 @@ import {
   Typography, Button, Space, Tag, Card, Modal, Descriptions, Tooltip, message, Empty, DatePicker, Collapse, Segmented, Slider, Alert, Popover, Divider, Select, Popconfirm, Switch, Input, InputNumber, Skeleton, Checkbox,
 } from "antd";
 import { createPortal } from "react-dom";
-import PlanificacionPrintDoc, { PLAN_PRINT_COLS } from "@/components/modules/operaciones/PlanificacionPrintDoc";
+import PlanificacionPrintDoc, { PLAN_PRINT_COLS, exportarPlanificacionSemanaExcel } from "@/components/modules/operaciones/PlanificacionPrintDoc";
+import { FileExcelOutlined } from "@ant-design/icons";
 import {
   CalendarOutlined, LeftOutlined, RightOutlined, UserOutlined, ToolOutlined, AimOutlined,
   SettingOutlined, RollbackOutlined, UnorderedListOutlined, WarningFilled, ZoomInOutlined, ZoomOutOutlined,
@@ -292,6 +293,7 @@ export default function ProgramacionSemanalPage() {
   const [printCols, setPrintCols] = useState<string[]>(PLAN_PRINT_COLS.map((c) => c.key));
   const [printHoriz, setPrintHoriz] = useState(true);
   const [printJob, setPrintJob] = useState<{ id: number; semana: string; columnas: string[]; orient: "vertical" | "horizontal" } | null>(null);
+  const [descargandoExcel, setDescargandoExcel] = useState(false);
   // Al cerrar el diálogo de impresión, desmontar el área de impresión (evita
   // que se re-dispare en una página muy "viva" con timers/tab-sync).
   useEffect(() => {
@@ -2293,6 +2295,8 @@ export default function ProgramacionSemanalPage() {
               <Button size="small" icon={<BgColorsOutlined />}>Leyenda</Button>
             </Popover>
             <Button size="small" icon={<PrinterOutlined />} onClick={() => setPrintModalOpen(true)}>Imprimir</Button>
+            <Button size="small" icon={<FileExcelOutlined />} onClick={() => setPrintModalOpen(true)}
+              style={{ background: "#1d6f42", color: "#fff", borderColor: "#1d6f42" }}>Descargar Excel</Button>
             <span style={{ fontSize: 12, color: brand.textSecondary }}>
               <ZoomOutOutlined /> Zoom
             </span>
@@ -2709,22 +2713,36 @@ export default function ProgramacionSemanalPage() {
       {/* Modal de impresión — misma tabla plana que /planificacion (con selección
           de columnas). El tablero drag-drop no se imprime; se imprime la semana. */}
       <Modal
-        title={`Imprimir programación — Semana ${semanaActual}`}
+        title={`Imprimir / Exportar programación — Semana ${semanaActual}`}
         open={printModalOpen}
         onCancel={() => setPrintModalOpen(false)}
-        okText="Imprimir"
-        okButtonProps={{ icon: <PrinterOutlined />, disabled: printCols.length === 0 }}
-        onOk={() => {
-          if (printCols.length === 0) return;
-          // id incremental → re-monta el doc y permite reimprimir sin recargar.
-          setPrintJob((prev) => ({
-            id: (prev?.id ?? 0) + 1,
-            semana: semanaActual,
-            columnas: [...printCols],
-            orient: printHoriz ? "horizontal" : "vertical",
-          }));
-          setPrintModalOpen(false);
-        }}
+        footer={[
+          <Button key="cancel" onClick={() => setPrintModalOpen(false)}>Cancelar</Button>,
+          <Button
+            key="excel" icon={<FileExcelOutlined />} loading={descargandoExcel}
+            disabled={printCols.length === 0}
+            style={{ background: "#1d6f42", color: "#fff", borderColor: "#1d6f42" }}
+            onClick={async () => {
+              if (printCols.length === 0) return;
+              setDescargandoExcel(true);
+              try {
+                const n = await exportarPlanificacionSemanaExcel(semanaActual, printCols);
+                message.success(`Excel descargado: ${n} tarea(s)`);
+                setPrintModalOpen(false);
+              } catch { message.error("Error al exportar"); }
+              finally { setDescargandoExcel(false); }
+            }}
+          >Descargar Excel</Button>,
+          <Button
+            key="print" type="primary" icon={<PrinterOutlined />}
+            disabled={printCols.length === 0}
+            onClick={() => {
+              if (printCols.length === 0) return;
+              setPrintJob((prev) => ({ id: (prev?.id ?? 0) + 1, semana: semanaActual, columnas: [...printCols], orient: printHoriz ? "horizontal" : "vertical" }));
+              setPrintModalOpen(false);
+            }}
+          >Imprimir</Button>,
+        ]}
         cancelText="Cancelar"
         width={modalWidth(screens, 520)}
       >
