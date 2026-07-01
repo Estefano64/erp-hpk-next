@@ -739,9 +739,17 @@ function RequerimientosDetalleInner({ embebido = false }: { embebido?: boolean }
     setDescuentoModal(0);
     setOtrosModal(0);
     setOtrosSignoModal("+");
+    // Fecha global inicial = la del PRIMER item (misma que la per-item).
+    // Antes se inicializaba a 'hoy + 15 días' sin relación con lo que
+    // aparecía en la columna F. Entrega de la tabla → se veía 'F. Entrega
+    // 07/07' arriba y 'Fecha entrega esperada 16/07' abajo, dos fechas
+    // distintas para la misma OC. Ahora arrancan sincronizadas.
+    const fechaInicial = selectedRecords[0]?.fecha_requerida
+      ? dayjs(selectedRecords[0].fecha_requerida)
+      : dayjs().add(15, "day");
     ocForm.setFieldsValue({
       moneda: "USD",
-      fecha_entrega_esperada: dayjs().add(15, "day"),
+      fecha_entrega_esperada: fechaInicial,
     });
     setModalOpen(true);
   };
@@ -2535,14 +2543,31 @@ function RequerimientosDetalleInner({ embebido = false }: { embebido?: boolean }
               },
               {
                 // Fecha de entrega esperada por item — editable. Inicializada
-                // con fecha_requerida del req. El botón "Aplicar a todos" del
-                // header de la tabla pisa todas con la fecha de cabecera.
+                // con fecha_requerida del req. Vinculada con la fecha global
+                // de cabecera: cambiar una actualiza la otra cuando hay solo
+                // 1 item (o cuando todas las fechas son iguales — así el
+                // usuario no ve dos fechas contradictorias arriba y abajo).
                 title: "F. Entrega", key: "fent", width: 150, align: "center",
                 render: (_, r: Requerimiento) => (
                   <DatePicker
                     size="small"
                     value={fechasItemsModal[r.id] ?? null}
-                    onChange={(d) => setFechasItemsModal((prev) => ({ ...prev, [r.id]: d }))}
+                    onChange={(d) => {
+                      setFechasItemsModal((prev) => {
+                        const next = { ...prev, [r.id]: d };
+                        // Si TODAS las fechas de items (después del cambio)
+                        // quedan iguales, la global también se sincroniza.
+                        const valores = selectedRecords.map((rec) => next[rec.id] ?? null);
+                        const primera = valores[0];
+                        const todasIguales = valores.every((v) =>
+                          v === primera || (v && primera && v.isSame(primera, "day"))
+                        );
+                        if (todasIguales && d) {
+                          ocForm.setFieldsValue({ fecha_entrega_esperada: d });
+                        }
+                        return next;
+                      });
+                    }}
                     format="DD/MM/YYYY"
                     style={{ width: "100%" }}
                     placeholder="Seleccionar fecha"
