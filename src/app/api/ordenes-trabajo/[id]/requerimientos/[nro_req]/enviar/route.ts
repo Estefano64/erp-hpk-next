@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
-import { maybePromoveOTaRecursosSolicitados } from "@/lib/ot-status";
+import { recalcularRecursosStatusOT } from "@/lib/recursos-ot";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string; nro_req: string }> };
@@ -59,8 +59,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           usuario,
         },
       });
-      const promovido = await maybePromoveOTaRecursosSolicitados(tx, otId, usuario);
-      return { enviados: borradores.length, total: items.length, promovido };
+      await recalcularRecursosStatusOT(tx, otId);
+      return { enviados: borradores.length, total: items.length, promovido: true };
     });
 
     return NextResponse.json({ data: result });

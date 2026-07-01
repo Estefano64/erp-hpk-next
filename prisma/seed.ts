@@ -852,14 +852,18 @@ async function main() {
 
   // Recursos Status
   const recursosStatuses = [
-    { codigo: "En revision procesos", nombre: "En revision procesos" },
-    { codigo: "Recursos solicitados", nombre: "Recursos solicitados" },
-    { codigo: "En cotización", nombre: "En cotización" },
-    { codigo: "En aprobación", nombre: "En aprobación" },
-    { codigo: "En espera de recursos", nombre: "En espera de recursos" },
-    { codigo: "Recursos en recepción", nombre: "Recursos en recepción" },
-    { codigo: "Recursos incompletos", nombre: "Recursos incompletos" },
-    { codigo: "Recursos completos", nombre: "Recursos completos" },
+    { codigo: "En revision procesos", nombre: "En revision procesos", activo: true },
+    { codigo: "Recursos solicitados", nombre: "Recursos solicitados", activo: true },
+    { codigo: "En cotización", nombre: "En cotización de RQ", activo: true },
+    { codigo: "En aprobación", nombre: "En aprobación de PO", activo: true },
+    { codigo: "En espera de recursos", nombre: "En espera de recursos", activo: true },
+    { codigo: "Recursos completos", nombre: "Recursos completos", activo: true },
+    { codigo: "Recursos entregados", nombre: "Recursos entregados", activo: true },
+    // Estados retirados del flujo (2026-06): "Recursos en recepción" se absorbe
+    // en "Recursos completos" y "Recursos incompletos" en "En espera de recursos".
+    // Se conservan INACTIVOS por integridad referencial de datos históricos.
+    { codigo: "Recursos en recepción", nombre: "Recursos en recepción", activo: false },
+    { codigo: "Recursos incompletos", nombre: "Recursos incompletos", activo: false },
   ];
   for (const s of recursosStatuses) {
     await prisma.recursosStatus.upsert({ where: { codigo: s.codigo }, update: {}, create: s });

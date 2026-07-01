@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
+import { recalcularRecursosStatusOT, recalcularRecursosStatusOTInterna } from "@/lib/recursos-ot";
 
 export async function POST(req: NextRequest) {
   const token = await getToken({ req });
@@ -103,6 +104,9 @@ export async function POST(req: NextRequest) {
           data: { orden_trabajo_interna_id, tipo_operacion: "Otro", descripcion: descripcionHist, usuario },
         });
       }
+
+      for (const ot_id of otsExternasUnicas) await recalcularRecursosStatusOT(tx, ot_id);
+      for (const iid of otsInternasUnicas) await recalcularRecursosStatusOTInterna(tx, iid);
 
       return {
         desaprobados: candidatos.length,
