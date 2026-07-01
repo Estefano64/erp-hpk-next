@@ -129,6 +129,20 @@ export async function GET(_req: NextRequest, { params }: Params) {
         precio_unitario: rep.precio_unitario,
         moneda: rep.moneda,
         fabricante_codigo: rep.fabricante_codigo,
+        // Fecha de entrega POR ITEM — la que se pone en Crear OC (columna
+        // F. Entrega de la tabla del modal) y persiste en OTRepuesto. Antes
+        // no se enviaba en la response, por eso el editor la mostraba
+        // siempre vacía y al guardar sobrescribía con null.
+        fecha_entrega_esperada: rep.fecha_entrega_esperada,
+        // Overrides que hace Crear OC: si el user ajustó cantidad/precio/
+        // descripción/UM al momento de generar la OC, esos valores se guardan
+        // en estos campos oc_* del OTRepuesto. Sin devolverlos, el editor
+        // caía al valor original del req y "no se veían los cambios".
+        oc_descripcion: rep.oc_descripcion,
+        oc_cantidad: rep.oc_cantidad,
+        oc_precio_unitario: rep.oc_precio_unitario,
+        oc_unidad_medida: rep.oc_unidad_medida,
+        oc_orden_item: rep.oc_orden_item,
         estado: rep.status_oc_codigo
           ? codeToLabel[rep.status_oc_codigo] ?? rep.status_oc_codigo
           : "Pendiente",

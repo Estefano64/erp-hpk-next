@@ -338,19 +338,28 @@ export default function DespachosPage() {
                 : <Tag icon={<WarningOutlined />} color="warning">INCOMPLETO</Tag>,
             },
             {
-              key: "acciones", title: "Acciones", width: 100, fixed: "right", align: "center",
+              key: "acciones", title: "Acciones", width: 130, fixed: "right", align: "center",
               render: (_, g) => (
-                <Tooltip title="Ver detalle de la OT">
-                  <Button
-                    size="small"
-                    type="primary"
-                    icon={<EyeOutlined />}
-                    onClick={() => {
-                      setFiltro(g.ot ?? "");
-                      setVistaModo("detalle");
-                    }}
-                  />
-                </Tooltip>
+                <Space size={4}>
+                  <Tooltip title="Abrir la OT completa (detalle, requerimientos, adjuntos, etc.)">
+                    <Button
+                      size="small"
+                      type="primary"
+                      icon={<EyeOutlined />}
+                      onClick={() => router.push(`/ordenes-trabajo/${g.ot_id}`)}
+                    />
+                  </Tooltip>
+                  <Tooltip title="Ver items de despacho de esta OT (acá mismo)">
+                    <Button
+                      size="small"
+                      icon={<InboxOutlined />}
+                      onClick={() => {
+                        setFiltro(g.ot ?? "");
+                        setVistaModo("detalle");
+                      }}
+                    />
+                  </Tooltip>
+                </Space>
               ),
             },
           ]}

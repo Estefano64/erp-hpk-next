@@ -76,6 +76,11 @@ interface CompraData {
     oc_cantidad?: number | string | null;
     oc_precio_unitario?: number | string | null;
     oc_unidad_medida?: string | null;
+    // Fecha de entrega POR ITEM: puede diferir de la fecha_entrega_esperada
+    // de cabecera (ej. cuando en Crear OC el user pone fechas distintas
+    // por línea). Ahora la API la devuelve — antes se cargaba vacía y al
+    // guardar se perdía.
+    fecha_entrega_esperada?: string | null;
     orden_trabajo?: { id: number; ot: number | string | null; tipo_codigo: string | null } | null;
     orden_trabajo_interna?: { id: number; ot: number | string | null } | null;
   }>;
@@ -149,7 +154,11 @@ export default function EditarOCPage() {
           : 0,
         moneda: it.moneda ?? c.moneda,
         fabricante_codigo: it.fabricante_codigo,
-        fecha_entrega_esperada: null,
+        // Fecha por-item: la que se puso en Crear OC (columna F. Entrega
+        // del modal) o la que el user editó en visitas previas al editor.
+        // Antes se seteaba siempre a null → al guardar el editor pisaba
+        // la fecha original con null.
+        fecha_entrega_esperada: it.fecha_entrega_esperada ?? null,
         // Código formateado de la OT (externa → V/S/REP) o interna (OIxxxxYY).
         _ot_codigo: it.orden_trabajo?.ot != null
           ? formatOtCodigo(it.orden_trabajo.ot as number | string | null, it.orden_trabajo.tipo_codigo, "")
