@@ -22,8 +22,10 @@ export const PLAN_PRINT_COLS: { key: string; label: string }[] = [
   { key: "cliente", label: "Cliente" },
   { key: "tarea", label: "Tarea" },
   { key: "maquina", label: "Máquina" },
-  { key: "horas", label: "Hs" },
-  { key: "fechas", label: "Inicio → Fin" },
+  { key: "hs_est", label: "Hs est." },
+  { key: "hs_real", label: "Hs real" },
+  { key: "plan", label: "Plan (ini→fin)" },
+  { key: "real", label: "Real (ini→fin)" },
   { key: "estado", label: "Estado" },
 ];
 
@@ -36,6 +38,7 @@ interface Props {
 
 export default function PlanificacionPrintDoc({ semana, columnas, orient = "vertical", autoPrint = false }: Props) {
   const [rows, setRows] = useState<Dict[]>([]);
+  const [maquinas, setMaquinas] = useState<Map<string, string>>(new Map());
   const [cargando, setCargando] = useState(true);
 
   useEffect(() => {
@@ -43,9 +46,15 @@ export default function PlanificacionPrintDoc({ semana, columnas, orient = "vert
     setCargando(true);
     (async () => {
       try {
-        const r = await fetch(`/api/planificacion?semana=${encodeURIComponent(semana)}`);
-        const j = r.ok ? await r.json() : null;
-        if (!cancel) { setRows(j?.data ?? []); setCargando(false); }
+        const j = async (url: string) => { const r = await fetch(url); return r.ok ? r.json() : null; };
+        const [plan, eq] = await Promise.all([
+          j(`/api/planificacion?semana=${encodeURIComponent(semana)}`),
+          j(`/api/equipos?limit=10000&tipo=MAQ`),
+        ]);
+        if (cancel) return;
+        setRows(plan?.data ?? []);
+        setMaquinas(new Map(((eq?.data ?? []) as { codigo: string; descripcion: string }[]).map((e) => [e.codigo, e.descripcion])));
+        setCargando(false);
       } catch {
         if (!cancel) { setRows([]); setCargando(false); }
       }
@@ -70,6 +79,8 @@ export default function PlanificacionPrintDoc({ semana, columnas, orient = "vert
 
   const cols = PLAN_PRINT_COLS.filter((c) => columnas.includes(c.key));
   const fld = (v: unknown) => (v == null || v === "" ? "—" : String(v));
+  const fd = (v: unknown) => (v ? formatDateOnlyShort(v as string) : "—");
+  const esNum = (k: string) => k === "hs_est" || k === "hs_real";
 
   const cell = (r: Dict, key: string) => {
     const otr = r.orden_trabajo as Dict | null;
@@ -78,9 +89,11 @@ export default function PlanificacionPrintDoc({ semana, columnas, orient = "vert
       case "ot": return fld(otr?.ot);
       case "cliente": { const c = otr?.cliente as Dict | null; return fld(c?.nombre_comercial ?? c?.razon_social); }
       case "tarea": return fld(r.descripcion ?? r.operacion_codigo);
-      case "maquina": return fld(r.maquina);
-      case "horas": return fld(r.horas_estimadas);
-      case "fechas": return `${r.fecha_inicio ? formatDateOnlyShort(r.fecha_inicio as string) : "—"} → ${r.fecha_fin ? formatDateOnlyShort(r.fecha_fin as string) : "—"}`;
+      case "maquina": { const cod = r.maquina as string | null; return cod ? (maquinas.get(cod) ?? cod) : "—"; }
+      case "hs_est": return fld(r.horas_estimadas);
+      case "hs_real": return fld(r.horas_reales);
+      case "plan": return `${fd(r.fecha_inicio)} → ${fd(r.fecha_fin)}`;
+      case "real": return `${fd(r.fecha_inicio_real)} → ${fd(r.fecha_fin_real)}`;
       case "estado": return fld(r.estado);
       default: return "—";
     }
@@ -105,11 +118,11 @@ export default function PlanificacionPrintDoc({ semana, columnas, orient = "vert
 
         {rows.length === 0 ? <p className="muted">Sin tareas en la semana.</p> : (
           <table className="data">
-            <thead><tr>{cols.map((c) => <th key={c.key} className={c.key === "horas" ? "r" : ""}>{c.label}</th>)}</tr></thead>
+            <thead><tr>{cols.map((c) => <th key={c.key} className={esNum(c.key) ? "r" : ""}>{c.label}</th>)}</tr></thead>
             <tbody>
               {ordenadas.map((r, i) => (
                 <tr key={i}>
-                  {cols.map((c) => <td key={c.key} className={c.key === "horas" ? "r" : ""}>{cell(r, c.key)}</td>)}
+                  {cols.map((c) => <td key={c.key} className={esNum(c.key) ? "r" : ""}>{cell(r, c.key)}</td>)}
                 </tr>
               ))}
             </tbody>
@@ -128,7 +141,7 @@ export default function PlanificacionPrintDoc({ semana, columnas, orient = "vert
         .plan-print-doc table.data th { background: #14324f; color: #fff; text-align: left; padding: 4px 6px; font-size: 10px; }
         .plan-print-doc table.data td { padding: 3px 6px; border-bottom: 1px solid #e5e5e5; }
         .plan-print-doc table.data tr:nth-child(even) td { background: #fafbfc; }
-        .plan-print-doc table.data .r { text-align: right; }
+        .plan-print-doc table.data th.r, .plan-print-doc table.data td.r { text-align: right; }
         .plan-print-doc .muted { color: #999; }
         @media print {
           .plan-print-doc table.data tr { break-inside: avoid; }

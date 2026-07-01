@@ -251,7 +251,8 @@ export default function PlanificacionPage() {
   // Impresión de la semana: modal de columnas + job para el área de impresión.
   const [printOpen, setPrintOpen] = useState(false);
   const [printCols, setPrintCols] = useState<string[]>(PLAN_PRINT_COLS.map((c) => c.key));
-  const [printJob, setPrintJob] = useState<{ id: number; semana: string; columnas: string[] } | null>(null);
+  const [printHoriz, setPrintHoriz] = useState(true);
+  const [printJob, setPrintJob] = useState<{ id: number; semana: string; columnas: string[]; orient: "vertical" | "horizontal" } | null>(null);
   const [filterEstado, setFilterEstado] = useState<string | undefined>();
   // Por defecto solo se cargan las tareas con estado general "Abierto" (activas:
   // sin terminar ni anular) — es lo que el planner trabaja a diario. Para ver
@@ -2164,7 +2165,12 @@ export default function PlanificacionPage() {
         onOk={() => {
           if (!filterSemana || printCols.length === 0) return;
           // id incremental → fuerza re-montar el doc y re-imprimir sin recargar.
-          setPrintJob((prev) => ({ id: (prev?.id ?? 0) + 1, semana: filterSemana, columnas: [...printCols] }));
+          setPrintJob((prev) => ({
+            id: (prev?.id ?? 0) + 1,
+            semana: filterSemana,
+            columnas: [...printCols],
+            orient: printHoriz ? "horizontal" : "vertical",
+          }));
           setPrintOpen(false);
         }}
       >
@@ -2177,6 +2183,11 @@ export default function PlanificacionPage() {
           options={PLAN_PRINT_COLS.map((c) => ({ label: c.label, value: c.key }))}
           style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}
         />
+        <div style={{ marginTop: 16, borderTop: `1px solid ${brand.border}`, paddingTop: 12 }}>
+          <Checkbox checked={printHoriz} onChange={(e) => setPrintHoriz(e.target.checked)}>
+            Orientación horizontal (recomendado con muchas columnas)
+          </Checkbox>
+        </div>
       </Modal>
 
       {/* Área de impresión oculta (porteada a body) — se imprime sola. El `key`
@@ -2184,7 +2195,7 @@ export default function PlanificacionPage() {
       {printJob && typeof document !== "undefined" &&
         createPortal(
           <div className="ot-print-area">
-            <PlanificacionPrintDoc key={printJob.id} semana={printJob.semana} columnas={printJob.columnas} orient="vertical" autoPrint />
+            <PlanificacionPrintDoc key={printJob.id} semana={printJob.semana} columnas={printJob.columnas} orient={printJob.orient} autoPrint />
           </div>,
           document.body,
         )}
