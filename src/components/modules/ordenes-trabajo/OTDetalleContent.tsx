@@ -49,6 +49,7 @@ import OTRequerimientosTab from "./OTRequerimientosTab";
 import OTCostosTab from "./OTCostosTab";
 import { DescargarOTExcelButton } from "@/components/DescargarOTExcelButton";
 import { MaterialQuickCreateModal } from "@/components/modules/materiales/MaterialQuickCreateModal";
+import OTPrintDoc from "@/components/modules/ordenes-trabajo/OTPrintDoc";
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -279,10 +280,12 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   // Buscador + modal de creación de material para el Select "Código de Material".
   const [matSearch, setMatSearch] = useState("");
   const [matModalOpen, setMatModalOpen] = useState(false);
-  // Modal "Imprimir OT": selección de secciones + orientación.
+  // Modal "Imprimir OT": selección de secciones + orientación, y previsualización.
   const [printOpen, setPrintOpen] = useState(false);
   const [printSecc, setPrintSecc] = useState<string[]>(["resumen", "tareas", "requerimientos"]);
   const [printHoriz, setPrintHoriz] = useState(false);
+  // Datos de la impresión en curso (null = sin previsualización abierta).
+  const [printPreview, setPrintPreview] = useState<{ secciones: string[]; orient: "vertical" | "horizontal" } | null>(null);
 
   const fetchOT = useCallback(async () => {
     if (!otId) return;
@@ -1693,12 +1696,11 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
         title={`Imprimir OT ${ot ? formatOtCodigo(ot.ot, ot.tipo_codigo, "") : ""}`}
         open={printOpen}
         onCancel={() => setPrintOpen(false)}
-        okText="Imprimir"
+        okText="Previsualizar"
         okButtonProps={{ icon: <PrinterOutlined />, disabled: printSecc.length === 0 }}
         onOk={() => {
           if (!ot || printSecc.length === 0) return;
-          const url = `/ordenes-trabajo/${ot.id}/imprimir?secciones=${printSecc.join(",")}&orient=${printHoriz ? "horizontal" : "vertical"}`;
-          window.open(url, "_blank");
+          setPrintPreview({ secciones: printSecc, orient: printHoriz ? "horizontal" : "vertical" });
           setPrintOpen(false);
         }}
       >
@@ -1720,6 +1722,27 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
             Orientación horizontal (para tablas anchas: Costos / Requerimientos)
           </Checkbox>
         </div>
+      </Modal>
+
+      {/* Previsualización de impresión (a pantalla completa). El CSS de print de
+          OTPrintDoc imprime SOLO el documento (oculta el resto). */}
+      <Modal
+        title="Vista previa de impresión"
+        open={!!printPreview}
+        onCancel={() => setPrintPreview(null)}
+        width="90%"
+        style={{ top: 20 }}
+        styles={{ body: { maxHeight: "78vh", overflow: "auto", background: "#f5f5f5", padding: 16 } }}
+        footer={[
+          <Button key="cerrar" onClick={() => setPrintPreview(null)}>Cerrar</Button>,
+          <Button key="print" type="primary" icon={<PrinterOutlined />} onClick={() => window.print()}>Imprimir</Button>,
+        ]}
+      >
+        {printPreview && ot && (
+          <div style={{ background: "#fff", padding: 24, maxWidth: 900, margin: "0 auto", boxShadow: "0 1px 6px rgba(0,0,0,.15)" }}>
+            <OTPrintDoc otId={ot.id} secciones={printPreview.secciones} orient={printPreview.orient} />
+          </div>
+        )}
       </Modal>
 
       {/* Crear material al vuelo desde el Select "Código de Material". */}
