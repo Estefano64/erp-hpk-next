@@ -279,6 +279,10 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   // Buscador + modal de creación de material para el Select "Código de Material".
   const [matSearch, setMatSearch] = useState("");
   const [matModalOpen, setMatModalOpen] = useState(false);
+  // Modal "Imprimir OT": selección de secciones + orientación.
+  const [printOpen, setPrintOpen] = useState(false);
+  const [printSecc, setPrintSecc] = useState<string[]>(["resumen", "tareas", "requerimientos"]);
+  const [printHoriz, setPrintHoriz] = useState(false);
 
   const fetchOT = useCallback(async () => {
     if (!otId) return;
@@ -770,16 +774,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
         {/* ── Barra de acciones ── */}
         <div className="ot-print-hide" style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 16 }}>
           {ot && <DescargarOTExcelButton otId={ot.id} tipo="externa" />}
-          <Button
-            icon={<PrinterOutlined />}
-            onClick={() => {
-              document.body.classList.add("ot-printing");
-              setTimeout(() => {
-                window.print();
-                document.body.classList.remove("ot-printing");
-              }, 100);
-            }}
-          >
+          <Button icon={<PrinterOutlined />} onClick={() => setPrintOpen(true)}>
             Imprimir
           </Button>
           <Button
@@ -1692,6 +1687,40 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
           `}</style>
         </div>
       )}
+
+      {/* Imprimir OT: elegir secciones + orientación → abre la vista de impresión. */}
+      <Modal
+        title={`Imprimir OT ${ot ? formatOtCodigo(ot.ot, ot.tipo_codigo, "") : ""}`}
+        open={printOpen}
+        onCancel={() => setPrintOpen(false)}
+        okText="Imprimir"
+        okButtonProps={{ icon: <PrinterOutlined />, disabled: printSecc.length === 0 }}
+        onOk={() => {
+          if (!ot || printSecc.length === 0) return;
+          const url = `/ordenes-trabajo/${ot.id}/imprimir?secciones=${printSecc.join(",")}&orient=${printHoriz ? "horizontal" : "vertical"}`;
+          window.open(url, "_blank");
+          setPrintOpen(false);
+        }}
+      >
+        <p style={{ marginTop: 0, color: brand.textSecondary }}>¿Qué secciones incluir?</p>
+        <Checkbox.Group
+          value={printSecc}
+          onChange={(v) => setPrintSecc(v as string[])}
+          options={[
+            { label: "Resumen (datos de la OT)", value: "resumen" },
+            { label: "Tareas (planificación)", value: "tareas" },
+            { label: "Requerimientos", value: "requerimientos" },
+            { label: "Costos", value: "costos" },
+            { label: "Historial", value: "historial" },
+          ]}
+          style={{ display: "flex", flexDirection: "column", gap: 8 }}
+        />
+        <div style={{ marginTop: 16, borderTop: `1px solid ${brand.border}`, paddingTop: 12 }}>
+          <Checkbox checked={printHoriz} onChange={(e) => setPrintHoriz(e.target.checked)}>
+            Orientación horizontal (para tablas anchas: Costos / Requerimientos)
+          </Checkbox>
+        </div>
+      </Modal>
 
       {/* Crear material al vuelo desde el Select "Código de Material". */}
       <MaterialQuickCreateModal
