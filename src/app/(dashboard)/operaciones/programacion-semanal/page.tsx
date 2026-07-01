@@ -292,6 +292,13 @@ export default function ProgramacionSemanalPage() {
   const [printCols, setPrintCols] = useState<string[]>(PLAN_PRINT_COLS.map((c) => c.key));
   const [printHoriz, setPrintHoriz] = useState(true);
   const [printJob, setPrintJob] = useState<{ id: number; semana: string; columnas: string[]; orient: "vertical" | "horizontal" } | null>(null);
+  // Al cerrar el diálogo de impresión, desmontar el área de impresión (evita
+  // que se re-dispare en una página muy "viva" con timers/tab-sync).
+  useEffect(() => {
+    const done = () => setPrintJob(null);
+    window.addEventListener("afterprint", done);
+    return () => window.removeEventListener("afterprint", done);
+  }, []);
   const [panning, setPanning] = useState<{ initialX: number; initialScroll: number } | null>(null);
   // Drag con pointer events (más fluido que HTML5 drag)
   const [drag, setDrag] = useState<{

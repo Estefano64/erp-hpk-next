@@ -253,6 +253,12 @@ export default function PlanificacionPage() {
   const [printCols, setPrintCols] = useState<string[]>(PLAN_PRINT_COLS.map((c) => c.key));
   const [printHoriz, setPrintHoriz] = useState(true);
   const [printJob, setPrintJob] = useState<{ id: number; semana: string; columnas: string[]; orient: "vertical" | "horizontal" } | null>(null);
+  // Al cerrar el diálogo de impresión, desmontar el área de impresión.
+  useEffect(() => {
+    const done = () => setPrintJob(null);
+    window.addEventListener("afterprint", done);
+    return () => window.removeEventListener("afterprint", done);
+  }, []);
   const [filterEstado, setFilterEstado] = useState<string | undefined>();
   // Por defecto solo se cargan las tareas con estado general "Abierto" (activas:
   // sin terminar ni anular) — es lo que el planner trabaja a diario. Para ver

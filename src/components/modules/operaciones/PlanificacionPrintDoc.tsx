@@ -5,7 +5,7 @@
 // El "ocultar todo lo demás" al imprimir lo maneja el contenedor (portal a body
 // en la página de planificación), igual que OTPrintDoc.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import dayjs from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
 import { splitRecursos } from "@/lib/recursos";
@@ -62,11 +62,15 @@ export default function PlanificacionPrintDoc({ semana, columnas, orient = "vert
     return () => { cancel = true; };
   }, [semana]);
 
+  // Imprime UNA sola vez por montaje (el `key` del padre re-monta para reimprimir).
+  // El ref evita bucles si el componente re-renderiza en páginas muy "vivas"
+  // (tablero con timers/tab-sync).
+  const printedRef = useRef(false);
   useEffect(() => {
-    if (autoPrint && !cargando) {
-      const t = setTimeout(() => window.print(), 400);
-      return () => clearTimeout(t);
-    }
+    if (!autoPrint || cargando || printedRef.current) return;
+    printedRef.current = true;
+    const t = setTimeout(() => window.print(), 400);
+    return () => clearTimeout(t);
   }, [autoPrint, cargando]);
 
   const rango = useMemo(() => {
