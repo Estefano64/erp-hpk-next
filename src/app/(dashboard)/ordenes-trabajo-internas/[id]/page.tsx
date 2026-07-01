@@ -22,7 +22,7 @@ import OTInternaAdjuntosTab from "@/components/modules/ordenes-trabajo-internas/
 import OTInternaRequerimientosTab from "@/components/modules/ordenes-trabajo-internas/OTInternaRequerimientosTab";
 import OTInternaHistorialTab from "@/components/modules/ordenes-trabajo-internas/OTInternaHistorialTab";
 import OTCostosTab from "@/components/modules/ordenes-trabajo/OTCostosTab";
-import { DescargarOTExcelButton } from "@/components/DescargarOTExcelButton";
+import { DescargarOTWordButton } from "@/components/DescargarOTWordButton";
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -491,16 +491,21 @@ export default function OTInternaDetallePage() {
                 </Button>
               </>
             )}
-            <DescargarOTExcelButton otId={ot.id} tipo="interna" />
-            <Tooltip title="Descarga el PDF en formato HPK-M-F-07 (Reporte de Mantenimiento Correctivo) con los datos de esta OT interna. Los adjuntos se listan por nombre.">
-              <Button
-                icon={<FilePdfOutlined />}
-                onClick={() => window.open(`/api/ordenes-trabajo-internas/${ot.id}/reporte-correctivo/pdf`, "_blank")}
-                style={{ background: "#cf1322", color: "#fff", borderColor: "#cf1322" }}
-              >
-                Reporte Correctivo (PDF)
-              </Button>
-            </Tooltip>
+            <DescargarOTWordButton otId={ot.id} tipo="interna" />
+            {/* El botón 'Reporte Correctivo (PDF)' solo aparece si esta OT
+                interna es de mantenimiento (solicitud_mantenimiento=true) —
+                el formato HPK-M-F-07 no aplica a otros tipos de OT interna. */}
+            {ot.solicitud_mantenimiento && (
+              <Tooltip title="Descarga el PDF en formato HPK-M-F-07 (Reporte de Mantenimiento Correctivo) con los datos de esta OT interna. Los adjuntos se listan por nombre.">
+                <Button
+                  icon={<FilePdfOutlined />}
+                  onClick={() => window.open(`/api/ordenes-trabajo-internas/${ot.id}/reporte-correctivo/pdf`, "_blank")}
+                  style={{ background: "#cf1322", color: "#fff", borderColor: "#cf1322" }}
+                >
+                  Reporte Correctivo (PDF)
+                </Button>
+              </Tooltip>
+            )}
             <Button
               icon={<ArrowLeftOutlined />}
               onClick={() => router.push("/ordenes-trabajo-internas")}
