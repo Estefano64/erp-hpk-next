@@ -402,6 +402,10 @@ export function ExportarExcelButton<T>({
 
   const todasMarcadas = selectedCols.length === columns.length;
   const ningunaMarcada = selectedCols.length === 0;
+  // Cuando "Respetar layout" está activo, las columnas del .xlsx las define la
+  // tabla (visibles + orden), así que la selección manual de abajo no aplica →
+  // se deshabilita para no confundir al usuario.
+  const columnasBloqueadas = !!tablaLayout && respetarLayout;
 
   return (
     <>
@@ -427,7 +431,9 @@ export function ExportarExcelButton<T>({
         footer={
           <Space>
             <Text type="secondary" style={{ fontSize: 12 }}>
-              {selectedCols.length} de {columns.length} columna(s) seleccionada(s)
+              {columnasBloqueadas
+                ? "Columnas: según el layout de la tabla"
+                : `${selectedCols.length} de ${columns.length} columna(s) seleccionada(s)`}
             </Text>
             <Button onClick={() => setOpen(false)}>Cancelar</Button>
             <Button
@@ -624,26 +630,34 @@ export function ExportarExcelButton<T>({
 
         <Divider style={{ margin: `${spc.sm}px 0` }} />
 
-        {/* Selección de columnas */}
+        {/* Selección de columnas. Si "Respetar layout" está activo, las columnas
+            las define la tabla → deshabilitamos esta sección para no confundir. */}
         <div style={{ marginBottom: spc.sm, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <Text strong>Columnas a exportar</Text>
           <Space size={4}>
             <Button
               size="small" type="link"
               onClick={() => setSelectedCols(allKeys)}
-              disabled={todasMarcadas}
+              disabled={columnasBloqueadas || todasMarcadas}
             >
               Marcar todas
             </Button>
             <Button
               size="small" type="link" danger
               onClick={() => setSelectedCols([])}
-              disabled={ningunaMarcada}
+              disabled={columnasBloqueadas || ningunaMarcada}
             >
               Desmarcar todas
             </Button>
           </Space>
         </div>
+
+        {columnasBloqueadas && (
+          <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: spc.sm }}>
+            Las columnas las define el <b>layout de la tabla</b> (las visibles, en su orden).
+            Desmarcá <b>&quot;Respetar layout actual de la tabla&quot;</b> arriba para elegirlas a mano.
+          </Text>
+        )}
 
         <Input
           placeholder="Buscar columna..."
@@ -651,6 +665,7 @@ export function ExportarExcelButton<T>({
           value={colSearch}
           onChange={(e) => setColSearch(e.target.value)}
           allowClear
+          disabled={columnasBloqueadas}
           style={{ marginBottom: spc.sm }}
         />
 
@@ -661,11 +676,13 @@ export function ExportarExcelButton<T>({
             border: `1px solid ${brand.border}`,
             borderRadius: 4,
             padding: spc.sm,
+            opacity: columnasBloqueadas ? 0.5 : 1,
           }}
         >
           <Checkbox.Group
             value={selectedCols}
             onChange={(vals) => setSelectedCols(vals as string[])}
+            disabled={columnasBloqueadas}
             style={{ width: "100%" }}
           >
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>

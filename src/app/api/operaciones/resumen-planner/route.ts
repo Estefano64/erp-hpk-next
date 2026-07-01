@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import dayjs from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
 import utc from "dayjs/plugin/utc";
@@ -23,12 +23,18 @@ const TZ = "America/Lima";
 //     sesión pausada y el inicio de la siguiente del mismo técnico ese día —
 //     si no retomó ese día no se cuenta, así fin de jornada no infla).
 //   - alertas: OTs atrasadas / por vencer (7 días) + pool sin asignar.
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const ahora = dayjs().tz(TZ);
-    const semIni = ahora.startOf("isoWeek").toDate();
-    const semFin = ahora.endOf("isoWeek").toDate();
-    const semanaActual = `${ahora.isoWeekYear()}W${String(ahora.isoWeek()).padStart(2, "0")}`;
+    // Semana objetivo: por defecto la actual; si viene ?semana=YYYYWww se usa esa
+    // para las secciones "plan vs real" y "pausas". "Trabajando ahora" y las
+    // alertas (atrasadas/por vencer) siguen siendo EN VIVO (no dependen de esto).
+    const semanaParam = req.nextUrl.searchParams.get("semana");
+    const m = semanaParam?.match(/^(\d{4})W(\d{1,2})$/);
+    const semBase = m ? ahora.year(Number(m[1])).isoWeek(Number(m[2])) : ahora;
+    const semIni = semBase.startOf("isoWeek").toDate();
+    const semFin = semBase.endOf("isoWeek").toDate();
+    const semanaActual = `${semBase.isoWeekYear()}W${String(semBase.isoWeek()).padStart(2, "0")}`;
 
     // ── Trabajando ahora ─────────────────────────────────────────────────
     const sesionesAbiertas = await prisma.planificacionOTSesion.findMany({

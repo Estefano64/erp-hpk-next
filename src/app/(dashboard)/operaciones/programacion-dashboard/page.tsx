@@ -380,14 +380,19 @@ interface ResumenData {
 function ResumenPlanner() {
   const [data, setData] = useState<ResumenData | null>(null);
   const [loading, setLoading] = useState(true);
+  // Semana objetivo para "plan vs real" y "pausas". "Trabajando ahora" y las
+  // alertas siguen en vivo (el endpoint no las filtra por semana).
+  const [semanaDate, setSemanaDate] = useState<Dayjs>(() => dayjs().startOf("isoWeek"));
+  const semana = semanaCodigo(semanaDate);
+  const esSemanaActual = semana === semanaCodigo(dayjs());
   const fetchResumen = useCallback(async () => {
     try {
-      const res = await fetch("/api/operaciones/resumen-planner");
+      const res = await fetch(`/api/operaciones/resumen-planner?semana=${encodeURIComponent(semana)}`);
       if (res.ok) setData(await res.json());
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [semana]);
   useEffect(() => {
     fetchResumen();
     const id = setInterval(fetchResumen, 60_000);
@@ -411,6 +416,27 @@ function ResumenPlanner() {
   const diasDiff = (fecha: string) => dayjs().startOf("day").diff(dayjs(dateOnlyLocal(fecha)), "day");
 
   return (
+    <>
+    {/* ── Selector de semana (afecta "plan vs real" y "pausas") ── */}
+    <Card size="small" style={{ marginBottom: space.sm }} styles={{ body: { padding: 10 } }}>
+      <Space wrap align="center">
+        <Text strong style={{ fontSize: 13 }}>Semana:</Text>
+        <DatePicker
+          picker="week"
+          value={semanaDate}
+          onChange={(d) => d && setSemanaDate(d.startOf("isoWeek"))}
+          format={(v) => `Semana ${v.isoWeek()}, ${v.isoWeekYear()}`}
+          allowClear={false}
+          style={{ minWidth: 180 }}
+        />
+        {!esSemanaActual && (
+          <Button size="small" onClick={() => setSemanaDate(dayjs().startOf("isoWeek"))}>Esta semana</Button>
+        )}
+        <Text type="secondary" style={{ fontSize: 11 }}>
+          Aplica a &quot;plan vs real&quot; y &quot;horas de paro&quot;. &quot;Trabajando ahora&quot; es en vivo.
+        </Text>
+      </Space>
+    </Card>
     <Row gutter={[12, 12]}>
       {/* ── Trabajando ahora (en vivo) ── */}
       <Col xs={24} lg={12}>
@@ -557,6 +583,7 @@ function ResumenPlanner() {
         </Card>
       </Col>
     </Row>
+    </>
   );
 }
 

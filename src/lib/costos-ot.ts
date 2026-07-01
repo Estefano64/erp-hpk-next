@@ -551,3 +551,137 @@ export async function calcularCostosOT(
     },
   };
 }
+
+// ── Resumen de costos BATCH (para columnas del listado de OTs) ──────────────
+// Calcula, para un conjunto de OTs externas, solo los TOTALES por moneda que se
+// muestran como columnas: Estrategia, Estimado, Real (todos incluyen HH) y HH
+// (mano de obra real, aparte). Es un cálculo batcheado (cantidad de queries
+// CONSTANTE, no una por OT) para poder usarse en el listado sin matarlo.
+
+export interface CostosResumenOT {
+  estrategia: MonedaTotales; // estándar del template (incluye HH template)
+  estimado: MonedaTotales;   // plan de la OT (incluye HH estimado)
+  real: MonedaTotales;       // ejecutado (incluye HH real)
+  hh: MonedaTotales;         // solo mano de obra real (subset de `real`)
+}
+
+export async function calcularCostosResumenBatch(
+  prisma: PrismaClient,
+  otIds: number[],
+): Promise<Map<number, CostosResumenOT>> {
+  const out = new Map<number, CostosResumenOT>();
+  const ids = [...new Set(otIds.filter((n) => Number.isFinite(n) && n > 0))];
+  for (const id of ids) out.set(id, { estrategia: {}, estimado: {}, real: {}, hh: {} });
+  if (ids.length === 0) return out;
+
+  // ── Reqs: estimado (cantidad×precio) + real (recibido×precio) ──
+  const reps = await prisma.oTRepuesto.findMany({
+    where: { ot_id: { in: ids } },
+    select: {
+      ot_id: true, cantidad: true, cantidad_recibida: true, precio_unitario: true,
+      moneda: true, status_requerimiento_codigo: true, status_oc_codigo: true, solo_para_oc: true,
+    },
+  });
+  for (const r of reps) {
+    if (r.ot_id == null || r.solo_para_oc === true) continue;
+    if (r.status_requerimiento_codigo === "ANULADO" || r.status_requerimiento_codigo === "DESAPROBADO" || r.status_oc_codigo === "ANULADO") continue;
+    const acc = out.get(r.ot_id); if (!acc) continue;
+    const moneda = r.moneda ?? "USD";
+    const precio = dec(r.precio_unitario);
+    sumarMoneda(acc.estimado, moneda, dec(r.cantidad) * precio);
+    sumarMoneda(acc.real, moneda, dec(r.cantidad_recibida) * precio);
+  }
+
+  // ── HH: real (sesiones cerradas × costo) + estimado (horas_estimadas × tasa) ──
+  const planos = await prisma.planificacionOT.findMany({
+    where: { ot_id: { in: ids } },
+    select: {
+      ot_id: true, tecnico: true, horas_extras: true, horas_estimadas: true,
+      sesiones: { select: { tecnico: true, inicio: true, fin: true } },
+    },
+  });
+  const tecnicos = new Set<string>();
+  for (const p of planos) {
+    if (p.tecnico) tecnicos.add(p.tecnico);
+    for (const s of p.sesiones) if (s.tecnico) tecnicos.add(s.tecnico);
+  }
+  const trabajadores = tecnicos.size > 0
+    ? await prisma.trabajador.findMany({ where: { nombre: { in: [...tecnicos] } }, select: { nombre: true, costo_hora_hombre: true, costo_hora_extra: true } })
+    : [];
+  const costoTec = new Map(trabajadores.map((t) => [t.nombre, { normal: dec(t.costo_hora_hombre), extra: dec(t.costo_hora_extra) }]));
+  for (const p of planos) {
+    if (p.ot_id == null) continue;
+    const acc = out.get(p.ot_id); if (!acc) continue;
+    // HH real por técnico (sesiones cerradas).
+    const agg = new Map<string, { hn: number; he: number }>();
+    for (const s of p.sesiones) {
+      if (!s.fin) continue;
+      const horas = (s.fin.getTime() - s.inicio.getTime()) / (1000 * 60 * 60);
+      if (!Number.isFinite(horas) || horas <= 0) continue;
+      const cur = agg.get(s.tecnico) ?? { hn: 0, he: 0 };
+      if (p.horas_extras) cur.he += horas; else cur.hn += horas;
+      agg.set(s.tecnico, cur);
+    }
+    let realHH = 0;
+    for (const [tec, h] of agg) {
+      const c = costoTec.get(tec) ?? { normal: 0, extra: 0 };
+      realHH += h.hn * c.normal + h.he * c.extra;
+    }
+    if (realHH > 0) { sumarMoneda(acc.hh, MONEDA_HH, realHH); sumarMoneda(acc.real, MONEDA_HH, realHH); }
+    // HH estimado (tarifa × horas_estimadas).
+    const horasEstim = dec(p.horas_estimadas);
+    if (horasEstim > 0 && p.tecnico) {
+      const c = costoTec.get(p.tecnico) ?? { normal: 0, extra: 0 };
+      sumarMoneda(acc.estimado, MONEDA_HH, horasEstim * (p.horas_extras ? c.extra : c.normal));
+    }
+  }
+
+  // ── Estrategia: template del cod_rep (Tarea + OperacionCodRep horas × tarifa) ──
+  const ots = await prisma.ordenTrabajo.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, codigo_reparacion: { select: { codigo: true } } },
+  });
+  const codRepByOt = new Map<number, string>();
+  const codRepSet = new Set<string>();
+  for (const o of ots) {
+    const c = o.codigo_reparacion?.codigo;
+    if (c) { codRepByOt.set(o.id, c); codRepSet.add(c); }
+  }
+  if (codRepSet.size > 0) {
+    const codReps = [...codRepSet];
+    const [tareas, operaciones, config] = await Promise.all([
+      prisma.tarea.findMany({ where: { cod_rep_codigo: { in: codReps } }, select: { cod_rep_codigo: true, tipo_codigo: true, material_codigo: true, requerimiento: true, precio: true } }),
+      prisma.operacionCodRep.findMany({ where: { cod_rep_codigo: { in: codReps }, activo: true }, select: { cod_rep_codigo: true, horas: true } }),
+      prisma.configuracionCotizacion.findFirst({ select: { tarifa_hora_sol: true } }),
+    ]);
+    const tarifa = dec(config?.tarifa_hora_sol) || 100;
+    const matSinPrecio = [...new Set(tareas.filter((t) => t.material_codigo && dec(t.precio) <= 0).map((t) => t.material_codigo!))];
+    const matsCat = matSinPrecio.length > 0
+      ? await prisma.material.findMany({ where: { codigo: { in: matSinPrecio } }, select: { codigo: true, precio: true, moneda_codigo: true } })
+      : [];
+    const precioCat = new Map(matsCat.map((m) => [m.codigo, { precio: dec(m.precio), moneda: m.moneda_codigo ?? "USD" }]));
+    // Agrupar template por cod_rep.
+    const tareasByRep = new Map<string, typeof tareas>();
+    for (const t of tareas) { const a = tareasByRep.get(t.cod_rep_codigo!) ?? []; a.push(t); tareasByRep.set(t.cod_rep_codigo!, a); }
+    const horasByRep = new Map<string, number>();
+    for (const o of operaciones) horasByRep.set(o.cod_rep_codigo, (horasByRep.get(o.cod_rep_codigo) ?? 0) + dec(o.horas));
+    for (const [otId, codRep] of codRepByOt) {
+      const acc = out.get(otId); if (!acc) continue;
+      for (const t of tareasByRep.get(codRep) ?? []) {
+        const reqQty = dec(t.requerimiento);
+        const cant = t.tipo_codigo === "SER" && reqQty <= 0 ? 1 : reqQty;
+        let precio = dec(t.precio), moneda = "USD";
+        if (precio <= 0 && t.material_codigo) {
+          const c = precioCat.get(t.material_codigo);
+          if (c && c.precio > 0) { precio = c.precio; moneda = c.moneda; }
+        }
+        const sub = cant * precio;
+        if (sub > 0) sumarMoneda(acc.estrategia, moneda, sub);
+      }
+      const horasTotal = horasByRep.get(codRep) ?? 0;
+      if (horasTotal > 0) sumarMoneda(acc.estrategia, MONEDA_HH, horasTotal * tarifa);
+    }
+  }
+
+  return out;
+}
