@@ -337,7 +337,20 @@ export function DescargarOTWordButton({ otId, tipo, children }: Props) {
           ],
         });
 
-      // Tabla genérica con encabezados custom.
+      // Celda con shading gris muy suave (para zebra rows).
+      const cellTextZebra = (text: string, opts: { bold?: boolean; align?: AlignType } = {}) =>
+        new TableCell({
+          margins: CELL_MARGIN,
+          borders: CELL_BORDERS,
+          shading: { type: ShadingType.CLEAR, fill: "F5F7FA", color: "auto" },
+          children: [new Paragraph({
+            alignment: opts.align ?? AlignmentType.LEFT,
+            children: [new TextRun({ text: text || "—", bold: opts.bold ?? false, size: 20 })],
+          })],
+        });
+
+      // Tabla genérica con encabezados custom y filas alternadas (zebra).
+      // Ayuda a leer tablas anchas cuando las columnas quedan angostas.
       const tablaGrid = (headers: string[], rows: string[][], colAligns?: AlignType[]) =>
         new Table({
           width: { size: 100, type: WidthType.PERCENTAGE },
@@ -346,8 +359,10 @@ export function DescargarOTWordButton({ otId, tipo, children }: Props) {
               tableHeader: true,
               children: headers.map((h, i) => headerCell(h, colAligns?.[i] ?? AlignmentType.LEFT)),
             }),
-            ...rows.map((r) => new TableRow({
-              children: r.map((c, i) => cellText(c, { align: colAligns?.[i] })),
+            ...rows.map((r, rowIdx) => new TableRow({
+              children: r.map((c, colIdx) => rowIdx % 2 === 1
+                ? cellTextZebra(c, { align: colAligns?.[colIdx] })
+                : cellText(c, { align: colAligns?.[colIdx] })),
             })),
           ],
         });
@@ -431,59 +446,65 @@ export function DescargarOTWordButton({ otId, tipo, children }: Props) {
       const tituloDoc = `${tipo === "externa" ? "OT Externa" : "OT Interna"} — ${otCodigo}`;
 
       // ── Sección 2: Requerimientos ─────────────────────────────────────
+      // Reducidas a 9 columnas para que quede legible (antes 17 quedaban muy
+      // apretadas). Se preservan los datos importantes: identificación,
+      // descripción, cantidad+UM en una sola col, precio+total+moneda, quién
+      // provee y cuándo se necesita.
 
       const reqsHeaders = [
-        "Nro Req.", "Item", "Tipo", "Material", "Descripción", "Cant.",
-        "Recib.", "UM", "P. Unit.", "Moneda", "Total", "Status Req.",
-        "Status OC", "Proveedor", "N° OC", "F. Requerida", "F. Entrega",
+        "Nro Req / Item", "Material", "Descripción",
+        "Cant.", "P. Unit.", "Total", "Estado OC",
+        "Proveedor / N° OC", "F. Requerida",
       ];
       const reqsAligns: AlignType[] = [
-        AlignmentType.LEFT, AlignmentType.CENTER, AlignmentType.CENTER,
-        AlignmentType.LEFT, AlignmentType.LEFT, AlignmentType.RIGHT,
-        AlignmentType.RIGHT, AlignmentType.CENTER, AlignmentType.RIGHT,
-        AlignmentType.CENTER, AlignmentType.RIGHT, AlignmentType.LEFT,
         AlignmentType.LEFT, AlignmentType.LEFT, AlignmentType.LEFT,
-        AlignmentType.CENTER, AlignmentType.CENTER,
+        AlignmentType.RIGHT, AlignmentType.RIGHT, AlignmentType.RIGHT,
+        AlignmentType.LEFT, AlignmentType.LEFT, AlignmentType.CENTER,
       ];
       const reqsRows = (requerimientos ?? []).map((r) => {
         const total = r.cantidad != null && r.precio_unitario != null
           ? Number(r.cantidad) * Number(r.precio_unitario)
           : null;
+        const um = r.material?.unidad_medida_codigo ?? r.unidad_medida ?? "";
+        const cantConUm = r.cantidad != null
+          ? `${fmtNum(r.cantidad)}${um ? " " + um : ""}`
+          : "";
+        const puConMoneda = r.precio_unitario != null && r.precio_unitario !== ""
+          ? `${r.moneda ? r.moneda + " " : ""}${fmtNum(r.precio_unitario)}`
+          : "";
+        const totalConMoneda = total != null
+          ? `${r.moneda ? r.moneda + " " : ""}${fmtNum(total)}`
+          : "";
+        const provOC = [
+          r.proveedor?.razon_social,
+          r.compra?.numero_po ? `OC ${r.compra.numero_po}` : "",
+        ].filter(Boolean).join(" · ");
         return [
-          r.nro_req ?? "",
-          r.item_req != null ? String(r.item_req) : "",
-          r.tipo_codigo ?? "",
+          `${r.nro_req ?? ""}${r.item_req != null ? " / " + r.item_req : ""}`,
           r.material?.codigo ?? r.material_codigo ?? "",
           r.material?.descripcion ?? r.descripcion ?? "",
-          r.cantidad != null ? fmtNum(r.cantidad) : "",
-          r.cantidad_recibida != null ? fmtNum(r.cantidad_recibida) : "",
-          r.material?.unidad_medida_codigo ?? r.unidad_medida ?? "",
-          r.precio_unitario != null && r.precio_unitario !== "" ? fmtNum(r.precio_unitario) : "",
-          r.moneda ?? "",
-          total != null ? fmtNum(total) : "",
-          r.status_requerimiento?.nombre ?? r.status_requerimiento?.codigo ?? "",
+          cantConUm,
+          puConMoneda,
+          totalConMoneda,
           r.status_oc?.nombre ?? r.status_oc?.codigo ?? "",
-          r.proveedor?.razon_social ?? "",
-          r.compra?.numero_po ?? "",
+          provOC,
           fmtDate(r.fecha_requerida),
-          fmtDate(r.fecha_entrega_real),
         ];
       });
 
       // ── Sección 3: Adjuntos ───────────────────────────────────────────
+      // Reducidas a 4 columnas — el MIME y usuario_sube ya no se muestran
+      // (rara vez útil en el reporte).
 
-      const adjHeaders = ["Nombre", "Etapa", "Tamaño", "Tipo MIME", "Subido por", "F. Subida"];
+      const adjHeaders = ["Nombre", "Etapa", "Tamaño", "F. Subida"];
       const adjAligns: AlignType[] = [
-        AlignmentType.LEFT, AlignmentType.CENTER, AlignmentType.RIGHT,
-        AlignmentType.LEFT, AlignmentType.LEFT, AlignmentType.CENTER,
+        AlignmentType.LEFT, AlignmentType.CENTER, AlignmentType.RIGHT, AlignmentType.CENTER,
       ];
       const adjRows = (adjuntos ?? []).map((a) => [
         a.nombre_archivo ?? "",
         a.etapa_codigo ?? "",
         bytesLegibles(a.tamano),
-        a.tipo_mime ?? "",
-        a.usuario ?? "",
-        fmtDateTime(a.fecha_subida),
+        fmtDate(a.fecha_subida),
       ]);
 
       // ── Sección 4: Costos ─────────────────────────────────────────────
@@ -501,43 +522,51 @@ export function DescargarOTWordButton({ otId, tipo, children }: Props) {
       }
       costosResumenRows.push({ campo: "TOTAL", valor: num(costos?.totalGeneral) });
 
-      const costosItemHeaders = ["Tipo", "Fecha", "Descripción", "Cant.", "P. Unit.", "Subtotal", "Moneda", "Documento", "Usuario"];
+      // Detalle de costos — reducido a 6 columnas. El documento y usuario
+      // salen de la vista principal (siguen en el historial completo).
+      const costosItemHeaders = ["Tipo", "Fecha", "Descripción", "Cant.", "P. Unit.", "Subtotal"];
       const costosItemAligns: AlignType[] = [
         AlignmentType.CENTER, AlignmentType.CENTER, AlignmentType.LEFT,
         AlignmentType.RIGHT, AlignmentType.RIGHT, AlignmentType.RIGHT,
-        AlignmentType.CENTER, AlignmentType.LEFT, AlignmentType.LEFT,
       ];
       const costosItemRows = (costos?.items ?? []).map((it) => [
         it.tipo ?? "",
         fmtDate(it.fecha ?? null),
         it.descripcion ?? "",
         it.cantidad != null ? String(it.cantidad) : "",
-        it.precio_unitario != null ? fmtNum(it.precio_unitario) : "",
-        it.subtotal != null ? fmtNum(it.subtotal) : "",
-        it.moneda ?? "",
-        it.documento ?? "",
-        it.usuario ?? "",
+        it.precio_unitario != null
+          ? `${it.moneda ? it.moneda + " " : ""}${fmtNum(it.precio_unitario)}`
+          : "",
+        it.subtotal != null
+          ? `${it.moneda ? it.moneda + " " : ""}${fmtNum(it.subtotal)}`
+          : "",
       ]);
 
       // ── Sección 5: Cambios ────────────────────────────────────────────
+      // Reducida a 5 columnas — el diff completo (antes/ahora) suele
+      // aparecer también en la descripción del historial. Se prioriza qué
+      // cambió (Campo) y quién lo cambió.
 
-      const cambiosHeaders = ["Fecha", "Usuario", "Tipo", "Campo", "Antes", "Ahora", "Descripción"];
+      const cambiosHeaders = ["Fecha", "Usuario", "Tipo", "Campo", "Descripción"];
       const cambiosAligns: AlignType[] = [
         AlignmentType.CENTER, AlignmentType.LEFT, AlignmentType.CENTER,
-        AlignmentType.LEFT, AlignmentType.LEFT, AlignmentType.LEFT, AlignmentType.LEFT,
+        AlignmentType.LEFT, AlignmentType.LEFT,
       ];
       const cambios = (historial ?? [])
         .filter((h) => TIPOS_CAMBIO.has(h.tipo_operacion ?? ""))
         .map((h) => {
           const extra = parseDatosAdicionales(h.datos_adicionales ?? null);
+          // Compone la descripción con el diff si viene en datos_adicionales.
+          const descBase = h.descripcion ?? "";
+          const descConDiff = extra.antes || extra.ahora
+            ? `${descBase}${descBase ? " · " : ""}${extra.antes || "(vacío)"} → ${extra.ahora || "(vacío)"}`.trim()
+            : descBase;
           return [
             fmtDateTime(h.createdAt ?? h.fecha ?? null),
             h.usuario ?? "",
             h.tipo_operacion ?? "",
             extra.campo,
-            extra.antes,
-            extra.ahora,
-            h.descripcion ?? "",
+            descConDiff,
           ];
         });
 
