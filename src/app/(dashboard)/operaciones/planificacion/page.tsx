@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Typography, Card, Table, Tag, Input, Select, Space, Button, DatePicker, InputNumber, Checkbox, message, Row, Col, Alert, Switch, Popconfirm, Tooltip, Modal, Timeline, Empty,
 } from "antd";
-import { SearchOutlined, ReloadOutlined, CalendarOutlined, InfoCircleOutlined, SaveOutlined, UndoOutlined, ThunderboltOutlined, PlusOutlined, DeleteOutlined, HistoryOutlined, CloseOutlined } from "@ant-design/icons";
+import { SearchOutlined, ReloadOutlined, CalendarOutlined, InfoCircleOutlined, SaveOutlined, UndoOutlined, ThunderboltOutlined, PlusOutlined, DeleteOutlined, HistoryOutlined, CloseOutlined, PrinterOutlined } from "@ant-design/icons";
+import { createPortal } from "react-dom";
+import PlanificacionPrintDoc from "@/components/modules/operaciones/PlanificacionPrintDoc";
 import { OperacionCombo } from "@/components/modules/ordenes-trabajo/OTTareasTab";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import type { ColumnsType } from "antd/es/table";
@@ -242,6 +244,10 @@ export default function PlanificacionPage() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [filterSemana, setFilterSemana] = useState<string | undefined>();
+  // Impresión de la semana: modal de formato + job para el área de impresión.
+  const [printOpen, setPrintOpen] = useState(false);
+  const [printFormatos, setPrintFormatos] = useState<string[]>(["plana", "grilla"]);
+  const [printJob, setPrintJob] = useState<{ semana: string; formatos: string[]; orient: "vertical" | "horizontal" } | null>(null);
   const [filterEstado, setFilterEstado] = useState<string | undefined>();
   // Por defecto solo se cargan las tareas con estado general "Abierto" (activas:
   // sin terminar ni anular) — es lo que el planner trabaja a diario. Para ver
@@ -1584,6 +1590,11 @@ export default function PlanificacionPage() {
           Planificación
         </Typography.Title>
         <Space size="middle" wrap>
+          <Tooltip title={filterSemana ? "Imprimir la programación de la semana elegida" : "Elegí una semana primero"}>
+            <Button icon={<PrinterOutlined />} onClick={() => setPrintOpen(true)} disabled={!filterSemana}>
+              Imprimir
+            </Button>
+          </Tooltip>
           <Button
             type={editMode ? "default" : "primary"}
             danger={editMode}
@@ -2138,6 +2149,53 @@ export default function PlanificacionPage() {
           </>
         )}
       </Modal>
+
+      {/* Imprimir programación de la semana: elegir formato → imprime directo. */}
+      <Modal
+        title={`Imprimir programación — Semana ${filterSemana ?? ""}`}
+        open={printOpen}
+        onCancel={() => setPrintOpen(false)}
+        okText="Imprimir"
+        okButtonProps={{ icon: <PrinterOutlined />, disabled: printFormatos.length === 0 || !filterSemana }}
+        onOk={() => {
+          if (!filterSemana || printFormatos.length === 0) return;
+          setPrintJob({
+            semana: filterSemana,
+            formatos: [...printFormatos],
+            orient: printFormatos.includes("grilla") ? "horizontal" : "vertical",
+          });
+          setPrintOpen(false);
+        }}
+      >
+        <p style={{ marginTop: 0, color: brand.textSecondary }}>
+          Imprime <b>toda la semana {filterSemana}</b> (sin los otros filtros). ¿Qué formato?
+        </p>
+        <Checkbox.Group
+          value={printFormatos}
+          onChange={(v) => setPrintFormatos(v as string[])}
+          options={[
+            { label: "Tabla plana (todas las tareas)", value: "plana" },
+            { label: "Grilla semanal (operario × día) — sale horizontal", value: "grilla" },
+          ]}
+          style={{ display: "flex", flexDirection: "column", gap: 8 }}
+        />
+      </Modal>
+
+      {/* Área de impresión oculta (porteada a body) — se imprime sola. */}
+      {printJob && typeof document !== "undefined" &&
+        createPortal(
+          <div className="ot-print-area">
+            <PlanificacionPrintDoc semana={printJob.semana} formatos={printJob.formatos} orient={printJob.orient} autoPrint />
+          </div>,
+          document.body,
+        )}
+      <style>{`
+        .ot-print-area { display: none; }
+        @media print {
+          body > *:not(.ot-print-area) { display: none !important; }
+          .ot-print-area { display: block !important; }
+        }
+      `}</style>
     </div>
   );
 }
