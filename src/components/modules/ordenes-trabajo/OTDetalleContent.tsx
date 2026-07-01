@@ -1730,6 +1730,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
         title="Vista previa de impresión"
         open={!!printPreview}
         onCancel={() => setPrintPreview(null)}
+        rootClassName="ot-print-modal-root"
         width="90%"
         style={{ top: 20 }}
         styles={{ body: { maxHeight: "78vh", overflow: "auto", background: "#f5f5f5", padding: 16 } }}
@@ -1744,6 +1745,28 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
           </div>
         )}
       </Modal>
+      <style>{`
+        @media print {
+          /* Imprimir SOLO el modal de vista previa: ocultar dashboard y demás
+             portales, y neutralizar el modal para que fluya como documento
+             (sin páginas en blanco ni recortes). */
+          body > *:not(.ot-print-modal-root) { display: none !important; }
+          .ot-print-modal-root .ant-modal-mask,
+          .ot-print-modal-root .ant-modal-header,
+          .ot-print-modal-root .ant-modal-footer,
+          .ot-print-modal-root .ant-modal-close { display: none !important; }
+          .ot-print-modal-root,
+          .ot-print-modal-root .ant-modal-wrap,
+          .ot-print-modal-root .ant-modal,
+          .ot-print-modal-root .ant-modal-content,
+          .ot-print-modal-root .ant-modal-body {
+            position: static !important; inset: auto !important; overflow: visible !important;
+            max-height: none !important; height: auto !important; width: auto !important;
+            padding: 0 !important; margin: 0 !important; box-shadow: none !important;
+            transform: none !important; background: #fff !important;
+          }
+        }
+      `}</style>
 
       {/* Crear material al vuelo desde el Select "Código de Material". */}
       <MaterialQuickCreateModal

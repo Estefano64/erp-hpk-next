@@ -172,7 +172,7 @@ export default function OTPrintDoc({ otId, secciones, orient = "vertical", autoP
             <Header />
             <h2>Costos</h2>
             <table className="data">
-              <thead><tr><th>Categoría</th><th>Estrategia</th><th>Estimado</th><th>Real (ejecutado)</th></tr></thead>
+              <thead><tr><th>Categoría</th><th className="r">Estrategia</th><th className="r">Estimado</th><th className="r">Real (ejecutado)</th></tr></thead>
               <tbody>
                 {([
                   ["Materiales", "materiales"], ["Cargo directo", "cargo_directo"], ["Servicios", "servicios"], ["HH", "hh"],
@@ -233,25 +233,14 @@ export default function OTPrintDoc({ otId, secciones, orient = "vertical", autoP
         .ot-print-doc table.data th { background: #14324f; color: #fff; text-align: left; padding: 5px 6px; font-size: 11px; }
         .ot-print-doc table.data td { padding: 4px 6px; border-bottom: 1px solid #e5e5e5; }
         .ot-print-doc table.data tr:nth-child(even) td { background: #fafbfc; }
-        .ot-print-doc table.data .r { text-align: right; }
+        .ot-print-doc table.data th.r, .ot-print-doc table.data td.r { text-align: right; }
         .ot-print-doc table.data tr.total td { font-weight: 700; border-top: 2px solid #14324f; background: #eef3f6; }
         .ot-print-doc .muted { color: #999; }
         @media print {
-          /* Imprimir SOLO este documento — ocultar todo lo demás (chrome, modal). */
-          body * { visibility: hidden !important; }
-          .ot-print-doc, .ot-print-doc * { visibility: visible !important; }
-          .ot-print-doc { position: absolute; left: 0; top: 0; width: 100%; }
+          /* Saltos de página por sección + no cortar tablas. El "ocultar todo lo
+             demás" lo maneja el contenedor (modal en el detalle, o la ruta). */
           .ot-print-doc .seccion.salto { break-before: page; }
           .ot-print-doc table, .ot-print-doc tr, .ot-print-doc td, .ot-print-doc th { break-inside: avoid; }
-          /* Si el doc está dentro de un modal antd: neutralizar scroll/altura/
-             posición para que no recorte la impresión, y ocultar su chrome. */
-          .ant-modal, .ant-modal-content, .ant-modal-body, .ant-modal-wrap {
-            position: static !important; overflow: visible !important;
-            max-height: none !important; height: auto !important;
-            box-shadow: none !important; padding: 0 !important; margin: 0 !important; background: #fff !important;
-          }
-          .ant-modal-mask, .ant-modal-header, .ant-modal-footer, .ant-modal-close,
-          .ant-layout-sider, .ant-layout-header { display: none !important; }
         }
       `}</style>
     </div>
