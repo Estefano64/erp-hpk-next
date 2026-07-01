@@ -28,6 +28,17 @@ import { useEditLock } from "@/lib/useEditLock";
 import TareaAdjuntosLista from "@/components/TareaAdjuntosLista";
 import AyudaProgramacionSemanal from "@/components/modules/operaciones/AyudaProgramacionSemanal";
 
+// Clave normalizada para deduplicar valores de texto (parte / tarea) que solo
+// difieren en mayúsculas, espacios o acentos ("Cilindro", "cilindro ", "VÁSTAGO").
+const normTxt = (s: unknown): string =>
+  (s ?? "")
+    .toString()
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/\s+/g, " ");
+
 dayjs.extend(isoWeek);
 dayjs.locale("es");
 
@@ -514,12 +525,10 @@ export default function ProgramacionSemanalPage() {
       if (!poolOts.includes(ot)) return false;
     }
     if (poolPartes.length > 0) {
-      const parte = (t.componente ?? "").toString();
-      if (!poolPartes.includes(parte)) return false;
+      if (!poolPartes.includes(normTxt(t.componente))) return false;
     }
     if (poolTareas.length > 0) {
-      const tarea = (t.descripcion ?? t.operacion_codigo ?? "").toString();
-      if (!poolTareas.includes(tarea)) return false;
+      if (!poolTareas.includes(normTxt(t.descripcion ?? t.operacion_codigo))) return false;
     }
     const q = poolBusqueda.trim().toLowerCase();
     if (!q) return true;
@@ -553,20 +562,23 @@ export default function ProgramacionSemanalPage() {
   const poolOpciones = useMemo(() => {
     const todos = [...sinSemanaLista, ...sinFechaListaSemana];
     const ots = new Set<string>();
-    const partes = new Set<string>();
-    const tareas = new Set<string>();
+    // value = clave normalizada; label = primer texto "lindo" que aparece.
+    const partes = new Map<string, string>();
+    const tareas = new Map<string, string>();
     for (const t of todos) {
       const ot = String(t.orden_trabajo?.ot ?? t.ot_id ?? "").trim();
       if (ot) ots.add(ot);
       const parte = (t.componente ?? "").toString().trim();
-      if (parte) partes.add(parte);
+      const kParte = normTxt(parte);
+      if (kParte && !partes.has(kParte)) partes.set(kParte, parte);
       const tarea = (t.descripcion ?? t.operacion_codigo ?? "").toString().trim();
-      if (tarea) tareas.add(tarea);
+      const kTarea = normTxt(tarea);
+      if (kTarea && !tareas.has(kTarea)) tareas.set(kTarea, tarea);
     }
     return {
       ots: [...ots].sort((a, b) => Number(a) - Number(b)).map((v) => ({ value: v, label: `OT ${v}` })),
-      partes: [...partes].sort((a, b) => a.localeCompare(b)).map((v) => ({ value: v, label: v })),
-      tareas: [...tareas].sort((a, b) => a.localeCompare(b)).map((v) => ({ value: v, label: v })),
+      partes: [...partes.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([value, label]) => ({ value, label })),
+      tareas: [...tareas.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([value, label]) => ({ value, label })),
     };
   }, [sinSemanaLista, sinFechaListaSemana]);
 
