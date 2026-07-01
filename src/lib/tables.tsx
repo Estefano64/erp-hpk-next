@@ -1250,6 +1250,12 @@ export function useAbortableFetch() {
     (e: unknown): boolean => (e as { name?: string } | null)?.name === "AbortError",
     [],
   );
-  return { start, isCurrent, isAbort };
+  // CRITICAL: useMemo con `[]` — el objeto retornado DEBE tener referencia
+  // estable entre renders. Si no, cualquier consumidor que lo pase como dep
+  // de useCallback (ej. `[..., abortable]`) va a regenerar su callback en
+  // cada render, y un useEffect que dependa de ese callback fireará en
+  // bucle infinito. Las callbacks internas ya son estables via useCallback,
+  // así que memoizar el wrapper es seguro.
+  return useMemo(() => ({ start, isCurrent, isAbort }), [start, isCurrent, isAbort]);
 }
 
