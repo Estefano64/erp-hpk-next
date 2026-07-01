@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Typography, Table, Button, Input, Select, Space, Tag, Modal, Form,
@@ -286,7 +286,14 @@ export default function OrdenesTrabajoInternasPage() {
     return () => ctrl.abort();
   }, [tipoEquipoForm]);
 
+  // Fix "hay que buscar varias veces": cada tecla dispara un fetch nuevo,
+  // pero sin abortar el anterior una respuesta lenta puede pisar al último
+  // resultado correcto (race condition). Cancelamos siempre el en vuelo.
+  const abortRef = useRef<AbortController | null>(null);
   const fetchData = useCallback(async () => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -297,14 +304,18 @@ export default function OrdenesTrabajoInternasPage() {
       if (filterTipo) params.set("tipo", filterTipo);
       if (filterEquipo) params.set("equipo", filterEquipo);
       if (verInactivas) params.set("incluirInactivas", "1");
-      const res = await fetch(`/api/ordenes-trabajo-internas?${params}`);
+      const res = await fetch(`/api/ordenes-trabajo-internas?${params}`, { signal: controller.signal });
+      if (controller.signal.aborted) return;
       if (res.ok) {
         const json = await res.json();
         setRows(json.data ?? []);
         setTotal(json.total ?? 0);
       }
+    } catch (e) {
+      if ((e as { name?: string } | null)?.name === "AbortError") return;
+      throw e;
     } finally {
-      setLoading(false);
+      if (abortRef.current === controller) setLoading(false);
     }
   }, [page, pageSize, search, filterTipo, filterEquipo, verInactivas]);
 
