@@ -190,15 +190,20 @@ function evalEstadoMeta(estado: string | null) {
 // automático de useColumnasRedimensionables (checkboxes con valores únicos
 // del dataset). Decisión del usuario — más natural para columnas con pocos
 // valores repetidos como nombre del creador.
-// Formatea un total multi-moneda { USD: 100, PEN: 50 } → "US$ 100.00 · S/ 50.00".
-function fmtMonedaTot(tot?: Record<string, number>) {
-  if (!tot) return <Typography.Text type="secondary">—</Typography.Text>;
+// Total multi-moneda { USD: 100, PEN: 50 } → "US$ 100.00 · S/ 50.00" (string).
+function monedaTotStr(tot?: Record<string, number>): string {
+  if (!tot) return "";
   const entries = Object.entries(tot).filter(([, v]) => v !== 0);
-  if (entries.length === 0) return <Typography.Text type="secondary">—</Typography.Text>;
+  if (entries.length === 0) return "";
   const sim = (m: string) => (m === "USD" ? "US$ " : m === "PEN" || m === "SOL" ? "S/ " : `${m} `);
   return entries
     .map(([m, v]) => `${sim(m)}${v.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
     .join("  ·  ");
+}
+// Versión para render en tabla (— si está vacío).
+function fmtMonedaTot(tot?: Record<string, number>) {
+  const s = monedaTotStr(tot);
+  return s === "" ? <Typography.Text type="secondary">—</Typography.Text> : s;
 }
 
 const TEXT_KEYS = new Set<string>([
@@ -318,6 +323,15 @@ export default function OrdenesTrabajoPage() {
     if (verInactivas) params.set("incluirInactivas", "1");
     return params;
   }, [search, columnFilters, sorter, rangoRecepcion, aniosSel, verInactivas]);
+
+  // Filtros para el export: igual que filtrosServer, pero pide el cálculo de
+  // costos si alguna columna de costos está visible (para que salgan en el .xlsx).
+  const filtrosServerExport = useMemo(() => {
+    const p = new URLSearchParams(filtrosServer);
+    const costosVisibles = ["costo_estrategia", "costo_estimado", "costo_real", "costo_hh"].some((k) => !ocultas.includes(k));
+    if (costosVisibles) p.set("costos", "1");
+    return p;
+  }, [filtrosServer, ocultas]);
 
   // Paginación server-side: trae solo la página actual (50). Manda al server
   // la búsqueda, los filtros de columna, el rango de fecha y el orden. Campos
@@ -980,7 +994,7 @@ export default function OrdenesTrabajoPage() {
             // Cuando el usuario marca "Usar filtros actuales de la tabla", la
             // descarga envía estos mismos filtros server-side al endpoint y
             // recibe TODAS las filas que cumplen (no solo la página visible).
-            endpointParams={filtrosServer}
+            endpointParams={filtrosServerExport}
             // Layout actual de la tabla (orden + columnas ocultas). Sólo aplica
             // a columnas del export cuya `key` coincide con la `key` de la
             // tabla — el resto (datos históricos como evaluación/cotización)
@@ -1046,6 +1060,12 @@ export default function OrdenesTrabajoPage() {
               { key: "tipo_garantia", label: "Tipo Garantía", value: (r) => r.tipo_garantia?.nombre ?? "" },
               { key: "base_metalica", label: "Base metálica", value: (r) => r.base_metalica?.nombre ?? "" },
               { key: "comentarios", label: "Comentarios", value: (r) => r.comentarios ?? "" },
+              // Costos (solo se calculan si alguna columna de costos está visible
+              // en la tabla, que activa ?costos=1 también en el export).
+              { key: "costo_estrategia", label: "Costo Estrategia", value: (r) => monedaTotStr(r.costos_resumen?.estrategia), defaultSelected: false },
+              { key: "costo_estimado", label: "Costo Estimado", value: (r) => monedaTotStr(r.costos_resumen?.estimado), defaultSelected: false },
+              { key: "costo_real", label: "Costo Real", value: (r) => monedaTotStr(r.costos_resumen?.real), defaultSelected: false },
+              { key: "costo_hh", label: "Costo HH", value: (r) => monedaTotStr(r.costos_resumen?.hh), defaultSelected: false },
               // Histórico (importado del Excel)
               { label: "Fecha Evaluación", value: (r) => formatDateOnly(r.fecha_evaluacion ?? null) ?? "" },
               { label: "Evaluador", value: (r) => r.evaluador ?? "" },
