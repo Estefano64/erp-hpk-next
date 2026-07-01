@@ -33,6 +33,11 @@ export interface ReporteCorrectivoPDFData {
   fecha_responsable: string; // pre-formateada
   /** Adjuntos — se listan por nombre en un bloque debajo del texto (opcional). */
   adjuntos?: Array<{ nombre_archivo: string | null; etapa_codigo?: string | null }>;
+  /** Datos generales de la OT — se renderizan en un grid antes del bloque
+   *  "Detalle de Falla". Cada fila es un {label, value, wide?}.
+   *  `wide: true` → renderiza a ancho completo (para textos largos como
+   *  Descripción o Comentarios). Vacíos se omiten. */
+  datos_ot?: Array<{ label: string; value: string | null | undefined; wide?: boolean }>;
 }
 
 export async function buildReporteCorrectivoPDF(
@@ -58,6 +63,100 @@ export async function buildReporteCorrectivoPDF(
     drawLabelValueRow(doc, "Nombre equipo:", data.equipo_nombre ?? "", totalW);
     drawLabelValueRow(doc, "Código:", data.equipo_codigo ?? "", totalW);
     drawLabelValueRow(doc, "Fecha:", data.fecha, totalW);
+
+    // Datos generales de la OT (opcional). Los campos "wide" (Descripción,
+    // Comentarios, etc.) se renderizan a ancho completo para evitar
+    // desborde a la celda de al lado; los demás en grid de 2 columnas.
+    const datosNonEmpty = (data.datos_ot ?? []).filter(
+      (r) => r.value != null && String(r.value).trim() !== "",
+    );
+    if (datosNonEmpty.length > 0) {
+      doc.y += 6;
+      // Header gris de sección.
+      const startYd = doc.y;
+      const headerH = 16;
+      doc.lineWidth(0.6).strokeColor("#000")
+        .rect(doc.page.margins.left, startYd, totalW, headerH)
+        .fillAndStroke("#E5E5E5", "#000");
+      doc.fillColor("#000").font("Helvetica-Bold").fontSize(10)
+        .text("Datos de la OT", doc.page.margins.left, startYd + 4, { width: totalW, align: "center" });
+      doc.y = startYd + headerH;
+
+      // Separamos por tipo: wide primero abajo del header, luego grid 2col.
+      const anchos = datosNonEmpty.filter((r) => r.wide);
+      const angostos = datosNonEmpty.filter((r) => !r.wide);
+      const colW = totalW / 2;
+      const labelWnarrow = 90;
+      const labelWwide = 110;
+      const paddingX = 4;
+      const paddingY = 3;
+      const fontSize = 8;
+      doc.font("Helvetica").fontSize(fontSize);
+
+      // Helper para dibujar una celda con altura calculada.
+      const drawCell = (
+        x: number, y: number, w: number,
+        label: string, value: string, labelW: number,
+      ): number => {
+        const valueW = w - labelW - paddingX;
+        const valueH = doc.heightOfString(value, { width: valueW });
+        const rowH = Math.max(14, valueH + paddingY * 2);
+        doc.lineWidth(0.3).strokeColor("#666")
+          .rect(x, y, w, rowH).stroke();
+        doc.font("Helvetica-Bold").fontSize(fontSize).fillColor("#000")
+          .text(label, x + paddingX, y + paddingY, { width: labelW - paddingX });
+        doc.font("Helvetica").fontSize(fontSize)
+          .text(value, x + labelW, y + paddingY, { width: valueW });
+        return rowH;
+      };
+
+      // Filas wide (una por fila, ancho completo).
+      for (const item of anchos) {
+        const h = drawCell(
+          doc.page.margins.left, doc.y, totalW,
+          item.label, String(item.value ?? ""), labelWwide,
+        );
+        doc.y += h;
+      }
+      // Filas angostas — 2 columnas. Recorremos en pares: [izq, der].
+      for (let i = 0; i < angostos.length; i += 2) {
+        const izq = angostos[i];
+        const der = angostos[i + 1];
+        const yRow = doc.y;
+        // Dibujamos ambas celdas — necesitamos que tengan la misma altura
+        // para que el grid se vea parejo; calculamos las 2 y usamos la max.
+        const izqValW = colW - labelWnarrow - paddingX;
+        const izqH = doc.heightOfString(String(izq.value ?? ""), { width: izqValW }) + paddingY * 2;
+        let derH = 14;
+        if (der) {
+          const derValW = colW - labelWnarrow - paddingX;
+          derH = doc.heightOfString(String(der.value ?? ""), { width: derValW }) + paddingY * 2;
+        }
+        const rowH = Math.max(14, izqH, derH);
+        // Celda izquierda.
+        doc.lineWidth(0.3).strokeColor("#666")
+          .rect(doc.page.margins.left, yRow, colW, rowH).stroke();
+        doc.font("Helvetica-Bold").fontSize(fontSize).fillColor("#000")
+          .text(izq.label, doc.page.margins.left + paddingX, yRow + paddingY, { width: labelWnarrow - paddingX });
+        doc.font("Helvetica").fontSize(fontSize)
+          .text(String(izq.value ?? ""), doc.page.margins.left + labelWnarrow, yRow + paddingY, {
+            width: colW - labelWnarrow - paddingX,
+          });
+        // Celda derecha (si existe).
+        if (der) {
+          const xDer = doc.page.margins.left + colW;
+          doc.lineWidth(0.3).strokeColor("#666")
+            .rect(xDer, yRow, colW, rowH).stroke();
+          doc.font("Helvetica-Bold").fontSize(fontSize).fillColor("#000")
+            .text(der.label, xDer + paddingX, yRow + paddingY, { width: labelWnarrow - paddingX });
+          doc.font("Helvetica").fontSize(fontSize)
+            .text(String(der.value ?? ""), xDer + labelWnarrow, yRow + paddingY, {
+              width: colW - labelWnarrow - paddingX,
+            });
+        }
+        doc.y = yRow + rowH;
+      }
+    }
 
     doc.y += 6;
 
@@ -92,6 +191,16 @@ export async function buildReporteCorrectivoPDF(
     }
 
     doc.y += 12;
+
+    // Si el espacio restante no alcanza para las firmas (100pt + label), corte
+    // de página. Sin esto, cuando el "Datos de la OT" ocupa mucho vertical,
+    // los recuadros de firma se dibujaban fuera de la hoja y aparecían solo
+    // los labels "FIRMA" en páginas nuevas.
+    const espacioMinFirmas = 100 + 16;
+    const yLimite = doc.page.height - doc.page.margins.bottom;
+    if (doc.y + espacioMinFirmas > yLimite) {
+      doc.addPage();
+    }
 
     // Firmas — 2 columnas con NOMBRE / FECHA / FIRMA.
     const x = doc.page.margins.left;
