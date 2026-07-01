@@ -4,6 +4,7 @@ import { getAuditUser } from "@/lib/audit";
 import { parseDateOnly } from "@/lib/dates";
 import { nextNumeroOTExterna } from "@/lib/ot-numero";
 import { parseOtCodigoSearch } from "@/lib/ot-formato";
+import { calcularCostosResumenBatch } from "@/lib/costos-ot";
 
 // GET — lista con filtros y paginación
 export async function GET(req: NextRequest) {
@@ -231,6 +232,15 @@ export async function GET(req: NextRequest) {
       }),
       prisma.ordenTrabajo.count({ where }),
     ]);
+
+    // Columnas de costos del listado (opt-in vía ?costos=1). Se calcula SOLO
+    // para las OTs de esta página (batcheado) — es caro, no se hace por default.
+    if (searchParams.get("costos") === "1" && data.length > 0) {
+      const resumen = await calcularCostosResumenBatch(prisma, data.map((o) => o.id));
+      for (const o of data as (typeof data[number] & { costos_resumen?: unknown })[]) {
+        o.costos_resumen = resumen.get(o.id) ?? { estrategia: {}, estimado: {}, real: {}, hh: {} };
+      }
+    }
 
     return NextResponse.json({ data, total, page });
   } catch (error) {

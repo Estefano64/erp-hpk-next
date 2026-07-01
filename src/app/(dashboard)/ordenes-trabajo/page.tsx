@@ -130,6 +130,15 @@ interface OTRecord {
   // Adjuntos de la etapa "po_cliente" — viene como array con 0 o 1 id desde
   // la API. Sirve solo como flag para derivar la columna "Estado PO".
   adjuntos?: { id: number }[];
+  // Resumen de costos por moneda (solo si se pidió ?costos=1). Cada campo es
+  // un objeto { moneda: monto }. estrategia/estimado/real incluyen HH; hh es
+  // la mano de obra real aparte.
+  costos_resumen?: {
+    estrategia: Record<string, number>;
+    estimado: Record<string, number>;
+    real: Record<string, number>;
+    hh: Record<string, number>;
+  };
 }
 
 // Campos extra que la API devuelve y van al Excel pero no se renderizan en la
@@ -181,6 +190,17 @@ function evalEstadoMeta(estado: string | null) {
 // automático de useColumnasRedimensionables (checkboxes con valores únicos
 // del dataset). Decisión del usuario — más natural para columnas con pocos
 // valores repetidos como nombre del creador.
+// Formatea un total multi-moneda { USD: 100, PEN: 50 } → "US$ 100.00 · S/ 50.00".
+function fmtMonedaTot(tot?: Record<string, number>) {
+  if (!tot) return <Typography.Text type="secondary">—</Typography.Text>;
+  const entries = Object.entries(tot).filter(([, v]) => v !== 0);
+  if (entries.length === 0) return <Typography.Text type="secondary">—</Typography.Text>;
+  const sim = (m: string) => (m === "USD" ? "US$ " : m === "PEN" || m === "SOL" ? "S/ " : `${m} `);
+  return entries
+    .map(([m, v]) => `${sim(m)}${v.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+    .join("  ·  ");
+}
+
 const TEXT_KEYS = new Set<string>([
   "equipo_codigo", "descripcion", "tipo", "np", "cod_rep_flota", "cod_rep_posicion",
   "plaqueteo", "wo_cliente", "po_cliente", "po_item", "id_viajero",
@@ -258,6 +278,8 @@ export default function OrdenesTrabajoPage() {
     "dias_en_taller",
     "atencion_reparacion", "tipo_reparacion", "garantia", "tipo_garantia", "base_metalica",
     "comentarios",
+    // Costos (se calculan solo para la página visible al activarlas).
+    "costo_estrategia", "costo_estimado", "costo_real", "costo_hh",
   ]);
   const { rango: rangoRecepcion, setRango: setRangoRecepcion } = useRangoFechasPersistente("ot-list-rango-recepcion");
 
@@ -305,12 +327,16 @@ export default function OrdenesTrabajoPage() {
     const params = new URLSearchParams(filtrosServer);
     params.set("page", String(page));
     params.set("limit", String(pageSize));
+    // Solo pedimos el cálculo de costos (caro) si alguna columna de costos está
+    // visible. Así no penaliza a quien no las usa.
+    const costosVisibles = ["costo_estrategia", "costo_estimado", "costo_real", "costo_hh"].some((k) => !ocultas.includes(k));
+    if (costosVisibles) params.set("costos", "1");
     const res = await fetch(`/api/ordenes-trabajo?${params}`);
     const json = await res.json();
     setData(json.data ?? []);
     setTotal(json.total ?? 0);
     setLoading(false);
-  }, [page, pageSize, filtrosServer]);
+  }, [page, pageSize, filtrosServer, ocultas]);
 
   // Desactivar (anular, reversible) / reactivar una OT. Solo admin.
   async function toggleActivo(record: OTRecord) {
@@ -580,6 +606,25 @@ export default function OrdenesTrabajoPage() {
       },
     },
     // ── Columnas opcionales (ocultas por default) ──
+    // Costos (opt-in): se calculan solo para la página visible. Estrategia =
+    // estándar del cod_rep; Estimado = plan de la OT; Real = ejecutado; los 3
+    // incluyen HH. "Costo HH" = mano de obra real aparte. Multi-moneda.
+    {
+      key: "costo_estrategia", title: "Costo Estrategia", width: 150, align: "right",
+      render: (_: unknown, r: OTRecord) => fmtMonedaTot(r.costos_resumen?.estrategia),
+    },
+    {
+      key: "costo_estimado", title: "Costo Estimado", width: 150, align: "right",
+      render: (_: unknown, r: OTRecord) => fmtMonedaTot(r.costos_resumen?.estimado),
+    },
+    {
+      key: "costo_real", title: "Costo Real", width: 150, align: "right",
+      render: (_: unknown, r: OTRecord) => fmtMonedaTot(r.costos_resumen?.real),
+    },
+    {
+      key: "costo_hh", title: "Costo HH", width: 130, align: "right",
+      render: (_: unknown, r: OTRecord) => fmtMonedaTot(r.costos_resumen?.hh),
+    },
     {
       key: "tipo_ot", title: "Tipo OT", width: 100,
       filters: [...new Set(data.map((r) => r.tipo_ot?.nombre).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
