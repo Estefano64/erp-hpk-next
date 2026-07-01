@@ -22,7 +22,6 @@ import OTInternaAdjuntosTab from "@/components/modules/ordenes-trabajo-internas/
 import OTInternaRequerimientosTab from "@/components/modules/ordenes-trabajo-internas/OTInternaRequerimientosTab";
 import OTInternaHistorialTab from "@/components/modules/ordenes-trabajo-internas/OTInternaHistorialTab";
 import OTCostosTab from "@/components/modules/ordenes-trabajo/OTCostosTab";
-import { DescargarOTWordButton } from "@/components/DescargarOTWordButton";
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -491,7 +490,6 @@ export default function OTInternaDetallePage() {
                 </Button>
               </>
             )}
-            <DescargarOTWordButton otId={ot.id} tipo="interna" />
             {/* El botón 'Reporte Correctivo (PDF)' solo aparece si esta OT
                 interna es de mantenimiento (solicitud_mantenimiento=true) —
                 el formato HPK-M-F-07 no aplica a otros tipos de OT interna. */}

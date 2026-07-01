@@ -47,7 +47,6 @@ import OTTareasTab from "./OTTareasTab";
 import OTHistorialTab from "./OTHistorialTab";
 import OTRequerimientosTab from "./OTRequerimientosTab";
 import OTCostosTab from "./OTCostosTab";
-import { DescargarOTWordButton } from "@/components/DescargarOTWordButton";
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -748,8 +747,9 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
 
         {/* ── Barra de acciones ── */}
         <div className="ot-print-hide" style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 16 }}>
-          {ot && <DescargarOTWordButton otId={ot.id} tipo="externa" />}
-          {/* El botón 'Reporte Correctivo (PDF)' no aparece acá porque las
+          {/* La descarga en PDF se hace vía el botón Imprimir de más abajo
+              (usa window.print del navegador). No hay export a Word / Excel.
+              El botón 'Reporte Correctivo (PDF)' no aparece acá porque las
               OTs externas son para reparación de repuestos del cliente y NO
               son mantenimiento correctivo — ese formato (HPK-M-F-07) solo
               aplica a OTs internas del taller. */}
