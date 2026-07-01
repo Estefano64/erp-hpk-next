@@ -387,7 +387,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
         <div class="company-header">
           <img src="/LOGO-HPK-INVERSIONEs.png" alt="HpyK" class="company-logo" />
           <div class="company-text">
-            <div class="company-name">HP&amp;K INVERSIONES S.A.C.</div>
+            <div class="company-name">HP&amp;K INVERSIONES S.R.L.</div>
             <div class="company-data">
               Parque Industrial Río Seco Mz C lote 17,<br/>
               Cerro Colorado - Arequipa - Perú<br/>
@@ -495,7 +495,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
   <!-- Nota factura -->
   <div class="factura-box">
     <div class="titulo">Facturar a:</div>
-    <div>HP&amp;K INVERSIONES S.A.C.</div>
+    <div>HP&amp;K INVERSIONES S.R.L.</div>
     <div>Parque Industrial Río Seco Mz C lote 17, Cerro Colorado - Arequipa - Perú</div>
     <div style="margin-top:4px"><b>Entregar en:</b> Parque Industrial Río Seco Mz C lote 17, Cerro Colorado - Arequipa - Perú</div>
   </div>
