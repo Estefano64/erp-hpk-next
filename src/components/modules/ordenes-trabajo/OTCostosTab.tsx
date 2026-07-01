@@ -78,6 +78,14 @@ interface CostosResponse {
     hh: { total_por_moneda: MonedaTotales };
     total_por_moneda: MonedaTotales;
   };
+  // Costo estándar del template del código estratégico (cod_rep).
+  estrategia: {
+    materiales: { total_por_moneda: MonedaTotales };
+    cargo_directo: { total_por_moneda: MonedaTotales };
+    servicios: { total_por_moneda: MonedaTotales };
+    hh: { total_por_moneda: MonedaTotales };
+    total_por_moneda: MonedaTotales;
+  };
   trabajadores: { estimado: number; real: number };
 }
 
@@ -177,6 +185,7 @@ export default function OTCostosTab({ otId, kind = "externa" }: Props) {
       || p.hh.items.length > 0
       || data.trabajadores.estimado > 0
       || data.trabajadores.real > 0
+      || Object.keys(data.estrategia.total_por_moneda).length > 0
     );
   }, [data]);
 
@@ -213,32 +222,39 @@ export default function OTCostosTab({ otId, kind = "externa" }: Props) {
   const matrizRows = [
     {
       key: "materiales", label: "Materiales",
+      estrategia: data.estrategia.materiales.total_por_moneda,
       estimado: data.estimado.materiales.total_por_moneda,
       real: data.ejecutado.materiales.total_por_moneda,
     },
     {
       key: "cargo_directo", label: "Cargo directo",
+      estrategia: data.estrategia.cargo_directo.total_por_moneda,
       estimado: data.estimado.cargo_directo.total_por_moneda,
       real: data.ejecutado.cargo_directo.total_por_moneda,
     },
     {
       key: "servicio", label: "Servicio",
+      estrategia: data.estrategia.servicios.total_por_moneda,
       estimado: data.estimado.servicios.total_por_moneda,
       real: data.ejecutado.servicios.total_por_moneda,
     },
     {
       key: "qty", label: "QtY (trabajadores)",
+      // El template no define trabajadores → sin valor de estrategia.
+      estrategia: null,
       estimado: data.trabajadores.estimado,
       real: data.trabajadores.real,
       esConteo: true,
     },
     {
       key: "hh", label: "HH",
+      estrategia: data.estrategia.hh.total_por_moneda,
       estimado: data.estimado.hh.total_por_moneda,
       real: data.ejecutado.hh.total_por_moneda,
     },
   ] as Array<{
     key: string; label: string;
+    estrategia: MonedaTotales | number | null;
     estimado: MonedaTotales | number; real: MonedaTotales | number;
     esConteo?: boolean;
   }>;
@@ -254,6 +270,12 @@ export default function OTCostosTab({ otId, kind = "externa" }: Props) {
           pagination={false}
           columns={[
             { title: "", dataIndex: "label", key: "label", width: 200, render: (v: string) => <Text strong>{v}</Text> },
+            {
+              title: "Estrategia", dataIndex: "estrategia", key: "estrategia", align: "right",
+              render: (v: MonedaTotales | number | null, r) => r.esConteo || v == null
+                ? <Text type="secondary">—</Text>
+                : <MonedasTotalesInline totales={v as MonedaTotales} />,
+            },
             {
               title: "Estimado", dataIndex: "estimado", key: "estimado", align: "right",
               render: (v: MonedaTotales | number, r) => r.esConteo
@@ -273,19 +295,27 @@ export default function OTCostosTab({ otId, kind = "externa" }: Props) {
       {/* ── Resumen totales ── */}
       <Card size="small">
         <Row gutter={[16, 12]}>
-          <Col xs={24} sm={8}>
-            <Statistic
-              title={<Text type="secondary" style={{ fontSize: 12 }}>Costo ejecutado</Text>}
-              valueRender={() => <MonedasTotalesInline totales={data.ejecutado.total_por_moneda} />}
-            />
+          <Col xs={24} sm={6}>
+            <Tooltip title="Costo estándar según el template del código estratégico (cod_rep).">
+              <Statistic
+                title={<Text type="secondary" style={{ fontSize: 12 }}>Costo estrategia (estándar)</Text>}
+                valueRender={() => <MonedasTotalesInline totales={data.estrategia.total_por_moneda} />}
+              />
+            </Tooltip>
           </Col>
-          <Col xs={24} sm={8}>
+          <Col xs={24} sm={6}>
             <Statistic
               title={<Text type="secondary" style={{ fontSize: 12 }}>Costo estimado (plan total)</Text>}
               valueRender={() => <MonedasTotalesInline totales={data.estimado.total_por_moneda} />}
             />
           </Col>
-          <Col xs={24} sm={8}>
+          <Col xs={24} sm={6}>
+            <Statistic
+              title={<Text type="secondary" style={{ fontSize: 12 }}>Costo ejecutado (real)</Text>}
+              valueRender={() => <MonedasTotalesInline totales={data.ejecutado.total_por_moneda} />}
+            />
+          </Col>
+          <Col xs={24} sm={6}>
             <Tooltip title="Suma de ejecutado + proyectado por moneda. No incluye conversión cambiaria.">
               <Statistic
                 title={<Text type="secondary" style={{ fontSize: 12 }}>Total comprometido</Text>}

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
+import { recalcularRecursosStatusDesdeRep } from "@/lib/recursos-ot";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
@@ -58,6 +59,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           descripcion: `Requerimiento ${current.nro_req ?? id} desaprobado${motivo ? ` — ${motivo}` : ""}`,
           usuario,
         },
+      });
+      await recalcularRecursosStatusDesdeRep(tx, {
+        ot_id: current.ot_id,
+        orden_trabajo_interna_id: current.orden_trabajo_interna_id,
       });
       return r;
     });

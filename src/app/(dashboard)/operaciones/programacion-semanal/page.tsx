@@ -2,8 +2,10 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Typography, Button, Space, Tag, Card, Modal, Descriptions, Tooltip, message, Empty, DatePicker, Collapse, Segmented, Slider, Alert, Popover, Divider, Select, Popconfirm, Switch, Input, InputNumber, Skeleton,
+  Typography, Button, Space, Tag, Card, Modal, Descriptions, Tooltip, message, Empty, DatePicker, Collapse, Segmented, Slider, Alert, Popover, Divider, Select, Popconfirm, Switch, Input, InputNumber, Skeleton, Checkbox,
 } from "antd";
+import { createPortal } from "react-dom";
+import PlanificacionPrintDoc, { PLAN_PRINT_COLS } from "@/components/modules/operaciones/PlanificacionPrintDoc";
 import {
   CalendarOutlined, LeftOutlined, RightOutlined, UserOutlined, ToolOutlined, AimOutlined,
   SettingOutlined, RollbackOutlined, UnorderedListOutlined, WarningFilled, ZoomInOutlined, ZoomOutOutlined,
@@ -285,7 +287,18 @@ export default function ProgramacionSemanalPage() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [printModalOpen, setPrintModalOpen] = useState(false);
   const [ayudaOpen, setAyudaOpen] = useState(false);
-  const [printDayIdx, setPrintDayIdx] = useState<number | null>(null); // null = semana, 0-4 = día específico
+  // Impresión: misma tabla plana que /planificacion (el tablero drag-drop no
+  // sirve para papel). Se elige columnas + orientación y se imprime la semana.
+  const [printCols, setPrintCols] = useState<string[]>(PLAN_PRINT_COLS.map((c) => c.key));
+  const [printHoriz, setPrintHoriz] = useState(true);
+  const [printJob, setPrintJob] = useState<{ id: number; semana: string; columnas: string[]; orient: "vertical" | "horizontal" } | null>(null);
+  // Al cerrar el diálogo de impresión, desmontar el área de impresión (evita
+  // que se re-dispare en una página muy "viva" con timers/tab-sync).
+  useEffect(() => {
+    const done = () => setPrintJob(null);
+    window.addEventListener("afterprint", done);
+    return () => window.removeEventListener("afterprint", done);
+  }, []);
   const [panning, setPanning] = useState<{ initialX: number; initialScroll: number } | null>(null);
   // Drag con pointer events (más fluido que HTML5 drag)
   const [drag, setDrag] = useState<{
@@ -2693,57 +2706,59 @@ export default function ProgramacionSemanalPage() {
         </>
       )}
 
-      {/* Modal de impresión */}
+      {/* Modal de impresión — misma tabla plana que /planificacion (con selección
+          de columnas). El tablero drag-drop no se imprime; se imprime la semana. */}
       <Modal
-        title="Imprimir programación"
+        title={`Imprimir programación — Semana ${semanaActual}`}
         open={printModalOpen}
-        onCancel={() => { setPrintModalOpen(false); setPrintDayIdx(null); }}
-        onOk={() => {
-          setPrintModalOpen(false);
-          document.body.classList.add("psg-printing");
-          if (printDayIdx != null) {
-            document.body.dataset.printDay = String(printDayIdx);
-            // Hace scroll a ese día para que sea lo primero visible
-            const wrap = timelineRef.current;
-            if (wrap) wrap.scrollLeft = printDayIdx * dayPx;
-          } else {
-            delete document.body.dataset.printDay;
-          }
-          setTimeout(() => {
-            window.print();
-            document.body.classList.remove("psg-printing");
-            delete document.body.dataset.printDay;
-            setPrintDayIdx(null);
-          }, 200);
-        }}
+        onCancel={() => setPrintModalOpen(false)}
         okText="Imprimir"
+        okButtonProps={{ icon: <PrinterOutlined />, disabled: printCols.length === 0 }}
+        onOk={() => {
+          if (printCols.length === 0) return;
+          // id incremental → re-monta el doc y permite reimprimir sin recargar.
+          setPrintJob((prev) => ({
+            id: (prev?.id ?? 0) + 1,
+            semana: semanaActual,
+            columnas: [...printCols],
+            orient: printHoriz ? "horizontal" : "vertical",
+          }));
+          setPrintModalOpen(false);
+        }}
         cancelText="Cancelar"
         width={modalWidth(screens, 520)}
       >
-        <div style={{ marginBottom: 12 }}>¿Qué querés imprimir?</div>
-        <Segmented
-          block
-          value={printDayIdx == null ? "semana" : `dia${printDayIdx}`}
-          onChange={(v) => {
-            if (v === "semana") setPrintDayIdx(null);
-            else setPrintDayIdx(Number(String(v).replace("dia", "")));
-          }}
-          options={[
-            { value: "semana", label: "Semana completa" },
-            ...days.map((d, i) => ({ value: `dia${i}`, label: diaEs(d) })),
-          ]}
+        <p style={{ marginTop: 0, color: brand.textSecondary }}>
+          Imprime <b>toda la semana {semanaActual}</b> como tabla. ¿Qué columnas incluir?
+        </p>
+        <Checkbox.Group
+          value={printCols}
+          onChange={(v) => setPrintCols(v as string[])}
+          options={PLAN_PRINT_COLS.map((c) => ({ label: c.label, value: c.key }))}
+          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}
         />
-        <Alert
-          type="info"
-          showIcon
-          style={{ marginTop: 12 }}
-          title="Recomendación"
-          description={<>En el diálogo del navegador elegí <strong>horizontal (landscape)</strong> y <strong>A4</strong>. Si imprimís un día, en la opción &quot;más ajustes&quot; del navegador podés ajustar el zoom para que ese día ocupe la página entera.</>}
-        />
-        <div style={{ marginTop: 8, fontSize: 12, color: brand.textSecondary }}>
-          Total filas: <strong>{recursos.length}</strong> · Tareas: <strong>{rows.length}</strong>
+        <div style={{ marginTop: 16, borderTop: `1px solid ${brand.border}`, paddingTop: 12 }}>
+          <Checkbox checked={printHoriz} onChange={(e) => setPrintHoriz(e.target.checked)}>
+            Orientación horizontal (recomendado con muchas columnas)
+          </Checkbox>
         </div>
       </Modal>
+
+      {/* Área de impresión oculta (porteada a body) — se imprime sola. */}
+      {printJob && typeof document !== "undefined" &&
+        createPortal(
+          <div className="ot-print-area">
+            <PlanificacionPrintDoc key={printJob.id} semana={printJob.semana} columnas={printJob.columnas} orient={printJob.orient} autoPrint />
+          </div>,
+          document.body,
+        )}
+      <style>{`
+        .ot-print-area { display: none; }
+        @media print {
+          body > *:not(.ot-print-area) { display: none !important; }
+          .ot-print-area { display: block !important; }
+        }
+      `}</style>
 
       {/* Modal detalle */}
       <Modal

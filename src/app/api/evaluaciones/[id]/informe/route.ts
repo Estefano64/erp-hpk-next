@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { sanitizarNombreArchivo } from "@/lib/file-uploads";
-import { deleteObject } from "@/lib/r2-helpers";
+import { deleteObject, copyObjectToFolder } from "@/lib/r2-helpers";
 import { R2Keys, otCodigoFor } from "@/lib/r2";
 import { getAuditUser } from "@/lib/audit";
 
@@ -102,6 +102,37 @@ export async function POST(req: NextRequest, { params }: Params) {
         usuario,
       },
     });
+
+    // Sincronización con Adjuntos: si la OT aún NO tiene ningún adjunto de etapa
+    // "evaluacion", creamos uno copiando este informe a la carpeta de adjuntos,
+    // para que el documento aparezca también en la pestaña Adjuntos. "Crear si
+    // falta": no duplica si ya existe alguno. Best-effort: no rompe el registro
+    // del informe si la copia o el insert fallan.
+    try {
+      const yaTieneAdjunto = await prisma.otAdjunto.count({
+        where: { orden_trabajo_id: existing.orden_trabajo.id, etapa_codigo: "evaluacion" },
+      });
+      if (yaTieneAdjunto === 0) {
+        const destKey = await copyObjectToFolder({
+          sourceKey: key,
+          folderPrefix: R2Keys.otAdjunto(otCodigoFor(existing.orden_trabajo), "evaluacion"),
+          fileName: nombreSanitizado,
+        });
+        await prisma.otAdjunto.create({
+          data: {
+            orden_trabajo_id: existing.orden_trabajo.id,
+            etapa_codigo: "evaluacion",
+            nombre_archivo: nombreSanitizado,
+            r2_key: destKey,
+            tipo_mime,
+            tamano,
+            usuario_sube: usuario,
+          },
+        });
+      }
+    } catch (e) {
+      console.warn("Sync informe->adjunto evaluación falló:", e);
+    }
 
     return NextResponse.json({ data: updated });
   } catch (error) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useSession } from "next-auth/react";
 import { useTabSync } from "@/lib/useTabSync";
 import { useCachedFetch } from "@/lib/useCachedFetch";
@@ -47,6 +48,10 @@ import OTTareasTab from "./OTTareasTab";
 import OTHistorialTab from "./OTHistorialTab";
 import OTRequerimientosTab from "./OTRequerimientosTab";
 import OTCostosTab from "./OTCostosTab";
+// DescargarOTExcelButton se eliminó en Cloudflare — el botón Imprimir (via
+// setPrintOpen + OTPrintDoc) ya cubre la exportación a PDF. No hay Word/Excel.
+import { MaterialQuickCreateModal } from "@/components/modules/materiales/MaterialQuickCreateModal";
+import OTPrintDoc from "@/components/modules/ordenes-trabajo/OTPrintDoc";
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -103,6 +108,7 @@ interface OTDetalle {
   cod_rep_flota: string | null;
   cod_rep_posicion: string | null;
   id_fabricante: number | null;
+  material_codigo: string | null;
   wo_cliente: string | null;
   po_cliente: string | null;
   po_item: string | null;
@@ -252,6 +258,9 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   // Proveedores para el Select de "Vendor Externo" — reusa la tabla proveedor
   // existente (decisión del user, evita crear nuevo catálogo).
   const proveedoresRes = useCachedFetch<Wrapped<{ id: number; razon_social: string; nombre_comercial: string | null }>>("/api/proveedores?limit=10000");
+  // Materiales para el campo "Código de Material" (REP/BIE) — con buscador y
+  // creación al vuelo (mismo control que en "nueva OT").
+  const materialesRes = useCachedFetch<Wrapped<{ codigo: string; descripcion: string }>>("/api/materiales?limit=10000");
 
   const otStatuses = otStatusesRes?.data ?? [];
   const recursosStatuses = recursosStatusesRes?.data ?? [];
@@ -268,6 +277,17 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   const fabricantes = fabricantesRes?.data ?? [];
   const posiciones = posicionesRes?.data ?? [];
   const proveedores = proveedoresRes?.data ?? [];
+  const [materiales, setMateriales] = useState<{ codigo: string; descripcion: string }[]>([]);
+  useEffect(() => { if (materialesRes?.data) setMateriales(materialesRes.data); }, [materialesRes]);
+  // Buscador + modal de creación de material para el Select "Código de Material".
+  const [matSearch, setMatSearch] = useState("");
+  const [matModalOpen, setMatModalOpen] = useState(false);
+  // Modal "Imprimir OT": selección de secciones + orientación, y previsualización.
+  const [printOpen, setPrintOpen] = useState(false);
+  const [printSecc, setPrintSecc] = useState<string[]>(["resumen", "tareas", "requerimientos"]);
+  const [printHoriz, setPrintHoriz] = useState(false);
+  // Datos de la impresión en curso (null = sin previsualización abierta).
+  const [printPreview, setPrintPreview] = useState<{ secciones: string[]; orient: "vertical" | "horizontal" } | null>(null);
 
   const fetchOT = useCallback(async () => {
     if (!otId) return;
@@ -345,6 +365,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
       descripcion: ot.descripcion,
       tipo: ot.tipo,
       id_fabricante: ot.id_fabricante,
+      material_codigo: ot.material_codigo,
       cod_rep_flota: ot.cod_rep_flota,
       cod_rep_posicion: ot.cod_rep_posicion,
       fecha_requerimiento_cliente: ot.fecha_requerimiento_cliente,
@@ -443,7 +464,8 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
         body: JSON.stringify({
           ot_status_codigo: otStatus,
           recursos_status_codigo: recursosStatus,
-          taller_status_codigo: tallerStatus,
+          // Estado Taller no aplica a Bien/Servicio → se guarda null.
+          taller_status_codigo: bloqueoBien ? null : tallerStatus,
           comentarios: comentarios || null,
           version: ot.version,
         }),
@@ -556,6 +578,15 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   /* ── Guardar edición general ── */
   async function handleSaveEdit() {
     if (!ot) return;
+    // PO Cliente / PO Item obligatorios para Bien (igual que en creación).
+    if (editData.tipo_codigo === "BIE") {
+      const poc = String(editData.po_cliente ?? "").trim();
+      const poi = String(editData.po_item ?? "").trim();
+      if (!poc || !poi) {
+        messageApi.error("Para Bien, PO Cliente y PO Item son obligatorios.");
+        return;
+      }
+    }
     setSavingEdit(true);
     try {
       const cambioCodRep =
@@ -747,22 +778,13 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
 
         {/* ── Barra de acciones ── */}
         <div className="ot-print-hide" style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 16 }}>
-          {/* La descarga en PDF se hace vía el botón Imprimir de más abajo
-              (usa window.print del navegador). No hay export a Word / Excel.
+          {/* No hay export a Word / Excel — la descarga en PDF se hace vía
+              el modal de impresión (OTPrintDoc) que abre 'Imprimir'.
               El botón 'Reporte Correctivo (PDF)' no aparece acá porque las
               OTs externas son para reparación de repuestos del cliente y NO
               son mantenimiento correctivo — ese formato (HPK-M-F-07) solo
               aplica a OTs internas del taller. */}
-          <Button
-            icon={<PrinterOutlined />}
-            onClick={() => {
-              document.body.classList.add("ot-printing");
-              setTimeout(() => {
-                window.print();
-                document.body.classList.remove("ot-printing");
-              }, 100);
-            }}
-          >
+          <Button icon={<PrinterOutlined />} onClick={() => setPrintOpen(true)}>
             Imprimir
           </Button>
           <Button
@@ -831,17 +853,18 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                 options={recursosStatuses.map((s) => ({ value: s.codigo, label: s.nombre }))}
               />
             </Col>
+            {/* Estado Taller: NO aplica a Bien/Servicio → se oculta. */}
+            {!bloqueoBien && (
             <Col xs={12} md={6}>
               <FieldLabel>Estado Taller</FieldLabel>
               <Select showSearch optionFilterProp="label"
                 style={{ width: "100%" }}
                 value={tallerStatus || undefined}
                 onChange={setTallerStatus}
-                disabled={bloqueoBien}
-                placeholder={bloqueoBien ? "No aplica" : undefined}
                 options={tallerStatuses.map((s) => ({ value: s.codigo, label: s.nombre }))}
               />
             </Col>
+            )}
             <Col xs={12} md={6}>
               {/* Prioridad arriba de todo (pedido del equipo): antes había que
                   scrollear hasta "Documentos y Logística" para verla. */}
@@ -919,6 +942,8 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                 <Col xs={12} md={6}><Field label="Posición" value={ot.cod_rep_posicion} /></Col>
                 {!esBien && <Col xs={12} md={6}><Field label="Equipo" value={ot.equipo_codigo} /></Col>}
                 {!esBien && <Col xs={12} md={6}><Field label="N/S" value={ot.ns} /></Col>}
+                {/* Código de Material: Reparación y Bien (no en Servicio). */}
+                {!esServicio && <Col xs={12} md={6}><Field label="Código de Material" value={ot.material_codigo} /></Col>}
               </Row>
               {/* Plaqueteo al lado de N/S — antes vivía en "Documentos y
                   Logística"; el user pidió pegarlo a N/S porque son del cilindro
@@ -1037,6 +1062,38 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                     onChange={(v) => setField("cantidad", v ?? 1)}
                   />
                 </Col>
+                {/* Código de Material: Reparación y Bien (oculto en Servicio).
+                    Select ligado al catálogo con creación al vuelo ("+ Crear"). */}
+                {!esServicio && (
+                  <Col xs={12} md={8}>
+                    <FieldLabel>Código de Material</FieldLabel>
+                    <Select
+                      showSearch allowClear style={{ width: "100%" }}
+                      placeholder="Buscar o crear material..."
+                      optionFilterProp="label"
+                      value={(editData.material_codigo as string) ?? undefined}
+                      onChange={(v) => setField("material_codigo", v ?? null)}
+                      onSearch={(v) => setMatSearch(v)}
+                      onBlur={() => setMatSearch("")}
+                      options={materiales.map((m) => ({ value: m.codigo, label: `${m.codigo} — ${m.descripcion}` }))}
+                      dropdownRender={(menu) => (
+                        <div>
+                          {menu}
+                          {matSearch.trim() && (
+                            <div style={{ borderTop: "1px solid #f0f0f0", padding: "6px 8px" }}>
+                              <Button type="link" size="small" block
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => setMatModalOpen(true)}
+                              >
+                                + Crear: <b>{`"${matSearch.trim()}"`}</b>
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    />
+                  </Col>
+                )}
               </Row>
               {/* Equipo / N/S / Plaqueteo: REP y SER; ocultos en Bien. */}
               {!esBien && (
@@ -1123,12 +1180,12 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                   </Col>
                 )}
                 <Col xs={12} md={6}>
-                  <FieldLabel>PO Cliente</FieldLabel>
+                  <FieldLabel>{`PO Cliente${esBien ? " *" : ""}`}</FieldLabel>
                   <Input value={(editData.po_cliente as string) ?? ""} onChange={(e) => setField("po_cliente", e.target.value)} />
                 </Col>
-                {/* PO Item: los 3 tipos. */}
+                {/* PO Item: los 3 tipos; obligatorio en Bien. */}
                 <Col xs={12} md={6}>
-                  <FieldLabel>PO Item</FieldLabel>
+                  <FieldLabel>{`PO Item${esBien ? " *" : ""}`}</FieldLabel>
                   <Input value={(editData.po_item as string) ?? ""} onChange={(e) => setField("po_item", e.target.value)} />
                 </Col>
                 {/* Lugar de entrega: solo Bien. */}
@@ -1162,23 +1219,23 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                     </Col>
                   </>
                 )}
-                {/* Fecha Requerimiento: REP y Bien; Servicio no la usa (igual que creación). */}
-                {!esServicio && (
-                  <Col xs={12} md={6}>
-                    <FieldLabel>Fecha Requerimiento Cliente</FieldLabel>
-                    <DatePicker
-                      style={{ width: "100%" }} format="DD/MM/YYYY"
-                      value={editData.fecha_requerimiento_cliente ? dayjs(String(editData.fecha_requerimiento_cliente).slice(0, 10)) : null}
-                      onChange={(d) => setField("fecha_requerimiento_cliente", d ? d.format("YYYY-MM-DD") : null)}
-                    />
-                  </Col>
-                )}
+                {/* Fecha Requerimiento: aplica a los 3 tipos. En REP los días se
+                    cuentan desde la recepción; en BIE/SER desde la creación. */}
+                <Col xs={12} md={6}>
+                  <FieldLabel>Fecha Requerimiento Cliente</FieldLabel>
+                  <DatePicker
+                    style={{ width: "100%" }} format="DD/MM/YYYY"
+                    value={editData.fecha_requerimiento_cliente ? dayjs(String(editData.fecha_requerimiento_cliente).slice(0, 10)) : null}
+                    onChange={(d) => setField("fecha_requerimiento_cliente", d ? d.format("YYYY-MM-DD") : null)}
+                  />
+                </Col>
               </Row>
             </>
           )}
         </Card>
 
-        {/* ── PCR y Horas de Trabajo ── */}
+        {/* ── PCR y Horas de Trabajo (solo Reparación; oculto en BIE/SER) ── */}
+        {!bloqueoBien && (
         <Card
           size="small"
           styles={{ body: { padding: 16 } }}
@@ -1222,6 +1279,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
             </Row>
           )}
         </Card>
+        )}
 
         {/* ── Tipo Reparación y Garantía ── */}
         <Card
@@ -1232,13 +1290,14 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
           <SectionTitle>Tipo Reparación y Garantía</SectionTitle>
           {!editing ? (
             <Row gutter={[16, 4]}>
-              <Col xs={12} md={4}><Field label="Atención" value={ot.atencion_reparacion?.nombre} /></Col>
-              <Col xs={12} md={4}><Field label="Tipo Reparación" value={ot.tipo_reparacion?.nombre} /></Col>
+              {/* Atención: REP y Bien. Tipo Reparación / Base Metálica: solo REP. */}
+              {!esServicio && <Col xs={12} md={4}><Field label="Atención" value={ot.atencion_reparacion?.nombre} /></Col>}
+              {!bloqueoBien && <Col xs={12} md={4}><Field label="Tipo Reparación" value={ot.tipo_reparacion?.nombre} /></Col>}
               {/* Prioridad se movió arriba (al bloque "Documentos y Logística"
                   al lado de Fecha Requerimiento Cliente) — pedido del user. */}
               <Col xs={12} md={3}><Field label="Garantía" value={ot.garantia_codigo} /></Col>
               <Col xs={12} md={4}><Field label="Tipo Garantía" value={ot.tipo_garantia?.nombre} /></Col>
-              <Col xs={12} md={3}><Field label="Base Metálica" value={ot.base_metalica_codigo} /></Col>
+              {!bloqueoBien && <Col xs={12} md={3}><Field label="Base Metálica" value={ot.base_metalica_codigo} /></Col>}
               <Col xs={12} md={3}><Field label="Contrato (días)" value={ot.contrato_dias} /></Col>
               <Col xs={24} md={6}>
                 <Field
@@ -1256,26 +1315,30 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
             </Row>
           ) : (
             <Row gutter={[16, 12]}>
+              {/* Atención: Reparación y Bien (oculto en Servicio). */}
+              {!esServicio && (
               <Col xs={12} md={6}>
                 <FieldLabel>Atención Reparación</FieldLabel>
                 <Select showSearch optionFilterProp="label"
                   style={{ width: "100%" }}
-                  disabled={esServicio}
                   value={editData.atencion_reparacion_codigo as string}
                   onChange={(v) => setField("atencion_reparacion_codigo", v)}
                   options={atencionReparaciones.map((a) => ({ value: a.codigo, label: a.nombre }))}
                 />
               </Col>
+              )}
+              {/* Tipo Reparación: solo Reparación (oculto en BIE/SER). */}
+              {!bloqueoBien && (
               <Col xs={12} md={6}>
                 <FieldLabel>Tipo Reparación</FieldLabel>
                 <Select showSearch optionFilterProp="label"
                   style={{ width: "100%" }}
-                  disabled={bloqueoBien}
                   value={editData.tipo_reparacion_codigo as string}
                   onChange={(v) => setField("tipo_reparacion_codigo", v)}
                   options={tipoReparaciones.map((t) => ({ value: t.codigo, label: t.nombre }))}
                 />
               </Col>
+              )}
               <Col xs={12} md={6}>
                 <FieldLabel>Prioridad de Atención</FieldLabel>
                 <Select showSearch optionFilterProp="label" style={{ width: "100%" }} value={editData.prioridad_atencion_codigo as string}
@@ -1300,14 +1363,16 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                   onChange={(v) => setField("tipo_garantia_codigo", v)}
                   options={tipoGarantias.map((t) => ({ value: t.codigo, label: t.nombre }))} />
               </Col>
+              {/* Base Metálica: solo Reparación (oculto en BIE/SER). */}
+              {!bloqueoBien && (
               <Col xs={8} md={3}>
                 <FieldLabel>Base Metálica</FieldLabel>
                 <Checkbox
                   checked={editData.base_metalica_codigo === "Si"}
-                  disabled={bloqueoBien}
                   onChange={(e) => setField("base_metalica_codigo", e.target.checked ? "Si" : "No")}
                 >Sí</Checkbox>
               </Col>
+              )}
               <Col xs={16} md={6}>
                 <FieldLabel>Cotización (monto + moneda)</FieldLabel>
                 <Space.Compact style={{ display: "flex" }}>
@@ -1632,6 +1697,78 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
           `}</style>
         </div>
       )}
+
+      {/* Imprimir OT: elegir secciones + orientación → abre la vista de impresión. */}
+      <Modal
+        title={`Imprimir OT ${ot ? formatOtCodigo(ot.ot, ot.tipo_codigo, "") : ""}`}
+        open={printOpen}
+        onCancel={() => setPrintOpen(false)}
+        okText="Imprimir"
+        okButtonProps={{ icon: <PrinterOutlined />, disabled: printSecc.length === 0 }}
+        onOk={() => {
+          if (!ot || printSecc.length === 0) return;
+          // Copia del array para forzar re-fetch + re-print aunque se repita la
+          // misma selección (OTPrintDoc depende de la identidad de `secciones`).
+          setPrintPreview({ secciones: [...printSecc], orient: printHoriz ? "horizontal" : "vertical" });
+          setPrintOpen(false);
+        }}
+      >
+        <p style={{ marginTop: 0, color: brand.textSecondary }}>¿Qué secciones incluir?</p>
+        <Checkbox.Group
+          value={printSecc}
+          onChange={(v) => setPrintSecc(v as string[])}
+          options={[
+            { label: "Resumen (datos de la OT)", value: "resumen" },
+            { label: "Tareas (planificación)", value: "tareas" },
+            { label: "Requerimientos", value: "requerimientos" },
+            { label: "Costos", value: "costos" },
+            { label: "Historial", value: "historial" },
+          ]}
+          style={{ display: "flex", flexDirection: "column", gap: 8 }}
+        />
+        <div style={{ marginTop: 16, borderTop: `1px solid ${brand.border}`, paddingTop: 12 }}>
+          <Checkbox checked={printHoriz} onChange={(e) => setPrintHoriz(e.target.checked)}>
+            Orientación horizontal (para tablas anchas: Costos / Requerimientos)
+          </Checkbox>
+        </div>
+      </Modal>
+
+      {/* Impresión directa: el documento se renderiza en un área oculta porteada
+          a <body> y se imprime solo (OTPrintDoc autoPrint). En pantalla queda
+          display:none; al imprimir se oculta TODO lo demás (sin páginas en
+          blanco, sin recortes de modal). No hay preview del ERP — el navegador
+          ya muestra su propia vista previa en el diálogo de impresión. */}
+      {printPreview && ot && typeof document !== "undefined" &&
+        createPortal(
+          <div className="ot-print-area">
+            <OTPrintDoc
+              otId={ot.id}
+              secciones={printPreview.secciones}
+              orient={printPreview.orient}
+              autoPrint
+            />
+          </div>,
+          document.body,
+        )}
+      <style>{`
+        .ot-print-area { display: none; }
+        @media print {
+          body > *:not(.ot-print-area) { display: none !important; }
+          .ot-print-area { display: block !important; }
+        }
+      `}</style>
+
+      {/* Crear material al vuelo desde el Select "Código de Material". */}
+      <MaterialQuickCreateModal
+        open={matModalOpen}
+        initialDescripcion={matSearch.trim()}
+        onClose={() => setMatModalOpen(false)}
+        onCreated={(mat) => {
+          setMateriales((prev) => [{ codigo: mat.codigo, descripcion: mat.descripcion }, ...prev]);
+          setField("material_codigo", mat.codigo);
+          setMatSearch("");
+        }}
+      />
     </div>
   );
 }

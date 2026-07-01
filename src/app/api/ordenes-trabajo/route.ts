@@ -280,6 +280,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // BIE/SER no tienen fecha de recepción: los días se cuentan desde HOY
+    // (la fecha de creación de la OT) hasta la fecha de requerimiento.
+    if (
+      contratoDias == null && fechaRequerimiento &&
+      (body.tipo_codigo === "BIE" || body.tipo_codigo === "SER")
+    ) {
+      const hoy = new Date();
+      contratoDias = Math.ceil((fechaRequerimiento.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
+    }
+
     // Fecha de requerimiento del cliente: AHORA OPCIONAL. El dato no siempre
     // viene en el viajero/guía de remisión del cliente; antes era obligatoria
     // para REP/BIE pero se relajó porque bloqueaba la creación legítima de OTs.
@@ -362,9 +372,9 @@ export async function POST(req: NextRequest) {
           cod_rep_flota: codRepFlota,
           cod_rep_posicion: codRepPosicion,
           // Equipo / N/S: REP y SER (null solo en BIE). Código de Material:
-          // solo Reparación (null en BIE y SER).
+          // Reparación y BIE (null solo en SER).
           equipo_codigo: esBien ? null : (body.equipo_codigo || null),
-          material_codigo: esBienOServicio ? null : (body.material_codigo || null),
+          material_codigo: esServicio ? null : (body.material_codigo || null),
           ns: esBien ? null : (body.ns || null),
           // Plaqueteo / WO Cliente: REP y SER (null solo en BIE).
           plaqueteo: esBien ? null : (body.plaqueteo || null),
@@ -389,7 +399,9 @@ export async function POST(req: NextRequest) {
           tipo_reparacion_codigo: esBienOServicio ? null : (body.tipo_reparacion_codigo || null),
           tipo_garantia_codigo: tipoGarantiaCodigo,
           prioridad_atencion_codigo: body.prioridad_atencion_codigo || null,
-          contrato_dias: esBienOServicio ? null : contratoDias,
+          // Días: REP se calcula con fecha de recepción; BIE/SER con la fecha
+          // de creación (arriba). Aplica a los 3 tipos (ya no se anula).
+          contrato_dias: contratoDias,
           base_metalica_codigo: esBienOServicio ? null : (body.base_metalica_codigo || null),
           comentarios: body.comentarios || null,
           monto_cotizacion: body.monto_cotizacion != null && body.monto_cotizacion !== "" ? body.monto_cotizacion : null,
@@ -398,7 +410,9 @@ export async function POST(req: NextRequest) {
           fecha_requerimiento_cliente: fechaRequerimiento,
           ot_status_codigo: "Abierta",
           recursos_status_codigo: "En revision procesos",
-          taller_status_codigo: "Pdt Evaluación",
+          // Estado Taller: NO aplica a BIE/SER (queda null; el listado muestra
+          // "No aplica"). Solo las de Reparación arrancan en "Pdt Evaluación".
+          taller_status_codigo: esBienOServicio ? null : "Pdt Evaluación",
           usuario_crea: usuarioCrea,
         },
         include: {

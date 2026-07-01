@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
+import { recalcularRecursosStatusOT, recalcularRecursosStatusOTInterna } from "@/lib/recursos-ot";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
@@ -136,6 +137,14 @@ export async function POST(req: NextRequest, { params }: Params) {
             datos_adicionales: datosAdicionalesHist,
           },
         });
+      }
+
+      // Aceptar la OC (PEND_OC → PROCESO) mueve la etapa de recursos.
+      for (const { ot_id } of otsExternasAfectadas) {
+        if (ot_id != null) await recalcularRecursosStatusOT(tx, ot_id);
+      }
+      for (const { orden_trabajo_interna_id } of otsInternasAfectadas) {
+        if (orden_trabajo_interna_id != null) await recalcularRecursosStatusOTInterna(tx, orden_trabajo_interna_id);
       }
 
       return actualizada;

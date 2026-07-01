@@ -11,7 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
-import { deleteObject } from "@/lib/r2-helpers";
+import { deleteObject, copyObjectToFolder } from "@/lib/r2-helpers";
 import { R2Keys, otCodigoFor } from "@/lib/r2";
 import { getAuditUser } from "@/lib/audit";
 
@@ -158,6 +158,44 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
     if (Object.keys(fechasData).length > 0) {
       await prisma.ordenTrabajo.update({ where: { id: otId }, data: fechasData });
+    }
+
+    // Sincronización con el informe de la hoja de evaluación.
+    // Si esta etapa es "evaluacion" y la OT tiene una hoja de evaluación
+    // editable SIN informe cargado, copiamos este adjunto al slot de informe
+    // (carpeta evaluaciones/) y lo registramos. Es "rellenar el hueco": NUNCA
+    // pisa un informe ya existente ni una hoja bloqueada (APROBADA/PENDIENTE).
+    // Best-effort: si falla, no rompe la subida del adjunto.
+    if (etapa === "evaluacion") {
+      try {
+        const evalSheet = await prisma.evaluacionTecnica.findFirst({
+          where: { ot_id: otId },
+          orderBy: { id: "desc" },
+          select: { id: true, informe_key: true, estado: true },
+        });
+        if (
+          evalSheet && !evalSheet.informe_key &&
+          evalSheet.estado !== "APROBADA" && evalSheet.estado !== "PENDIENTE_APROBACION"
+        ) {
+          const destKey = await copyObjectToFolder({
+            sourceKey: key,
+            folderPrefix: R2Keys.otEvaluacion(otCodigoFor(ot)),
+            fileName: nombre_archivo,
+          });
+          await prisma.evaluacionTecnica.update({
+            where: { id: evalSheet.id },
+            data: {
+              informe_key: destKey,
+              informe_nombre: nombre_archivo,
+              informe_mime: tipo_mime,
+              informe_tamano: tamano,
+              informe_fecha_subida: new Date(),
+            },
+          });
+        }
+      } catch (e) {
+        console.warn("Sync adjunto->informe evaluación falló:", e);
+      }
     }
 
     return NextResponse.json({ data: adjunto }, { status: 201 });

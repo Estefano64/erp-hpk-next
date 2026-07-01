@@ -418,16 +418,11 @@ export async function POST(req: NextRequest) {
         ? await tx.ubicacion.findUnique({ where: { codigo: d.ubicacion_codigo }, select: { codigo: true } })
         : null;
 
-      // Recálculo unificado del recursos_status. Antes acá había una función
-      // local que ponía "Recursos completos" cuando la OC estaba entregada,
-      // sin diferenciar si el material había llegado a almacén o si ya se
-      // entregó al técnico. Ahora usamos el state machine de recursos-ot
-      // que introduce el estado intermedio "Recursos en almacén" (material
-      // recibido pero pendiente de entrega formal al técnico). Ese helper
-      // también registra el cambio en OTHistorial cuando corresponde.
+      // Recursos status: se deriva con el helper canónico (misma state machine
+      // que el resto de los endpoints). La recepción mueve la OT a "Recursos
+      // completos" (todo llegó) o la deja en "En espera de recursos" (parcial).
       for (const otId of otIds) {
         await recalcularRecursosStatusOT(tx, otId);
-        // La ubicación sigue actualizándose por acá (no depende del state).
         if (ubicacionValida) {
           await tx.ordenTrabajo.update({
             where: { id: otId },
@@ -435,8 +430,6 @@ export async function POST(req: NextRequest) {
           });
         }
       }
-
-      // OT internas: mismo recálculo unificado.
       for (const otInternaId of otInternaIds) {
         await recalcularRecursosStatusOTInterna(tx, otInternaId);
       }

@@ -23,6 +23,7 @@ import { brand } from "@/lib/theme";
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 import { useUnsavedChangesWarning, confirmLeave } from "@/lib/unsaved-changes";
+import { MaterialQuickCreateModal } from "@/components/modules/materiales/MaterialQuickCreateModal";
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -87,6 +88,10 @@ export default function NuevaOTPage() {
   // Cargados una sola vez con límite alto (~2k materiales). El Select
   // permite búsqueda por código y descripción.
   const [materiales, setMateriales] = useState<MaterialOption[]>([]);
+  // Texto tipeado en el Select de material + control del modal "crear material".
+  // Permiten ofrecer "+ Crear: <texto>" cuando el código no existe en catálogo.
+  const [matSearch, setMatSearch] = useState("");
+  const [matModalOpen, setMatModalOpen] = useState(false);
 
   // Estado del form para lógica condicional
   const [estrategia, setEstrategia] = useState(false);
@@ -121,9 +126,15 @@ export default function NuevaOTPage() {
   const fechaRecepcionWatch = Form.useWatch("fecha_recepcion", form);
   const fechaRequerimientoWatch = Form.useWatch("fecha_requerimiento_cliente", form);
   const diasCalculados = useMemo(() => {
-    if (!fechaRecepcionWatch || !fechaRequerimientoWatch) return null;
-    return dayjs(fechaRequerimientoWatch).diff(dayjs(fechaRecepcionWatch), "day");
-  }, [fechaRecepcionWatch, fechaRequerimientoWatch]);
+    if (!fechaRequerimientoWatch) return null;
+    // REP: días entre recepción y requerimiento. BIE/SER: no tienen recepción,
+    // así que se cuentan desde HOY (la fecha en que se crea la OT).
+    const base = (esBien || esServicio)
+      ? dayjs().startOf("day")
+      : (fechaRecepcionWatch ? dayjs(fechaRecepcionWatch) : null);
+    if (!base) return null;
+    return dayjs(fechaRequerimientoWatch).diff(base, "day");
+  }, [fechaRecepcionWatch, fechaRequerimientoWatch, esBien, esServicio]);
 
   useEffect(() => {
     async function loadCatalogs() {
@@ -176,8 +187,6 @@ export default function NuevaOTPage() {
         horas: undefined,
         tipo_reparacion_codigo: undefined,
         base_metalica: false,
-        // Código de Material: solo Reparación → se limpia en BIE y SER.
-        material_codigo: undefined,
       });
       setPorcentajePcr(null);
     }
@@ -195,8 +204,10 @@ export default function NuevaOTPage() {
     if (esServicio) {
       // SER no usa Atención reparación. La Fecha de Requerimiento del Cliente
       // SÍ aplica a servicio (no se limpia al cambiar de tipo).
+      // Código de Material aplica a Reparación y Bien → solo se limpia en SER.
       form.setFieldsValue({
         atencion_reparacion_codigo: undefined,
+        material_codigo: undefined,
       });
       setAtencionCodigo("");
       setFechaReqCalculada(null);
@@ -309,9 +320,9 @@ export default function NuevaOTPage() {
         cod_rep_flota: estrategia ? null : (values.cod_rep_flota || null),
         cod_rep_posicion: estrategia ? null : (values.cod_rep_posicion || null),
         // Equipo / N/S: REP y SER (null solo en Bien). Código de Material:
-        // solo Reparación (null en Bien y Servicio).
+        // Reparación y Bien (null solo en Servicio).
         equipo_codigo: esBien ? null : (values.equipo_codigo || null),
-        material_codigo: bloqueoBien ? null : (values.material_codigo || null),
+        material_codigo: esServicio ? null : (values.material_codigo || null),
         ns: esBien ? null : (values.ns || null),
         // Plaqueteo / WO Cliente: REP y SER (null solo en Bien).
         // PO Item: los 3 tipos. ID Viajero / Guía / Empresa / Fecha Recepción /
@@ -576,18 +587,40 @@ export default function NuevaOTPage() {
                 </Col>
               </>
             )}
-            {/* Código de Material: solo Reparación (oculto en Bien y Servicio). */}
-            {!bloqueoBien && (
+            {/* Código de Material: Reparación y Bien (oculto solo en Servicio).
+                Es un Select ligado al catálogo (FK) — se tipea para buscar y
+                debe elegirse un material existente. Si el código no está, se
+                puede crear al vuelo con "+ Crear: <texto>" (abre el modal de
+                creación de material; al guardar queda seleccionado). */}
+            {!esServicio && (
               <Col xs={12} md={6}>
                 <Form.Item name="material_codigo" label="Código de Material">
                   <Select
                     showSearch allowClear
-                    placeholder="Buscar material..."
+                    placeholder="Buscar o crear material..."
                     optionFilterProp="label"
+                    onSearch={(v) => setMatSearch(v)}
+                    onBlur={() => setMatSearch("")}
                     options={materiales.map((m) => ({
                       value: m.codigo,
                       label: `${m.codigo} — ${m.descripcion}`,
                     }))}
+                    dropdownRender={(menu) => (
+                      <div>
+                        {menu}
+                        {matSearch.trim() && (
+                          <div style={{ borderTop: "1px solid #f0f0f0", padding: "6px 8px" }}>
+                            <Button
+                              type="link" size="small" block
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => setMatModalOpen(true)}
+                            >
+                              + Crear: <b>{`"${matSearch.trim()}"`}</b>
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   />
                 </Form.Item>
               </Col>
@@ -613,13 +646,22 @@ export default function NuevaOTPage() {
               </Col>
             )}
             <Col xs={12} md={6}>
-              <Form.Item name="po_cliente" label="PO Cliente">
+              {/* PO Cliente: obligatorio solo en Bien (opcional en REP/SER). */}
+              <Form.Item
+                name="po_cliente"
+                label="PO Cliente"
+                rules={[{ required: esBien, message: "Requerido para Bien" }]}
+              >
                 <Input />
               </Form.Item>
             </Col>
-            {/* PO Item: los 3 tipos (REP, BIE, SER). */}
+            {/* PO Item: los 3 tipos (REP, BIE, SER); obligatorio solo en Bien. */}
             <Col xs={12} md={6}>
-              <Form.Item name="po_item" label="PO Item">
+              <Form.Item
+                name="po_item"
+                label="PO Item"
+                rules={[{ required: esBien, message: "Requerido para Bien" }]}
+              >
                 <Input />
               </Form.Item>
             </Col>
@@ -866,17 +908,15 @@ export default function NuevaOTPage() {
                     />
                   </Form.Item>
                 </Col>
-                {/* "Días calculados" = días entre recepción y requerimiento.
-                    No aplica a Servicio (no hay recepción) → se oculta. */}
-                {!esServicio && (
-                  <Col xs={12} md={6}>
-                    <Form.Item label="Días calculados">
-                      <Text strong style={{ fontSize: 16 }}>
-                        {diasCalculados != null ? `${diasCalculados} días` : "-"}
-                      </Text>
-                    </Form.Item>
-                  </Col>
-                )}
+                {/* "Días calculados": REP usa la fecha de recepción; BIE/SER la
+                    fecha de creación (hoy). Aplica a los 3 tipos. */}
+                <Col xs={12} md={6}>
+                  <Form.Item label="Días calculados">
+                    <Text strong style={{ fontSize: 16 }}>
+                      {diasCalculados != null ? `${diasCalculados} días` : "-"}
+                    </Text>
+                  </Form.Item>
+                </Col>
               </>
             )}
           </Row>
@@ -897,6 +937,19 @@ export default function NuevaOTPage() {
           </Button>
         </div>
       </Form>
+
+      {/* Crear material al vuelo desde el Select "Código de Material". Al crear,
+          lo agregamos a la lista y lo dejamos seleccionado en el form. */}
+      <MaterialQuickCreateModal
+        open={matModalOpen}
+        initialDescripcion={matSearch.trim()}
+        onClose={() => setMatModalOpen(false)}
+        onCreated={(mat) => {
+          setMateriales((prev) => [{ codigo: mat.codigo, descripcion: mat.descripcion }, ...prev]);
+          form.setFieldValue("material_codigo", mat.codigo);
+          setMatSearch("");
+        }}
+      />
     </div>
   );
 }

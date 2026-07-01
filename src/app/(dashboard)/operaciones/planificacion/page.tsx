@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Typography, Card, Table, Tag, Input, Select, Space, Button, DatePicker, InputNumber, Checkbox, message, Row, Col, Alert, Switch, Popconfirm, Tooltip, Modal, Timeline, Empty,
 } from "antd";
-import { SearchOutlined, ReloadOutlined, CalendarOutlined, InfoCircleOutlined, SaveOutlined, UndoOutlined, ThunderboltOutlined, PlusOutlined, DeleteOutlined, HistoryOutlined, CloseOutlined } from "@ant-design/icons";
+import { SearchOutlined, ReloadOutlined, CalendarOutlined, InfoCircleOutlined, SaveOutlined, UndoOutlined, ThunderboltOutlined, PlusOutlined, DeleteOutlined, HistoryOutlined, CloseOutlined, PrinterOutlined } from "@ant-design/icons";
+import { createPortal } from "react-dom";
+import PlanificacionPrintDoc, { PLAN_PRINT_COLS } from "@/components/modules/operaciones/PlanificacionPrintDoc";
 import { OperacionCombo } from "@/components/modules/ordenes-trabajo/OTTareasTab";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import type { ColumnsType } from "antd/es/table";
@@ -241,7 +243,22 @@ export default function PlanificacionPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
-  const [filterSemana, setFilterSemana] = useState<string | undefined>();
+  // Por defecto, la semana ISO actual (formato "YYYYWnn", igual que buildSemanasOptions).
+  const [filterSemana, setFilterSemana] = useState<string | undefined>(() => {
+    const d = dayjs();
+    return `${d.isoWeekYear()}W${String(d.isoWeek()).padStart(2, "0")}`;
+  });
+  // Impresión de la semana: modal de columnas + job para el área de impresión.
+  const [printOpen, setPrintOpen] = useState(false);
+  const [printCols, setPrintCols] = useState<string[]>(PLAN_PRINT_COLS.map((c) => c.key));
+  const [printHoriz, setPrintHoriz] = useState(true);
+  const [printJob, setPrintJob] = useState<{ id: number; semana: string; columnas: string[]; orient: "vertical" | "horizontal" } | null>(null);
+  // Al cerrar el diálogo de impresión, desmontar el área de impresión.
+  useEffect(() => {
+    const done = () => setPrintJob(null);
+    window.addEventListener("afterprint", done);
+    return () => window.removeEventListener("afterprint", done);
+  }, []);
   const [filterEstado, setFilterEstado] = useState<string | undefined>();
   // Por defecto solo se cargan las tareas con estado general "Abierto" (activas:
   // sin terminar ni anular) — es lo que el planner trabaja a diario. Para ver
@@ -1584,6 +1601,11 @@ export default function PlanificacionPage() {
           Planificación
         </Typography.Title>
         <Space size="middle" wrap>
+          <Tooltip title={filterSemana ? "Imprimir la programación de la semana elegida" : "Elegí una semana primero"}>
+            <Button icon={<PrinterOutlined />} onClick={() => setPrintOpen(true)} disabled={!filterSemana}>
+              Imprimir
+            </Button>
+          </Tooltip>
           <Button
             type={editMode ? "default" : "primary"}
             danger={editMode}
@@ -2138,6 +2160,58 @@ export default function PlanificacionPage() {
           </>
         )}
       </Modal>
+
+      {/* Imprimir programación de la semana: elegir columnas → imprime directo. */}
+      <Modal
+        title={`Imprimir programación — Semana ${filterSemana ?? ""}`}
+        open={printOpen}
+        onCancel={() => setPrintOpen(false)}
+        okText="Imprimir"
+        okButtonProps={{ icon: <PrinterOutlined />, disabled: printCols.length === 0 || !filterSemana }}
+        onOk={() => {
+          if (!filterSemana || printCols.length === 0) return;
+          // id incremental → fuerza re-montar el doc y re-imprimir sin recargar.
+          setPrintJob((prev) => ({
+            id: (prev?.id ?? 0) + 1,
+            semana: filterSemana,
+            columnas: [...printCols],
+            orient: printHoriz ? "horizontal" : "vertical",
+          }));
+          setPrintOpen(false);
+        }}
+      >
+        <p style={{ marginTop: 0, color: brand.textSecondary }}>
+          Imprime <b>toda la semana {filterSemana}</b> (sin los otros filtros). ¿Qué columnas incluir?
+        </p>
+        <Checkbox.Group
+          value={printCols}
+          onChange={(v) => setPrintCols(v as string[])}
+          options={PLAN_PRINT_COLS.map((c) => ({ label: c.label, value: c.key }))}
+          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}
+        />
+        <div style={{ marginTop: 16, borderTop: `1px solid ${brand.border}`, paddingTop: 12 }}>
+          <Checkbox checked={printHoriz} onChange={(e) => setPrintHoriz(e.target.checked)}>
+            Orientación horizontal (recomendado con muchas columnas)
+          </Checkbox>
+        </div>
+      </Modal>
+
+      {/* Área de impresión oculta (porteada a body) — se imprime sola. El `key`
+          fuerza re-montar en cada impresión para que se pueda repetir sin recargar. */}
+      {printJob && typeof document !== "undefined" &&
+        createPortal(
+          <div className="ot-print-area">
+            <PlanificacionPrintDoc key={printJob.id} semana={printJob.semana} columnas={printJob.columnas} orient={printJob.orient} autoPrint />
+          </div>,
+          document.body,
+        )}
+      <style>{`
+        .ot-print-area { display: none; }
+        @media print {
+          body > *:not(.ot-print-area) { display: none !important; }
+          .ot-print-area { display: block !important; }
+        }
+      `}</style>
     </div>
   );
 }

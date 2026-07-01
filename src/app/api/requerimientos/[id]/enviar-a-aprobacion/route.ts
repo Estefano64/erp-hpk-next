@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
-import { maybePromoveOTaRecursosSolicitados } from "@/lib/ot-status";
+import { recalcularRecursosStatusDesdeRep } from "@/lib/recursos-ot";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
@@ -54,10 +54,11 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           usuario,
         },
       });
-      // Promoción de OT solo aplica a OTs externas — internas no tienen ese status.
-      if (current.ot_id != null) {
-        await maybePromoveOTaRecursosSolicitados(tx, current.ot_id, usuario);
-      }
+      // Recalcular el estado de recursos (enviar a aprobación mueve la etapa).
+      await recalcularRecursosStatusDesdeRep(tx, {
+        ot_id: current.ot_id,
+        orden_trabajo_interna_id: current.orden_trabajo_interna_id,
+      });
       return r;
     });
     return NextResponse.json({ data: updated });

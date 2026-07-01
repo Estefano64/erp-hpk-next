@@ -1,0 +1,156 @@
+"use client";
+
+// Documento de impresión de la Programación Semanal (tabla plana). Trae TODA la
+// semana elegida (solo filtro semana) y renderiza las columnas seleccionadas.
+// El "ocultar todo lo demás" al imprimir lo maneja el contenedor (portal a body
+// en la página de planificación), igual que OTPrintDoc.
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import dayjs from "dayjs";
+import isoWeek from "dayjs/plugin/isoWeek";
+import { splitRecursos } from "@/lib/recursos";
+import { formatDateOnlyShort } from "@/lib/dates";
+
+dayjs.extend(isoWeek);
+
+type Dict = Record<string, unknown>;
+
+// Columnas disponibles para la tabla plana (orden fijo de impresión).
+export const PLAN_PRINT_COLS: { key: string; label: string }[] = [
+  { key: "operario", label: "Operario" },
+  { key: "ot", label: "OT" },
+  { key: "cliente", label: "Cliente" },
+  { key: "tarea", label: "Tarea" },
+  { key: "maquina", label: "Máquina" },
+  { key: "hs_est", label: "Hs est." },
+  { key: "hs_real", label: "Hs real" },
+  { key: "plan", label: "Plan (ini→fin)" },
+  { key: "real", label: "Real (ini→fin)" },
+  { key: "estado", label: "Estado" },
+];
+
+interface Props {
+  semana: string;             // "YYYYWnn" (ej. "2026W27")
+  columnas: string[];         // keys de PLAN_PRINT_COLS a imprimir
+  orient?: "vertical" | "horizontal";
+  autoPrint?: boolean;
+}
+
+export default function PlanificacionPrintDoc({ semana, columnas, orient = "vertical", autoPrint = false }: Props) {
+  const [rows, setRows] = useState<Dict[]>([]);
+  const [maquinas, setMaquinas] = useState<Map<string, string>>(new Map());
+  const [cargando, setCargando] = useState(true);
+
+  useEffect(() => {
+    let cancel = false;
+    setCargando(true);
+    (async () => {
+      try {
+        const j = async (url: string) => { const r = await fetch(url); return r.ok ? r.json() : null; };
+        const [plan, eq] = await Promise.all([
+          j(`/api/planificacion?semana=${encodeURIComponent(semana)}`),
+          j(`/api/equipos?limit=10000&tipo=MAQ`),
+        ]);
+        if (cancel) return;
+        setRows(plan?.data ?? []);
+        setMaquinas(new Map(((eq?.data ?? []) as { codigo: string; descripcion: string }[]).map((e) => [e.codigo, e.descripcion])));
+        setCargando(false);
+      } catch {
+        if (!cancel) { setRows([]); setCargando(false); }
+      }
+    })();
+    return () => { cancel = true; };
+  }, [semana]);
+
+  // Imprime UNA sola vez por montaje (el `key` del padre re-monta para reimprimir).
+  // El ref evita bucles si el componente re-renderiza en páginas muy "vivas"
+  // (tablero con timers/tab-sync).
+  const printedRef = useRef(false);
+  useEffect(() => {
+    if (!autoPrint || cargando || printedRef.current) return;
+    printedRef.current = true;
+    const t = setTimeout(() => window.print(), 400);
+    return () => clearTimeout(t);
+  }, [autoPrint, cargando]);
+
+  const rango = useMemo(() => {
+    const [yStr, wStr] = semana.split("W");
+    const y = Number(yStr), w = Number(wStr);
+    if (!Number.isFinite(y) || !Number.isFinite(w)) return semana;
+    const lunes = dayjs().year(y).isoWeek(w).startOf("isoWeek");
+    return `${lunes.format("DD/MM")} – ${lunes.add(5, "day").format("DD/MM/YYYY")}`;
+  }, [semana]);
+
+  const cols = PLAN_PRINT_COLS.filter((c) => columnas.includes(c.key));
+  const fld = (v: unknown) => (v == null || v === "" ? "—" : String(v));
+  const fd = (v: unknown) => (v ? formatDateOnlyShort(v as string) : "—");
+  const esNum = (k: string) => k === "hs_est" || k === "hs_real";
+
+  const cell = (r: Dict, key: string) => {
+    const otr = r.orden_trabajo as Dict | null;
+    switch (key) {
+      case "operario": return splitRecursos((r.tecnico as string) ?? "").join(", ") || "—";
+      case "ot": return fld(otr?.ot);
+      case "cliente": { const c = otr?.cliente as Dict | null; return fld(c?.nombre_comercial ?? c?.razon_social); }
+      case "tarea": return fld(r.descripcion ?? r.operacion_codigo);
+      case "maquina": { const cod = r.maquina as string | null; return cod ? (maquinas.get(cod) ?? cod) : "—"; }
+      case "hs_est": return fld(r.horas_estimadas);
+      case "hs_real": return fld(r.horas_reales);
+      case "plan": return `${fd(r.fecha_inicio)} → ${fd(r.fecha_fin)}`;
+      case "real": return `${fd(r.fecha_inicio_real)} → ${fd(r.fecha_fin_real)}`;
+      case "estado": return fld(r.estado);
+      default: return "—";
+    }
+  };
+
+  if (cargando) return <div style={{ padding: 24 }}>Preparando impresión…</div>;
+
+  const ordenadas = [...rows].sort(
+    (a, b) => String(a.tecnico ?? "").localeCompare(String(b.tecnico ?? "")) || String(a.fecha_inicio ?? "").localeCompare(String(b.fecha_inicio ?? "")),
+  );
+
+  return (
+    <div className="plan-print-doc">
+      <div className="doc">
+        <div className="doc-header">
+          <div>
+            <div className="doc-title">Programación Semanal</div>
+            <div className="doc-sub">Semana {semana} &nbsp;·&nbsp; {rango} &nbsp;·&nbsp; {rows.length} tarea(s)</div>
+          </div>
+          <div className="doc-meta">Impreso: {formatDateOnlyShort(new Date().toISOString())}</div>
+        </div>
+
+        {rows.length === 0 ? <p className="muted">Sin tareas en la semana.</p> : (
+          <table className="data">
+            <thead><tr>{cols.map((c) => <th key={c.key} className={esNum(c.key) ? "r" : ""}>{c.label}</th>)}</tr></thead>
+            <tbody>
+              {ordenadas.map((r, i) => (
+                <tr key={i}>
+                  {cols.map((c) => <td key={c.key} className={esNum(c.key) ? "r" : ""}>{cell(r, c.key)}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <style>{`
+        @page { size: A4 ${orient === "horizontal" ? "landscape" : "portrait"}; margin: 12mm; }
+        .plan-print-doc .doc { color: #111; font-family: Arial, sans-serif; font-size: 11px; }
+        .plan-print-doc .doc-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #14324f; padding-bottom: 6px; margin-bottom: 10px; }
+        .plan-print-doc .doc-title { font-size: 16px; font-weight: 700; color: #14324f; }
+        .plan-print-doc .doc-sub { font-size: 11px; color: #444; margin-top: 2px; }
+        .plan-print-doc .doc-meta { font-size: 10px; color: #777; white-space: nowrap; }
+        .plan-print-doc table { width: 100%; border-collapse: collapse; }
+        .plan-print-doc table.data th { background: #14324f; color: #fff; text-align: left; padding: 4px 6px; font-size: 10px; }
+        .plan-print-doc table.data td { padding: 3px 6px; border-bottom: 1px solid #e5e5e5; }
+        .plan-print-doc table.data tr:nth-child(even) td { background: #fafbfc; }
+        .plan-print-doc table.data th.r, .plan-print-doc table.data td.r { text-align: right; }
+        .plan-print-doc .muted { color: #999; }
+        @media print {
+          .plan-print-doc table.data tr { break-inside: avoid; }
+        }
+      `}</style>
+    </div>
+  );
+}

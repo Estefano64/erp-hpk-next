@@ -79,6 +79,10 @@ export async function GET(req: NextRequest) {
               descripcion: true,
               cod_rep_flota: true,
               cliente: { select: { codigo: true, razon_social: true, nombre_comercial: true } },
+              // Flag para la columna "Estado PO" de aprobaciones: presencia de
+              // un adjunto de etapa 'po_cliente' en la OT (mismo criterio que el
+              // listado de OTs externas). Trae 1 id como bandera.
+              adjuntos: { where: { etapa_codigo: "po_cliente" }, select: { id: true }, take: 1 },
             },
           },
           material: { select: { codigo: true, descripcion: true, precio: true, moneda_codigo: true, stock_actual: true } },

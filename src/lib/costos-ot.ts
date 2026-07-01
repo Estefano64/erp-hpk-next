@@ -95,6 +95,20 @@ export interface CostosResultado {
     hh: { total_por_moneda: MonedaTotales };
     total_por_moneda: MonedaTotales;
   };
+  // ESTRATEGIA = costo ESTÁNDAR según el template del código estratégico
+  // (cod_rep), independiente de esta OT puntual. Es el "debería costar":
+  //   Materiales/cargo_directo/servicios: Σ(Tarea.requerimiento × Tarea.precio)
+  //     del template del cod_rep (en USD, igual que el auto-gen de reqs).
+  //   HH: Σ(OperacionCodRep.horas) × tarifa estándar (ConfiguracionCotizacion
+  //     .tarifa_hora_sol, en PEN).
+  // Vacío para OTs sin código estratégico o internas.
+  estrategia: {
+    materiales: { total_por_moneda: MonedaTotales };
+    cargo_directo: { total_por_moneda: MonedaTotales };
+    servicios: { total_por_moneda: MonedaTotales };
+    hh: { total_por_moneda: MonedaTotales };
+    total_por_moneda: MonedaTotales;
+  };
   // Conteo de trabajadores asignados a esta OT — "QtY" en el resumen pedido.
   //   estimado = trabajadores distintos planificados (PlanificacionOT.tecnico)
   //   real     = trabajadores distintos que efectivamente trabajaron
@@ -414,6 +428,71 @@ export async function calcularCostosOT(
     }
   }
 
+  // ── ESTRATEGIA: costo estándar del template del código estratégico ──
+  // Solo OT externa con cod_rep. Materiales/CAD/SER salen de Tarea (template
+  // de requerimientos), en USD como el auto-gen. HH sale de OperacionCodRep
+  // (horas del template) × tarifa estándar configurable (PEN).
+  const totalEstrategiaMat: MonedaTotales = {};
+  const totalEstrategiaCad: MonedaTotales = {};
+  const totalEstrategiaSer: MonedaTotales = {};
+  const totalEstrategiaHH: MonedaTotales = {};
+  if (!esInterna && args.otId) {
+    const otRow = await prisma.ordenTrabajo.findUnique({
+      where: { id: args.otId },
+      select: { codigo_reparacion: { select: { codigo: true } } },
+    });
+    const codRepCodigo = otRow?.codigo_reparacion?.codigo ?? null;
+    if (codRepCodigo) {
+      // El template de reqs no guarda moneda; el auto-gen crea OTRepuesto en USD.
+      const MONEDA_TEMPLATE = "USD";
+      const tareas = await prisma.tarea.findMany({
+        where: { cod_rep_codigo: codRepCodigo },
+        select: { tipo_codigo: true, material_codigo: true, requerimiento: true, precio: true },
+      });
+      // Fallback: muchas tareas MAC del template no traen precio. Para no mostrar
+      // 0, tomamos el precio del catálogo de Materiales (Material.precio, en su
+      // propia moneda) cuando la tarea tiene material pero precio vacío.
+      const matSinPrecio = [...new Set(
+        tareas.filter((t) => t.material_codigo && dec(t.precio) <= 0).map((t) => t.material_codigo!),
+      )];
+      const matsCat = matSinPrecio.length > 0
+        ? await prisma.material.findMany({
+            where: { codigo: { in: matSinPrecio } },
+            select: { codigo: true, precio: true, moneda_codigo: true },
+          })
+        : [];
+      const precioCat = new Map(matsCat.map((m) => [m.codigo, { precio: dec(m.precio), moneda: m.moneda_codigo ?? MONEDA_TEMPLATE }]));
+      for (const t of tareas) {
+        const reqQty = dec(t.requerimiento);
+        // SER sin cantidad explícita cuenta como 1 (igual que pickCantidadFromTarea).
+        const cant = t.tipo_codigo === "SER" && reqQty <= 0 ? 1 : reqQty;
+        let precio = dec(t.precio);
+        let moneda = MONEDA_TEMPLATE;
+        // Si la tarea no trae precio y es un material del catálogo, usar el del catálogo.
+        if (precio <= 0 && t.material_codigo) {
+          const cat = precioCat.get(t.material_codigo);
+          if (cat && cat.precio > 0) { precio = cat.precio; moneda = cat.moneda; }
+        }
+        const sub = cant * precio;
+        if (sub <= 0) continue;
+        if (t.tipo_codigo === "SER") sumarMoneda(totalEstrategiaSer, moneda, sub);
+        else if (t.tipo_codigo === "CAD") sumarMoneda(totalEstrategiaCad, moneda, sub);
+        else sumarMoneda(totalEstrategiaMat, moneda, sub);
+      }
+      // HH estándar: horas del template × tarifa configurable (PEN).
+      const config = await prisma.configuracionCotizacion.findFirst({
+        select: { tarifa_hora_sol: true },
+      });
+      const tarifa = dec(config?.tarifa_hora_sol) || 100;
+      const operaciones = await prisma.operacionCodRep.findMany({
+        where: { cod_rep_codigo: codRepCodigo, activo: true },
+        select: { horas: true },
+      });
+      const horasTotal = operaciones.reduce((s, o) => s + dec(o.horas), 0);
+      if (horasTotal > 0) sumarMoneda(totalEstrategiaHH, MONEDA_HH, horasTotal * tarifa);
+    }
+  }
+
   // ── Totales generales por moneda ────────────────────────────────────
   const totalEjecutado: MonedaTotales = {};
   const totalProyectado: MonedaTotales = {};
@@ -430,6 +509,11 @@ export async function calcularCostosOT(
   for (const [m, v] of Object.entries(totalEstimadoCad)) sumarMoneda(totalEstimado, m, v);
   for (const [m, v] of Object.entries(totalEstimadoSer)) sumarMoneda(totalEstimado, m, v);
   for (const [m, v] of Object.entries(totalEstimadoHH)) sumarMoneda(totalEstimado, m, v);
+  const totalEstrategia: MonedaTotales = {};
+  for (const [m, v] of Object.entries(totalEstrategiaMat)) sumarMoneda(totalEstrategia, m, v);
+  for (const [m, v] of Object.entries(totalEstrategiaCad)) sumarMoneda(totalEstrategia, m, v);
+  for (const [m, v] of Object.entries(totalEstrategiaSer)) sumarMoneda(totalEstrategia, m, v);
+  for (const [m, v] of Object.entries(totalEstrategiaHH)) sumarMoneda(totalEstrategia, m, v);
 
   return {
     ejecutado: {
@@ -453,6 +537,13 @@ export async function calcularCostosOT(
       servicios: { total_por_moneda: totalEstimadoSer },
       hh: { total_por_moneda: totalEstimadoHH },
       total_por_moneda: totalEstimado,
+    },
+    estrategia: {
+      materiales: { total_por_moneda: totalEstrategiaMat },
+      cargo_directo: { total_por_moneda: totalEstrategiaCad },
+      servicios: { total_por_moneda: totalEstrategiaSer },
+      hh: { total_por_moneda: totalEstrategiaHH },
+      total_por_moneda: totalEstrategia,
     },
     trabajadores: {
       estimado: trabajadoresEstimado.size,
