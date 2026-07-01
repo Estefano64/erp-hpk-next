@@ -22,6 +22,7 @@ import {
   paginacionEstandar,
   FILTRO_VACIO_VALUE,
   FILTRO_VACIO_LABEL,
+  useAbortableFetch,
 } from "@/lib/tables";
 import type { Key } from "react";
 import dayjs, { Dayjs } from "dayjs";
@@ -319,27 +320,36 @@ export default function PlanificacionPage() {
     return [...map].map(([value, label]) => ({ value, label }));
   }, [otOpts, rows]);
 
+  const abortable = useAbortableFetch();
   const fetchData = useCallback(async () => {
+    const controller = abortable.start();
     setLoading(true);
-    // La lista ordena por ot_id desc en el server: con un límite chico las OTs de
-    // ot_id bajo caían fuera del corte y sus tareas desaparecían (p.ej. OT 383926
-    // con >700 tareas abiertas en total). 10000 = tope de la API. Mismo criterio
-    // que Programación Semanal.
-    const params = new URLSearchParams({ limit: "10000" });
-    if (search) params.set("search", search);
-    if (filterSemana) params.set("semana", filterSemana);
-    if (filterEstado) params.set("estado", filterEstado);
-    if (filterMacroEstado) params.set("estados", (MACRO_ESTADO[filterMacroEstado] ?? []).join(","));
-    if (filterTecnico) params.set("tecnico", filterTecnico);
-    if (filterMaquina) params.set("maquina", filterMaquina);
-    const res = await fetch(`/api/planificacion?${params}`);
-    if (res.ok) {
-      const json = await res.json();
-      setRows(json.data ?? []);
-      setTotal(json.total ?? 0);
+    try {
+      // La lista ordena por ot_id desc en el server: con un límite chico las OTs de
+      // ot_id bajo caían fuera del corte y sus tareas desaparecían (p.ej. OT 383926
+      // con >700 tareas abiertas en total). 10000 = tope de la API. Mismo criterio
+      // que Programación Semanal.
+      const params = new URLSearchParams({ limit: "10000" });
+      if (search) params.set("search", search);
+      if (filterSemana) params.set("semana", filterSemana);
+      if (filterEstado) params.set("estado", filterEstado);
+      if (filterMacroEstado) params.set("estados", (MACRO_ESTADO[filterMacroEstado] ?? []).join(","));
+      if (filterTecnico) params.set("tecnico", filterTecnico);
+      if (filterMaquina) params.set("maquina", filterMaquina);
+      const res = await fetch(`/api/planificacion?${params}`, { signal: controller.signal });
+      if (controller.signal.aborted) return;
+      if (res.ok) {
+        const json = await res.json();
+        setRows(json.data ?? []);
+        setTotal(json.total ?? 0);
+      }
+    } catch (e) {
+      if (abortable.isAbort(e)) return;
+      throw e;
+    } finally {
+      if (abortable.isCurrent(controller)) setLoading(false);
     }
-    setLoading(false);
-  }, [search, filterSemana, filterEstado, filterMacroEstado, filterTecnico, filterMaquina]);
+  }, [search, filterSemana, filterEstado, filterMacroEstado, filterTecnico, filterMaquina, abortable]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
   const notifySync = useTabSync("planificacion", fetchData);

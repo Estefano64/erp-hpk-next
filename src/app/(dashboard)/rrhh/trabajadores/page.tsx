@@ -20,7 +20,7 @@ import { formatDateOnly } from "@/lib/dates";
 import {
   numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE,
   useColumnasOcultas, ColumnasToggleButton, visibleColumns, filtroPorColumna,
-  useColumnasRedimensionables, useTablaFiltrada,
+  useColumnasRedimensionables, useTablaFiltrada, useAbortableFetch,
 } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import { useResponsive, modalWidth } from "@/lib/responsive";
@@ -367,22 +367,28 @@ export default function TrabajadoresPage() {
     setUsuariosByTrabajador(map);
   }, []);
 
+  const abortable = useAbortableFetch();
   const fetchData = useCallback(async () => {
+    const controller = abortable.start();
     setLoading(true);
     try {
       const params = new URLSearchParams({ limit: "10000" });
       if (search) params.set("search", search);
       if (filtroArea) params.set("area", filtroArea);
       params.set("activos", verInactivos ? "false" : "true");
-      const res = await fetch(`/api/trabajadores?${params}`);
+      const res = await fetch(`/api/trabajadores?${params}`, { signal: controller.signal });
+      if (controller.signal.aborted) return;
       if (res.ok) {
         const j = await res.json();
         setRows(j.data ?? []);
       }
+    } catch (e) {
+      if (abortable.isAbort(e)) return;
+      throw e;
     } finally {
-      setLoading(false);
+      if (abortable.isCurrent(controller)) setLoading(false);
     }
-  }, [search, filtroArea, verInactivos]);
+  }, [search, filtroArea, verInactivos, abortable]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { fetchUsuarios(); }, [fetchUsuarios]);

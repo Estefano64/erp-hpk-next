@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   Typography, Table, Button, Input, Select, Space, Tag, Modal, Form,
@@ -27,6 +27,7 @@ import {
   useColumnasRedimensionables,
   filtroPorColumna,
   usePersistedState,
+  useAbortableFetch,
 } from "@/lib/tables";
 import { areasTallerGrouped, areaTallerLabel, tipoEquipoPorAreaTaller } from "@/lib/areas-taller";
 import { formatOtInternaCodigo } from "@/lib/ot-formato";
@@ -286,14 +287,10 @@ export default function OrdenesTrabajoInternasPage() {
     return () => ctrl.abort();
   }, [tipoEquipoForm]);
 
-  // Fix "hay que buscar varias veces": cada tecla dispara un fetch nuevo,
-  // pero sin abortar el anterior una respuesta lenta puede pisar al último
-  // resultado correcto (race condition). Cancelamos siempre el en vuelo.
-  const abortRef = useRef<AbortController | null>(null);
+  // Cancelamos fetches en vuelo cuando el user tipea (evita race condition).
+  const abortable = useAbortableFetch();
   const fetchData = useCallback(async () => {
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
+    const controller = abortable.start();
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -312,12 +309,12 @@ export default function OrdenesTrabajoInternasPage() {
         setTotal(json.total ?? 0);
       }
     } catch (e) {
-      if ((e as { name?: string } | null)?.name === "AbortError") return;
+      if (abortable.isAbort(e)) return;
       throw e;
     } finally {
-      if (abortRef.current === controller) setLoading(false);
+      if (abortable.isCurrent(controller)) setLoading(false);
     }
-  }, [page, pageSize, search, filterTipo, filterEquipo, verInactivas]);
+  }, [page, pageSize, search, filterTipo, filterEquipo, verInactivas, abortable]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 

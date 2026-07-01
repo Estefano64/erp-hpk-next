@@ -41,6 +41,7 @@ import {
   RangoFechasFiltro,
   dentroDeRango,
   useColumnasRedimensionables,
+  useAbortableFetch,
 } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import dayjs from "dayjs";
@@ -97,17 +98,26 @@ export default function ContratosPage() {
   const [messageApi, contextHolder] = message.useMessage();
   const { screens } = useResponsive();
 
+  const abortable = useAbortableFetch();
   const fetchData = useCallback(async () => {
+    const controller = abortable.start();
     setLoading(true);
-    const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
-    if (search) params.set("search", search);
-    if (filterCliente) params.set("cliente", filterCliente);
-    const res = await fetch(`/api/contratos?${params}`);
-    const json = await res.json();
-    setData(json.data ?? []);
-    setTotal(json.total ?? 0);
-    setLoading(false);
-  }, [page, pageSize, search, filterCliente]);
+    try {
+      const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
+      if (search) params.set("search", search);
+      if (filterCliente) params.set("cliente", filterCliente);
+      const res = await fetch(`/api/contratos?${params}`, { signal: controller.signal });
+      const json = await res.json();
+      if (controller.signal.aborted) return;
+      setData(json.data ?? []);
+      setTotal(json.total ?? 0);
+    } catch (e) {
+      if (abortable.isAbort(e)) return;
+      throw e;
+    } finally {
+      if (abortable.isCurrent(controller)) setLoading(false);
+    }
+  }, [page, pageSize, search, filterCliente, abortable]);
 
   useEffect(() => {
     async function loadOptions() {

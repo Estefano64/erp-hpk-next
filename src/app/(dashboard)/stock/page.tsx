@@ -41,6 +41,7 @@ import {
   visibleColumns,
   filtroPorColumna,
   useColumnasRedimensionables,
+  useAbortableFetch,
 } from "@/lib/tables";
 import { EditableCell } from "@/components/EditableCell";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
@@ -123,17 +124,20 @@ export default function StockPage() {
   // de columna), igual respeta el toggle y la búsqueda.
   const [vistaActual, setVistaActual] = useState<StockItem[] | null>(null);
 
+  const abortable = useAbortableFetch();
   const fetchData = useCallback(async () => {
+    const controller = abortable.start();
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (filtro !== "todos") params.set("filtro", filtro);
       if (search) params.set("search", search);
       const [resStock, resNoCat] = await Promise.all([
-        fetch(`/api/stock?${params}`),
-        fetch(`/api/no-catalogados`),
+        fetch(`/api/stock?${params}`, { signal: controller.signal }),
+        fetch(`/api/no-catalogados`, { signal: controller.signal }),
       ]);
       const json = await resStock.json();
+      if (controller.signal.aborted) return;
       setData(json.data ?? []);
       setKpis(json.kpis ?? {});
       if (resNoCat.ok) {
@@ -167,12 +171,13 @@ export default function StockPage() {
         }));
         setNoCatRaw(mapped);
       }
-    } catch {
+    } catch (e) {
+      if (abortable.isAbort(e)) return;
       message.error("Error al cargar stock");
     } finally {
-      setLoading(false);
+      if (abortable.isCurrent(controller)) setLoading(false);
     }
-  }, [filtro, search, message]);
+  }, [filtro, search, message, abortable]);
 
   useEffect(() => {
     fetchData();

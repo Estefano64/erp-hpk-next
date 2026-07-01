@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef, type Key } from "react";
+import { useState, useEffect, useCallback, useMemo, type Key } from "react";
 import {
   Typography,
   Table,
@@ -41,6 +41,7 @@ import {
   filtroPorColumna,
   RangoFechasFiltro,
   useColumnasRedimensionables,
+  useAbortableFetch,
 } from "@/lib/tables";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
@@ -333,46 +334,32 @@ export default function OrdenesTrabajoPage() {
     return p;
   }, [filtrosServer, ocultas]);
 
-  // Paginación server-side: trae solo la página actual (50). Manda al server
-  // la búsqueda, los filtros de columna, el rango de fecha y el orden. Campos
-  // de texto van como txt_<campo>; el resto (enum) por su nombre de columna.
-  //
-  // Fix "hay que buscar varias veces": el user tipeaba "390526" y a veces
-  // veía resultados viejos. Cada tecla dispara un fetch nuevo, pero antes no
-  // se cancelaba el anterior — si una respuesta lenta llegaba DESPUÉS de una
-  // rápida más nueva, pisaba el resultado correcto (race condition clásica).
-  // Ahora cada fetch nuevo aborta el en vuelo, así la única respuesta que
-  // llega al state es la última.
-  const abortRef = useRef<AbortController | null>(null);
+  // Paginación server-side + búsqueda con cancelación de fetches en vuelo
+  // (evita race condition al tipear rápido).
+  const abortable = useAbortableFetch();
   const fetchData = useCallback(async () => {
-    // Cancelar cualquier request en vuelo antes de disparar uno nuevo.
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
+    const controller = abortable.start();
     setLoading(true);
     try {
       const params = new URLSearchParams(filtrosServer);
       params.set("page", String(page));
       params.set("limit", String(pageSize));
       // Solo pedimos el cálculo de costos (caro) si alguna columna de costos
-      // está visible. Así no penaliza a quien no las usa. Traído de main.
+      // está visible. Así no penaliza a quien no las usa.
       const costosVisibles = ["costo_estrategia", "costo_estimado", "costo_real", "costo_hh"].some((k) => !ocultas.includes(k));
       if (costosVisibles) params.set("costos", "1");
       const res = await fetch(`/api/ordenes-trabajo?${params}`, { signal: controller.signal });
       const json = await res.json();
-      // Solo aplicamos el resultado si nuestro fetch sigue siendo el activo.
       if (controller.signal.aborted) return;
       setData(json.data ?? []);
       setTotal(json.total ?? 0);
     } catch (e) {
-      // Fetch cancelado: silenciar (es normal cuando el user sigue tipeando).
-      if ((e as { name?: string } | null)?.name === "AbortError") return;
+      if (abortable.isAbort(e)) return;
       throw e;
     } finally {
-      // Loading se apaga solo si somos el fetch activo (evita parpadeo).
-      if (abortRef.current === controller) setLoading(false);
+      if (abortable.isCurrent(controller)) setLoading(false);
     }
-  }, [page, pageSize, filtrosServer, ocultas]);
+  }, [page, pageSize, filtrosServer, ocultas, abortable]);
 
   // Desactivar (anular, reversible) / reactivar una OT. Solo admin.
   async function toggleActivo(record: OTRecord) {

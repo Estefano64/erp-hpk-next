@@ -1207,3 +1207,49 @@ export function useTablaFiltrada<T>(rows: readonly T[]) {
   return { filtradas, onChange, captureFilteredRows };
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// useAbortableFetch — helper para listados con búsqueda / paginación.
+//
+// Sirve para evitar el bug "hay que buscar varias veces": cuando el user
+// tipea en un search input, cada tecla dispara un fetch nuevo. Si no se
+// cancela el anterior, una respuesta LENTA puede llegar DESPUÉS de una
+// rápida más nueva y pisar al último resultado correcto (race condition).
+//
+// API:
+//   const abortable = useAbortableFetch();
+//   ...
+//   const fetchData = useCallback(async () => {
+//     const controller = abortable.start();
+//     setLoading(true);
+//     try {
+//       const res = await fetch(url, { signal: controller.signal });
+//       if (controller.signal.aborted) return;
+//       // ... setState
+//     } catch (e) {
+//       if (abortable.isAbort(e)) return;
+//       throw e;
+//     } finally {
+//       if (abortable.isCurrent(controller)) setLoading(false);
+//     }
+//   }, [...deps]);
+//
+// El hook garantiza:
+//   - `start()` aborta cualquier fetch en vuelo y devuelve un controller nuevo.
+//   - `isAbort(e)` reconoce AbortError (para silenciar el catch).
+//   - `isCurrent(ctrl)` dice si somos aún el fetch activo (para setLoading).
+export function useAbortableFetch() {
+  const ref = useRef<AbortController | null>(null);
+  const start = useCallback(() => {
+    ref.current?.abort();
+    const controller = new AbortController();
+    ref.current = controller;
+    return controller;
+  }, []);
+  const isCurrent = useCallback((c: AbortController) => ref.current === c, []);
+  const isAbort = useCallback(
+    (e: unknown): boolean => (e as { name?: string } | null)?.name === "AbortError",
+    [],
+  );
+  return { start, isCurrent, isAbort };
+}
+

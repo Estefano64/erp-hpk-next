@@ -43,6 +43,7 @@ import {
   visibleColumns,
   filtroPorColumna,
   useColumnasRedimensionables,
+  useAbortableFetch,
 } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
@@ -105,23 +106,32 @@ export default function CodigosReparacionPage() {
   const [messageApi, contextHolder] = message.useMessage();
   const { screens } = useResponsive();
 
+  const abortable = useAbortableFetch();
   const fetchData = useCallback(async () => {
+    const controller = abortable.start();
     setLoading(true);
-    const params = new URLSearchParams({
-      page: String(page),
-      limit: String(pageSize),
-    });
-    if (search) params.set("search", search);
-    if (filterTipo) params.set("tipo", filterTipo);
-    if (filterFlota) params.set("flota", filterFlota);
-    if (filterFab) params.set("fabricante", filterFab);
+    try {
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(pageSize),
+      });
+      if (search) params.set("search", search);
+      if (filterTipo) params.set("tipo", filterTipo);
+      if (filterFlota) params.set("flota", filterFlota);
+      if (filterFab) params.set("fabricante", filterFab);
 
-    const res = await fetch(`/api/codigos-reparacion?${params}`);
-    const json = await res.json();
-    setData(json.data ?? []);
-    setTotal(json.total ?? 0);
-    setLoading(false);
-  }, [page, pageSize, search, filterTipo, filterFlota, filterFab]);
+      const res = await fetch(`/api/codigos-reparacion?${params}`, { signal: controller.signal });
+      const json = await res.json();
+      if (controller.signal.aborted) return;
+      setData(json.data ?? []);
+      setTotal(json.total ?? 0);
+    } catch (e) {
+      if (abortable.isAbort(e)) return;
+      throw e;
+    } finally {
+      if (abortable.isCurrent(controller)) setLoading(false);
+    }
+  }, [page, pageSize, search, filterTipo, filterFlota, filterFab, abortable]);
 
   // Cargar opciones de selects
   useEffect(() => {

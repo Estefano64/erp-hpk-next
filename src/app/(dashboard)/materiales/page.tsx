@@ -47,6 +47,7 @@ import {
   filtroPorColumna,
   useColumnasRedimensionables,
   usePersistedState,
+  useAbortableFetch,
 } from "@/lib/tables";
 import { ImportarExcelModal } from "@/components/ImportarExcelModal";
 import { EmptyState } from "@/components/EmptyState";
@@ -141,29 +142,38 @@ export default function MaterialesPage() {
   const [messageApi, contextHolder] = message.useMessage();
   const { screens } = useResponsive();
 
+  const abortable = useAbortableFetch();
   const fetchData = useCallback(async () => {
+    const controller = abortable.start();
     setLoading(true);
-    const params = new URLSearchParams({
-      page: String(page),
-      limit: String(pageSize),
-      // Esta tabla muestra SOLO catalogados formales (código numérico).
-      // Excluye entries auto-creados desde flujos como ingreso de OCs
-      // abiertas (ej. "BC-PB8931") — esos se ven en /stock/no-catalogados.
-      solo_catalogados: "true",
-    });
-    if (search) params.set("search", search);
-    if (filterPlanta) params.set("planta", filterPlanta);
-    if (filterArea) params.set("area", filterArea);
-    if (filterCategoria) params.set("categoria", filterCategoria);
-    if (filterClasificacion) params.set("clasificacion", filterClasificacion);
-    if (filterFab) params.set("fabricante", filterFab);
+    try {
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(pageSize),
+        // Esta tabla muestra SOLO catalogados formales (código numérico).
+        // Excluye entries auto-creados desde flujos como ingreso de OCs
+        // abiertas (ej. "BC-PB8931") — esos se ven en /stock/no-catalogados.
+        solo_catalogados: "true",
+      });
+      if (search) params.set("search", search);
+      if (filterPlanta) params.set("planta", filterPlanta);
+      if (filterArea) params.set("area", filterArea);
+      if (filterCategoria) params.set("categoria", filterCategoria);
+      if (filterClasificacion) params.set("clasificacion", filterClasificacion);
+      if (filterFab) params.set("fabricante", filterFab);
 
-    const res = await fetch(`/api/materiales?${params}`);
-    const json = await res.json();
-    setData(json.data ?? []);
-    setTotal(json.total ?? 0);
-    setLoading(false);
-  }, [page, pageSize, search, filterPlanta, filterArea, filterCategoria, filterClasificacion, filterFab]);
+      const res = await fetch(`/api/materiales?${params}`, { signal: controller.signal });
+      const json = await res.json();
+      if (controller.signal.aborted) return;
+      setData(json.data ?? []);
+      setTotal(json.total ?? 0);
+    } catch (e) {
+      if (abortable.isAbort(e)) return;
+      throw e;
+    } finally {
+      if (abortable.isCurrent(controller)) setLoading(false);
+    }
+  }, [page, pageSize, search, filterPlanta, filterArea, filterCategoria, filterClasificacion, filterFab, abortable]);
 
   useEffect(() => {
     async function loadOptions() {

@@ -38,6 +38,7 @@ import {
   visibleColumns,
   filtroPorColumna,
   useColumnasRedimensionables,
+  useAbortableFetch,
 } from "@/lib/tables";
 import { ImportarExcelModal } from "@/components/ImportarExcelModal";
 import { EmptyState } from "@/components/EmptyState";
@@ -96,16 +97,25 @@ export default function ClientesPage() {
   const [messageApi, contextHolder] = message.useMessage();
   const { screens } = useResponsive();
 
+  const abortable = useAbortableFetch();
   const fetchData = useCallback(async () => {
+    const controller = abortable.start();
     setLoading(true);
-    const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
-    if (search) params.set("search", search);
-    const res = await fetch(`/api/clientes?${params}`);
-    const json = await res.json();
-    setData(json.data ?? []);
-    setTotal(json.total ?? 0);
-    setLoading(false);
-  }, [page, pageSize, search]);
+    try {
+      const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
+      if (search) params.set("search", search);
+      const res = await fetch(`/api/clientes?${params}`, { signal: controller.signal });
+      const json = await res.json();
+      if (controller.signal.aborted) return;
+      setData(json.data ?? []);
+      setTotal(json.total ?? 0);
+    } catch (e) {
+      if (abortable.isAbort(e)) return;
+      throw e;
+    } finally {
+      if (abortable.isCurrent(controller)) setLoading(false);
+    }
+  }, [page, pageSize, search, abortable]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
