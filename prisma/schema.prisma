@@ -678,6 +678,10 @@ model Material {
   // al crear la OT — para trazabilidad de stock/cargos.
   ordenes_trabajo       OrdenTrabajo[]         @relation("OTMaterialEquipo")
 
+  @@index([activo])
+  @@index([categoria_codigo])
+  @@index([clasificacion_codigo])
+  @@index([planta_codigo])
   @@map("material")
 }
 
@@ -746,6 +750,11 @@ model Equipo {
   reportes_correctivos ReporteCorrectivo[]
   task_lists           TaskList[]
 
+  @@index([activo])
+  @@index([status_codigo])
+  @@index([area_codigo])
+  @@index([tipo_codigo])
+  @@index([planta_codigo])
   @@map("equipo")
 }
 
@@ -921,6 +930,9 @@ model CodigoReparacion {
   tareas                   Tarea[]
   operaciones              OperacionCodRep[]
 
+  @@index([tipo_codigo])
+  @@index([categoria_codigo])
+  @@index([flota_codigo])
   @@map("codigo_reparacion")
 }
 
@@ -1076,6 +1088,15 @@ model OrdenTrabajo {
   prestamos_herramientas      PrestamoHerramienta[]
 
   @@index([anio])
+  // Índices de listados/dashboards: el listado principal filtra activo + ordena
+  // por fecha_recepcion; status/cliente son los filtros más frecuentes; `ot` se
+  // busca por número exacto.
+  @@index([activo, fecha_recepcion])
+  @@index([ot_status_codigo])
+  @@index([id_cliente])
+  @@index([ot])
+  // Ya existía en prod (migración 20260605220000) pero faltaba declararlo acá.
+  @@index([material_codigo])
   @@map("orden_trabajo")
 }
 
@@ -1322,6 +1343,9 @@ model Compra {
   @@index([numero_po])
   @@index([status_oc_codigo])
   @@index([ot_id])
+  // Ya existía en prod (migración 20260606120000) pero faltaba declararlo acá;
+  // sin esto, un diff schema↔prod lo marca para DROP.
+  @@index([es_almacen_abierto])
   @@map("compras")
 }
 
@@ -1650,6 +1674,9 @@ model PlanificacionOT {
   @@index([ot_id])
   @@index([operacion_cod_rep_id])
   @@index([estado])
+  @@index([semana_plan])
+  @@index([tecnico])
+  @@index([fecha_inicio])
   @@map("planificacion_ot")
 }
 
