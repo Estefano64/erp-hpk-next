@@ -39,66 +39,88 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
     const usuario = parsed.data.usuario || "Logistica";
 
+    // ── Lecturas y validaciones FUERA de la transacción ──────────────────
+    // La transacción interactiva tiene timeout (5 s default) y cada query
+    // dentro es un viaje a la BD en serie; con ~10 viajes llegaba a P2028 en
+    // prod. Las validaciones son de solo lectura y no necesitan la
+    // transacción: la consistencia real la garantizan las guardas atómicas
+    // de adentro (updateMany condicionales).
+    const rep = await prisma.oTRepuesto.findUnique({ where: { id: (parseInt4Safe(id) ?? 0) } });
+    if (!rep) {
+      throw Object.assign(new Error("Requerimiento no encontrado"), { code: "NOT_FOUND" });
+    }
+    if (!rep.material_id) {
+      throw Object.assign(
+        new Error("El requerimiento no tiene material asignado, no se puede consumir de almacén."),
+        { code: "NO_MATERIAL" },
+      );
+    }
+    if (rep.po_id || rep.nro_oc) {
+      throw Object.assign(
+        new Error("El requerimiento ya está asignado a una OC, no se puede consumir de almacén."),
+        { code: "HAS_OC" },
+      );
+    }
+    if (rep.status_oc_codigo === "ANULADO" || rep.status_oc_codigo === "DEVOLUCION") {
+      throw Object.assign(
+        new Error(`No se puede consumir un requerimiento en estado ${rep.status_oc_codigo}.`),
+        { code: "INVALID_STATE" },
+      );
+    }
+    // Copia local ya narrowed a number (el check de arriba no sobrevive al closure de la tx).
+    const materialId = rep.material_id;
+
+    const material = await prisma.material.findUnique({ where: { material_id: materialId } });
+    if (!material) {
+      throw Object.assign(new Error("Material no encontrado"), { code: "MATERIAL_NOT_FOUND" });
+    }
+
+    // Cantidad a consumir: por defecto la pedida; si el cliente envía una menor, se permite parcial.
+    const cantPedida = new Prisma.Decimal(rep.cantidad);
+    const cantidad = parsed.data.cantidad != null
+      ? new Prisma.Decimal(parsed.data.cantidad)
+      : cantPedida;
+
+    if (cantidad.lte(0)) {
+      throw Object.assign(new Error("La cantidad debe ser mayor a 0"), { code: "BAD_QTY" });
+    }
+    if (cantidad.gt(cantPedida)) {
+      throw Object.assign(
+        new Error(`La cantidad (${cantidad}) excede la pedida (${cantPedida}).`),
+        { code: "OVER_QTY" },
+      );
+    }
+
+    const stockActual = new Prisma.Decimal(material.stock_actual ?? 0);
+    if (stockActual.lt(cantidad)) {
+      throw Object.assign(
+        new Error(`Stock insuficiente. Disponible: ${stockActual}, requerido: ${cantidad}.`),
+        { code: "NO_STOCK" },
+      );
+    }
+
+    // Snapshot del precio al momento de la salida (cascada catálogo → última OC).
+    const { precio: precioSnap, moneda: monedaSnap } = await resolverPrecioSalida(prisma, materialId);
+
     const result = await prisma.$transaction(async (tx) => {
-      const rep = await tx.oTRepuesto.findUnique({ where: { id: (parseInt4Safe(id) ?? 0) } });
-      if (!rep) {
-        throw Object.assign(new Error("Requerimiento no encontrado"), { code: "NOT_FOUND" });
-      }
-      if (!rep.material_id) {
+      // Guarda atómica 1: descontar stock SOLO si sigue alcanzando. Si otro
+      // consumo simultáneo lo bajó entre la validación y acá, count = 0 y se
+      // aborta (antes ese caso podía descontar de más).
+      const decremento = await tx.material.updateMany({
+        where: { material_id: materialId, stock_actual: { gte: cantidad } },
+        data: { stock_actual: { decrement: cantidad } },
+      });
+      if (decremento.count === 0) {
         throw Object.assign(
-          new Error("El requerimiento no tiene material asignado, no se puede consumir de almacén."),
-          { code: "NO_MATERIAL" },
-        );
-      }
-      if (rep.po_id || rep.nro_oc) {
-        throw Object.assign(
-          new Error("El requerimiento ya está asignado a una OC, no se puede consumir de almacén."),
-          { code: "HAS_OC" },
-        );
-      }
-      if (rep.status_oc_codigo === "ANULADO" || rep.status_oc_codigo === "DEVOLUCION") {
-        throw Object.assign(
-          new Error(`No se puede consumir un requerimiento en estado ${rep.status_oc_codigo}.`),
-          { code: "INVALID_STATE" },
-        );
-      }
-
-      const material = await tx.material.findUnique({ where: { material_id: rep.material_id } });
-      if (!material) {
-        throw Object.assign(new Error("Material no encontrado"), { code: "MATERIAL_NOT_FOUND" });
-      }
-
-      // Cantidad a consumir: por defecto la pedida; si el cliente envía una menor, se permite parcial.
-      const cantPedida = new Prisma.Decimal(rep.cantidad);
-      const cantidad = parsed.data.cantidad != null
-        ? new Prisma.Decimal(parsed.data.cantidad)
-        : cantPedida;
-
-      if (cantidad.lte(0)) {
-        throw Object.assign(new Error("La cantidad debe ser mayor a 0"), { code: "BAD_QTY" });
-      }
-      if (cantidad.gt(cantPedida)) {
-        throw Object.assign(
-          new Error(`La cantidad (${cantidad}) excede la pedida (${cantPedida}).`),
-          { code: "OVER_QTY" },
-        );
-      }
-
-      const stockActual = new Prisma.Decimal(material.stock_actual ?? 0);
-      if (stockActual.lt(cantidad)) {
-        throw Object.assign(
-          new Error(`Stock insuficiente. Disponible: ${stockActual}, requerido: ${cantidad}.`),
+          new Error(`Stock insuficiente. Requerido: ${cantidad}.`),
           { code: "NO_STOCK" },
         );
       }
 
-      // Snapshot del precio al momento de la salida (cascada catálogo → última OC).
-      const { precio: precioSnap, moneda: monedaSnap } = await resolverPrecioSalida(tx, rep.material_id);
-
       // 1) Crear movimiento SALIDA.
       await tx.movimientoInventario.create({
         data: {
-          material_id: rep.material_id,
+          material_id: materialId,
           tipo_movimiento: "SALIDA",
           cantidad,
           precio_unitario: precioSnap,
@@ -111,11 +133,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         },
       });
 
-      // 2) Decrementar stock_actual.
-      await tx.material.update({
-        where: { material_id: rep.material_id },
-        data: { stock_actual: { decrement: cantidad } },
-      });
+      // 2) El decremento de stock ya se hizo arriba (guarda atómica).
 
       // 3) Marcar el requerimiento. Si fue completo, status pasa a
       //    CONSUMIDO_ALMACEN (estado intermedio: stock ya salió pero aún no
@@ -142,7 +160,18 @@ export async function POST(req: NextRequest, { params }: Params) {
         const obsPrev = rep.observaciones ? `${rep.observaciones}\n` : "";
         updateData.observaciones = `${obsPrev}Consumo parcial de almacén: ${cantidad} u. el ${new Date().toLocaleDateString("es-PE")} (${usuario}) — pendiente despacho al técnico`;
       }
-      await tx.oTRepuesto.update({ where: { id: rep.id }, data: updateData });
+      // Guarda atómica 2: aplicar SOLO si el req sigue como lo leímos (sin OC
+      // y en el mismo estado) — corta el doble-click / doble consumo.
+      const repUpd = await tx.oTRepuesto.updateMany({
+        where: { id: rep.id, po_id: null, nro_oc: null, status_oc_codigo: rep.status_oc_codigo, cantidad: rep.cantidad },
+        data: updateData,
+      });
+      if (repUpd.count === 0) {
+        throw Object.assign(
+          new Error("El requerimiento cambió mientras se procesaba (¿doble click o consumo simultáneo?). Refrescá y volvé a intentar."),
+          { code: "CONCURRENT" },
+        );
+      }
 
       // 4) Registrar en historial de la OT (externa o interna).
       //    Antes solo seteaba ot_id → si el req era de una OT interna el
@@ -156,7 +185,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           usuario,
           datos_adicionales: JSON.stringify({
             requerimiento_id: rep.id,
-            material_id: rep.material_id,
+            material_id: materialId,
             cantidad: cantidad.toString(),
             stock_anterior: stockActual.toString(),
             stock_nuevo: stockActual.minus(cantidad).toString(),
@@ -173,7 +202,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         cantidad_consumida: cantidad.toString(),
         stock_resultante: stockActual.minus(cantidad).toString(),
       };
-    });
+    }, { timeout: 15_000 });
 
     return NextResponse.json({
       message: `Consumido de almacén: ${result.cantidad_consumida} unidad(es). Stock restante: ${result.stock_resultante}.`,
@@ -190,7 +219,8 @@ export async function POST(req: NextRequest, { params }: Params) {
       err?.code === "INVALID_STATE" ||
       err?.code === "BAD_QTY" ||
       err?.code === "OVER_QTY" ||
-      err?.code === "NO_STOCK"
+      err?.code === "NO_STOCK" ||
+      err?.code === "CONCURRENT"
     ) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
