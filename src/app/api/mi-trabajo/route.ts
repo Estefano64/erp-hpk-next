@@ -78,21 +78,10 @@ export async function GET(req: Request) {
     // incluir tareas asignadas a esa semana aunque todavía no tengan hora.
     const semanaActual = `${refLima.isoWeekYear()}W${String(refLima.isoWeek()).padStart(2, "0")}`;
 
-    // Sesión abierta (si el técnico está trabajando algo ahora)
-    const sesionAbierta = await prisma.planificacionOTSesion.findFirst({
-      // Ignora sesiones abiertas de tareas ya canceladas/realizadas (evita que el
-      // cronómetro "Trabajando ahora" quede colgado si una se cerró por otra vía).
-      where: { tecnico, fin: null, planificacion_ot: { estado: { notIn: ["cancelado", "realizado"] } } },
-      include: {
-        planificacion_ot: {
-          select: {
-            id: true, descripcion: true, ot_id: true, componente: true, operacion_codigo: true,
-            horas_estimadas: true, horas_reales: true, horas_extras: true,
-            orden_trabajo: { select: { ot: true } },
-          },
-        },
-      },
-    });
+    // Rango del histórico (últimas 4 semanas, contiguas hasta la actual): se
+    // trae de una vez y se bucketiza por semana en JS (antes: 8 queries en loop).
+    const histIni = ahoraLima.subtract(3, "week").startOf("isoWeek").toDate();
+    const histFin = ahoraLima.endOf("isoWeek").toDate();
 
     // Tareas que tocan hoy o esta semana (en base a su fecha_inicio programada)
     const include = {
@@ -113,63 +102,131 @@ export async function GET(req: Request) {
         },
       },
     };
-    const tareasHoy = await prisma.planificacionOT.findMany({
-      where: {
-        AND: [
-          whereTecnico,
-          { fecha_inicio: { gte: hoyIni, lte: hoyFin } },
-        ],
-      },
-      orderBy: { fecha_inicio: "asc" },
-      include,
-    });
-    // Tareas de la semana del técnico: las que tienen fecha en el rango O las
-    // que están asignadas a esta semana (semana_plan) aunque todavía no tengan
-    // hora. Así el técnico ve TODO lo de su semana, no solo lo ya calendarizado.
-    const tareasSemana = await prisma.planificacionOT.findMany({
-      where: {
-        AND: [
-          whereTecnico,
-          {
-            OR: [
-              { fecha_inicio: { gte: semIni, lte: semFin } },
-              { semana_plan: semanaActual },
-            ],
+    // Primera tanda: las 5 lecturas dependen solo del técnico → en paralelo.
+    const [sesionAbierta, tareasHoy, tareasSemana, tareasMes, tareasHist] = await Promise.all([
+      // Sesión abierta (si el técnico está trabajando algo ahora). Ignora
+      // sesiones de tareas ya canceladas/realizadas (evita cronómetro colgado).
+      prisma.planificacionOTSesion.findFirst({
+        where: { tecnico, fin: null, planificacion_ot: { estado: { notIn: ["cancelado", "realizado"] } } },
+        include: {
+          planificacion_ot: {
+            select: {
+              id: true, descripcion: true, ot_id: true, componente: true, operacion_codigo: true,
+              horas_estimadas: true, horas_reales: true, horas_extras: true,
+              orden_trabajo: { select: { ot: true } },
+            },
           },
-        ],
-      },
-      orderBy: [{ fecha_inicio: "asc" }, { id: "asc" }],
-      include,
-    });
+        },
+      }),
+      prisma.planificacionOT.findMany({
+        where: {
+          AND: [
+            whereTecnico,
+            { fecha_inicio: { gte: hoyIni, lte: hoyFin } },
+          ],
+        },
+        orderBy: { fecha_inicio: "asc" },
+        include,
+      }),
+      // Tareas de la semana del técnico: las que tienen fecha en el rango O las
+      // que están asignadas a esta semana (semana_plan) aunque todavía no tengan
+      // hora. Así el técnico ve TODO lo de su semana, no solo lo ya calendarizado.
+      prisma.planificacionOT.findMany({
+        where: {
+          AND: [
+            whereTecnico,
+            {
+              OR: [
+                { fecha_inicio: { gte: semIni, lte: semFin } },
+                { semana_plan: semanaActual },
+              ],
+            },
+          ],
+        },
+        orderBy: [{ fecha_inicio: "asc" }, { id: "asc" }],
+        include,
+      }),
+      // Mes: para rendimientoMes.
+      prisma.planificacionOT.findMany({
+        where: { AND: [whereTecnico, { fecha_inicio: { gte: mesIni, lte: mesFin } }] },
+        select: { id: true, horas_estimadas: true, horas_extras: true, horas_extras_qty: true },
+      }),
+      // Histórico: rango completo de 4 semanas.
+      prisma.planificacionOT.findMany({
+        where: { AND: [whereTecnico, { fecha_inicio: { gte: histIni, lte: histFin } }] },
+        select: { id: true, fecha_inicio: true, horas_estimadas: true, horas_extras: true, horas_extras_qty: true },
+      }),
+    ]);
 
     // ── Estado PERSONAL del técnico en cada tarea (multi-técnico) ──────────
     // Una tarea puede tener varios técnicos; cada uno avanza por su cuenta. El
     // estado del técnico logueado se deriva de SUS sesiones en esa tarea.
     const idsLista = [...new Set([...tareasHoy, ...tareasSemana].map((t) => t.id))];
-    const misSesiones = idsLista.length
-      ? await prisma.planificacionOTSesion.findMany({
-          where: { tecnico, planificacion_ot_id: { in: idsLista } },
-          select: { planificacion_ot_id: true, tecnico: true, inicio: true, fin: true, cierre: true },
-        })
-      : [];
+    // OTs con evaluación aprobada (el técnico puede verla en solo lectura).
+    const otIdsEval = [...new Set(
+      [...tareasHoy, ...tareasSemana].map((t) => t.ot_id).filter((v): v is number => v != null),
+    )];
+    // Códigos de máquina que aparecen en las tareas (multi-máquina separada por "|"):
+    // solo se consultan ESOS equipos, no el catálogo entero.
+    const codigosMaquina = [...new Set(
+      [...tareasHoy, ...tareasSemana]
+        .flatMap((t) => (t.maquina ?? "").split("|"))
+        .map((c) => c.trim())
+        .filter(Boolean),
+    )];
+    const mesIds = tareasMes.map((t) => t.id);
+    const histIds = tareasHist.map((t) => t.id);
+
+    // Segunda tanda: todas dependen de la primera pero no entre sí → en paralelo.
+    const [misSesiones, evalsAprobadas, equiposCat, sesMes, sesHist, planSesiones] = await Promise.all([
+      idsLista.length
+        ? prisma.planificacionOTSesion.findMany({
+            where: { tecnico, planificacion_ot_id: { in: idsLista } },
+            select: { planificacion_ot_id: true, tecnico: true, inicio: true, fin: true, cierre: true },
+          })
+        : [],
+      otIdsEval.length
+        ? prisma.evaluacionTecnica.findMany({
+            where: { ot_id: { in: otIdsEval }, estado: "APROBADA" },
+            select: { id: true, ot_id: true },
+            orderBy: { id: "desc" }, // si hubiera más de una, gana la más reciente
+          })
+        : [],
+      codigosMaquina.length
+        ? prisma.equipo.findMany({
+            where: { codigo: { in: codigosMaquina } },
+            select: { codigo: true, descripcion: true },
+          })
+        : [],
+      mesIds.length
+        ? prisma.planificacionOTSesion.findMany({
+            where: { tecnico, planificacion_ot_id: { in: mesIds } },
+            select: { planificacion_ot_id: true, tecnico: true, inicio: true, fin: true, cierre: true },
+          })
+        : [],
+      histIds.length
+        ? prisma.planificacionOTSesion.findMany({
+            where: { tecnico, planificacion_ot_id: { in: histIds } },
+            select: { planificacion_ot_id: true, tecnico: true, inicio: true, fin: true, cierre: true },
+          })
+        : [],
+      // Sesiones previas de la tarea en curso (para el cronómetro del cliente).
+      sesionAbierta
+        ? prisma.planificacionOTSesion.findMany({
+            where: {
+              planificacion_ot_id: sesionAbierta.planificacion_ot_id,
+              NOT: { id: sesionAbierta.id },
+            },
+            select: { inicio: true, fin: true },
+          })
+        : [],
+    ]);
+
     const miEstadoPorTarea = new Map<number, EstadoTecnico>();
     for (const id of idsLista) {
       miEstadoPorTarea.set(id, estadoTecnico(misSesiones.filter((s) => s.planificacion_ot_id === id)));
     }
 
-    // Hoja de evaluación APROBADA de la OT de cada tarea (si aplica): el técnico
-    // puede VERLA en solo lectura desde su panel. Solo se exponen APROBADAS —
-    // borradores / pendientes / rechazadas no. Tareas sin OT no aplican.
-    const otIdsEval = [...new Set(
-      [...tareasHoy, ...tareasSemana].map((t) => t.ot_id).filter((v): v is number => v != null),
-    )];
-    const evalsAprobadas = otIdsEval.length
-      ? await prisma.evaluacionTecnica.findMany({
-          where: { ot_id: { in: otIdsEval }, estado: "APROBADA" },
-          select: { id: true, ot_id: true },
-          orderBy: { id: "desc" }, // si hubiera más de una, gana la más reciente
-        })
-      : [];
     const evalPorOt = new Map<number, number>();
     for (const e of evalsAprobadas) {
       if (!evalPorOt.has(e.ot_id)) evalPorOt.set(e.ot_id, e.id);
@@ -177,7 +234,6 @@ export async function GET(req: Request) {
 
     // Mapa código de equipo → nombre, para mostrar el NOMBRE de la máquina (no el
     // código) en el dashboard del técnico.
-    const equiposCat = await prisma.equipo.findMany({ select: { codigo: true, descripcion: true } });
     const nombreEquipo = new Map(equiposCat.map((e) => [e.codigo, e.descripcion ?? e.codigo]));
     const maquinaNombre = (maq: string | null | undefined): string | null => {
       if (!maq) return null;
@@ -191,19 +247,6 @@ export async function GET(req: Request) {
         maquina_nombre: maquinaNombre(t.maquina),
         evaluacion_aprobada_id: t.ot_id != null ? (evalPorOt.get(t.ot_id) ?? null) : null,
       }));
-
-    // Horas reales del técnico logueado en un conjunto de tareas (sus sesiones).
-    async function horasRealesTecnico(taskIds: number[]): Promise<number> {
-      if (taskIds.length === 0) return 0;
-      const [ss, tareas] = await Promise.all([
-        prisma.planificacionOTSesion.findMany({
-          where: { tecnico, planificacion_ot_id: { in: taskIds } },
-          select: { planificacion_ot_id: true, inicio: true, fin: true },
-        }),
-        prisma.planificacionOT.findMany({ where: { id: { in: taskIds } }, select: { id: true, horas_extras: true, horas_extras_qty: true } }),
-      ]);
-      return realDeTareas(tareas, ss);
-    }
 
     // ── Rendimiento (POR TÉCNICO, consistente con el resto del dashboard) ──
     // "Realizado" = el técnico terminó SU parte (miEstado=realizado, derivado de
@@ -227,22 +270,13 @@ export async function GET(req: Request) {
     }
 
     // Semana: reusa tareasSemana + su miEstado ya calculado (por técnico).
+    // Las horas reales salen de misSesiones (ya trae las sesiones del técnico
+    // para todas las tareas de hoy+semana; realDeTareas filtra por tarea).
     const realizadasSemList = tareasSemana.filter((t) => miEstadoPorTarea.get(t.id) === "realizado");
-    const realSem = await horasRealesTecnico(realizadasSemList.map((t) => t.id));
+    const realSem = realDeTareas(realizadasSemList, misSesiones);
     const rendimientoSemana = calcRendimiento(realizadasSemList, tareasSemana.length, realSem);
 
     // Mes: tareas del técnico con fecha_inicio en el mes + su estado por sesiones.
-    const tareasMes = await prisma.planificacionOT.findMany({
-      where: { AND: [whereTecnico, { fecha_inicio: { gte: mesIni, lte: mesFin } }] },
-      select: { id: true, horas_estimadas: true, horas_extras: true, horas_extras_qty: true },
-    });
-    const mesIds = tareasMes.map((t) => t.id);
-    const sesMes = mesIds.length
-      ? await prisma.planificacionOTSesion.findMany({
-          where: { tecnico, planificacion_ot_id: { in: mesIds } },
-          select: { planificacion_ot_id: true, tecnico: true, inicio: true, fin: true, cierre: true },
-        })
-      : [];
     const realizadasMesList = tareasMes.filter(
       (t) => estadoTecnico(sesMes.filter((s) => s.planificacion_ot_id === t.id)) === "realizado",
     );
@@ -250,21 +284,16 @@ export async function GET(req: Request) {
     const rendimientoMes = calcRendimiento(realizadasMesList, tareasMes.length, realMes);
 
     // ── Histórico últimas 4 semanas (por técnico) ──────────────────
+    // tareasHist/sesHist ya traen las 4 semanas completas; acá solo se
+    // bucketiza por semana (cada tarea cae en una sola por su fecha_inicio).
     const historico: Array<{ semana: string; estimadas: number; reales: number; eficienciaPct: number | null }> = [];
     for (let i = 3; i >= 0; i--) {
-      const ini = dayjs().tz(TZ).subtract(i, "week").startOf("isoWeek").toDate();
-      const fin = dayjs().tz(TZ).subtract(i, "week").endOf("isoWeek").toDate();
-      const tareas = await prisma.planificacionOT.findMany({
-        where: { AND: [whereTecnico, { fecha_inicio: { gte: ini, lte: fin } }] },
-        select: { id: true, horas_estimadas: true, horas_extras: true, horas_extras_qty: true },
-      });
-      const ids = tareas.map((t) => t.id);
-      const ses = ids.length
-        ? await prisma.planificacionOTSesion.findMany({
-            where: { tecnico, planificacion_ot_id: { in: ids } },
-            select: { planificacion_ot_id: true, tecnico: true, inicio: true, fin: true, cierre: true },
-          })
-        : [];
+      const ini = ahoraLima.subtract(i, "week").startOf("isoWeek").toDate();
+      const fin = ahoraLima.subtract(i, "week").endOf("isoWeek").toDate();
+      const tareas = tareasHist.filter(
+        (t) => t.fecha_inicio != null && t.fecha_inicio >= ini && t.fecha_inicio <= fin,
+      );
+      const ses = sesHist;
       const hechas = tareas.filter(
         (t) => estadoTecnico(ses.filter((s) => s.planificacion_ot_id === t.id)) === "realizado",
       );
@@ -305,13 +334,6 @@ export async function GET(req: Request) {
       const transcurridoMs = esHE
         ? Date.now() - sesionAbierta.inicio.getTime()
         : horasRealesEntre(sesionAbierta.inicio, new Date()) * 3_600_000;
-      const planSesiones = await prisma.planificacionOTSesion.findMany({
-        where: {
-          planificacion_ot_id: sesionAbierta.planificacion_ot_id,
-          NOT: { id: sesionAbierta.id },
-        },
-        select: { inicio: true, fin: true },
-      });
       sesionEnCurso = {
         sesion_id: sesionAbierta.id,
         planificacion_ot_id: sesionAbierta.planificacion_ot_id,
