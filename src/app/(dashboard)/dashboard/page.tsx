@@ -2,9 +2,19 @@
 
 import { Typography, Spin } from "antd";
 import { useSession } from "next-auth/react";
+import dynamic from "next/dynamic";
 import TecnicoPanel from "@/components/modules/tecnico/TecnicoPanel";
-import PlannerProgramaDashboard from "@/components/modules/dashboard/PlannerProgramaDashboard";
-import LogisticaDashboard from "@/components/modules/dashboard/LogisticaDashboard";
+
+// Dinámicos: ambos dashboards traen recharts (~150 KB). Cada rol ve solo uno,
+// así que se cargan como chunk aparte en vez de ir en el bundle inicial.
+const PlannerProgramaDashboard = dynamic(
+  () => import("@/components/modules/dashboard/PlannerProgramaDashboard"),
+  { loading: () => <Spin /> },
+);
+const LogisticaDashboard = dynamic(
+  () => import("@/components/modules/dashboard/LogisticaDashboard"),
+  { loading: () => <Spin /> },
+);
 
 const { Title, Text } = Typography;
 
