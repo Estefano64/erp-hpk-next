@@ -36,21 +36,80 @@ export async function GET(req: NextRequest) {
     const semFin = semBase.endOf("isoWeek").toDate();
     const semanaActual = `${semBase.isoWeekYear()}W${String(semBase.isoWeek()).padStart(2, "0")}`;
 
-    // ── Trabajando ahora ─────────────────────────────────────────────────
-    const sesionesAbiertas = await prisma.planificacionOTSesion.findMany({
-      where: { fin: null, planificacion_ot: { estado: { notIn: ["cancelado", "realizado"] } } },
-      select: {
-        tecnico: true, inicio: true,
-        planificacion_ot: {
+    const hoy0 = ahora.startOf("day").toDate();
+    const en7dias = ahora.add(7, "day").endOf("day").toDate();
+
+    // Las 7 lecturas son independientes entre sí: se lanzan en paralelo para
+    // que el request cueste lo que la más lenta (este endpoint se pollea).
+    const [sesionesAbiertas, operarios, tareasSemana, pausasSemana, iniciosSemana, otsActivas, poolSinAsignar] =
+      await Promise.all([
+        // ── Trabajando ahora ────────────────────────────────────────────
+        prisma.planificacionOTSesion.findMany({
+          where: { fin: null, planificacion_ot: { estado: { notIn: ["cancelado", "realizado"] } } },
           select: {
-            id: true, descripcion: true, componente: true, horas_estimadas: true, horas_extras: true,
-            es_correctivo: true,
-            orden_trabajo: { select: { id: true, ot: true } },
+            tecnico: true, inicio: true,
+            planificacion_ot: {
+              select: {
+                id: true, descripcion: true, componente: true, horas_estimadas: true, horas_extras: true,
+                es_correctivo: true,
+                orden_trabajo: { select: { id: true, ot: true } },
+              },
+            },
           },
-        },
-      },
-      orderBy: { inicio: "asc" },
-    });
+          orderBy: { inicio: "asc" },
+        }),
+        // Operarios activos (para calcular libres).
+        prisma.trabajador.findMany({
+          where: { activo: true, usuario: { roles: { has: "tecnico" } } },
+          select: { nombre: true },
+          orderBy: { nombre: "asc" },
+        }),
+        // ── Semana: tareas para cumplimiento por operario ───────────────
+        prisma.planificacionOT.findMany({
+          where: {
+            estado: { not: "cancelado" },
+            OR: [
+              { semana_plan: semanaActual },
+              { fecha_inicio: { gte: semIni, lte: semFin } },
+            ],
+          },
+          select: {
+            id: true, estado: true, tecnico: true, fecha_inicio: true, publicado: true,
+            fecha_inicio_base: true, tecnico_base: true, semana_base: true,
+          },
+        }),
+        // ── Pausas de la semana ─────────────────────────────────────────
+        prisma.planificacionOTSesion.findMany({
+          where: { cierre: "pausa", fin: { gte: semIni, lte: semFin } },
+          select: { tecnico: true, fin: true, motivo_pausa: true },
+        }),
+        prisma.planificacionOTSesion.findMany({
+          where: { inicio: { gte: semIni, lte: semFin } },
+          select: { tecnico: true, inicio: true },
+          orderBy: { inicio: "asc" },
+        }),
+        // ── Alertas: solo OTs cuya fecha efectiva (reprogramada ?? cliente)
+        // cae dentro de la ventana de interés (vencidas o ≤7 días). El resto
+        // no se usa — antes se traían TODAS las activas y se filtraba en JS.
+        prisma.ordenTrabajo.findMany({
+          where: {
+            activo: true,
+            ot_status_codigo: { not: "Cerrada" },
+            OR: [
+              { fecha_reprogramada: { lte: en7dias } },
+              { fecha_reprogramada: null, fecha_requerimiento_cliente: { lte: en7dias } },
+            ],
+          },
+          select: {
+            id: true, ot: true, descripcion: true,
+            fecha_requerimiento_cliente: true, fecha_reprogramada: true,
+            cliente: { select: { nombre_comercial: true, razon_social: true } },
+          },
+        }),
+        prisma.planificacionOT.count({
+          where: { fecha_inicio: null, estado: { notIn: ["cancelado", "realizado"] } },
+        }),
+      ]);
     const nowDate = new Date();
     const trabajandoAhora = sesionesAbiertas.map((s) => ({
       tecnico: s.tecnico,
@@ -67,28 +126,10 @@ export async function GET(req: NextRequest) {
     }));
 
     // Operarios activos sin sesión abierta (libres ahora).
-    const operarios = await prisma.trabajador.findMany({
-      where: { activo: true, usuario: { roles: { has: "tecnico" } } },
-      select: { nombre: true },
-      orderBy: { nombre: "asc" },
-    });
     const ocupados = new Set(trabajandoAhora.map((t) => t.tecnico));
     const libres = operarios.map((o) => o.nombre).filter((n) => !ocupados.has(n));
 
     // ── Semana: cumplimiento por operario (vs lo enviado) ───────────────
-    const tareasSemana = await prisma.planificacionOT.findMany({
-      where: {
-        estado: { not: "cancelado" },
-        OR: [
-          { semana_plan: semanaActual },
-          { fecha_inicio: { gte: semIni, lte: semFin } },
-        ],
-      },
-      select: {
-        id: true, estado: true, tecnico: true, fecha_inicio: true, publicado: true,
-        fecha_inicio_base: true, tecnico_base: true, semana_base: true,
-      },
-    });
     interface OpStat { total: number; realizadas: number; enProceso: number; desviadas: number; fueraDePlan: number }
     const porOperario = new Map<string, OpStat>();
     const conEnvio = new Set<string>(); // operarios con algo enviado esta semana
@@ -122,25 +163,24 @@ export async function GET(req: NextRequest) {
     };
 
     // ── Pausas de la semana por motivo (horas de hueco hasta retomar) ────
-    const pausasSemana = await prisma.planificacionOTSesion.findMany({
-      where: { cierre: "pausa", fin: { gte: semIni, lte: semFin } },
-      select: { tecnico: true, fin: true, motivo_pausa: true },
-    });
-    const iniciosSemana = await prisma.planificacionOTSesion.findMany({
-      where: { inicio: { gte: semIni, lte: semFin } },
-      select: { tecnico: true, inicio: true },
-      orderBy: { inicio: "asc" },
-    });
+    // Inicios agrupados por técnico (ya vienen ordenados por inicio asc): así
+    // cada pausa solo recorre los inicios de SU técnico, no todos los de la semana.
+    const iniciosPorTecnico = new Map<string, Date[]>();
+    for (const s of iniciosSemana) {
+      const arr = iniciosPorTecnico.get(s.tecnico) ?? [];
+      arr.push(s.inicio);
+      iniciosPorTecnico.set(s.tecnico, arr);
+    }
     const pausasPorMotivo = new Map<string, { horas: number; veces: number }>();
     for (const p of pausasSemana) {
       if (!p.fin) continue;
       // Próximo inicio del MISMO técnico, MISMO día (si no retomó ese día, el
       // hueco no se cuenta — evita inflar con fin de jornada).
-      const siguiente = iniciosSemana.find(
-        (s) => s.tecnico === p.tecnico && s.inicio > p.fin! && dayjs(s.inicio).tz(TZ).isSame(dayjs(p.fin).tz(TZ), "day"),
+      const siguiente = (iniciosPorTecnico.get(p.tecnico) ?? []).find(
+        (inicio) => inicio > p.fin! && dayjs(inicio).tz(TZ).isSame(dayjs(p.fin).tz(TZ), "day"),
       );
       if (!siguiente) continue;
-      const horas = horasRealesEntre(p.fin, siguiente.inicio);
+      const horas = horasRealesEntre(p.fin, siguiente);
       if (horas <= 0) continue;
       const motivo = p.motivo_pausa ?? "SIN_MOTIVO";
       const e = pausasPorMotivo.get(motivo) ?? { horas: 0, veces: 0 };
@@ -153,16 +193,6 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => b.horas - a.horas);
 
     // ── Alertas: OTs atrasadas / por vencer + pool ───────────────────────
-    const hoy0 = ahora.startOf("day").toDate();
-    const en7dias = ahora.add(7, "day").endOf("day").toDate();
-    const otsActivas = await prisma.ordenTrabajo.findMany({
-      where: { activo: true, ot_status_codigo: { not: "Cerrada" } },
-      select: {
-        id: true, ot: true, descripcion: true,
-        fecha_requerimiento_cliente: true, fecha_reprogramada: true,
-        cliente: { select: { nombre_comercial: true, razon_social: true } },
-      },
-    });
     const conFechaEf = otsActivas
       .map((o) => ({ ...o, fechaEf: o.fecha_reprogramada ?? o.fecha_requerimiento_cliente }))
       .filter((o) => o.fechaEf != null);
@@ -174,10 +204,6 @@ export async function GET(req: NextRequest) {
       id: o.id, ot: o.ot, descripcion: o.descripcion,
       cliente: o.cliente?.nombre_comercial ?? o.cliente?.razon_social ?? null,
       fecha: o.fechaEf,
-    });
-
-    const poolSinAsignar = await prisma.planificacionOT.count({
-      where: { fecha_inicio: null, estado: { notIn: ["cancelado", "realizado"] } },
     });
 
     return NextResponse.json({
