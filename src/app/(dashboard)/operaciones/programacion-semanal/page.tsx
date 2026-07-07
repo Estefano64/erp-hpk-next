@@ -363,25 +363,31 @@ export default function ProgramacionSemanalPage() {
   const fetchData = useCallback(async () => {
     setCargando(true);
     try {
-      const params1 = new URLSearchParams({
-        limit: "10000",
-        desde: lunes.hour(0).minute(0).second(0).toISOString(),
-        hasta: viernes.toISOString(),
-      });
-      // `resAll` alimenta el pool de pendientes (sin fecha / sin semana). Debe traer
-      // TODAS las filas: ordena por ot_id desc, así que con un límite chico las OTs
-      // de ot_id bajo caían fuera del corte y sus tareas desaparecían del pool
-      // (no se veían en la grilla ni en pendientes). 10000 = tope de la API.
-      const [resWeek, resAll] = await Promise.all([
-        fetch(`/api/planificacion?${params1}`),
-        fetch(`/api/planificacion?limit=10000`),
-      ]);
+      // Una sola llamada: el fetch global (pool de pendientes, choques entre
+      // semanas, Gantt) es superconjunto del de la semana, así que las filas
+      // de la semana se derivan acá con el MISMO criterio de overlap que
+      // aplica el API con desde/hasta (fecha_inicio <= hasta AND (fecha_fin
+      // >= desde OR (sin fecha_fin AND fecha_inicio >= desde))). Antes se
+      // pedían las dos variantes en paralelo (~2× payload por carga).
+      // Debe traer TODAS las filas: ordena por ot_id desc, así que con un
+      // límite chico las OTs de ot_id bajo caían fuera del corte y sus tareas
+      // desaparecían del pool. 10000 = tope de la API.
+      const resAll = await fetch(`/api/planificacion?limit=10000`);
+      if (!resAll.ok) return;
       // Una tarea cancelada no ocupa lugar: la sacamos de la grilla y del pool para
       // que su espacio quede libre y se pueda programar otra tarea encima (y para
       // que no dispare falsos choques en la detección de superposición).
-      const sinCanceladas = (arr: PlanRow[]) => arr.filter((r) => r.estado !== "cancelado");
-      if (resWeek.ok) setRows(sinCanceladas((await resWeek.json()).data ?? []));
-      if (resAll.ok) setAllRows(sinCanceladas((await resAll.json()).data ?? []));
+      const todas = (((await resAll.json()).data ?? []) as PlanRow[])
+        .filter((r) => r.estado !== "cancelado");
+      const desde = lunes.hour(0).minute(0).second(0);
+      const enSemana = (r: PlanRow) =>
+        !!r.fecha_inicio &&
+        !dayjs(r.fecha_inicio).isAfter(viernes) &&
+        (r.fecha_fin
+          ? !dayjs(r.fecha_fin).isBefore(desde)
+          : !dayjs(r.fecha_inicio).isBefore(desde));
+      setRows(todas.filter(enSemana));
+      setAllRows(todas);
     } finally {
       setCargando(false);
     }
