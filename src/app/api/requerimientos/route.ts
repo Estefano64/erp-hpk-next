@@ -99,49 +99,77 @@ export async function GET(req: NextRequest) {
     }
 
     const soloAprobadosSinOC = sp.get("solo_aprobados_sin_oc") === "1";
-    const [dataRaw, totalRaw] = await Promise.all([
-      prisma.oTRepuesto.findMany({
-        where,
-        include: {
-          orden_trabajo: {
-            select: {
-              id: true, ot: true, tipo_codigo: true,
-              descripcion: true,
-              cod_rep_flota: true,
-              cliente: { select: { codigo: true, razon_social: true, nombre_comercial: true } },
-              codigo_reparacion: { select: { codigo: true, descripcion: true } },
-            },
-          },
-          // Para items que pertenecen a una OT interna (orden_trabajo es null),
-          // traemos los datos de la OT interna así el frontend puede renderear
-          // el código OIXXXXYY en lugar de mostrar la fila vacía.
-          orden_trabajo_interna: {
-            select: { id: true, ot: true, descripcion: true },
-          },
-          material: { select: { codigo: true, descripcion: true, unidad_medida_codigo: true, stock_actual: true, np: true, precio: true, moneda_codigo: true } },
-          // Ubicación física en el almacén HP&K: zona (HER/SUM/REP/STO) +
-          // celda (A1, B2...). Visible como columna en /requerimientos.
-          almacen_zona: { select: { codigo: true, nombre: true } },
-          almacen_posicion: { select: { codigo: true } },
-          status_requerimiento: { select: { codigo: true, nombre: true } },
-          status_cotizacion: { select: { codigo: true, nombre: true } },
-          status_oc: { select: { codigo: true, nombre: true } },
-          proveedor: { select: { id: true, razon_social: true } },
-          compra: {
-            select: {
-              id: true, numero_po: true, status_oc_codigo: true,
-              // Datos de la aceptación de la OC — visibles en /requerimientos/detalle
-              // como tooltip/columna separada del comentario de aprobación del req.
-              usuario_aprueba: true,
-              comentario_aprobacion: true,
-            },
-          },
-          adjuntos: { select: { id: true, nombre_archivo: true, r2_key: true, tamano: true } },
+
+    // Relaciones que consumen los listados (mismas en modo full y slim).
+    const relaciones = {
+      orden_trabajo: {
+        select: {
+          id: true, ot: true, tipo_codigo: true,
+          descripcion: true,
+          cod_rep_flota: true,
+          cliente: { select: { codigo: true, razon_social: true, nombre_comercial: true } },
+          codigo_reparacion: { select: { codigo: true, descripcion: true } },
         },
-        orderBy: [{ fecha_solicitud: "desc" }, { id: "desc" }],
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
+      },
+      // Para items que pertenecen a una OT interna (orden_trabajo es null),
+      // traemos los datos de la OT interna así el frontend puede renderear
+      // el código OIXXXXYY en lugar de mostrar la fila vacía.
+      orden_trabajo_interna: {
+        select: { id: true, ot: true, descripcion: true },
+      },
+      material: { select: { codigo: true, descripcion: true, unidad_medida_codigo: true, stock_actual: true, np: true, precio: true, moneda_codigo: true } },
+      // Ubicación física en el almacén HP&K: zona (HER/SUM/REP/STO) +
+      // celda (A1, B2...). Visible como columna en /requerimientos.
+      almacen_zona: { select: { codigo: true, nombre: true } },
+      almacen_posicion: { select: { codigo: true } },
+      status_requerimiento: { select: { codigo: true, nombre: true } },
+      status_cotizacion: { select: { codigo: true, nombre: true } },
+      status_oc: { select: { codigo: true, nombre: true } },
+      proveedor: { select: { id: true, razon_social: true } },
+      compra: {
+        select: {
+          id: true, numero_po: true, status_oc_codigo: true,
+          // Datos de la aceptación de la OC — visibles en /requerimientos/detalle
+          // como tooltip/columna separada del comentario de aprobación del req.
+          usuario_aprueba: true,
+          comentario_aprobacion: true,
+        },
+      },
+      adjuntos: { select: { id: true, nombre_archivo: true, r2_key: true, tamano: true } },
+    } as const;
+
+    // Modo slim (?slim=1): en vez de TODOS los escalares de OTRepuesto (~70
+    // columnas, varios TEXT), solo los campos que consume la tabla de
+    // /requerimientos/detalle (su interface RequerimientoApi). Con 800+ filas
+    // el modo full pesa ~2 MB por carga; el slim baja a menos de la mitad.
+    const slim = sp.get("slim") === "1";
+    const orderBy = [{ fecha_solicitud: "desc" as const }, { id: "desc" as const }];
+    const skip = (page - 1) * limit;
+    const listQuery = slim
+      ? prisma.oTRepuesto.findMany({
+          where,
+          select: {
+            id: true, ot_id: true, orden_trabajo_interna_id: true,
+            material_id: true, material_codigo: true,
+            nro_req: true, item_req: true, tipo_codigo: true,
+            cantidad: true, cantidad_recibida: true,
+            descripcion: true, fabricante_codigo: true, unidad_medida: true,
+            fecha_solicitud: true, fecha_requerida: true,
+            precio_unitario: true, moneda: true,
+            po_id: true, nro_oc: true, observaciones: true,
+            usuario_aprueba: true, comentario_aprobacion: true,
+            status_requerimiento_codigo: true, status_cotizacion_codigo: true, status_oc_codigo: true,
+            ...relaciones,
+          },
+          orderBy, skip, take: limit,
+        })
+      : prisma.oTRepuesto.findMany({
+          where,
+          include: relaciones,
+          orderBy, skip, take: limit,
+        });
+    const [dataRaw, totalRaw] = await Promise.all([
+      listQuery,
       prisma.oTRepuesto.count({ where }),
     ]);
 
