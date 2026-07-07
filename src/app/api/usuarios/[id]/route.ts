@@ -16,7 +16,7 @@ async function requireAdmin() {
 const ROLES = [
   "admin", "viewer", "tecnico", "evaluador",
   "aprobador_evaluacion", "aprobador_requerimiento",
-  "planner", "supervisor", "logistica", "mantenimiento", "contabilidad",
+  "planner", "produccion", "supervisor", "logistica", "mantenimiento", "contabilidad",
 ] as const;
 
 const UpdateSchema = z.object({

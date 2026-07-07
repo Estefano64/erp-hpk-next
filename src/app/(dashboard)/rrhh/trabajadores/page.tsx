@@ -66,10 +66,11 @@ const ROLES = [
   { value: "evaluador", label: "Evaluador — firma 'Evaluado por' en hojas" },
   { value: "aprobador_evaluacion", label: "Aprobador de hojas — firma 'Supervisor' y aprueba evaluaciones" },
   { value: "aprobador_requerimiento", label: "Aprobador de requerimientos" },
+  { value: "planner", label: "Planner — dashboard de programación semanal" },
+  { value: "produccion", label: "Producción — dashboard de KPIs de taller" },
+  { value: "logistica", label: "Logística — dashboard del área" },
   // Placeholders (sin efecto todavía)
-  { value: "planner", label: "Planner (placeholder)" },
   { value: "supervisor", label: "Supervisor (placeholder)" },
-  { value: "logistica", label: "Logística (placeholder)" },
   { value: "mantenimiento", label: "Mantenimiento (placeholder)" },
   { value: "contabilidad", label: "Contabilidad (placeholder)" },
 ];
@@ -81,6 +82,9 @@ const COLOR_POR_ROL: Record<string, string> = {
   evaluador: "geekblue",
   aprobador_evaluacion: "purple",
   aprobador_requerimiento: "volcano",
+  planner: "blue",
+  produccion: "green",
+  logistica: "gold",
   viewer: "default",
 };
 
