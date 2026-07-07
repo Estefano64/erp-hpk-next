@@ -11,7 +11,7 @@
 // Mismo patrón visual que LogisticaDashboard (antd + recharts + tokens de theme).
 
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { Card, Typography, Select, Tag, Row, Col, Empty, Space, Spin, Statistic } from "antd";
+import { Card, Typography, Segmented, Select, Tag, Row, Col, Empty, Space, Spin, Statistic } from "antd";
 import {
   ToolOutlined,
   InboxOutlined,
@@ -32,8 +32,8 @@ const { Title, Text } = Typography;
 interface ProdResp {
   kpis: {
     enTaller: number;
-    ingresosAnio: number;
-    entregadosAnio: number;
+    ingresosPeriodo: number;
+    entregadosPeriodo: number;
     promDiasTaller: number;
     promDiasEvaluacion: number;
   };
@@ -50,6 +50,13 @@ interface ProdResp {
 }
 
 const MES_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+
+const MESES = [
+  { value: 1, label: "Enero" }, { value: 2, label: "Febrero" }, { value: 3, label: "Marzo" },
+  { value: 4, label: "Abril" }, { value: 5, label: "Mayo" }, { value: 6, label: "Junio" },
+  { value: 7, label: "Julio" }, { value: 8, label: "Agosto" }, { value: 9, label: "Septiembre" },
+  { value: 10, label: "Octubre" }, { value: 11, label: "Noviembre" }, { value: 12, label: "Diciembre" },
+];
 
 // Ramp secuencial de la marca (claro → navy) para las etapas del flujo de
 // taller. Validado (banda de luminosidad, ΔL adyacente, contraste ≥2:1).
@@ -119,24 +126,29 @@ function BarrasHorizontales({
 
 export default function ProduccionDashboard() {
   const anioActual = dayjs().year();
+  const [modo, setModo] = useState<"anio" | "mes">("anio");
   const [anio, setAnio] = useState<number>(anioActual);
+  const [mes, setMes] = useState<number>(dayjs().month() + 1);
   const [modelo, setModelo] = useState<string | null>(null);
   const [data, setData] = useState<ProdResp | null>(null);
   const [loading, setLoading] = useState(false);
 
   const anios = useMemo(() => aniosDisponibles(), []);
+  // Rótulo del período activo, para KPIs y títulos de charts.
+  const ctx = modo === "mes" ? `${MESES.find((m) => m.value === mes)?.label} ${anio}` : String(anio);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams({ anio: String(anio) });
+      if (modo === "mes") params.set("mes", String(mes));
       if (modelo) params.set("modelo", modelo);
       const res = await fetch(`/api/dashboard/produccion?${params}`);
       if (res.ok) setData(await res.json());
     } finally {
       setLoading(false);
     }
-  }, [anio, modelo]);
+  }, [modo, anio, mes, modelo]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -208,19 +220,36 @@ export default function ProduccionDashboard() {
           </div>
         </Space>
 
-        <Space size={6} align="center">
-          <FilterOutlined style={{ color: brand.textSecondary }} />
-          <Select
-            value={anio}
-            onChange={setAnio}
-            options={anios.map((y) => ({ value: y, label: String(y) }))}
-            style={{ width: 100 }}
+        <Space wrap size={14}>
+          <Segmented
+            value={modo}
+            onChange={(v) => setModo(v as "anio" | "mes")}
+            options={[
+              { value: "anio", label: "Año" },
+              { value: "mes", label: "Mes" },
+            ]}
           />
+          <Space size={6} align="center">
+            <FilterOutlined style={{ color: brand.textSecondary }} />
+            <Select
+              value={anio}
+              onChange={setAnio}
+              options={anios.map((y) => ({ value: y, label: String(y) }))}
+              style={{ width: 100 }}
+            />
+            <Select
+              value={mes}
+              onChange={setMes}
+              disabled={modo !== "mes"}
+              options={MESES}
+              style={{ width: 130 }}
+            />
+          </Space>
         </Space>
       </div>
 
       <Tag color="blue" style={{ marginBottom: 18, padding: "4px 10px" }}>
-        <FilterOutlined /> Filtro activo · Año: {anio} — «en taller» cuenta lo ingresado ese año que sigue sin entregar
+        <FilterOutlined /> Filtro activo · {ctx} — «en taller» cuenta lo ingresado en el período que sigue sin entregar
       </Tag>
 
       {loading && !data ? (
@@ -234,7 +263,7 @@ export default function ProduccionDashboard() {
             <Col xs={12} md={8} xl={4}>
               <Card>
                 <Statistic
-                  title={`En taller (ingresos ${anio})`}
+                  title={`En taller (ingresos ${ctx})`}
                   value={data.kpis.enTaller}
                   prefix={<ToolOutlined style={{ color: brand.navy }} />}
                   styles={{ content: { color: brand.navy, fontSize: 22, fontWeight: 600 } }}
@@ -244,8 +273,8 @@ export default function ProduccionDashboard() {
             <Col xs={12} md={8} xl={5}>
               <Card>
                 <Statistic
-                  title={`Ingresos ${anio}`}
-                  value={data.kpis.ingresosAnio}
+                  title={`Ingresos ${ctx}`}
+                  value={data.kpis.ingresosPeriodo}
                   prefix={<InboxOutlined style={{ color: brand.cyan }} />}
                   styles={{ content: { color: brand.cyan, fontSize: 22, fontWeight: 600 } }}
                 />
@@ -254,8 +283,8 @@ export default function ProduccionDashboard() {
             <Col xs={12} md={8} xl={5}>
               <Card>
                 <Statistic
-                  title={`Entregados ${anio}`}
-                  value={data.kpis.entregadosAnio}
+                  title={`Entregados ${ctx}`}
+                  value={data.kpis.entregadosPeriodo}
                   prefix={<CheckCircleOutlined style={{ color: "#1D9E75" }} />}
                   styles={{ content: { color: "#1D9E75", fontSize: 22, fontWeight: 600 } }}
                 />
@@ -264,7 +293,7 @@ export default function ProduccionDashboard() {
             <Col xs={12} md={12} xl={5}>
               <Card>
                 <Statistic
-                  title={`Prom. días en taller ${anio}`}
+                  title={`Prom. días en taller (${ctx})`}
                   value={data.kpis.promDiasTaller}
                   precision={1}
                   suffix="días"
@@ -276,7 +305,7 @@ export default function ProduccionDashboard() {
             <Col xs={12} md={12} xl={5}>
               <Card>
                 <Statistic
-                  title={`Prom. días de evaluación ${anio}`}
+                  title={`Prom. días de evaluación (${ctx})`}
                   value={data.kpis.promDiasEvaluacion}
                   precision={1}
                   suffix="días"
@@ -290,7 +319,7 @@ export default function ProduccionDashboard() {
           {/* Fila 1: WIP por status + tipo de reparación */}
           <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
             <Col xs={24} md={14}>
-              <ChartCard title={`Componentes en taller por status (ingresos ${anio})`} height={220}>
+              <ChartCard title={`Componentes en taller por status (ingresos ${ctx})`} height={220}>
                 <ResponsiveContainer>
                   <BarChart data={wipStatusData}>
                     <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
@@ -308,7 +337,7 @@ export default function ProduccionDashboard() {
               </ChartCard>
             </Col>
             <Col xs={24} md={10}>
-              <ChartCard title={`Tipo de reparación (recibidos ${anio})`} height={220}>
+              <ChartCard title={`Tipo de reparación (recibidos ${ctx})`} height={220}>
                 {tipoData.length === 0 ? <Empty style={{ marginTop: 24 }} /> : (
                   <ResponsiveContainer>
                     <BarChart data={tipoData}>
@@ -359,7 +388,7 @@ export default function ProduccionDashboard() {
           {/* Fila 3: WIP por modelo + componentes reparados del modelo */}
           <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
             <Col xs={24} md={12}>
-              <ChartCard title={`En taller por modelo (ingresos ${anio})`} height={alturaFilas(wipModeloData.length)}>
+              <ChartCard title={`En taller por modelo (ingresos ${ctx})`} height={alturaFilas(wipModeloData.length)}>
                 <BarrasHorizontales data={wipModeloData} color={brand.navy} />
               </ChartCard>
             </Col>
@@ -391,7 +420,7 @@ export default function ProduccionDashboard() {
           <Row gutter={[12, 12]}>
             <Col xs={24} md={12}>
               <ChartCard
-                title={`Días promedio en taller por cliente (entregas ${anio})`}
+                title={`Días promedio en taller por cliente (entregas ${ctx})`}
                 height={alturaFilas(diasTallerData.length)}
               >
                 <BarrasHorizontales data={diasTallerData} color="#EF9F27" sufijo=" días" />
@@ -399,7 +428,7 @@ export default function ProduccionDashboard() {
             </Col>
             <Col xs={24} md={12}>
               <ChartCard
-                title={`Días promedio de evaluación por cliente (${anio})`}
+                title={`Días promedio de evaluación por cliente (${ctx})`}
                 height={alturaFilas(diasEvalData.length)}
               >
                 <BarrasHorizontales data={diasEvalData} color="#8494BB" sufijo=" días" />

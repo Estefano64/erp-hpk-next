@@ -12,9 +12,11 @@
 //
 // Query params:
 //   ?anio=2026        obligatorio — rige TODO, incluido el WIP: "en taller"
-//                     cuenta lo ingresado ese año que sigue sin entregar
+//                     cuenta lo ingresado en el período que sigue sin entregar
 //                     (las OTs viejas con status desactualizado no ensucian
 //                     el año corriente; se ven eligiendo su año)
+//   ?mes=6            opcional — acota KPIs/WIP/tipo/días a ese mes; las dos
+//                     series "por mes" siempre muestran el año completo.
 //   ?modelo=930E-4SE  opcional — para el chart de componentes reparados;
 //                     si no viene, se usa la flota con más entregas históricas.
 //
@@ -42,12 +44,20 @@ export async function GET(req: NextRequest) {
 
     const sp = req.nextUrl.searchParams;
     const anio = Number(sp.get("anio") ?? dayjs().year());
+    const mes = sp.get("mes") ? Number(sp.get("mes")) : null;
     const modeloParam = sp.get("modelo")?.trim() || null;
     if (!Number.isFinite(anio) || anio < 2020 || anio > 2100) {
       return NextResponse.json({ error: "anio inválido" }, { status: 400 });
     }
-    const desde = new Date(Date.UTC(anio, 0, 1));
-    const hasta = new Date(Date.UTC(anio + 1, 0, 1));
+    if (mes != null && (!Number.isInteger(mes) || mes < 1 || mes > 12)) {
+      return NextResponse.json({ error: "mes inválido" }, { status: 400 });
+    }
+    // Rango del período (mes o año completo). Las series mensuales usan
+    // siempre el año completo, independiente del mes elegido.
+    const inicioAnio = new Date(Date.UTC(anio, 0, 1));
+    const finAnio = new Date(Date.UTC(anio + 1, 0, 1));
+    const desde = mes ? new Date(Date.UTC(anio, mes - 1, 1)) : inicioAnio;
+    const hasta = mes ? new Date(Date.UTC(anio, mes, 1)) : finAnio;
 
     type StatusRow = { status: string; n: number };
     type ModeloRow = { modelo: string; n: number };
@@ -90,23 +100,23 @@ export async function GET(req: NextRequest) {
             AND fecha_recepcion >= ${desde} AND fecha_recepcion < ${hasta}
           GROUP BY 1
         `,
-        // ── Ingresos por mes (fecha_recepcion) ───────────────────────────
+        // ── Ingresos por mes (fecha_recepcion) — año completo ────────────
         prisma.$queryRaw<MesRow[]>`
           SELECT EXTRACT(MONTH FROM fecha_recepcion)::int AS mes, COUNT(*)::int AS n
           FROM orden_trabajo
           WHERE activo = true
-            AND fecha_recepcion >= ${desde} AND fecha_recepcion < ${hasta}
+            AND fecha_recepcion >= ${inicioAnio} AND fecha_recepcion < ${finAnio}
           GROUP BY 1
         `,
-        // ── Entregas por mes (despacho → entrega → facturación) ──────────
+        // ── Entregas por mes (despacho → entrega → facturación) — año ────
         prisma.$queryRaw<MesRow[]>`
           SELECT EXTRACT(MONTH FROM COALESCE(fecha_despacho, fecha_entrega, fecha_facturacion))::int AS mes,
                  COUNT(*)::int AS n
           FROM orden_trabajo
           WHERE activo = true
             AND taller_status_codigo IN ('Entregado','Cobranza')
-            AND COALESCE(fecha_despacho, fecha_entrega, fecha_facturacion) >= ${desde}
-            AND COALESCE(fecha_despacho, fecha_entrega, fecha_facturacion) < ${hasta}
+            AND COALESCE(fecha_despacho, fecha_entrega, fecha_facturacion) >= ${inicioAnio}
+            AND COALESCE(fecha_despacho, fecha_entrega, fecha_facturacion) < ${finAnio}
           GROUP BY 1
         `,
         // ── Días promedio en taller por cliente (entregas del año) ───────
@@ -197,8 +207,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       kpis: {
         enTaller,
-        ingresosAnio: ingresosPorMes.reduce((s, n) => s + n, 0),
-        entregadosAnio: entregadosPorMes.reduce((s, n) => s + n, 0),
+        // Ingresos/entregas del período: si hay mes, la celda de ese mes de
+        // la serie anual; si no, el total del año.
+        ingresosPeriodo: mes ? ingresosPorMes[mes - 1] : ingresosPorMes.reduce((s, n) => s + n, 0),
+        entregadosPeriodo: mes ? entregadosPorMes[mes - 1] : entregadosPorMes.reduce((s, n) => s + n, 0),
         promDiasTaller: pond(diasTaller),
         promDiasEvaluacion: pond(diasEval),
       },
@@ -211,7 +223,7 @@ export async function GET(req: NextRequest) {
       diasEvaluacionPorCliente: diasEval,
       componentesModelo,
       modelos: modelos.map((m) => m.modelo),
-      meta: { anio, modelo },
+      meta: { anio, mes, modelo },
     });
   } catch (e) {
     console.error("GET /api/dashboard/produccion error:", e);
