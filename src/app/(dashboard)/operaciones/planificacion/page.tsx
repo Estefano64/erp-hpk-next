@@ -406,7 +406,8 @@ export default function PlanificacionPage() {
         fetch("/api/trabajadores?limit=10000&soloOperarios=1"),
         fetch("/api/equipos?limit=10000&tipo=MAQ"),
         fetch("/api/catalogos?tabla=statusTarea"),
-        fetch(`/api/ordenes-trabajo?limit=10000&anios=${anioActual}`),
+        // min=1: solo {id, ot} — acá solo se arman las opciones del Select.
+        fetch(`/api/ordenes-trabajo?limit=10000&anios=${anioActual}&min=1`),
         fetch("/api/catalogos?tabla=componente"),
         fetch("/api/catalogos?tabla=operacionReparacion"),
       ]);
