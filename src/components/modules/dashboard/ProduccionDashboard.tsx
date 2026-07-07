@@ -220,7 +220,7 @@ export default function ProduccionDashboard() {
       </div>
 
       <Tag color="blue" style={{ marginBottom: 18, padding: "4px 10px" }}>
-        <FilterOutlined /> Filtro activo · Año: {anio} — lo que está en taller se muestra siempre al día de hoy
+        <FilterOutlined /> Filtro activo · Año: {anio} — «en taller» cuenta lo ingresado ese año que sigue sin entregar
       </Tag>
 
       {loading && !data ? (
@@ -234,7 +234,7 @@ export default function ProduccionDashboard() {
             <Col xs={12} md={8} xl={4}>
               <Card>
                 <Statistic
-                  title="En taller (hoy)"
+                  title={`En taller (ingresos ${anio})`}
                   value={data.kpis.enTaller}
                   prefix={<ToolOutlined style={{ color: brand.navy }} />}
                   styles={{ content: { color: brand.navy, fontSize: 22, fontWeight: 600 } }}
@@ -290,7 +290,7 @@ export default function ProduccionDashboard() {
           {/* Fila 1: WIP por status + tipo de reparación */}
           <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
             <Col xs={24} md={14}>
-              <ChartCard title="Componentes en taller por status (hoy)" height={220}>
+              <ChartCard title={`Componentes en taller por status (ingresos ${anio})`} height={220}>
                 <ResponsiveContainer>
                   <BarChart data={wipStatusData}>
                     <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
@@ -359,7 +359,7 @@ export default function ProduccionDashboard() {
           {/* Fila 3: WIP por modelo + componentes reparados del modelo */}
           <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
             <Col xs={24} md={12}>
-              <ChartCard title="En taller por modelo (hoy)" height={alturaFilas(wipModeloData.length)}>
+              <ChartCard title={`En taller por modelo (ingresos ${anio})`} height={alturaFilas(wipModeloData.length)}>
                 <BarrasHorizontales data={wipModeloData} color={brand.navy} />
               </ChartCard>
             </Col>

@@ -11,7 +11,10 @@
 //   - Componentes reparados (histórico) del modelo seleccionado
 //
 // Query params:
-//   ?anio=2026        obligatorio (rige ingresos/entregas/días/estándar)
+//   ?anio=2026        obligatorio — rige TODO, incluido el WIP: "en taller"
+//                     cuenta lo ingresado ese año que sigue sin entregar
+//                     (las OTs viejas con status desactualizado no ensucian
+//                     el año corriente; se ven eligiendo su año)
 //   ?modelo=930E-4SE  opcional — para el chart de componentes reparados;
 //                     si no viene, se usa la flota con más entregas históricas.
 //
@@ -57,11 +60,16 @@ export async function GET(req: NextRequest) {
     const [wipStatus, wipModelo, tipoRep, ingresosMes, entregadosMes, diasTaller, diasEval, modelos] =
       await Promise.all([
         // ── WIP por status de taller ─────────────────────────────────────
+        // Se filtra por año de INGRESO (fecha_recepcion): hay muchas OTs
+        // viejas cuyo status de taller nunca se actualizó a Entregado, y sin
+        // este corte el "en taller" quedaba inflado con OTs de 2020-2024.
+        // Decisión del usuario 2026-07-07: el WIP sigue el filtro de año.
         prisma.$queryRaw<StatusRow[]>`
           SELECT taller_status_codigo AS status, COUNT(*)::int AS n
           FROM orden_trabajo
           WHERE activo = true
             AND taller_status_codigo IN ('Pdt Evaluación','Programado Evaluación','Pdt proceso','Programado Proceso','Terminado')
+            AND fecha_recepcion >= ${desde} AND fecha_recepcion < ${hasta}
           GROUP BY 1
         `,
         // ── WIP por modelo (flota) ───────────────────────────────────────
@@ -70,6 +78,7 @@ export async function GET(req: NextRequest) {
           FROM orden_trabajo
           WHERE activo = true
             AND taller_status_codigo IN ('Pdt Evaluación','Programado Evaluación','Pdt proceso','Programado Proceso','Terminado')
+            AND fecha_recepcion >= ${desde} AND fecha_recepcion < ${hasta}
           GROUP BY 1
           ORDER BY 2 DESC
         `,
