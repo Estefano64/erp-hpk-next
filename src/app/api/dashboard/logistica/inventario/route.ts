@@ -86,117 +86,127 @@ export async function GET(req: NextRequest) {
     const inicioAnio = dayjs(`${anio}-01-01`).startOf("year").toDate();
     const finAnio = dayjs(`${anio + 1}-01-01`).startOf("year").toDate();
 
-    // ── KPIs de stock + valorización (siempre "ahora") ─────────────────
+    // Todos los agregados se calculan en SQL (antes: findMany de tablas
+    // completas + loops en JS) y se lanzan en un solo Promise.all.
+    const wantCat = cat === "all" || cat === "cat";
+    const wantNoCat = cat === "all" || cat === "nocat";
+
+    type MatAggRow = { nps: number; cant: number; valorizacion: number; moneda: string | null };
+    type RangoRow = { tipo: string; monto: number; cant: number; nps: number };
+    type RangoNcRow = { tipo: string; cant: number; nps: number };
+    type PorMesRow = { mes: number; tipo: string; monto: number };
+    type TopRow = { codigo: string; np: string | null; descripcion: string; salidaQ: number; salidaMonto: number };
+
+    const [matAgg, ncAgg, rangoCat, rangoNc, porMesRows, topRows] = await Promise.all([
+      // ── KPIs de stock + valorización (siempre "ahora") ───────────────
+      wantCat
+        ? prisma.$queryRaw<MatAggRow[]>`
+            SELECT COUNT(*) FILTER (WHERE stock_actual > 0)::int AS nps,
+                   COALESCE(SUM(stock_actual) FILTER (WHERE stock_actual > 0), 0)::float AS cant,
+                   COALESCE(SUM(stock_actual * precio) FILTER (WHERE stock_actual > 0 AND precio > 0), 0)::float AS valorizacion,
+                   MODE() WITHIN GROUP (ORDER BY COALESCE(moneda_codigo, 'USD'))
+                     FILTER (WHERE stock_actual > 0 AND precio > 0) AS moneda
+            FROM material
+            WHERE activo = true
+          `
+        : Promise.resolve([] as MatAggRow[]),
+      wantNoCat
+        ? prisma.materialNoCatalogado.aggregate({
+            where: { activo: true, stock_actual: { gt: 0 } },
+            _count: { _all: true },
+            _sum: { stock_actual: true },
+          })
+        : Promise.resolve(null),
+      // ── Ingresos / salidas del rango (catalogados, con precio snapshot
+      //    del movimiento o precio de catálogo) ───────────────────────────
+      wantCat
+        ? prisma.$queryRaw<RangoRow[]>`
+            SELECT m.tipo_movimiento::text AS tipo,
+                   COALESCE(SUM(m.cantidad * COALESCE(m.precio_unitario, mat.precio, 0)), 0)::float AS monto,
+                   COALESCE(SUM(m.cantidad), 0)::float AS cant,
+                   COUNT(DISTINCT m.material_id)::int AS nps
+            FROM movimientos_inventario m
+            LEFT JOIN material mat ON mat.material_id = m.material_id
+            WHERE m.fecha_movimiento >= ${desde} AND m.fecha_movimiento < ${hasta}
+              AND m.cantidad > 0
+            GROUP BY 1
+          `
+        : Promise.resolve([] as RangoRow[]),
+      wantNoCat
+        ? prisma.$queryRaw<RangoNcRow[]>`
+            SELECT tipo_movimiento::text AS tipo,
+                   COALESCE(SUM(cantidad), 0)::float AS cant,
+                   COUNT(DISTINCT material_no_cat_id)::int AS nps
+            FROM movimiento_no_catalogado
+            WHERE fecha_movimiento >= ${desde} AND fecha_movimiento < ${hasta}
+              AND cantidad > 0
+            GROUP BY 1
+          `
+        : Promise.resolve([] as RangoNcRow[]),
+      // ── Por mes (12 valores) — del año, ignora modo ───────────────────
+      wantCat
+        ? prisma.$queryRaw<PorMesRow[]>`
+            SELECT EXTRACT(MONTH FROM m.fecha_movimiento)::int AS mes,
+                   m.tipo_movimiento::text AS tipo,
+                   COALESCE(SUM(m.cantidad * COALESCE(m.precio_unitario, mat.precio, 0)), 0)::float AS monto
+            FROM movimientos_inventario m
+            LEFT JOIN material mat ON mat.material_id = m.material_id
+            WHERE m.fecha_movimiento >= ${inicioAnio} AND m.fecha_movimiento < ${finAnio}
+              AND m.cantidad > 0
+            GROUP BY 1, 2
+          `
+        : Promise.resolve([] as PorMesRow[]),
+      // ── Top 10 productos más movidos por cantidad de SALIDA ──────────
+      wantCat
+        ? prisma.$queryRaw<TopRow[]>`
+            SELECT mat.codigo,
+                   mat.np,
+                   mat.descripcion,
+                   COALESCE(SUM(m.cantidad), 0)::float AS "salidaQ",
+                   COALESCE(SUM(m.cantidad * COALESCE(m.precio_unitario, mat.precio, 0)), 0)::float AS "salidaMonto"
+            FROM movimientos_inventario m
+            JOIN material mat ON mat.material_id = m.material_id
+            WHERE m.tipo_movimiento = 'SALIDA'
+              AND m.fecha_movimiento >= ${desde} AND m.fecha_movimiento < ${hasta}
+              AND m.cantidad > 0
+            GROUP BY mat.material_id, mat.codigo, mat.np, mat.descripcion
+            ORDER BY "salidaQ" DESC
+            LIMIT 10
+          `
+        : Promise.resolve([] as TopRow[]),
+    ]);
+
     let stock = 0;
     let valorizacion = 0;
     let moneda = "USD";
-
-    if (cat === "all" || cat === "cat") {
-      const materiales = await prisma.material.findMany({
-        where: { activo: true },
-        select: { material_id: true, stock_actual: true, precio: true, moneda_codigo: true },
-      });
-      const monedaCount: Record<string, number> = {};
-      for (const m of materiales) {
-        const s = Number(m.stock_actual ?? 0);
-        if (!Number.isFinite(s) || s <= 0) continue;
-        if (unidad === "np") stock += 1; else stock += s;
-        const p = Number(m.precio ?? 0);
-        if (Number.isFinite(p) && p > 0) {
-          valorizacion += s * p;
-          const mc = m.moneda_codigo ?? "USD";
-          monedaCount[mc] = (monedaCount[mc] ?? 0) + 1;
-        }
-      }
-      moneda = Object.entries(monedaCount).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "USD";
+    if (matAgg[0]) {
+      stock += unidad === "np" ? matAgg[0].nps : matAgg[0].cant;
+      valorizacion = matAgg[0].valorizacion;
+      moneda = matAgg[0].moneda ?? "USD";
     }
-    if (cat === "all" || cat === "nocat") {
-      const noCat = await prisma.materialNoCatalogado.findMany({
-        where: { activo: true },
-        select: { id: true, stock_actual: true },
-      });
-      for (const m of noCat) {
-        const s = Number(m.stock_actual ?? 0);
-        if (!Number.isFinite(s) || s <= 0) continue;
-        if (unidad === "np") stock += 1; else stock += s;
-        // no-cat no tiene precio → no aporta a valorización
-      }
+    if (ncAgg) {
+      // no-cat no tiene precio → no aporta a valorización
+      stock += unidad === "np" ? ncAgg._count._all : Number(ncAgg._sum.stock_actual ?? 0);
     }
 
-    // ── Ingresos / salidas del rango ───────────────────────────────────
     let ingresos = 0;
     let ingresosQ = 0;
     let salidas = 0;
     let salidasQ = 0;
-
-    if (cat === "all" || cat === "cat") {
-      // Catalogados: movimientos del rango con precio snapshot o catálogo
-      const movs = await prisma.movimientoInventario.findMany({
-        where: { fecha_movimiento: { gte: desde, lt: hasta } },
-        select: {
-          material_id: true,
-          tipo_movimiento: true,
-          cantidad: true,
-          precio_unitario: true,
-          material: { select: { precio: true } },
-        },
-      });
-      const setIngresoNPs = new Set<number>();
-      const setSalidaNPs = new Set<number>();
-      for (const m of movs) {
-        const c = Number(m.cantidad ?? 0);
-        if (!Number.isFinite(c) || c <= 0) continue;
-        const p = Number(m.precio_unitario ?? m.material?.precio ?? 0);
-        const monto = Number.isFinite(p) ? c * p : 0;
-        if (m.tipo_movimiento === "ENTRADA") {
-          ingresos += monto;
-          if (unidad === "np") setIngresoNPs.add(m.material_id); else ingresosQ += c;
-        } else if (m.tipo_movimiento === "SALIDA") {
-          salidas += monto;
-          if (unidad === "np") setSalidaNPs.add(m.material_id); else salidasQ += c;
-        }
-      }
-      if (unidad === "np") { ingresosQ += setIngresoNPs.size; salidasQ += setSalidaNPs.size; }
+    for (const r of rangoCat) {
+      if (r.tipo === "ENTRADA") { ingresos = r.monto; ingresosQ += unidad === "np" ? r.nps : r.cant; }
+      else if (r.tipo === "SALIDA") { salidas = r.monto; salidasQ += unidad === "np" ? r.nps : r.cant; }
     }
-    if (cat === "all" || cat === "nocat") {
-      const movsNc = await prisma.movimientoNoCatalogado.findMany({
-        where: { fecha_movimiento: { gte: desde, lt: hasta } },
-        select: { material_no_cat_id: true, tipo_movimiento: true, cantidad: true },
-      });
-      const setIngresoNc = new Set<number>();
-      const setSalidaNc = new Set<number>();
-      for (const m of movsNc) {
-        const c = Number(m.cantidad ?? 0);
-        if (!Number.isFinite(c) || c <= 0) continue;
-        if (m.tipo_movimiento === "ENTRADA") {
-          if (unidad === "np") setIngresoNc.add(m.material_no_cat_id); else ingresosQ += c;
-        } else if (m.tipo_movimiento === "SALIDA") {
-          if (unidad === "np") setSalidaNc.add(m.material_no_cat_id); else salidasQ += c;
-        }
-      }
-      if (unidad === "np") { ingresosQ += setIngresoNc.size; salidasQ += setSalidaNc.size; }
+    for (const r of rangoNc) {
+      if (r.tipo === "ENTRADA") ingresosQ += unidad === "np" ? r.nps : r.cant;
+      else if (r.tipo === "SALIDA") salidasQ += unidad === "np" ? r.nps : r.cant;
     }
 
-    // ── Por mes (12 valores) — del año, ignora modo ────────────────────
     const porMesIngresos: number[] = Array(12).fill(0);
     const porMesSalidas: number[] = Array(12).fill(0);
-    if (cat === "all" || cat === "cat") {
-      const movsAnio = await prisma.movimientoInventario.findMany({
-        where: { fecha_movimiento: { gte: inicioAnio, lt: finAnio } },
-        select: {
-          tipo_movimiento: true, cantidad: true, fecha_movimiento: true,
-          precio_unitario: true, material: { select: { precio: true } },
-        },
-      });
-      for (const m of movsAnio) {
-        const mi = dayjs(m.fecha_movimiento).month();
-        const c = Number(m.cantidad ?? 0);
-        const p = Number(m.precio_unitario ?? m.material?.precio ?? 0);
-        if (!Number.isFinite(c) || c <= 0) continue;
-        const monto = Number.isFinite(p) ? c * p : 0;
-        if (m.tipo_movimiento === "ENTRADA") porMesIngresos[mi] += monto;
-        else if (m.tipo_movimiento === "SALIDA") porMesSalidas[mi] += monto;
-      }
+    for (const r of porMesRows) {
+      if (r.tipo === "ENTRADA") porMesIngresos[r.mes - 1] = r.monto;
+      else if (r.tipo === "SALIDA") porMesSalidas[r.mes - 1] = r.monto;
     }
     // Valorización mensual: aproximación plana (stock × precio actual) por
     // cada mes que ya ocurrió. Más sofisticado requeriría snapshots históricos.
@@ -206,42 +216,9 @@ export async function GET(req: NextRequest) {
       porMesValorizacion[i] = valorizacion;
     }
 
-    // ── Top 10 productos más movidos por cantidad de SALIDA ────────────
-    const topProductos: { codigo: string; np: string | null; descripcion: string; salidaQ: number; salidaMonto: number }[] = [];
-    if (cat === "all" || cat === "cat") {
-      const movsSalida = await prisma.movimientoInventario.findMany({
-        where: { tipo_movimiento: "SALIDA", fecha_movimiento: { gte: desde, lt: hasta } },
-        select: {
-          material_id: true,
-          cantidad: true,
-          precio_unitario: true,
-          material: { select: { codigo: true, descripcion: true, np: true, precio: true } },
-        },
-      });
-      const porMat: Record<number, { codigo: string; np: string | null; descripcion: string; q: number; monto: number }> = {};
-      for (const m of movsSalida) {
-        if (!m.material) continue;
-        const c = Number(m.cantidad ?? 0);
-        if (!Number.isFinite(c) || c <= 0) continue;
-        const p = Number(m.precio_unitario ?? m.material.precio ?? 0);
-        const monto = Number.isFinite(p) ? c * p : 0;
-        if (!porMat[m.material_id]) {
-          porMat[m.material_id] = {
-            codigo: m.material.codigo,
-            np: m.material.np ?? null,
-            descripcion: m.material.descripcion ?? "",
-            q: 0, monto: 0,
-          };
-        }
-        porMat[m.material_id].q += c;
-        porMat[m.material_id].monto += monto;
-      }
-      Object.values(porMat).forEach((v) => {
-        topProductos.push({ codigo: v.codigo, np: v.np, descripcion: v.descripcion, salidaQ: v.q, salidaMonto: v.monto });
-      });
-    }
-    topProductos.sort((a, b) => b.salidaQ - a.salidaQ);
-    const top10 = topProductos.slice(0, 10);
+    const top10 = topRows.map((t) => ({
+      codigo: t.codigo, np: t.np, descripcion: t.descripcion, salidaQ: t.salidaQ, salidaMonto: t.salidaMonto,
+    }));
 
     return NextResponse.json({
       kpis: { stock, valorizacion, ingresos, ingresosQ, salidas, salidasQ, moneda },
