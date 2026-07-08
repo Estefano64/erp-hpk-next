@@ -62,10 +62,12 @@ export function puedeVerRuta(roles: string[] | null | undefined, pathname: strin
   return regla.roles.some((rol) => r.includes(rol));
 }
 
-// Modificador restrictivo: oculta la pestaña "Costos" de las OTs (externas e
-// internas). Pensado para cuentas admin que no deben ver costos (Diego Muñoz).
+// Costos de OT (pestaña Costos + endpoints /costos + columnas ?costos=1):
+// SOLO los admin — y dentro de ellos, no quien tenga el modificador
+// `sin_costos` (caso Diego Muñoz: admin que no ve costos).
 export function puedeVerCostosOT(roles: string[] | null | undefined): boolean {
-  return !(roles ?? []).includes("sin_costos");
+  const r = roles ?? [];
+  return r.includes("admin") && !r.includes("sin_costos");
 }
 
 // Roles "de área" (referencia para seeds/UI; el gating usa las listas de arriba).

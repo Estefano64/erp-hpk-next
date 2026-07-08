@@ -4,14 +4,22 @@
 // OT interna.
 
 import { NextRequest, NextResponse } from "next/server";
+import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { calcularCostosOT } from "@/lib/costos-ot";
+import { puedeVerCostosOT } from "@/lib/acceso-rutas";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
 
-export async function GET(_req: NextRequest, { params }: Params) {
+export async function GET(req: NextRequest, { params }: Params) {
   try {
+    // Costos de OT: solo admin (y no sin_costos). Mismo criterio que la
+    // pestaña Costos del frontend — esto evita verlos pegándole a la URL.
+    const token = await getToken({ req });
+    if (!puedeVerCostosOT((token?.roles as string[] | undefined) ?? [])) {
+      return NextResponse.json({ error: "Tu rol no tiene permiso para ver costos" }, { status: 403 });
+    }
     const { id } = await params;
     const otId = parseInt4Safe(id) ?? 0;
     if (otId == null || otId <= 0) {

@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { parseDateOnly } from "@/lib/dates";
 import { nextNumeroOTExterna } from "@/lib/ot-numero";
 import { parseOtCodigoSearch } from "@/lib/ot-formato";
 import { calcularCostosResumenBatch } from "@/lib/costos-ot";
+import { puedeVerCostosOT } from "@/lib/acceso-rutas";
 
 // GET — lista con filtros y paginación
 export async function GET(req: NextRequest) {
@@ -250,10 +252,15 @@ export async function GET(req: NextRequest) {
 
     // Columnas de costos del listado (opt-in vía ?costos=1). Se calcula SOLO
     // para las OTs de esta página (batcheado) — es caro, no se hace por default.
+    // Costos = solo admin sin `sin_costos`: para otros roles se omite en
+    // silencio (las columnas quedan vacías, la página no rompe).
     if (searchParams.get("costos") === "1" && data.length > 0) {
-      const resumen = await calcularCostosResumenBatch(prisma, data.map((o) => o.id));
-      for (const o of data as (typeof data[number] & { costos_resumen?: unknown })[]) {
-        o.costos_resumen = resumen.get(o.id) ?? { estrategia: {}, estimado: {}, real: {}, hh: {} };
+      const token = await getToken({ req });
+      if (puedeVerCostosOT((token?.roles as string[] | undefined) ?? [])) {
+        const resumen = await calcularCostosResumenBatch(prisma, data.map((o) => o.id));
+        for (const o of data as (typeof data[number] & { costos_resumen?: unknown })[]) {
+          o.costos_resumen = resumen.get(o.id) ?? { estrategia: {}, estimado: {}, real: {}, hh: {} };
+        }
       }
     }
 
