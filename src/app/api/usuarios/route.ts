@@ -66,12 +66,15 @@ const ROLES = [
   "evaluador",              // aparece en "Evaluado por"
   "aprobador_evaluacion",   // aparece en "Supervisor" + aprueba hojas
   "aprobador_requerimiento",// aprueba requerimientos
-  "planner",                // ve el dashboard de programación semanal
-  "produccion",             // ve el dashboard de producción (KPIs de taller)
+  "planner",                // planificación/programación con edición + dashboards
+  "produccion",             // operaciones/taller + dashboards
   "supervisor",             // placeholder
-  "logistica",              // ve el dashboard de logística
-  "mantenimiento",          // placeholder
-  "contabilidad",           // placeholder
+  "logistica",              // ciclo de compra/almacén + dashboards
+  "mantenimiento",          // OTs internas + equipos/vehículos/task lists
+  "contabilidad",           // contabilidad de compras + facturación
+  // Modificador restrictivo: oculta la pestaña Costos de las OTs (externas e
+  // internas). Se combina con otros roles (ej. admin + sin_costos).
+  "sin_costos",
 ] as const;
 
 const CreateSchema = z.object({

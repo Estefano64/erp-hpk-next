@@ -28,6 +28,7 @@ import IdleLogout from "@/components/IdleLogout";
 import BfcacheGuard from "@/components/BfcacheGuard";
 import { confirmLeave } from "@/lib/unsaved-changes";
 import { esTecnicoRestringido, rutaPermitidaTecnico } from "@/lib/tecnico-acceso";
+import { puedeVerRuta } from "@/lib/acceso-rutas";
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
@@ -57,6 +58,31 @@ function linkLabel(href: string, label: React.ReactNode): React.ReactNode {
       {label}
     </a>
   );
+}
+
+// Filtra el árbol de menú con la matriz de acceso-rutas.ts: las hojas cuya
+// ruta el usuario no puede ver se quitan, y los submenús que quedan vacíos
+// también. `roles === null` = todavía no cargaron desde /api/me → no filtrar
+// (evita que a un admin le "aparezcan" items tarde).
+function filtrarMenuPorRoles(
+  items: MenuProps["items"],
+  roles: string[] | null,
+): MenuProps["items"] {
+  if (roles === null || !items) return items;
+  const filtrados = items
+    .map((it) => {
+      if (!it) return null;
+      const conHijos = it as { key?: unknown; children?: MenuProps["items"] };
+      if (Array.isArray(conHijos.children)) {
+        const children = filtrarMenuPorRoles(conHijos.children, roles);
+        return children && children.length > 0 ? { ...it, children } : null;
+      }
+      const key = String(conHijos.key ?? "");
+      if (key.startsWith("/") && !puedeVerRuta(roles, key)) return null;
+      return it;
+    })
+    .filter(Boolean);
+  return filtrados as MenuProps["items"];
 }
 
 function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
@@ -247,6 +273,9 @@ export default function DashboardLayout({
   useEffect(() => { setCollapsed(isMobile); }, [isMobile]);
   const [userName, setUserName] = useState<string | null>(null);
   const [roles, setRoles] = useState<string[]>([]);
+  // null hasta que /api/me responda: el menú no se filtra por rol hasta tener
+  // los roles reales (si no, a un admin le "aparecerían" items con delay).
+  const [rolesCargados, setRolesCargados] = useState(false);
 
   useEffect(() => {
     fetch("/api/me")
@@ -255,6 +284,7 @@ export default function DashboardLayout({
         if (data?.user) {
           setUserName(data.user.name);
           setRoles(Array.isArray(data.user.roles) ? data.user.roles : []);
+          setRolesCargados(true);
         }
       })
       .catch(() => { /* ignore */ });
@@ -268,7 +298,10 @@ export default function DashboardLayout({
 
   // Técnico restringido: solo ve panel + tareas + tickets (menú y rutas).
   const tecnicoRestringido = esTecnicoRestringido(roles);
-  const menuItems = useMemo(() => buildMenuItems(tecnicoRestringido), [tecnicoRestringido]);
+  const menuItems = useMemo(
+    () => filtrarMenuPorRoles(buildMenuItems(tecnicoRestringido), rolesCargados ? roles : null),
+    [tecnicoRestringido, roles, rolesCargados],
+  );
 
   // Bloqueo de rutas en cliente: si un técnico cae en una pantalla que no le
   // corresponde (p. ej. tipeando la URL), lo devolvemos a su dashboard. El

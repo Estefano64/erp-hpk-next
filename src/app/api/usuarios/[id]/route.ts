@@ -17,6 +17,7 @@ const ROLES = [
   "admin", "viewer", "tecnico", "evaluador",
   "aprobador_evaluacion", "aprobador_requerimiento",
   "planner", "produccion", "supervisor", "logistica", "mantenimiento", "contabilidad",
+  "sin_costos",
 ] as const;
 
 const UpdateSchema = z.object({

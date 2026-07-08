@@ -17,13 +17,21 @@ import { withAuth } from "next-auth/middleware";
 import type { NextRequestWithAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
 import { esTecnicoRestringido, rutaPermitidaTecnico } from "@/lib/tecnico-acceso";
+import { puedeVerRuta } from "@/lib/acceso-rutas";
 
 export default withAuth(
   function middleware(req: NextRequestWithAuth) {
     const roles = (req.nextauth?.token?.roles as string[] | undefined) ?? [];
     const path = req.nextUrl.pathname;
-    if (!path.startsWith("/api/") && esTecnicoRestringido(roles) && !rutaPermitidaTecnico(path)) {
-      return NextResponse.redirect(new URL("/dashboard", req.url));
+    if (!path.startsWith("/api/")) {
+      if (esTecnicoRestringido(roles) && !rutaPermitidaTecnico(path)) {
+        return NextResponse.redirect(new URL("/dashboard", req.url));
+      }
+      // Matriz de visibilidad por rol (acceso-rutas.ts). Igual que con el
+      // técnico: las APIs no se bloquean acá, cada endpoint valida lo suyo.
+      if (!puedeVerRuta(roles, path)) {
+        return NextResponse.redirect(new URL("/dashboard", req.url));
+      }
     }
     return NextResponse.next();
   },

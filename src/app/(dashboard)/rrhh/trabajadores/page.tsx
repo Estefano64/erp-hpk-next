@@ -66,13 +66,14 @@ const ROLES = [
   { value: "evaluador", label: "Evaluador — firma 'Evaluado por' en hojas" },
   { value: "aprobador_evaluacion", label: "Aprobador de hojas — firma 'Supervisor' y aprueba evaluaciones" },
   { value: "aprobador_requerimiento", label: "Aprobador de requerimientos" },
-  { value: "planner", label: "Planner — dashboard de programación semanal" },
-  { value: "produccion", label: "Producción — dashboard de KPIs de taller" },
-  { value: "logistica", label: "Logística — dashboard del área" },
+  { value: "planner", label: "Planner — planificación/programación + dashboards" },
+  { value: "produccion", label: "Producción — operaciones/taller + dashboards" },
+  { value: "logistica", label: "Logística — ciclo de compra y almacén" },
+  { value: "mantenimiento", label: "Mantenimiento — OTs internas + equipos" },
+  { value: "contabilidad", label: "Contabilidad — compras y facturación" },
+  { value: "sin_costos", label: "Sin costos — oculta la pestaña Costos de OT (modificador)" },
   // Placeholders (sin efecto todavía)
   { value: "supervisor", label: "Supervisor (placeholder)" },
-  { value: "mantenimiento", label: "Mantenimiento (placeholder)" },
-  { value: "contabilidad", label: "Contabilidad (placeholder)" },
 ];
 
 // Colores de tags por rol para los badges en la tabla.
