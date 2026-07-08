@@ -29,6 +29,55 @@ export const PLAN_PRINT_COLS: { key: string; label: string }[] = [
   { key: "estado", label: "Estado" },
 ];
 
+// Valor (string) de una celda para una fila de planificación. Compartido por el
+// documento de impresión y el export a Excel.
+export function planCellValue(r: Record<string, unknown>, key: string, maquinas: Map<string, string>): string {
+  const fld = (v: unknown) => (v == null || v === "" ? "—" : String(v));
+  const fd = (v: unknown) => (v ? formatDateOnlyShort(v as string) : "—");
+  const otr = r.orden_trabajo as Record<string, unknown> | null;
+  switch (key) {
+    case "operario": return splitRecursos((r.tecnico as string) ?? "").join(", ") || "—";
+    case "ot": return fld(otr?.ot);
+    case "cliente": { const c = otr?.cliente as Record<string, unknown> | null; return fld(c?.nombre_comercial ?? c?.razon_social); }
+    case "tarea": return fld(r.descripcion ?? r.operacion_codigo);
+    case "maquina": { const cod = r.maquina as string | null; return cod ? (maquinas.get(cod) ?? cod) : "—"; }
+    case "hs_est": return fld(r.horas_estimadas);
+    case "hs_real": return fld(r.horas_reales);
+    case "plan": return `${fd(r.fecha_inicio)} → ${fd(r.fecha_fin)}`;
+    case "real": return `${fd(r.fecha_inicio_real)} → ${fd(r.fecha_fin_real)}`;
+    case "estado": return fld(r.estado);
+    default: return "—";
+  }
+}
+
+// Descarga la programación de una semana como .xlsx con las columnas elegidas
+// (mismo dato/columnas que la impresión). Devuelve la cantidad de filas.
+export async function exportarPlanificacionSemanaExcel(semana: string, columnas: string[]): Promise<number> {
+  const j = async (url: string) => { const r = await fetch(url); return r.ok ? r.json() : null; };
+  const [plan, eq] = await Promise.all([
+    j(`/api/planificacion?semana=${encodeURIComponent(semana)}&limit=10000`),
+    j(`/api/equipos?limit=10000&tipo=MAQ`),
+  ]);
+  const rows = (plan?.data ?? []) as Record<string, unknown>[];
+  const maquinas = new Map(((eq?.data ?? []) as { codigo: string; descripcion: string }[]).map((e) => [e.codigo, e.descripcion]));
+  const cols = PLAN_PRINT_COLS.filter((c) => columnas.includes(c.key));
+  const ordenadas = [...rows].sort(
+    (a, b) => String(a.tecnico ?? "").localeCompare(String(b.tecnico ?? "")) || String(a.fecha_inicio ?? "").localeCompare(String(b.fecha_inicio ?? "")),
+  );
+  const XLSX = await import("xlsx");
+  const data = ordenadas.map((r) => {
+    const o: Record<string, string> = {};
+    for (const c of cols) o[c.label] = planCellValue(r, c.key, maquinas);
+    return o;
+  });
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Programacion");
+  const ts = dayjs().format("YYYYMMDD-HHmm");
+  XLSX.writeFile(wb, `Programacion-${semana}-${ts}.xlsx`);
+  return ordenadas.length;
+}
+
 interface Props {
   semana: string;             // "YYYYWnn" (ej. "2026W27")
   columnas: string[];         // keys de PLAN_PRINT_COLS a imprimir
@@ -82,26 +131,8 @@ export default function PlanificacionPrintDoc({ semana, columnas, orient = "vert
   }, [semana]);
 
   const cols = PLAN_PRINT_COLS.filter((c) => columnas.includes(c.key));
-  const fld = (v: unknown) => (v == null || v === "" ? "—" : String(v));
-  const fd = (v: unknown) => (v ? formatDateOnlyShort(v as string) : "—");
   const esNum = (k: string) => k === "hs_est" || k === "hs_real";
-
-  const cell = (r: Dict, key: string) => {
-    const otr = r.orden_trabajo as Dict | null;
-    switch (key) {
-      case "operario": return splitRecursos((r.tecnico as string) ?? "").join(", ") || "—";
-      case "ot": return fld(otr?.ot);
-      case "cliente": { const c = otr?.cliente as Dict | null; return fld(c?.nombre_comercial ?? c?.razon_social); }
-      case "tarea": return fld(r.descripcion ?? r.operacion_codigo);
-      case "maquina": { const cod = r.maquina as string | null; return cod ? (maquinas.get(cod) ?? cod) : "—"; }
-      case "hs_est": return fld(r.horas_estimadas);
-      case "hs_real": return fld(r.horas_reales);
-      case "plan": return `${fd(r.fecha_inicio)} → ${fd(r.fecha_fin)}`;
-      case "real": return `${fd(r.fecha_inicio_real)} → ${fd(r.fecha_fin_real)}`;
-      case "estado": return fld(r.estado);
-      default: return "—";
-    }
-  };
+  const cell = (r: Dict, key: string) => planCellValue(r, key, maquinas);
 
   if (cargando) return <div style={{ padding: 24 }}>Preparando impresión…</div>;
 

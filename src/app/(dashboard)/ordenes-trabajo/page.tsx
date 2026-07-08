@@ -48,6 +48,7 @@ import { useResponsive, modalWidth } from "@/lib/responsive";
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 import { formatDateOnly } from "@/lib/dates";
+import { diasEnTaller } from "@/lib/dias-taller";
 import OTDetalleModal from "@/components/modules/ordenes-trabajo/OTDetalleModal";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import { formatOtCodigo } from "@/lib/ot-formato";
@@ -118,6 +119,7 @@ interface OTRecord {
   fecha_cotizacion?: string | null;
   fecha_aprobacion?: string | null;
   fecha_facturacion?: string | null;
+  fecha_despacho?: string | null;
   // Reparación en vendor externo (boolean + nombre del proveedor).
   reparacion_externa?: boolean;
   vendor_externo?: string | null;
@@ -509,6 +511,23 @@ export default function OrdenesTrabajoPage() {
       width: 130,
       sorter: (a, b) => (a.fecha_recepcion ?? "").localeCompare(b.fecha_recepcion ?? ""),
       render: (v: string | null) => formatDateOnly(v),
+    },
+    {
+      // Cuántos días lleva (o estuvo) la OT en el taller. En curso = desde la
+      // recepción hasta hoy; entregada = recepción → salida (despacho/entrega/
+      // facturación). Ver @/lib/dias-taller.
+      key: "dias_taller",
+      title: "Días en taller",
+      width: 120,
+      align: "center",
+      sorter: (a, b) => (diasEnTaller(a)?.dias ?? -1) - (diasEnTaller(b)?.dias ?? -1),
+      render: (_: unknown, r) => {
+        const v = diasEnTaller(r);
+        if (!v) return "-";
+        return v.enCurso
+          ? <Tag color="blue" style={{ marginInlineEnd: 0 }}>{v.dias} d en taller</Tag>
+          : `${v.dias} d`;
+      },
     },
     {
       key: "porcentaje_pcr",

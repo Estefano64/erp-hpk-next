@@ -350,6 +350,42 @@ export default function OTRequerimientosTab({
     setDraftOpen(false);
     setDraftItems([]);
     setDraftAppendToNroReq(null);
+    setDraftSelected([]);
+    setDraftBulkUM(undefined);
+    setDraftBulkTipo(undefined);
+  }
+  // Aplica U.M. y/o Tipo a los items del borrador seleccionados (edición masiva
+  // al momento de crear). Cambiar el tipo reusa la limpieza de actualizarDraftItem.
+  function aplicarBulkDraft() {
+    if (draftSelected.length === 0) return;
+    if (!draftBulkUM && !draftBulkTipo) {
+      messageApi.info("Elegí U.M. y/o Tipo para aplicar.");
+      return;
+    }
+    const sel = new Set(draftSelected);
+    setDraftItems((prev) => prev.map((it) => {
+      if (!sel.has(it.id)) return it;
+      let next = { ...it };
+      // Tipo primero (limpia campos dependientes al cambiar de tipo).
+      if (draftBulkTipo && draftBulkTipo !== it.tipo_codigo) {
+        next = {
+          ...next,
+          tipo_codigo: draftBulkTipo,
+          material_codigo: undefined,
+          servicio_codigo: undefined,
+          descripcion: "",
+          fabricante_codigo: undefined,
+          cantidad: 1,
+          unidad_medida: undefined,
+        };
+      }
+      if (draftBulkUM) next.unidad_medida = draftBulkUM;
+      return next;
+    }));
+    messageApi.success(`Aplicado a ${draftSelected.length} item(s).`);
+    setDraftSelected([]);
+    setDraftBulkUM(undefined);
+    setDraftBulkTipo(undefined);
   }
   function agregarItemDraft() {
     setDraftItems((prev) => [
@@ -575,6 +611,11 @@ export default function OTRequerimientosTab({
   const servicios = sersRes?.data ?? [];
   const umsRes = useCachedFetch<Wrapped<{ codigo: string; nombre: string; abreviatura?: string }>>("/api/catalogos?tabla=unidadMedida");
   const unidades = umsRes?.data ?? [];
+
+  // ── Edición masiva de items del BORRADOR (al crear un nuevo requerimiento) ──
+  const [draftSelected, setDraftSelected] = useState<string[]>([]);
+  const [draftBulkUM, setDraftBulkUM] = useState<string | undefined>();
+  const [draftBulkTipo, setDraftBulkTipo] = useState<"MAC" | "CAD" | "SER" | undefined>();
 
   // Roles del usuario (para acciones admin/aprobador)
   useEffect(() => {
@@ -1359,12 +1400,65 @@ export default function OTRequerimientosTab({
             <Button size="small" type="text" icon={<CloseOutlined />} onClick={cerrarDraft} aria-label="Cerrar" />
           }
         >
+          {/* Edición masiva: marcá varios items y asignales U.M. y/o Tipo de una. */}
+          {draftSelected.length > 0 && (
+            <div style={{ marginBottom: 12, padding: 8, borderRadius: 6, background: "#E6FFFB", border: `1px solid ${brand.cyan}` }}>
+              <Row gutter={[8, 8]} align="middle">
+                <Col flex="0 0 auto">
+                  <Tag color={brand.cyan} style={{ fontWeight: 600, margin: 0 }}>
+                    {draftSelected.length} seleccionado{draftSelected.length === 1 ? "" : "s"}
+                  </Tag>
+                </Col>
+                <Col flex="1 1 200px">
+                  <Select
+                    size="small"
+                    placeholder="Cambiar U.M. a…"
+                    value={draftBulkUM}
+                    onChange={setDraftBulkUM}
+                    options={unidades.map((u) => ({ value: u.codigo, label: u.abreviatura ? `${u.nombre} (${u.abreviatura})` : u.nombre }))}
+                    allowClear showSearch optionFilterProp="label"
+                    style={{ width: "100%" }}
+                  />
+                </Col>
+                <Col flex="1 1 180px">
+                  <Select
+                    size="small"
+                    placeholder="Cambiar Tipo a…"
+                    value={draftBulkTipo}
+                    onChange={(v) => setDraftBulkTipo(v as "MAC" | "CAD" | "SER" | undefined)}
+                    options={[
+                      { value: "MAC", label: "MAC (material)" },
+                      { value: "CAD", label: "CAD" },
+                      { value: "SER", label: "SER (servicio)" },
+                    ]}
+                    allowClear
+                    style={{ width: "100%" }}
+                  />
+                </Col>
+                <Col flex="0 0 auto">
+                  <Space size={6}>
+                    <Button size="small" type="primary" onClick={aplicarBulkDraft}>Aplicar</Button>
+                    <Button size="small" onClick={() => { setDraftSelected([]); setDraftBulkUM(undefined); setDraftBulkTipo(undefined); }}>Cancelar</Button>
+                  </Space>
+                </Col>
+              </Row>
+              {draftBulkTipo && (
+                <Text type="secondary" style={{ fontSize: 11, display: "block", marginTop: 6 }}>
+                  Cambiar el tipo reinicia material / descripción / cantidad de esos items.
+                </Text>
+              )}
+            </div>
+          )}
           <Table
             dataSource={draftItems}
             rowKey="id"
             pagination={false}
             size="small"
             scroll={{ x: 1200 }}
+            rowSelection={{
+              selectedRowKeys: draftSelected,
+              onChange: (keys) => setDraftSelected(keys as string[]),
+            }}
             columns={[
               {
                 title: "Ítem", key: "n", width: 50, align: "center",

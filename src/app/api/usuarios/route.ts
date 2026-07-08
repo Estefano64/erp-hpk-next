@@ -66,9 +66,10 @@ const ROLES = [
   "evaluador",              // aparece en "Evaluado por"
   "aprobador_evaluacion",   // aparece en "Supervisor" + aprueba hojas
   "aprobador_requerimiento",// aprueba requerimientos
-  "planner",                // placeholder
+  "planner",                // ve el dashboard de programación semanal
+  "produccion",             // ve el dashboard de producción (KPIs de taller)
   "supervisor",             // placeholder
-  "logistica",              // placeholder
+  "logistica",              // ve el dashboard de logística
   "mantenimiento",          // placeholder
   "contabilidad",           // placeholder
 ] as const;

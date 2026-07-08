@@ -43,7 +43,6 @@ import isoWeek from "dayjs/plugin/isoWeek";
 import { dateOnlyLocal } from "@/lib/dates";
 import { motivoPausa } from "@/lib/motivos-pausa";
 import Link from "next/link";
-import * as XLSX from "xlsx";
 
 dayjs.extend(isoWeek);
 
@@ -1059,7 +1058,9 @@ export default function ProgramacionDashboardPage() {
   const columns: ColumnsType<OTRow> = [...infoColumns, ...operacionColumns];
 
   // Export client-side de la matriz a .xlsx (una columna por operación visible).
-  const exportarMatriz = useCallback(() => {
+  // xlsx se importa dinámico para no cargarlo con la página (~400 KB).
+  const exportarMatriz = useCallback(async () => {
+    const XLSX = await import("xlsx");
     const rows = otsVisibles.map((o) => {
       const r: Record<string, string | number> = {
         "OT HP&K": o.ot ?? `#${o.id}`,

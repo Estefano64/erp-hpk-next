@@ -183,6 +183,21 @@ export async function GET(req: NextRequest) {
     else if (sortField === "taller_status") orderBy = { taller_status: { nombre: sortOrder } };
     else if (SORT_SCALAR[sortField]) orderBy = { [sortField]: sortOrder };
 
+    // Modo mínimo para selects (?min=1): solo id + ot, sin joins ni el resto
+    // de escalares. Lo usan las páginas que arman opciones de OT (p.ej.
+    // Planificación) — el listado completo pesa ~1000× más de lo que
+    // necesita un <Select>. Respeta los mismos filtros (anios, activo, etc.).
+    if (searchParams.get("min") === "1") {
+      const data = await prisma.ordenTrabajo.findMany({
+        where,
+        select: { id: true, ot: true },
+        orderBy,
+        skip: (page - 1) * limit,
+        take: limit,
+      });
+      return NextResponse.json({ data, total: data.length, page });
+    }
+
     const [data, total] = await Promise.all([
       prisma.ordenTrabajo.findMany({
         where,

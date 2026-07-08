@@ -6,7 +6,6 @@ import {
   Select, Tag, App, Divider,
 } from "antd";
 import { InboxOutlined, FileExcelOutlined, CopyOutlined, CheckCircleOutlined } from "@ant-design/icons";
-import * as XLSX from "xlsx";
 import type { ColumnsType } from "antd/es/table";
 import { useColumnasRedimensionables } from "@/lib/tables";
 import { useResponsive, modalWidth } from "@/lib/responsive";
@@ -126,6 +125,8 @@ export function ImportarExcelModal({
   }
 
   async function loadFromFile(file: File) {
+    // xlsx dinámico: solo se descarga cuando el usuario efectivamente sube un archivo.
+    const XLSX = await import("xlsx");
     const buf = await file.arrayBuffer();
     const wb = XLSX.read(buf, { type: "array" });
     const sheet = wb.Sheets[wb.SheetNames[0]];

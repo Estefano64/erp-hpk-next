@@ -573,7 +573,9 @@ function RequerimientosDetalleInner({ embebido = false }: { embebido?: boolean }
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/requerimientos?limit=10000");
+      // slim=1: proyección con solo los campos de RequerimientoApi — el modo
+      // full trae ~70 columnas de OTRepuesto por fila y con 800+ reqs pesa ~2 MB.
+      const res = await fetch("/api/requerimientos?limit=10000&slim=1");
       const json = await res.json();
       const raw = (json.data ?? []) as RequerimientoApi[];
       setAllData(raw.map(normalize));

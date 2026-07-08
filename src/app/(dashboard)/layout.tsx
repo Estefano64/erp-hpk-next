@@ -226,6 +226,8 @@ const rolLabels: Record<string, { label: string; color: string }> = {
   supervisor: { label: "Supervisor", color: brand.cyan },
   tecnico: { label: "Técnico", color: brand.success },
   logistica: { label: "Logística", color: brand.warning },
+  planner: { label: "Planner", color: brand.cyan },
+  produccion: { label: "Producción", color: brand.success },
   viewer: { label: "Viewer", color: brand.textSecondary },
 };
 
@@ -260,7 +262,7 @@ export default function DashboardLayout({
 
   // Rol "principal" para el badge del header: el primero según una prioridad
   // visual (admin gana). Para chequeos de acceso se debe usar roles.includes(x).
-  const PRIORIDAD_VISIBLE = ["admin", "supervisor", "planner", "tecnico", "evaluador", "aprobador_evaluacion", "aprobador_requerimiento", "logistica", "mantenimiento", "contabilidad", "viewer"];
+  const PRIORIDAD_VISIBLE = ["admin", "supervisor", "planner", "produccion", "tecnico", "evaluador", "aprobador_evaluacion", "aprobador_requerimiento", "logistica", "mantenimiento", "contabilidad", "viewer"];
   const rolPrincipal = PRIORIDAD_VISIBLE.find((r) => roles.includes(r)) ?? null;
   const rolInfo = rolPrincipal ? (rolLabels[rolPrincipal] ?? rolLabels.viewer) : null;
 
