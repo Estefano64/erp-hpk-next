@@ -132,6 +132,19 @@ interface RequerimientoApi {
   status_cotizacion: { codigo: string; nombre: string } | null;
   status_oc: { codigo: string; nombre: string } | null;
   adjuntos?: { id: number; nombre_archivo: string; r2_key: string; tamano: number }[];
+  // Match probable con material del catálogo: aparece solo cuando material_id
+  // es null y el backend detecta un NP embebido en la descripción/texto que
+  // coincide con Material.np o Material.codigo. Ver `route.ts` del endpoint.
+  _matches_probables?: {
+    material_id: number;
+    codigo: string;
+    descripcion: string;
+    np: string | null;
+    stock_actual: string | number | null;
+    unidad_medida_codigo: string | null;
+    precio: string | number | null;
+    moneda_codigo: string | null;
+  }[];
 }
 
 // View-model plano para la tabla
@@ -194,6 +207,20 @@ interface Requerimiento {
   observaciones?: string | null;
   stock_actual?: number;
   adjuntos?: { id: number; nombre_archivo: string; r2_key: string; tamano: number }[];
+  // Sugerencia de match del catálogo (solo cuando material_id es null y el
+  // backend detectó un match probable por NP). Si hay varios, elegimos el
+  // que tenga stock >= cantidad; sino el primero. Usado para: (a) resaltar
+  // la fila en amarillo si el match tiene stock, (b) mostrar botón Vincular.
+  match_sugerido?: {
+    material_id: number;
+    codigo: string;
+    descripcion: string;
+    np: string | null;
+    stock_actual: number;
+    unidad_medida: string | null;
+    precio: number | null;
+    moneda: string | null;
+  } | null;
 }
 
 function normalize(r: RequerimientoApi): Requerimiento {
@@ -253,6 +280,29 @@ function normalize(r: RequerimientoApi): Requerimiento {
     observaciones: r.observaciones,
     stock_actual: r.material?.stock_actual != null ? Number(r.material.stock_actual) : undefined,
     adjuntos: r.adjuntos,
+    // Elegimos el mejor match: preferimos uno con stock >= cantidad; si nada
+    // alcanza, el que tenga más stock; si todos son 0, el primero.
+    match_sugerido: (() => {
+      const cands = r._matches_probables;
+      if (!cands || cands.length === 0) return null;
+      const cantidad = Number(r.cantidad);
+      const normalizados = cands.map((m) => ({
+        material_id: m.material_id,
+        codigo: m.codigo,
+        descripcion: m.descripcion,
+        np: m.np,
+        stock_actual: m.stock_actual != null ? Number(m.stock_actual) : 0,
+        unidad_medida: m.unidad_medida_codigo,
+        precio: m.precio != null ? Number(m.precio) : null,
+        moneda: m.moneda_codigo,
+      }));
+      // 1) primero, uno que tenga stock >= cantidad
+      const suf = normalizados.find((m) => Number.isFinite(cantidad) && m.stock_actual >= cantidad && m.stock_actual > 0);
+      if (suf) return suf;
+      // 2) sino el que tenga más stock
+      const conStock = [...normalizados].sort((a, b) => b.stock_actual - a.stock_actual);
+      return conStock[0];
+    })(),
   };
 }
 
@@ -1146,7 +1196,10 @@ function RequerimientosDetalleInner({ embebido = false }: { embebido?: boolean }
   // ── Vincular material a un req que se creó como CAD o sin material ──
   const abrirModalVincular = async (r: Requerimiento) => {
     setModalVincular(r);
-    setMaterialIdAVincular(null);
+    // Si el backend detectó un match probable, preseleccionamos ese material
+    // en el Select — el usuario solo tiene que confirmar. Ejemplo típico:
+    // req CAD "Lainas, ED3755" → match auto con material 001149 (NP=ED3755).
+    setMaterialIdAVincular(r.match_sugerido?.material_id ?? null);
     // Fetch del catálogo bajo demanda. /api/materiales devuelve la lista
     // paginada — usamos limit alto porque el Select hace búsqueda client-side.
     try {
@@ -1926,15 +1979,47 @@ function RequerimientosDetalleInner({ embebido = false }: { embebido?: boolean }
                 onClick={() => abrirModalConsumir(r)}
               />
             </Tooltip>
-            {!hayMaterial && sinOC && noAnulado && noStockEstado && (
-              <Tooltip title="Vincular este req a un material del catálogo (cambia a tipo MAC). Útil para reqs creados como CAD por error.">
-                <Button
-                  size="small"
-                  icon={<LinkOutlined />}
-                  onClick={() => abrirModalVincular(r)}
-                />
-              </Tooltip>
-            )}
+            {!hayMaterial && sinOC && noAnulado && noStockEstado && (() => {
+              // Si el backend detectó un match probable (NP embebido en la
+              // descripción), lo pintamos primary + amarillo con el resumen
+              // del material candidato + stock. Un click abre el modal ya
+              // preseleccionado.
+              const m = r.match_sugerido;
+              if (m) {
+                const stockOkMatch = m.stock_actual >= Number(r.cantidad ?? 0) && m.stock_actual > 0;
+                return (
+                  <Tooltip
+                    title={
+                      <span>
+                        Match probable en catálogo: <b>{m.codigo}</b> · {m.descripcion}
+                        {m.np ? ` · NP ${m.np}` : ""}
+                        <br />
+                        Stock actual: <b>{m.stock_actual}</b> {stockOkMatch ? "(suficiente)" : "(insuficiente)"}
+                        <br />
+                        Click para vincular con material preseleccionado.
+                      </span>
+                    }
+                  >
+                    <Button
+                      size="small"
+                      type="primary"
+                      icon={<LinkOutlined />}
+                      style={stockOkMatch ? { background: "#faad14", borderColor: "#faad14" } : undefined}
+                      onClick={() => abrirModalVincular(r)}
+                    />
+                  </Tooltip>
+                );
+              }
+              return (
+                <Tooltip title="Vincular este req a un material del catálogo (cambia a tipo MAC). Útil para reqs creados como CAD por error.">
+                  <Button
+                    size="small"
+                    icon={<LinkOutlined />}
+                    onClick={() => abrirModalVincular(r)}
+                  />
+                </Tooltip>
+              );
+            })()}
             {(() => {
               // Caja chica: cierra el req con efectivo. Aplica si NO tiene OC
               // y NO está anulado. No requiere material catálogo (puede ser
@@ -2295,13 +2380,23 @@ function RequerimientosDetalleInner({ embebido = false }: { embebido?: boolean }
           sticky={{ offsetHeader: 56, offsetScroll: 0 }}
           size="small"
           rowClassName={(r) => {
-            const tieneStock = r.material_id != null
-              && r.po_id == null
+            const noBloqueado = r.po_id == null
               && r.status_req !== "ANULADO"
-              && r.status_req !== "DESAPROBADO"
+              && r.status_req !== "DESAPROBADO";
+            // Caso A: req vinculado a material con stock suficiente.
+            const conMaterial = r.material_id != null
+              && noBloqueado
               && (r.stock_actual ?? 0) >= Number(r.cantidad ?? 0)
               && (r.stock_actual ?? 0) > 0;
-            return tieneStock ? "req-row-stock" : "";
+            // Caso B: req sin material vinculado, pero el backend detectó un
+            // match probable (NP embebido en descripción) que tiene stock
+            // suficiente. Se resalta para invitar a vincular con un click.
+            const conMatchProbable = r.material_id == null
+              && noBloqueado
+              && r.match_sugerido != null
+              && r.match_sugerido.stock_actual >= Number(r.cantidad ?? 0)
+              && r.match_sugerido.stock_actual > 0;
+            return (conMaterial || conMatchProbable) ? "req-row-stock" : "";
           }}
         />
       </TableDragWrapper>

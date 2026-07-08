@@ -739,6 +739,30 @@ function TablaHistorico({
   const { columnas, components, TableDragWrapper } = useColumnasRedimensionables<MatRow>(
     columns, "compras-historico-v1",
   );
+  // Suma numérica de anchos para pasarle a scroll.x.
+  // Antes usábamos "max-content", que fuerza al browser a medir cada <td>
+  // por su contenido intrínseco → una descripción larga hacía crecer la
+  // columna Descripción por encima de su width fijo (el user reportó que
+  // "no se puede achicar"). Con un ancho numérico, tableLayout:"fixed"
+  // respeta estrictamente los widths del <colgroup>.
+  // Camina recursivamente por Column | ColumnGroup para sumar los children
+  // del grupo dinámico de proveedores.
+  const sumaAnchos = (cols: ColumnsType<MatRow>): number => {
+    let acc = 0;
+    for (const c of cols) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const anyC = c as any;
+      if (Array.isArray(anyC.children)) {
+        acc += sumaAnchos(anyC.children);
+      } else if (typeof anyC.width === "number") {
+        acc += anyC.width;
+      } else {
+        acc += 120; // fallback razonable para columnas sin width numérico
+      }
+    }
+    return acc;
+  };
+  const scrollX = sumaAnchos(columnas);
   return (
     <TableDragWrapper>
       <Table<MatRow>
@@ -756,7 +780,7 @@ function TablaHistorico({
         dataSource={data}
         loading={loading}
         sticky={STICKY_HEADER}
-        scroll={{ x: "max-content", y: "calc(100vh - 360px)" }}
+        scroll={{ x: scrollX, y: "calc(100vh - 360px)" }}
         pagination={paginacionEstandar({
           current: page,
           pageSize,
