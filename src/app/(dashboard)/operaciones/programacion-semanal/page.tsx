@@ -5,7 +5,8 @@ import {
   Typography, Button, Space, Tag, Card, Modal, Descriptions, Tooltip, message, Empty, DatePicker, Collapse, Segmented, Slider, Alert, Popover, Divider, Select, Popconfirm, Switch, Input, InputNumber, Skeleton, Checkbox,
 } from "antd";
 import { createPortal } from "react-dom";
-import PlanificacionPrintDoc, { PLAN_PRINT_COLS } from "@/components/modules/operaciones/PlanificacionPrintDoc";
+import PlanificacionPrintDoc, { PLAN_PRINT_COLS, exportarPlanificacionSemanaExcel } from "@/components/modules/operaciones/PlanificacionPrintDoc";
+import { FileExcelOutlined } from "@ant-design/icons";
 import {
   CalendarOutlined, LeftOutlined, RightOutlined, UserOutlined, ToolOutlined, AimOutlined,
   SettingOutlined, RollbackOutlined, UnorderedListOutlined, WarningFilled, ZoomInOutlined, ZoomOutOutlined,
@@ -26,6 +27,17 @@ import { useSession } from "next-auth/react";
 import { useEditLock } from "@/lib/useEditLock";
 import TareaAdjuntosLista from "@/components/TareaAdjuntosLista";
 import AyudaProgramacionSemanal from "@/components/modules/operaciones/AyudaProgramacionSemanal";
+
+// Clave normalizada para deduplicar valores de texto (parte / tarea) que solo
+// difieren en mayúsculas, espacios o acentos ("Cilindro", "cilindro ", "VÁSTAGO").
+const normTxt = (s: unknown): string =>
+  (s ?? "")
+    .toString()
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/\s+/g, " ");
 
 dayjs.extend(isoWeek);
 dayjs.locale("es");
@@ -248,6 +260,11 @@ export default function ProgramacionSemanalPage() {
   const [verTodasPendientes, setVerTodasPendientes] = useState(false);
   // Búsqueda libre del pool de pendientes (parte / cilindro / OT / descripción).
   const [poolBusqueda, setPoolBusqueda] = useState("");
+  // Filtros de selección múltiple del pool (además del texto libre): permiten
+  // elegir varias OTs / partes / tareas a la vez.
+  const [poolOts, setPoolOts] = useState<string[]>([]);
+  const [poolPartes, setPoolPartes] = useState<string[]>([]);
+  const [poolTareas, setPoolTareas] = useState<string[]>([]);
   const [rows, setRows] = useState<PlanRow[]>([]);
   const [allRows, setAllRows] = useState<PlanRow[]>([]); // para "sin semana asignada"
   // Estado de guardado visible: contador de requests en vuelo + último error.
@@ -292,6 +309,7 @@ export default function ProgramacionSemanalPage() {
   const [printCols, setPrintCols] = useState<string[]>(PLAN_PRINT_COLS.map((c) => c.key));
   const [printHoriz, setPrintHoriz] = useState(true);
   const [printJob, setPrintJob] = useState<{ id: number; semana: string; columnas: string[]; orient: "vertical" | "horizontal" } | null>(null);
+  const [descargandoExcel, setDescargandoExcel] = useState(false);
   // Al cerrar el diálogo de impresión, desmontar el área de impresión (evita
   // que se re-dispare en una página muy "viva" con timers/tab-sync).
   useEffect(() => {
@@ -345,25 +363,31 @@ export default function ProgramacionSemanalPage() {
   const fetchData = useCallback(async () => {
     setCargando(true);
     try {
-      const params1 = new URLSearchParams({
-        limit: "10000",
-        desde: lunes.hour(0).minute(0).second(0).toISOString(),
-        hasta: viernes.toISOString(),
-      });
-      // `resAll` alimenta el pool de pendientes (sin fecha / sin semana). Debe traer
-      // TODAS las filas: ordena por ot_id desc, así que con un límite chico las OTs
-      // de ot_id bajo caían fuera del corte y sus tareas desaparecían del pool
-      // (no se veían en la grilla ni en pendientes). 10000 = tope de la API.
-      const [resWeek, resAll] = await Promise.all([
-        fetch(`/api/planificacion?${params1}`),
-        fetch(`/api/planificacion?limit=10000`),
-      ]);
+      // Una sola llamada: el fetch global (pool de pendientes, choques entre
+      // semanas, Gantt) es superconjunto del de la semana, así que las filas
+      // de la semana se derivan acá con el MISMO criterio de overlap que
+      // aplica el API con desde/hasta (fecha_inicio <= hasta AND (fecha_fin
+      // >= desde OR (sin fecha_fin AND fecha_inicio >= desde))). Antes se
+      // pedían las dos variantes en paralelo (~2× payload por carga).
+      // Debe traer TODAS las filas: ordena por ot_id desc, así que con un
+      // límite chico las OTs de ot_id bajo caían fuera del corte y sus tareas
+      // desaparecían del pool. 10000 = tope de la API.
+      const resAll = await fetch(`/api/planificacion?limit=10000`);
+      if (!resAll.ok) return;
       // Una tarea cancelada no ocupa lugar: la sacamos de la grilla y del pool para
       // que su espacio quede libre y se pueda programar otra tarea encima (y para
       // que no dispare falsos choques en la detección de superposición).
-      const sinCanceladas = (arr: PlanRow[]) => arr.filter((r) => r.estado !== "cancelado");
-      if (resWeek.ok) setRows(sinCanceladas((await resWeek.json()).data ?? []));
-      if (resAll.ok) setAllRows(sinCanceladas((await resAll.json()).data ?? []));
+      const todas = (((await resAll.json()).data ?? []) as PlanRow[])
+        .filter((r) => r.estado !== "cancelado");
+      const desde = lunes.hour(0).minute(0).second(0);
+      const enSemana = (r: PlanRow) =>
+        !!r.fecha_inicio &&
+        !dayjs(r.fecha_inicio).isAfter(viernes) &&
+        (r.fecha_fin
+          ? !dayjs(r.fecha_fin).isBefore(desde)
+          : !dayjs(r.fecha_inicio).isBefore(desde));
+      setRows(todas.filter(enSemana));
+      setAllRows(todas);
     } finally {
       setCargando(false);
     }
@@ -500,6 +524,18 @@ export default function ProgramacionSemanalPage() {
   // descripción y código de tarea. Le da al planner una forma rápida de encontrar
   // qué programar sin depender solo del filtro por recurso.
   const pasaBusquedaPool = useCallback((t: PlanRow): boolean => {
+    // Filtros de selección múltiple: dentro de cada uno es OR (cualquiera de los
+    // elegidos), entre ellos y el texto es AND (deben cumplirse todos).
+    if (poolOts.length > 0) {
+      const ot = String(t.orden_trabajo?.ot ?? t.ot_id ?? "");
+      if (!poolOts.includes(ot)) return false;
+    }
+    if (poolPartes.length > 0) {
+      if (!poolPartes.includes(normTxt(t.componente))) return false;
+    }
+    if (poolTareas.length > 0) {
+      if (!poolTareas.includes(normTxt(t.descripcion ?? t.operacion_codigo))) return false;
+    }
     const q = poolBusqueda.trim().toLowerCase();
     if (!q) return true;
     const flota = t.orden_trabajo?.codigo_reparacion?.flota?.nombre
@@ -514,7 +550,7 @@ export default function ProgramacionSemanalPage() {
       String(t.orden_trabajo?.ot ?? t.ot_id),
       t.orden_trabajo?.descripcion ?? "",
     ].some((v) => (v ?? "").toString().toLowerCase().includes(q));
-  }, [poolBusqueda]);
+  }, [poolBusqueda, poolOts, poolPartes, poolTareas]);
 
   // Pendientes (pools) mostrados: aplican el filtro por recurso (salvo "Ver todas")
   // y la búsqueda libre del pool.
@@ -527,6 +563,31 @@ export default function ProgramacionSemanalPage() {
     if (pa !== pb) return pa - pb;
     return Number(a.orden_trabajo?.ot ?? 0) - Number(b.orden_trabajo?.ot ?? 0);
   }), []);
+  // Opciones de los selects múltiples del pool (OT / parte / tarea), derivadas de
+  // los pendientes reales para no ofrecer valores que no existen.
+  const poolOpciones = useMemo(() => {
+    const todos = [...sinSemanaLista, ...sinFechaListaSemana];
+    const ots = new Set<string>();
+    // value = clave normalizada; label = primer texto "lindo" que aparece.
+    const partes = new Map<string, string>();
+    const tareas = new Map<string, string>();
+    for (const t of todos) {
+      const ot = String(t.orden_trabajo?.ot ?? t.ot_id ?? "").trim();
+      if (ot) ots.add(ot);
+      const parte = (t.componente ?? "").toString().trim();
+      const kParte = normTxt(parte);
+      if (kParte && !partes.has(kParte)) partes.set(kParte, parte);
+      const tarea = (t.descripcion ?? t.operacion_codigo ?? "").toString().trim();
+      const kTarea = normTxt(tarea);
+      if (kTarea && !tareas.has(kTarea)) tareas.set(kTarea, tarea);
+    }
+    return {
+      ots: [...ots].sort((a, b) => Number(a) - Number(b)).map((v) => ({ value: v, label: `OT ${v}` })),
+      partes: [...partes.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([value, label]) => ({ value, label })),
+      tareas: [...tareas.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([value, label]) => ({ value, label })),
+    };
+  }, [sinSemanaLista, sinFechaListaSemana]);
+
   const sinSemanaMostrar = useMemo(() => {
     const l = filtrarPendientes ? sinSemanaLista.filter(pasaFiltroRecurso) : sinSemanaLista;
     return ordenarPool(l.filter(pasaBusquedaPool));
@@ -2293,6 +2354,8 @@ export default function ProgramacionSemanalPage() {
               <Button size="small" icon={<BgColorsOutlined />}>Leyenda</Button>
             </Popover>
             <Button size="small" icon={<PrinterOutlined />} onClick={() => setPrintModalOpen(true)}>Imprimir</Button>
+            <Button size="small" icon={<FileExcelOutlined />} onClick={() => setPrintModalOpen(true)}
+              style={{ background: "#1d6f42", color: "#fff", borderColor: "#1d6f42" }}>Descargar Excel</Button>
             <span style={{ fontSize: 12, color: brand.textSecondary }}>
               <ZoomOutOutlined /> Zoom
             </span>
@@ -2568,7 +2631,8 @@ export default function ProgramacionSemanalPage() {
           Soltá aquí para sacar la tarea de la semana
         </div>
       )}
-      {/* Buscador del pool de pendientes (parte / cilindro / OT / descripción). */}
+      {/* Buscador del pool de pendientes (parte / cilindro / OT / descripción) +
+          filtros de selección múltiple por OT / parte / tarea. */}
       <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <Input
           allowClear
@@ -2579,7 +2643,52 @@ export default function ProgramacionSemanalPage() {
           style={{ maxWidth: 420 }}
           size="small"
         />
-        {poolBusqueda.trim() && (
+        <Select
+          mode="multiple"
+          allowClear
+          placeholder="OT (todas)"
+          value={poolOts}
+          onChange={setPoolOts}
+          options={poolOpciones.ots}
+          optionFilterProp="label"
+          maxTagCount="responsive"
+          size="small"
+          style={{ minWidth: 160, maxWidth: 300 }}
+        />
+        <Select
+          mode="multiple"
+          allowClear
+          placeholder="Parte (todas)"
+          value={poolPartes}
+          onChange={setPoolPartes}
+          options={poolOpciones.partes}
+          optionFilterProp="label"
+          maxTagCount="responsive"
+          size="small"
+          style={{ minWidth: 180, maxWidth: 320 }}
+        />
+        <Select
+          mode="multiple"
+          allowClear
+          placeholder="Tarea (todas)"
+          value={poolTareas}
+          onChange={setPoolTareas}
+          options={poolOpciones.tareas}
+          optionFilterProp="label"
+          maxTagCount="responsive"
+          size="small"
+          style={{ minWidth: 180, maxWidth: 320 }}
+        />
+        {(poolOts.length > 0 || poolPartes.length > 0 || poolTareas.length > 0) && (
+          <Button
+            size="small"
+            icon={<ClearOutlined />}
+            onClick={() => { setPoolOts([]); setPoolPartes([]); setPoolTareas([]); }}
+          >
+            Limpiar
+          </Button>
+        )}
+        {(poolBusqueda.trim() || poolOts.length > 0 || poolPartes.length > 0 || poolTareas.length > 0) && (
           <span style={{ fontSize: 12, color: brand.textSecondary }}>
             {sinFechaMostrar.length + sinSemanaMostrar.length} pendiente(s) coinciden
           </span>
@@ -2709,22 +2818,36 @@ export default function ProgramacionSemanalPage() {
       {/* Modal de impresión — misma tabla plana que /planificacion (con selección
           de columnas). El tablero drag-drop no se imprime; se imprime la semana. */}
       <Modal
-        title={`Imprimir programación — Semana ${semanaActual}`}
+        title={`Imprimir / Exportar programación — Semana ${semanaActual}`}
         open={printModalOpen}
         onCancel={() => setPrintModalOpen(false)}
-        okText="Imprimir"
-        okButtonProps={{ icon: <PrinterOutlined />, disabled: printCols.length === 0 }}
-        onOk={() => {
-          if (printCols.length === 0) return;
-          // id incremental → re-monta el doc y permite reimprimir sin recargar.
-          setPrintJob((prev) => ({
-            id: (prev?.id ?? 0) + 1,
-            semana: semanaActual,
-            columnas: [...printCols],
-            orient: printHoriz ? "horizontal" : "vertical",
-          }));
-          setPrintModalOpen(false);
-        }}
+        footer={[
+          <Button key="cancel" onClick={() => setPrintModalOpen(false)}>Cancelar</Button>,
+          <Button
+            key="excel" icon={<FileExcelOutlined />} loading={descargandoExcel}
+            disabled={printCols.length === 0}
+            style={{ background: "#1d6f42", color: "#fff", borderColor: "#1d6f42" }}
+            onClick={async () => {
+              if (printCols.length === 0) return;
+              setDescargandoExcel(true);
+              try {
+                const n = await exportarPlanificacionSemanaExcel(semanaActual, printCols);
+                message.success(`Excel descargado: ${n} tarea(s)`);
+                setPrintModalOpen(false);
+              } catch { message.error("Error al exportar"); }
+              finally { setDescargandoExcel(false); }
+            }}
+          >Descargar Excel</Button>,
+          <Button
+            key="print" type="primary" icon={<PrinterOutlined />}
+            disabled={printCols.length === 0}
+            onClick={() => {
+              if (printCols.length === 0) return;
+              setPrintJob((prev) => ({ id: (prev?.id ?? 0) + 1, semana: semanaActual, columnas: [...printCols], orient: printHoriz ? "horizontal" : "vertical" }));
+              setPrintModalOpen(false);
+            }}
+          >Imprimir</Button>,
+        ]}
         cancelText="Cancelar"
         width={modalWidth(screens, 520)}
       >

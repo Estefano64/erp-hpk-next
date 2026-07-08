@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
@@ -18,73 +17,73 @@ export async function GET(req: NextRequest) {
       ];
     }
 
-    const materiales = await prisma.material.findMany({
-      where,
-      select: {
-        material_id: true,
-        codigo: true,
-        descripcion: true,
-        np: true,
-        stock_actual: true,
-        punto_reposicion: true,
-        stock_maximo: true,
-        unidad_medida_codigo: true,
-        ubicacion: true,
-        caja: true,
-        precio: true,
-        moneda_codigo: true,
-        fabricante_codigo: true,
-        categoria_codigo: true,
-        clasificacion_codigo: true,
-        // El nombre de la categoría se usa en /suministros para filtrar por
-        // "Suministros" / "Consumibles" sin depender de los códigos cortos.
-        categoria: { select: { nombre: true } },
-      },
-      orderBy: { codigo: "asc" },
-    });
+    // Las 4 consultas son independientes → en paralelo. Los agregados de
+    // POs/REQs se hacen en SQL (SUM + ARRAY_AGG) en vez de traer todas las
+    // filas de compras_detalle / ot_repuestos a Node y agrupar en JS.
+    type EnPORow = { material_id: number; cantidad: number; pos: string[]; almacenes: string[] };
+    type EnReqRow = { material_id: number; cantidad: number; reqs: string[] };
 
-    // ── Cantidades en POs (compras pendientes/aprobadas/enviadas) ──
-    const detallesEnPO = await prisma.compraDetalle.findMany({
-      where: {
-        compra: {
-          status_oc_codigo: { notIn: ["COMPLETO", "ANULADO", "DEVOLUCION"] },
+    const [materiales, enPORows, enReqRows, movAgrupado] = await Promise.all([
+      prisma.material.findMany({
+        where,
+        select: {
+          material_id: true,
+          codigo: true,
+          descripcion: true,
+          np: true,
+          stock_actual: true,
+          punto_reposicion: true,
+          stock_maximo: true,
+          unidad_medida_codigo: true,
+          ubicacion: true,
+          caja: true,
+          precio: true,
+          moneda_codigo: true,
+          fabricante_codigo: true,
+          categoria_codigo: true,
+          clasificacion_codigo: true,
+          // El nombre de la categoría se usa en /suministros para filtrar por
+          // "Suministros" / "Consumibles" sin depender de los códigos cortos.
+          categoria: { select: { nombre: true } },
         },
-      },
-      select: {
-        material_id: true,
-        cantidad: true,
-        compra: { select: { numero_po: true, ubicacion: { select: { nombre: true, codigo: true } } } },
-      },
-    });
-    type DetEnPO = typeof detallesEnPO[number];
-    const enPOMap = new Map<number, { cantidad: number; pos: string[]; almacenes: string[] }>();
-    for (const d of detallesEnPO as DetEnPO[]) {
-      const prev = enPOMap.get(d.material_id) ?? { cantidad: 0, pos: [], almacenes: [] };
-      prev.cantidad += Number(d.cantidad);
-      if (d.compra?.numero_po && !prev.pos.includes(d.compra.numero_po)) prev.pos.push(d.compra.numero_po);
-      const almNombre = d.compra?.ubicacion?.nombre ?? d.compra?.ubicacion?.codigo;
-      if (almNombre && !prev.almacenes.includes(almNombre)) prev.almacenes.push(almNombre);
-      enPOMap.set(d.material_id, prev);
-    }
+        orderBy: { codigo: "asc" },
+      }),
+      // ── Cantidades en POs (compras pendientes/aprobadas/enviadas) ──
+      prisma.$queryRaw<EnPORow[]>`
+        SELECT cd.material_id,
+               COALESCE(SUM(cd.cantidad), 0)::float AS cantidad,
+               ARRAY_REMOVE(ARRAY_AGG(DISTINCT c.numero_po), NULL) AS pos,
+               ARRAY_REMOVE(ARRAY_AGG(DISTINCT COALESCE(u.nombre, u.codigo)), NULL) AS almacenes
+        FROM compras_detalle cd
+        JOIN compras c ON c.id = cd.compra_id
+        LEFT JOIN ubicacion u ON u.codigo = c.ubicacion_codigo
+        WHERE c.status_oc_codigo NOT IN ('COMPLETO', 'ANULADO', 'DEVOLUCION')
+        GROUP BY cd.material_id
+      `,
+      // ── Cantidades en REQ pendientes (sin asignar a OC) ──
+      prisma.$queryRaw<EnReqRow[]>`
+        SELECT material_id,
+               COALESCE(SUM(cantidad), 0)::float AS cantidad,
+               ARRAY_REMOVE(ARRAY_AGG(DISTINCT nro_req), NULL) AS reqs
+        FROM ot_repuestos
+        WHERE status_oc_codigo NOT IN ('COMPLETO', 'ANULADO', 'DEVOLUCION')
+          AND po_id IS NULL
+          AND material_id IS NOT NULL
+        GROUP BY material_id
+      `,
+      // Balance de inventario: total de ENTRADAS vs SALIDAS (y AJUSTE).
+      prisma.movimientoInventario.groupBy({
+        by: ["tipo_movimiento"],
+        _sum: { cantidad: true },
+      }),
+    ]);
 
-    // ── Cantidades en REQ pendientes (sin asignar a OC) ──
-    const reqsPendientes = await prisma.oTRepuesto.findMany({
-      where: {
-        status_oc_codigo: { notIn: ["COMPLETO", "ANULADO", "DEVOLUCION"] },
-        po_id: null,
-        material_id: { not: null },
-      },
-      select: { material_id: true, cantidad: true, nro_req: true },
-    });
-    type ReqP = typeof reqsPendientes[number];
-    const enReqMap = new Map<number, { cantidad: number; reqs: string[] }>();
-    for (const r of reqsPendientes as ReqP[]) {
-      if (r.material_id == null) continue;
-      const prev = enReqMap.get(r.material_id) ?? { cantidad: 0, reqs: [] };
-      prev.cantidad += Number(r.cantidad);
-      if (r.nro_req && !prev.reqs.includes(r.nro_req)) prev.reqs.push(r.nro_req);
-      enReqMap.set(r.material_id, prev);
-    }
+    const enPOMap = new Map<number, { cantidad: number; pos: string[]; almacenes: string[] }>(
+      enPORows.map((r) => [r.material_id, { cantidad: r.cantidad, pos: r.pos, almacenes: r.almacenes }]),
+    );
+    const enReqMap = new Map<number, { cantidad: number; reqs: string[] }>(
+      enReqRows.map((r) => [r.material_id, { cantidad: r.cantidad, reqs: r.reqs }]),
+    );
 
     type Mat = typeof materiales[number];
     type StockItem = {
@@ -206,11 +205,6 @@ export async function GET(req: NextRequest) {
         m.punto_reposicion > 0 && m.stock_maximo > 0 && m.stock_actual <= 0,
     ).length;
 
-    // Balance de inventario: total de ENTRADAS vs SALIDAS (y AJUSTE) sobre movimientos.
-    const movAgrupado = await prisma.movimientoInventario.groupBy({
-      by: ["tipo_movimiento"],
-      _sum: { cantidad: true },
-    });
     let totalEntradas = 0, totalSalidas = 0, totalAjustes = 0;
     for (const g of movAgrupado) {
       const q = Number(g._sum.cantidad ?? 0);

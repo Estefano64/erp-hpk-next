@@ -406,7 +406,8 @@ export default function PlanificacionPage() {
         fetch("/api/trabajadores?limit=10000&soloOperarios=1"),
         fetch("/api/equipos?limit=10000&tipo=MAQ"),
         fetch("/api/catalogos?tabla=statusTarea"),
-        fetch(`/api/ordenes-trabajo?limit=10000&anios=${anioActual}`),
+        // min=1: solo {id, ot} — acá solo se arman las opciones del Select.
+        fetch(`/api/ordenes-trabajo?limit=10000&anios=${anioActual}&min=1`),
         fetch("/api/catalogos?tabla=componente"),
         fetch("/api/catalogos?tabla=operacionReparacion"),
       ]);
@@ -2171,24 +2172,23 @@ export default function PlanificacionPage() {
         )}
       </Modal>
 
-      {/* Imprimir programación de la semana: elegir columnas → imprime directo. */}
+      {/* Imprimir programación de la semana: elegir columnas → imprime. */}
       <Modal
         title={`Imprimir programación — Semana ${filterSemana ?? ""}`}
         open={printOpen}
         onCancel={() => setPrintOpen(false)}
-        okText="Imprimir"
-        okButtonProps={{ icon: <PrinterOutlined />, disabled: printCols.length === 0 || !filterSemana }}
-        onOk={() => {
-          if (!filterSemana || printCols.length === 0) return;
-          // id incremental → fuerza re-montar el doc y re-imprimir sin recargar.
-          setPrintJob((prev) => ({
-            id: (prev?.id ?? 0) + 1,
-            semana: filterSemana,
-            columnas: [...printCols],
-            orient: printHoriz ? "horizontal" : "vertical",
-          }));
-          setPrintOpen(false);
-        }}
+        footer={[
+          <Button key="cancel" onClick={() => setPrintOpen(false)}>Cancelar</Button>,
+          <Button
+            key="print" type="primary" icon={<PrinterOutlined />}
+            disabled={printCols.length === 0 || !filterSemana}
+            onClick={() => {
+              if (!filterSemana || printCols.length === 0) return;
+              setPrintJob((prev) => ({ id: (prev?.id ?? 0) + 1, semana: filterSemana, columnas: [...printCols], orient: printHoriz ? "horizontal" : "vertical" }));
+              setPrintOpen(false);
+            }}
+          >Imprimir</Button>,
+        ]}
       >
         <p style={{ marginTop: 0, color: brand.textSecondary }}>
           Imprime <b>toda la semana {filterSemana}</b> (sin los otros filtros). ¿Qué columnas incluir?

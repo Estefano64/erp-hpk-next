@@ -25,6 +25,7 @@ import {
   Alert,
   Space,
   Modal,
+  Tag,
 } from "antd";
 import {
   SaveOutlined,
@@ -42,6 +43,7 @@ import {
 import { brand } from "@/lib/theme";
 import dayjs from "dayjs";
 import { formatDateOnly, dateOnlyLocal } from "@/lib/dates";
+import { diasEnTaller } from "@/lib/dias-taller";
 import { formatOtCodigo } from "@/lib/ot-formato";
 import OTAdjuntosTab from "./OTAdjuntosTab";
 import OTTareasTab from "./OTTareasTab";
@@ -1166,6 +1168,18 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                 <Col xs={12} md={6}><Field label="Fecha despacho" value={fmtDate(ot.fecha_despacho)} /></Col>
                 <Col xs={12} md={6}><Field label="Empresa que recibe" value={ot.empresa_recibe} /></Col>
                 <Col xs={12} md={6}><Field label="Fecha facturación" value={fmtDate(ot.fecha_facturacion)} /></Col>
+                <Col xs={12} md={6}>
+                  <Field
+                    label="Días en taller"
+                    value={(() => {
+                      const v = diasEnTaller(ot);
+                      if (!v) return null;
+                      return v.enCurso
+                        ? <Tag color="blue" style={{ marginInlineEnd: 0 }}>{v.dias} días (en taller)</Tag>
+                        : `${v.dias} días`;
+                    })()}
+                  />
+                </Col>
               </Row>
             </>
           ) : (

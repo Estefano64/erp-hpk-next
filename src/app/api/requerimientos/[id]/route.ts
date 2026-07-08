@@ -88,7 +88,6 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         updates.material_id = null;
       }
     }
-
     const updated = await prisma.oTRepuesto.update({
       where: { id: (parseInt4Safe(id) ?? 0) },
       data: updates,
