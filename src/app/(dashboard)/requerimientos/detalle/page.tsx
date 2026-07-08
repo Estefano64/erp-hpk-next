@@ -117,7 +117,10 @@ interface RequerimientoApi {
   // OrdenTrabajoInterna.ot es INTEGER (NNNNYY) tras migración — el display
   // (OIXXXXYY) lo construye formatOtInternaCodigo en la UI.
   orden_trabajo_interna?: { id: number; ot: number | string | null; descripcion: string | null } | null;
-  material: { codigo: string; descripcion: string; unidad_medida_codigo: string | null; stock_actual?: string | number | null; np?: string | null; precio?: string | number | null; moneda_codigo?: string | null } | null;
+  material: { codigo: string; descripcion: string; unidad_medida_codigo: string | null; stock_actual?: string | number | null; np?: string | null; precio?: string | number | null; moneda_codigo?: string | null; ubicacion?: string | null } | null;
+  // Zona/posición física asignada al ítem al recepcionar la OC (si existe)
+  almacen_zona?: { codigo: string; nombre: string } | null;
+  almacen_posicion?: { codigo: string } | null;
   proveedor: { id: number; razon_social: string } | null;
   compra: {
     id: number;
@@ -206,6 +209,9 @@ interface Requerimiento {
   cliente_nombre: string | null;
   observaciones?: string | null;
   stock_actual?: number;
+  // Ubicación física del material en almacén — zona/posición o legacy libre.
+  // Útil especialmente para las filas amarillas (items con stock disponible).
+  ubicacion_almacen?: string | null;
   adjuntos?: { id: number; nombre_archivo: string; r2_key: string; tamano: number }[];
   // Sugerencia de match del catálogo (solo cuando material_id es null y el
   // backend detectó un match probable por NP). Si hay varios, elegimos el
@@ -279,6 +285,14 @@ function normalize(r: RequerimientoApi): Requerimiento {
     cliente_nombre: r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? null,
     observaciones: r.observaciones,
     stock_actual: r.material?.stock_actual != null ? Number(r.material.stock_actual) : undefined,
+    // Ubicación física del material en almacén: prioridad al zona/posición del
+    // requerimiento (asignados al recepcionar la OC de esa cantidad puntual);
+    // fallback al campo libre legacy `Material.ubicacion`. Cuando el item
+    // aparece en amarillo por tener stock disponible, esta columna muestra
+    // en qué zona está para que el usuario sepa dónde ir a buscarlo.
+    ubicacion_almacen: r.almacen_zona?.codigo
+      ? `${r.almacen_zona.codigo}${r.almacen_posicion?.codigo ? ` · ${r.almacen_posicion.codigo}` : ""}`
+      : (r.material?.ubicacion ?? null),
     adjuntos: r.adjuntos,
     // Elegimos el mejor match: preferimos uno con stock >= cantidad; si nada
     // alcanza, el que tenga más stock; si todos son 0, el primero.
@@ -345,15 +359,15 @@ export default function RequerimientosDetallePage() {
 // toggle "Por ítem" esté activo (sin navegar de página). Wrappeado en
 // Suspense porque internamente usa useSearchParams (Next.js requiere
 // Suspense para hooks de client navigation).
-export function RequerimientosDetalleEmbebido() {
+export function RequerimientosDetalleEmbebido({ estadoOverride }: { estadoOverride?: string } = {}) {
   return (
     <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>
-      <RequerimientosDetalleInner embebido />
+      <RequerimientosDetalleInner embebido estadoOverride={estadoOverride} />
     </Suspense>
   );
 }
 
-function RequerimientosDetalleInner({ embebido = false }: { embebido?: boolean } = {}) {
+function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embebido?: boolean; estadoOverride?: string } = {}) {
   const router = useRouter();
   const params = useSearchParams();
   const { message } = App.useApp();
@@ -665,15 +679,17 @@ function RequerimientosDetalleInner({ embebido = false }: { embebido?: boolean }
           r.observaciones
           && /(consumi(do|d.{0,3})\s+(de|del)\s+(almac[eé]n|oc\s+abierta)|pagado\s+con\s+caja\s+chica)/i.test(r.observaciones)
         ) return false;
-        // Si hay STOCK suficiente del material en inventario, el item no
-        // requiere OC — debe consumirse de almacén. La fuente de verdad es
-        // Material.stock_actual del catálogo (no la cant. del req asignada a
-        // OTs). El user puede igual ver estos items con el filtro "Con stock".
-        if (
-          r.material_id != null
-          && (r.stock_actual ?? 0) >= Number(r.cantidad ?? 0)
-          && (r.stock_actual ?? 0) > 0
-        ) return false;
+        // NOTA (2026-07): antes acá excluíamos items con stock en almacén
+        // suponiendo que se resolvían solos por consumo. Eso ocultaba items
+        // que en la práctica todavía estaban pendientes de "falta OC o
+        // sacar de almacén" — el usuario los perdía de vista hasta que
+        // status_oc se movía a CONSUMIDO_ALMACEN.
+        // El nuevo criterio: "Listos para OC" = todo lo aprobado sin OC y
+        // sin consumir todavía, tenga o no stock. Si hay stock, el item
+        // sale igual en la lista con la fila amarilla (ver rowClassName) —
+        // el usuario elige si crea OC o consume de almacén. Cuando
+        // efectivamente se consume, el filtro de status_oc de arriba lo
+        // saca de la vista.
         return true;
       });
     } else if (filtroRapido === "en_oc") {
@@ -686,8 +702,11 @@ function RequerimientosDetalleInner({ embebido = false }: { embebido?: boolean }
       rows = rows.filter((r) => (r.tipo_codigo ?? "MAC").toUpperCase() === filtroTipoMat);
     }
 
-    // Estado REQ
-    if (filtroEstado) rows = rows.filter((r) => (r.status_req ?? "SIN_APROBACION") === filtroEstado);
+    // Estado REQ — el override viene del tab superior de la página parent
+    // (/requerimientos con vistaModo="items"). Si el parent seleccionó un
+    // estado en el Segmented, prevalece sobre el Select local del embebido.
+    const estadoEfectivo = estadoOverride ?? filtroEstado;
+    if (estadoEfectivo) rows = rows.filter((r) => (r.status_req ?? "SIN_APROBACION") === estadoEfectivo);
 
     // Rango de fechas
     rows = rows.filter((r) =>
@@ -704,7 +723,7 @@ function RequerimientosDetalleInner({ embebido = false }: { embebido?: boolean }
     }
 
     return rows;
-  }, [allData, filtroTipoOT, filtroTipoMat, filtroOt, filtroNroReq, filtroRapido, filtroEstado, search, rangoSol, rangoReq]);
+  }, [allData, filtroTipoOT, filtroTipoMat, filtroOt, filtroNroReq, filtroRapido, filtroEstado, estadoOverride, search, rangoSol, rangoReq]);
 
   const otOptions = useMemo(() => {
     const map = new Map<number, string>();
@@ -1810,6 +1829,23 @@ function RequerimientosDetalleInner({ embebido = false }: { embebido?: boolean }
             <span style={{ fontWeight: 600, color }}>{stock}</span>
           </Tooltip>
         );
+      },
+    },
+    {
+      // Ubicación física en almacén — clave para los items amarillos
+      // (con stock disponible). Prioriza zona/posición asignada al
+      // recepcionar la OC; fallback al campo libre legacy Material.ubicacion.
+      key: "ubicacion_almacen",
+      title: "Ubicación almacén",
+      dataIndex: "ubicacion_almacen",
+      width: 130,
+      align: "center",
+      filters: obtenerValoresUnicos("ubicacion_almacen"),
+      filterSearch: true,
+      onFilter: (value, r) => r.ubicacion_almacen === value,
+      render: (v: string | null | undefined) => {
+        if (!v) return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
+        return <Tag color="purple" style={{ margin: 0, fontSize: 11 }}>{v}</Tag>;
       },
     },
     {

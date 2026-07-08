@@ -1588,7 +1588,11 @@ export default function RequerimientosPage() {
         // misma que vive en /requerimientos/detalle) sin navegar de página.
         // Trae todas las acciones por ítem: consumir almacén, caja chica,
         // vincular material, dividir, generar OC, etc.
-        <RequerimientosDetalleEmbebido />
+        // Pasamos el estado seleccionado en el Segmented superior como
+        // override para que los tabs (Todos/Aprobados/...) filtren también
+        // en el modo Por ítem (antes el embebido corría su propio Select
+        // y los tabs no hacían nada).
+        <RequerimientosDetalleEmbebido estadoOverride={filterStatusReq} />
       ) : rows.length === 0 && !loading ? (
         <Empty description="No hay requerimientos con esos filtros." />
       ) : (

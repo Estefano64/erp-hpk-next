@@ -261,13 +261,19 @@ export default function MaterialesPage() {
         body: JSON.stringify(values),
       });
 
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        // Mostramos el error real del backend cuando existe — antes solo
+        // decíamos "Error al guardar" y el user no tenía forma de saber
+        // qué campo faltaba o qué FK invalidó.
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.detail ?? body?.error ?? "Error al guardar");
+      }
 
       messageApi.success(editing ? "Actualizado correctamente" : "Creado correctamente");
       setModalOpen(false);
       fetchData();
-    } catch {
-      messageApi.error("Error al guardar");
+    } catch (e) {
+      messageApi.error(e instanceof Error ? e.message : "Error al guardar");
     } finally {
       setSaving(false);
     }
