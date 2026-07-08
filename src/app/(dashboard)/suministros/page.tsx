@@ -50,16 +50,24 @@ interface StockItem {
   alerta: "OK" | "BAJO" | "SIN" | "EXCESO";
 }
 
-// SOLO los materiales catalogados cuya categoría sea exactamente
-// "Suministros" o "Consumibles" (por nombre, case-insensitive). Antes el
-// filtro también matcheaba palabras en la descripción ("trapo", "lija", etc.)
-// pero eso producía falsos positivos — el user pidió SOLO por categoría.
+// Un material entra a la vista de Suministros cuando:
+//   - su CLASIFICACIÓN es SUMI / Suministros (fuente principal — es el
+//     campo específico que designa el material como suministro/consumible
+//     independientemente de la categoría comercial, ej. materiales de Ventas
+//     con clasificación Suministros); O
+//   - su CATEGORÍA es Suministros/Consumibles (compat legacy, cuando el
+//     usuario marcó la categoría directamente).
+// Aceptamos códigos cortos y nombres largos en ambos campos para no
+// depender de un formato específico de la BD.
 const NOMBRES_CATEGORIA_PERMITIDOS = ["suministros", "consumibles"];
-// Códigos cortos legacy que también valen (por si la BD tiene la categoría
-// con código antiguo pero nombre nuevo, o viceversa).
 const CODIGOS_CATEGORIA_PERMITIDOS = ["SUM", "SUMI", "CONS", "CONSUMIBLE"];
+const CODIGOS_CLASIFICACION_PERMITIDOS = ["SUM", "SUMI", "CONS", "CONSUMIBLE"];
 
 function esSuministro(item: StockItem): boolean {
+  // 1) por clasificación (fuente principal).
+  const clas = (item.clasificacion ?? "").trim().toUpperCase();
+  if (clas && CODIGOS_CLASIFICACION_PERMITIDOS.includes(clas)) return true;
+  // 2) fallback: por categoría (nombre o código).
   const nombre = (item.categoria_nombre ?? "").trim().toLowerCase();
   if (NOMBRES_CATEGORIA_PERMITIDOS.includes(nombre)) return true;
   const codigo = (item.categoria ?? "").trim().toUpperCase();
@@ -238,10 +246,11 @@ function TabCatalogo() {
         title="Consumibles que se entregan a una OT (trapos, pintura, pernos, disolventes, etc.)"
         description={
           <div style={{ fontSize: 12 }}>
-            Esta vista muestra solo los materiales catalogados cuya categoría sea
-            <b> Suministros</b> o <b>Consumibles</b>. Si un material no aparece, revisá
-            su categoría en /materiales o /catalogos.
-            Para entregar suministros a un trabajador / OT, usá la pestaña <b>Entregar suministros</b>.
+            Esta vista muestra los materiales catalogados cuya
+            <b> Clasificación</b> sea <b>SUMI · Suministros</b> (o cuya categoría
+            sea Suministros / Consumibles). Si un material no aparece, revisá su
+            clasificación en /materiales o /catalogos. Para entregarlos a un
+            trabajador / OT, usá la pestaña <b>Entregar suministros</b>.
           </div>
         }
       />
@@ -284,8 +293,10 @@ function TabCatalogo() {
             <div>
               <p>No hay materiales clasificados como suministro.</p>
               <p style={{ fontSize: 12, color: "#888" }}>
-                Para que un material aparezca acá, asigná categoría <b>SUM</b> en el catálogo de materiales,
-                o nombrá su descripción con palabras como “trapo”, “pintura”, “pernos”, etc.
+                Para que un material aparezca acá, asigná <b>Clasificación</b>
+                = <b>SUMI · Suministros</b> en el catálogo de materiales
+                (/materiales → Editar). También funciona si su categoría
+                es Suministros o Consumibles.
               </p>
             </div>
           }
