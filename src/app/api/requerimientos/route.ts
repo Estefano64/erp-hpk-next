@@ -118,7 +118,7 @@ export async function GET(req: NextRequest) {
           orden_trabajo_interna: {
             select: { id: true, ot: true, descripcion: true },
           },
-          material: { select: { codigo: true, descripcion: true, unidad_medida_codigo: true, stock_actual: true, np: true, precio: true, moneda_codigo: true } },
+          material: { select: { codigo: true, descripcion: true, unidad_medida_codigo: true, stock_actual: true, np: true, precio: true, moneda_codigo: true, ubicacion: true } },
           // Ubicación física en el almacén HP&K: zona (HER/SUM/REP/STO) +
           // celda (A1, B2...). Visible como columna en /requerimientos.
           almacen_zona: { select: { codigo: true, nombre: true } },
@@ -180,7 +180,14 @@ export async function GET(req: NextRequest) {
       const tokensPorReq = new Map<number, Set<string>>();
       const tokensGlobal = new Set<string>();
       for (const r of sinMaterial) {
-        const bag = `${r.descripcion ?? ""} ${r.texto ?? ""}`;
+        // `texto` es un campo del modelo OTRepuesto, pero según la versión de
+        // Prisma client generada en algunos deploys puede no aparecer en el
+        // tipo derivado (drift entre schema y client generado). Lo leemos
+        // vía bracket + cast para desanclar del tipo inferido — el runtime
+        // funciona igual porque Prisma devuelve el campo si existe en la BD.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const texto = ((r as any).texto as string | null | undefined) ?? "";
+        const bag = `${r.descripcion ?? ""} ${texto}`;
         const tokens = new Set<string>();
         for (const m of bag.matchAll(tokenRegex)) {
           const t = m[0];

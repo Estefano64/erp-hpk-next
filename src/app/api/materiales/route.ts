@@ -75,12 +75,21 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    // Generar código numérico auto-incremental
-    const last = await prisma.material.findFirst({
-      orderBy: { material_id: "desc" },
-      select: { codigo: true },
-    });
-    const lastNum = last?.codigo ? parseInt(last.codigo, 10) : 0;
+    // Generar código numérico auto-incremental. IMPORTANTE: hay que ignorar
+    // TODOS los materiales con código no-numérico:
+    //   - Auto-creados desde OCs abiertas: "BC-PB8931", "BC-58B5000590"
+    //   - Regresiones históricas: "000NaN" (bug antiguo con parseInt sobre BC-*)
+    //   - Cualquier código que no sea dígitos puros.
+    // Usamos regex de Postgres via $queryRaw porque Prisma no soporta regex
+    // en el where — así garantizamos que el MAX es el correlativo real.
+    const rows = await prisma.$queryRaw<{ codigo: string }[]>`
+      SELECT codigo FROM material
+      WHERE codigo ~ '^[0-9]+$'
+      ORDER BY LENGTH(codigo) DESC, codigo DESC
+      LIMIT 1
+    `;
+    const lastCod = rows[0]?.codigo ?? "";
+    const lastNum = /^\d+$/.test(lastCod) ? parseInt(lastCod, 10) : 0;
     const codigo = String(lastNum + 1).padStart(6, "0");
 
     const created = await prisma.material.create({
@@ -117,6 +126,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ data: created }, { status: 201 });
   } catch (error) {
     console.error("POST /api/materiales error:", error);
-    return NextResponse.json({ error: "Error al crear" }, { status: 500 });
+    // Devolvemos el mensaje real del error (Prisma incluye info útil para
+    // diagnóstico: FK inválida, unique violation, etc.) — antes el frontend
+    // solo veía "Error al guardar" y no había forma de saber qué falló.
+    const detail = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "Error al crear", detail }, { status: 500 });
   }
 }
