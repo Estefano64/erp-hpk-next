@@ -79,7 +79,6 @@ export async function GET(_req: NextRequest) {
       .map((it) => {
         const cantTotal = Number(it.cantidad);
         const yaDespachado = Number(it.cantidad_recibida ?? 0);
-        const cantPendiente = Math.max(0, cantTotal - yaDespachado);
         const esFree = it.material_id == null;
         // Origen del item para el despacho al técnico. Dos casos especiales:
         //   "stock"        → CONSUMIDO_ALMACEN: stock ya descontado en
@@ -97,6 +96,32 @@ export async function GET(_req: NextRequest) {
         const poRecibida = it.po_id == null
           ? stockMat > 0
           : poStatus === "ENTREGADO" || poStatus === "INCOMPLETO" || poStatus === "COMPLETO";
+        // Cuánto arribó realmente para ESTE item de esta OT.
+        // Nota: `ingreso-po` solo actualiza OTRepuesto.cantidad_recibida para
+        // items FREE (sin material) — para MAC solo toca CompraDetalle. Por
+        // eso NO leemos cantidad_recibida para MAC: derivamos del status de
+        // la OC padre:
+        //   OC ENTREGADO/COMPLETO → item recibió cantidad completa.
+        //   OC INCOMPLETO         → llegó parcial (fallback a cantidad_recibida).
+        //   CONSUMIDO_ALMACEN     → cuenta como recibido (ya está reservado).
+        //   otros / sin OC        → nada llegado aún.
+        let cantLlegada = 0;
+        if (yaConsumido) {
+          cantLlegada = cantTotal;
+        } else if (esFree) {
+          cantLlegada = Math.min(yaDespachado, cantTotal);
+        } else if (it.po_id != null) {
+          if (poStatus === "ENTREGADO" || poStatus === "COMPLETO") {
+            cantLlegada = cantTotal;
+          } else if (poStatus === "INCOMPLETO") {
+            cantLlegada = Math.min(yaDespachado, cantTotal);
+          }
+        }
+        // Pendiente = lo que falta que llegue (a comprar / a recepcionar).
+        // Antes: cantidad - cantidad_recibida (siempre 0 para MAC porque el
+        // campo no se actualiza) → todos los items MAC con OC ENTREGADA
+        // aparecían con Pendiente = cantidad, lo cual es incorrecto.
+        const cantPendiente = Math.max(0, cantTotal - cantLlegada);
         // Caso especial FREE: ingreso-po incrementa cantidad_recibida (item
         // ya arribó a HPK) pero el item AÚN no se entregó al técnico — su
         // status_oc sigue siendo PROCESO/INCOMPLETO/COMPLETO. En este estado
@@ -158,6 +183,11 @@ export async function GET(_req: NextRequest) {
           _es_free_oc_recibida: esFreeOCRecibida,
           _es_consumido_pend_despacho: esConsumidoPendDespacho,
           _cant_pendiente: cantPendiente,
+          // Cuánto llegó para ESTA OT (basado en status de la OC, no en el
+          // stock global del material). Es lo que la columna "Stock alm."
+          // debería mostrar — el material.stock_actual es global y otras OTs
+          // pueden haber consumido lo que llegó para ésta.
+          _cant_llegada: cantLlegada,
           _puede_despachar: puedeDespachar,
           _po_status: poStatus,
           _po_recibida: poRecibida,
