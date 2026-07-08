@@ -8,7 +8,7 @@ import {
 import {
   PlusOutlined, ReloadOutlined, CloseOutlined, SaveOutlined,
   EditOutlined, DeleteOutlined, FileSyncOutlined, SendOutlined,
-  PaperClipOutlined, CalendarOutlined,
+  PaperClipOutlined, CalendarOutlined, ThunderboltOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
@@ -85,10 +85,53 @@ interface MaterialOpt {
 
 interface Props {
   otId: number;
-  codRepCodigo: string | null;
-  /** Fecha de recepción de la OT (para validar que fecha_requerida no sea anterior). */
+  /**
+   * Tipo de OT. Determina:
+   *   - URLs de la API (/api/ordenes-trabajo vs /api/ordenes-trabajo-internas)
+   *   - Endpoint del template (aplicar-template vs aplicar-tasklist)
+   *   - Botón "Generar desde template" vs "Aplicar Task List"
+   *   - Validación de fecha_requerida contra fecha_recepcion (solo externa)
+   *   - Equivalencias cil↔gl en cantidad y precio (solo interna)
+   *   - Auto-rescale del precio referencial cuando la UM difiere (solo interna)
+   * Default "externa" para compat con callers pre-existentes.
+   */
+  kind?: "externa" | "interna";
+  codRepCodigo?: string | null;
+  /** Fecha de recepción de la OT (solo externa). No aplica a OT interna. */
   otFechaRecepcion?: string | null;
   onUpdated?: () => void;
+}
+
+// ── Conversión entre unidades equivalentes (regla de OTs internas) ──
+// Hoy solo cilindro ↔ galón (1 cil = 55 gal — combustibles/lubricantes HPK).
+// Se usa para: mostrar el equivalente al lado de la cantidad y del precio, y
+// re-escalar el precio referencial cuando la UM elegida en el draft difiere
+// de la UM con la que el material está cotizado en catálogo.
+// Solo aplica en modo kind="interna".
+const CONVERSION_FACTORES: Record<string, Record<string, number>> = {
+  cil: { gl: 55 },
+  gl: { cil: 1 / 55 },
+};
+
+// Factor "from → to": 55 significa "1 unidad de FROM = 55 unidades de TO".
+function factorEntreUM(from: string | null | undefined, to: string | null | undefined): number | null {
+  const a = (from ?? "").toLowerCase();
+  const b = (to ?? "").toLowerCase();
+  if (!a || !b || a === b) return null;
+  return CONVERSION_FACTORES[a]?.[b] ?? null;
+}
+
+// Equivalencia de una UM convertible: a qué unidad se traduce y con qué factor.
+function equivalenteUM(um: string | null | undefined): { to: string; factor: number } | null {
+  const u = (um ?? "").toLowerCase();
+  if (u === "cil") return { to: "gl", factor: 55 };
+  if (u === "gl") return { to: "cil", factor: 1 / 55 };
+  return null;
+}
+
+// Formatea un número con hasta 4 decimales, sin ceros a la derecha.
+function fmtCant(n: number): string {
+  return Number(n.toFixed(4)).toLocaleString("es-PE", { maximumFractionDigits: 4 });
 }
 
 const TIPO_COLOR: Record<string, string> = { MAC: "blue", CAD: "orange", SER: "purple" };
@@ -148,7 +191,25 @@ const OC_COLOR: Record<string, string> = {
   DEVOLUCION: "warning",
 };
 
-export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepcion, onUpdated }: Props) {
+export default function OTRequerimientosTab({
+  otId,
+  kind = "externa",
+  codRepCodigo,
+  otFechaRecepcion,
+  onUpdated,
+}: Props) {
+  // Convención: en interna no aplica fecha_recepcion aunque nos la pasen.
+  const otFechaRecepcionEfectiva = kind === "interna" ? null : (otFechaRecepcion ?? null);
+
+  // Prefijo base para las URLs del endpoint. Todas las rutas por-item
+  // (/api/requerimientos/[id]/*) son polimórficas y se comparten entre
+  // externa e interna, así que no dependen del kind.
+  const apiPrefix = kind === "interna"
+    ? `/api/ordenes-trabajo-internas/${otId}`
+    : `/api/ordenes-trabajo/${otId}`;
+  // "Aplicar template" es cod_rep en externa; "aplicar-tasklist" es equipo+PM en interna.
+  const aplicarTemplatePath = kind === "interna" ? "aplicar-tasklist" : "aplicar-template";
+
   const [rows, setRows] = useState<RequerimientoRow[]>([]);
   const [loading, setLoading] = useState(false);
   // Evita doble "Generar desde template" (doble click / carga lenta).
@@ -158,9 +219,42 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
   const [messageApi, contextHolder] = message.useMessage();
   const { screens } = useResponsive();
   const [modalApi, modalCtx] = Modal.useModal();
-  const { ocultas, setOcultas } = useColumnasOcultas("ot-requerimientos-cols-v2");
+  // Namespaced por kind para que interna y externa mantengan preferencias de
+  // columnas separadas (usuarios pueden querer distinto layout por tipo).
+  const { ocultas, setOcultas } = useColumnasOcultas(
+    kind === "interna" ? "ot-interna-requerimientos-cols-v2" : "ot-requerimientos-cols-v2",
+  );
   const { rango: rangoSol, setRango: setRangoSol } = useRangoFechas();
   const { rango: rangoReq, setRango: setRangoReq } = useRangoFechas();
+
+  // Info de la OT interna (equipo + estrategia PM) — habilita "Aplicar Task List".
+  // Equivalente al codRepCodigo de las OT externas. Solo se fetchea cuando kind=interna.
+  const [otInfoInterna, setOtInfoInterna] = useState<{ equipo_codigo: string | null; estrategia_pm: string | null }>({
+    equipo_codigo: null,
+    estrategia_pm: null,
+  });
+  const taskListDisponible = kind === "interna"
+    ? !!otInfoInterna.equipo_codigo && !!otInfoInterna.estrategia_pm
+    : false;
+  useEffect(() => {
+    if (kind !== "interna") return;
+    let cancelado = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/ordenes-trabajo-internas/${otId}`);
+        if (!res.ok) return;
+        const j = await res.json();
+        if (cancelado) return;
+        setOtInfoInterna({
+          equipo_codigo: j.data?.equipo_codigo ?? null,
+          estrategia_pm: j.data?.estrategia?.actividad_codigo ?? null,
+        });
+      } catch {
+        /* silent */
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [kind, otId]);
 
   // Modal solo para editar 1 item
   const [modalOpen, setModalOpen] = useState(false);
@@ -304,13 +398,34 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
           next.descripcion = s.nombre;
         }
       }
+      // Auto-rescale del precio cuando cambia UM en OTs internas (cil↔gl).
+      // El material puede estar cotizado en cil pero elegimos gl para el req;
+      // sin esto, el precio referencial se queda con la escala anterior.
+      // Solo aplica a MAC con material catalogado y para la conversión cil↔gl.
+      if (kind === "interna"
+          && patch.unidad_medida
+          && patch.unidad_medida !== it.unidad_medida
+          && next.tipo_codigo === "MAC"
+          && next.material_codigo) {
+        const m = materiales.find((x) => x.codigo === next.material_codigo);
+        const catUm = m?.unidad_medida_codigo ?? undefined;
+        const catPrecio = m?.precio != null ? Number(m.precio) : null;
+        if (catUm && catPrecio != null && Number.isFinite(catPrecio)) {
+          const factor = factorEntreUM(catUm, patch.unidad_medida);
+          if (factor != null) {
+            // Precio en UM elegida = precio catálogo × factor de conversión inverso.
+            // Si 1 cil = 55 gl y el catálogo dice $110/cil, entonces $2/gl.
+            next.precio_unitario = Number((catPrecio / factor).toFixed(4));
+          }
+        }
+      }
       return next;
     }));
   }
   async function guardarDraft() {
     // Validar
     const errors: string[] = [];
-    const fechaRecepcion = otFechaRecepcion ? dayjs(String(otFechaRecepcion).slice(0, 10)) : null;
+    const fechaRecepcion = otFechaRecepcionEfectiva ? dayjs(String(otFechaRecepcionEfectiva).slice(0, 10)) : null;
     for (const [idx, it] of draftItems.entries()) {
       if (!it.descripcion?.trim()) errors.push(`Item ${idx + 1}: descripción requerida`);
       if (!it.cantidad || it.cantidad <= 0) errors.push(`Item ${idx + 1}: cantidad debe ser > 0`);
@@ -358,7 +473,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
         })),
         nro_req: draftAppendToNroReq ?? undefined,
       };
-      const res = await fetch(`/api/ordenes-trabajo/${otId}/requerimientos/bulk`, {
+      const res = await fetch(`${apiPrefix}/requerimientos/bulk`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
@@ -471,7 +586,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/ordenes-trabajo/${otId}/requerimientos`);
+      const res = await fetch(`${apiPrefix}/requerimientos`);
       if (res.ok) {
         const j = await res.json();
         // Sobreescribimos status_cotizacion con el derivado porque el campo en
@@ -494,35 +609,56 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
     if (aplicandoTpl) return; // re-entrada (doble click)
     setAplicandoTpl(true);
     try {
-      const res = await fetch(`/api/ordenes-trabajo/${otId}/requerimientos/aplicar-template`, {
+      const res = await fetch(`${apiPrefix}/requerimientos/${aplicarTemplatePath}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ estrategia }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => null);
-        messageApi.error(err?.error ?? "Error al aplicar template.");
+        messageApi.error(err?.error ?? `Error al aplicar ${kind === "interna" ? "task list" : "template"}.`);
         return;
       }
       const j = await res.json();
       if (j.skipped) {
         messageApi.info(`No se hizo nada: ya hay ${j.existentes} requerimientos.`);
       } else {
-        messageApi.success(`Template aplicado: ${j.creados} creados${j.eliminados ? `, ${j.eliminados} reemplazados` : ""}.`);
+        const nounSuccess = kind === "interna" ? "Task list aplicado" : "Template aplicado";
+        messageApi.success(`${nounSuccess}: ${j.creados} creados${j.eliminados ? `, ${j.eliminados} reemplazados` : ""}.`);
       }
       fetchData();
       onUpdated?.();
     } catch {
-      messageApi.error("Error al aplicar template.");
+      messageApi.error(`Error al aplicar ${kind === "interna" ? "task list" : "template"}.`);
     } finally {
       setAplicandoTpl(false);
     }
   }
 
+  // Etiquetas contextuales según kind: "template" habla de cod_rep en externa,
+  // "task list" habla de equipo + PM en interna.
+  const templateNoun = kind === "interna" ? "task list" : "template";
+  const templateSource = kind === "interna"
+    ? (otInfoInterna.equipo_codigo && otInfoInterna.estrategia_pm
+        ? `${otInfoInterna.equipo_codigo} + ${otInfoInterna.estrategia_pm}`
+        : "equipo + estrategia PM")
+    : codRepCodigo;
+
   function abrirDialogTemplate() {
-    if (!codRepCodigo) {
-      messageApi.warning("La OT no tiene cod_rep asignado.");
-      return;
+    if (kind === "interna") {
+      if (!taskListDisponible) {
+        messageApi.warning(
+          !otInfoInterna.equipo_codigo
+            ? "La OT no tiene equipo asignado — el task list se filtra por equipo."
+            : "La estrategia debe ser PM1, PM2, PM3 o PM4. Asignala en el tab Detalle.",
+        );
+        return;
+      }
+    } else {
+      if (!codRepCodigo) {
+        messageApi.warning("La OT no tiene cod_rep asignado.");
+        return;
+      }
     }
     if (rows.length === 0) {
       // Sin requerimientos, aplicar directo
@@ -530,13 +666,13 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
       return;
     }
     modalApi.confirm({
-      title: "Aplicar template de requerimientos",
+      title: `Aplicar ${templateNoun} de requerimientos`,
       content: (
         <div>
-          <p>La OT ya tiene <strong>{rows.length}</strong> requerimiento(s). ¿Qué hacemos con los del template del cod_rep <strong>{codRepCodigo}</strong>?</p>
+          <p>La OT ya tiene <strong>{rows.length}</strong> requerimiento(s). ¿Qué hacemos con los del {templateNoun} de <strong>{templateSource}</strong>?</p>
           <ul style={{ marginLeft: 20, marginTop: 8 }}>
-            <li><strong>Reemplazar pendientes</strong>: borra los SIN_APROBACION sin OC y aplica el template (los aprobados o con OC se mantienen).</li>
-            <li><strong>Sumar todos</strong>: agrega los del template encima sin tocar lo existente (puede generar duplicados).</li>
+            <li><strong>Reemplazar pendientes</strong>: borra los SIN_APROBACION sin OC y aplica el {templateNoun} (los aprobados o con OC se mantienen).</li>
+            <li><strong>Sumar todos</strong>: agrega los del {templateNoun} encima sin tocar lo existente (puede generar duplicados).</li>
           </ul>
         </div>
       ),
@@ -624,7 +760,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
       };
       const url = editingId
         ? `/api/requerimientos/${editingId}`
-        : `/api/ordenes-trabajo/${otId}/requerimientos`;
+        : `${apiPrefix}/requerimientos`;
       const method = editingId ? "PUT" : "POST";
       const res = await fetch(url, {
         method, headers: { "Content-Type": "application/json" },
@@ -661,7 +797,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
     let ok = 0, errs = 0;
     for (const nro of gruposUnicos) {
       const res = await fetch(
-        `/api/ordenes-trabajo/${otId}/requerimientos/${encodeURIComponent(nro)}/enviar`,
+        `${apiPrefix}/requerimientos/${encodeURIComponent(nro)}/enviar`,
         { method: "POST" },
       );
       if (res.ok) ok++; else errs++;
@@ -673,7 +809,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
   }
   async function setFechaRequeridaGrupo(nroReq: string, fecha: dayjs.Dayjs | null) {
     const res = await fetch(
-      `/api/ordenes-trabajo/${otId}/requerimientos/${encodeURIComponent(nroReq)}/fecha-requerida`,
+      `${apiPrefix}/requerimientos/${encodeURIComponent(nroReq)}/fecha-requerida`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -696,7 +832,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
   }
   async function enviarGrupo(nroReq: string) {
     const res = await fetch(
-      `/api/ordenes-trabajo/${otId}/requerimientos/${encodeURIComponent(nroReq)}/enviar`,
+      `${apiPrefix}/requerimientos/${encodeURIComponent(nroReq)}/enviar`,
       { method: "POST" },
     );
     if (!res.ok) {
@@ -852,13 +988,31 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
       },
     },
     {
-      title: "Cant.", key: "qty", width: 80, align: "right",
+      title: "Cant.", key: "qty", width: 90, align: "right",
       sorter: (a, b) => Number(a.cantidad) - Number(b.cantidad),
       filters: [...new Set(rows.map((r) => Number(r.cantidad)))]
         .sort((a, b) => a - b).map((v) => ({ text: String(v), value: String(v) })),
       filterSearch: true,
       onFilter: (value, r) => String(Number(r.cantidad)) === value,
-      render: (_, r) => Number(r.cantidad).toLocaleString(),
+      render: (_, r) => {
+        const cant = Number(r.cantidad);
+        // En interna mostramos la equivalencia cil↔gl como subline si aplica
+        // (1 cil ≈ 55 gl y viceversa). Ayuda al usuario a leer sin convertir.
+        if (kind === "interna") {
+          const eq = equivalenteUM(r.unidad_medida);
+          if (eq) {
+            return (
+              <div style={{ lineHeight: 1.1 }}>
+                <div>{cant.toLocaleString()}</div>
+                <Text type="secondary" style={{ fontSize: 10 }}>
+                  ≈ {fmtCant(cant * eq.factor)} {eq.to}
+                </Text>
+              </div>
+            );
+          }
+        }
+        return cant.toLocaleString();
+      },
     },
     {
       title: "P. Unit.", key: "precio_unit", width: 110, align: "right",
@@ -1130,12 +1284,33 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
             />
           <Button onClick={resetAnchos}>Restablecer anchos</Button>
             <Button icon={<ReloadOutlined />} onClick={fetchData}>Refrescar</Button>
-            {codRepCodigo && (
-              <Tooltip title={`Copia los items del template del cod_rep ${codRepCodigo}`}>
-                <Button icon={<FileSyncOutlined />} onClick={abrirDialogTemplate} loading={aplicandoTpl} disabled={aplicandoTpl}>
-                  Generar desde template
+            {kind === "interna" ? (
+              <Tooltip
+                title={
+                  taskListDisponible
+                    ? `Copia los items del task list del equipo ${otInfoInterna.equipo_codigo} + cascada ${otInfoInterna.estrategia_pm}`
+                    : (!otInfoInterna.equipo_codigo
+                        ? "Falta equipo — asignalo en el tab Detalle"
+                        : "Falta estrategia PM1..PM4 — asignala en el tab Detalle")
+                }
+              >
+                <Button
+                  icon={<ThunderboltOutlined />}
+                  onClick={abrirDialogTemplate}
+                  loading={aplicandoTpl}
+                  disabled={aplicandoTpl || !taskListDisponible}
+                >
+                  Aplicar Task List{otInfoInterna.estrategia_pm ? ` (${otInfoInterna.estrategia_pm})` : ""}
                 </Button>
               </Tooltip>
+            ) : (
+              codRepCodigo && (
+                <Tooltip title={`Copia los items del template del cod_rep ${codRepCodigo}`}>
+                  <Button icon={<FileSyncOutlined />} onClick={abrirDialogTemplate} loading={aplicandoTpl} disabled={aplicandoTpl}>
+                    Generar desde template
+                  </Button>
+                </Tooltip>
+              )
             )}
             <Button type="primary" icon={<PlusOutlined />} onClick={() => abrirDraft()} disabled={draftOpen}>
               Nuevo Requerimiento
@@ -1144,11 +1319,22 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
         </Col>
       </Row>
 
-      {!codRepCodigo && rows.length === 0 && (
+      {kind === "externa" && !codRepCodigo && rows.length === 0 && (
         <Alert
           type="info" showIcon style={{ marginBottom: 12 }}
           title="Sin cod_rep asignado"
           description="Esta OT no tiene código de reparación, por lo que no hay template para aplicar. Agregá los items manualmente con 'Nuevo Requerimiento'."
+        />
+      )}
+      {kind === "interna" && !taskListDisponible && rows.length === 0 && (
+        <Alert
+          type="info" showIcon style={{ marginBottom: 12 }}
+          title="Sin task list aplicable"
+          description={
+            !otInfoInterna.equipo_codigo
+              ? "Esta OT no tiene equipo asignado. Asigná uno en el tab Detalle para poder aplicar el task list."
+              : "La estrategia PM debe estar seteada (PM1, PM2, PM3 o PM4). Asignala en el tab Detalle."
+          }
         />
       )}
 
@@ -1311,17 +1497,32 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
                 //   - MAC sin precio en catálogo (o sin material elegido aún)
                 //     → input editable, igual que SER/CAD.
                 //   - SER/CAD → siempre editable.
-                title: "Precio ref. *", key: "precio", width: 150, align: "right",
+                title: kind === "interna" ? "Precio ref." : "Precio ref. *", key: "precio", width: 150, align: "right",
                 render: (_: unknown, r: DraftItem) => {
                   const mat = r.tipo_codigo === "MAC" && r.material_codigo
                     ? materiales.find((m) => m.codigo === r.material_codigo)
                     : null;
-                  if (mat?.precio) {
+                  const eqUM = kind === "interna" ? equivalenteUM(r.unidad_medida) : null;
+                  // En interna, mostramos el read-only solo cuando el usuario
+                  // NO tocó el precio explícitamente. Si actualizarDraftItem
+                  // hizo auto-rescale (cil↔gl) queremos ver ese, no el catálogo.
+                  const preservaPropio = kind === "interna" && r.precio_unitario != null;
+                  if (mat?.precio && !preservaPropio) {
+                    const precio = Number(mat.precio);
                     return (
                       <Tooltip title="Precio del catálogo de material">
-                        <Text style={{ fontSize: 12 }}>
-                          {Number(mat.precio).toFixed(2)} {mat.moneda_codigo ?? "USD"}
-                        </Text>
+                        <div style={{ lineHeight: 1.1 }}>
+                          <Text style={{ fontSize: 12 }}>
+                            {precio.toFixed(2)} {mat.moneda_codigo ?? "USD"}
+                          </Text>
+                          {eqUM && (
+                            <div>
+                              <Text type="secondary" style={{ fontSize: 10 }}>
+                                ≈ {(precio / eqUM.factor).toFixed(2)}/{eqUM.to}
+                              </Text>
+                            </div>
+                          )}
+                        </div>
                       </Tooltip>
                     );
                   }
@@ -1357,8 +1558,8 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
                     value={r.fecha_requerida ?? null}
                     onChange={(d) => actualizarDraftItem(r.id, { fecha_requerida: d })}
                     disabledDate={(current) => {
-                      if (!otFechaRecepcion || !current) return false;
-                      return current.isBefore(dayjs(String(otFechaRecepcion).slice(0, 10)), "day");
+                      if (!otFechaRecepcionEfectiva || !current) return false;
+                      return current.isBefore(dayjs(String(otFechaRecepcionEfectiva).slice(0, 10)), "day");
                     }}
                   />
                 ),
@@ -1466,7 +1667,7 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
           onAddItems={(nro) => abrirDraft(nro)}
           onEnviarGrupo={enviarGrupo}
           onSetFechaRequerida={setFechaRequeridaGrupo}
-          otFechaRecepcion={otFechaRecepcion}
+          otFechaRecepcion={otFechaRecepcionEfectiva}
         />
       )}
 
@@ -1639,8 +1840,8 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
             rules={[
               () => ({
                 validator(_, value) {
-                  if (!value || !otFechaRecepcion) return Promise.resolve();
-                  const recep = dayjs(String(otFechaRecepcion).slice(0, 10));
+                  if (!value || !otFechaRecepcionEfectiva) return Promise.resolve();
+                  const recep = dayjs(String(otFechaRecepcionEfectiva).slice(0, 10));
                   if (value.isBefore(recep, "day")) {
                     return Promise.reject(new Error("No puede ser anterior a la recepción de la OT"));
                   }
@@ -1653,8 +1854,8 @@ export default function OTRequerimientosTab({ otId, codRepCodigo, otFechaRecepci
               style={{ width: 200 }}
               format="DD/MM/YYYY"
               disabledDate={(current) => {
-                if (!otFechaRecepcion || !current) return false;
-                return current.isBefore(dayjs(String(otFechaRecepcion).slice(0, 10)), "day");
+                if (!otFechaRecepcionEfectiva || !current) return false;
+                return current.isBefore(dayjs(String(otFechaRecepcionEfectiva).slice(0, 10)), "day");
               }}
             />
           </Form.Item>

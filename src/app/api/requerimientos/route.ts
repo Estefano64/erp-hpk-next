@@ -163,7 +163,90 @@ export async function GET(req: NextRequest) {
       total = data.length;
     }
 
-    return NextResponse.json({ data, total, page });
+    // ── Matches probables por NP para reqs sin material vinculado ────────
+    // Un req que se creó como CAD (texto libre) pero tiene un NP embebido en
+    // su descripción/texto podría corresponder a un material del catálogo.
+    // Ejemplo: "Lainas, ED3755" → material 001149 (LAINAS, NP=ED3755). El
+    // frontend usa este dato para: (a) resaltar la fila si el match tiene
+    // stock suficiente, (b) sugerir Vincular con un click.
+    // Extraemos tokens candidatos con al menos 4 chars y al menos un dígito
+    // (patrón típico de NP). El match final se hace con NP exacto (case-insensitive)
+    // para evitar falsos positivos con palabras comunes.
+    const sinMaterial = data.filter((r) => r.material_id == null);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const matchesPorReq = new Map<number, any[]>();
+    if (sinMaterial.length > 0) {
+      const tokenRegex = /\b[A-Za-z0-9-]{4,}\b/g;
+      const tokensPorReq = new Map<number, Set<string>>();
+      const tokensGlobal = new Set<string>();
+      for (const r of sinMaterial) {
+        const bag = `${r.descripcion ?? ""} ${r.texto ?? ""}`;
+        const tokens = new Set<string>();
+        for (const m of bag.matchAll(tokenRegex)) {
+          const t = m[0];
+          if (/\d/.test(t)) tokens.add(t.toUpperCase());
+        }
+        if (tokens.size > 0) {
+          tokensPorReq.set(r.id, tokens);
+          for (const t of tokens) tokensGlobal.add(t);
+        }
+      }
+      if (tokensGlobal.size > 0) {
+        const matsCandidatos = await prisma.material.findMany({
+          where: {
+            activo: true,
+            OR: [
+              { np: { in: [...tokensGlobal], mode: "insensitive" } },
+              { codigo: { in: [...tokensGlobal], mode: "insensitive" } },
+            ],
+          },
+          select: {
+            material_id: true, codigo: true, descripcion: true, np: true,
+            stock_actual: true, unidad_medida_codigo: true, precio: true, moneda_codigo: true,
+          },
+        });
+        // Indexamos por NP y por código (ambos uppercase) para lookup rápido.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const idxNp = new Map<string, any[]>();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const idxCod = new Map<string, any[]>();
+        for (const m of matsCandidatos) {
+          if (m.np) {
+            const k = m.np.toUpperCase();
+            if (!idxNp.has(k)) idxNp.set(k, []);
+            idxNp.get(k)!.push(m);
+          }
+          if (m.codigo) {
+            const k = m.codigo.toUpperCase();
+            if (!idxCod.has(k)) idxCod.set(k, []);
+            idxCod.get(k)!.push(m);
+          }
+        }
+        for (const [reqId, tokens] of tokensPorReq) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const found: any[] = [];
+          const seen = new Set<number>();
+          for (const t of tokens) {
+            for (const arr of [idxNp.get(t) ?? [], idxCod.get(t) ?? []]) {
+              for (const m of arr) {
+                if (!seen.has(m.material_id)) {
+                  seen.add(m.material_id);
+                  found.push(m);
+                }
+              }
+            }
+          }
+          if (found.length > 0) matchesPorReq.set(reqId, found);
+        }
+      }
+    }
+    // Adjuntamos el campo al payload sin modificar reqs con material_id ya seteado.
+    const dataConMatches = data.map((r) => ({
+      ...r,
+      _matches_probables: matchesPorReq.get(r.id) ?? undefined,
+    }));
+
+    return NextResponse.json({ data: dataConMatches, total, page });
   } catch (error) {
     console.error("GET /api/requerimientos error:", error);
     return NextResponse.json({ error: "Error al obtener requerimientos" }, { status: 500 });
