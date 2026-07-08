@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   Typography, Table, Button, Input, Select, Space, Tag, Modal, Form,
-  Row, Col, Card, App, DatePicker, Popconfirm, Tooltip, Switch, Checkbox,
+  Row, Col, Card, App, DatePicker, Popconfirm, Tooltip, Switch, Checkbox, Alert,
 } from "antd";
 import {
   ToolOutlined, PlusOutlined, ReloadOutlined, SearchOutlined,
@@ -182,6 +182,10 @@ export default function OrdenesTrabajoInternasPage() {
     "oti-list-ot-status-filter",
     ["Abierta"],
   );
+  // Bump para forzar remount del Table cuando limpiamos el filtro OT Status
+  // desde afuera. La columna usa defaultFilteredValue (uncontrolled), así que
+  // la única forma limpia de "vaciar" el filtro es cambiar el key del Table.
+  const [tableFilterVersion, setTableFilterVersion] = useState(0);
   const [saving, setSaving] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<OTInternaRow | null>(null);
@@ -910,8 +914,47 @@ export default function OrdenesTrabajoInternasPage() {
         </Row>
       </Card>
 
+      {/* Aviso cuando el filtro de OT Status oculta filas. El default es
+          ["Abierta"] — sin este banner es fácil pensar que "desaparecieron"
+          las OTs cerradas cuando en realidad están filtradas.
+          El botón "Ver todas" limpia el filtro y fuerza remount del Table
+          (bumpea tableFilterVersion) porque la columna usa defaultFilteredValue. */}
+      {otStatusFilter && otStatusFilter.length > 0 && (() => {
+        const totalCargadas = rows.length;
+        const visibles = rows.filter((r) => otStatusFilter.includes(r.ot_status?.codigo ?? "")).length;
+        const ocultasPorFiltro = totalCargadas - visibles;
+        if (ocultasPorFiltro <= 0) return null;
+        return (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            title={`Mostrando ${visibles} de ${totalCargadas} OT internas`}
+            description={
+              <span>
+                Hay <b>{ocultasPorFiltro}</b> OT(s) ocultas por el filtro OT Status
+                (<Tag style={{ margin: 0 }}>{otStatusFilter.join(", ")}</Tag>).
+              </span>
+            }
+            action={
+              <Button
+                size="small"
+                type="primary"
+                onClick={() => {
+                  setOtStatusFilter(null);
+                  setTableFilterVersion((v) => v + 1);
+                }}
+              >
+                Ver todas
+              </Button>
+            }
+          />
+        );
+      })()}
+
       <TableDragWrapper>
         <Table
+          key={`ot-internas-${tableFilterVersion}`}
           rowKey="id"
           columns={visibleColumns(columnas, ocultas, ["__num", "ot", "acciones"])}
           components={components}
