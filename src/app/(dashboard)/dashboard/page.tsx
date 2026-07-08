@@ -23,8 +23,9 @@ const ProduccionDashboard = dynamic(
 
 const { Title, Text } = Typography;
 
-// Dashboards disponibles por rol. `admin` los ve todos y puede alternar;
-// un usuario con varios roles de área también (ej. planner + produccion).
+// Decisión 2026-07-08 (rediseño de roles): TODOS los usuarios de oficina ven
+// los tres dashboards y alternan con el Segmented. Solo el técnico restringido
+// queda afuera (tiene su panel propio).
 type DashKey = "logistica" | "planner" | "produccion";
 const DASH_LABELS: Record<DashKey, string> = {
   logistica: "Logística",
@@ -41,10 +42,10 @@ export default function DashboardPage() {
     [session],
   );
 
-  const disponibles = useMemo<DashKey[]>(() => {
-    if (roles.includes("admin")) return DASH_ORDEN;
-    return DASH_ORDEN.filter((d) => roles.includes(d));
-  }, [roles]);
+  const disponibles = useMemo<DashKey[]>(
+    () => (roles.includes("tecnico") ? [] : DASH_ORDEN),
+    [roles],
+  );
 
   // Preferencia del usuario (persistida en localStorage). Si no hay o ya no
   // está disponible para sus roles, cae al primero de la lista.
