@@ -70,3 +70,123 @@ export function puedeVerCostosOT(roles: string[] | null | undefined): boolean {
 
 // Roles "de área" (referencia para seeds/UI; el gating usa las listas de arriba).
 export const ROLES_AREA = AREAS;
+
+// ────────────────────────────────────────────────────────────────────────────
+// Fase 2: gating de ESCRITURA en /api/* (POST/PUT/PATCH/DELETE), aplicado por
+// el middleware. Los GET nunca se bloquean acá.
+//
+// Reglas:
+//   - DEFAULT PERMITIDO: endpoint sin regla = no se bloquea (locks, r2, me,
+//     tickets, etc.). Igual que la matriz de páginas.
+//   - `roles: null` = EXENTO explícitamente: el gating central no aplica y
+//     manda el chequeo propio del endpoint. Se usa para (a) el flujo de
+//     APROBACIONES (pedido del usuario: no tocar por ahora) y (b) las subrutas
+//     del TÉCNICO (iniciar/pausar/finalizar/adjuntos), que ya validan
+//     asignación adentro.
+//   - Matching por prefijo + sufijo opcional; gana la regla más específica
+//     (mayor largo de prefijo+sufijo). "admin" siempre pasa.
+//   - Esto NO reemplaza los chequeos in-route existentes (requireAdmin de
+//     usuarios/catálogos, asignación del técnico, etc.): es una capa previa.
+const AREA_OT = ["admin", "planner", "produccion", "logistica"] as const;
+const TODAS_AREAS = ["admin", "planner", "produccion", "logistica", "mantenimiento", "contabilidad"] as const;
+const EVALUACION = ["admin", "planner", "produccion", "evaluador", "aprobador_evaluacion", "tecnico"] as const;
+const COMPRA = ["admin", "logistica"] as const;
+
+type ReglaApi = { prefijo: string; sufijo?: string; roles: readonly string[] | null };
+
+export const REGLAS_ESCRITURA_API: ReglaApi[] = [
+  // ── RRHH: trabajadores solo admin (usuarios ya tiene requireAdmin propio)
+  { prefijo: "/api/trabajadores", roles: ["admin"] },
+  // ── OTs externas: crean/editan las áreas de OT (incluye sus reqs/adjuntos)
+  { prefijo: "/api/ordenes-trabajo", roles: AREA_OT },
+  //    …pero el llenado de la hoja de evaluación es del flujo de evaluación
+  { prefijo: "/api/ordenes-trabajo", sufijo: "/evaluacion/finalizar", roles: EVALUACION },
+  { prefijo: "/api/ordenes-trabajo", sufijo: "/evaluacion/foto", roles: EVALUACION },
+  { prefijo: "/api/ordenes-trabajo", sufijo: "/evaluacion/foto/upload-url", roles: EVALUACION },
+  // ── OTs internas: las editan todas las áreas; la aprobación queda exenta
+  { prefijo: "/api/ordenes-trabajo-internas", roles: TODAS_AREAS },
+  { prefijo: "/api/ordenes-trabajo-internas", sufijo: "/aprobacion", roles: null },
+  // ── Hojas de evaluación
+  { prefijo: "/api/evaluaciones", roles: EVALUACION },
+  // ── Planificación / programación: planner y produccion editan…
+  { prefijo: "/api/planificacion", roles: ["admin", "planner", "produccion"] },
+  //    …y las subrutas del TÉCNICO quedan exentas (validan asignación adentro)
+  { prefijo: "/api/planificacion", sufijo: "/iniciar", roles: null },
+  { prefijo: "/api/planificacion", sufijo: "/pausar", roles: null },
+  { prefijo: "/api/planificacion", sufijo: "/finalizar", roles: null },
+  { prefijo: "/api/planificacion", sufijo: "/adjuntos", roles: null },
+  { prefijo: "/api/planificacion", sufijo: "/adjuntos/upload-url", roles: null },
+  // ── Requerimientos globales: solicitan/editan las áreas de OT…
+  { prefijo: "/api/requerimientos", roles: AREA_OT },
+  //    …las operaciones de almacén/cotización son de logística…
+  { prefijo: "/api/requerimientos", sufijo: "/consumir-de-almacen", roles: COMPRA },
+  { prefijo: "/api/requerimientos", sufijo: "/consumir-caja-chica", roles: COMPRA },
+  { prefijo: "/api/requerimientos", sufijo: "/precio", roles: COMPRA },
+  { prefijo: "/api/requerimientos", sufijo: "/dividir", roles: COMPRA },
+  { prefijo: "/api/requerimientos", sufijo: "/vincular-material", roles: COMPRA },
+  //    …y el flujo de APROBACIONES queda exento (no tocar por ahora)
+  { prefijo: "/api/requerimientos", sufijo: "/aprobar", roles: null },
+  { prefijo: "/api/requerimientos", sufijo: "/desaprobar", roles: null },
+  { prefijo: "/api/requerimientos", sufijo: "/anular", roles: null },
+  { prefijo: "/api/requerimientos/aprobar-lote", roles: null },
+  { prefijo: "/api/requerimientos/desaprobar-lote", roles: null },
+  { prefijo: "/api/requerimientos", sufijo: "/enviar-a-aprobacion", roles: null },
+  // ── Compras / OCs: escribe logística; guías/facturas también contabilidad;
+  //    aceptar/anular (aprobación de OC) exentos
+  { prefijo: "/api/compras", roles: COMPRA },
+  { prefijo: "/api/compras", sufijo: "/guia", roles: ["admin", "logistica", "contabilidad"] },
+  { prefijo: "/api/compras", sufijo: "/guia/upload-url", roles: ["admin", "logistica", "contabilidad"] },
+  { prefijo: "/api/compras", sufijo: "/adjuntos", roles: ["admin", "logistica", "contabilidad"] },
+  { prefijo: "/api/compras", sufijo: "/aceptar", roles: null },
+  { prefijo: "/api/compras", sufijo: "/anular", roles: null },
+  // ── Almacén
+  { prefijo: "/api/movimientos", roles: COMPRA },
+  { prefijo: "/api/despachos", roles: COMPRA },
+  { prefijo: "/api/no-catalogados", roles: COMPRA },
+  // ── Herramientas y suministros (materiales incluye mantenimiento porque
+  //    /suministros edita materiales de esa categoría)
+  { prefijo: "/api/herramientas", roles: ["admin", "logistica", "mantenimiento"] },
+  { prefijo: "/api/prestamos-herramientas", roles: ["admin", "logistica", "mantenimiento"] },
+  { prefijo: "/api/materiales", roles: ["admin", "logistica", "mantenimiento"] },
+  // ── Maestros de logística
+  { prefijo: "/api/clientes", roles: COMPRA },
+  { prefijo: "/api/proveedores", roles: COMPRA },
+  // ── Contratos: solo logística y producción
+  { prefijo: "/api/contratos", roles: ["admin", "produccion", "logistica"] },
+  // ── Códigos estratégicos y sus catálogos: todas las áreas
+  { prefijo: "/api/codigos-reparacion", roles: TODAS_AREAS },
+  { prefijo: "/api/operaciones-cod-rep", roles: TODAS_AREAS },
+  { prefijo: "/api/operaciones-reparacion", roles: TODAS_AREAS },
+  { prefijo: "/api/servicios-reparacion", roles: TODAS_AREAS },
+  // ── Mantenimiento
+  { prefijo: "/api/equipos", roles: ["admin", "mantenimiento"] },
+  { prefijo: "/api/vehiculos", roles: ["admin", "mantenimiento"] },
+  { prefijo: "/api/mantenimiento", roles: ["admin", "mantenimiento"] },
+  // ── Facturación de OT
+  { prefijo: "/api/facturacion", roles: ["admin", "logistica", "contabilidad"] },
+];
+
+const METODOS_ESCRITURA = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+// ¿El usuario puede ejecutar esta ESCRITURA de API? (los GET no pasan por acá)
+export function puedeEscribirApi(
+  roles: string[] | null | undefined,
+  pathname: string,
+  method: string,
+): boolean {
+  if (!METODOS_ESCRITURA.has(method.toUpperCase())) return true;
+  const r = roles ?? [];
+  if (r.includes("admin")) return true;
+  let regla: ReglaApi | null = null;
+  let especificidad = -1;
+  for (const it of REGLAS_ESCRITURA_API) {
+    const matchPrefijo = pathname === it.prefijo || pathname.startsWith(it.prefijo + "/");
+    if (!matchPrefijo) continue;
+    if (it.sufijo && !pathname.endsWith(it.sufijo)) continue;
+    const esp = it.prefijo.length + (it.sufijo?.length ?? 0);
+    if (esp > especificidad) { regla = it; especificidad = esp; }
+  }
+  if (!regla) return true;          // sin regla = default permitido
+  if (regla.roles === null) return true; // exento: manda el chequeo in-route
+  return regla.roles.some((rol) => r.includes(rol));
+}

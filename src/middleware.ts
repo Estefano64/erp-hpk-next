@@ -17,7 +17,7 @@ import { withAuth } from "next-auth/middleware";
 import type { NextRequestWithAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
 import { esTecnicoRestringido, rutaPermitidaTecnico } from "@/lib/tecnico-acceso";
-import { puedeVerRuta } from "@/lib/acceso-rutas";
+import { puedeVerRuta, puedeEscribirApi } from "@/lib/acceso-rutas";
 
 export default withAuth(
   function middleware(req: NextRequestWithAuth) {
@@ -27,11 +27,18 @@ export default withAuth(
       if (esTecnicoRestringido(roles) && !rutaPermitidaTecnico(path)) {
         return NextResponse.redirect(new URL("/dashboard", req.url));
       }
-      // Matriz de visibilidad por rol (acceso-rutas.ts). Igual que con el
-      // técnico: las APIs no se bloquean acá, cada endpoint valida lo suyo.
+      // Matriz de visibilidad por rol (acceso-rutas.ts).
       if (!puedeVerRuta(roles, path)) {
         return NextResponse.redirect(new URL("/dashboard", req.url));
       }
+    } else if (!puedeEscribirApi(roles, path, req.method)) {
+      // Gating de escritura por rol (fase 2, acceso-rutas.ts). Los GET y los
+      // endpoints exentos (aprobaciones, subrutas del técnico) no pasan por
+      // acá; los chequeos in-route existentes siguen aplicando después.
+      return NextResponse.json(
+        { error: "Tu rol no tiene permiso para esta acción" },
+        { status: 403 },
+      );
     }
     return NextResponse.next();
   },
