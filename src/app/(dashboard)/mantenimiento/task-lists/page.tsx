@@ -1,15 +1,35 @@
 "use client";
 
+// Task Lists de Mantenimiento — vista principal por GRUPO (Máquina + Pauta).
+//
+// Cada fila del listado principal representa un GRUPO virtual (máquina del
+// taller + actividad PM1..PM4). El grupo agrega N tareas (TaskList) y M
+// ítems (TaskListItem). Al abrir un grupo, el usuario navega a:
+//   - Tareas         → /mantenimiento/task-lists/grupo/{máquina}/{PM}/tareas
+//   - Requerimientos → /mantenimiento/task-lists/grupo/{máquina}/{PM}/requerimientos
+//
+// Espejo directo del patrón de Códigos Estratégicos → Operaciones / Template
+// requerimientos: mismo look, mismas acciones por fila, edición inline en las
+// sub-páginas. La importación por Excel se conserva como vía alterna de carga
+// masiva (reemplaza todo el catálogo).
+//
+// La agregación por grupo se hace client-side sobre los TaskList devueltos
+// por /api/mantenimiento/task-lists (paginación grande, limit=1000). Si el
+// volumen crece, mover al endpoint /grupos server-side.
+
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import {
   Typography, Table, Button, Input, Select, Space, Tag, Modal, App,
-  Row, Col, Card, Upload, Tooltip,
+  Row, Col, Card, Upload,
 } from "antd";
 import {
-  ToolOutlined, SearchOutlined, ReloadOutlined, UploadOutlined, InboxOutlined,
+  SearchOutlined, ReloadOutlined, UploadOutlined, InboxOutlined, EyeOutlined,
+  ToolOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import type { UploadFile } from "antd/es/upload/interface";
+import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import {
   numeracionColumn,
@@ -22,6 +42,7 @@ import {
   filtroPorColumna,
   usePersistedState,
   useTablaFiltrada,
+  useAbortableFetch,
 } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
@@ -52,57 +73,63 @@ interface TaskListRow {
   items: TaskListItem[];
 }
 
-const TIPO_COLOR: Record<string, string> = {
-  MAC: "blue",
-  CAD: "geekblue",
-  SER: "purple",
-};
+// Grupo virtual (Máquina + Pauta) — agrega N tareas + M ítems.
+interface Grupo {
+  key: string;                    // "máquina|actividad" — identidad estable
+  maquina_taller: string;
+  actividad_codigo: string;
+  tareas_count: number;
+  items_count: number;
+  responsables: string[];         // únicos, ordenados
+}
 
 export default function TaskListsPage() {
+  const router = useRouter();
   const { message, modal: antdModal } = App.useApp();
-  const screens = useResponsive();
+  const { screens } = useResponsive();
 
   const [rows, setRows] = useState<TaskListRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
 
-  // Filtros persistidos
-  const [search, setSearch] = usePersistedState<string>("task-lists-search", "");
-  const [maquinaFiltro, setMaquinaFiltro] = usePersistedState<string>("task-lists-maquina", "");
-  const [actividadFiltro, setActividadFiltro] = usePersistedState<string>("task-lists-actividad", "");
-  const [columnFilters, setColumnFilters] = usePersistedState<
-    Record<string, (string | number | boolean | null)[] | null>
-  >("task-lists-col-filters", {});
+  // Filtros persistidos.
+  const [search, setSearch] = usePersistedState<string>("task-lists-search-v2", "");
+  const [maquinaFiltro, setMaquinaFiltro] = usePersistedState<string>("task-lists-maquina-v2", "");
+  const [actividadFiltro, setActividadFiltro] = usePersistedState<string>("task-lists-actividad-v2", "");
 
-  // Catálogos para los selects de filtro
+  // Catálogos para los selects de filtro.
   const [maquinas, setMaquinas] = useState<string[]>([]);
   const [actividades, setActividades] = useState<string[]>([]);
 
-  // Modal de importar
+  // Modal de importar Excel.
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<UploadFile | null>(null);
   const [importing, setImporting] = useState(false);
 
   // ── Fetchers ────────────────────────────────────────────
+  const abortable = useAbortableFetch();
   const fetchData = useCallback(async () => {
+    const controller = abortable.start();
     setLoading(true);
     try {
       const qs = new URLSearchParams();
-      qs.set("limit", "1000");
+      qs.set("limit", "10000");
       if (search.trim()) qs.set("search", search.trim());
       if (maquinaFiltro) qs.set("maquina_taller", maquinaFiltro);
       if (actividadFiltro) qs.set("actividad_codigo", actividadFiltro);
-      const res = await fetch(`/api/mantenimiento/task-lists?${qs}`);
+      const res = await fetch(`/api/mantenimiento/task-lists?${qs}`, { signal: controller.signal });
       if (!res.ok) throw new Error("Error al cargar");
       const json = await res.json();
+      if (controller.signal.aborted) return;
       setRows(json.data || []);
     } catch (e) {
+      if (abortable.isAbort(e)) return;
       message.error((e as Error).message);
     } finally {
-      setLoading(false);
+      if (abortable.isCurrent(controller)) setLoading(false);
     }
-  }, [search, maquinaFiltro, actividadFiltro, message]);
+  }, [search, maquinaFiltro, actividadFiltro, message, abortable]);
 
   const fetchCatalogos = useCallback(async () => {
     try {
@@ -118,6 +145,40 @@ export default function TaskListsPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { fetchCatalogos(); }, [fetchCatalogos]);
+
+  // ── Agregación por grupo (máquina + actividad) ──────────
+  // Recorre las filas devueltas por el API y las agrupa por par
+  // (máquina, actividad). Suma tareas + ítems, junta responsables únicos.
+  const grupos: Grupo[] = useMemo(() => {
+    const map = new Map<string, Grupo>();
+    for (const r of rows) {
+      const key = `${r.maquina_taller}|${r.actividad_codigo}`;
+      const existing = map.get(key);
+      if (existing) {
+        existing.tareas_count += 1;
+        existing.items_count += r.items.length;
+        if (r.usuario_responsable && !existing.responsables.includes(r.usuario_responsable)) {
+          existing.responsables.push(r.usuario_responsable);
+        }
+      } else {
+        map.set(key, {
+          key,
+          maquina_taller: r.maquina_taller,
+          actividad_codigo: r.actividad_codigo,
+          tareas_count: 1,
+          items_count: r.items.length,
+          responsables: r.usuario_responsable ? [r.usuario_responsable] : [],
+        });
+      }
+    }
+    const arr = [...map.values()];
+    arr.sort((a, b) => {
+      const m = a.maquina_taller.localeCompare(b.maquina_taller);
+      return m !== 0 ? m : a.actividad_codigo.localeCompare(b.actividad_codigo);
+    });
+    for (const g of arr) g.responsables.sort();
+    return arr;
+  }, [rows]);
 
   async function handleImportar() {
     if (!importFile) {
@@ -167,222 +228,196 @@ export default function TaskListsPage() {
     });
   }
 
-  // ── Columnas tabla principal ────────────────────────────
-  const allColumns: ColumnsType<TaskListRow> = useMemo(
+  function urlGrupo(g: Grupo, kind: "tareas" | "requerimientos") {
+    return `/mantenimiento/task-lists/grupo/${encodeURIComponent(g.maquina_taller)}/${encodeURIComponent(g.actividad_codigo)}/${kind}`;
+  }
+
+  // ── Columnas tabla principal (grupos) ───────────────────
+  const columns: ColumnsType<Grupo> = useMemo(
     () => [
-      numeracionColumn<TaskListRow>(),
+      numeracionColumn<Grupo>({ current: page, pageSize }),
       {
         key: "maquina_taller",
         title: "Máquina del taller",
         dataIndex: "maquina_taller",
-        width: 220,
-        fixed: "left",
-        ...filtroPorColumna<TaskListRow>(rows, "maquina_taller"),
+        width: 240,
+        sorter: (a, b) => a.maquina_taller.localeCompare(b.maquina_taller),
+        ...filtroPorColumna<Grupo>(grupos, "maquina_taller"),
+        render: (v: string) => <Tag color={brand.navy}>{v}</Tag>,
       },
       {
         key: "actividad_codigo",
-        title: "Actividad",
+        title: "Pauta (PM)",
         dataIndex: "actividad_codigo",
-        width: 100,
-        ...filtroPorColumna<TaskListRow>(rows, "actividad_codigo"),
+        width: 120,
+        sorter: (a, b) => a.actividad_codigo.localeCompare(b.actividad_codigo),
+        ...filtroPorColumna<Grupo>(grupos, "actividad_codigo"),
         render: (v: string) => <Tag color="cyan">{v}</Tag>,
       },
       {
-        key: "descripcion",
-        title: "Descripción de la tarea",
-        dataIndex: "descripcion",
-        width: 450,
+        key: "responsables",
+        title: "Responsable(s)",
+        width: 180,
+        render: (_: unknown, g: Grupo) =>
+          g.responsables.length > 0
+            ? g.responsables.join(", ")
+            : <Text type="secondary">—</Text>,
       },
       {
-        key: "usuario_responsable",
-        title: "Responsable",
-        dataIndex: "usuario_responsable",
-        width: 140,
-        ...filtroPorColumna<TaskListRow>(rows, "usuario_responsable"),
-        render: (v: string | null) => v || <Text type="secondary">—</Text>,
+        key: "tareas_count",
+        title: "Tareas",
+        width: 90,
+        align: "center",
+        sorter: (a, b) => a.tareas_count - b.tareas_count,
+        render: (_: unknown, g) => <Tag color="blue">{g.tareas_count}</Tag>,
       },
       {
         key: "items_count",
-        title: "Ítems",
-        width: 80,
+        title: "Requerimientos",
+        width: 130,
         align: "center",
-        render: (_: unknown, r) => <Tag>{r.items.length}</Tag>,
+        sorter: (a, b) => a.items_count - b.items_count,
+        render: (_: unknown, g) => <Tag color="purple">{g.items_count}</Tag>,
+      },
+      {
+        key: "acciones",
+        title: "Acciones",
+        width: 130,
+        align: "center",
+        render: (_: unknown, g: Grupo) => (
+          <Space size="small">
+            <Button
+              type="text"
+              icon={<ToolOutlined />}
+              title="Ver / editar tareas"
+              onClick={() => router.push(urlGrupo(g, "tareas"))}
+            />
+            <Button
+              type="text"
+              icon={<InboxOutlined />}
+              title="Ver / editar template de requerimientos"
+              onClick={() => router.push(urlGrupo(g, "requerimientos"))}
+            />
+            <Button
+              type="text"
+              icon={<EyeOutlined />}
+              title="Ver detalle (tareas)"
+              onClick={() => router.push(urlGrupo(g, "tareas"))}
+            />
+          </Space>
+        ),
       },
     ],
-    [rows],
+    [grupos, page, pageSize, router],
   );
 
-  // Filas visibles tras los filtros de columna — `rows` ya viene filtrado
-  // server-side por búsqueda/máquina/actividad, así que esto captura todo.
-  const { filtradas, captureFilteredRows } = useTablaFiltrada(rows);
-
-  const { ocultas, setOcultas } = useColumnasOcultas("task-lists-cols-ocultas", []);
-  const { columnas, components, TableDragWrapper } = useColumnasRedimensionables(
-    allColumns,
-    "task-lists-tabla",
-    { data: rows },
-  );
-  const visibles = visibleColumns(columnas, ocultas);
-
-  // ── Render expandible ─────────────────────────────────
-  const renderItemsExpanded = (row: TaskListRow) => {
-    if (!row.items.length) {
-      return <Text type="secondary">Sin ítems registrados.</Text>;
-    }
-    const cols: ColumnsType<TaskListItem> = [
-      { key: "item", title: "#", dataIndex: "item", width: 50, align: "center" },
-      {
-        key: "tipo", title: "Tipo", dataIndex: "tipo", width: 70,
-        render: (t: string) => <Tag color={TIPO_COLOR[t] ?? "default"}>{t}</Tag>,
-      },
-      {
-        key: "material", title: "Material / Servicio", width: 260,
-        render: (_: unknown, i: TaskListItem) => {
-          if (i.material) {
-            return (
-              <span>
-                <Text strong>{i.material.codigo}</Text> · {i.material.descripcion}
-              </span>
-            );
-          }
-          return i.ref_descripcion || <Text type="secondary">—</Text>;
-        },
-      },
-      {
-        key: "np", title: "N° Parte", dataIndex: "np", width: 130,
-        render: (v: string | null) => v || <Text type="secondary">—</Text>,
-      },
-      {
-        key: "requerimiento", title: "Cantidad", dataIndex: "requerimiento", width: 90, align: "right",
-        render: (v: number | string | null) => v != null ? String(v) : <Text type="secondary">—</Text>,
-      },
-      {
-        key: "um", title: "UM", dataIndex: "um", width: 60, align: "center",
-        render: (v: string | null) => v || <Text type="secondary">—</Text>,
-      },
-      {
-        key: "texto", title: "Notas", dataIndex: "texto",
-        render: (v: string | null) => v || <Text type="secondary">—</Text>,
-      },
-      {
-        key: "precio", title: "Precio ref.", dataIndex: "precio", width: 100, align: "right",
-        render: (v: number | string | null) => v != null ? String(v) : <Text type="secondary">—</Text>,
-      },
-    ];
-    return (
-      <Table<TaskListItem>
-        rowKey="id"
-        size="small"
-        columns={cols}
-        dataSource={row.items}
-        pagination={false}
-        scroll={{ x: 900 }}
-      />
-    );
-  };
+  const { filtradas, captureFilteredRows } = useTablaFiltrada(grupos);
+  const { ocultas, setOcultas } = useColumnasOcultas("task-lists-cols-ocultas-v3", []);
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
+    useColumnasRedimensionables<Grupo>(columns, "task-lists-cols-widths-v3", { data: grupos });
 
   return (
-    <div style={{ padding: 16 }}>
-      <Title level={3} style={{ marginTop: 0 }}>
-        <ToolOutlined /> Task Lists de Mantenimiento del Taller
-      </Title>
-      <Text type="secondary">
-        Catálogo de tareas de mantenimiento por máquina y pauta (MP1, MP2, MP3, MP4),
-        con la lista de materiales / cargos directos / servicios requeridos.
-      </Text>
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+        <Title level={3} style={{ margin: 0 }}>
+          Task Lists de Mantenimiento
+        </Title>
+        <Space wrap>
+          <ColumnasToggleButton<Grupo>
+            columns={columns}
+            ocultas={ocultas}
+            setOcultas={setOcultas}
+            obligatorias={["__num", "maquina_taller", "acciones"]}
+          />
+          <Button onClick={resetAnchos}>Restablecer anchos</Button>
+          <ExportarExcelButton<Grupo>
+            endpoint="/api/mantenimiento/task-lists"
+            filename="TaskLists-Grupos"
+            currentRows={filtradas}
+            tablaLayout={{ ocultas }}
+            columns={[
+              { key: "maquina_taller", label: "Máquina del taller", value: (r) => r.maquina_taller },
+              { key: "actividad_codigo", label: "Pauta", value: (r) => r.actividad_codigo },
+              { key: "responsables", label: "Responsables", value: (r) => r.responsables.join(", ") },
+              { key: "tareas_count", label: "Tareas", value: (r) => r.tareas_count },
+              { key: "items_count", label: "Requerimientos", value: (r) => r.items_count },
+            ]}
+          >
+            Descargar Grupos
+          </ExportarExcelButton>
+          <Button
+            type="primary"
+            icon={<UploadOutlined />}
+            onClick={() => setImportOpen(true)}
+          >
+            Importar Excel
+          </Button>
+        </Space>
+      </div>
 
-      <Card size="small" style={{ marginTop: 16, marginBottom: 8 }}>
-        <Row gutter={[8, 8]} align="middle">
-          <Col xs={24} md={7}>
+      <Card styles={{ body: { padding: 16 } }} style={{ marginBottom: 16 }}>
+        <Row gutter={[12, 12]}>
+          <Col xs={24} sm={12} md={8}>
             <Input
-              allowClear
-              placeholder="Buscar por descripción, máquina, responsable"
+              placeholder="Buscar por descripción, máquina o responsable..."
               prefix={<SearchOutlined />}
+              allowClear
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             />
           </Col>
-          <Col xs={24} md={6}>
+          <Col xs={12} sm={6} md={5}>
             <Select
-              allowClear
-              showSearch
-              optionFilterProp="label"
               placeholder="Máquina del taller"
+              allowClear showSearch optionFilterProp="label"
               style={{ width: "100%" }}
               value={maquinaFiltro || undefined}
-              onChange={(v) => setMaquinaFiltro(v || "")}
+              onChange={(v) => { setMaquinaFiltro(v ?? ""); setPage(1); }}
               options={maquinas.map((m) => ({ value: m, label: m }))}
             />
           </Col>
-          <Col xs={24} md={4}>
+          <Col xs={12} sm={6} md={4}>
             <Select
-              allowClear
-              placeholder="Actividad (MP1..)"
+              placeholder="Pauta (PM1..)"
+              allowClear showSearch optionFilterProp="label"
               style={{ width: "100%" }}
               value={actividadFiltro || undefined}
-              onChange={(v) => setActividadFiltro(v || "")}
+              onChange={(v) => { setActividadFiltro(v ?? ""); setPage(1); }}
               options={actividades.map((a) => ({ value: a, label: a }))}
             />
           </Col>
-          <Col xs={24} md={7}>
+          <Col xs={24} sm={12} md={4}>
             <Space wrap>
-              <Button
-                type="primary"
-                icon={<UploadOutlined />}
-                onClick={() => setImportOpen(true)}
-              >
-                Importar Excel
+              <Button icon={<ReloadOutlined />} onClick={() => { setSearch(""); setMaquinaFiltro(""); setActividadFiltro(""); setPage(1); }}>
+                Limpiar
               </Button>
-              <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>
+              <Button onClick={fetchData} loading={loading}>
                 Refrescar
               </Button>
-              <ColumnasToggleButton
-                columns={allColumns}
-                ocultas={ocultas}
-                setOcultas={setOcultas}
-              />
-              <ExportarExcelButton<TaskListRow>
-                endpoint="/api/mantenimiento/task-lists"
-                filename="TaskLists"
-                currentRows={filtradas}
-                tablaLayout={{ ocultas }}
-                columns={[
-                  { key: "maquina_taller", label: "Máquina del taller", value: (r) => r.maquina_taller },
-                  { key: "actividad_codigo", label: "Actividad", value: (r) => r.actividad_codigo },
-                  { key: "descripcion", label: "Descripción de la tarea", value: (r) => r.descripcion },
-                  { key: "usuario_responsable", label: "Responsable", value: (r) => r.usuario_responsable ?? "" },
-                  { key: "items_count", label: "Ítems", value: (r) => r.items.length },
-                ]}
-              />
             </Space>
           </Col>
         </Row>
       </Card>
 
       <TableDragWrapper>
-        <Table<TaskListRow>
-          rowKey="id"
+        <Table<Grupo>
+          rowKey="key"
           size="small"
           loading={loading}
-          columns={visibles}
-          components={components}
-          dataSource={rows}
+          columns={visibleColumns(columnsResizable, ocultas)}
+          components={tableComponents}
+          dataSource={grupos}
           scroll={{ x: 1100 }}
-          expandable={{
-            expandedRowRender: renderItemsExpanded,
-            rowExpandable: (r) => r.items.length > 0,
-          }}
+          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
           pagination={paginacionEstandar({
             current: page,
             pageSize,
-            total: rows.length,
+            total: grupos.length,
             onChange: (p, s) => { setPage(p); setPageSize(s); },
-            label: "task lists",
+            label: "grupos",
           })}
-          onChange={(_p, filters, _s, extra) => {
-            // Capturar las filas filtradas para la exportación a Excel.
+          onChange={(_p, _f, _s, extra) => {
             captureFilteredRows(extra);
-            setColumnFilters(filters as Record<string, (string | number | boolean | null)[] | null>);
           }}
         />
       </TableDragWrapper>
@@ -395,7 +430,7 @@ export default function TaskListsPage() {
         onOk={handleImportar}
         okText={importing ? "Importando..." : "Importar"}
         okButtonProps={{ loading: importing, disabled: !importFile }}
-        width={modalWidth(screens.screens, 600)}
+        width={modalWidth(screens, 600)}
         destroyOnHidden
       >
         <Text type="secondary">
@@ -414,7 +449,7 @@ export default function TaskListsPage() {
                 originFileObj: file as unknown as File,
                 status: "done",
               } as UploadFile);
-              return false; // no auto-upload
+              return false;
             }}
             onRemove={() => setImportFile(null)}
             fileList={importFile ? [importFile] : []}
