@@ -222,6 +222,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
         oc_cantidad?: string | number | null;
         oc_precio_unitario?: string | number | null;
         oc_unidad_medida?: string | null;
+        fecha_entrega_esperada?: string | Date | null;
       };
       const descCruda = rAny.oc_descripcion
         ?? r.material?.descripcion
@@ -250,6 +251,12 @@ export async function GET(_req: NextRequest, { params }: Params) {
         : "";
       const colOt = otCodigoItem || np || codigo;
 
+      // Fecha per-item (la que el usuario editó en /compras/[id]/editar,
+      // columna "F. Entrega") tiene prioridad; fallback a la fecha global de
+      // la OC (compra.fecha_entrega_esperada). Nunca leemos fecha_requerida
+      // del req original — ese es el compromiso con el creador del req y no
+      // se debe pisar al negociar la OC.
+      const fechaItem = rAny.fecha_entrega_esperada ?? compra.fecha_entrega_esperada;
       itemsRows.push(`
         <tr>
           <td class="center">${idx + 1}</td>
@@ -257,7 +264,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
           <td class="center">${esc(colOt)}</td>
           <td class="desc">${esc(descripcion)}</td>
           <td class="center">${esc(um)}</td>
-          <td class="center">${fmtDate(compra.fecha_entrega_esperada) || "-"}</td>
+          <td class="center">${fmtDate(fechaItem) || "-"}</td>
           <td class="right">${pu ? pu.toFixed(2) : "-"}</td>
           <td class="right">${tot ? tot.toFixed(2) : "-"}</td>
         </tr>

@@ -45,6 +45,11 @@ interface Item {
     codigo_reparacion: { codigo: string; descripcion: string } | null;
   } | null;
   _cant_pendiente: number;
+  // Cantidad que efectivamente llegó / está reservada para ESTA OT (deriva
+  // del status de la OC padre, no del stock global del material). El backend
+  // lo agregó para desacoplar el display de Stock alm del catálogo — otras
+  // OTs pueden haber consumido lo que llegó para ésta.
+  _cant_llegada?: number;
   _puede_despachar: boolean;
   _po_status: string | null;
   _po_recibida: boolean;
@@ -261,7 +266,8 @@ export default function DespachosPage() {
               { key: "cantidad", label: "Pedido", value: (r) => Number(r.cantidad) },
               { key: "unidad", label: "Unidad", value: (r) => r.unidad_medida ?? "" },
               { key: "pendiente", label: "Pendiente", value: (r) => r._cant_pendiente },
-              { key: "stock", label: "Stock alm.", value: (r) => Number(r.material?.stock_actual ?? 0) },
+              { key: "stock", label: "Stock alm. (llegado para OT)", value: (r) => Number(r._cant_llegada ?? 0) },
+              { key: "stock_cat", label: "Stock catálogo (global)", value: (r) => Number(r.material?.stock_actual ?? 0) },
               {
                 key: "origen", label: "Origen / PO",
                 value: (r) => !r.po_id
@@ -490,13 +496,25 @@ function GrupoCard({
       render: (_, r) => <span style={{ fontWeight: 600 }}>{r._cant_pendiente.toLocaleString()}</span>,
     },
     {
-      key: "stock", title: "Stock alm.", width: 90, align: "right",
+      key: "stock", title: "Stock alm.", width: 100, align: "right",
       render: (_, r) => {
         // Items ya consumidos (de almacén u OC abierta): el stock ya salió o
         // está reservado — no aplica mostrar stock catálogo del material.
         if (r._es_consumido_almacen || r._es_consumido_oc_abierta) return <Text type="secondary">—</Text>;
-        const st = Number(r.material?.stock_actual ?? 0);
-        return <span style={{ color: r._puede_despachar ? "#52c41a" : "#cf1322", fontWeight: 600 }}>{st}</span>;
+        // "Lo que llegó para esta OT" — deriva del status de la OC padre.
+        // Es distinto del stock global del material (que puede estar más bajo
+        // porque otras OTs ya consumieron, o más alto por stock previo no
+        // asignado a nadie). El tooltip muestra el stock catálogo para que el
+        // almacenero sepa si conviene consumir de almacén general.
+        const llegado = Number(r._cant_llegada ?? 0);
+        const stockCat = Number(r.material?.stock_actual ?? 0);
+        return (
+          <Tooltip title={`Stock catálogo del material: ${stockCat}`}>
+            <span style={{ color: r._puede_despachar ? "#52c41a" : "#cf1322", fontWeight: 600 }}>
+              {llegado}
+            </span>
+          </Tooltip>
+        );
       },
     },
     {
