@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { getAuditUser } from "@/lib/audit";
 
 // GET — lista de task lists con filtros y paginación.
 // Filtros:
@@ -52,6 +54,53 @@ export async function GET(req: NextRequest) {
     ]);
 
     return NextResponse.json({ data, total, page });
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Error" },
+      { status: 500 },
+    );
+  }
+}
+
+// POST — crea una nueva tarea (TaskList) dentro de un grupo (máquina + PM).
+// Mismo patrón que /api/operaciones-cod-rep: el caller manda la clave del
+// grupo (máquina + actividad) y el body con los datos de la nueva tarea.
+const CreateSchema = z.object({
+  maquina_taller: z.string().trim().min(1).max(150),
+  actividad_codigo: z.string().trim().min(1).max(20),
+  descripcion: z.string().trim().min(1),
+  usuario_responsable: z.string().trim().max(100).optional().nullable(),
+  equipo_codigo: z.string().trim().max(50).optional().nullable(),
+});
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const parsed = CreateSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Validación", detail: parsed.error.flatten() },
+        { status: 400 },
+      );
+    }
+    const d = parsed.data;
+    const usuario = (await getAuditUser(req)) ?? "sistema";
+    const created = await prisma.taskList.create({
+      data: {
+        maquina_taller: d.maquina_taller,
+        actividad_codigo: d.actividad_codigo,
+        descripcion: d.descripcion,
+        usuario_responsable: d.usuario_responsable ?? null,
+        equipo_codigo: d.equipo_codigo ?? null,
+        usuario_crea: usuario,
+        usuario_actualiza: usuario,
+        activo: true,
+      },
+      include: {
+        items: { orderBy: { item: "asc" } },
+      },
+    });
+    return NextResponse.json({ data: created }, { status: 201 });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Error" },

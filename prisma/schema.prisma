@@ -1145,6 +1145,11 @@ model OrdenTrabajoInterna {
   fecha_aprobacion          DateTime?          @db.Timestamp(3)
   usuario_aprueba           String?            @db.VarChar(150)
   comentario_aprobacion     String?            @db.VarChar(500)
+  // Checklist de tareas ejecutadas — mapa { [task_list_id]: { done, fecha,
+  // usuario, obs } } para marcar qué tareas del task list ya se completaron.
+  // Se rellena desde el tab Tareas del detalle de la OT. Se guarda como JSON
+  // en la OT para evitar una tabla adicional (el volumen por OT es bajo).
+  tareas_checklist          Json?
   version                   Int                @default(1)
   estrategia                Estrategia?        @relation(fields: [estrategia_id], references: [estrategia_id])
   equipo                    Equipo?            @relation(fields: [equipo_codigo], references: [codigo])

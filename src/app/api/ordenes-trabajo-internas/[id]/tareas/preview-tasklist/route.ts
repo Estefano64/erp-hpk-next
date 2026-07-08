@@ -79,12 +79,13 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
         actividad_codigo: { in: cascada },
         activo: true,
       },
-      select: { actividad_codigo: true, descripcion: true },
+      select: { id: true, actividad_codigo: true, descripcion: true },
       // PM1 primero, después PM2, etc. Dentro de cada nivel, orden por id (insert order).
       orderBy: [{ actividad_codigo: "asc" }, { id: "asc" }],
     });
 
     const tareas = taskLists.map((tl) => ({
+      task_list_id: tl.id,
       actividad_codigo: tl.actividad_codigo,
       descripcion: tl.descripcion,
     }));

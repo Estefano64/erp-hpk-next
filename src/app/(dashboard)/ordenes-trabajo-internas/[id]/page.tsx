@@ -5,7 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   Alert, Button, Card, Tag, Space, Spin, Tabs, Row, Col, Form, Input, Select,
-  DatePicker, App, Typography, Tooltip, Modal, Table, Empty,
+  DatePicker, App, Typography, Tooltip, Modal, Table, Empty, Checkbox, Progress,
 } from "antd";
 import type { FormInstance } from "antd";
 import { useEditLock } from "@/lib/useEditLock";
@@ -1177,15 +1177,32 @@ function DetalleTab({ ot, editing, form, catalogos, onDirty }: {
 // requerimientos, se usa el botón "Aplicar Task List" del tab Requerimientos
 // (que invoca /requerimientos/aplicar-tasklist).
 // ───────────────────────────────────────────────────────────────────────────
+interface TareaPreview {
+  task_list_id: number;
+  actividad_codigo: string;
+  descripcion: string;
+}
+interface ChecklistEntry {
+  done?: boolean;
+  fecha?: string | null;
+  usuario?: string | null;
+  obs?: string | null;
+}
+type Checklist = Record<string, ChecklistEntry>;
+
 function TareasTab({ ot }: {
   ot: OTInternaDetalle;
   editing: boolean;
   form: ReturnType<typeof Form.useForm<EditValues>>[0];
 }) {
   const { message } = App.useApp();
-  const [tareas, setTareas] = useState<Array<{ actividad_codigo: string; descripcion: string }>>([]);
+  const [tareas, setTareas] = useState<TareaPreview[]>([]);
   const [cascada, setCascada] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [checklist, setChecklist] = useState<Checklist>({});
+  // IDs con guardado pendiente / en curso — para deshabilitar el checkbox
+  // mientras se sincroniza y evitar double-toggle.
+  const [saving, setSaving] = useState<Set<number>>(new Set());
 
   // El nivel PM está en `actividad_codigo` — `codigo` es el ID arbitrario
   // tipo "EST-0059". Convención oficial: PM1/PM2/PM3/PM4.
@@ -1197,27 +1214,79 @@ function TareasTab({ ot }: {
     if (!puedeListar) {
       setTareas([]);
       setCascada([]);
+      setChecklist({});
       return;
     }
     let cancelado = false;
     setLoading(true);
-    fetch(`/api/ordenes-trabajo-internas/${ot.id}/tareas/preview-tasklist`)
-      .then(async (r) => {
+    // Cargamos en paralelo el preview del catálogo + el estado del checklist
+    // guardado en la OT. Se mergean por task_list_id.
+    Promise.all([
+      fetch(`/api/ordenes-trabajo-internas/${ot.id}/tareas/preview-tasklist`).then(async (r) => {
         if (!r.ok) {
           const j = await r.json().catch(() => ({}));
           throw new Error(j.error ?? "Error al cargar tareas");
         }
         return r.json();
-      })
-      .then((j) => {
+      }),
+      fetch(`/api/ordenes-trabajo-internas/${ot.id}/tareas/checklist`).then(async (r) => {
+        if (!r.ok) return { data: {} };
+        return r.json();
+      }),
+    ])
+      .then(([preview, chk]) => {
         if (cancelado) return;
-        setTareas(j.tareas ?? []);
-        setCascada(j.cascada ?? []);
+        setTareas(preview.tareas ?? []);
+        setCascada(preview.cascada ?? []);
+        setChecklist(chk.data ?? {});
       })
       .catch((e) => { if (!cancelado) message.error(e instanceof Error ? e.message : "Error"); })
       .finally(() => { if (!cancelado) setLoading(false); });
     return () => { cancelado = true; };
   }, [ot.id, puedeListar, ot.equipo_codigo, estrCodigo, message]);
+
+  async function toggleTarea(taskListId: number, done: boolean) {
+    // Optimistic: pintamos el cambio local, luego confirmamos con el server.
+    // Si falla, revertimos.
+    const prev = checklist[taskListId] ?? {};
+    const optimistic: ChecklistEntry = {
+      done,
+      fecha: done ? (prev.fecha ?? new Date().toISOString()) : null,
+      usuario: done ? (prev.usuario ?? "…") : null,
+      obs: prev.obs ?? null,
+    };
+    setChecklist((c) => ({ ...c, [taskListId]: optimistic }));
+    setSaving((s) => new Set(s).add(taskListId));
+    try {
+      const res = await fetch(`/api/ordenes-trabajo-internas/${ot.id}/tareas/checklist`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [taskListId]: { done } }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error ?? "Error al guardar");
+      }
+      const j = await res.json();
+      // El server devuelve el checklist completo tras el merge — con
+      // fecha/usuario reales estampados. Actualizamos con ese.
+      setChecklist(j.data ?? {});
+    } catch (e) {
+      // Revertir
+      setChecklist((c) => ({ ...c, [taskListId]: prev }));
+      message.error(e instanceof Error ? e.message : "Error");
+    } finally {
+      setSaving((s) => {
+        const next = new Set(s);
+        next.delete(taskListId);
+        return next;
+      });
+    }
+  }
+
+  const totalDone = tareas.reduce((n, t) => n + (checklist[t.task_list_id]?.done ? 1 : 0), 0);
+  const totalTareas = tareas.length;
+  const pct = totalTareas > 0 ? Math.round((totalDone / totalTareas) * 100) : 0;
 
   if (!puedeListar) {
     return (
@@ -1237,7 +1306,6 @@ function TareasTab({ ot }: {
     );
   }
 
-  // Vista única (sin edit mode): tabla con las tareas del PM seleccionado.
   return (
     <Card size="small">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 12, flexWrap: "wrap" }}>
@@ -1256,15 +1324,43 @@ function TareasTab({ ot }: {
           Para generar los requerimientos de estas tareas, usá el botón <b>Aplicar Task List</b> en el tab Requerimientos.
         </Text>
       </div>
-      <Table
+
+      {totalTareas > 0 && (
+        <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <Text strong>
+            {totalDone} / {totalTareas} tareas completadas
+          </Text>
+          <Progress
+            percent={pct}
+            size="small"
+            style={{ flex: 1, minWidth: 180, maxWidth: 400 }}
+            status={pct === 100 ? "success" : "active"}
+          />
+        </div>
+      )}
+
+      <Table<TareaPreview>
         size="small"
         loading={loading}
-        rowKey={(_r, idx) => String(idx)}
+        rowKey={(r) => String(r.task_list_id)}
         dataSource={tareas}
         pagination={false}
-        scroll={{ x: 700 }}
+        scroll={{ x: 800 }}
         locale={{ emptyText: "No hay tareas en el catálogo para este equipo + PM" }}
         columns={[
+          {
+            title: "", key: "check", width: 46, align: "center",
+            render: (_v, r) => {
+              const state = checklist[r.task_list_id];
+              return (
+                <Checkbox
+                  checked={!!state?.done}
+                  disabled={saving.has(r.task_list_id)}
+                  onChange={(e) => toggleTarea(r.task_list_id, e.target.checked)}
+                />
+              );
+            },
+          },
           {
             title: "#", key: "idx", width: 50, align: "right",
             render: (_v, _r, i) => <Text type="secondary">{i + 1}</Text>,
@@ -1275,7 +1371,42 @@ function TareasTab({ ot }: {
           },
           {
             title: "Tarea", dataIndex: "descripcion", key: "descripcion",
-            render: (v: string) => <span style={{ fontSize: 13 }}>{v}</span>,
+            render: (v: string, r) => {
+              const state = checklist[r.task_list_id];
+              const done = !!state?.done;
+              return (
+                <span
+                  style={{
+                    fontSize: 13,
+                    textDecoration: done ? "line-through" : undefined,
+                    color: done ? brand.textSecondary : undefined,
+                  }}
+                >
+                  {v}
+                </span>
+              );
+            },
+          },
+          {
+            title: "Completada", key: "meta", width: 220,
+            render: (_v, r) => {
+              const state = checklist[r.task_list_id];
+              if (!state?.done) return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
+              return (
+                <div style={{ fontSize: 11 }}>
+                  <div>
+                    <Text type="secondary">Por:</Text>{" "}
+                    <b>{state.usuario ?? "—"}</b>
+                  </div>
+                  {state.fecha && (
+                    <div>
+                      <Text type="secondary">El:</Text>{" "}
+                      {dayjs(state.fecha).format("DD/MM/YYYY HH:mm")}
+                    </div>
+                  )}
+                </div>
+              );
+            },
           },
         ]}
       />
