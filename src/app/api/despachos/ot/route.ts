@@ -147,14 +147,26 @@ export async function GET(_req: NextRequest) {
           && cantPendiente <= 0
           && it.status_oc_codigo !== "ENTREGADO"
           && it.status_oc_codigo !== "ANULADO";
+        // Caso MAC con OC ya recibida pero sin despachar al técnico todavía:
+        // cantLlegada > 0 y cant_pendiente = 0, pero el item sigue en
+        // estado PROCESO/INCOMPLETO/COMPLETO. Sin esta rama, el filtro de
+        // `_cant_pendiente > 0` lo sacaba de despachos y el almacenero no
+        // podía entregarlo al técnico. Espeja el patrón de esFreeOCRecibida.
+        const esMacLlegadoPendDespacho =
+          !esFree
+          && !yaConsumido
+          && cantLlegada > 0
+          && cantPendiente <= 0
+          && it.status_oc_codigo !== "ENTREGADO"
+          && it.status_oc_codigo !== "ANULADO";
         // Lógica de "puede despachar":
         //   - Ya consumido (almacén o OC abierta): siempre listo para entrega.
         //   - FREE con OC recibida: listo (el stock ya está físicamente).
         //   - Consumido legacy (pend=0): listo (solo cierre formal).
         //   - MAC desde OC: hay stock suficiente en almacén.
         //   - FREE (sin material) normal: la OC asociada ya fue recibida.
-        const puedeDespachar = (cantPendiente > 0 || esFreeOCRecibida || esConsumidoPendDespacho) && (
-          yaConsumido || esFreeOCRecibida || esConsumidoPendDespacho
+        const puedeDespachar = (cantPendiente > 0 || esFreeOCRecibida || esConsumidoPendDespacho || esMacLlegadoPendDespacho) && (
+          yaConsumido || esFreeOCRecibida || esConsumidoPendDespacho || esMacLlegadoPendDespacho
             ? true
             : esFree
               ? poRecibida
@@ -182,6 +194,7 @@ export async function GET(_req: NextRequest) {
           _es_consumido_oc_abierta: esConsumidoOCAbierta,
           _es_free_oc_recibida: esFreeOCRecibida,
           _es_consumido_pend_despacho: esConsumidoPendDespacho,
+          _es_mac_llegado_pend_despacho: esMacLlegadoPendDespacho,
           _cant_pendiente: cantPendiente,
           // Cuánto llegó para ESTA OT (basado en status de la OC, no en el
           // stock global del material). Es lo que la columna "Stock alm."
@@ -194,7 +207,12 @@ export async function GET(_req: NextRequest) {
           _motivo_pendiente: motivoPendiente,
         };
       })
-      .filter((it) => it._cant_pendiente > 0 || it._es_free_oc_recibida || it._es_consumido_pend_despacho);
+      .filter((it) =>
+        it._cant_pendiente > 0
+        || it._es_free_oc_recibida
+        || it._es_consumido_pend_despacho
+        || it._es_mac_llegado_pend_despacho,
+      );
 
     type ItemConCalc = (typeof pendientes)[number];
 
