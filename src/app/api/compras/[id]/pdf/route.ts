@@ -151,19 +151,28 @@ export async function GET(_req: NextRequest, { params }: Params) {
       ),
     ];
     const otReferencias = otCodigosFormateados.join(", ");
-    // Nombre del documento al guardar como PDF: "{NumeroOC}-{OT}-{PROVEEDOR}"
-    // Sanitizar para que sea un nombre de archivo válido (sin /, \, :, espacios consecutivos).
-    const ocFile = compra.numero_po.replace(/[^A-Za-z0-9\-_]/g, "");
-    const otFile = otCodigosFormateados
-      .join("_")
-      .replace(/[^A-Za-z0-9\-_]/g, "");
-    const provFile = (compra.proveedor?.nombre_comercial ?? compra.proveedor?.razon_social ?? "")
-      .toUpperCase()
-      .normalize("NFD").replace(/[̀-ͯ]/g, "")
-      .replace(/\s+/g, "_")
-      .replace(/[^A-Z0-9\-_]/g, "")
-      .slice(0, 40);
-    const tituloDocumento = [ocFile, otFile || "SinOT", provFile || "SinProv"].join("-");
+    // Nombre del documento al guardar como PDF.
+    // Formato pedido por el usuario (2026-07): "OC {numero_po} OT {otCodigos} {PROVEEDOR}"
+    // — con espacios reales, sin guiones bajos ni guiones intermedios. Igual
+    // sanitizamos caracteres inválidos para nombres de archivo (/ \ : etc.)
+    // pero permitimos espacios.
+    const sanitizeNombreArchivo = (s: string) =>
+      s
+        .normalize("NFD").replace(/[̀-ͯ]/g, "") // saca acentos
+        .replace(/[\\/:*?"<>|]/g, "") // caracteres inválidos en Windows
+        .replace(/\s+/g, " ")
+        .trim();
+    const ocFile = sanitizeNombreArchivo(compra.numero_po);
+    const otFile = sanitizeNombreArchivo(otCodigosFormateados.join(" "));
+    const provFile = sanitizeNombreArchivo(
+      (compra.proveedor?.nombre_comercial ?? compra.proveedor?.razon_social ?? "").toUpperCase(),
+    ).slice(0, 40);
+    const partes = [
+      `OC ${ocFile}`,
+      otFile ? `OT ${otFile}` : "OT SinOT",
+      provFile || "SinProv",
+    ];
+    const tituloDocumento = partes.join(" ");
 
     // Campo "REQ" del header de la plantilla:
     //   - Si la OC tiene items de OT interna → mostrar el ÁREA del taller

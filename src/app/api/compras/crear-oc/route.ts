@@ -94,7 +94,14 @@ export async function POST(req: NextRequest) {
     // PDF como "Elaborado por" y matchee con la firma en /public/firmas/.
     // El campo `usuario` del body queda como fallback por compatibilidad.
     const usuarioSesion = await getAuditUser(req);
-    const usuario = usuarioSesion || d.usuario || "Logistica";
+    // Preferimos SIEMPRE el nombre real de la sesión. Solo caemos al
+    // `d.usuario` del body si además NO es el genérico "Logistica" (ese
+    // valor causaba que el PDF pintara la firma de Miriam vía alias, aunque
+    // el creador real fuera otro).
+    const bodyUsuarioLimpio = (typeof d.usuario === "string" && d.usuario.trim().toLowerCase() !== "logistica")
+      ? d.usuario
+      : null;
+    const usuario = usuarioSesion || bodyUsuarioLimpio || "Logistica";
 
     // Antes era "D26", ahora solo "26" (los 2 dígitos del año).
     const prefix = new Date().getFullYear().toString().slice(-2);
