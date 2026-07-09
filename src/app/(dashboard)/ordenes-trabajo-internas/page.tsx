@@ -46,6 +46,25 @@ function labelDeTaskList(t: {
   return `${t.maquina_taller} · ${t.actividad_codigo} · ${desc}`;
 }
 
+// Convención HPK: los niveles de mantenimiento preventivo son PM1..PM4
+// (Preventive Maintenance). En el catálogo histórico de estrategias
+// algunos registros quedaron como MP1..MP4 por typo. Normalizamos SOLO
+// en display sin tocar el dato guardado en BD.
+function normalizarPMLabel(s: string): string {
+  return s.replace(/\bMP([1-4])\b/gi, "PM$1");
+}
+
+// Periodicidad estándar HPK del preventivo por nivel:
+//   PM1 → 3 meses, PM2 → 6 meses, PM3 → 12 meses, PM4 → 24 meses.
+// Devuelve la etiqueta lista para pegar en la descripción de la OT, o
+// null si la cadena no contiene un nivel PM/MP identificable.
+function periodicidadPM(s: string): string | null {
+  const m = s.match(/\b(?:PM|MP)([1-4])\b/i);
+  if (!m) return null;
+  const meses: Record<number, string> = { 1: "3 meses", 2: "6 meses", 3: "12 meses", 4: "24 meses" };
+  return meses[Number(m[1])] ?? null;
+}
+
 // ─── Semana ISO ↔ string "YYYYWww" ─────────────────────────────────────────
 // Formato consistente con src/lib/emergencia-cascade.ts (sin guión entre año y W).
 // Aceptamos también "YYYY-Www" al parsear por compatibilidad.
@@ -1194,9 +1213,16 @@ export default function OrdenesTrabajoInternasPage() {
                         if (value == null) return;
                         const est = estrategias.find((e) => e.estrategia_id === value);
                         if (!est) return;
+                        // Descripción del PM normalizada (MP1..MP4 → PM1..PM4)
+                        // y la periodicidad en meses según el nivel:
+                        //   PM1 → 3 meses, PM2 → 6 meses, PM3 → 12 meses, PM4 → 24 meses.
+                        // Si no matchea un nivel PM, se queda solo con la descripción
+                        // normalizada + la hora actual (comportamiento previo).
+                        const descNorm = normalizarPMLabel(est.descripcion);
+                        const sufijo = periodicidadPM(est.descripcion) ?? dayjs().format("HH:mm");
                         form.setFieldValue(
                           "descripcion",
-                          `${est.codigo} — ${est.descripcion} - ${dayjs().format("HH:mm")}`,
+                          `${est.codigo} — ${descNorm} - ${sufijo}`,
                         );
                       }}
                       // AntD Select acepta o un array plano de {value,label}
@@ -1204,12 +1230,28 @@ export default function OrdenesTrabajoInternasPage() {
                       // TypeScript no se queje de la unión, casteamos a un
                       // tipo amplio aceptado por el componente.
                       options={(() => {
-                        const labelOf = (e: EstrategiaOption) => `${e.codigo} — ${e.descripcion}`;
+                        // Convención HPK: PM (Preventive Maintenance). En el
+                        // catálogo de estrategias históricamente se guardó
+                        // como "MP" por typo. Lo normalizamos SOLO en display
+                        // sin tocar el dato en BD.
+                        const labelOf = (e: EstrategiaOption) =>
+                          `${e.codigo} — ${normalizarPMLabel(e.descripcion)}`;
+                        // Reglas de visibilidad (decisión del user, 2026-07):
+                        //   - Si el equipo tiene estrategias propias → solo esas.
+                        //     No mostramos genéricas para no confundir con
+                        //     mantenimientos que no aplican al equipo.
+                        //   - Si el equipo NO tiene estrategias propias →
+                        //     mostramos las genéricas como fallback para que
+                        //     igual puedan crear una OT sin quedarse en cero.
+                        //   - Sin equipo seleccionado → solo genéricas.
                         const delEquipo = equipoSel
                           ? estrategias.filter((e) => e.equipo_codigo === equipoSel)
                           : [];
                         const genericas = estrategias.filter((e) => e.equipo_codigo == null);
+                        const mostrarGenericas = delEquipo.length === 0;
                         if (delEquipo.length === 0 && genericas.length === 0) {
+                          // Ni del equipo ni genéricas → mostramos todo lo
+                          // que haya (sin agrupar) para no dejar el select vacío.
                           return estrategias.map((e) => ({
                             value: e.estrategia_id,
                             label: labelOf(e),
@@ -1225,9 +1267,11 @@ export default function OrdenesTrabajoInternasPage() {
                             options: delEquipo.map((e) => ({ value: e.estrategia_id, label: labelOf(e) })),
                           });
                         }
-                        if (genericas.length > 0) {
+                        if (mostrarGenericas && genericas.length > 0) {
                           groups.push({
-                            label: <Text type="secondary" style={{ fontSize: 11 }}>Genéricas (sin equipo)</Text>,
+                            label: <Text type="secondary" style={{ fontSize: 11 }}>
+                              {equipoSel ? "Genéricas (equipo sin estrategias propias)" : "Genéricas (sin equipo)"}
+                            </Text>,
                             options: genericas.map((e) => ({ value: e.estrategia_id, label: labelOf(e) })),
                           });
                         }
