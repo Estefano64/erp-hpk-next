@@ -1740,7 +1740,8 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
             { label: "Resumen (datos de la OT)", value: "resumen" },
             { label: "Tareas (planificación)", value: "tareas" },
             { label: "Requerimientos", value: "requerimientos" },
-            { label: "Costos", value: "costos" },
+            // Costos: solo para quien puede verlos (misma regla que la pestaña).
+            ...(verCostos ? [{ label: "Costos", value: "costos" }] : []),
             { label: "Historial", value: "historial" },
           ]}
           style={{ display: "flex", flexDirection: "column", gap: 8 }}

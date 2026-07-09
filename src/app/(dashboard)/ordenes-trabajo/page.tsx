@@ -49,6 +49,7 @@ import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 import { formatDateOnly } from "@/lib/dates";
 import { diasEnTaller } from "@/lib/dias-taller";
+import { puedeVerCostosOT } from "@/lib/acceso-rutas";
 import OTDetalleModal from "@/components/modules/ordenes-trabajo/OTDetalleModal";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import { formatOtCodigo } from "@/lib/ot-formato";
@@ -240,7 +241,11 @@ export default function OrdenesTrabajoPage() {
   const { screens } = useResponsive();
   const { data: session } = useSession();
   // Eliminar / desactivar OTs es exclusivo del admin (operación destructiva).
-  const esAdmin = ((session?.user as { roles?: string[] } | undefined)?.roles ?? []).includes("admin");
+  const rolesUsuario = ((session?.user as { roles?: string[] } | undefined)?.roles ?? []);
+  const esAdmin = rolesUsuario.includes("admin");
+  // Costos de OT: solo admin sin sin_costos (las columnas/export de costos
+  // ni se ofrecen al resto — el API tampoco les manda costos_resumen).
+  const verCostos = puedeVerCostosOT(rolesUsuario);
   const [data, setData] = useState<OTRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -651,22 +656,25 @@ export default function OrdenesTrabajoPage() {
     // Costos (opt-in): se calculan solo para la página visible. Estrategia =
     // estándar del cod_rep; Estimado = plan de la OT; Real = ejecutado; los 3
     // incluyen HH. "Costo HH" = mano de obra real aparte. Multi-moneda.
-    {
-      key: "costo_estrategia", title: "Costo Estrategia", width: 150, align: "right",
-      render: (_: unknown, r: OTRecord) => fmtMonedaTot(r.costos_resumen?.estrategia),
-    },
-    {
-      key: "costo_estimado", title: "Costo Estimado", width: 150, align: "right",
-      render: (_: unknown, r: OTRecord) => fmtMonedaTot(r.costos_resumen?.estimado),
-    },
-    {
-      key: "costo_real", title: "Costo Real", width: 150, align: "right",
-      render: (_: unknown, r: OTRecord) => fmtMonedaTot(r.costos_resumen?.real),
-    },
-    {
-      key: "costo_hh", title: "Costo HH", width: 130, align: "right",
-      render: (_: unknown, r: OTRecord) => fmtMonedaTot(r.costos_resumen?.hh),
-    },
+    // Solo para quien puede ver costos (admin sin sin_costos).
+    ...(verCostos ? [
+      {
+        key: "costo_estrategia", title: "Costo Estrategia", width: 150, align: "right" as const,
+        render: (_: unknown, r: OTRecord) => fmtMonedaTot(r.costos_resumen?.estrategia),
+      },
+      {
+        key: "costo_estimado", title: "Costo Estimado", width: 150, align: "right" as const,
+        render: (_: unknown, r: OTRecord) => fmtMonedaTot(r.costos_resumen?.estimado),
+      },
+      {
+        key: "costo_real", title: "Costo Real", width: 150, align: "right" as const,
+        render: (_: unknown, r: OTRecord) => fmtMonedaTot(r.costos_resumen?.real),
+      },
+      {
+        key: "costo_hh", title: "Costo HH", width: 130, align: "right" as const,
+        render: (_: unknown, r: OTRecord) => fmtMonedaTot(r.costos_resumen?.hh),
+      },
+    ] : []),
     {
       key: "tipo_ot", title: "Tipo OT", width: 100,
       filters: [...new Set(data.map((r) => r.tipo_ot?.nombre).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
@@ -1089,11 +1097,14 @@ export default function OrdenesTrabajoPage() {
               { key: "base_metalica", label: "Base metálica", value: (r) => r.base_metalica?.nombre ?? "" },
               { key: "comentarios", label: "Comentarios", value: (r) => r.comentarios ?? "" },
               // Costos (solo se calculan si alguna columna de costos está visible
-              // en la tabla, que activa ?costos=1 también en el export).
-              { key: "costo_estrategia", label: "Costo Estrategia", value: (r) => monedaTotStr(r.costos_resumen?.estrategia), defaultSelected: false },
-              { key: "costo_estimado", label: "Costo Estimado", value: (r) => monedaTotStr(r.costos_resumen?.estimado), defaultSelected: false },
-              { key: "costo_real", label: "Costo Real", value: (r) => monedaTotStr(r.costos_resumen?.real), defaultSelected: false },
-              { key: "costo_hh", label: "Costo HH", value: (r) => monedaTotStr(r.costos_resumen?.hh), defaultSelected: false },
+              // en la tabla, que activa ?costos=1 también en el export). Solo
+              // se ofrecen a quien puede ver costos.
+              ...(verCostos ? [
+                { key: "costo_estrategia", label: "Costo Estrategia", value: (r: OTRecord) => monedaTotStr(r.costos_resumen?.estrategia), defaultSelected: false },
+                { key: "costo_estimado", label: "Costo Estimado", value: (r: OTRecord) => monedaTotStr(r.costos_resumen?.estimado), defaultSelected: false },
+                { key: "costo_real", label: "Costo Real", value: (r: OTRecord) => monedaTotStr(r.costos_resumen?.real), defaultSelected: false },
+                { key: "costo_hh", label: "Costo HH", value: (r: OTRecord) => monedaTotStr(r.costos_resumen?.hh), defaultSelected: false },
+              ] : []),
               // Histórico (importado del Excel)
               { label: "Fecha Evaluación", value: (r) => formatDateOnly(r.fecha_evaluacion ?? null) ?? "" },
               { label: "Evaluador", value: (r) => r.evaluador ?? "" },

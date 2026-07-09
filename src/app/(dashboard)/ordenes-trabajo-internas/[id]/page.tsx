@@ -235,6 +235,7 @@ export default function OTInternaDetallePage() {
   // header puede quedar desactualizado hasta refresh (aceptable).
   useEffect(() => {
     if (!Number.isFinite(otId) || otId <= 0) return;
+    if (!verCostos) return; // costos = solo admin sin sin_costos; ni pedirlos
     fetch(`/api/ordenes-trabajo-internas/${otId}/costos`)
       .then(async (r) => {
         if (!r.ok) return;
@@ -247,7 +248,7 @@ export default function OTInternaDetallePage() {
         });
       })
       .catch(() => { /* sin costos no rompemos el detalle */ });
-  }, [otId]);
+  }, [otId, verCostos]);
 
   useEffect(() => {
     (async () => {
