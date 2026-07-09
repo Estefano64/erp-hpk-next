@@ -694,6 +694,39 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
       });
     } else if (filtroRapido === "en_oc") {
       rows = rows.filter((r) => r.po_id != null);
+    } else if (filtroRapido === "almacen") {
+      // "Almacén" = subconjunto de "Listos para OC" que YA tiene stock
+      // disponible en almacén (equivalen a las filas amarillas). Sirve
+      // para que Logística tome decisiones rápido: en vez de generar OC,
+      // consumir del almacén. Un item aparece si:
+      //   - está APROBADO y sin OC (mismo criterio que "Listos para OC"),
+      //   - NO fue consumido / entregado / anulado,
+      //   - Y tiene stock suficiente: material_id + Material.stock_actual
+      //     >= cantidad,  O el backend detectó un match probable por NP
+      //     con stock (para reqs CAD sin material vinculado).
+      rows = rows.filter((r) => {
+        if (r.status_req !== "APROBADO") return false;
+        if (r.po_id != null) return false;
+        if (
+          r.status_oc === "CONSUMIDO_ALMACEN"
+          || r.status_oc === "CONSUMIDO_OC_ABIERTA"
+          || r.status_oc === "ENTREGADO"
+          || r.status_oc === "ANULADO"
+        ) return false;
+        if (
+          r.observaciones
+          && /(consumi(do|d.{0,3})\s+(de|del)\s+(almac[eé]n|oc\s+abierta)|pagado\s+con\s+caja\s+chica)/i.test(r.observaciones)
+        ) return false;
+        const cantReq = Number(r.cantidad ?? 0);
+        const conMaterial = r.material_id != null
+          && (r.stock_actual ?? 0) >= cantReq
+          && (r.stock_actual ?? 0) > 0;
+        const conMatchProbable = r.material_id == null
+          && r.match_sugerido != null
+          && r.match_sugerido.stock_actual >= cantReq
+          && r.match_sugerido.stock_actual > 0;
+        return conMaterial || conMatchProbable;
+      });
     }
 
     // Tipo de material — defalt MAC para items sin tipo declarado, igual que
@@ -913,7 +946,11 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
             : null,
           observaciones: values.observaciones,
           nombre: null,
-          usuario: "Logistica",
+          // usuario: NO enviamos "Logistica" hardcodeado — el server usa el
+          // getAuditUser (token.name) de la sesión y guarda el nombre REAL
+          // de quien está creando. Si mandáramos "Logistica" acá, el alias
+          // ELABORADOR lo convertía a "Miriam Ccanahuire" en el PDF y perdía
+          // la autoría real (ej. Diego).
           // Campos extra del editor de OC (Fase 2 del refactor del modal):
           ref_pedido: refPedidoModal || null,
           tipo_pago: tipoPagoModal,
@@ -2375,6 +2412,19 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
             >
               En OC
             </Button>
+            <Tooltip title="Filtra items APROBADOS sin OC que tienen stock disponible en almacén (equivalen a las filas amarillas). Sugerencia: consumí de almacén en vez de generar OC.">
+              <Button
+                size="small"
+                type={filtroRapido === "almacen" ? "primary" : "default"}
+                icon={<InboxOutlined />}
+                onClick={() => setFiltroRapido(filtroRapido === "almacen" ? "todos" : "almacen")}
+                style={filtroRapido === "almacen"
+                  ? { background: "#faad14", borderColor: "#faad14" }
+                  : undefined}
+              >
+                Almacén
+              </Button>
+            </Tooltip>
           </Space>
         </div>
       </Card>
