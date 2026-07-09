@@ -28,7 +28,9 @@ export const RUTAS_RESTRINGIDAS: { prefijo: string; roles: readonly string[] }[]
   { prefijo: "/catalogos", roles: ["admin"] },
   { prefijo: "/configuracion-cotizacion", roles: ["admin"] },
   { prefijo: "/configuracion", roles: ["admin"] },
-  // ── RRHH (incluye gestión de cuentas de usuario)
+  // ── RRHH: admin gestiona; planner/produccion solo VEN los trabajadores
+  //    (la parte de cuentas/roles es admin-only y la página la oculta para
+  //    los demás — sin esto se veía "a medias" con las cuentas vacías).
   { prefijo: "/rrhh", roles: ["admin", "planner", "produccion"] },
   // ── Planificación / Programación semanal / Dashboard planificación
   { prefijo: "/operaciones", roles: ["admin", "planner", "produccion", "viewer"] },
