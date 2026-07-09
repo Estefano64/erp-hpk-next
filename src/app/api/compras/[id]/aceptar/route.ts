@@ -3,6 +3,7 @@ import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { recalcularRecursosStatusOT, recalcularRecursosStatusOTInterna } from "@/lib/recursos-ot";
+import { montoEnUSD, puedeAprobarOC } from "@/lib/aprobacion-montos";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
@@ -12,8 +13,9 @@ type Params = { params: Promise<{ id: string }> };
 // Registra el usuario que acepta en `usuario_aprueba` y deja traza
 // en OTHistorial de cada OT vinculada.
 //
-// Permiso: cualquier usuario autenticado (decisión del usuario, 2026-05-27).
-// El nombre del aprobador queda registrado en `usuario_aprueba` y en OTHistorial.
+// Permiso por MONTO (esquema de gerencia 2026-07-08, ver aprobacion-montos.ts):
+// hasta $1,000 quien la elaboró; $2,500 aprobador_oc_2500; $5,000
+// aprobador_oc_5000; más de $5,000 solo gerencia.
 export async function POST(req: NextRequest, { params }: Params) {
   try {
     const token = await getToken({ req });
@@ -43,6 +45,9 @@ export async function POST(req: NextRequest, { params }: Params) {
           id: true,
           numero_po: true,
           status_oc_codigo: true,
+          total: true,
+          moneda_codigo: true,
+          usuario_solicita: true,
           // Una OC puede tener items en CompraDetalle (creación manual) o en
           // OTRepuesto vía po_id (creación desde requerimientos aprobados).
           // Cualquiera de las dos cuenta como "tiene items".
@@ -57,6 +62,13 @@ export async function POST(req: NextRequest, { params }: Params) {
           new Error(`Solo se pueden aceptar OC en estado Pendiente (actual: ${compra.status_oc_codigo ?? "—"}).`),
           { status: 400 },
         );
+      }
+      // Tope de aprobación por monto (aprobacion-montos.ts).
+      const montoUSD = montoEnUSD(Number(compra.total ?? 0), compra.moneda_codigo);
+      const roles = (token.roles as string[] | undefined) ?? [];
+      const permiso = puedeAprobarOC(roles, montoUSD, compra.usuario_solicita === usuario);
+      if (!permiso.ok) {
+        throw Object.assign(new Error(permiso.error), { status: 403 });
       }
       // Una OC sin detalles ni reqs vinculados no se puede recibir.
       if (compra._count.detalles === 0 && compra._count.ot_repuestos === 0) {

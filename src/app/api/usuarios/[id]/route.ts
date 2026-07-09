@@ -16,6 +16,7 @@ async function requireAdmin() {
 const ROLES = [
   "admin", "viewer", "tecnico", "evaluador",
   "aprobador_evaluacion", "aprobador_requerimiento",
+  "aprobador_oc_2500", "aprobador_oc_5000", "gerencia",
   "planner", "produccion", "supervisor", "logistica", "mantenimiento", "contabilidad",
   "sin_costos",
 ] as const;

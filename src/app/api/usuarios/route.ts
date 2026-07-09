@@ -65,7 +65,10 @@ const ROLES = [
   "tecnico",                // operario + panel personal
   "evaluador",              // aparece en "Evaluado por"
   "aprobador_evaluacion",   // aparece en "Supervisor" + aprueba hojas
-  "aprobador_requerimiento",// aprueba requerimientos
+  "aprobador_requerimiento",// aprueba requerimientos hasta US$5,000 (Diego)
+  "aprobador_oc_2500",      // aprueba OCs hasta US$2,500 (Miriam)
+  "aprobador_oc_5000",      // aprueba OCs hasta US$5,000 (Diego)
+  "gerencia",               // aprueba sin tope (Carlos/Pio) — NO derivado de admin
   "planner",                // planificación/programación con edición + dashboards
   "produccion",             // operaciones/taller + dashboards
   "supervisor",             // placeholder
