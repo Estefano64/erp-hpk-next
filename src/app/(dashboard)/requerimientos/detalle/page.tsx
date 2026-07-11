@@ -64,6 +64,7 @@ import {
   PaperClipOutlined,
 } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
+import { puedeEscribirApi } from "@/lib/acceso-rutas";
 import { uploadToR2 } from "@/lib/r2-client";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import dayjs, { Dayjs } from "dayjs";
@@ -556,6 +557,10 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
   // Roles (para mostrar acciones admin/aprobador de aprobar/desaprobar/anular)
   const [roles, setRoles] = useState<string[]>([]);
   const isAdmin = roles.includes("admin");
+  // Acciones del ciclo de compra (consumir/vincular/dividir/caja chica/crear
+  // OC): misma matriz de escritura que aplica el servidor — a los roles de
+  // solo-lectura (producción, contabilidad, etc.) ni se les muestran.
+  const esLogistica = puedeEscribirApi(roles, "/api/requerimientos/0/precio", "PATCH");
 
   useEffect(() => {
     fetch("/api/me")
@@ -1800,7 +1805,7 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
       filterSearch: true,
       onFilter: (value, r) => String(r.cantidad) === String(value),
       render: (v: number, r: Requerimiento) => {
-        const canSplit = Number(v) >= 2 && r.po_id == null;
+        const canSplit = esLogistica && Number(v) >= 2 && r.po_id == null;
         return (
           <Space size={4}>
             <span style={{ fontWeight: 600 }}>{v}</span>
@@ -2044,15 +2049,17 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                 />
               </Tooltip>
             )}
-            <Tooltip title={puedeConsumir ? "Consumir esta cantidad del stock interno (elige zona + posición)" : motivoDeshab}>
-              <Button
-                size="small"
-                icon={<InboxOutlined />}
-                disabled={!puedeConsumir}
-                onClick={() => abrirModalConsumir(r)}
-              />
-            </Tooltip>
-            {!hayMaterial && sinOC && noAnulado && noStockEstado && (() => {
+            {esLogistica && (
+              <Tooltip title={puedeConsumir ? "Consumir esta cantidad del stock interno (elige zona + posición)" : motivoDeshab}>
+                <Button
+                  size="small"
+                  icon={<InboxOutlined />}
+                  disabled={!puedeConsumir}
+                  onClick={() => abrirModalConsumir(r)}
+                />
+              </Tooltip>
+            )}
+            {esLogistica && !hayMaterial && sinOC && noAnulado && noStockEstado && (() => {
               // Si el backend detectó un match probable (NP embebido en la
               // descripción), lo pintamos primary + amarillo con el resumen
               // del material candidato + stock. Un click abre el modal ya
@@ -2093,7 +2100,7 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                 </Tooltip>
               );
             })()}
-            {(() => {
+            {esLogistica && (() => {
               // Caja chica: cierra el req con efectivo. Aplica si NO tiene OC
               // y NO está anulado. No requiere material catálogo (puede ser
               // cargo directo).
@@ -2217,7 +2224,7 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
           >
             <Button icon={<SettingOutlined />}>Columnas</Button>
           </Popover>
-          {selectedRows.length > 0 && (
+          {esLogistica && selectedRows.length > 0 && (
             <>
               <Tooltip title="Descuenta los items seleccionados del stock de una OC marcada como 'almacén abierto' (ej. BC Bering PO 4504281587). No genera OC nueva.">
                 <Button

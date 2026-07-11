@@ -15,6 +15,7 @@ import type { UploadFile } from "antd/es/upload/interface";
 import dayjs, { Dayjs } from "dayjs";
 import { paginacionEstandar } from "@/lib/tables";
 import { brand } from "@/lib/theme";
+import { useEscrituraApi } from "@/lib/use-escritura";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import { formatDateOnly } from "@/lib/dates";
 import { uploadToR2, openR2File } from "@/lib/r2-client";
@@ -49,6 +50,8 @@ interface OTLista {
 export default function DespachoMinaPage() {
   const { message: msg } = App.useApp();
   const router = useRouter();
+  // Emitir guías es de logística/contabilidad (misma matriz que el servidor).
+  const esLogistica = useEscrituraApi("/api/despachos/mina/0", "POST");
   const { screens } = useResponsive();
   const [data, setData] = useState<OTLista[]>([]);
   const [loading, setLoading] = useState(false);
@@ -241,21 +244,23 @@ export default function DespachoMinaPage() {
           <Tooltip title="Ver OT">
             <Button size="small" icon={<EyeOutlined />} onClick={() => router.push(`/ordenes-trabajo/${r.id}`)} />
           </Tooltip>
-          <Tooltip title={!r.tiene_po_cliente ? "Subir primero la PO del cliente en Adjuntos de la OT" : ""}>
-            <Button
-              size="small"
-              type="primary"
-              icon={<FileTextOutlined />}
-              onClick={() => abrirModal(r)}
-              disabled={!r.tiene_po_cliente}
-            >
-              Generar guía
-            </Button>
-          </Tooltip>
+          {esLogistica && (
+            <Tooltip title={!r.tiene_po_cliente ? "Subir primero la PO del cliente en Adjuntos de la OT" : ""}>
+              <Button
+                size="small"
+                type="primary"
+                icon={<FileTextOutlined />}
+                onClick={() => abrirModal(r)}
+                disabled={!r.tiene_po_cliente}
+              >
+                Generar guía
+              </Button>
+            </Tooltip>
+          )}
         </Space>
       ),
     },
-  ], [router, msg]);
+  ], [router, msg, esLogistica]);
 
   return (
     <div>

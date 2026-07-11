@@ -12,6 +12,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
+import { useEscrituraApi } from "@/lib/use-escritura";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import { formatDateOnly } from "@/lib/dates";
 import {
@@ -87,6 +88,8 @@ const estadoPrestamoColor: Record<string, string> = {
 function TabCatalogo() {
   const { message } = App.useApp();
   const { screens } = useResponsive();
+  // Gestión de herramientas = logística/mantenimiento (matriz del servidor).
+  const puedeGestionar = useEscrituraApi("/api/herramientas", "POST");
   const [data, setData] = useState<Herramienta[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -199,9 +202,9 @@ function TabCatalogo() {
       onFilter: (value, r) => r.estado === value,
       render: (v: string) => <Tag color={estadoColor[v] || "default"}>{v}</Tag>,
     },
-    {
-      key: "acciones", title: "Acciones", width: 110, fixed: "right", align: "center",
-      render: (_, h) => (
+    ...(puedeGestionar ? [{
+      key: "acciones", title: "Acciones", width: 110, fixed: "right" as const, align: "center" as const,
+      render: (_: unknown, h: Herramienta) => (
         <Space size={0}>
           <Tooltip title="Editar"><Button type="text" icon={<EditOutlined />} onClick={() => openEdit(h)} /></Tooltip>
           <Popconfirm title={`¿Eliminar ${h.codigo}?`} onConfirm={() => handleDelete(h.id)} okText="Eliminar" cancelText="Cancelar">
@@ -209,7 +212,7 @@ function TabCatalogo() {
           </Popconfirm>
         </Space>
       ),
-    },
+    }] : []),
   ];
 
   const { columnas: columnsResizable, components: tableComponents } =
@@ -233,7 +236,9 @@ function TabCatalogo() {
             <Input placeholder="Buscar (código, nombre)..." value={search} onChange={(e) => setSearch(e.target.value)} allowClear />
           </Col>
           <Col xs={12} md={6}><Button block icon={<ReloadOutlined />} onClick={fetchData}>Actualizar</Button></Col>
-          <Col xs={12} md={6}><Button block type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nueva herramienta</Button></Col>
+          {puedeGestionar && (
+            <Col xs={12} md={6}><Button block type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nueva herramienta</Button></Col>
+          )}
         </Row>
       </Card>
 
@@ -323,6 +328,8 @@ function TabCatalogo() {
 // TAB 2: PRÉSTAMOS
 // ════════════════════════════════════════════════════════════
 function TabPrestamos() {
+  // Prestar/devolver = logística/mantenimiento (matriz del servidor).
+  const puedeGestionar = useEscrituraApi("/api/prestamos-herramientas", "POST");
   const { message } = App.useApp();
   const { screens } = useResponsive();
   const [data, setData] = useState<Prestamo[]>([]);
@@ -535,9 +542,11 @@ function TabPrestamos() {
     {
       key: "acciones", title: "Acciones", width: 110, fixed: "right", align: "center",
       render: (_, p) => p.estado === "PRESTADA" ? (
-        <Tooltip title="Devolver">
-          <Button size="small" type="primary" icon={<RollbackOutlined />} onClick={() => abrirDevolver(p)}>Devolver</Button>
-        </Tooltip>
+        puedeGestionar ? (
+          <Tooltip title="Devolver">
+            <Button size="small" type="primary" icon={<RollbackOutlined />} onClick={() => abrirDevolver(p)}>Devolver</Button>
+          </Tooltip>
+        ) : <Tag color="blue" style={{ margin: 0 }}>Prestada</Tag>
       ) : <Tag color="green" style={{ margin: 0 }}>Devuelta</Tag>,
     },
   ];
@@ -567,7 +576,9 @@ function TabPrestamos() {
               ]} />
           </Col>
           <Col xs={12} md={6}><Button block icon={<ReloadOutlined />} onClick={fetchData}>Actualizar</Button></Col>
-          <Col xs={12} md={10}><Button block type="primary" icon={<SendOutlined />} onClick={openNuevo}>Nuevo préstamo</Button></Col>
+          {puedeGestionar && (
+            <Col xs={12} md={10}><Button block type="primary" icon={<SendOutlined />} onClick={openNuevo}>Nuevo préstamo</Button></Col>
+          )}
         </Row>
       </Card>
 

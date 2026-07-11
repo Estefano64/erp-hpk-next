@@ -15,6 +15,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
+import { useEscrituraApi } from "@/lib/use-escritura";
 import { useUnsavedChangesWarning, confirmLeave } from "@/lib/unsaved-changes";
 import { useColumnasRedimensionables, STICKY_HEADER } from "@/lib/tables";
 import { formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
@@ -94,6 +95,10 @@ export default function EditarOCPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const compraId = Number(params.id);
+  // El editor de OC es de logística: para otros roles (que pueden llegar por
+  // URL directa) se muestra el aviso en lugar del editor — el servidor igual
+  // rechazaría el guardado.
+  const esLogistica = useEscrituraApi("/api/compras", "POST");
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -584,6 +589,17 @@ export default function EditarOCPage() {
   }
   if (!compra) {
     return <Empty description="OC no encontrada" />;
+  }
+  if (!esLogistica) {
+    return (
+      <Alert
+        type="warning"
+        showIcon
+        message="Editor de OC — solo logística"
+        description="Tu rol no gestiona órdenes de compra. Podés ver el detalle de la OC desde el listado de Compras."
+        action={<Button icon={<RollbackOutlined />} onClick={() => router.push("/compras")}>Volver a Compras</Button>}
+      />
+    );
   }
 
   return (

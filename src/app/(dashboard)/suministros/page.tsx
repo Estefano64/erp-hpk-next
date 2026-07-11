@@ -23,6 +23,7 @@ import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import { useSession } from "next-auth/react";
 import { brand } from "@/lib/theme";
+import { useEscrituraApi } from "@/lib/use-escritura";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import { EditableCell } from "@/components/EditableCell";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
@@ -387,6 +388,8 @@ function TabEntregas() {
   const { data: session } = useSession();
   const { screens } = useResponsive();
   const usuarioActual = session?.user?.name ?? session?.user?.email ?? "usuario";
+  // Registrar entregas = logística/mantenimiento (matriz del servidor).
+  const puedeEntregar = useEscrituraApi("/api/movimientos", "POST");
 
   const [rows, setRows] = useState<EntregaRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -558,7 +561,9 @@ function TabEntregas() {
             ]}
           />
           <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>Actualizar</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openNuevo}>Nueva entrega</Button>
+          {puedeEntregar && (
+            <Button type="primary" icon={<PlusOutlined />} onClick={openNuevo}>Nueva entrega</Button>
+          )}
         </Space>
       </div>
 

@@ -10,6 +10,7 @@ import { FileAddOutlined, ReloadOutlined, InboxOutlined, SearchOutlined, EditOut
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { brand } from "@/lib/theme";
+import { useEscrituraApi } from "@/lib/use-escritura";
 import { useCachedFetch } from "@/lib/useCachedFetch";
 import { formatDateOnlyShort } from "@/lib/dates";
 import {
@@ -52,6 +53,8 @@ interface Props {
 
 export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
   const router = useRouter();
+  // Precios y Generar OC son de logística (misma matriz que el servidor).
+  const esLogistica = useEscrituraApi("/api/requerimientos/0/precio", "PATCH");
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -331,6 +334,12 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
           );
         }
         const sinPrecio = precio == null || precio <= 0;
+        // Solo logística asigna/edita precios; el resto ve el valor plano.
+        if (!esLogistica) {
+          return sinPrecio
+            ? <Text type="secondary" style={{ fontSize: 11 }}>—</Text>
+            : <span style={{ fontSize: 11 }}>{precio!.toFixed(2)} {r.moneda ?? ""}</span>;
+        }
         return (
           <Tooltip title={sinPrecio ? "Falta precio — click para asignar" : "Click para editar"}>
             <div
@@ -419,14 +428,16 @@ export default function RequerimientosAprobadosTab({ onOCCreated }: Props) {
             />
           <Button onClick={resetAnchos}>Restablecer anchos</Button>
             <Button icon={<ReloadOutlined />} onClick={fetchData}>Refrescar</Button>
-            <Button
-              type="primary"
-              icon={<FileAddOutlined />}
-              onClick={abrirOcModal}
-              disabled={selectedKeys.length === 0}
-            >
-              Generar OC ({selectedKeys.length})
-            </Button>
+            {esLogistica && (
+              <Button
+                type="primary"
+                icon={<FileAddOutlined />}
+                onClick={abrirOcModal}
+                disabled={selectedKeys.length === 0}
+              >
+                Generar OC ({selectedKeys.length})
+              </Button>
+            )}
           </Space>
         </Col>
       </Row>

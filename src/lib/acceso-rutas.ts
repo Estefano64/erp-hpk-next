@@ -143,8 +143,10 @@ export const REGLAS_ESCRITURA_API: ReglaApi[] = [
   { prefijo: "/api/compras", sufijo: "/adjuntos", roles: ["admin", "logistica", "contabilidad"] },
   { prefijo: "/api/compras", sufijo: "/aceptar", roles: null },
   { prefijo: "/api/compras", sufijo: "/anular", roles: null },
-  // ── Almacén
-  { prefijo: "/api/movimientos", roles: COMPRA },
+  // ── Almacén. Movimientos incluye a mantenimiento porque la entrega de
+  //    suministros (que mantenimiento SÍ gestiona según la matriz) registra
+  //    una SALIDA por este mismo endpoint.
+  { prefijo: "/api/movimientos", roles: ["admin", "logistica", "mantenimiento"] },
   { prefijo: "/api/despachos", roles: COMPRA },
   { prefijo: "/api/no-catalogados", roles: COMPRA },
   // ── Herramientas y suministros (materiales incluye mantenimiento porque
