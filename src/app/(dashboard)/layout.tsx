@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
-import { Layout, Menu, Button, Dropdown, Spin, Typography, Tag } from "antd";
+import { Layout, Menu, Button, Dropdown, Spin, Typography, Tag, Space, Tooltip } from "antd";
 import {
   DashboardOutlined,
   ToolOutlined,
@@ -20,6 +20,8 @@ import {
   ControlOutlined,
   DatabaseOutlined,
   TeamOutlined,
+  MoonOutlined,
+  SunOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { brand } from "@/lib/theme";
@@ -29,6 +31,7 @@ import BfcacheGuard from "@/components/BfcacheGuard";
 import { confirmLeave } from "@/lib/unsaved-changes";
 import { esTecnicoRestringido, rutaPermitidaTecnico } from "@/lib/tecnico-acceso";
 import { puedeVerRuta } from "@/lib/acceso-rutas";
+import { useTema } from "@/components/ThemeProvider";
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
@@ -267,6 +270,7 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const router = useRouter();
   const { isMobile } = useResponsive();
+  const { tema, setTema } = useTema();
 
   // En celular el sidebar es un cajón superpuesto (no empuja el contenido):
   // arranca colapsado y el contenido va a ancho completo.
@@ -422,7 +426,7 @@ export default function DashboardLayout({
         <Header
           style={{
             padding: isMobile ? "0 12px" : "0 24px",
-            background: brand.white,
+            background: "var(--erp-surface)",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
@@ -440,6 +444,15 @@ export default function DashboardLayout({
             style={{ fontSize: 16, color: brand.textPrimary }}
           />
 
+          <Space size={4}>
+          <Tooltip title={tema === "oscuro" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}>
+            <Button
+              type="text"
+              icon={tema === "oscuro" ? <SunOutlined /> : <MoonOutlined />}
+              onClick={() => setTema(tema === "oscuro" ? "claro" : "oscuro")}
+              style={{ fontSize: 16, color: brand.textSecondary }}
+            />
+          </Tooltip>
           <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" trigger={["click"]}>
             <Button
               type="text"
@@ -481,6 +494,7 @@ export default function DashboardLayout({
               )}
             </Button>
           </Dropdown>
+          </Space>
         </Header>
 
         <Content style={{ margin: isMobile ? "12px 8px" : 20, minHeight: "calc(100vh - 96px)" }}>

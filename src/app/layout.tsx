@@ -22,7 +22,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es">
+    <html lang="es" suppressHydrationWarning>
+      <head>
+        {/* Anti-flash del modo oscuro: marca el html ANTES de pintar, así las
+            variables CSS --erp-* ya salen del modo guardado. La elección es
+            por usuario/navegador (localStorage "erp-tema"). */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{if(localStorage.getItem("erp-tema")==="oscuro")document.documentElement.dataset.tema="oscuro"}catch(e){}`,
+          }}
+        />
+      </head>
       <body suppressHydrationWarning>
         <SessionProvider>
           <AntdRegistry>

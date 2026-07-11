@@ -3144,8 +3144,8 @@ export default function ProgramacionSemanalPage() {
           border-right: 1px solid ${brand.border};
         }
         .psg-day-header:last-child { border-right: none; }
-        .psg-day-today { background: ${brand.cyan}0d; }
-        .psg-day-today .psg-day-label { color: ${brand.cyan}; background: ${brand.cyan}1a; border-bottom: 2px solid ${brand.cyan}; }
+        .psg-day-today { background: color-mix(in srgb, ${brand.cyan} 5%, transparent); }
+        .psg-day-today .psg-day-label { color: ${brand.cyan}; background: color-mix(in srgb, ${brand.cyan} 10%, transparent); border-bottom: 2px solid ${brand.cyan}; }
         .psg-day-label {
           padding: 8px;
           text-align: center;

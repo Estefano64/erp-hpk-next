@@ -371,7 +371,7 @@ function SeccionRequerimientos({
                 <div style={{ width: "100%", height: 200 }}>
                   <ResponsiveContainer>
                     <BarChart data={porMesData}>
-                      <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                      <CartesianGrid stroke="var(--erp-chart-grid)" vertical={false} />
                       <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} />
                       <ReTooltip />
@@ -389,7 +389,7 @@ function SeccionRequerimientos({
                   ) : (
                     <ResponsiveContainer>
                       <BarChart data={data.porSemana}>
-                        <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                        <CartesianGrid stroke="var(--erp-chart-grid)" vertical={false} />
                         <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                         <YAxis tick={{ fontSize: 11 }} />
                         <ReTooltip />
@@ -405,7 +405,7 @@ function SeccionRequerimientos({
                 <div style={{ width: "100%", height: 200 }}>
                   <ResponsiveContainer>
                     <BarChart data={porOtData}>
-                      <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                      <CartesianGrid stroke="var(--erp-chart-grid)" vertical={false} />
                       <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} />
                       <ReTooltip />
@@ -424,7 +424,7 @@ function SeccionRequerimientos({
                 <div style={{ width: "100%", height: 200 }}>
                   <ResponsiveContainer>
                     <BarChart data={porTiempoData}>
-                      <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                      <CartesianGrid stroke="var(--erp-chart-grid)" vertical={false} />
                       <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} />
                       <ReTooltip />
@@ -665,7 +665,7 @@ function SeccionOC({
                 <div style={{ width: "100%", height: 200 }}>
                   <ResponsiveContainer>
                     <BarChart data={porMesCantData}>
-                      <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                      <CartesianGrid stroke="var(--erp-chart-grid)" vertical={false} />
                       <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} />
                       <ReTooltip />
@@ -680,7 +680,7 @@ function SeccionOC({
                 <div style={{ width: "100%", height: 200 }}>
                   <ResponsiveContainer>
                     <BarChart data={porMesCostoData}>
-                      <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                      <CartesianGrid stroke="var(--erp-chart-grid)" vertical={false} />
                       <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
                       <ReTooltip formatter={(v) => fmtMoneda(Number(v), data.kpis.moneda)} />
@@ -695,7 +695,7 @@ function SeccionOC({
                 <div style={{ width: "100%", height: 200 }}>
                   <ResponsiveContainer>
                     <BarChart data={porTiempoData}>
-                      <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                      <CartesianGrid stroke="var(--erp-chart-grid)" vertical={false} />
                       <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} />
                       <ReTooltip />
@@ -915,7 +915,7 @@ function SeccionInventario({
                 <div style={{ width: "100%", height: 240 }}>
                   <ResponsiveContainer>
                     <BarChart data={porMesData}>
-                      <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                      <CartesianGrid stroke="var(--erp-chart-grid)" vertical={false} />
                       <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
                       <ReTooltip formatter={(v) => fmtMoneda(Number(v), data.kpis.moneda)} />
@@ -939,7 +939,7 @@ function SeccionInventario({
                   <div style={{ width: "100%", height: 240 }}>
                     <ResponsiveContainer>
                       <BarChart data={topData} layout="vertical" margin={{ top: 4, right: 12, bottom: 4, left: 0 }}>
-                        <CartesianGrid stroke="rgba(0,0,0,0.07)" horizontal={false} />
+                        <CartesianGrid stroke="var(--erp-chart-grid)" horizontal={false} />
                         <XAxis type="number" tick={{ fontSize: 11 }} />
                         <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={90} />
                         <ReTooltip
@@ -1089,7 +1089,7 @@ function SeccionOT({
               <div style={{ width: "100%", height: 220 }}>
                 <ResponsiveContainer>
                   <BarChart data={estadoData}>
-                    <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                    <CartesianGrid stroke="var(--erp-chart-grid)" vertical={false} />
                     <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} />
                     <ReTooltip />
@@ -1107,7 +1107,7 @@ function SeccionOT({
               <div style={{ width: "100%", height: 220 }}>
                 <ResponsiveContainer>
                   <BarChart data={tiempoData}>
-                    <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                    <CartesianGrid stroke="var(--erp-chart-grid)" vertical={false} />
                     <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} />
                     <ReTooltip />
@@ -1126,7 +1126,7 @@ function SeccionOT({
               <div style={{ width: "100%", height: 220 }}>
                 <ResponsiveContainer>
                   <BarChart data={avanceData}>
-                    <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                    <CartesianGrid stroke="var(--erp-chart-grid)" vertical={false} />
                     <XAxis dataKey="name" tick={{ fontSize: 10 }} />
                     <YAxis tick={{ fontSize: 11 }} />
                     <ReTooltip />
@@ -1289,7 +1289,7 @@ function SeccionFacturacion({
             <div style={{ width: "100%", height: 240 }}>
               <ResponsiveContainer>
                 <BarChart data={porMesData}>
-                  <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                  <CartesianGrid stroke="var(--erp-chart-grid)" vertical={false} />
                   <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
                   <ReTooltip formatter={(v) => fmtMoneda(Number(v), data.kpis.moneda)} />

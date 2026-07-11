@@ -9,6 +9,66 @@
   --color-border: #EBEBEB;
 }
 
+/* ── Tema claro/oscuro por usuario ──────────────────────────────────────
+   Los componentes usan `brand.*` de src/lib/theme.ts, que apunta a estas
+   variables. El modo lo fija html[data-tema] (ThemeProvider + script
+   anti-flash del layout raíz). Los valores DEBEN coincidir con PALETAS
+   de src/lib/theme.ts. */
+:root {
+  --erp-navy: #1C2B5B;
+  --erp-cyan: #11A0B6;
+  --erp-text: #333333;
+  --erp-text-sec: #8C8C8C;
+  --erp-bg-page: #F4F4F4;
+  --erp-surface: #FFFFFF;
+  --erp-surface-hover: #fafafa;
+  --erp-surface-selected: #e6f4ff;
+  --erp-border: #EBEBEB;
+  --erp-success: #28A745;
+  --erp-warning: #FFC107;
+  --erp-error: #cf1322;
+  --erp-chart-grid: rgba(0, 0, 0, 0.07);
+  --erp-scrollbar: #d9d9d9;
+  --erp-scrollbar-hover: #bfbfbf;
+  color-scheme: light;
+}
+html[data-tema="oscuro"] {
+  --erp-navy: #6B85C8;
+  --erp-cyan: #2FB8CC;
+  --erp-text: #E6E6E6;
+  --erp-text-sec: #9E9E9E;
+  --erp-bg-page: #121212;
+  --erp-surface: #1E1E1E;
+  --erp-surface-hover: #262626;
+  --erp-surface-selected: #112a45;
+  --erp-border: #333333;
+  --erp-success: #49AA19;
+  --erp-warning: #D89614;
+  --erp-error: #E84749;
+  --erp-chart-grid: rgba(255, 255, 255, 0.10);
+  --erp-scrollbar: #3d3d3d;
+  --erp-scrollbar-hover: #555;
+  color-scheme: dark;
+}
+/* Impresión SIEMPRE en claro (guías, OTs, planificación van a papel). */
+@media print {
+  :root, html[data-tema="oscuro"] {
+    --erp-navy: #1C2B5B;
+    --erp-cyan: #11A0B6;
+    --erp-text: #333333;
+    --erp-text-sec: #8C8C8C;
+    --erp-bg-page: #FFFFFF;
+    --erp-surface: #FFFFFF;
+    --erp-surface-hover: #ffffff;
+    --erp-surface-selected: #ffffff;
+    --erp-border: #EBEBEB;
+    --erp-success: #28A745;
+    --erp-warning: #FFC107;
+    --erp-error: #cf1322;
+    color-scheme: light;
+  }
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -16,8 +76,8 @@
 }
 
 body {
-  background: #F4F4F4;
-  color: #333333;
+  background: var(--erp-bg-page);
+  color: var(--erp-text);
   font-family: 'Montserrat', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -31,11 +91,11 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #d9d9d9;
+  background: var(--erp-scrollbar);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #bfbfbf;
+  background: var(--erp-scrollbar-hover);
 }
 
 /* Cabeceras de tabla siempre en una sola línea (drag manual para ensanchar si se necesita). */
@@ -161,7 +221,7 @@ body {
    `fix-left` → `fix-start`, `fix-right` → `fix-end` (RTL-friendly). */
 .ant-table-cell-fix-start,
 .ant-table-cell-fix-end {
-  background-color: #ffffff !important;
+  background-color: var(--erp-surface) !important;
   z-index: 3 !important;
 }
 .ant-table-tbody > tr:hover > .ant-table-cell-fix-start,
@@ -170,16 +230,36 @@ body {
 .ant-table-tbody > tr.ant-table-row-hover > .ant-table-cell-fix-end,
 .ant-table-tbody > tr > .ant-table-cell-fix-start.ant-table-cell-row-hover,
 .ant-table-tbody > tr > .ant-table-cell-fix-end.ant-table-cell-row-hover {
-  background-color: #fafafa !important;
+  background-color: var(--erp-surface-hover) !important;
 }
 .ant-table-tbody > tr.ant-table-row-selected > .ant-table-cell-fix-start,
 .ant-table-tbody > tr.ant-table-row-selected > .ant-table-cell-fix-end {
-  background-color: #e6f4ff !important;
+  background-color: var(--erp-surface-selected) !important;
 }
 .ant-table-thead > tr > .ant-table-cell-fix-start,
 .ant-table-thead > tr > .ant-table-cell-fix-end {
-  background-color: #fafafa !important;
+  background-color: var(--erp-surface-hover) !important;
   z-index: 5 !important;
+}
+
+/* Tooltips de recharts: su default es fondo blanco fijo — en oscuro se
+   adapta a la superficie del tema. */
+html[data-tema="oscuro"] .recharts-default-tooltip {
+  background-color: var(--erp-surface) !important;
+  border-color: var(--erp-border) !important;
+}
+html[data-tema="oscuro"] .recharts-default-tooltip .recharts-tooltip-label,
+html[data-tema="oscuro"] .recharts-default-tooltip .recharts-tooltip-item {
+  color: var(--erp-text) !important;
+}
+/* Resize handle de columnas: la línea idle era rgba negra, invisible en oscuro. */
+html[data-tema="oscuro"] .react-resizable-handle {
+  background: linear-gradient(
+    to right,
+    transparent 0%, transparent 45%,
+    rgba(255, 255, 255, 0.14) 45%, rgba(255, 255, 255, 0.14) 55%,
+    transparent 55%, transparent 100%
+  ) !important;
 }
 /* Cualquier contenido (Tags, badges, etc.) dentro de una celda no debe poder
    escaparse de los límites de la celda. */
