@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { formatOtCodigo, formatOtInternaCodigo, parseOtCodigoSearch } from "@/lib/ot-formato";
+import { hoyEnLima } from "@/lib/dates";
 
 // ── Mapeos de status entre POs2 (UI) y current (DB) ─────────────
 const codeToLabel: Record<string, string> = {
@@ -243,7 +244,7 @@ export async function POST(req: NextRequest) {
         numero_req: d.numero_req ?? null,
         ot_id: d.ot_id ?? null,
         proveedor_id: d.proveedor_id,
-        fecha_solicitud: toDate(d.fecha_solicitud) ?? new Date(),
+        fecha_solicitud: toDate(d.fecha_solicitud) ?? hoyEnLima(),
         fecha_entrega_esperada: toDate(d.fecha_entrega_esperada),
         ubicacion_codigo: d.ubicacion_codigo ?? null,
         status_oc_codigo: d.status_oc_codigo ?? "PEND_OC",

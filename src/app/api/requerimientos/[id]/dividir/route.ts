@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
+import { hoyEnLima } from "@/lib/dates";
 type Params = { params: Promise<{ id: string }> };
 
 const Schema = z.object({
@@ -97,7 +98,9 @@ export async function POST(req: NextRequest, { params }: Params) {
               ...baseClone,
               item_req: startItem + i - 1,
               cantidad: partes[i],
-              fecha_solicitud: new Date(),
+              // hoyEnLima: evita el shift de un día que ocurría al usar new
+              // Date() en el server UTC de Railway después de las 19:00 Lima.
+              fecha_solicitud: hoyEnLima(),
               observaciones: `Dividido del requerimiento #${original.id}`,
             },
           });
@@ -111,7 +114,9 @@ export async function POST(req: NextRequest, { params }: Params) {
               ...baseClone,
               item_req: startItem + partes.length - 1,
               cantidad: remanente,
-              fecha_solicitud: new Date(),
+              // hoyEnLima: evita el shift de un día que ocurría al usar new
+              // Date() en el server UTC de Railway después de las 19:00 Lima.
+              fecha_solicitud: hoyEnLima(),
               observaciones: `Remanente dividido del requerimiento #${original.id}`,
             },
           });

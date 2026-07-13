@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { parseDateOnly } from "@/lib/dates";
+import { parseDateOnly, hoyEnLima } from "@/lib/dates";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
 const IGV_PCT = new Prisma.Decimal("0.18");
@@ -184,7 +184,9 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
               moneda: it.moneda ?? compra.moneda_codigo ?? "USD",
               fabricante_codigo: it.fabricante_codigo ?? null,
               fecha_entrega_esperada: fecha,
-              fecha_solicitud: new Date(),
+              // hoyEnLima: evita el shift de un día que ocurría al usar
+              // `new Date()` en el server UTC de Railway después de las 19:00 Lima.
+              fecha_solicitud: hoyEnLima(),
               tipo_codigo: "MAC",
               es_adicional: true,
               solo_para_oc: true,
