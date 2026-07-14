@@ -175,7 +175,7 @@ function Kpi({ label, value, color, active, onClick }: {
       onClick={onClick}
       style={{
         cursor: onClick ? "pointer" : "default",
-        background: active ? c : brand.white,
+        background: active ? c : "var(--erp-surface)",
         border: `1px solid ${active ? c : brand.border}`,
         borderRadius: radius.md,
         padding: "6px 14px",
@@ -1487,7 +1487,7 @@ function ConfigurarVistaDrawer({
                         padding: "6px 10px",
                         border: `1px solid ${brand.border}`,
                         borderRadius: 4,
-                        background: brand.white,
+                        background: "var(--erp-surface)",
                       }}
                     >
                       <span style={{ width: 14, height: 14, borderRadius: 3, background: colorDeComponente(c) }} />
@@ -1533,7 +1533,7 @@ function ConfigurarVistaDrawer({
                         padding: "6px 10px",
                         border: `1px solid ${brand.border}`,
                         borderRadius: 4,
-                        background: brand.white,
+                        background: "var(--erp-surface)",
                       }}
                     >
                       <ColorPicker
@@ -1596,10 +1596,10 @@ function TablaProgramacion({
         />
       </div>
       <style jsx global>{`
-        .pdash-tabla .pdash-zebra > td { background: #FAFBFC; }
+        .pdash-tabla .pdash-zebra > td { background: var(--erp-surface-hover); }
         .pdash-tabla .pdash-overdue > td:first-child { box-shadow: inset 3px 0 0 ${brand.error}; }
-        .pdash-tabla .pdash-overdue > td { background: rgba(207, 19, 34, 0.04); }
-        .pdash-tabla .ant-table-tbody > tr:hover > td { background: rgba(17, 160, 182, 0.10) !important; }
+        .pdash-tabla .pdash-overdue > td { background: color-mix(in srgb, ${brand.error} 6%, transparent); }
+        .pdash-tabla .ant-table-tbody > tr:hover > td { background: color-mix(in srgb, ${brand.cyan} 12%, transparent) !important; }
       `}</style>
     </TableDragWrapper>
   );

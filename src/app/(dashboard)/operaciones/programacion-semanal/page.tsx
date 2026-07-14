@@ -3098,7 +3098,7 @@ export default function ProgramacionSemanalPage() {
           .psg-stats { grid-template-columns: repeat(2, 1fr); }
         }
         .psg-stat-card {
-          background: #fff;
+          background: var(--erp-surface);
           border: 1px solid ${brand.border};
           border-radius: 6px;
           padding: 12px 16px;
@@ -3115,13 +3115,13 @@ export default function ProgramacionSemanalPage() {
           min-width: 100%;
         }
         .psg-row:first-child { border-top: none; }
-        .psg-header-row { background: #FAFAFA; min-height: 60px; position: sticky; top: 0; z-index: 3; }
+        .psg-header-row { background: var(--erp-surface-hover); min-height: 60px; position: sticky; top: 0; z-index: 3; }
         .psg-resource-cell {
           width: 220px; min-width: 220px;
           flex-shrink: 0;
           padding: 8px 12px;
           border-right: 1px solid ${brand.border};
-          background: #fff;
+          background: var(--erp-surface);
           display: flex; flex-direction: column; justify-content: center;
           font-size: 13px;
           position: sticky; left: 0; z-index: 2;
@@ -3137,7 +3137,7 @@ export default function ProgramacionSemanalPage() {
           text-overflow: ellipsis;
           word-break: break-word;
         }
-        .psg-header-row .psg-resource-cell { background: #FAFAFA; font-weight: 600; }
+        .psg-header-row .psg-resource-cell { background: var(--erp-surface-hover); font-weight: 600; }
         .psg-timeline-header { display: flex; flex-shrink: 0; }
         .psg-day-header {
           flex-shrink: 0;
@@ -3151,7 +3151,7 @@ export default function ProgramacionSemanalPage() {
           text-align: center;
           font-weight: 600;
           font-size: 12px;
-          background: #FAFAFA;
+          background: var(--erp-surface-hover);
           border-bottom: 1px solid ${brand.border};
           text-transform: capitalize;
         }
@@ -3168,7 +3168,7 @@ export default function ProgramacionSemanalPage() {
         .psg-hour-lunch-band {
           position: absolute;
           top: 0; bottom: 0;
-          background: #FFFBE6;
+          background: color-mix(in srgb, ${brand.warning} 14%, var(--erp-surface));
           pointer-events: none;
           z-index: 0;
           border-left: 1px dashed #d48806;
@@ -3177,7 +3177,7 @@ export default function ProgramacionSemanalPage() {
 
         .psg-row-strip {
           position: relative;
-          background: #fff;
+          background: var(--erp-surface);
           flex-shrink: 0;
         }
         .psg-day-bg {
@@ -3187,12 +3187,14 @@ export default function ProgramacionSemanalPage() {
         }
         .psg-slot {
           flex-shrink: 0;
-          border-right: 1px solid #F5F5F5;
+          border-right: 1px solid ${brand.border};
         }
         .psg-slot-lunch-band {
           position: absolute;
           top: 0; bottom: 0;
-          background: repeating-linear-gradient(45deg, #FFF7CC 0 4px, #FFFBE6 4px 8px);
+          background: repeating-linear-gradient(45deg,
+            color-mix(in srgb, ${brand.warning} 22%, var(--erp-surface)) 0 4px,
+            color-mix(in srgb, ${brand.warning} 10%, var(--erp-surface)) 4px 8px);
           pointer-events: none;
           z-index: 0;
         }
@@ -3356,7 +3358,7 @@ export default function ProgramacionSemanalPage() {
           position: relative;
           flex: 1;
           height: 6px;
-          background: #F0F0F0;
+          background: var(--erp-border);
           border-radius: 3px;
           overflow: hidden;
         }

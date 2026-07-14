@@ -1166,7 +1166,7 @@ export default function PlanificacionPage() {
                       display: "inline-flex",
                       alignItems: "center",
                       gap: 4,
-                      background: "#E6F4FF",
+                      background: "color-mix(in srgb, #1677FF 14%, var(--erp-surface))",
                       color: "#1677FF",
                       borderRadius: 4,
                       padding: "1px 6px",
@@ -1239,7 +1239,7 @@ export default function PlanificacionPage() {
                       display: "inline-flex",
                       alignItems: "center",
                       gap: 4,
-                      background: "#F6FFED",
+                      background: "color-mix(in srgb, #389E0D 16%, var(--erp-surface))",
                       color: "#389E0D",
                       borderRadius: 4,
                       padding: "1px 6px",
@@ -1832,7 +1832,7 @@ export default function PlanificacionPage() {
         <Card
           size="small"
           styles={{ body: { padding: 12 } }}
-          style={{ marginBottom: 12, borderColor: brand.cyan, background: "#E6FFFB" }}
+          style={{ marginBottom: 12, borderColor: brand.cyan, background: `color-mix(in srgb, ${brand.cyan} 8%, var(--erp-surface))` }}
         >
           <Row gutter={[12, 8]} align="middle">
             <Col flex="0 0 auto">
@@ -1935,26 +1935,26 @@ export default function PlanificacionPage() {
            (NRO, OT) se quedan siempre blancas opacas para que nada se vea por detrás.
            NOTA: antd 6 renombró las clases de columnas fijas a fix-start/fix-end. */
         .plan-row-done > td:not(.ant-table-cell-fix-start):not(.ant-table-cell-fix-end) {
-          background-color: #F6FFED !important;
+          background-color: color-mix(in srgb, ${brand.success} 12%, var(--erp-surface)) !important;
         }
         .plan-row-cancel > td:not(.ant-table-cell-fix-start):not(.ant-table-cell-fix-end) {
-          background-color: #FFF1F0 !important;
-          color: #999 !important;
+          background-color: color-mix(in srgb, ${brand.error} 12%, var(--erp-surface)) !important;
+          color: ${brand.textSecondary} !important;
           text-decoration: line-through;
         }
         .plan-row-pending > td:not(.ant-table-cell-fix-start):not(.ant-table-cell-fix-end) {
-          background-color: #FFFBE6 !important;
-          box-shadow: inset 3px 0 0 #FAAD14;
+          background-color: color-mix(in srgb, ${brand.warning} 14%, var(--erp-surface)) !important;
+          box-shadow: inset 3px 0 0 ${brand.warning};
         }
         /* Hover: oscurecer color de fondo de celdas no-fijas; las fijas se manejan en globals.css. */
         .ant-table-tbody > tr.plan-row-done:hover > td:not(.ant-table-cell-fix-start):not(.ant-table-cell-fix-end) {
-          background-color: #d9f7be !important;
+          background-color: color-mix(in srgb, ${brand.success} 22%, var(--erp-surface)) !important;
         }
         .ant-table-tbody > tr.plan-row-cancel:hover > td:not(.ant-table-cell-fix-start):not(.ant-table-cell-fix-end) {
-          background-color: #ffccc7 !important;
+          background-color: color-mix(in srgb, ${brand.error} 22%, var(--erp-surface)) !important;
         }
         .ant-table-tbody > tr.plan-row-pending:hover > td:not(.ant-table-cell-fix-start):not(.ant-table-cell-fix-end) {
-          background-color: #fff1b8 !important;
+          background-color: color-mix(in srgb, ${brand.warning} 26%, var(--erp-surface)) !important;
         }
         /* Las celdas fijas: SIEMPRE blanco opaco. Cubrimos todas las variantes
            que usa antd v6 para hover (clase, :hover, row-hover) y para filas
@@ -1979,7 +1979,7 @@ export default function PlanificacionPage() {
         .ant-table-tbody > tr.plan-row-cancel:hover > td.ant-table-cell-fix-end,
         .ant-table-tbody > tr.plan-row-pending:hover > td.ant-table-cell-fix-start,
         .ant-table-tbody > tr.plan-row-pending:hover > td.ant-table-cell-fix-end {
-          background-color: #ffffff !important;
+          background-color: var(--erp-surface) !important;
         }
       `}</style>
 
