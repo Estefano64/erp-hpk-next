@@ -105,7 +105,7 @@ interface OTRow {
   fecha_entrega: string | null;
   fecha_requerimiento: string | null;
   ot_status: string | null;
-  plan: Record<string, { estado: string | null; externo: boolean | null }>;
+  plan: Record<string, { estado: string | null; externo: boolean | null; comentario?: string | null }>;
   progreso: { total: number; realizadas: number };
 }
 
@@ -784,24 +784,37 @@ export default function ProgramacionDashboardPage() {
   }, [operaciones, filtroComponente, opsOcultasSet]);
 
   // Renderer de celda de operación: muestra abreviatura sobre fondo del color del estado.
-  const renderCelda = (estado: string | null, externo: boolean | null) => {
-    if (!estado) return <div style={{ width: "100%", textAlign: "center", color: brand.textSecondary }}>—</div>;
+  const renderCelda = (estado: string | null, externo: boolean | null, comentario?: string | null) => {
+    if (!estado) return <div style={{ width: "100%", textAlign: "center", color: brand.textSecondary, fontSize: 13 }}>—</div>;
     const color = colorDeEstado(estado);
     const abr = abreviarEstado(estado);
+    const nombreEstado = estados.find((e) => e.codigo === estado)?.nombre ?? estado;
+    // Tooltip: estado + tercero + comentario/observaciones de la(s) tarea(s).
+    const tip = (
+      <div style={{ maxWidth: 260 }}>
+        <div style={{ fontWeight: 600 }}>{nombreEstado}{externo ? " · Tercero 🤝" : ""}</div>
+        {comentario && (
+          <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9, whiteSpace: "pre-wrap" }}>
+            🗒 {comentario}
+          </div>
+        )}
+      </div>
+    );
     return (
-      <Tooltip title={`${estados.find((e) => e.codigo === estado)?.nombre ?? estado}${externo ? " · Tercero 🤝" : ""}`}>
+      <Tooltip title={tip}>
         <div
           style={{
             background: color,
             color: brand.white,
-            fontWeight: 600,
-            fontSize: 10,
+            fontWeight: 700,
+            fontSize: 12,
             textAlign: "center",
             borderRadius: 2,
-            padding: "1px 4px",
-            minHeight: 18,
-            lineHeight: "16px",
+            padding: "2px 4px",
+            minHeight: 22,
+            lineHeight: "18px",
             position: "relative",
+            cursor: comentario ? "help" : "default",
             backgroundImage: externo
               ? "repeating-linear-gradient(45deg, rgba(255,255,255,0.25) 0 4px, transparent 4px 8px)"
               : undefined,
@@ -809,6 +822,12 @@ export default function ProgramacionDashboardPage() {
           }}
         >
           {abr}
+          {comentario && (
+            <span style={{
+              position: "absolute", top: 1, right: 2, width: 4, height: 4,
+              borderRadius: "50%", background: "rgba(255,255,255,0.9)",
+            }} />
+          )}
         </div>
       </Tooltip>
     );
@@ -983,25 +1002,37 @@ export default function ProgramacionDashboardPage() {
       const opsSTD = ops.filter((o) => (o.clasificacion ?? "STD").toUpperCase() === "STD");
       const opsNSTD = ops.filter((o) => (o.clasificacion ?? "").toUpperCase() === "NO_STD");
 
-      const buildOpCol = (op: OperacionCat): ColumnType<OTRow> => ({
-        key: `op-${comp.codigo}-${op.codigo}`,
-        title: (
-          <Tooltip title={`${op.nombre}${op.clasificacion ? ` (${op.clasificacion})` : ""}`}>
-            <div style={{ fontSize: 10, lineHeight: 1.1, writingMode: "vertical-rl", transform: "rotate(180deg)", padding: "3px 0", whiteSpace: "nowrap" }}>
-              {op.nombre}
-            </div>
-          </Tooltip>
-        ),
-        width: 38,
-        align: "center" as const,
-        render: (_: unknown, r: OTRow) => {
-          // El backend normaliza las claves de planMap (trim + uppercase) para
-          // que coincidan aunque la planificación tenga casing distinto.
-          const key = `${comp.codigo.trim().toUpperCase()}__${op.codigo.trim().toUpperCase()}`;
-          const cell = r.plan[key];
-          return renderCelda(cell?.estado ?? null, cell?.externo ?? null);
-        },
-      });
+      // Tinte de fondo por clasificación (indicación del usuario: diferenciar
+      // estándar / no estándar con color). Verde muy suave = estándar, naranja
+      // muy suave = no estándar. Sobre var(--erp-surface) para funcionar en
+      // modo claro y oscuro.
+      const tinteStd = "color-mix(in srgb, #389E0D 8%, var(--erp-surface))";
+      const tinteNStd = "color-mix(in srgb, #D46B08 10%, var(--erp-surface))";
+
+      const buildOpCol = (op: OperacionCat, clase: "std" | "nstd"): ColumnType<OTRow> => {
+        const tinte = clase === "std" ? tinteStd : tinteNStd;
+        return {
+          key: `op-${comp.codigo}-${op.codigo}`,
+          title: (
+            <Tooltip title={`${op.nombre}${op.clasificacion ? ` (${op.clasificacion})` : ""}`}>
+              <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.1, writingMode: "vertical-rl", transform: "rotate(180deg)", padding: "3px 0", whiteSpace: "nowrap" }}>
+                {op.nombre}
+              </div>
+            </Tooltip>
+          ),
+          width: 44,
+          align: "center" as const,
+          onHeaderCell: () => ({ style: { background: tinte } }),
+          onCell: () => ({ style: { background: tinte, padding: "2px 3px" } }),
+          render: (_: unknown, r: OTRow) => {
+            // El backend normaliza las claves de planMap (trim + uppercase) para
+            // que coincidan aunque la planificación tenga casing distinto.
+            const key = `${comp.codigo.trim().toUpperCase()}__${op.codigo.trim().toUpperCase()}`;
+            const cell = r.plan[key];
+            return renderCelda(cell?.estado ?? null, cell?.externo ?? null, cell?.comentario ?? null);
+          },
+        };
+      };
 
       // Subgrupos por clasificación
       const subgrupos: ColumnsType<OTRow> = [];
@@ -1009,22 +1040,22 @@ export default function ProgramacionDashboardPage() {
         subgrupos.push({
           key: `comp-${comp.codigo}-std`,
           title: (
-            <div style={{ fontSize: 10, fontWeight: 600, color: "#389E0D", letterSpacing: 0.3 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: brand.white, letterSpacing: 0.3, background: "#389E0D", borderRadius: 3, padding: "1px 6px", display: "inline-block" }}>
               Estándar
             </div>
           ),
-          children: opsSTD.map(buildOpCol),
+          children: opsSTD.map((op) => buildOpCol(op, "std")),
         } as ColumnGroupType<OTRow>);
       }
       if (opsNSTD.length > 0) {
         subgrupos.push({
           key: `comp-${comp.codigo}-nstd`,
           title: (
-            <div style={{ fontSize: 10, fontWeight: 600, color: "#D46B08", letterSpacing: 0.3 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: brand.white, letterSpacing: 0.3, background: "#D46B08", borderRadius: 3, padding: "1px 6px", display: "inline-block" }}>
               No estándar
             </div>
           ),
-          children: opsNSTD.map(buildOpCol),
+          children: opsNSTD.map((op) => buildOpCol(op, "nstd")),
         } as ColumnGroupType<OTRow>);
       }
 
