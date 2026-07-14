@@ -1441,6 +1441,18 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
     successMsg: `${r.nro_req ?? "Item"} anulado`,
   });
 
+  const eliminarItem = async (r: Requerimiento) => {
+    try {
+      const res = await fetch(`/api/requerimientos/${r.id}`, { method: "DELETE" });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(json?.error || "Error al eliminar");
+      message.success(`${r.nro_req ?? "Item"} eliminado`);
+      await fetchData();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : "Error al eliminar");
+    }
+  };
+
   const sugerenciaDividir = (cantidad: number): number[][] => {
     // Ej para 4: [[1,1,1,1], [1,3], [2,2]]
     const sugs: number[][] = [];
@@ -1985,6 +1997,10 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
         const puedeAprobar = isAdmin && sr === "SIN_APROBACION" && sinOC;
         const puedeDesaprobar = isAdmin && sr === "SIN_APROBACION" && sinOC;
         const puedeAnular = isAdmin && noAnulado && sinOC;
+        // Eliminar: el backend permite DELETE cuando no hay OC y estado NO es
+        // APROBADO/ANULADO (BORRADOR, SIN_APROBACION, DESAPROBADO). Sin gate
+        // de admin — el creador puede limpiar sus propios reqs con error.
+        const puedeEliminar = sinOC && sr !== "APROBADO" && sr !== "ANULADO";
 
         // Consumir de almacén: requiere material, sin OC, no anulado, stock suficiente.
         const hayMaterial = r.material_id != null;
@@ -2042,6 +2058,20 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                   icon={<StopOutlined />}
                   onClick={() => anularItem(r)}
                 />
+              </Tooltip>
+            )}
+            {puedeEliminar && (
+              <Tooltip title="Eliminar definitivamente (borra el registro, no se puede deshacer)">
+                <Popconfirm
+                  title={`Eliminar ${r.nro_req ?? "requerimiento"}`}
+                  description="Se borrará el registro. Solo se puede eliminar si no tiene OC y no está aprobado ni anulado."
+                  okText="Eliminar"
+                  okButtonProps={{ danger: true }}
+                  cancelText="Cancelar"
+                  onConfirm={() => eliminarItem(r)}
+                >
+                  <Button size="small" danger icon={<DeleteOutlined />} />
+                </Popconfirm>
               </Tooltip>
             )}
             <Tooltip title={puedeConsumir ? "Consumir esta cantidad del stock interno (elige zona + posición)" : motivoDeshab}>
