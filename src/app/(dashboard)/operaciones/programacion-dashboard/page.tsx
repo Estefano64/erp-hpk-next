@@ -1601,6 +1601,22 @@ function TablaProgramacion({
   const { columnas, components, TableDragWrapper } = useColumnasRedimensionables<OTRow>(
     columns, "programacion-dashboard-v1",
   );
+  // Ancho horizontal FIJO = suma de los anchos de todas las columnas hoja.
+  // Con `x: "max-content"` antd calcula el ancho del encabezado y del cuerpo
+  // por separado; como las cabeceras tienen texto vertical, difieren por
+  // columna y el desfase se acumula al scrollear (header y cuerpo se
+  // desalinean). Con un número fijo ambas tablas usan table-layout: fixed y
+  // alinean perfecto.
+  const scrollX = useMemo(() => {
+    const sumaHojas = (cols: ColumnsType<OTRow>): number =>
+      cols.reduce((acc, c) => {
+        const hijos = (c as { children?: ColumnsType<OTRow> }).children;
+        if (hijos && hijos.length) return acc + sumaHojas(hijos);
+        const w = (c as { width?: number | string }).width;
+        return acc + (typeof w === "number" ? w : 80);
+      }, 0);
+    return sumaHojas(columnas);
+  }, [columnas]);
   return (
     <TableDragWrapper>
       <div className="pdash-tabla">
@@ -1612,12 +1628,10 @@ function TablaProgramacion({
           dataSource={data}
           loading={loading}
           bordered
-          // Sin `sticky`: con scroll.y el encabezado ya queda fijo arriba y —
-          // clave — comparte el MISMO scroll horizontal que el cuerpo, así no
-          // se desincroniza al mover a los lados. `sticky` (header a nivel de
-          // página) creaba una capa aparte que se despegaba en el scroll
-          // horizontal y dejaba la derecha inalcanzable.
-          scroll={{ x: "max-content", y: "calc(100vh - 240px)" }}
+          // Sin `sticky`: con scroll.y el encabezado ya queda fijo arriba y
+          // comparte el mismo scroll horizontal que el cuerpo. `scrollX` fijo
+          // (no "max-content") mantiene header y cuerpo alineados.
+          scroll={{ x: scrollX, y: "calc(100vh - 240px)" }}
           rowClassName={(r, idx) => `${idx % 2 === 1 ? "pdash-zebra" : ""} ${otAtrasada(r) ? "pdash-overdue" : ""}`.trim()}
           pagination={paginacionEstandar({
             current: page,
