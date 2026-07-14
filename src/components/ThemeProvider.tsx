@@ -13,7 +13,7 @@
 // Consumo: `const { tema, setTema } = useTema()` (el toggle vive en el
 // header del dashboard).
 
-import { createContext, useCallback, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import { ConfigProvider, App } from "antd";
 import esES from "antd/locale/es_ES";
 import { erpThemeFor, type TemaModo } from "@/lib/theme";
@@ -46,9 +46,15 @@ export default function ThemeProvider({
     try { localStorage.setItem("erp-tema", t); } catch { /* ignore */ }
   }, []);
 
+  // Memoizados: sin esto, cada render de este provider crea un theme y un
+  // value nuevos → antd regenera TODOS sus estilos y los consumidores del
+  // contexto re-renderizan sin necesidad. Solo cambian cuando cambia `tema`.
+  const theme = useMemo(() => erpThemeFor(tema), [tema]);
+  const ctxValue = useMemo(() => ({ tema, setTema }), [tema, setTema]);
+
   return (
-    <TemaContext.Provider value={{ tema, setTema }}>
-      <ConfigProvider theme={erpThemeFor(tema)} locale={esES}>
+    <TemaContext.Provider value={ctxValue}>
+      <ConfigProvider theme={theme} locale={esES}>
         <App>{children}</App>
       </ConfigProvider>
     </TemaContext.Provider>
