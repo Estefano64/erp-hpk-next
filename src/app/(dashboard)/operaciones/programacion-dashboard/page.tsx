@@ -56,7 +56,6 @@ import {
   useColumnasOcultas,
   ColumnasToggleButton,
   visibleColumns,
-  STICKY_HEADER,
   filtroPorColumna,
   useColumnasRedimensionables,
   paginacionEstandar,
@@ -1613,8 +1612,12 @@ function TablaProgramacion({
           dataSource={data}
           loading={loading}
           bordered
-          sticky={STICKY_HEADER}
-          scroll={{ x: "max-content", y: "calc(100vh - 280px)" }}
+          // Sin `sticky`: con scroll.y el encabezado ya queda fijo arriba y —
+          // clave — comparte el MISMO scroll horizontal que el cuerpo, así no
+          // se desincroniza al mover a los lados. `sticky` (header a nivel de
+          // página) creaba una capa aparte que se despegaba en el scroll
+          // horizontal y dejaba la derecha inalcanzable.
+          scroll={{ x: "max-content", y: "calc(100vh - 240px)" }}
           rowClassName={(r, idx) => `${idx % 2 === 1 ? "pdash-zebra" : ""} ${otAtrasada(r) ? "pdash-overdue" : ""}`.trim()}
           pagination={paginacionEstandar({
             current: page,
