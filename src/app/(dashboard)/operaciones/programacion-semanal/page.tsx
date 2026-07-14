@@ -3474,7 +3474,7 @@ export default function ProgramacionSemanalPage() {
           grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
           gap: 8px;
           padding: 12px;
-          background: #FAFAFA;
+          background: var(--erp-surface-hover);
           border: 1px solid ${brand.border};
           border-radius: 6px;
         }
