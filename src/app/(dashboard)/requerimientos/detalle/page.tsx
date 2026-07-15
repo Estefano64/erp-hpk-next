@@ -58,7 +58,7 @@ import {
   dentroDeRango,
   paginacionEstandar,
 } from "@/lib/tables";
-import { Popover, InputNumber, Divider, Checkbox, Switch, Upload } from "antd";
+import { Popover, InputNumber, Divider, Checkbox, Switch, Upload, Collapse } from "antd";
 import {
   UploadOutlined,
   PaperClipOutlined,
@@ -2972,6 +2972,66 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
             </Button>
           </div>
         </div>
+
+        {/* Apartado de comentarios de los items seleccionados. Muestra el
+            observaciones que dejo el solicitante y el comentario_aprobacion
+            del que aprobo el req, agrupado por item. Colapsable para no
+            saturar el modal cuando son muchos items. */}
+        {(() => {
+          const conComentarios = selectedRecords.filter(
+            (r) => (r.observaciones && r.observaciones.trim())
+              || (r.req_comentario_aprobacion && r.req_comentario_aprobacion.trim()),
+          );
+          if (conComentarios.length === 0) return null;
+          return (
+            <div style={{ marginTop: 12, marginBottom: 8 }}>
+              <Collapse
+                size="small"
+                ghost
+                items={[{
+                  key: "coms",
+                  label: (
+                    <Text strong style={{ fontSize: 12 }}>
+                      Comentarios de los items ({conComentarios.length} con notas)
+                    </Text>
+                  ),
+                  children: (
+                    <div style={{ maxHeight: 260, overflowY: "auto", paddingRight: 4 }}>
+                      {conComentarios.map((r) => (
+                        <div
+                          key={r.id}
+                          style={{
+                            borderLeft: `3px solid ${brand.navy}`,
+                            padding: "4px 8px",
+                            marginBottom: 8,
+                            background: brand.bgPage,
+                            borderRadius: 4,
+                          }}
+                        >
+                          <div style={{ fontSize: 11, color: brand.textSecondary, marginBottom: 2 }}>
+                            <b>{r.nro_req ?? "—"}</b>
+                            {r.item_req != null && <span> · item {r.item_req}</span>}
+                            {r.descripcion && <span> · {r.descripcion}</span>}
+                          </div>
+                          {r.observaciones && r.observaciones.trim() && (
+                            <div style={{ fontSize: 12, whiteSpace: "pre-wrap", marginTop: 2 }}>
+                              <b style={{ color: brand.textSecondary }}>Solicitante:</b> {r.observaciones}
+                            </div>
+                          )}
+                          {r.req_comentario_aprobacion && r.req_comentario_aprobacion.trim() && (
+                            <div style={{ fontSize: 12, whiteSpace: "pre-wrap", marginTop: 2 }}>
+                              <b style={{ color: brand.textSecondary }}>Aprobador{r.req_usuario_aprueba ? ` (${r.req_usuario_aprueba})` : ""}:</b> {r.req_comentario_aprobacion}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ),
+                }]}
+              />
+            </div>
+          );
+        })()}
 
         <Form form={ocForm} layout="vertical">
           <Row gutter={16}>
