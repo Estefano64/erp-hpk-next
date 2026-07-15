@@ -915,6 +915,28 @@ export default function OTRequerimientosTab({
     onUpdated?.();
   }
 
+  // Eliminar varios items en paralelo. El backend valida por item (rechaza los
+  // que ya tienen OC / están APROBADO / ANULADO), acá recolectamos éxitos vs
+  // errores y reportamos con un solo toast al final para no spamear.
+  async function eliminarLote(ids: number[]) {
+    if (ids.length === 0) return;
+    const resultados = await Promise.allSettled(
+      ids.map((id) => fetch(`/api/requerimientos/${id}`, { method: "DELETE" }).then(async (r) => {
+        if (!r.ok) {
+          const err = await r.json().catch(() => null);
+          throw new Error(err?.error ?? "Error");
+        }
+        return id;
+      })),
+    );
+    const ok = resultados.filter((r) => r.status === "fulfilled").length;
+    const errs = resultados.length - ok;
+    if (ok > 0) messageApi.success(`Eliminados: ${ok}${errs ? ` · Fallaron: ${errs}` : ""}`);
+    if (errs > 0 && ok === 0) messageApi.error(`No se pudo eliminar ningún item (${errs} con error).`);
+    fetchData();
+    onUpdated?.();
+  }
+
   // ── Stats ──
   const stats = useMemo(() => {
     let borrador = 0, aprobados = 0, sinAprob = 0, conOC = 0, anulados = 0;
@@ -1779,6 +1801,7 @@ export default function OTRequerimientosTab({
           onEnviarGrupo={enviarGrupo}
           onSetFechaRequerida={setFechaRequeridaGrupo}
           otFechaRecepcion={otFechaRecepcionEfectiva}
+          onEliminarLote={eliminarLote}
         />
       )}
 
@@ -2037,6 +2060,7 @@ function RequerimientosAgrupados({
   onEnviarGrupo,
   onSetFechaRequerida,
   otFechaRecepcion,
+  onEliminarLote,
 }: {
   rows: RequerimientoRow[];
   columns: ColumnsType<RequerimientoRow>;
@@ -2047,7 +2071,13 @@ function RequerimientosAgrupados({
   onEnviarGrupo?: (nroReq: string) => void;
   onSetFechaRequerida?: (nroReq: string, fecha: dayjs.Dayjs | null) => Promise<void>;
   otFechaRecepcion?: string | Date | null;
+  onEliminarLote?: (ids: number[]) => Promise<void>;
 }) {
+  // Selección multi-item por grupo. Guardamos las keys por nro_req para que
+  // colapsar/expandir o cambiar de grupo no pierda la selección de otros.
+  const [selByGrupo, setSelByGrupo] = useState<Record<string, React.Key[]>>({});
+  const setSelDelGrupo = (nro: string, keys: React.Key[]) =>
+    setSelByGrupo((prev) => ({ ...prev, [nro]: keys }));
   // Agrupar por nro_req (preservando orden por fecha desc del primer item de cada grupo)
   const groups = useMemo(() => {
     const m = new Map<string, RequerimientoRow[]>();
@@ -2157,6 +2187,25 @@ function RequerimientosAgrupados({
             }
             extra={
               <Space size={6}>
+                {(() => {
+                  const seleccionados = (selByGrupo[nro] ?? []) as number[];
+                  if (!onEliminarLote || seleccionados.length === 0) return null;
+                  return (
+                    <Popconfirm
+                      title={`Eliminar ${seleccionados.length} item(s) seleccionados`}
+                      description="El backend solo permite eliminar items sin OC y que no estén APROBADO/ANULADO. El resto se salta."
+                      okText="Eliminar" okButtonProps={{ danger: true }} cancelText="Cancelar"
+                      onConfirm={async () => {
+                        await onEliminarLote(seleccionados);
+                        setSelDelGrupo(nro, []);
+                      }}
+                    >
+                      <Button size="small" danger icon={<DeleteOutlined />}>
+                        Eliminar seleccionados ({seleccionados.length})
+                      </Button>
+                    </Popconfirm>
+                  );
+                })()}
                 {isRealReq && allEditable && onSetFechaRequerida && (
                   <FechaRequeridaBulkButton
                     nroReq={nro}
@@ -2197,6 +2246,20 @@ function RequerimientosAgrupados({
                 size="small"
                 scroll={{ x: 2160 }}
                 rowClassName={(r) => r.status_requerimiento_codigo === "ANULADO" ? "req-anulado" : ""}
+                rowSelection={onEliminarLote ? {
+                  selectedRowKeys: (selByGrupo[nro] ?? []),
+                  onChange: (keys) => setSelDelGrupo(nro, keys),
+                  // Solo permitimos seleccionar items eliminables por el backend:
+                  // sin OC y en estados donde DELETE está aceptado (BORRADOR /
+                  // SIN_APROBACION / DESAPROBADO). Los ya aprobados / con OC /
+                  // anulados salen greyed-out.
+                  getCheckboxProps: (r) => {
+                    const sr = r.status_requerimiento_codigo ?? "BORRADOR";
+                    const tieneOC = r.po_id != null;
+                    const bloqueado = tieneOC || sr === "APROBADO" || sr === "ANULADO";
+                    return { disabled: bloqueado };
+                  },
+                } : undefined}
               />
             )}
           </Card>
