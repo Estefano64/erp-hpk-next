@@ -80,6 +80,7 @@ interface ReqPendiente {
   cantidad: number | string;
   unidad_medida: string | null;
   precio_unitario: number | string | null;
+  precio_venta: number | string | null;
   moneda: string | null;
   fecha_solicitud: string;
   fecha_requerida: string | null;
@@ -1079,6 +1080,27 @@ export default function AceptacionesPage() {
         if (r.material?.stock_actual == null) return <Text type="secondary">—</Text>;
         const st = Number(r.material.stock_actual);
         return <span style={{ color: st > 0 ? "#52c41a" : "#ff4d4f", fontWeight: 600 }}>{st}</span>;
+      },
+    },
+    {
+      key: "precio_unit_req", title: "P. Unit. Req", width: 110, align: "right",
+      // Precio de compra/costo unitario que carga el solicitante al crear el req
+      // (OTRepuesto.precio_unitario). Se muestra en la moneda del req, con
+      // fallback a "USD" si viene null.
+      sorter: (a, b) => Number(a.precio_unitario ?? 0) - Number(b.precio_unitario ?? 0),
+      render: (_, r) => {
+        if (r.precio_unitario == null) return <Text type="secondary">—</Text>;
+        return <span>{r.moneda ?? "USD"} {Number(r.precio_unitario).toFixed(2)}</span>;
+      },
+    },
+    {
+      key: "precio_venta_req", title: "P. Venta Req", width: 110, align: "right",
+      // Precio de venta al cliente que carga el solicitante (OTRepuesto.precio_venta).
+      // Puede estar vacío si el flujo del req todavía no cotizó venta.
+      sorter: (a, b) => Number(a.precio_venta ?? 0) - Number(b.precio_venta ?? 0),
+      render: (_, r) => {
+        if (r.precio_venta == null) return <Text type="secondary">—</Text>;
+        return <span>{r.moneda ?? "USD"} {Number(r.precio_venta).toFixed(2)}</span>;
       },
     },
     {
