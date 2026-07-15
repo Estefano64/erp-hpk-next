@@ -60,6 +60,7 @@ import {
   paginacionEstandar,
 } from "@/lib/tables";
 import { brand } from "@/lib/theme";
+import { useEscrituraApi } from "@/lib/use-escritura";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import dayjs, { Dayjs } from "dayjs";
 
@@ -1735,6 +1736,9 @@ function TabSalida({ onRefresh }: { onRefresh: () => void }) {
 // ════════════════════════════════════════════════════════════
 export default function MovimientosPage() {
   const [refreshKey, setRefreshKey] = useState(0);
+  // Registrar movimientos es de logística (misma matriz que el servidor);
+  // los demás roles ven solo el historial.
+  const esLogistica = useEscrituraApi("/api/movimientos", "POST");
 
   const tabItems = [
     {
@@ -1751,7 +1755,7 @@ export default function MovimientosPage() {
     // "Requerimientos Aprobados" — sigue exportado desde acá (TabIngresoPO)
     // y se importa desde /compras/page.tsx. Mantenemos el componente local
     // por si después se quiere ofrecer también en este módulo.
-    {
+    ...(esLogistica ? [{
       key: "salida",
       label: (
         <Space>
@@ -1760,7 +1764,7 @@ export default function MovimientosPage() {
         </Space>
       ),
       children: <TabSalida key={`salida-${refreshKey}`} onRefresh={() => setRefreshKey((k) => k + 1)} />,
-    },
+    }] : []),
   ];
 
   return (

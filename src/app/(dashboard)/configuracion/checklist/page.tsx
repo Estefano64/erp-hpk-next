@@ -508,7 +508,7 @@ export default function ChecklistPage() {
                         flexDirection: "column",
                         gap: 4,
                         padding: "8px 12px",
-                        background: marcado ? `${brand.success}11` : brand.bgPage,
+                        background: marcado ? `color-mix(in srgb, ${brand.success} 7%, transparent)` : brand.bgPage,
                         border: `1px solid ${marcado ? brand.success : brand.border}`,
                         borderRadius: 6,
                         opacity: marcado ? 0.85 : 1,

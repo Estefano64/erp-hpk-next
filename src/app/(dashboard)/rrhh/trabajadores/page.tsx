@@ -24,6 +24,8 @@ import {
 } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import { useResponsive, modalWidth } from "@/lib/responsive";
+import { useSession } from "next-auth/react";
+import { rolesDesdeUser } from "@/lib/permisos";
 
 dayjs.extend(isoWeek);
 
@@ -65,14 +67,18 @@ const ROLES = [
   { value: "tecnico", label: "Técnico — operario + panel personal" },
   { value: "evaluador", label: "Evaluador — firma 'Evaluado por' en hojas" },
   { value: "aprobador_evaluacion", label: "Aprobador de hojas — firma 'Supervisor' y aprueba evaluaciones" },
-  { value: "aprobador_requerimiento", label: "Aprobador de requerimientos" },
-  { value: "planner", label: "Planner — dashboard de programación semanal" },
-  { value: "produccion", label: "Producción — dashboard de KPIs de taller" },
-  { value: "logistica", label: "Logística — dashboard del área" },
+  { value: "aprobador_requerimiento", label: "Aprobador de requerimientos — hasta US$ 5,000" },
+  { value: "aprobador_oc_2500", label: "Aprobador de OCs — hasta US$ 2,500" },
+  { value: "aprobador_oc_5000", label: "Aprobador de OCs — hasta US$ 5,000" },
+  { value: "gerencia", label: "Gerencia — aprueba sin tope de monto" },
+  { value: "planner", label: "Planner — planificación/programación + dashboards" },
+  { value: "produccion", label: "Producción — operaciones/taller + dashboards" },
+  { value: "logistica", label: "Logística — ciclo de compra y almacén" },
+  { value: "mantenimiento", label: "Mantenimiento — OTs internas + equipos" },
+  { value: "contabilidad", label: "Contabilidad — compras y facturación" },
+  { value: "sin_costos", label: "Sin costos — oculta la pestaña Costos de OT (modificador)" },
   // Placeholders (sin efecto todavía)
   { value: "supervisor", label: "Supervisor (placeholder)" },
-  { value: "mantenimiento", label: "Mantenimiento (placeholder)" },
-  { value: "contabilidad", label: "Contabilidad (placeholder)" },
 ];
 
 // Colores de tags por rol para los badges en la tabla.
@@ -173,6 +179,11 @@ function eficienciaColorVista(pct: number | null): string {
 export default function TrabajadoresPage() {
   const { message, modal } = App.useApp();
   const { isMobile, screens } = useResponsive();
+  // planner/produccion entran en modo SOLO LECTURA: ven la lista de
+  // trabajadores pero sin la columna Cuenta (los datos de cuentas son
+  // admin-only y quedaba "todo sin cuenta"), sin acciones ni alta.
+  const { data: session } = useSession();
+  const esAdmin = rolesDesdeUser(session?.user as { roles?: string[] } | undefined).includes("admin");
   const [rows, setRows] = useState<Trabajador[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -359,6 +370,7 @@ export default function TrabajadoresPage() {
   ], []);
 
   const fetchUsuarios = useCallback(async () => {
+    if (!esAdmin) return; // /api/usuarios es admin-only: ni intentarlo
     const res = await fetch("/api/usuarios");
     if (!res.ok) return;
     const j = await res.json();
@@ -369,7 +381,7 @@ export default function TrabajadoresPage() {
       if (u.trabajadorId != null) map[u.trabajadorId] = u;
     }
     setUsuariosByTrabajador(map);
-  }, []);
+  }, [esAdmin]);
 
   const abortable = useAbortableFetch();
   const fetchData = useCallback(async () => {
@@ -679,51 +691,55 @@ export default function TrabajadoresPage() {
         return <Text style={{ fontSize: 12, color: brand.navy }}>S/ {Number(v).toFixed(2)}</Text>;
       },
     },
-    {
-      key: "cuenta", title: "Cuenta", width: 220, align: "center",
-      render: (_, r) => {
-        const u = usuariosByTrabajador[r.trabajador_id];
-        if (!u) {
+    // Cuenta y Acciones son de gestión (los datos/APIs son admin-only): para
+    // planner/produccion (solo lectura) las columnas ni aparecen.
+    ...(esAdmin ? ([
+      {
+        key: "cuenta", title: "Cuenta", width: 220, align: "center",
+        render: (_, r) => {
+          const u = usuariosByTrabajador[r.trabajador_id];
+          if (!u) {
+            return (
+              <Tooltip title="Crear cuenta de usuario para este trabajador">
+                <Button size="small" icon={<UserAddOutlined />} onClick={() => openCuenta(r)}>
+                  Sin cuenta
+                </Button>
+              </Tooltip>
+            );
+          }
           return (
-            <Tooltip title="Crear cuenta de usuario para este trabajador">
-              <Button size="small" icon={<UserAddOutlined />} onClick={() => openCuenta(r)}>
-                Sin cuenta
-              </Button>
+            <Tooltip title={`${u.codigoEmpleado}${u.email ? ` · ${u.email}` : ""} · ${u.roles.join(", ") || "sin roles"}`}>
+              <Space size={2} wrap onClick={() => openCuenta(r)} style={{ cursor: "pointer" }}>
+                <UserOutlined style={{ color: u.activo ? brand.cyan : brand.textSecondary }} />
+                {u.roles.length === 0
+                  ? <Tag color="default" style={{ fontSize: 10, margin: 0 }}>sin rol</Tag>
+                  : u.roles.map((r) => (
+                      <Tag key={r} color={u.activo ? (COLOR_POR_ROL[r] ?? "blue") : "default"} style={{ fontSize: 10, margin: 0 }}>{r}</Tag>
+                    ))
+                }
+                {!u.activo && <Tag color="default" style={{ fontSize: 10, margin: 0 }}>inactiva</Tag>}
+              </Space>
             </Tooltip>
           );
-        }
-        return (
-          <Tooltip title={`${u.codigoEmpleado}${u.email ? ` · ${u.email}` : ""} · ${u.roles.join(", ") || "sin roles"}`}>
-            <Space size={2} wrap onClick={() => openCuenta(r)} style={{ cursor: "pointer" }}>
-              <UserOutlined style={{ color: u.activo ? brand.cyan : brand.textSecondary }} />
-              {u.roles.length === 0
-                ? <Tag color="default" style={{ fontSize: 10, margin: 0 }}>sin rol</Tag>
-                : u.roles.map((r) => (
-                    <Tag key={r} color={u.activo ? (COLOR_POR_ROL[r] ?? "blue") : "default"} style={{ fontSize: 10, margin: 0 }}>{r}</Tag>
-                  ))
-              }
-              {!u.activo && <Tag color="default" style={{ fontSize: 10, margin: 0 }}>inactiva</Tag>}
-            </Space>
-          </Tooltip>
-        );
+        },
       },
-    },
-    {
-      key: "acciones", title: "", width: 140, fixed: "right", align: "center",
-      render: (_, r) => (
-        <Space size={2}>
-          <Tooltip title="Ver vista de este técnico (solo lectura)">
-            <Button type="text" size="small" icon={<EyeOutlined />} onClick={() => abrirVista(r)} />
-          </Tooltip>
-          <Tooltip title="Editar"><Button type="text" size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} /></Tooltip>
-          {r.activo && (
-            <Popconfirm title={`Desactivar a ${r.nombre}?`} onConfirm={() => handleDelete(r)} okText="Sí" cancelText="No">
-              <Tooltip title="Desactivar"><Button type="text" size="small" danger icon={<DeleteOutlined />} /></Tooltip>
-            </Popconfirm>
-          )}
-        </Space>
-      ),
-    },
+      {
+        key: "acciones", title: "", width: 140, fixed: "right", align: "center",
+        render: (_, r) => (
+          <Space size={2}>
+            <Tooltip title="Ver vista de este técnico (solo lectura)">
+              <Button type="text" size="small" icon={<EyeOutlined />} onClick={() => abrirVista(r)} />
+            </Tooltip>
+            <Tooltip title="Editar"><Button type="text" size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} /></Tooltip>
+            {r.activo && (
+              <Popconfirm title={`Desactivar a ${r.nombre}?`} onConfirm={() => handleDelete(r)} okText="Sí" cancelText="No">
+                <Tooltip title="Desactivar"><Button type="text" size="small" danger icon={<DeleteOutlined />} /></Tooltip>
+              </Popconfirm>
+            )}
+          </Space>
+        ),
+      },
+    ] satisfies ColumnsType<Trabajador>) : []),
   ];
 
   const { columnas: columnsResizable, components: tableComponents, TableDragWrapper } =
@@ -741,7 +757,7 @@ export default function TrabajadoresPage() {
             <Button icon={<EyeOutlined />} onClick={() => abrirVista()}>Ver vista de técnico</Button>
           </Tooltip>
           <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>Refrescar</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nuevo</Button>
+          {esAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nuevo</Button>}
         </Space>
       </div>
 
@@ -797,14 +813,15 @@ export default function TrabajadoresPage() {
                 key: "costo_he", label: "Costo H.E.",
                 value: (r) => r.costo_hora_extra != null ? Number(r.costo_hora_extra) : "",
               },
-              {
+              // La columna Cuenta del export solo tiene datos para admin.
+              ...(esAdmin ? [{
                 key: "cuenta", label: "Cuenta",
-                value: (r) => {
+                value: (r: Trabajador) => {
                   const u = usuariosByTrabajador[r.trabajador_id];
                   if (!u) return "Sin cuenta";
                   return `${u.codigoEmpleado}${u.roles.length > 0 ? ` (${u.roles.join(", ")})` : ""}`;
                 },
-              },
+              }] : []),
               { key: "activo", label: "Activo", value: (r) => r.activo ? "Sí" : "No" },
             ]}
           />

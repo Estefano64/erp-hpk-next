@@ -3,6 +3,7 @@ import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { recalcularRecursosStatusDesdeRep } from "@/lib/recursos-ot";
+import { montoEnUSD, puedeAprobarReq } from "@/lib/aprobacion-montos";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
@@ -61,6 +62,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         ot_id: true,
         orden_trabajo_interna_id: true,
         nro_req: true,
+        cantidad: true,
+        precio_unitario: true,
+        moneda: true,
       },
     });
     if (!current) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
@@ -68,6 +72,15 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       return NextResponse.json({
         error: `Solo se puede aprobar desde SIN_APROBACION. Estado actual: ${current.status_requerimiento_codigo}`,
       }, { status: 409 });
+    }
+    // Tope de aprobación por monto (aprobacion-montos.ts). Si el body trae
+    // precio estimado, se usa ese (es el que quedará registrado al aprobar).
+    const precioTope = precioEstimado ?? Number(current.precio_unitario ?? 0);
+    const monedaTope = monedaEstimado ?? current.moneda;
+    const montoUSD = montoEnUSD((Number.isFinite(precioTope) ? precioTope : 0) * Number(current.cantidad ?? 0), monedaTope);
+    const permiso = puedeAprobarReq((token.roles as string[] | undefined) ?? [], montoUSD);
+    if (!permiso.ok) {
+      return NextResponse.json({ error: permiso.error }, { status: 403 });
     }
 
     const updated = await prisma.$transaction(async (tx) => {

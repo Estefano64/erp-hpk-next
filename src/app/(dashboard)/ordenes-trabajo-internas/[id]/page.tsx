@@ -19,6 +19,8 @@ import dayjs, { type Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
 import { areasTallerGrouped, areaTallerLabel } from "@/lib/areas-taller";
 import { formatOtInternaCodigo } from "@/lib/ot-formato";
+import { puedeVerCostosOT } from "@/lib/acceso-rutas";
+import { rolesDesdeUser } from "@/lib/permisos";
 import OTInternaAdjuntosTab from "@/components/modules/ordenes-trabajo-internas/OTInternaAdjuntosTab";
 import OTInternaRequerimientosTab from "@/components/modules/ordenes-trabajo-internas/OTInternaRequerimientosTab";
 import OTInternaHistorialTab from "@/components/modules/ordenes-trabajo-internas/OTInternaHistorialTab";
@@ -134,6 +136,8 @@ export default function OTInternaDetallePage() {
   const { data: session } = useSession();
   const currentUser = (session?.user?.name ?? session?.user?.email) ?? null;
   const lock = useEditLock("ot-interna", Number.isFinite(otId) && otId > 0 ? otId : null, currentUser);
+  // Modificador "sin_costos": la pestaña Costos no se muestra.
+  const verCostos = puedeVerCostosOT(rolesDesdeUser(session?.user as { roles?: string[] } | undefined));
 
   const [ot, setOt] = useState<OTInternaDetalle | null>(null);
   const [loading, setLoading] = useState(true);
@@ -231,6 +235,7 @@ export default function OTInternaDetallePage() {
   // header puede quedar desactualizado hasta refresh (aceptable).
   useEffect(() => {
     if (!Number.isFinite(otId) || otId <= 0) return;
+    if (!verCostos) return; // costos = solo admin sin sin_costos; ni pedirlos
     fetch(`/api/ordenes-trabajo-internas/${otId}/costos`)
       .then(async (r) => {
         if (!r.ok) return;
@@ -243,7 +248,7 @@ export default function OTInternaDetallePage() {
         });
       })
       .catch(() => { /* sin costos no rompemos el detalle */ });
-  }, [otId]);
+  }, [otId, verCostos]);
 
   useEffect(() => {
     (async () => {
@@ -739,12 +744,12 @@ export default function OTInternaDetallePage() {
             icon: <InboxOutlined />,
             children: <OTInternaRequerimientosTab otInternaId={otId} />,
           },
-          {
+          ...(verCostos ? [{
             key: "costos",
             label: "Costos",
             icon: <DollarOutlined />,
             children: <OTCostosTab otId={otId} kind="interna" />,
-          },
+          }] : []),
           {
             key: "adjuntos",
             label: "Adjuntos",

@@ -13,6 +13,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
+import { useEscrituraApi } from "@/lib/use-escritura";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import {
   numeracionColumn, useColumnasOcultas, ColumnasToggleButton, visibleColumns,
@@ -471,6 +472,8 @@ function GrupoCard({
   router: ReturnType<typeof useRouter>;
 }) {
   const { ocultas, setOcultas } = useColumnasOcultas(`despachos-ot-${grupo.ot_id}-cols-v1`);
+  // Despachar es de logística (misma matriz que el servidor).
+  const esLogistica = useEscrituraApi("/api/despachos/ot/0", "POST");
 
   const columns: ColumnsType<Item> = [
     numeracionColumn<Item>(),
@@ -661,15 +664,17 @@ function GrupoCard({
             setOcultas={setOcultas}
             obligatorias={["nro_req", "desc", "cantidad", "puede"]}
           />
-          <Button
-            type="primary"
-            icon={<ExportOutlined />}
-            disabled={seleccionados.length === 0}
-            loading={submitting}
-            onClick={onDespachar}
-          >
-            Despachar seleccionados ({seleccionados.length})
-          </Button>
+          {esLogistica && (
+            <Button
+              type="primary"
+              icon={<ExportOutlined />}
+              disabled={seleccionados.length === 0}
+              loading={submitting}
+              onClick={onDespachar}
+            >
+              Despachar seleccionados ({seleccionados.length})
+            </Button>
+          )}
         </Space>
       }
     >

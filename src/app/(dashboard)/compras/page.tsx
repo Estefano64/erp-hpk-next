@@ -64,6 +64,7 @@ import {
 } from "@/lib/tables";
 import { Popover, Divider } from "antd";
 import { brand } from "@/lib/theme";
+import { useEscrituraApi } from "@/lib/use-escritura";
 import dayjs from "dayjs";
 import CompraDetalleModal from "@/components/modules/compras/CompraDetalleModal";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
@@ -122,6 +123,9 @@ const estadoColor: Record<string, string> = {
 export default function ComprasPage() {
   const router = useRouter();
   const { message, modal } = App.useApp();
+  // Editar/eliminar OCs es de logística (misma matriz que el servidor);
+  // producción/contabilidad/etc. ven el listado en solo-lectura.
+  const esLogistica = useEscrituraApi("/api/compras", "POST");
 
   const [data, setData] = useState<Compra[]>([]);
   const [loading, setLoading] = useState(false);
@@ -839,9 +843,11 @@ export default function ComprasPage() {
           <Tooltip title="Ver detalle">
             <Button type="text" icon={<EyeOutlined />} onClick={() => setModalId(r.id)} />
           </Tooltip>
-          <Tooltip title="Editar items (tipo Excel)">
-            <Button type="text" icon={<EditOutlined style={{ color: brand.cyan }} />} onClick={() => router.push(`/compras/${r.id}/editar`)} />
-          </Tooltip>
+          {esLogistica && (
+            <Tooltip title="Editar items (tipo Excel)">
+              <Button type="text" icon={<EditOutlined style={{ color: brand.cyan }} />} onClick={() => router.push(`/compras/${r.id}/editar`)} />
+            </Tooltip>
+          )}
           <Tooltip title="Generar PDF (OC)">
             <Button type="text" icon={<FilePdfOutlined style={{ color: "#cf1322" }} />} onClick={() => window.open(`/api/compras/${r.id}/pdf`, "_blank")} />
           </Tooltip>
@@ -858,7 +864,7 @@ export default function ComprasPage() {
               </Popconfirm>
             </Tooltip>
           )}
-          {r.estado === "Pendiente" && (
+          {esLogistica && r.estado === "Pendiente" && (
             <Tooltip title="Eliminar">
               <Popconfirm
                 title="¿Eliminar esta OC?"
@@ -1055,30 +1061,35 @@ export default function ComprasPage() {
             ),
             children: ocsContent,
           },
-          {
-            key: "ingreso",
-            label: (
-              <span>
-                <InboxOutlined /> Ingreso de POs
-              </span>
-            ),
-            // Componente importado desde /movimientos — el tab fue movido
-            // acá para que el equipo de logística reciba las OCs sin cambiar
-            // de módulo. onRefresh recarga la lista de OCs después de un ingreso.
-            children: <TabIngresoPO onRefresh={fetchData} />,
-          },
-          {
-            key: "oc-abiertas",
-            label: (
-              <span>
-                <DatabaseOutlined /> OCs Abiertas
-              </span>
-            ),
-            // Componente importado desde /compras/oc-abiertas/page.tsx
-            // (export con nombre OCAbiertasTab). Embebido como tab acá para
-            // que el almacén abierto se gestione desde el mismo módulo.
-            children: <OCAbiertasTab />,
-          },
+          // Ingreso de POs y OCs Abiertas son operación de logística (recibir
+          // mercadería, consumir almacén abierto): los demás roles ven solo
+          // el listado de OCs.
+          ...(esLogistica ? [
+            {
+              key: "ingreso",
+              label: (
+                <span>
+                  <InboxOutlined /> Ingreso de POs
+                </span>
+              ),
+              // Componente importado desde /movimientos — el tab fue movido
+              // acá para que el equipo de logística reciba las OCs sin cambiar
+              // de módulo. onRefresh recarga la lista de OCs después de un ingreso.
+              children: <TabIngresoPO onRefresh={fetchData} />,
+            },
+            {
+              key: "oc-abiertas",
+              label: (
+                <span>
+                  <DatabaseOutlined /> OCs Abiertas
+                </span>
+              ),
+              // Componente importado desde /compras/oc-abiertas/page.tsx
+              // (export con nombre OCAbiertasTab). Embebido como tab acá para
+              // que el almacén abierto se gestione desde el mismo módulo.
+              children: <OCAbiertasTab />,
+            },
+          ] : []),
         ]}
       />
 

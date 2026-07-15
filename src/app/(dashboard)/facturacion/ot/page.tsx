@@ -16,6 +16,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
+import { useEscrituraApi } from "@/lib/use-escritura";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import { formatDateOnly } from "@/lib/dates";
 import { useColumnasRedimensionables, STICKY_HEADER, paginacionEstandar } from "@/lib/tables";
@@ -97,6 +98,8 @@ function formatFileSize(bytes: number): string {
 export default function FacturacionOTPage() {
   const { message: msg } = App.useApp();
   const router = useRouter();
+  // Facturar es de logística/contabilidad (misma matriz que el servidor).
+  const puedeFacturar = useEscrituraApi("/api/facturacion/ot/0", "POST");
   const { screens } = useResponsive();
   const [data, setData] = useState<OTLista[]>([]);
   const [loading, setLoading] = useState(false);
@@ -331,20 +334,22 @@ export default function FacturacionOTPage() {
           <Tooltip title="Ver OT">
             <Button size="small" icon={<EyeOutlined />} onClick={() => router.push(`/ordenes-trabajo/${r.id}`)} />
           </Tooltip>
-          <Tooltip title={r.pdfs_ok ? "Abrir factura + PDFs" : `Faltan PDFs: ${r.faltantes.join(", ")}. Podés subirlos desde la ventana.`}>
-            <Button
-              size="small"
-              type="primary"
-              icon={<FileDoneOutlined />}
-              onClick={() => abrirModal(r)}
-            >
-              {r.nro_factura ? "Editar factura" : (r.pdfs_ok ? "Facturar" : "Adjuntar y facturar")}
-            </Button>
-          </Tooltip>
+          {puedeFacturar && (
+            <Tooltip title={r.pdfs_ok ? "Abrir factura + PDFs" : `Faltan PDFs: ${r.faltantes.join(", ")}. Podés subirlos desde la ventana.`}>
+              <Button
+                size="small"
+                type="primary"
+                icon={<FileDoneOutlined />}
+                onClick={() => abrirModal(r)}
+              >
+                {r.nro_factura ? "Editar factura" : (r.pdfs_ok ? "Facturar" : "Adjuntar y facturar")}
+              </Button>
+            </Tooltip>
+          )}
         </Space>
       ),
     },
-  ], [router]);
+  ], [router, puedeFacturar]);
 
   return (
     <div>

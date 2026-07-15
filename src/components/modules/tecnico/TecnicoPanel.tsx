@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Typography, Card, Row, Col, Table, Tag, Button, Statistic, Empty, Space, App, Tooltip, Segmented, Modal, Input, Upload, Radio, Spin,
 } from "antd";
@@ -143,14 +143,39 @@ function formatSegundos(s: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
+// Cronómetro de la sesión en curso. AISLADO a propósito: es lo único que
+// avanza cada segundo. Antes el tick vivía en TecnicoPanel y re-renderizaba
+// TODO el panel (14 Cards/Tablas) una vez por segundo durante todo el turno
+// del técnico — eso trababa laptops y celulares. Ahora solo este componente
+// re-renderiza por segundo. Se re-monta con `key={sesion_id}` para reiniciar.
+function CronometroSesion({ transcurridoSeg, esHE, isMobile }: {
+  transcurridoSeg: number; esHE: boolean; isMobile: boolean;
+}) {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    // El tiempo hábil se congela en almuerzo/fuera de jornada (salvo HE),
+    // igual que las horas reales que se guardan.
+    const h = window.setInterval(() => {
+      if (esHE || enVentanaConteo(new Date())) setTick((s) => s + 1);
+    }, 1000);
+    return () => window.clearInterval(h);
+  }, [esHE]);
+  return (
+    <Statistic
+      title="Tiempo en esta sesión"
+      value={formatSegundos(transcurridoSeg + tick)}
+      prefix={<ClockCircleOutlined style={{ color: brand.cyan }} />}
+      valueStyle={{ color: brand.cyan, fontFamily: "monospace", fontSize: isMobile ? 22 : 28 }}
+    />
+  );
+}
+
 export default function TecnicoPanel() {
   const { message, modal } = App.useApp();
   const { screens, isMobile } = useResponsive(); // isMobile = < 768px
   const [data, setData] = useState<MiTrabajo | null>(null);
   const [loading, setLoading] = useState(false);
   const [accionLoading, setAccionLoading] = useState<number | null>(null);
-  // Cronómetro local que avanza desde transcurrido_seg
-  const [secondsTick, setSecondsTick] = useState(0);
   // Semana que se está viendo (navegable con flechas) y filtro por día.
   const [semanaRef, setSemanaRef] = useState<Dayjs>(() => dayjs());
   const [diaFiltro, setDiaFiltro] = useState<string>("all");
@@ -205,21 +230,8 @@ export default function TecnicoPanel() {
   })();
 
   useEffect(() => { fetchData(); }, [fetchData]);
-
-  // Tick del cronómetro cada segundo si hay sesión en curso. Solo avanza en
-  // tiempo HÁBIL (se congela en el almuerzo y fuera de jornada — igual que las
-  // horas reales que se guardan), salvo tareas de horas extra.
-  useEffect(() => {
-    if (!data?.sesionEnCurso) return;
-    const esHE = !!data.sesionEnCurso.es_horas_extras;
-    const handle = window.setInterval(() => {
-      if (esHE || enVentanaConteo(new Date())) setSecondsTick((s) => s + 1);
-    }, 1000);
-    return () => window.clearInterval(handle);
-  }, [data?.sesionEnCurso]);
-
-  // Reset del tick cuando cambia la sesión.
-  useEffect(() => { setSecondsTick(0); }, [data?.sesionEnCurso?.sesion_id]);
+  // El cronómetro (único elemento que avanza por segundo) vive aislado en
+  // <CronometroSesion> para no re-renderizar todo el panel cada segundo.
 
   async function accion(taskId: number, accion: "iniciar" | "pausar" | "finalizar", observaciones?: string, motivo?: string): Promise<boolean> {
     setAccionLoading(taskId);
@@ -377,10 +389,6 @@ export default function TecnicoPanel() {
     await accion(taskId, acc, obsText.trim() || undefined, acc === "pausar" ? (obsMotivo ?? undefined) : undefined);
   }
 
-  const sesionActivaSegundos = useMemo(() => {
-    if (!data?.sesionEnCurso) return 0;
-    return data.sesionEnCurso.transcurrido_seg + secondsTick;
-  }, [data?.sesionEnCurso, secondsTick]);
 
   // Botones/estado de acción del técnico para una tarea (se reusa en la tabla de
   // escritorio y en las tarjetas de celular).
@@ -671,11 +679,11 @@ export default function TecnicoPanel() {
               </Space>
             </Col>
             <Col xs={24} sm={12} md="auto">
-              <Statistic
-                title="Tiempo en esta sesión"
-                value={formatSegundos(sesionActivaSegundos)}
-                prefix={<ClockCircleOutlined style={{ color: brand.cyan }} />}
-                valueStyle={{ color: brand.cyan, fontFamily: "monospace", fontSize: isMobile ? 22 : 28 }}
+              <CronometroSesion
+                key={data.sesionEnCurso.sesion_id}
+                transcurridoSeg={data.sesionEnCurso.transcurrido_seg}
+                esHE={!!data.sesionEnCurso.es_horas_extras}
+                isMobile={isMobile}
               />
               <Text type="secondary" style={{ fontSize: 11 }}>
                 Acumulado previo: {data.sesionEnCurso.horas_reales_previas.toFixed(2)}h /

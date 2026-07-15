@@ -209,7 +209,7 @@ export default function OTInternaAdjuntosTab({ otId }: Props) {
           borderColor: brand.cyan,
           borderStyle: "dashed",
           borderWidth: 2,
-          background: `${brand.cyan}05`,
+          background: `color-mix(in srgb, ${brand.cyan} 2%, transparent)`,
           marginBottom: 24,
           padding: "20px 0",
         }}

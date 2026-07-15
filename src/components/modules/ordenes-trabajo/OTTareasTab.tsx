@@ -721,7 +721,7 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
         </Space>
       </div>
 
-      <Card style={{ marginBottom: 16, background: "#F0F7FF" }} styles={{ body: { padding: "10px 16px" } }}>
+      <Card style={{ marginBottom: 16, background: `color-mix(in srgb, ${brand.cyan} 6%, var(--erp-surface))` }} styles={{ body: { padding: "10px 16px" } }}>
         <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 4 }}>Progreso General</div>
         <Progress percent={progreso} size="small" />
       </Card>

@@ -1253,7 +1253,11 @@ export default function OTRequerimientosTab({
       {rows.length > 0 && monedasActivas.length > 0 && (
         <Card
           size="small"
-          style={{ marginBottom: 12, background: "#FAFCFE", borderColor: "#D6E4FF" }}
+          style={{
+            marginBottom: 12,
+            background: `color-mix(in srgb, ${brand.cyan} 5%, var(--erp-surface))`,
+            borderColor: `color-mix(in srgb, ${brand.cyan} 25%, var(--erp-border))`,
+          }}
           styles={{ body: { padding: 12 } }}
         >
           <Row gutter={12} align="middle">

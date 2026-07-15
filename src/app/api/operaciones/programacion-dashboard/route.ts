@@ -66,6 +66,10 @@ export async function GET() {
             fecha_inicio: true,
             fecha_fin: true,
             trabajo_externo: true,
+            // Para el tooltip de la celda de la matriz: comentario del planner
+            // + observaciones que deja el técnico al pausar/terminar.
+            comentario: true,
+            observaciones: true,
           },
         },
       },
@@ -155,8 +159,13 @@ export async function GET() {
     ];
     const operaciones = [...operacionesCat, ...Array.from(opsExtra.values())];
 
+    // Junta comentario del planner + observaciones del técnico en una nota.
+    const notaDe = (p: Plan): string | null => {
+      const partes = [p.comentario?.trim(), p.observaciones?.trim()].filter(Boolean);
+      return partes.length ? partes.join(" · ") : null;
+    };
     const ots = otsRaw.map((o: OT) => {
-      const planMap: Record<string, { estado: string | null; externo: boolean | null }> = {};
+      const planMap: Record<string, { estado: string | null; externo: boolean | null; comentario: string | null }> = {};
       let total = 0;
       let realizadas = 0;
       for (const p of o.planificaciones as Plan[]) {
@@ -167,11 +176,19 @@ export async function GET() {
         const { compCanon, opCanon, rawOp } = resolver(p);
         const key = `${norm(compCanon)}__${norm(opCanon ?? rawOp)}`;
         const estado = p.estado ?? null;
+        const nota = notaDe(p);
         const prev = planMap[key];
         if (!prev) {
-          planMap[key] = { estado, externo: p.trabajo_externo ?? null };
-        } else if (prev.estado === "realizado" && estado && estado !== "realizado") {
-          planMap[key] = { estado, externo: p.trabajo_externo ?? null };
+          planMap[key] = { estado, externo: p.trabajo_externo ?? null, comentario: nota };
+        } else {
+          // Estado representativo: prioriza lo NO realizado.
+          if (prev.estado === "realizado" && estado && estado !== "realizado") {
+            planMap[key] = { ...prev, estado, externo: p.trabajo_externo ?? null };
+          }
+          // Acumula notas de varias tareas en la misma celda (sin duplicar).
+          if (nota && !(prev.comentario ?? "").includes(nota)) {
+            planMap[key].comentario = prev.comentario ? `${prev.comentario} · ${nota}` : nota;
+          }
         }
         total++;
         if ((p.estado ?? "").trim().toLowerCase() === "realizado") realizadas++;

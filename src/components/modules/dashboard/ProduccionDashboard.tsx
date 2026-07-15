@@ -108,7 +108,7 @@ function BarrasHorizontales({
   return (
     <ResponsiveContainer>
       <BarChart data={data} layout="vertical" margin={{ left: 8, right: 24 }}>
-        <CartesianGrid stroke="rgba(0,0,0,0.07)" horizontal={false} />
+        <CartesianGrid stroke="var(--erp-chart-grid)" horizontal={false} />
         <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
         <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={150} />
         <ReTooltip
@@ -322,7 +322,7 @@ export default function ProduccionDashboard() {
               <ChartCard title={`Componentes en taller por status (ingresos ${ctx})`} height={220}>
                 <ResponsiveContainer>
                   <BarChart data={wipStatusData}>
-                    <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                    <CartesianGrid stroke="var(--erp-chart-grid)" vertical={false} />
                     <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
                     <ReTooltip />
@@ -341,7 +341,7 @@ export default function ProduccionDashboard() {
                 {tipoData.length === 0 ? <Empty style={{ marginTop: 24 }} /> : (
                   <ResponsiveContainer>
                     <BarChart data={tipoData}>
-                      <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                      <CartesianGrid stroke="var(--erp-chart-grid)" vertical={false} />
                       <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
                       <ReTooltip />
@@ -361,7 +361,7 @@ export default function ProduccionDashboard() {
               <ChartCard title={`Ingreso de componentes por mes (${anio})`} height={220}>
                 <ResponsiveContainer>
                   <BarChart data={ingresosData}>
-                    <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                    <CartesianGrid stroke="var(--erp-chart-grid)" vertical={false} />
                     <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
                     <ReTooltip />
@@ -374,7 +374,7 @@ export default function ProduccionDashboard() {
               <ChartCard title={`Componentes entregados por mes (${anio})`} height={220}>
                 <ResponsiveContainer>
                   <BarChart data={entregadosData}>
-                    <CartesianGrid stroke="rgba(0,0,0,0.07)" vertical={false} />
+                    <CartesianGrid stroke="var(--erp-chart-grid)" vertical={false} />
                     <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
                     <ReTooltip />

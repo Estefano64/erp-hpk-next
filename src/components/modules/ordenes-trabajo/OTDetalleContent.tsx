@@ -44,6 +44,8 @@ import { brand } from "@/lib/theme";
 import dayjs from "dayjs";
 import { formatDateOnly, dateOnlyLocal } from "@/lib/dates";
 import { diasEnTaller } from "@/lib/dias-taller";
+import { puedeVerCostosOT } from "@/lib/acceso-rutas";
+import { rolesDesdeUser } from "@/lib/permisos";
 import { formatOtCodigo } from "@/lib/ot-formato";
 import OTAdjuntosTab from "./OTAdjuntosTab";
 import OTTareasTab from "./OTTareasTab";
@@ -216,6 +218,9 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   const { data: session } = useSession();
   const currentUser = (session?.user?.name ?? session?.user?.email) ?? null;
   const lock = useEditLock("ot-externa", otId ?? null, currentUser);
+  // Modificador "sin_costos": la pestaña Costos no se muestra (ej. cuentas
+  // admin que no deben ver costos de OT).
+  const verCostos = puedeVerCostosOT(rolesDesdeUser(session?.user as { roles?: string[] } | undefined));
 
   const [ot, setOt] = useState<OTDetalle | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1595,7 +1600,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
     { key: "resumen", label: "Resumen", icon: <InfoCircleOutlined />, children: resumenContent },
     { key: "tareas", label: "Tareas", icon: <UnorderedListOutlined />, children: ot ? <OTTareasTab otId={ot.id} codRepCodigo={ot.codigo_reparacion?.codigo ?? null} /> : null },
     { key: "requerimientos", label: "Requerimientos", icon: <InboxOutlined />, children: ot ? <OTRequerimientosTab otId={ot.id} codRepCodigo={ot.codigo_reparacion?.codigo ?? null} otFechaRecepcion={ot.fecha_recepcion} onUpdated={() => fetchOT()} /> : null },
-    { key: "costos", label: "Costos", icon: <DollarOutlined />, children: ot ? <OTCostosTab otId={ot.id} /> : null },
+    ...(verCostos ? [{ key: "costos", label: "Costos", icon: <DollarOutlined />, children: ot ? <OTCostosTab otId={ot.id} /> : null }] : []),
     { key: "adjuntos", label: "Adjuntos", icon: <PaperClipOutlined />, children: ot ? (
       <OTAdjuntosTab
         otId={ot.id}
@@ -1735,7 +1740,8 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
             { label: "Resumen (datos de la OT)", value: "resumen" },
             { label: "Tareas (planificación)", value: "tareas" },
             { label: "Requerimientos", value: "requerimientos" },
-            { label: "Costos", value: "costos" },
+            // Costos: solo para quien puede verlos (misma regla que la pestaña).
+            ...(verCostos ? [{ label: "Costos", value: "costos" }] : []),
             { label: "Historial", value: "historial" },
           ]}
           style={{ display: "flex", flexDirection: "column", gap: 8 }}

@@ -9,12 +9,15 @@
 //   { ids: number[] }         → aprueba esos ids específicos (fallback para
 //                                  items sin nro_req)
 //
-// Permiso: cualquier usuario autenticado (mismo criterio que aceptar OC).
+// Permiso por MONTO (esquema de gerencia 2026-07-08, ver aprobacion-montos.ts):
+// hasta US$ 5,000 (o sin precios) el aprobador_requerimiento (Diego); más de
+// eso solo gerencia. El monto del lote = Σ cantidad × precio_unitario en USD.
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { recalcularRecursosStatusOT, recalcularRecursosStatusOTInterna } from "@/lib/recursos-ot";
+import { montoEnUSD, puedeAprobarReq } from "@/lib/aprobacion-montos";
 
 export async function POST(req: NextRequest) {
   const token = await getToken({ req });
@@ -61,8 +64,23 @@ export async function POST(req: NextRequest) {
           status_requerimiento_codigo: "SIN_APROBACION",
           ...(nroReq ? { nro_req: nroReq } : { id: { in: ids! } }),
         },
-        select: { id: true, ot_id: true, orden_trabajo_interna_id: true, nro_req: true },
+        select: {
+          id: true, ot_id: true, orden_trabajo_interna_id: true, nro_req: true,
+          cantidad: true, precio_unitario: true, moneda: true,
+        },
       });
+
+      // Tope de aprobación por monto del lote (items sin precio suman 0).
+      const montoLoteUSD = candidatos.reduce((s, c) => {
+        const precio = Number(c.precio_unitario ?? 0);
+        const cant = Number(c.cantidad ?? 0);
+        if (!Number.isFinite(precio) || !Number.isFinite(cant)) return s;
+        return s + montoEnUSD(precio * cant, c.moneda);
+      }, 0);
+      const permiso = puedeAprobarReq((token.roles as string[] | undefined) ?? [], montoLoteUSD);
+      if (!permiso.ok) {
+        throw Object.assign(new Error(permiso.error), { status: 403 });
+      }
 
       if (candidatos.length === 0) {
         return {
@@ -131,6 +149,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ data: result });
   } catch (error) {
+    const err = error as { status?: number; message?: string };
+    if (err?.status) {
+      return NextResponse.json({ error: err.message ?? "Error" }, { status: err.status });
+    }
     console.error("POST /api/requerimientos/aprobar-lote error:", error);
     return NextResponse.json({ error: "Error al aprobar requerimiento" }, { status: 500 });
   }
