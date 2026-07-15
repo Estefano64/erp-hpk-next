@@ -126,6 +126,41 @@ interface AceptacionesPayload {
 
 const TIPO_REQ_COLOR: Record<string, string> = { MAC: "blue", CAD: "orange", SER: "purple" };
 
+// POST con reintentos para errores transientes en flujos bulk (aprobar/rechazar
+// N requerimientos). Reintenta si:
+//   - el fetch lanza (network fail, offline temporal, DNS)
+//   - respuesta 5xx (error del server, casi siempre transient)
+//   - respuesta 408 (timeout) o 429 (rate limit)
+// NO reintenta si es 4xx (excepto 408/429): esos son errores de estado del
+// item (ya aprobado, ya con OC, etc.) y reintentar no los arregla.
+// Backoff progresivo: 150ms, 450ms, 1350ms — ~2s en el peor caso por item.
+async function postConReintentos(
+  url: string,
+  init: RequestInit,
+  maxIntentos = 3,
+): Promise<{ ok: boolean; status: number; error?: string }> {
+  let ultimoStatus = 0;
+  let ultimoError: string | undefined;
+  for (let intento = 0; intento < maxIntentos; intento++) {
+    try {
+      const res = await fetch(url, init);
+      if (res.ok) return { ok: true, status: res.status };
+      const esTransient = res.status >= 500 || res.status === 408 || res.status === 429;
+      ultimoStatus = res.status;
+      const body = await res.json().catch(() => null);
+      ultimoError = body?.error ?? `HTTP ${res.status}`;
+      if (!esTransient) return { ok: false, status: res.status, error: ultimoError };
+    } catch (e) {
+      ultimoError = e instanceof Error ? e.message : "Error de red";
+    }
+    if (intento < maxIntentos - 1) {
+      const delay = 150 * Math.pow(3, intento);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  return { ok: false, status: ultimoStatus, error: ultimoError };
+}
+
 interface ProveedorOpt { id: number; razon_social: string; ruc: string | null }
 
 export default function AceptacionesPage() {
@@ -565,15 +600,18 @@ export default function AceptacionesPage() {
         const body = JSON.stringify({ motivo: txt || null });
         let ok = 0, errs = 0;
         for (const id of selReqs) {
-          const res = await fetch(`/api/requerimientos/${id}/desaprobar`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body,
-          });
-          if (res.ok) ok++; else errs++;
+          const r = await postConReintentos(
+            `/api/requerimientos/${id}/desaprobar`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body,
+            },
+          );
+          if (r.ok) ok++; else errs++;
         }
         if (ok > 0) message.success(`${ok} requerimiento(s) rechazado(s).`);
-        if (errs > 0) message.warning(`${errs} con error.`);
+        if (errs > 0) message.warning(`${errs} con error tras reintentos.`);
         setSelReqs([]);
         fetchData();
       },
@@ -687,15 +725,18 @@ export default function AceptacionesPage() {
         const body = txt ? { comentario: txt } : undefined;
         let ok = 0, errs = 0;
         for (const id of selReqs) {
-          const res = await fetch(`/api/requerimientos/${id}/aprobar`, {
-            method: "POST",
-            headers: body ? { "Content-Type": "application/json" } : {},
-            body: body ? JSON.stringify(body) : undefined,
-          });
-          if (res.ok) ok++; else errs++;
+          const r = await postConReintentos(
+            `/api/requerimientos/${id}/aprobar`,
+            {
+              method: "POST",
+              headers: body ? { "Content-Type": "application/json" } : {},
+              body: body ? JSON.stringify(body) : undefined,
+            },
+          );
+          if (r.ok) ok++; else errs++;
         }
         if (ok > 0) message.success(`${ok} requerimiento(s) aprobado(s).`);
-        if (errs > 0) message.warning(`${errs} con error.`);
+        if (errs > 0) message.warning(`${errs} con error tras reintentos.`);
         setSelReqs([]);
         fetchData();
       },
