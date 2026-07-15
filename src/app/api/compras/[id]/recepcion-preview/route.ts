@@ -46,7 +46,15 @@ export async function GET(_req: NextRequest, { params }: Params) {
         orden_trabajo_interna_id: true,
         almacen_zona_id: true,
         almacen_posicion_id: true,
-        material: { select: { codigo: true, descripcion: true, np: true, unidad_medida_codigo: true } },
+        material: {
+          select: {
+            codigo: true,
+            descripcion: true,
+            np: true,
+            unidad_medida_codigo: true,
+            clasificacion_codigo: true,
+          },
+        },
         orden_trabajo: { select: { ot: true, tipo_codigo: true } },
         orden_trabajo_interna: { select: { ot: true } },
       },
@@ -63,11 +71,13 @@ export async function GET(_req: NextRequest, { params }: Params) {
           : r.orden_trabajo_interna?.ot != null
             ? formatOtInternaCodigo(r.orden_trabajo_interna.ot, "")
             : "";
+        const clasificacion = r.material?.clasificacion_codigo ?? null;
         const ubicSugerida = r.almacen_zona_id == null
           ? await sugerirUbicacionPorOT(prisma, {
               otId: r.ot_id,
               otInternaId: r.orden_trabajo_interna_id,
               excluirRepuestoId: r.id,
+              clasificacionCodigo: clasificacion,
             })
           : null;
         return {
@@ -79,6 +89,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
           descripcion: r.material?.descripcion ?? r.descripcion,
           np: r.material?.np ?? null,
           unidad: r.material?.unidad_medida_codigo ?? "UN",
+          clasificacion_codigo: clasificacion,
           cantidad_pedida: cantPedida,
           cantidad_recibida: cantRecibida,
           cantidad_pendiente: pendiente,

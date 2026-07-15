@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { parseDateOnly } from "@/lib/dates";
+import { parseDateOnly, hoyEnLima } from "@/lib/dates";
 import { getAuditUser } from "@/lib/audit";
 import { recalcularRecursosStatusOT, recalcularRecursosStatusOTInterna } from "@/lib/recursos-ot";
 
@@ -236,7 +236,12 @@ export async function POST(req: NextRequest) {
               nombre: nombreFinal,
               proveedor_id: d.proveedor_id,
               ubicacion_codigo,
-              fecha_solicitud: new Date(),
+              // Antes: new Date() → toma la hora del server (UTC en Railway).
+              // A las 20:00 hora Lima ya son 01:00 UTC del día siguiente y
+              // Postgres guardaba el día siguiente en la Fecha Emisión.
+              // hoyEnLima() devuelve el día actual en Lima como mediodía UTC,
+              // que Postgres almacena correctamente en @db.Date.
+              fecha_solicitud: hoyEnLima(),
               fecha_entrega_esperada: parseDateOnly(d.fecha_entrega_esperada),
               status_oc_codigo: "PEND_OC",
               subtotal,

@@ -64,3 +64,29 @@ export function formatDateOnlyShort(v: string | Date | null | undefined): string
   if (full === "-" || full.length < 10) return full;
   return full.slice(0, 6) + full.slice(8); // "DD/MM/YYYY" → "DD/MM/YY"
 }
+
+/**
+ * Fecha "hoy" en America/Lima como Date apuntando a mediodía UTC.
+ *
+ * Por qué: Railway corre en UTC. `new Date()` a las 20:00 hora Lima devuelve
+ * `2026-07-11T01:00Z`. Cuando Prisma lo guarda en un `@db.Date`, Postgres
+ * extrae la parte de fecha en UTC y almacena `2026-07-11` — el DÍA SIGUIENTE
+ * al real en Lima. Esto se veía en el PDF de OC con la Fecha Emisión errónea.
+ *
+ * La solución: obtener el YYYY-MM-DD de Lima con Intl y construir un Date
+ * apuntando al mediodía UTC de ese día (12:00 UTC = 07:00 Lima), de modo que
+ * NO importa la timezone del proceso, siempre cae dentro del día correcto al
+ * guardarse como `@db.Date`.
+ */
+export function hoyEnLima(): Date {
+  const partes = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Lima",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date());
+  const y = partes.find((p) => p.type === "year")?.value ?? "1970";
+  const m = partes.find((p) => p.type === "month")?.value ?? "01";
+  const d = partes.find((p) => p.type === "day")?.value ?? "01";
+  // Mediodía UTC de ese día → cae dentro del día correcto en cualquier TZ
+  // razonable (America/Lima UTC-5, Europa UTC+1..+3, etc.).
+  return new Date(`${y}-${m}-${d}T12:00:00.000Z`);
+}

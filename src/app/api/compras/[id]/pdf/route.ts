@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { rutaFirmaDe, nombreParaFirma } from "@/lib/firmas";
 import {  formatOtCodigo, formatOtInternaCodigo, parseInt4Safe } from "@/lib/ot-formato";
 import { areaTallerLabel } from "@/lib/areas-taller";
+import { formatDateOnly } from "@/lib/dates";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -76,7 +77,12 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
     const fmtDate = (d: Date | string | null | undefined) => {
       if (!d) return "";
-      return new Date(d).toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "numeric" });
+      // Los campos de fecha en Compra son @db.Date (fecha pura, sin hora).
+      // Usamos formatDateOnly del lib compartido que extrae YYYY-MM-DD del
+      // ISO string sin hacer conversión de timezone — así el PDF muestra
+      // EXACTAMENTE lo que está guardado en la BD, sea cual sea la TZ del
+      // proceso Node (Railway corre en UTC).
+      return formatDateOnly(d);
     };
 
     // Limpia la descripción del material para la plantilla de OC: si termina
