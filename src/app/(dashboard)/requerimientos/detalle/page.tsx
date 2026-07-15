@@ -1684,6 +1684,31 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
       },
     },
     {
+      key: "coment_creacion",
+      title: "Coment. del solicitante",
+      dataIndex: "observaciones",
+      width: 200,
+      ellipsis: true,
+      // Comentario que dejó quien CREÓ el requerimiento (observaciones
+      // libres del solicitante). Acumula también las notas del historial
+      // (Anulación / Desaprobación / consumos parciales) que el backend
+      // preapenda con prefijos tipo "[Anulación] motivo". El tooltip
+      // muestra el texto completo respetando saltos de línea.
+      render: (_: unknown, r: Requerimiento) => {
+        const c = r.observaciones;
+        if (!c) return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
+        return (
+          <Tooltip
+            title={
+              <div style={{ maxWidth: 340, whiteSpace: "pre-wrap" }}>{c}</div>
+            }
+          >
+            <Text style={{ fontSize: 12 }} ellipsis>{c}</Text>
+          </Tooltip>
+        );
+      },
+    },
+    {
       key: "comentario_aprob_req",
       title: "Coment. aprob. REQ",
       dataIndex: "req_comentario_aprobacion",
