@@ -38,6 +38,11 @@ const CASCADA_PM: Record<string, string[]> = {
   PM4: ["PM1", "PM2", "PM3", "PM4"],
 };
 
+// Estrategias no-PM que copian desde tabla `Tarea` por estrategia_id (sin
+// exigir equipo). Whitelist explícita — no queremos que cualquier estrategia
+// no-PM caiga acá por accidente y rompa el flujo histórico.
+const ACTIVIDADES_NO_PM_HABILITADAS = new Set(["PEDIR_SUMI"]);
+
 export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
@@ -69,11 +74,13 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       if (!estrCodigo) return { error: "SIN_ESTRATEGIA" } as const;
       const cascada = CASCADA_PM[estrCodigo.toUpperCase()];
 
-      // ── Rama NON-PM: la estrategia no es un nivel PMx (ej. "PEDIR_SUMI").
+      // ── Rama NON-PM: la estrategia no es un nivel PMx pero está en la
+      // whitelist ACTIVIDADES_NO_PM_HABILITADAS (hoy solo "PEDIR_SUMI").
       // Copia directa desde tabla `Tarea` filtrando por estrategia_id, sin
-      // cascada y sin exigir equipo. Se usa para estrategias "genéricas"
-      // creadas espejando un CodigoReparacion como CR-0144.
-      if (!cascada) {
+      // cascada y sin exigir equipo. Otras estrategias no-PM siguen
+      // rechazadas (rama ESTRATEGIA_NO_PM más abajo) para preservar el flujo
+      // histórico y no auto-habilitar genéricas por accidente.
+      if (!cascada && ACTIVIDADES_NO_PM_HABILITADAS.has(estrCodigo.toUpperCase())) {
         const tareas = await tx.tarea.findMany({
           where: { estrategia_id: ot.estrategia!.estrategia_id },
           orderBy: { item_numero: "asc" },
@@ -141,6 +148,13 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           nro_req: nroReqNP,
           fuente: "tarea_por_estrategia",
         } as const;
+      }
+
+      // Si NO es cascada PM y NO está en la whitelist NO-PM habilitada,
+      // rechazamos con el error histórico. Evita que estrategias genéricas
+      // no aprobadas para OT interna caigan al flujo por accidente.
+      if (!cascada) {
+        return { error: "ESTRATEGIA_NO_PM", codigo: estrCodigo } as const;
       }
 
       // ── Rama PM (comportamiento histórico): requiere equipo, aplica cascada.
@@ -276,6 +290,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         SIN_EQUIPO: [400, "La OT no tiene equipo asignado — el task list se filtra por equipo."],
         SIN_ESTRATEGIA: [400, "La OT no tiene estrategia asignada."],
         SIN_TAREAS: [400, `La estrategia "${(result as { codigo?: string }).codigo}" no tiene tareas cargadas.`],
+        ESTRATEGIA_NO_PM: [400, `La estrategia "${(result as { codigo?: string }).codigo}" no es PM1/PM2/PM3/PM4 y no está habilitada para OT interna sin equipo.`],
         TASKLIST_VACIO: [400, `No hay task lists para el equipo ${(result as { equipo?: string }).equipo} en los niveles ${(result as { cascada?: string[] }).cascada?.join("+")}.`],
       };
       const [status, msg] = codes[String(result.error)] ?? [400, "Error"];

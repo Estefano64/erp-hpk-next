@@ -233,8 +233,17 @@ export default function OTRequerimientosTab({
     equipo_codigo: null,
     estrategia_pm: null,
   });
+  // Estrategias PM (PM1..PM4) exigen equipo — el task list se filtra por
+  // equipo + PM. Las estrategias NON-PM en la whitelist (hoy solo
+  // PEDIR_SUMI = Almacen de suministros) copian directo desde tabla Tarea
+  // por estrategia_id y NO necesitan equipo. Cualquier otra estrategia
+  // no-PM queda deshabilitada (mismo criterio que el backend).
+  const ACTIVIDADES_NO_PM_HABILITADAS = new Set(["PEDIR_SUMI"]);
+  const esEstrategiaPM = !!otInfoInterna.estrategia_pm && /^PM[1-4]$/i.test(otInfoInterna.estrategia_pm);
+  const esEstrategiaAlmacen = !!otInfoInterna.estrategia_pm
+    && ACTIVIDADES_NO_PM_HABILITADAS.has(otInfoInterna.estrategia_pm.toUpperCase());
   const taskListDisponible = kind === "interna"
-    ? !!otInfoInterna.equipo_codigo && !!otInfoInterna.estrategia_pm
+    ? (esEstrategiaPM ? !!otInfoInterna.equipo_codigo : esEstrategiaAlmacen)
     : false;
   useEffect(() => {
     if (kind !== "interna") return;
@@ -689,9 +698,11 @@ export default function OTRequerimientosTab({
     if (kind === "interna") {
       if (!taskListDisponible) {
         messageApi.warning(
-          !otInfoInterna.equipo_codigo
-            ? "La OT no tiene equipo asignado — el task list se filtra por equipo."
-            : "La estrategia debe ser PM1, PM2, PM3 o PM4. Asignala en el tab Detalle.",
+          !otInfoInterna.estrategia_pm
+            ? "La OT no tiene estrategia asignada. Asignala en el tab Detalle."
+            : esEstrategiaPM && !otInfoInterna.equipo_codigo
+              ? "La estrategia es PM — necesita equipo asignado. Asigná uno en el tab Detalle."
+              : `La estrategia "${otInfoInterna.estrategia_pm}" no está habilitada para aplicar sin equipo. Usá PM1/PM2/PM3/PM4 o PEDIR_SUMI.`,
         );
         return;
       }
@@ -1376,9 +1387,11 @@ export default function OTRequerimientosTab({
           type="info" showIcon style={{ marginBottom: 12 }}
           title="Sin task list aplicable"
           description={
-            !otInfoInterna.equipo_codigo
-              ? "Esta OT no tiene equipo asignado. Asigná uno en el tab Detalle para poder aplicar el task list."
-              : "La estrategia PM debe estar seteada (PM1, PM2, PM3 o PM4). Asignala en el tab Detalle."
+            !otInfoInterna.estrategia_pm
+              ? "Esta OT no tiene estrategia asignada. Asigná una en el tab Detalle."
+              : esEstrategiaPM && !otInfoInterna.equipo_codigo
+                ? "La estrategia es PM y necesita equipo asignado. Asigná uno en el tab Detalle para poder aplicar el task list."
+                : `La estrategia "${otInfoInterna.estrategia_pm}" no está habilitada para aplicar sin equipo. Solo PM1..PM4 (con equipo) o PEDIR_SUMI (Almacén de suministros).`
           }
         />
       )}
