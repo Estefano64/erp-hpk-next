@@ -545,9 +545,14 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
     material_id: number;
     ot_codigo: string;
     cantidad_pendiente: number;
+    clasificacion_codigo?: string | null;
     ubicacion_actual: { zona_id: number; posicion_id: number | null } | null;
     ubicacion_sugerida: { zona_id: number; posicion_id: number | null } | null;
   }
+  // Barras / tubos / acero se almacenan físicamente en el TALLER, no con el
+  // resto del stock. Cuando el operario hace "Aplicar a todos", esos items
+  // reciben la zona TALLER en vez de la zona bulk seleccionada.
+  const CLASIF_TALLER = new Set(["BARR", "TUBO", "ACER"]);
   const [zonasAlmacen, setZonasAlmacen] = useState<AlmacenZona[]>([]);
   const [previewItems, setPreviewItems] = useState<PreviewItem[]>([]);
   // material_id → { zona_id, posicion_id }. Aplica a TODOS los reqs de la OC
@@ -1092,17 +1097,39 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                       type="primary"
                       disabled={zonaBulk == null}
                       onClick={() => {
-                        // Aplica la zona elegida a TODOS los items que estén
-                        // siendo recibidos. Limpia las posiciones (cada zona tiene
-                        // sus propias posiciones — el usuario las elige por fila si
-                        // necesita ser más específico).
+                        // Aplica la zona elegida a los items regulares. Los
+                        // metálicos (BARR/TUBO/ACER) van SIEMPRE a la zona
+                        // TALLER — el operario no las mezcla con el resto.
+                        const zonaTaller = zonasAlmacen.find((z) => z.codigo === "TALLER");
                         const next: typeof ubicByMaterial = { ...ubicByMaterial };
+                        let aplicadosRegular = 0;
+                        let aplicadosTaller = 0;
+                        let sinTaller = 0;
                         for (const it of previewItems) {
                           const matKey = it.material_id ?? it.repuesto_id;
-                          next[matKey] = { zona_id: zonaBulk, posicion_id: null };
+                          if (CLASIF_TALLER.has(it.clasificacion_codigo ?? "")) {
+                            if (zonaTaller) {
+                              next[matKey] = { zona_id: zonaTaller.id, posicion_id: null };
+                              aplicadosTaller++;
+                            } else {
+                              // Fallback defensivo: si no existe la zona TALLER
+                              // en el catálogo, mejor dejarlos sin asignar
+                              // (que el operario decida) que meterlos al bulk.
+                              sinTaller++;
+                            }
+                          } else {
+                            next[matKey] = { zona_id: zonaBulk, posicion_id: null };
+                            aplicadosRegular++;
+                          }
                         }
                         setUbicByMaterial(next);
-                        message.success(`Zona aplicada a ${previewItems.length} item(s).`);
+                        const partes: string[] = [];
+                        if (aplicadosRegular > 0) partes.push(`${aplicadosRegular} a la zona seleccionada`);
+                        if (aplicadosTaller > 0) partes.push(`${aplicadosTaller} a TALLER (barras/tubos/acero)`);
+                        message.success(`Zonas aplicadas: ${partes.join(", ")}.`);
+                        if (sinTaller > 0) {
+                          message.warning(`${sinTaller} item(s) metálicos sin asignar — falta crear la zona TALLER.`);
+                        }
                       }}
                     >
                       Aplicar a todos
