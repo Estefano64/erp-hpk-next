@@ -2079,15 +2079,6 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                 </Popconfirm>
               </Tooltip>
             )}
-            <Tooltip title={puedeConsumir ? "Consumir esta cantidad del stock interno (elige zona + posición)" : motivoDeshab}>
-              <Button
-                size="small"
-                icon={<InboxOutlined />}
-                disabled={!puedeConsumir}
-                onClick={() => abrirModalConsumir(r)}
-              />
-            </Tooltip>
-            {!hayMaterial && sinOC && noAnulado && noStockEstado && (() => {
             {esLogistica && (
               <Tooltip title={puedeConsumir ? "Consumir esta cantidad del stock interno (elige zona + posición)" : motivoDeshab}>
                 <Button
