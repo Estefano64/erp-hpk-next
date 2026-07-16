@@ -964,17 +964,56 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
             icon={<InboxOutlined />}
             disabled={selectedItemIds.length === 0}
             onClick={() => {
-              const seleccionadas = filasAplanadas.filter((r) => selectedItemIds.includes(r.id));
-              const ocsUnicas = [...new Set(seleccionadas.map((r) => r.po_id))];
-              if (ocsUnicas.length === 0) return;
-              if (ocsUnicas.length > 1) {
-                message.warning("Seleccioná items de UNA sola OC por vez. Cada OC se recibe por separado (lleva su propia guía + factura).");
+              // IMPORTANTE: filtrar sobre filasFiltradas (no filasAplanadas)
+              // para que IDs "colgados" de filtros/search previos no cuenten.
+              // AntD conserva selectedRowKeys aunque el user aplique un filtro
+              // que hace desaparecer esas filas — sin este saneo, la validacion
+              // de "una sola OC" fallaba mostrando items invisibles de OCs
+              // que ya no estan en pantalla.
+              const seleccionadas = filasFiltradas.filter((r) => selectedItemIds.includes(r.id));
+              // Agrupamos por po_id (id interno) pero conservamos numero_po
+              // visible para que el mensaje sea leible por el operario.
+              const porOC = new Map<number, { numero_po: string; count: number }>();
+              for (const r of seleccionadas) {
+                const cur = porOC.get(r.po_id);
+                if (cur) cur.count++;
+                else porOC.set(r.po_id, { numero_po: r.numero_po, count: 1 });
+              }
+              const ocsUnicas = [...porOC.entries()];
+              if (ocsUnicas.length === 0) {
+                message.info("No hay items seleccionados visibles con los filtros actuales.");
                 return;
               }
-              abrirRecibir(ocsUnicas[0], selectedItemIds);
+              if (ocsUnicas.length > 1) {
+                // Caso especial: mismo numero_po visible pero po_id distintos.
+                // Es un duplicado interno (misma OC creada 2 veces en la BD),
+                // el operario no puede resolverlo desde este pantalla — tiene
+                // que anular la duplicada desde /compras.
+                const numerosUnicos = new Set(ocsUnicas.map(([, v]) => v.numero_po));
+                const detalles = ocsUnicas
+                  .map(([id, v]) => `${v.numero_po} (id ${id}, ${v.count} item${v.count !== 1 ? "s" : ""})`)
+                  .join(", ");
+                if (numerosUnicos.size === 1) {
+                  const numPO = [...numerosUnicos][0];
+                  message.warning(
+                    `La OC ${numPO} aparece duplicada en la BD (${ocsUnicas.length} filas con el mismo N° PO: ${detalles}). Anulá una desde Compras y volvé a intentar.`,
+                    12,
+                  );
+                } else {
+                  message.warning(
+                    `Seleccioná items de UNA sola OC por vez. Detectadas ${ocsUnicas.length}: ${detalles}.`,
+                    10,
+                  );
+                }
+                return;
+              }
+              // Solo pasa los IDs de items realmente visibles + seleccionados
+              // (los invisibles no se reciben aunque queden en el state).
+              const idsVisibles = seleccionadas.map((r) => r.id);
+              abrirRecibir(ocsUnicas[0][0], idsVisibles);
             }}
           >
-            Recibir seleccionados ({selectedItemIds.length})
+            Recibir seleccionados ({filasFiltradas.filter((r) => selectedItemIds.includes(r.id)).length})
           </Button>
         </Space>
         <Space wrap>
