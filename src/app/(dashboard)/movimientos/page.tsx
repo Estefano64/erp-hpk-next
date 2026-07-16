@@ -482,6 +482,12 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
 // TAB 3: INGRESO DE POs (recepción) — vista de tabla plana
 // ════════════════════════════════════════════════════════════
 interface ItemFila {
+  // rowKey unica compuesta: `${po_id}-${tipo}-${id}` donde tipo es 'r'
+  // para OTRepuesto free y 'd' para CompraDetalle. Necesaria porque
+  // CompraDetalle.id y OTRepuesto.id son autoincrement separados y pueden
+  // colisionar (ej. ambos = 138) — sin esta discriminacion, AntD Table
+  // agrupa las 2 filas bajo el mismo selectedRowKey.
+  _key: string;
   id: number;
   po_id: number;
   numero_po: string;
@@ -492,6 +498,9 @@ interface ItemFila {
   observaciones_compra: string | null;
   // material_id puede ser null para items "free" (CAD sin catálogo).
   material_id: number | null;
+  // repuesto_id != null indica que la fila viene de OTRepuesto (item free).
+  // repuesto_id == null indica CompraDetalle. Se usa para el rowKey unico.
+  repuesto_id: number | null;
   codigo: string | null;
   descripcion: string | null;
   // Descripción específica de la OC (la del OTRepuesto): para servicios y
@@ -521,7 +530,9 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
   const [poSeleccionada, setPoSeleccionada] = useState<POPendiente | null>(null);
   // Selección por checkbox: el user marca items de UNA OC y luego clickea
   // "Recibir seleccionados" arriba — abre el modal con esos items pre-cargados.
-  const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
+  // string[] porque ahora el rowKey es la composite key `_key` (evita
+  // colision entre CompraDetalle.id y OTRepuesto.id).
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   // Filas realmente visibles en la tabla despues de aplicar los filtros de
   // columna de AntD (dropdowns en el header) + filtros externos. Se
   // actualiza via Table.onChange. Se usa para la validacion "1 sola OC" del
@@ -604,27 +615,33 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
 
   // Aplanar todos los items de todas las POs
   const filasAplanadas: ItemFila[] = pos.flatMap((po) =>
-    po.items.map((i) => ({
-      id: i.id,
-      po_id: po.id,
-      numero_po: po.numero_po,
-      proveedor_nombre: po.proveedor_nombre,
-      almacen_nombre: po.almacen_nombre,
-      fecha_entrega_esperada: po.fecha_entrega_esperada,
-      estado: po.estado,
-      observaciones_compra: (po as POPendiente & { observaciones?: string | null }).observaciones ?? null,
-      material_id: i.material_id,
-      codigo: i.codigo,
-      descripcion: i.descripcion,
-      descripcion_oc: (i as { descripcion_oc?: string | null }).descripcion_oc ?? null,
-      cantidad: Number(i.cantidad),
-      unidad_medida: i.unidad_medida,
-      precio_unitario: i.precio_unitario != null ? Number(i.precio_unitario) : null,
-      moneda: po.moneda,
-      ot_codigo: (i as { ot_codigo?: string | null }).ot_codigo ?? null,
-      tipo_codigo: i.tipo_codigo ?? null,
-      compra_id: po.id,
-    }))
+    po.items.map((i) => {
+      const repuestoId = (i as { repuesto_id?: number | null }).repuesto_id ?? null;
+      const tipo = repuestoId != null ? "r" : "d";
+      return {
+        _key: `${po.id}-${tipo}-${i.id}`,
+        id: i.id,
+        po_id: po.id,
+        numero_po: po.numero_po,
+        proveedor_nombre: po.proveedor_nombre,
+        almacen_nombre: po.almacen_nombre,
+        fecha_entrega_esperada: po.fecha_entrega_esperada,
+        estado: po.estado,
+        observaciones_compra: (po as POPendiente & { observaciones?: string | null }).observaciones ?? null,
+        material_id: i.material_id,
+        repuesto_id: repuestoId,
+        codigo: i.codigo,
+        descripcion: i.descripcion,
+        descripcion_oc: (i as { descripcion_oc?: string | null }).descripcion_oc ?? null,
+        cantidad: Number(i.cantidad),
+        unidad_medida: i.unidad_medida,
+        precio_unitario: i.precio_unitario != null ? Number(i.precio_unitario) : null,
+        moneda: po.moneda,
+        ot_codigo: (i as { ot_codigo?: string | null }).ot_codigo ?? null,
+        tipo_codigo: i.tipo_codigo ?? null,
+        compra_id: po.id,
+      };
+    })
   );
 
   const filasFiltradas = filasAplanadas.filter((r) => {
@@ -984,7 +1001,7 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
               const baseVisible = filasEnVista.length > 0
                 ? filasEnVista
                 : filasFiltradas.filter((r) => dentroDeRango(r, "fecha_entrega_esperada", rangoEntrega));
-              const seleccionadas = baseVisible.filter((r) => selectedItemIds.includes(r.id));
+              const seleccionadas = baseVisible.filter((r) => selectedItemIds.includes(r._key));
               // Agrupamos por po_id (id interno) pero conservamos numero_po
               // visible para que el mensaje sea leible por el operario.
               const porOC = new Map<number, { numero_po: string; count: number }>();
@@ -1027,7 +1044,7 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
               abrirRecibir(ocsUnicas[0][0], idsVisibles);
             }}
           >
-            Recibir seleccionados ({(filasEnVista.length > 0 ? filasEnVista : filasFiltradas.filter((r) => dentroDeRango(r, "fecha_entrega_esperada", rangoEntrega))).filter((r) => selectedItemIds.includes(r.id)).length})
+            Recibir seleccionados ({(filasEnVista.length > 0 ? filasEnVista : filasFiltradas.filter((r) => dentroDeRango(r, "fecha_entrega_esperada", rangoEntrega))).filter((r) => selectedItemIds.includes(r._key)).length})
           </Button>
         </Space>
         <Space wrap>
@@ -1043,7 +1060,7 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
 
       <ItemsDragWrapper>
               <Table
-          rowKey="id"
+          rowKey="_key"
           size="small"
           loading={loading}
           dataSource={filasFiltradas.filter((r) => dentroDeRango(r, "fecha_entrega_esperada", rangoEntrega))}
@@ -1053,7 +1070,7 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
           // "Recibir seleccionados" de arriba (similar a "Generar OC").
           rowSelection={{
             selectedRowKeys: selectedItemIds,
-            onChange: (keys) => setSelectedItemIds(keys as number[]),
+            onChange: (keys) => setSelectedItemIds(keys as string[]),
             // Helper visual: cuando se selecciona, mostrar tip si hay items
             // de distintas OCs (la acción luego lo bloquea de forma dura).
             getCheckboxProps: () => ({}),
