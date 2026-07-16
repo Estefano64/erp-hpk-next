@@ -522,6 +522,13 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
   // Selección por checkbox: el user marca items de UNA OC y luego clickea
   // "Recibir seleccionados" arriba — abre el modal con esos items pre-cargados.
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
+  // Filas realmente visibles en la tabla despues de aplicar los filtros de
+  // columna de AntD (dropdowns en el header) + filtros externos. Se
+  // actualiza via Table.onChange. Se usa para la validacion "1 sola OC" del
+  // boton Recibir seleccionados — sin esto, IDs seleccionados en OCs que un
+  // filtro posterior oculto quedaban colgados en el state y contaminaban la
+  // cuenta.
+  const [filasEnVista, setFilasEnVista] = useState<ItemFila[]>([]);
   const [cantidadesRecibidas, setCantidadesRecibidas] = useState<Record<number, number>>({});
   const [nroGuia, setNroGuia] = useState("");
   const [nroFactura, setNroFactura] = useState("");
@@ -964,13 +971,20 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
             icon={<InboxOutlined />}
             disabled={selectedItemIds.length === 0}
             onClick={() => {
-              // IMPORTANTE: filtrar sobre filasFiltradas (no filasAplanadas)
-              // para que IDs "colgados" de filtros/search previos no cuenten.
-              // AntD conserva selectedRowKeys aunque el user aplique un filtro
-              // que hace desaparecer esas filas — sin este saneo, la validacion
-              // de "una sola OC" fallaba mostrando items invisibles de OCs
-              // que ya no estan en pantalla.
-              const seleccionadas = filasFiltradas.filter((r) => selectedItemIds.includes(r.id));
+              // IMPORTANTE: filtrar sobre las filas EN VISTA (post filtros de
+              // columna de AntD + rango de fechas + search), no sobre
+              // filasAplanadas ni filasFiltradas. AntD conserva
+              // selectedRowKeys aunque el user aplique un filtro que hace
+              // desaparecer esas filas — sin este saneo, la validacion de
+              // "una sola OC" fallaba contando items invisibles de OCs que
+              // ya no estan en pantalla.
+              // Fallback: si el user no interactuo aun con la tabla,
+              // filasEnVista puede estar vacio; usamos el mismo dataSource
+              // computado que la tabla.
+              const baseVisible = filasEnVista.length > 0
+                ? filasEnVista
+                : filasFiltradas.filter((r) => dentroDeRango(r, "fecha_entrega_esperada", rangoEntrega));
+              const seleccionadas = baseVisible.filter((r) => selectedItemIds.includes(r.id));
               // Agrupamos por po_id (id interno) pero conservamos numero_po
               // visible para que el mensaje sea leible por el operario.
               const porOC = new Map<number, { numero_po: string; count: number }>();
@@ -1013,7 +1027,7 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
               abrirRecibir(ocsUnicas[0][0], idsVisibles);
             }}
           >
-            Recibir seleccionados ({filasFiltradas.filter((r) => selectedItemIds.includes(r.id)).length})
+            Recibir seleccionados ({(filasEnVista.length > 0 ? filasEnVista : filasFiltradas.filter((r) => dentroDeRango(r, "fecha_entrega_esperada", rangoEntrega))).filter((r) => selectedItemIds.includes(r.id)).length})
           </Button>
         </Space>
         <Space wrap>
@@ -1051,6 +1065,12 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
             onChange: (p, s) => { setItemsPage(p); setItemsPageSize(s); },
             label: "items",
           })}
+          // Capturamos el dataSource filtrado por AntD (dropdowns de columna
+          // + sort) para que la validacion del boton Recibir cuente solo lo
+          // que el operario ve en pantalla.
+          onChange={(_p, _f, _s, extra) => {
+            setFilasEnVista(extra.currentDataSource as ItemFila[]);
+          }}
           scroll={{ x: 1500 }}
           sticky={{ offsetHeader: 56, offsetScroll: 0 }}
         />
