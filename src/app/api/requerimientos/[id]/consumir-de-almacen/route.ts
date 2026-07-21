@@ -61,10 +61,32 @@ export async function POST(req: NextRequest, { params }: Params) {
         { code: "HAS_OC" },
       );
     }
-    if (rep.status_oc_codigo === "ANULADO" || rep.status_oc_codigo === "DEVOLUCION") {
+    // Bloqueo total: estados donde el req ya esta cerrado. Sin esto, un req
+    // consumido completamente (CONSUMIDO_ALMACEN) podia volverse a consumir
+    // porque los otros guards no lo cubrian — el operario podia drenar stock
+    // varias veces sobre el mismo item.
+    const ESTADOS_CERRADOS = new Set([
+      "ANULADO",
+      "DEVOLUCION",
+      "CONSUMIDO_ALMACEN",
+      "CONSUMIDO_OC_ABIERTA",
+      "ENTREGADO",
+      "COMPLETO",
+    ]);
+    if (rep.status_oc_codigo && ESTADOS_CERRADOS.has(rep.status_oc_codigo)) {
       throw Object.assign(
-        new Error(`No se puede consumir un requerimiento en estado ${rep.status_oc_codigo}.`),
+        new Error(`Este requerimiento ya fue procesado (estado: ${rep.status_oc_codigo}). No se puede consumir de almacén otra vez.`),
         { code: "INVALID_STATE" },
+      );
+    }
+    // Ademas, un req solo puede consumirse si esta APROBADO. Bloquea sacar
+    // stock por items en BORRADOR / SIN_APROBACION / DESAPROBADO (consistente
+    // con la nueva regla del catalogo).
+    const sr = rep.status_requerimiento_codigo;
+    if (sr !== "APROBADO") {
+      throw Object.assign(
+        new Error(`No se puede consumir de almacén: el requerimiento está en estado ${sr ?? "sin aprobación"} y debe estar APROBADO.`),
+        { code: "NOT_APPROVED" },
       );
     }
     // Copia local ya narrowed a number (el check de arriba no sobrevive al closure de la tx).
@@ -217,6 +239,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       err?.code === "NO_MATERIAL" ||
       err?.code === "HAS_OC" ||
       err?.code === "INVALID_STATE" ||
+      err?.code === "NOT_APPROVED" ||
       err?.code === "BAD_QTY" ||
       err?.code === "OVER_QTY" ||
       err?.code === "NO_STOCK" ||

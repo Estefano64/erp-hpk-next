@@ -2050,11 +2050,23 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
         // de admin — el creador puede limpiar sus propios reqs con error.
         const puedeEliminar = sinOC && sr !== "APROBADO" && sr !== "ANULADO";
 
-        // Consumir de almacén: requiere material, sin OC, no anulado, stock suficiente.
+        // Consumir de almacén: requiere APROBADO, material, sin OC, no anulado,
+        // stock suficiente y NO estar en un estado cerrado (ya consumido /
+        // entregado / completo). Sin este ultimo check, el operario podia
+        // seguir sacando stock sobre un req ya cerrado.
         const hayMaterial = r.material_id != null;
         const stockOk = (r.stock_actual ?? 0) >= Number(r.cantidad);
-        const puedeConsumir = hayMaterial && sinOC && noStockEstado && stockOk && noAnulado;
-        const motivoDeshab = !hayMaterial
+        const esAprobado = sr === "APROBADO";
+        const yaCerrado = r.status_oc === "CONSUMIDO_ALMACEN"
+          || r.status_oc === "CONSUMIDO_OC_ABIERTA"
+          || r.status_oc === "ENTREGADO"
+          || r.status_oc === "COMPLETO";
+        const puedeConsumir = esAprobado && hayMaterial && sinOC && noStockEstado && stockOk && noAnulado && !yaCerrado;
+        const motivoDeshab = !esAprobado
+          ? `Requerimiento ${sr ?? "sin estado"} — solo se puede consumir cuando está APROBADO`
+          : yaCerrado
+          ? `Ya procesado (${r.status_oc}) — no se puede consumir otra vez`
+          : !hayMaterial
           ? "Sin material vinculado"
           : !sinOC
           ? "Ya está asignado a una OC"
@@ -2309,9 +2321,30 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                   Consumir de Almacén Abierto ({selectedRows.length})
                 </Button>
               </Tooltip>
-              <Button type="primary" size="large" icon={<FileDoneOutlined />} onClick={abrirModalOC}>
-                Crear OC ({selectedRows.length})
-              </Button>
+              {(() => {
+                // Bloquea el boton si algun item seleccionado no esta APROBADO.
+                // Mismo criterio que aplica el backend en crear-oc — antes se
+                // podia clickear, abrir el modal, llenar todo y solo enterarse
+                // del error al presionar 'Generar OC'.
+                const noAprobados = selectedRecords.filter((r) => r.status_req !== "APROBADO");
+                const bloqueado = noAprobados.length > 0;
+                const tooltip = bloqueado
+                  ? `${noAprobados.length} item(s) no estan APROBADOS: ${noAprobados.slice(0, 3).map((r) => `${r.nro_req ?? "?"}/${r.item_req ?? "?"} (${r.status_req ?? "?"})`).join(", ")}${noAprobados.length > 3 ? "…" : ""}. Pasalos por Aprobaciones primero.`
+                  : "Generar Orden de Compra con los items seleccionados";
+                return (
+                  <Tooltip title={tooltip}>
+                    <Button
+                      type="primary"
+                      size="large"
+                      icon={<FileDoneOutlined />}
+                      onClick={abrirModalOC}
+                      disabled={bloqueado}
+                    >
+                      Crear OC ({selectedRows.length})
+                    </Button>
+                  </Tooltip>
+                );
+              })()}
             </>
           )}
         </Space>

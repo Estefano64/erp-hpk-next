@@ -141,6 +141,31 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      // Validación: TODO ítem debe estar APROBADO antes de generar la OC.
+      // Sin esto, se podian comprar reqs en BORRADOR / SIN_APROBACION /
+      // DESAPROBADO / ANULADO, saltandose el paso de aprobacion — el flujo
+      // requiere que el aprobador valide precios y cantidad antes de que
+      // se emita la OC al proveedor.
+      const noAprobados = repuestos.filter(
+        (r) => r.status_requerimiento_codigo !== "APROBADO",
+      );
+      if (noAprobados.length > 0) {
+        const labels = noAprobados
+          .map((r) => `${r.nro_req ?? `#${r.id}`}/${r.item_req ?? "-"} (${r.status_requerimiento_codigo ?? "sin estado"})`)
+          .slice(0, 10)
+          .join(", ");
+        const extra = noAprobados.length > 10 ? ` y ${noAprobados.length - 10} más` : "";
+        throw Object.assign(
+          new Error(
+            `No se puede crear la OC: ${noAprobados.length} item(s) no están APROBADOS (${labels}${extra}). Pasalos por Aprobaciones antes de generar la OC.`,
+          ),
+          {
+            code: "NOT_APPROVED",
+            no_aprobados_ids: noAprobados.map((r) => r.id),
+          },
+        );
+      }
+
       // Validación: TODO ítem debe tener precio_unitario > 0 antes de crear la OC.
       const sinPrecio = repuestos.filter((r) => {
         const p = Number(r.precio_unitario ?? 0);
@@ -508,13 +533,19 @@ export async function POST(req: NextRequest) {
       { status: 201 },
     );
   } catch (error: unknown) {
-    const err = error as { code?: string; message?: string; sin_precio_ids?: number[] };
+    const err = error as { code?: string; message?: string; sin_precio_ids?: number[]; no_aprobados_ids?: number[] };
     if (err?.code === "NO_DISPONIBLES" || err?.code === "PARCIAL" || err?.code === "RACE") {
       return NextResponse.json({ error: err.message }, { status: 409 });
     }
     if (err?.code === "SIN_PRECIO") {
       return NextResponse.json(
         { error: err.message, sin_precio_ids: err.sin_precio_ids ?? [] },
+        { status: 400 },
+      );
+    }
+    if (err?.code === "NOT_APPROVED") {
+      return NextResponse.json(
+        { error: err.message, no_aprobados_ids: err.no_aprobados_ids ?? [] },
         { status: 400 },
       );
     }
