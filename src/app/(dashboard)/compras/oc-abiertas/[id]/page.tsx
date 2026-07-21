@@ -463,7 +463,6 @@ export default function OCAbiertaEditorPage() {
                 <Select
                   options={[
                     { value: "USD", label: "USD" },
-                    { value: "PEN", label: "PEN" },
                     { value: "SOL", label: "SOL" },
                   ]}
                 />

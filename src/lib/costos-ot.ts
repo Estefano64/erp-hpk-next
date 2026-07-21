@@ -132,7 +132,7 @@ function dec(v: Prisma.Decimal | number | string | null | undefined): number {
 // La moneda de HH no está en el modelo Trabajador. Asumimos PEN — el costo
 // de mano de obra en HP&K se maneja en soles. Para cambiar, override aquí
 // (en una fase posterior puede moverse a ConfiguracionCotizacion).
-const MONEDA_HH = "PEN";
+const MONEDA_HH = "SOL";
 
 interface Args {
   otId?: number | null;

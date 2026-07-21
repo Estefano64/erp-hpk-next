@@ -1334,6 +1334,13 @@ model Compra {
   // /pago_* arriba quedan para compat con callers que aún los lean.
   adjuntos               CompraAdjunto[]
   observaciones          String?
+  // Override manual del nombre y RUC del proveedor SOLO para esta OC.
+  // Se usa cuando el operario elige "PROVEEDOR VARIOS" (id 154) y quiere
+  // que el PDF muestre datos reales del proveedor puntual sin crear un
+  // registro nuevo en la tabla proveedores. Si estan null, el PDF y las
+  // vistas usan proveedor.razon_social / proveedor.ruc como siempre.
+  proveedor_nombre_override String?      @db.VarChar(200)
+  proveedor_ruc_override    String?      @db.VarChar(11)
   usuario_solicita       String          @db.VarChar(100)
   usuario_aprueba        String?         @db.VarChar(100)
   // Fecha en que se acepto la OC (POST /aceptar). El PDF la usa como "Fecha

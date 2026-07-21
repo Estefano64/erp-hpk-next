@@ -60,7 +60,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       if (parsed.data.proveedor) partes.push(`prov.: ${parsed.data.proveedor}`);
       if (parsed.data.comprobante) partes.push(`comp.: ${parsed.data.comprobante}`);
       const monto = parsed.data.monto_unitario;
-      const moneda = parsed.data.moneda || rep.moneda || "PEN";
+      const moneda = parsed.data.moneda || rep.moneda || "SOL";
       if (monto != null) {
         const cant = Number(rep.cantidad ?? 0);
         partes.push(`${moneda} ${monto.toFixed(2)}/u × ${cant} = ${moneda} ${(monto * cant).toFixed(2)}`);

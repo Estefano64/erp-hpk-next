@@ -466,6 +466,16 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
   const [descuentoModal, setDescuentoModal] = useState<number>(0);
   const [otrosModal, setOtrosModal] = useState<number>(0);
   const [otrosSignoModal, setOtrosSignoModal] = useState<"+" | "-">("+");
+  // Overrides opcionales del nombre + RUC del proveedor SOLO para la OC
+  // en curso. Se envian a crear-oc y se persisten en columnas dedicadas
+  // de Compra. Solo se muestran los inputs cuando el proveedor
+  // seleccionado matchea el patron generico (PROVEEDOR VARIOS/GENERICO).
+  // Sin override → PDF usa proveedor.razon_social / ruc como siempre.
+  const [proveedorNombreOverride, setProveedorNombreOverride] = useState<string>("");
+  const [proveedorRucOverride, setProveedorRucOverride] = useState<string>("");
+  // ID del proveedor seleccionado en el form (para saber si mostrar los
+  // inputs de override). Se sincroniza en el onChange del Select.
+  const [proveedorSeleccionadoId, setProveedorSeleccionadoId] = useState<number | null>(null);
 
   // Modal de Dividir
   const [modalDividir, setModalDividir] = useState<Requerimiento | null>(null);
@@ -531,7 +541,7 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
   const [materialIdAVincular, setMaterialIdAVincular] = useState<number | null>(null);
   const [vinculando, setVinculando] = useState(false);
   const [cajaMonto, setCajaMonto] = useState<number | null>(null);
-  const [cajaMoneda, setCajaMoneda] = useState<string>("PEN");
+  const [cajaMoneda, setCajaMoneda] = useState<string>("SOL");
   const [cajaProveedor, setCajaProveedor] = useState<string>("");
   const [cajaComprobante, setCajaComprobante] = useState<string>("");
   const [cajaObs, setCajaObs] = useState<string>("");
@@ -848,6 +858,9 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
     setDescuentoModal(0);
     setOtrosModal(0);
     setOtrosSignoModal("+");
+    setProveedorSeleccionadoId(null);
+    setProveedorNombreOverride("");
+    setProveedorRucOverride("");
     // Fecha global inicial = la del PRIMER item (misma que la per-item).
     // Antes se inicializaba a 'hoy + 15 días' sin relación con lo que
     // aparecía en la columna F. Entrega de la tabla → se veía 'F. Entrega
@@ -951,6 +964,11 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
             : null,
           observaciones: values.observaciones,
           nombre: null,
+          // Overrides opcionales del proveedor - se envian solo si el user
+          // los completo. Backend los persiste en columnas dedicadas de
+          // Compra y el PDF los prioriza sobre proveedor.razon_social/ruc.
+          proveedor_nombre_override: proveedorNombreOverride.trim() || null,
+          proveedor_ruc_override: proveedorRucOverride.trim() || null,
           // usuario: NO enviamos "Logistica" hardcodeado — el server usa el
           // getAuditUser (token.name) de la sesión y guarda el nombre REAL
           // de quien está creando. Si mandáramos "Logistica" acá, el alias
@@ -1305,7 +1323,7 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
   const abrirModalCajaChica = (r: Requerimiento) => {
     setModalCajaChica(r);
     setCajaMonto(typeof r.precio_unitario === "number" ? r.precio_unitario : (r.precio_unitario != null ? Number(r.precio_unitario) : null));
-    setCajaMoneda(r.moneda || "PEN");
+    setCajaMoneda(r.moneda || "SOL");
     setCajaProveedor("");
     setCajaComprobante("");
     setCajaObs("");
@@ -1979,7 +1997,7 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
       dataIndex: "moneda",
       width: 65,
       align: "center",
-      filters: [{ text: "USD", value: "USD" }, { text: "PEN", value: "PEN" }],
+      filters: [{ text: "USD", value: "USD" }, { text: "SOL", value: "SOL" }],
       onFilter: (value, r) => r.moneda === value,
     },
     {
@@ -2032,11 +2050,23 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
         // de admin — el creador puede limpiar sus propios reqs con error.
         const puedeEliminar = sinOC && sr !== "APROBADO" && sr !== "ANULADO";
 
-        // Consumir de almacén: requiere material, sin OC, no anulado, stock suficiente.
+        // Consumir de almacén: requiere APROBADO, material, sin OC, no anulado,
+        // stock suficiente y NO estar en un estado cerrado (ya consumido /
+        // entregado / completo). Sin este ultimo check, el operario podia
+        // seguir sacando stock sobre un req ya cerrado.
         const hayMaterial = r.material_id != null;
         const stockOk = (r.stock_actual ?? 0) >= Number(r.cantidad);
-        const puedeConsumir = hayMaterial && sinOC && noStockEstado && stockOk && noAnulado;
-        const motivoDeshab = !hayMaterial
+        const esAprobado = sr === "APROBADO";
+        const yaCerrado = r.status_oc === "CONSUMIDO_ALMACEN"
+          || r.status_oc === "CONSUMIDO_OC_ABIERTA"
+          || r.status_oc === "ENTREGADO"
+          || r.status_oc === "COMPLETO";
+        const puedeConsumir = esAprobado && hayMaterial && sinOC && noStockEstado && stockOk && noAnulado && !yaCerrado;
+        const motivoDeshab = !esAprobado
+          ? `Requerimiento ${sr ?? "sin estado"} — solo se puede consumir cuando está APROBADO`
+          : yaCerrado
+          ? `Ya procesado (${r.status_oc}) — no se puede consumir otra vez`
+          : !hayMaterial
           ? "Sin material vinculado"
           : !sinOC
           ? "Ya está asignado a una OC"
@@ -2291,9 +2321,30 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                   Consumir de Almacén Abierto ({selectedRows.length})
                 </Button>
               </Tooltip>
-              <Button type="primary" size="large" icon={<FileDoneOutlined />} onClick={abrirModalOC}>
-                Crear OC ({selectedRows.length})
-              </Button>
+              {(() => {
+                // Bloquea el boton si algun item seleccionado no esta APROBADO.
+                // Mismo criterio que aplica el backend en crear-oc — antes se
+                // podia clickear, abrir el modal, llenar todo y solo enterarse
+                // del error al presionar 'Generar OC'.
+                const noAprobados = selectedRecords.filter((r) => r.status_req !== "APROBADO");
+                const bloqueado = noAprobados.length > 0;
+                const tooltip = bloqueado
+                  ? `${noAprobados.length} item(s) no estan APROBADOS: ${noAprobados.slice(0, 3).map((r) => `${r.nro_req ?? "?"}/${r.item_req ?? "?"} (${r.status_req ?? "?"})`).join(", ")}${noAprobados.length > 3 ? "…" : ""}. Pasalos por Aprobaciones primero.`
+                  : "Generar Orden de Compra con los items seleccionados";
+                return (
+                  <Tooltip title={tooltip}>
+                    <Button
+                      type="primary"
+                      size="large"
+                      icon={<FileDoneOutlined />}
+                      onClick={abrirModalOC}
+                      disabled={bloqueado}
+                    >
+                      Crear OC ({selectedRows.length})
+                    </Button>
+                  </Tooltip>
+                );
+              })()}
             </>
           )}
         </Space>
@@ -3108,11 +3159,28 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                   placeholder="Seleccionar proveedor"
                   showSearch
                   optionFilterProp="label"
-                  options={proveedores.map((p) => ({ value: p.id, label: p.razon_social }))}
+                  // Ordenar: proveedor generico (PROVEEDOR VARIOS/GENERICO)
+                  // al tope con marcador ★, resto ordenado alfabetico.
+                  // Asi el operario tiene el atajo visible sin scroll para
+                  // OCs rapidas con proveedor no catalogado.
+                  options={(() => {
+                    const esGenerico = (nom: string) => /PROVEEDOR\s*(VARIOS|GEN[EÉ]RICO)/i.test(nom);
+                    const genericos = proveedores.filter((p) => esGenerico(p.razon_social));
+                    const resto = proveedores.filter((p) => !esGenerico(p.razon_social));
+                    return [
+                      ...genericos.map((p) => ({ value: p.id, label: `★ ${p.razon_social}` })),
+                      ...resto.map((p) => ({ value: p.id, label: p.razon_social })),
+                    ];
+                  })()}
                   onChange={async (provId) => {
                     // Al elegir proveedor: fetch a /api/proveedores/[id]/defaults-oc
                     // y pre-rellenar moneda, tipo_pago, dias_credito, fecha_entrega
                     // y observaciones. El user puede editar después.
+                    setProveedorSeleccionadoId(provId ?? null);
+                    // Al cambiar de proveedor limpiamos los overrides — no
+                    // tiene sentido conservarlos si ya no es generico.
+                    setProveedorNombreOverride("");
+                    setProveedorRucOverride("");
                     if (!provId) return;
                     try {
                       const res = await fetch(`/api/proveedores/${provId}/defaults-oc`);
@@ -3123,7 +3191,7 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                       // el user ya editó manualmente.
                       const cur = ocForm.getFieldsValue();
                       const patch: Record<string, unknown> = {};
-                      if (d.moneda && !cur.moneda) patch.moneda = d.moneda === "SOL" || d.moneda === "PEN" ? "PEN" : "USD";
+                      if (d.moneda && !cur.moneda) patch.moneda = d.moneda === "SOL" || d.moneda === "PEN" ? "SOL" : "USD";
                       if (d.tipo_pago && tipoPagoModal == null) setTipoPagoModal(d.tipo_pago);
                       if (d.dias_credito != null && diasCreditoModal == null) setDiasCreditoModal(d.dias_credito);
                       if (d.tiempo_entrega_dias != null && !cur.fecha_entrega_esperada) {
@@ -3149,13 +3217,51 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                   }}
                 />
               </Form.Item>
+              {/* Inputs de override — solo visibles cuando el proveedor
+                  seleccionado es el generico (PROVEEDOR VARIOS/GENERICO).
+                  Permiten rellenar nombre + RUC del proveedor real de la
+                  OC sin crear un registro en la tabla proveedores. */}
+              {(() => {
+                const provSel = proveedores.find((p) => p.id === proveedorSeleccionadoId);
+                const esGenerico = provSel && /PROVEEDOR\s*(VARIOS|GEN[EÉ]RICO)/i.test(provSel.razon_social);
+                if (!esGenerico) return null;
+                return (
+                  <div style={{ marginTop: -8, marginBottom: 12, padding: 12, border: `1px dashed ${brand.textSecondary}`, borderRadius: 6, background: brand.bgPage }}>
+                    <Text type="secondary" style={{ fontSize: 11, display: "block", marginBottom: 8 }}>
+                      Proveedor <b>VARIOS</b> — completá el nombre y RUC reales del proveedor puntual (opcional). Aparecen en el PDF de la OC pero NO se guardan en el catálogo.
+                    </Text>
+                    <Row gutter={8}>
+                      <Col xs={24} md={14}>
+                        <Text style={{ fontSize: 12, display: "block", marginBottom: 4 }}>Nombre del proveedor</Text>
+                        <Input
+                          size="small"
+                          value={proveedorNombreOverride}
+                          onChange={(e) => setProveedorNombreOverride(e.target.value)}
+                          placeholder="Ej: FERRETERIA EL SOL SAC"
+                          maxLength={200}
+                        />
+                      </Col>
+                      <Col xs={24} md={10}>
+                        <Text style={{ fontSize: 12, display: "block", marginBottom: 4 }}>RUC</Text>
+                        <Input
+                          size="small"
+                          value={proveedorRucOverride}
+                          onChange={(e) => setProveedorRucOverride(e.target.value.replace(/\D/g, "").slice(0, 11))}
+                          placeholder="11 dígitos"
+                          maxLength={11}
+                        />
+                      </Col>
+                    </Row>
+                  </div>
+                );
+              })()}
             </Col>
             <Col xs={12} md={6}>
               <Form.Item label="Moneda" name="moneda">
                 <Select showSearch optionFilterProp="label"
                   options={[
                     { value: "USD", label: "USD" },
-                    { value: "PEN", label: "PEN" },
+                    { value: "SOL", label: "SOL" },
                   ]}
                 />
               </Form.Item>
@@ -3805,7 +3911,7 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                   onChange={setCajaMoneda}
                   style={{ width: "100%" }}
                   options={[
-                    { value: "PEN", label: "PEN (S/)" },
+                    { value: "SOL", label: "SOL (S/)" },
                     { value: "USD", label: "USD (US$)" },
                   ]}
                 />

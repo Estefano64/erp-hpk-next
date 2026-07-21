@@ -468,22 +468,28 @@ function SortableResizableTitle(props: SortableResizableTitleProps) {
         left: 0,
         top: 0,
         bottom: 0,
-        width: 16,
+        // 24px de ancho (antes 16) para dar mas superficie clickeable.
+        // Combinado con la mayor opacidad idle, el handle se descubre a la
+        // primera sin necesidad de hover-y-adivinar.
+        width: 24,
         zIndex: 3,
         cursor: sort.isDragging ? "grabbing" : "grab",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        color: "rgba(0,0,0,0.35)",
-        fontSize: 11,
-        // Opacidad baja idle (era 0 = invisible). 0.25 es suficiente para que
-        // se vea el handle en columnas estrechas como fechas. Sube a 1 al hover
-        // del header via CSS global.
-        opacity: 0.25,
+        // Mas contraste: navy en vez de gris claro, mas visible sobre
+        // fondos claros y oscuros.
+        color: brand.navy,
+        fontSize: 12,
+        fontWeight: 700,
+        // Opacidad idle subida de 0.25 → 0.55 para que se vea sin necesidad
+        // de hover. El CSS global lo lleva a 1 en hover del header.
+        opacity: 0.55,
         transition: "opacity 0.15s",
+        userSelect: "none",
       }}
       className="col-drag-handle"
-      title="Arrastrar para reordenar columna"
+      title="Arrastrá desde acá para reordenar la columna"
       onClick={(e) => e.stopPropagation()}
     >
       ⋮⋮
