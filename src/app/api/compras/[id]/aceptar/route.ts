@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { recalcularRecursosStatusOT, recalcularRecursosStatusOTInterna } from "@/lib/recursos-ot";
 import { montoEnUSD, puedeAprobarOC } from "@/lib/aprobacion-montos";
+import { hoyEnLima } from "@/lib/dates";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
@@ -83,6 +84,10 @@ export async function POST(req: NextRequest, { params }: Params) {
         data: {
           status_oc_codigo: "PROCESO",
           usuario_aprueba: usuario,
+          // Fecha oficial de aprobacion de la OC. El PDF la usa como
+          // "Fecha Emision" (antes usaba fecha_solicitud, que era la
+          // fecha de creacion del draft y podia ser muy anterior).
+          fecha_aprobacion: hoyEnLima(),
           // Persistimos los 3 campos también en la fila de la OC (no solo en
           // OTHistorial) — la UI los muestra en /requerimientos/detalle sin
           // tener que parsear el JSON del historial.
