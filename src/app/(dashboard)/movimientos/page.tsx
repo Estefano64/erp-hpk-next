@@ -535,10 +535,9 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   // Filas realmente visibles en la tabla despues de aplicar los filtros de
   // columna de AntD (dropdowns en el header) + filtros externos. Se
-  // actualiza via Table.onChange. Se usa para la validacion "1 sola OC" del
-  // boton Recibir seleccionados — sin esto, IDs seleccionados en OCs que un
-  // filtro posterior oculto quedaban colgados en el state y contaminaban la
-  // cuenta.
+  // actualiza via Table.onChange y ese mismo handler poda selectedItemIds
+  // para que no queden claves colgadas de items que un filtro poste-
+  // riormente escondio.
   const [filasEnVista, setFilasEnVista] = useState<ItemFila[]>([]);
   const [cantidadesRecibidas, setCantidadesRecibidas] = useState<Record<number, number>>({});
   const [nroGuia, setNroGuia] = useState("");
@@ -1084,9 +1083,15 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
           })}
           // Capturamos el dataSource filtrado por AntD (dropdowns de columna
           // + sort) para que la validacion del boton Recibir cuente solo lo
-          // que el operario ve en pantalla.
+          // que el operario ve en pantalla. Ademas podamos selectedItemIds
+          // en el acto: cualquier clave que ya no este visible se descarta
+          // del state - asi la validacion NO cuenta items ocultos aunque
+          // filasEnVista este stale.
           onChange={(_p, _f, _s, extra) => {
-            setFilasEnVista(extra.currentDataSource as ItemFila[]);
+            const visibles = extra.currentDataSource as ItemFila[];
+            setFilasEnVista(visibles);
+            const clavesVisibles = new Set(visibles.map((r) => r._key));
+            setSelectedItemIds((prev) => prev.filter((k) => clavesVisibles.has(k)));
           }}
           scroll={{ x: 1500 }}
           sticky={{ offsetHeader: 56, offsetScroll: 0 }}

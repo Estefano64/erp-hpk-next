@@ -31,6 +31,14 @@ interface RepLite {
   status_oc_codigo: string | null;
   po_id: number | null;
   solo_para_oc: boolean | null;
+  // Cantidad pedida y recibida — para detectar cuando un rep esta 100%
+  // recibido aunque su status_oc_codigo individual no se haya sincronizado
+  // con el estado de la Compra. Solucion al bug: la recepcion actualiza
+  // Compra.status_oc_codigo y OTRepuesto.cantidad_recibida, pero NO
+  // OTRepuesto.status_oc_codigo — la OT quedaba en "En espera de recursos"
+  // aunque todo estuviera entregado.
+  cantidad: import("@prisma/client/runtime/library").Decimal | number;
+  cantidad_recibida: import("@prisma/client/runtime/library").Decimal | number | null;
   // Estado de la OC vinculada (para distinguir "En aprobación de PO" cuando la
   // Compra está en PEND_OC) — puede ser null si el req no tiene OC.
   compra: { status_oc_codigo: string | null } | null;
@@ -59,8 +67,21 @@ function etapaRep(r: RepLite): number {
   // Aprobado en adelante → depende de OC / recepción / consumo.
   const oc = r.status_oc_codigo;
   if (oc && CONSUMIDOS.has(oc)) return 6;                 // consumido/salido de almacén
-  if (oc === "COMPLETO" || oc === "ENTREGADO") return 5;  // recibido completo
+  if (oc === "COMPLETO" || oc === "ENTREGADO") return 5;  // recibido completo (por rep)
   const compraOc = r.compra?.status_oc_codigo ?? null;
+  // Compra ENTREGADO/COMPLETO ⇒ toda la OC llego (calculado en la recepcion),
+  // asi que TODOS sus reps ya estan al 100% aunque OTRepuesto.status_oc_codigo
+  // no se haya sincronizado. Tratamos como stage 5.
+  if (compraOc === "ENTREGADO" || compraOc === "COMPLETO") return 5;
+  // Compra INCOMPLETO ⇒ algunas lineas quedaron parciales. Cada rep se
+  // resuelve mirando su propia cantidad_recibida: si esta al 100% es stage 5,
+  // sino sigue esperando.
+  if (compraOc === "INCOMPLETO") {
+    const cant = Number(r.cantidad);
+    const rec = Number(r.cantidad_recibida ?? 0);
+    if (rec >= cant - 0.0001 && cant > 0) return 5;
+    return 4;
+  }
   const tieneOC = r.po_id != null || compraOc != null;
   if (tieneOC) {
     if (compraOc === "PEND_OC" || oc === "PEND_OC") return 3;  // OC pendiente de aprobar
@@ -96,6 +117,8 @@ const SELECT_REP_LITE = {
   status_oc_codigo: true,
   po_id: true,
   solo_para_oc: true,
+  cantidad: true,
+  cantidad_recibida: true,
   compra: { select: { status_oc_codigo: true } },
 } as const;
 
