@@ -44,6 +44,10 @@ export const authOptions: AuthOptions = {
           email: user.email ?? user.codigoEmpleado,
           name: user.nombre,
           roles: user.roles,
+          // Portal de clientes: empresa a la que pertenece la cuenta (rol
+          // "cliente"). Viaja en el JWT para que el API del portal filtre
+          // SIEMPRE por este valor de sesión, nunca por parámetros.
+          clienteId: user.clienteId ?? null,
         };
       },
     }),
@@ -52,6 +56,7 @@ export const authOptions: AuthOptions = {
     async jwt({ token, user }) {
       if (user) {
         token.roles = (user as unknown as { roles: string[] }).roles;
+        token.clienteId = (user as unknown as { clienteId: number | null }).clienteId ?? null;
       }
       return token;
     },
@@ -59,6 +64,7 @@ export const authOptions: AuthOptions = {
       if (session.user) {
         (session.user as { id?: string }).id = token.sub;
         (session.user as { roles?: string[] }).roles = (token.roles as string[] | undefined) ?? [];
+        (session.user as { clienteId?: number | null }).clienteId = (token.clienteId as number | null | undefined) ?? null;
       }
       return session;
     },

@@ -44,9 +44,14 @@ model Usuario {
   // personal del rol "tecnico".
   trabajadorId   Int?     @unique @map("trabajador_id")
   trabajador     Trabajador? @relation(fields: [trabajadorId], references: [trabajador_id], onDelete: SetNull)
+  // Portal de clientes: cuenta con rol "cliente" vinculada a una empresa.
+  // Solo ve /portal y únicamente las OTs de SU cliente con visible_portal.
+  clienteId      Int?     @map("cliente_id")
+  cliente        Cliente? @relation(fields: [clienteId], references: [cliente_id], onDelete: SetNull)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  @@index([clienteId])
   @@map("usuarios")
 }
 
@@ -479,6 +484,7 @@ model Cliente {
   updated_at         DateTime       @default(now()) @updatedAt
   contratos          Contrato[]
   ordenes_trabajo    OrdenTrabajo[]
+  usuarios_portal    Usuario[]
 
   @@map("cliente")
 }
@@ -950,6 +956,9 @@ model OrdenTrabajo {
   // Denormalizado para filtrar el listado por año sin módulo en el where.
   // Se setea al crear la OT (y se recalcula si cambia `ot`).
   anio                        Int?
+  // Portal de clientes: OPT-IN. Solo si un administrativo la publica, el
+  // cliente ve el progreso de esta OT en /portal. Default oculto a propósito.
+  visible_portal              Boolean             @default(false)
   id_cliente                  Int?
   estrategia                  Boolean?
   id_cod_rep                  Int?

@@ -78,6 +78,9 @@ const ROLES = [
   // Modificador restrictivo: oculta la pestaña Costos de las OTs (externas e
   // internas). Se combina con otros roles (ej. admin + sin_costos).
   "sin_costos",
+  // Portal de clientes: cuenta EXTERNA de una empresa cliente. Solo ve
+  // /portal con las OTs publicadas de SU cliente (requiere clienteId).
+  "cliente",
 ] as const;
 
 const CreateSchema = z.object({
@@ -91,6 +94,8 @@ const CreateSchema = z.object({
   password: z.string().min(6).max(100),
   activo: z.boolean().optional(),
   trabajadorId: z.number().int().positive().optional().nullable(),
+  // Portal: empresa a la que pertenece la cuenta (obligatorio con rol cliente).
+  clienteId: z.number().int().positive().optional().nullable(),
 });
 
 // POST /api/usuarios — crea cuenta. Si trabajadorId viene, valida que ese
@@ -118,6 +123,11 @@ export async function POST(req: NextRequest) {
     const rolesUnicos = [...new Set(d.roles)];
     if (rolesUnicos.length === 0) rolesUnicos.push("viewer");
 
+    // Una cuenta de portal necesita saber de qué empresa es.
+    if (rolesUnicos.includes("cliente") && !d.clienteId) {
+      return NextResponse.json({ error: "Una cuenta con rol cliente requiere clienteId (empresa)" }, { status: 400 });
+    }
+
     const hashed = await bcrypt.hash(d.password, 10);
     const created = await prisma.usuario.create({
       data: {
@@ -129,10 +139,11 @@ export async function POST(req: NextRequest) {
         activo: d.activo ?? true,
         password: hashed,
         trabajadorId: d.trabajadorId ?? null,
+        clienteId: d.clienteId ?? null,
       },
       select: {
         id: true, codigoEmpleado: true, email: true, dni: true,
-        nombre: true, roles: true, activo: true, trabajadorId: true,
+        nombre: true, roles: true, activo: true, trabajadorId: true, clienteId: true,
       },
     });
     return NextResponse.json({ data: created }, { status: 201 });
