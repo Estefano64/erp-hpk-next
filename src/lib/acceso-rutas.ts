@@ -64,6 +64,31 @@ export function puedeVerRuta(roles: string[] | null | undefined, pathname: strin
   return regla.roles.some((rol) => r.includes(rol));
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// Portal de clientes. Una cuenta con rol "cliente" (sin admin) queda
+// ENCERRADA en el portal: solo las rutas de abajo; cualquier otra página la
+// devuelve a /portal, y las APIs del ERP le responden 403 (solo puede usar
+// /api/portal/* + auth + /api/me). Mismo patrón que el técnico restringido.
+export const RUTAS_CLIENTE = ["/portal", "/perfil"] as const;
+
+export function esClientePortal(roles: string[] | null | undefined): boolean {
+  const r = roles ?? [];
+  return r.includes("cliente") && !r.includes("admin");
+}
+
+export function rutaPermitidaCliente(pathname: string): boolean {
+  return RUTAS_CLIENTE.some((base) => pathname === base || pathname.startsWith(base + "/"));
+}
+
+export function apiPermitidaCliente(pathname: string): boolean {
+  return (
+    pathname.startsWith("/api/portal") ||
+    pathname.startsWith("/api/auth") ||
+    pathname === "/api/me" ||
+    pathname === "/api/me/cambiar-password"
+  );
+}
+
 // Costos de OT (pestaña Costos + endpoints /costos + columnas ?costos=1):
 // SOLO los admin — y dentro de ellos, no quien tenga el modificador
 // `sin_costos` (caso Diego Muñoz: admin que no ve costos).

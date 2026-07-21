@@ -17,12 +17,29 @@ import { withAuth } from "next-auth/middleware";
 import type { NextRequestWithAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
 import { esTecnicoRestringido, rutaPermitidaTecnico } from "@/lib/tecnico-acceso";
-import { puedeVerRuta, puedeEscribirApi } from "@/lib/acceso-rutas";
+import {
+  puedeVerRuta, puedeEscribirApi,
+  esClientePortal, rutaPermitidaCliente, apiPermitidaCliente,
+} from "@/lib/acceso-rutas";
 
 export default withAuth(
   function middleware(req: NextRequestWithAuth) {
     const roles = (req.nextauth?.token?.roles as string[] | undefined) ?? [];
     const path = req.nextUrl.pathname;
+    // Cuenta de PORTAL (rol cliente sin admin): encerrada en /portal. Las
+    // páginas del ERP la redirigen al portal y las APIs internas le dan 403.
+    if (esClientePortal(roles)) {
+      if (path.startsWith("/api/")) {
+        if (!apiPermitidaCliente(path)) {
+          return NextResponse.json({ error: "No disponible para cuentas de portal" }, { status: 403 });
+        }
+        return NextResponse.next();
+      }
+      if (!rutaPermitidaCliente(path)) {
+        return NextResponse.redirect(new URL("/portal", req.url));
+      }
+      return NextResponse.next();
+    }
     if (!path.startsWith("/api/")) {
       if (esTecnicoRestringido(roles) && !rutaPermitidaTecnico(path)) {
         return NextResponse.redirect(new URL("/dashboard", req.url));
