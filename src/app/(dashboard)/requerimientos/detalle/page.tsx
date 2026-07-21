@@ -3108,7 +3108,19 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                   placeholder="Seleccionar proveedor"
                   showSearch
                   optionFilterProp="label"
-                  options={proveedores.map((p) => ({ value: p.id, label: p.razon_social }))}
+                  // Ordenar: proveedor generico (PROVEEDOR VARIOS/GENERICO)
+                  // al tope con marcador ★, resto ordenado alfabetico.
+                  // Asi el operario tiene el atajo visible sin scroll para
+                  // OCs rapidas con proveedor no catalogado.
+                  options={(() => {
+                    const esGenerico = (nom: string) => /PROVEEDOR\s*(VARIOS|GEN[EÉ]RICO)/i.test(nom);
+                    const genericos = proveedores.filter((p) => esGenerico(p.razon_social));
+                    const resto = proveedores.filter((p) => !esGenerico(p.razon_social));
+                    return [
+                      ...genericos.map((p) => ({ value: p.id, label: `★ ${p.razon_social}` })),
+                      ...resto.map((p) => ({ value: p.id, label: p.razon_social })),
+                    ];
+                  })()}
                   onChange={async (provId) => {
                     // Al elegir proveedor: fetch a /api/proveedores/[id]/defaults-oc
                     // y pre-rellenar moneda, tipo_pago, dias_credito, fecha_entrega
