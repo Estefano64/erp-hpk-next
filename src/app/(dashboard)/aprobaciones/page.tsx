@@ -1723,7 +1723,7 @@ export default function AceptacionesPage() {
                   style={{ width: 100 }}
                   options={[
                     { value: "USD", label: "USD" },
-                    { value: "PEN", label: "PEN" },
+                    { value: "SOL", label: "SOL" },
                   ]}
                 />
               </Space>

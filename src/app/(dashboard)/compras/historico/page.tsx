@@ -705,7 +705,7 @@ export default function HistoricoComprasPage() {
               <Form.Item name="moneda_codigo" label="Moneda" initialValue="USD">
                 <Select options={[
                   { value: "USD", label: "USD" },
-                  { value: "PEN", label: "PEN" },
+                  { value: "SOL", label: "SOL" },
                   { value: "EUR", label: "EUR" },
                 ]} />
               </Form.Item>

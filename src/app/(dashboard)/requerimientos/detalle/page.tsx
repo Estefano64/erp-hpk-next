@@ -531,7 +531,7 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
   const [materialIdAVincular, setMaterialIdAVincular] = useState<number | null>(null);
   const [vinculando, setVinculando] = useState(false);
   const [cajaMonto, setCajaMonto] = useState<number | null>(null);
-  const [cajaMoneda, setCajaMoneda] = useState<string>("PEN");
+  const [cajaMoneda, setCajaMoneda] = useState<string>("SOL");
   const [cajaProveedor, setCajaProveedor] = useState<string>("");
   const [cajaComprobante, setCajaComprobante] = useState<string>("");
   const [cajaObs, setCajaObs] = useState<string>("");
@@ -1305,7 +1305,7 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
   const abrirModalCajaChica = (r: Requerimiento) => {
     setModalCajaChica(r);
     setCajaMonto(typeof r.precio_unitario === "number" ? r.precio_unitario : (r.precio_unitario != null ? Number(r.precio_unitario) : null));
-    setCajaMoneda(r.moneda || "PEN");
+    setCajaMoneda(r.moneda || "SOL");
     setCajaProveedor("");
     setCajaComprobante("");
     setCajaObs("");
@@ -1979,7 +1979,7 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
       dataIndex: "moneda",
       width: 65,
       align: "center",
-      filters: [{ text: "USD", value: "USD" }, { text: "PEN", value: "PEN" }],
+      filters: [{ text: "USD", value: "USD" }, { text: "SOL", value: "SOL" }],
       onFilter: (value, r) => r.moneda === value,
     },
     {
@@ -3123,7 +3123,7 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                       // el user ya editó manualmente.
                       const cur = ocForm.getFieldsValue();
                       const patch: Record<string, unknown> = {};
-                      if (d.moneda && !cur.moneda) patch.moneda = d.moneda === "SOL" || d.moneda === "PEN" ? "PEN" : "USD";
+                      if (d.moneda && !cur.moneda) patch.moneda = d.moneda === "SOL" || d.moneda === "PEN" ? "SOL" : "USD";
                       if (d.tipo_pago && tipoPagoModal == null) setTipoPagoModal(d.tipo_pago);
                       if (d.dias_credito != null && diasCreditoModal == null) setDiasCreditoModal(d.dias_credito);
                       if (d.tiempo_entrega_dias != null && !cur.fecha_entrega_esperada) {
@@ -3155,7 +3155,7 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                 <Select showSearch optionFilterProp="label"
                   options={[
                     { value: "USD", label: "USD" },
-                    { value: "PEN", label: "PEN" },
+                    { value: "SOL", label: "SOL" },
                   ]}
                 />
               </Form.Item>
@@ -3805,7 +3805,7 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                   onChange={setCajaMoneda}
                   style={{ width: "100%" }}
                   options={[
-                    { value: "PEN", label: "PEN (S/)" },
+                    { value: "SOL", label: "SOL (S/)" },
                     { value: "USD", label: "USD (US$)" },
                   ]}
                 />

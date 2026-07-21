@@ -535,7 +535,7 @@ export default function ProveedoresPage() {
                   placeholder="Auto"
                   options={[
                     { value: "USD", label: "USD" },
-                    { value: "SOL", label: "SOL (PEN)" },
+                    { value: "SOL", label: "SOL" },
                   ]}
                 />
               </Form.Item>

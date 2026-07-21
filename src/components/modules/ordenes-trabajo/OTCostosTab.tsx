@@ -99,7 +99,7 @@ interface Props {
 function fmt(monto: number, moneda: string): string {
   // Format en es-PE — separador de miles + 2 decimales.
   const n = new Intl.NumberFormat("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(monto);
-  const simbolo = moneda === "USD" ? "US$ " : moneda === "PEN" ? "S/ " : `${moneda} `;
+  const simbolo = moneda === "USD" ? "US$ " : moneda === "SOL" || moneda === "PEN" ? "S/ " : `${moneda} `;
   return `${simbolo}${n}`;
 }
 
@@ -109,7 +109,7 @@ function MonedasTotalesInline({ totales }: { totales: MonedaTotales }) {
   return (
     <Space wrap size={4}>
       {entries.map(([m, v]) => (
-        <Tag key={m} color={m === "USD" ? "blue" : m === "PEN" ? "gold" : "default"} style={{ margin: 0, fontFamily: "monospace" }}>
+        <Tag key={m} color={m === "USD" ? "blue" : m === "SOL" || m === "PEN" ? "gold" : "default"} style={{ margin: 0, fontFamily: "monospace" }}>
           {fmt(v, m)}
         </Tag>
       ))}
