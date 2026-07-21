@@ -49,7 +49,7 @@ import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 import { formatDateOnly } from "@/lib/dates";
 import { diasEnTaller } from "@/lib/dias-taller";
-import { puedeVerCostosOT } from "@/lib/acceso-rutas";
+import { puedeVerCostosOT, puedeEscribirApi } from "@/lib/acceso-rutas";
 import OTDetalleModal from "@/components/modules/ordenes-trabajo/OTDetalleModal";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import { formatOtCodigo } from "@/lib/ot-formato";
@@ -128,6 +128,8 @@ interface OTRecord {
   // importado del Excel "Data_data". Independiente de tipo_reparacion.
   caracteristica_cilindro?: string | null;
   dias_en_taller?: number | null;
+  // Portal de clientes: si la OT está publicada para el cliente (opt-in).
+  visible_portal?: boolean;
   // Estado de la hoja de evaluación técnica (último registro). null = sin
   // evaluación todavía.
   evaluaciones_tecnicas?: { estado: string }[];
@@ -246,6 +248,27 @@ export default function OrdenesTrabajoPage() {
   // Costos de OT: solo admin sin sin_costos (las columnas/export de costos
   // ni se ofrecen al resto — el API tampoco les manda costos_resumen).
   const verCostos = puedeVerCostosOT(rolesUsuario);
+  // Publicar OTs en el portal de clientes: quien puede escribir OTs.
+  const puedePublicarPortal = puedeEscribirApi(rolesUsuario, "/api/ordenes-trabajo", "POST");
+  const [portalToggling, setPortalToggling] = useState<number | null>(null);
+  const togglePortal = async (r: OTRecord, visible: boolean) => {
+    setPortalToggling(r.id);
+    try {
+      const res = await fetch(`/api/ordenes-trabajo/${r.id}/portal`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visible }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.error ?? "Error al actualizar");
+      setData((prev) => prev.map((o) => (o.id === r.id ? { ...o, visible_portal: visible } : o)));
+      message.success(visible ? `OT publicada en el portal del cliente` : `OT ocultada del portal`);
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "Error al actualizar el portal");
+    } finally {
+      setPortalToggling(null);
+    }
+  };
   const [data, setData] = useState<OTRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -900,6 +923,22 @@ export default function OrdenesTrabajoPage() {
       ...filtroPorColumna(data, "comentarios"),
       render: (v: string | null) => v ?? "-",
     },
+    // Portal de clientes: publicar/ocultar esta OT para el cliente (opt-in).
+    // El switch solo lo ven los que pueden escribir OTs (admin/planner/
+    // produccion/logistica) — misma matriz que valida el servidor.
+    ...(puedePublicarPortal ? [{
+      key: "portal", title: "Portal cliente", width: 110, align: "center" as const,
+      render: (_: unknown, r: OTRecord) => (
+        <Tooltip title={r.visible_portal ? "Visible para el cliente en el portal — click para ocultar" : "Oculta del portal — click para publicar al cliente"}>
+          <Switch
+            size="small"
+            checked={!!r.visible_portal}
+            loading={portalToggling === r.id}
+            onChange={(v) => togglePortal(r, v)}
+          />
+        </Tooltip>
+      ),
+    }] : []),
     {
       key: "acciones",
       title: "",

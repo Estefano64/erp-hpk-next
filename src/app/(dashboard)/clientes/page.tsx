@@ -25,7 +25,9 @@ import {
   StopOutlined,
   ReloadOutlined,
   ImportOutlined,
+  UserAddOutlined,
 } from "@ant-design/icons";
+import { Tooltip } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
@@ -89,6 +91,47 @@ export default function ClientesPage() {
   ]);
 
   const [modalOpen, setModalOpen] = useState(false);
+  // Cuenta de PORTAL del cliente (rol "cliente"): solo timeline de sus OTs
+  // publicadas. La crea el admin desde acá y le entrega las credenciales.
+  const [portalCliente, setPortalCliente] = useState<ClienteRecord | null>(null);
+  const [portalSaving, setPortalSaving] = useState(false);
+  const [portalForm] = Form.useForm<{ nombre: string; email?: string; codigo: string; password: string }>();
+  const abrirCuentaPortal = (c: ClienteRecord) => {
+    setPortalCliente(c);
+    portalForm.setFieldsValue({
+      nombre: `Portal ${c.nombre_comercial ?? c.razon_social}`.slice(0, 100),
+      codigo: `PORTAL-${c.codigo}`.slice(0, 20),
+      email: undefined,
+      password: undefined,
+    });
+  };
+  const crearCuentaPortal = async () => {
+    if (!portalCliente) return;
+    try {
+      const v = await portalForm.validateFields();
+      setPortalSaving(true);
+      const res = await fetch("/api/usuarios", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          codigoEmpleado: v.codigo.trim(),
+          nombre: v.nombre.trim(),
+          email: v.email?.trim() || null,
+          password: v.password,
+          roles: ["cliente"],
+          clienteId: portalCliente.cliente_id,
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.error ?? "Error al crear la cuenta");
+      message.success(`Cuenta de portal creada. Usuario: ${v.email?.trim() || v.codigo.trim()} — entregá las credenciales al cliente.`);
+      setPortalCliente(null);
+    } catch (e) {
+      if (e instanceof Error && e.message) message.error(e.message);
+    } finally {
+      setPortalSaving(false);
+    }
+  };
   const [editing, setEditing] = useState<ClienteRecord | null>(null);
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
@@ -266,6 +309,11 @@ export default function ClientesPage() {
       render: (_: unknown, record: ClienteRecord) => (
         <Space size="small">
           <Button type="text" icon={<EditOutlined />} onClick={() => openEdit(record)} />
+          {isAdminUser && (
+            <Tooltip title="Crear cuenta de PORTAL para este cliente (acceso externo de solo seguimiento)">
+              <Button type="text" icon={<UserAddOutlined style={{ color: brand.cyan }} />} onClick={() => abrirCuentaPortal(record)} />
+            </Tooltip>
+          )}
           <Popconfirm
             title="¿Desactivar este cliente?"
             description="Se ocultará de las listas pero se conservará en la base de datos."
@@ -457,6 +505,34 @@ export default function ClientesPage() {
               </Form.Item>
             </Col>
           </Row>
+        </Form>
+      </Modal>
+
+      {/* Cuenta de portal para un cliente (solo admin). El login es el email
+          (o el código) + la contraseña; el cliente solo verá /portal. */}
+      <Modal
+        title={`Cuenta de portal — ${portalCliente?.nombre_comercial ?? portalCliente?.razon_social ?? ""}`}
+        open={!!portalCliente}
+        onCancel={() => setPortalCliente(null)}
+        onOk={crearCuentaPortal}
+        confirmLoading={portalSaving}
+        okText="Crear cuenta"
+        cancelText="Cancelar"
+        destroyOnHidden
+      >
+        <Form form={portalForm} layout="vertical">
+          <Form.Item name="nombre" label="Nombre de la cuenta" rules={[{ required: true, message: "Requerido" }]}>
+            <Input maxLength={100} />
+          </Form.Item>
+          <Form.Item name="email" label="Email del contacto (será su usuario de login)" rules={[{ type: "email", message: "Email inválido" }]}>
+            <Input placeholder="contacto@cliente.com" maxLength={100} />
+          </Form.Item>
+          <Form.Item name="codigo" label="Código interno (login alternativo)" rules={[{ required: true, message: "Requerido" }]}>
+            <Input maxLength={20} />
+          </Form.Item>
+          <Form.Item name="password" label="Contraseña inicial" rules={[{ required: true, min: 6, message: "Mínimo 6 caracteres" }]}>
+            <Input.Password maxLength={100} />
+          </Form.Item>
         </Form>
       </Modal>
 
