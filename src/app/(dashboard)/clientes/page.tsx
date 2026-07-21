@@ -16,6 +16,10 @@ import {
   Row,
   Col,
   Card,
+  Drawer,
+  Switch,
+  Spin,
+  Empty,
 } from "antd";
 import {
   PlusOutlined,
@@ -26,8 +30,12 @@ import {
   ReloadOutlined,
   ImportOutlined,
   UserAddOutlined,
+  GlobalOutlined,
 } from "@ant-design/icons";
 import { Tooltip } from "antd";
+import { puedeEscribirApi } from "@/lib/acceso-rutas";
+import { formatOtCodigo } from "@/lib/ot-formato";
+import { formatDateOnly } from "@/lib/dates";
 import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
@@ -91,6 +99,55 @@ export default function ClientesPage() {
   ]);
 
   const [modalOpen, setModalOpen] = useState(false);
+  // ── Panel "Portal del cliente": cuentas de acceso + qué OTs ve ──────────
+  // Centraliza la gestión del portal acá (pedido del usuario: no sobrecargar
+  // el listado de OTs externas). Publicar usa el mismo endpoint gateado.
+  const rolesUsuario = ((session?.user as { roles?: string[] } | undefined)?.roles ?? []);
+  const puedeGestionarPortal = puedeEscribirApi(rolesUsuario, "/api/ordenes-trabajo", "POST");
+  const [portalDrawer, setPortalDrawer] = useState<ClienteRecord | null>(null);
+  const [portalData, setPortalData] = useState<{
+    cuentas: { id: number; nombre: string; email: string | null; codigoEmpleado: string; activo: boolean }[];
+    ots: { id: number; ot: number | null; tipo_codigo: string | null; descripcion: string | null; np: string | null; cod_rep_flota: string | null; taller_status_codigo: string | null; fecha_recepcion: string | null; visible_portal: boolean }[];
+  } | null>(null);
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [portalBuscar, setPortalBuscar] = useState("");
+  const [portalToggling, setPortalToggling] = useState<number | null>(null);
+  const cargarPortal = async (clienteId: number) => {
+    setPortalLoading(true);
+    try {
+      const r = await fetch(`/api/clientes/${clienteId}/portal`);
+      const j = await r.json().catch(() => null);
+      if (r.ok) setPortalData(j);
+      else message.error(j?.error ?? "Error al cargar el portal");
+    } finally {
+      setPortalLoading(false);
+    }
+  };
+  const abrirPortal = (c: ClienteRecord) => {
+    setPortalDrawer(c);
+    setPortalData(null);
+    setPortalBuscar("");
+    void cargarPortal(c.cliente_id);
+  };
+  const togglePortalOT = async (otId: number, visible: boolean) => {
+    setPortalToggling(otId);
+    try {
+      const r = await fetch(`/api/ordenes-trabajo/${otId}/portal`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visible }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j?.error ?? "Error al actualizar");
+      setPortalData((prev) => prev
+        ? { ...prev, ots: prev.ots.map((o) => (o.id === otId ? { ...o, visible_portal: visible } : o)) }
+        : prev);
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "Error al actualizar");
+    } finally {
+      setPortalToggling(null);
+    }
+  };
   // Cuenta de PORTAL del cliente (rol "cliente"): solo timeline de sus OTs
   // publicadas. La crea el admin desde acá y le entrega las credenciales.
   const [portalCliente, setPortalCliente] = useState<ClienteRecord | null>(null);
@@ -126,6 +183,8 @@ export default function ClientesPage() {
       if (!res.ok) throw new Error(j?.error ?? "Error al crear la cuenta");
       message.success(`Cuenta de portal creada. Usuario: ${v.email?.trim() || v.codigo.trim()} — entregá las credenciales al cliente.`);
       setPortalCliente(null);
+      // Si el panel del portal está abierto para este cliente, refrescarlo.
+      if (portalDrawer?.cliente_id === portalCliente.cliente_id) void cargarPortal(portalCliente.cliente_id);
     } catch (e) {
       if (e instanceof Error && e.message) message.error(e.message);
     } finally {
@@ -309,9 +368,9 @@ export default function ClientesPage() {
       render: (_: unknown, record: ClienteRecord) => (
         <Space size="small">
           <Button type="text" icon={<EditOutlined />} onClick={() => openEdit(record)} />
-          {isAdminUser && (
-            <Tooltip title="Crear cuenta de PORTAL para este cliente (acceso externo de solo seguimiento)">
-              <Button type="text" icon={<UserAddOutlined style={{ color: brand.cyan }} />} onClick={() => abrirCuentaPortal(record)} />
+          {puedeGestionarPortal && (
+            <Tooltip title="Portal del cliente: cuentas de acceso y qué OTs ve">
+              <Button type="text" icon={<GlobalOutlined style={{ color: brand.cyan }} />} onClick={() => abrirPortal(record)} />
             </Tooltip>
           )}
           <Popconfirm
@@ -507,6 +566,111 @@ export default function ClientesPage() {
           </Row>
         </Form>
       </Modal>
+
+      {/* ── Panel "Portal del cliente": cuentas + qué OTs ve ─────────────── */}
+      <Drawer
+        title={
+          <Space size={8}>
+            <GlobalOutlined style={{ color: brand.cyan }} />
+            <span>Portal — {portalDrawer?.nombre_comercial ?? portalDrawer?.razon_social ?? ""}</span>
+          </Space>
+        }
+        placement="right"
+        width={modalWidth(screens, 640)}
+        open={!!portalDrawer}
+        onClose={() => setPortalDrawer(null)}
+      >
+        {portalLoading || !portalData ? (
+          <div style={{ textAlign: "center", padding: 48 }}><Spin /></div>
+        ) : (
+          <div>
+            {/* Cuentas de acceso */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <Typography.Text strong>Cuentas de acceso</Typography.Text>
+              {isAdminUser && portalDrawer && (
+                <Button size="small" icon={<UserAddOutlined />} onClick={() => abrirCuentaPortal(portalDrawer)}>
+                  Nueva cuenta
+                </Button>
+              )}
+            </div>
+            {portalData.cuentas.length === 0 ? (
+              <Card size="small" style={{ marginBottom: 16 }}>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  Este cliente todavía no tiene cuentas de portal.{isAdminUser ? " Creale una con el botón de arriba y entregale las credenciales." : " Un admin puede crearla."}
+                </Typography.Text>
+              </Card>
+            ) : (
+              <Card size="small" style={{ marginBottom: 16 }} styles={{ body: { padding: 8 } }}>
+                {portalData.cuentas.map((c) => (
+                  <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 6px" }}>
+                    <div>
+                      <Typography.Text style={{ fontSize: 13 }}>{c.nombre}</Typography.Text>
+                      <div style={{ fontSize: 11, color: brand.textSecondary }}>
+                        Login: {c.email ?? c.codigoEmpleado}
+                      </div>
+                    </div>
+                    <Tag color={c.activo ? "success" : "default"} style={{ margin: 0 }}>{c.activo ? "Activa" : "Inactiva"}</Tag>
+                  </div>
+                ))}
+              </Card>
+            )}
+
+            {/* OTs del cliente: publicar / ocultar */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8, flexWrap: "wrap" }}>
+              <Typography.Text strong>
+                Qué OTs ve el cliente{" "}
+                <Tag color="blue" style={{ marginLeft: 4 }}>
+                  {portalData.ots.filter((o) => o.visible_portal).length} publicadas de {portalData.ots.length}
+                </Tag>
+              </Typography.Text>
+              <Input
+                allowClear
+                size="small"
+                prefix={<SearchOutlined />}
+                placeholder="Buscar OT, componente, N/P..."
+                value={portalBuscar}
+                onChange={(e) => setPortalBuscar(e.target.value)}
+                style={{ width: 220 }}
+              />
+            </div>
+            {(() => {
+              const q = portalBuscar.trim().toLowerCase();
+              const lista = portalData.ots.filter((o) => !q || [String(o.ot ?? ""), o.descripcion, o.np, o.cod_rep_flota]
+                .some((v) => (v ?? "").toLowerCase().includes(q)));
+              if (lista.length === 0) return <Empty description="Sin OTs para mostrar" style={{ marginTop: 24 }} />;
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {lista.map((o) => (
+                    <Card key={o.id} size="small" styles={{ body: { padding: "8px 10px" } }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                        <div style={{ minWidth: 0 }}>
+                          <Typography.Text strong style={{ fontSize: 13, color: brand.navy }}>
+                            OT {o.ot != null ? formatOtCodigo(o.ot, o.tipo_codigo, "") : `#${o.id}`}
+                          </Typography.Text>
+                          <div style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {o.descripcion ?? "—"}
+                          </div>
+                          <div style={{ fontSize: 11, color: brand.textSecondary }}>
+                            {o.np ? `N/P ${o.np} · ` : ""}{o.cod_rep_flota ? `${o.cod_rep_flota} · ` : ""}
+                            {o.taller_status_codigo ?? "Sin estado"} · Recibida {formatDateOnly(o.fecha_recepcion)}
+                          </div>
+                        </div>
+                        <Switch
+                          checked={o.visible_portal}
+                          loading={portalToggling === o.id}
+                          checkedChildren="Visible"
+                          unCheckedChildren="Oculta"
+                          onChange={(v) => togglePortalOT(o.id, v)}
+                        />
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+      </Drawer>
 
       {/* Cuenta de portal para un cliente (solo admin). El login es el email
           (o el código) + la contraseña; el cliente solo verá /portal. */}
