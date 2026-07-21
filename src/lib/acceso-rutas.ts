@@ -181,6 +181,11 @@ export const REGLAS_ESCRITURA_API: ReglaApi[] = [
   { prefijo: "/api/materiales", roles: ["admin", "logistica", "mantenimiento"] },
   // ── Maestros de logística
   { prefijo: "/api/clientes", roles: COMPRA },
+  //    …pero la gestión de cuentas del PORTAL la hacen los mismos roles que
+  //    publican OTs (los endpoints solo alcanzan cuentas rol "cliente")
+  { prefijo: "/api/clientes", sufijo: "/portal/cuentas", roles: AREA_OT },
+  { prefijo: "/api/clientes", sufijo: "/password", roles: AREA_OT },
+  { prefijo: "/api/clientes", sufijo: "/estado", roles: AREA_OT },
   { prefijo: "/api/proveedores", roles: COMPRA },
   // ── Contratos: solo logística y producción
   { prefijo: "/api/contratos", roles: ["admin", "produccion", "logistica"] },

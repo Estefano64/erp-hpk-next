@@ -149,8 +149,9 @@ export default function ClientesPage() {
       setPortalToggling(null);
     }
   };
-  // Administración de cuentas de portal (solo admin): reset de contraseña y
-  // activar/desactivar. Usa los endpoints admin de /api/usuarios existentes.
+  // Administración de cuentas de portal (mismos roles que publican OTs):
+  // reset de contraseña y activar/desactivar. Usa los endpoints del portal,
+  // que solo alcanzan cuentas rol "cliente" de este cliente.
   const [cuentaPass, setCuentaPass] = useState<{ id: number; nombre: string } | null>(null);
   const [passNueva, setPassNueva] = useState("");
   const [passSaving, setPassSaving] = useState(false);
@@ -159,7 +160,7 @@ export default function ClientesPage() {
     if (passNueva.trim().length < 6) { message.warning("Mínimo 6 caracteres"); return; }
     setPassSaving(true);
     try {
-      const r = await fetch(`/api/usuarios/${cuentaPass.id}/cambiar-password`, {
+      const r = await fetch(`/api/clientes/${portalDrawer?.cliente_id}/portal/cuentas/${cuentaPass.id}/password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ nueva: passNueva.trim(), confirmacion: passNueva.trim() }),
@@ -177,8 +178,8 @@ export default function ClientesPage() {
   };
   const toggleCuentaActiva = async (cuentaId: number, activo: boolean) => {
     try {
-      const r = await fetch(`/api/usuarios/${cuentaId}`, {
-        method: "PUT",
+      const r = await fetch(`/api/clientes/${portalDrawer?.cliente_id}/portal/cuentas/${cuentaId}/estado`, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ activo }),
       });
@@ -191,7 +192,8 @@ export default function ClientesPage() {
     }
   };
   // Cuenta de PORTAL del cliente (rol "cliente"): solo timeline de sus OTs
-  // publicadas. La crea el admin desde acá y le entrega las credenciales.
+  // publicadas. La crean los roles que gestionan el portal (admin/planner/
+  // produccion/logistica) y le entregan las credenciales al cliente.
   const [portalCliente, setPortalCliente] = useState<ClienteRecord | null>(null);
   const [portalSaving, setPortalSaving] = useState(false);
   const [portalForm] = Form.useForm<{ nombre: string; email?: string; codigo: string; password: string }>();
@@ -209,7 +211,7 @@ export default function ClientesPage() {
     try {
       const v = await portalForm.validateFields();
       setPortalSaving(true);
-      const res = await fetch("/api/usuarios", {
+      const res = await fetch(`/api/clientes/${portalCliente.cliente_id}/portal/cuentas`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -217,8 +219,6 @@ export default function ClientesPage() {
           nombre: v.nombre.trim(),
           email: v.email?.trim() || null,
           password: v.password,
-          roles: ["cliente"],
-          clienteId: portalCliente.cliente_id,
         }),
       });
       const j = await res.json().catch(() => ({}));
@@ -629,7 +629,7 @@ export default function ClientesPage() {
             {/* Cuentas de acceso */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <Typography.Text strong>Cuentas de acceso</Typography.Text>
-              {isAdminUser && portalDrawer && (
+              {puedeGestionarPortal && portalDrawer && (
                 <Button size="small" icon={<UserAddOutlined />} onClick={() => abrirCuentaPortal(portalDrawer)}>
                   Nueva cuenta
                 </Button>
@@ -638,7 +638,7 @@ export default function ClientesPage() {
             {portalData.cuentas.length === 0 ? (
               <Card size="small" style={{ marginBottom: 16 }}>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  Este cliente todavía no tiene cuentas de portal.{isAdminUser ? " Creale una con el botón de arriba y entregale las credenciales." : " Un admin puede crearla."}
+                  Este cliente todavía no tiene cuentas de portal.{puedeGestionarPortal ? " Creale una con el botón de arriba y entregale las credenciales." : " Un admin, planner, producción o logística puede crearla."}
                 </Typography.Text>
               </Card>
             ) : (
@@ -652,12 +652,12 @@ export default function ClientesPage() {
                       </div>
                     </div>
                     <Space size={6}>
-                      {isAdminUser && (
+                      {puedeGestionarPortal && (
                         <Tooltip title="Generar nueva contraseña (si el cliente la olvidó)">
                           <Button size="small" icon={<KeyOutlined />} onClick={() => { setCuentaPass({ id: c.id, nombre: c.nombre }); setPassNueva(""); }} />
                         </Tooltip>
                       )}
-                      {isAdminUser ? (
+                      {puedeGestionarPortal ? (
                         <Tooltip title={c.activo ? "Desactivar: la cuenta no podrá iniciar sesión" : "Reactivar la cuenta"}>
                           <Switch
                             size="small"
