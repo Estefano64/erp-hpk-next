@@ -88,8 +88,13 @@ export const R2Keys = {
     `ordenes-trabajo/${sanitize(otCodigo)}/compras/${sanitize(ocCodigo)}/guia`,
   compraFactura: (otCodigo: string, ocCodigo: string) =>
     `ordenes-trabajo/${sanitize(otCodigo)}/compras/${sanitize(ocCodigo)}/factura`,
+  // Guia de llegada: documento que se sube cuando el material fisicamente
+  // arriba al almacen (distinto de guia de remision del proveedor).
+  compraGuiaLlegada: (otCodigo: string, ocCodigo: string) =>
+    `ordenes-trabajo/${sanitize(otCodigo)}/compras/${sanitize(ocCodigo)}/guia-llegada`,
   compraSueltaGuia: (ocCodigo: string) => `compras-sueltas/${sanitize(ocCodigo)}/guia`,
   compraSueltaFactura: (ocCodigo: string) => `compras-sueltas/${sanitize(ocCodigo)}/factura`,
+  compraSueltaGuiaLlegada: (ocCodigo: string) => `compras-sueltas/${sanitize(ocCodigo)}/guia-llegada`,
   // Comprobante de pago (voucher/boleta/transferencia). Solo aplica a OCs
   // pagadas al contado o por transferencia.
   compraPago: (otCodigo: string, ocCodigo: string) =>

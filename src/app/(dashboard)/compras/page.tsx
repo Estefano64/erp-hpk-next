@@ -420,11 +420,12 @@ export default function ComprasPage() {
   // Refactor (2026-06): se trajo la funcionalidad de /compras/contabilidad
   // a la tabla principal de Compras, así el equipo sube/elimina guías y
   // facturas sin cambiar de pantalla.
-  type TipoArchivo = "guia" | "factura" | "pago";
+  type TipoArchivo = "guia" | "factura" | "pago" | "guia_llegada";
   const ETIQUETA_TIPO: Record<TipoArchivo, string> = {
     guia: "Guía",
     factura: "Factura",
     pago: "Comprobante de pago",
+    guia_llegada: "Guía de llegada",
   };
   const [uploadingSlot, setUploadingSlot] = useState<string | null>(null);
 
@@ -478,13 +479,20 @@ export default function ComprasPage() {
   const archivoCell = (
     r: Compra,
     tipo: TipoArchivo,
-    resource: "compra-guia" | "compra-factura" | "compra-pago",
+    resource: "compra-guia" | "compra-factura" | "compra-pago" | "compra-guia-llegada",
   ) => {
     const label = ETIQUETA_TIPO[tipo];
     const slot = `${r.id}-${tipo}`;
     const uploading = uploadingSlot === slot;
-    const legacyKey = tipo === "guia" ? r.guia_key : tipo === "factura" ? r.factura_key : r.pago_key;
-    const legacyNombre = tipo === "guia" ? r.guia_nombre : tipo === "factura" ? r.factura_nombre : r.pago_nombre;
+    // guia_llegada NO tiene campo legacy en Compra — solo vive en CompraAdjunto.
+    const legacyKey = tipo === "guia" ? r.guia_key
+      : tipo === "factura" ? r.factura_key
+      : tipo === "pago" ? r.pago_key
+      : null;
+    const legacyNombre = tipo === "guia" ? r.guia_nombre
+      : tipo === "factura" ? r.factura_nombre
+      : tipo === "pago" ? r.pago_nombre
+      : null;
     const multi = (r.adjuntos ?? []).filter((a) => a.tipo === tipo);
     const filas: Array<{ adjId: number | null; r2Key: string; nombre: string | null }> = [];
     if (legacyKey) filas.push({ adjId: null, r2Key: legacyKey, nombre: legacyNombre });
@@ -761,6 +769,12 @@ export default function ComprasPage() {
       title: "Archivos Factura",
       width: 230,
       render: (_v, r) => archivoCell(r, "factura", "compra-factura"),
+    },
+    {
+      key: "archivos_guia_llegada",
+      title: "Guía de llegada",
+      width: 230,
+      render: (_v, r) => archivoCell(r, "guia_llegada", "compra-guia-llegada"),
     },
     {
       key: "comprobante_pago",
