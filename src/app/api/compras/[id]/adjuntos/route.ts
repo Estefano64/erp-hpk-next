@@ -18,16 +18,17 @@ import { getAuditUser } from "@/lib/audit";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
-type Tipo = "guia" | "factura" | "pago";
+type Tipo = "guia" | "factura" | "pago" | "guia_llegada";
 
 const ETIQUETA: Record<Tipo, string> = {
   guia: "Guía",
   factura: "Factura",
   pago: "Comprobante de pago",
+  guia_llegada: "Guía de llegada",
 };
 
 function isTipo(v: unknown): v is Tipo {
-  return v === "guia" || v === "factura" || v === "pago";
+  return v === "guia" || v === "factura" || v === "pago" || v === "guia_llegada";
 }
 
 // GET — lista adjuntos de la OC. Filtra por tipo si viene en query.
@@ -72,7 +73,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       tipo_mime?: unknown; tamano?: unknown;
     };
     if (!isTipo(tipo)) {
-      return NextResponse.json({ error: "tipo inválido (guia|factura|pago)" }, { status: 400 });
+      return NextResponse.json({ error: "tipo inválido (guia|factura|pago|guia_llegada)" }, { status: 400 });
     }
     if (typeof key !== "string" || key.length === 0) {
       return NextResponse.json({ error: "key requerida" }, { status: 400 });
@@ -96,12 +97,16 @@ export async function POST(req: NextRequest, { params }: Params) {
           ? R2Keys.compraGuia(otCodigo, compra.numero_po)
           : tipo === "factura"
             ? R2Keys.compraFactura(otCodigo, compra.numero_po)
-            : R2Keys.compraPago(otCodigo, compra.numero_po))
+            : tipo === "guia_llegada"
+              ? R2Keys.compraGuiaLlegada(otCodigo, compra.numero_po)
+              : R2Keys.compraPago(otCodigo, compra.numero_po))
       : (tipo === "guia"
           ? R2Keys.compraSueltaGuia(compra.numero_po)
           : tipo === "factura"
             ? R2Keys.compraSueltaFactura(compra.numero_po)
-            : R2Keys.compraSueltaPago(compra.numero_po));
+            : tipo === "guia_llegada"
+              ? R2Keys.compraSueltaGuiaLlegada(compra.numero_po)
+              : R2Keys.compraSueltaPago(compra.numero_po));
     if (!key.startsWith(prefijoBase + "/")) {
       return NextResponse.json({ error: "key fuera del namespace de la compra" }, { status: 400 });
     }

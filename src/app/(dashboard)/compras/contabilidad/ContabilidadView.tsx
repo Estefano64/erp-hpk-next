@@ -130,11 +130,12 @@ export default function ContabilidadView({
   // Subir guía/factura/pago. Cada upload registra una FILA NUEVA en
   // compra_adjunto — una misma OC puede tener N guías, N facturas y N pagos.
   // El endpoint legacy /api/compras/[id]/guia ya no se usa para subir.
-  type TipoArchivo = "guia" | "factura" | "pago";
+  type TipoArchivo = "guia" | "factura" | "pago" | "guia_llegada";
   const ETIQUETA_TIPO: Record<TipoArchivo, string> = {
     guia: "Guía",
     factura: "Factura",
     pago: "Comprobante de pago",
+    guia_llegada: "Guía de llegada",
   };
   const subirArchivo = async (compraId: number, tipo: TipoArchivo, file: File) => {
     const slotId = `${compraId}-${tipo}`;
@@ -190,16 +191,22 @@ export default function ContabilidadView({
     r: CompraRow,
     label: string,
     tipo: TipoArchivo,
-    resource: "compra-guia" | "compra-factura" | "compra-pago",
+    resource: "compra-guia" | "compra-factura" | "compra-pago" | "compra-guia-llegada",
   ) => {
     const compraId = r.id;
     const slotId = `${compraId}-${tipo}`;
     const uploading = uploadingId === slotId;
     // Combinar legacy (si existe) + multi. El legacy se muestra como una
     // fila más, identificada con `adjId=null` para que delete vaya al
-    // endpoint correcto.
-    const legacyKey = tipo === "guia" ? r.guia_key : tipo === "factura" ? r.factura_key : r.pago_key;
-    const legacyNombre = tipo === "guia" ? r.guia_nombre : tipo === "factura" ? r.factura_nombre : r.pago_nombre;
+    // endpoint correcto. guia_llegada NO tiene legacy — solo multi.
+    const legacyKey = tipo === "guia" ? r.guia_key
+      : tipo === "factura" ? r.factura_key
+      : tipo === "pago" ? r.pago_key
+      : null;
+    const legacyNombre = tipo === "guia" ? r.guia_nombre
+      : tipo === "factura" ? r.factura_nombre
+      : tipo === "pago" ? r.pago_nombre
+      : null;
     const multi = (r.adjuntos ?? []).filter((a) => a.tipo === tipo);
     const filas: Array<{ adjId: number | null; r2Key: string; nombre: string | null }> = [];
     if (legacyKey) filas.push({ adjId: null, r2Key: legacyKey, nombre: legacyNombre });
@@ -347,6 +354,10 @@ export default function ContabilidadView({
     {
       key: "factura", title: "Archivos Factura", width: 280, align: "left",
       render: (_v, r) => archivoCell(r, "factura", "factura", "compra-factura"),
+    },
+    {
+      key: "guia_llegada", title: "Guía de llegada", width: 260, align: "left",
+      render: (_v, r) => archivoCell(r, "guía de llegada", "guia_llegada", "compra-guia-llegada"),
     },
     {
       key: "pago", title: "Comprobante Pago", width: 260, align: "left",

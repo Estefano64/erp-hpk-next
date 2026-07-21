@@ -17,12 +17,13 @@ import { assertOTAccess, readJsonBody, validateUploadBody } from "@/lib/r2-serve
 
 import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
-type Tipo = "guia" | "factura" | "pago";
+type Tipo = "guia" | "factura" | "pago" | "guia_llegada";
 
 function parseTipo(req: NextRequest): Tipo {
   const t = new URL(req.url).searchParams.get("tipo");
   if (t === "factura") return "factura";
   if (t === "pago") return "pago";
+  if (t === "guia_llegada") return "guia_llegada";
   return "guia";
 }
 
@@ -68,12 +69,16 @@ export async function POST(req: NextRequest, { params }: Params) {
           ? R2Keys.compraGuia(otCodigo, compra.numero_po)
           : tipo === "factura"
             ? R2Keys.compraFactura(otCodigo, compra.numero_po)
-            : R2Keys.compraPago(otCodigo, compra.numero_po))
+            : tipo === "guia_llegada"
+              ? R2Keys.compraGuiaLlegada(otCodigo, compra.numero_po)
+              : R2Keys.compraPago(otCodigo, compra.numero_po))
       : (tipo === "guia"
           ? R2Keys.compraSueltaGuia(compra.numero_po)
           : tipo === "factura"
             ? R2Keys.compraSueltaFactura(compra.numero_po)
-            : R2Keys.compraSueltaPago(compra.numero_po));
+            : tipo === "guia_llegada"
+              ? R2Keys.compraSueltaGuiaLlegada(compra.numero_po)
+              : R2Keys.compraSueltaPago(compra.numero_po));
 
     const result = await generateUploadUrl({
       folderPrefix,

@@ -444,7 +444,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
       <td class="lbl">Dirección:</td>
       <td class="val">${esc(compra.proveedor?.direccion ?? "-")}</td>
       <td class="lbl">Fecha Emisión:</td>
-      <td class="val">${fmtDate(compra.fecha_solicitud)}</td>
+      <td class="val">${fmtDate(compra.fecha_aprobacion ?? compra.fecha_solicitud)}</td>
     </tr>
     <tr>
       <td class="lbl">Teléfono:</td>

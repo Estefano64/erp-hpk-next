@@ -18,6 +18,7 @@ export type R2Resource =
   | "compra-guia"
   | "compra-factura"
   | "compra-pago"
+  | "compra-guia-llegada"
   | "evaluacion-informe"
   | "ticket-captura";
 
@@ -29,6 +30,7 @@ const VALID_RESOURCES: ReadonlySet<R2Resource> = new Set([
   "compra-guia",
   "compra-factura",
   "compra-pago",
+  "compra-guia-llegada",
   "evaluacion-informe",
   "ticket-captura",
 ]);
@@ -90,16 +92,22 @@ export async function authorizeR2Access(params: {
     }
     case "compra-guia":
     case "compra-factura":
-    case "compra-pago": {
+    case "compra-pago":
+    case "compra-guia-llegada": {
       // Multi-adjunto: el archivo puede vivir como guia/factura/pago "legacy"
       // (campos directos en Compra) o como fila en CompraAdjunto. Aceptamos
       // ambos lados para no romper enlaces ya emitidos.
-      const tipo = resource === "compra-guia" ? "guia" : resource === "compra-factura" ? "factura" : "pago";
+      // guia_llegada no tiene campo legacy — solo vive en CompraAdjunto.
+      const tipo = resource === "compra-guia" ? "guia"
+        : resource === "compra-factura" ? "factura"
+        : resource === "compra-guia-llegada" ? "guia_llegada"
+        : "pago";
       const adj = await prisma.compraAdjunto.findFirst({
         where: { compra_id: resourceId, tipo, r2_key: key },
         select: { id: true },
       });
       if (adj) return { ok: true };
+      if (tipo === "guia_llegada") return notFound();
       const legacy = await prisma.compra.findFirst({
         where: {
           id: resourceId,
