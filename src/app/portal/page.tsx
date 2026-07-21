@@ -22,12 +22,17 @@ interface OTPortal {
   np: string | null;
   equipo: string | null;
   flota: string | null;
+  cantidad: number;
   etapaActual: number;
   estadoLabel: string;
   entregada: boolean;
   fecha_recepcion: string | null;
   fecha_evaluacion: string | null;
   fecha_entrega: string | null;
+  fecha_requerida: string | null;
+  actualizado: string | null;
+  dias_taller: number | null;
+  dias_en_curso: boolean;
 }
 
 interface Resp {
@@ -129,8 +134,21 @@ export default function PortalPage() {
                     <div style={{ fontSize: 13 }}>{o.descripcion ?? "—"}</div>
                     <Text type="secondary" style={{ fontSize: 12 }}>
                       {o.np ? `N/P ${o.np}` : ""}{o.flota ? ` · Flota ${o.flota}` : ""}{o.equipo ? ` · Equipo ${o.equipo}` : ""}
+                      {o.cantidad > 1 ? ` · Cantidad: ${o.cantidad}` : ""}
                     </Text>
                   </div>
+                </div>
+                {/* Datos del avance: días en taller, fecha requerida, últ. novedad */}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px", marginBottom: 10, fontSize: 12, color: brand.textSecondary }}>
+                  {o.dias_taller != null && (
+                    <span>
+                      ⏱ {o.dias_en_curso
+                        ? <>Lleva <b>{o.dias_taller}</b> día{o.dias_taller === 1 ? "" : "s"} en taller</>
+                        : <>Tiempo total en taller: <b>{o.dias_taller}</b> día{o.dias_taller === 1 ? "" : "s"}</>}
+                    </span>
+                  )}
+                  {o.fecha_requerida && <span>📅 Fecha requerida: <b>{formatDateOnly(o.fecha_requerida)}</b></span>}
+                  {o.actualizado && !o.entregada && <span>🔄 Última novedad: {formatDateOnly(o.actualizado)}</span>}
                 </div>
                 <Steps
                   size="small"

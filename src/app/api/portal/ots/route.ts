@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
+import { diasEnTaller } from "@/lib/dias-taller";
 
 // Etapas del timeline en lenguaje de cliente, en orden.
 const ETAPAS = ["Recibido", "En evaluación", "En reparación", "Listo", "Entregado"] as const;
@@ -57,6 +58,10 @@ export async function GET(req: NextRequest) {
           fecha_evaluacion: true,
           fecha_despacho: true,
           fecha_entrega: true,
+          fecha_facturacion: true,
+          fecha_requerimiento_cliente: true,
+          fecha_actualizacion: true,
+          cantidad: true,
         },
         orderBy: [{ fecha_recepcion: "desc" }, { id: "desc" }],
       }),
@@ -65,6 +70,15 @@ export async function GET(req: NextRequest) {
     const data = ots.map((o) => {
       const etapa = etapaActualDe(o.taller_status_codigo, o.fecha_recepcion != null);
       const fechaEntrega = o.fecha_despacho ?? o.fecha_entrega ?? null;
+      // Días en taller: misma lógica que el ERP (dias-taller.ts) — en curso
+      // cuenta hasta hoy; entregada usa recepción→salida.
+      const dias = diasEnTaller({
+        fecha_recepcion: o.fecha_recepcion,
+        fecha_despacho: o.fecha_despacho,
+        fecha_entrega: o.fecha_entrega,
+        fecha_facturacion: o.fecha_facturacion,
+        taller_status_codigo: o.taller_status_codigo,
+      });
       return {
         id: o.id,
         ot: o.ot,
@@ -73,12 +87,18 @@ export async function GET(req: NextRequest) {
         np: o.np,
         equipo: o.equipo_codigo,
         flota: o.cod_rep_flota,
+        cantidad: o.cantidad,
         etapaActual: etapa,
         estadoLabel: ETAPAS[etapa],
         entregada: etapa === 4,
         fecha_recepcion: o.fecha_recepcion,
         fecha_evaluacion: o.fecha_evaluacion,
         fecha_entrega: fechaEntrega,
+        // Info extra del timeline (pedido del usuario):
+        fecha_requerida: o.fecha_requerimiento_cliente,
+        actualizado: o.fecha_actualizacion,
+        dias_taller: dias?.dias ?? null,
+        dias_en_curso: dias?.enCurso ?? false,
       };
     });
 
