@@ -466,6 +466,16 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
   const [descuentoModal, setDescuentoModal] = useState<number>(0);
   const [otrosModal, setOtrosModal] = useState<number>(0);
   const [otrosSignoModal, setOtrosSignoModal] = useState<"+" | "-">("+");
+  // Overrides opcionales del nombre + RUC del proveedor SOLO para la OC
+  // en curso. Se envian a crear-oc y se persisten en columnas dedicadas
+  // de Compra. Solo se muestran los inputs cuando el proveedor
+  // seleccionado matchea el patron generico (PROVEEDOR VARIOS/GENERICO).
+  // Sin override → PDF usa proveedor.razon_social / ruc como siempre.
+  const [proveedorNombreOverride, setProveedorNombreOverride] = useState<string>("");
+  const [proveedorRucOverride, setProveedorRucOverride] = useState<string>("");
+  // ID del proveedor seleccionado en el form (para saber si mostrar los
+  // inputs de override). Se sincroniza en el onChange del Select.
+  const [proveedorSeleccionadoId, setProveedorSeleccionadoId] = useState<number | null>(null);
 
   // Modal de Dividir
   const [modalDividir, setModalDividir] = useState<Requerimiento | null>(null);
@@ -848,6 +858,9 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
     setDescuentoModal(0);
     setOtrosModal(0);
     setOtrosSignoModal("+");
+    setProveedorSeleccionadoId(null);
+    setProveedorNombreOverride("");
+    setProveedorRucOverride("");
     // Fecha global inicial = la del PRIMER item (misma que la per-item).
     // Antes se inicializaba a 'hoy + 15 días' sin relación con lo que
     // aparecía en la columna F. Entrega de la tabla → se veía 'F. Entrega
@@ -951,6 +964,11 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
             : null,
           observaciones: values.observaciones,
           nombre: null,
+          // Overrides opcionales del proveedor - se envian solo si el user
+          // los completo. Backend los persiste en columnas dedicadas de
+          // Compra y el PDF los prioriza sobre proveedor.razon_social/ruc.
+          proveedor_nombre_override: proveedorNombreOverride.trim() || null,
+          proveedor_ruc_override: proveedorRucOverride.trim() || null,
           // usuario: NO enviamos "Logistica" hardcodeado — el server usa el
           // getAuditUser (token.name) de la sesión y guarda el nombre REAL
           // de quien está creando. Si mandáramos "Logistica" acá, el alias
@@ -3125,6 +3143,11 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                     // Al elegir proveedor: fetch a /api/proveedores/[id]/defaults-oc
                     // y pre-rellenar moneda, tipo_pago, dias_credito, fecha_entrega
                     // y observaciones. El user puede editar después.
+                    setProveedorSeleccionadoId(provId ?? null);
+                    // Al cambiar de proveedor limpiamos los overrides — no
+                    // tiene sentido conservarlos si ya no es generico.
+                    setProveedorNombreOverride("");
+                    setProveedorRucOverride("");
                     if (!provId) return;
                     try {
                       const res = await fetch(`/api/proveedores/${provId}/defaults-oc`);
@@ -3161,6 +3184,44 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                   }}
                 />
               </Form.Item>
+              {/* Inputs de override — solo visibles cuando el proveedor
+                  seleccionado es el generico (PROVEEDOR VARIOS/GENERICO).
+                  Permiten rellenar nombre + RUC del proveedor real de la
+                  OC sin crear un registro en la tabla proveedores. */}
+              {(() => {
+                const provSel = proveedores.find((p) => p.id === proveedorSeleccionadoId);
+                const esGenerico = provSel && /PROVEEDOR\s*(VARIOS|GEN[EÉ]RICO)/i.test(provSel.razon_social);
+                if (!esGenerico) return null;
+                return (
+                  <div style={{ marginTop: -8, marginBottom: 12, padding: 12, border: `1px dashed ${brand.textSecondary}`, borderRadius: 6, background: brand.bgPage }}>
+                    <Text type="secondary" style={{ fontSize: 11, display: "block", marginBottom: 8 }}>
+                      Proveedor <b>VARIOS</b> — completá el nombre y RUC reales del proveedor puntual (opcional). Aparecen en el PDF de la OC pero NO se guardan en el catálogo.
+                    </Text>
+                    <Row gutter={8}>
+                      <Col xs={24} md={14}>
+                        <Text style={{ fontSize: 12, display: "block", marginBottom: 4 }}>Nombre del proveedor</Text>
+                        <Input
+                          size="small"
+                          value={proveedorNombreOverride}
+                          onChange={(e) => setProveedorNombreOverride(e.target.value)}
+                          placeholder="Ej: FERRETERIA EL SOL SAC"
+                          maxLength={200}
+                        />
+                      </Col>
+                      <Col xs={24} md={10}>
+                        <Text style={{ fontSize: 12, display: "block", marginBottom: 4 }}>RUC</Text>
+                        <Input
+                          size="small"
+                          value={proveedorRucOverride}
+                          onChange={(e) => setProveedorRucOverride(e.target.value.replace(/\D/g, "").slice(0, 11))}
+                          placeholder="11 dígitos"
+                          maxLength={11}
+                        />
+                      </Col>
+                    </Row>
+                  </div>
+                );
+              })()}
             </Col>
             <Col xs={12} md={6}>
               <Form.Item label="Moneda" name="moneda">

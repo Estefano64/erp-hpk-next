@@ -13,6 +13,12 @@ const Schema = z.object({
   fecha_entrega_esperada: z.string().optional().nullable(),
   observaciones: z.string().optional().nullable(),
   nombre: z.string().trim().max(300).optional().nullable(),
+  // Override manual del nombre y RUC del proveedor SOLO para esta OC.
+  // El caso de uso: elegir el proveedor generico "PROVEEDOR VARIOS" y
+  // sobreescribir los datos que el PDF va a mostrar sin crear un registro
+  // permanente en la tabla proveedores. Vacio/null → PDF usa proveedor.razon_social/ruc.
+  proveedor_nombre_override: z.string().trim().max(200).optional().nullable(),
+  proveedor_ruc_override: z.string().trim().max(11).optional().nullable(),
   ubicacion_codigo: z.string().optional().nullable(),
   almacen_id: z.string().optional().nullable(),
   usuario: z.string().trim().optional().nullable(),
@@ -256,6 +262,10 @@ export async function POST(req: NextRequest) {
               tipo_pago: d.tipo_pago || null,
               dias_credito: d.tipo_pago === "CONTADO" ? 0 : (d.dias_credito ?? null),
               observaciones: d.observaciones || `OC generada desde ${repuestos.length} requerimiento(s)`,
+              // Overrides opcionales del proveedor (solo si el usuario los
+              // envio desde el form). Trim/null-out para no persistir "".
+              proveedor_nombre_override: d.proveedor_nombre_override?.trim() || null,
+              proveedor_ruc_override: d.proveedor_ruc_override?.trim() || null,
               usuario_solicita: usuario,
             },
           });

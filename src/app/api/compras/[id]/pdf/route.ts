@@ -170,9 +170,20 @@ export async function GET(_req: NextRequest, { params }: Params) {
         .trim();
     const ocFile = sanitizeNombreArchivo(compra.numero_po);
     const otFile = sanitizeNombreArchivo(otCodigosFormateados.join(" "));
-    const provFile = sanitizeNombreArchivo(
-      (compra.proveedor?.nombre_comercial ?? compra.proveedor?.razon_social ?? "").toUpperCase(),
-    ).slice(0, 40);
+    // Nombre y RUC del proveedor mostrados en el PDF: si hay override
+    // manual seteado al crear la OC (caso "PROVEEDOR VARIOS"), gana el
+    // override; sino cae al registro del proveedor. Aplica al filename +
+    // header + cualquier otro spot que muestre esos campos.
+    const provNombreEffectivo =
+      compra.proveedor_nombre_override?.trim() ||
+      compra.proveedor?.nombre_comercial ||
+      compra.proveedor?.razon_social ||
+      "";
+    const provRucEffectivo =
+      compra.proveedor_ruc_override?.trim() ||
+      compra.proveedor?.ruc ||
+      "";
+    const provFile = sanitizeNombreArchivo(provNombreEffectivo.toUpperCase()).slice(0, 40);
     const partes = [
       `OC ${ocFile}`,
       otFile ? `OT ${otFile}` : "OT SinOT",
@@ -436,9 +447,9 @@ export async function GET(_req: NextRequest, { params }: Params) {
   <table class="prov-table">
     <tr>
       <td class="lbl">Señor (es):</td>
-      <td class="val">${esc(compra.proveedor?.razon_social ?? "-")}</td>
+      <td class="val">${esc(provNombreEffectivo || "-")}</td>
       <td class="lbl">Ruc:</td>
-      <td class="val">${esc(compra.proveedor?.ruc ?? "-")}</td>
+      <td class="val">${esc(provRucEffectivo || "-")}</td>
     </tr>
     <tr>
       <td class="lbl">Dirección:</td>
