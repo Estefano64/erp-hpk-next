@@ -31,6 +31,7 @@ import {
   ImportOutlined,
   UserAddOutlined,
   GlobalOutlined,
+  KeyOutlined,
 } from "@ant-design/icons";
 import { Tooltip } from "antd";
 import { puedeEscribirApi } from "@/lib/acceso-rutas";
@@ -146,6 +147,47 @@ export default function ClientesPage() {
       message.error(e instanceof Error ? e.message : "Error al actualizar");
     } finally {
       setPortalToggling(null);
+    }
+  };
+  // Administración de cuentas de portal (solo admin): reset de contraseña y
+  // activar/desactivar. Usa los endpoints admin de /api/usuarios existentes.
+  const [cuentaPass, setCuentaPass] = useState<{ id: number; nombre: string } | null>(null);
+  const [passNueva, setPassNueva] = useState("");
+  const [passSaving, setPassSaving] = useState(false);
+  const resetPassword = async () => {
+    if (!cuentaPass) return;
+    if (passNueva.trim().length < 6) { message.warning("Mínimo 6 caracteres"); return; }
+    setPassSaving(true);
+    try {
+      const r = await fetch(`/api/usuarios/${cuentaPass.id}/cambiar-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nueva: passNueva.trim(), confirmacion: passNueva.trim() }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j?.error ?? "Error al cambiar la contraseña");
+      message.success(`Contraseña actualizada — entregá la nueva al cliente.`);
+      setCuentaPass(null);
+      setPassNueva("");
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "Error");
+    } finally {
+      setPassSaving(false);
+    }
+  };
+  const toggleCuentaActiva = async (cuentaId: number, activo: boolean) => {
+    try {
+      const r = await fetch(`/api/usuarios/${cuentaId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ activo }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j?.error ?? "Error al actualizar la cuenta");
+      message.success(activo ? "Cuenta activada" : "Cuenta desactivada — ya no puede iniciar sesión");
+      if (portalDrawer) void cargarPortal(portalDrawer.cliente_id);
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "Error");
     }
   };
   // Cuenta de PORTAL del cliente (rol "cliente"): solo timeline de sus OTs
@@ -602,18 +644,61 @@ export default function ClientesPage() {
             ) : (
               <Card size="small" style={{ marginBottom: 16 }} styles={{ body: { padding: 8 } }}>
                 {portalData.cuentas.map((c) => (
-                  <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 6px" }}>
-                    <div>
+                  <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 6px", gap: 8 }}>
+                    <div style={{ minWidth: 0 }}>
                       <Typography.Text style={{ fontSize: 13 }}>{c.nombre}</Typography.Text>
                       <div style={{ fontSize: 11, color: brand.textSecondary }}>
                         Login: {c.email ?? c.codigoEmpleado}
                       </div>
                     </div>
-                    <Tag color={c.activo ? "success" : "default"} style={{ margin: 0 }}>{c.activo ? "Activa" : "Inactiva"}</Tag>
+                    <Space size={6}>
+                      {isAdminUser && (
+                        <Tooltip title="Generar nueva contraseña (si el cliente la olvidó)">
+                          <Button size="small" icon={<KeyOutlined />} onClick={() => { setCuentaPass({ id: c.id, nombre: c.nombre }); setPassNueva(""); }} />
+                        </Tooltip>
+                      )}
+                      {isAdminUser ? (
+                        <Tooltip title={c.activo ? "Desactivar: la cuenta no podrá iniciar sesión" : "Reactivar la cuenta"}>
+                          <Switch
+                            size="small"
+                            checked={c.activo}
+                            checkedChildren="Activa"
+                            unCheckedChildren="Inactiva"
+                            onChange={(v) => toggleCuentaActiva(c.id, v)}
+                          />
+                        </Tooltip>
+                      ) : (
+                        <Tag color={c.activo ? "success" : "default"} style={{ margin: 0 }}>{c.activo ? "Activa" : "Inactiva"}</Tag>
+                      )}
+                    </Space>
                   </div>
                 ))}
               </Card>
             )}
+
+            {/* Modal: nueva contraseña para una cuenta (reset de soporte) */}
+            <Modal
+              title={`Nueva contraseña — ${cuentaPass?.nombre ?? ""}`}
+              open={!!cuentaPass}
+              onCancel={() => { setCuentaPass(null); setPassNueva(""); }}
+              onOk={resetPassword}
+              confirmLoading={passSaving}
+              okText="Cambiar contraseña"
+              cancelText="Cancelar"
+              destroyOnHidden
+            >
+              <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
+                Se reemplaza la contraseña actual (no hace falta conocerla). Entregá la nueva al contacto del cliente.
+              </Typography.Paragraph>
+              <Input.Password
+                placeholder="Nueva contraseña (mínimo 6 caracteres)"
+                value={passNueva}
+                onChange={(e) => setPassNueva(e.target.value)}
+                onPressEnter={resetPassword}
+                maxLength={100}
+                autoFocus
+              />
+            </Modal>
 
             {/* OTs del cliente: publicar / ocultar */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8, flexWrap: "wrap" }}>
