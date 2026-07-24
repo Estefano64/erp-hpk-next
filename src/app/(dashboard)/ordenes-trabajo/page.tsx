@@ -216,6 +216,10 @@ const TEXT_KEYS = new Set<string>([
   "equipo_codigo", "descripcion", "tipo", "np", "cod_rep_flota", "cod_rep_posicion",
   "plaqueteo", "wo_cliente", "po_cliente", "po_item", "id_viajero",
   "guia_remision", "empresa_entrega", "comentarios",
+  // Antes tenían filtro multi-select armado con los datos de la página
+  // visible (client-side) que el server ignoraba — el filtro "no aplicaba".
+  // Ahora son búsqueda de texto server-side como el resto.
+  "usuario_crea", "evaluador", "evaluacion_aprobado_por", "vendor_externo",
 ]);
 // Columnas enum cuyas opciones vienen del endpoint /facets.
 const ENUM_FACET_KEYS = new Set<string>([
@@ -234,6 +238,15 @@ const FIXED_FILTERS: Record<string, { text: string; value: string }[]> = {
   estado_po: [
     { text: "Pdt de PO", value: "PDT_PO" },
     { text: "Con PO",    value: "CON_PO" },
+  ],
+  caracteristica_cilindro: [
+    { text: "ESTANDAR", value: "ESTANDAR" },
+    { text: "NO ESTANDAR", value: "NO_ESTANDAR" },
+    { text: "(vacío)", value: "__vacio__" },
+  ],
+  reparacion_externa: [
+    { text: "Sí", value: "true" },
+    { text: "No", value: "false" },
   ],
 };
 
@@ -584,7 +597,10 @@ export default function OrdenesTrabajoPage() {
       key: "evaluacion_estado",
       title: "Evaluación",
       width: 140,
-      sorter: (a, b) => (a.evaluaciones_tecnicas?.[0]?.estado ?? "").localeCompare(b.evaluaciones_tecnicas?.[0]?.estado ?? ""),
+      // Sin sorter: el estado vive en la relación evaluaciones_tecnicas[0] y
+      // Prisma no puede ordenar por un campo de la primera fila relacionada.
+      // Antes había un sorter client-side cuya flecha no hacía nada (server-side
+      // pagination). El FILTRO sí funciona (evaluacion_estado en el API).
       filters: [
         { text: "Sin evaluación", value: "__none__" },
         ...Object.keys(EVAL_META).map((k) => ({ text: EVAL_META[k].label, value: k })),
@@ -971,7 +987,15 @@ export default function OrdenesTrabajoPage() {
     const key = col.key as string;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const c: any = { ...col };
-    if (c.sorter) { c.sorter = true; c.sortOrder = sorter.field === key ? sorter.order : null; }
+    // antd reporta sorter.field = dataIndex cuando existe (ej. la columna
+    // "monto_cotizado" ordena por su dataIndex "monto_cotizacion"); usamos esa
+    // misma clave para marcar la flecha activa y para el sortField del server.
+    const sortKey = String(c.dataIndex ?? key);
+    // Toda columna con dataIndex es un escalar de la OT → ordenable en el
+    // server. Antes solo las que declaraban sorter; el resto recibía un
+    // sorter client-side (autoSorter del hook) que solo ordenaba la página
+    // visible — con paginación server-side eso es mentirle al usuario.
+    if (c.sorter || c.dataIndex) { c.sorter = true; c.sortOrder = sorter.field === sortKey ? sorter.order : null; }
     // limpiar config de filtro client-side
     delete c.onFilter; delete c.filterSearch; delete c.filters; delete c.filterDropdown; delete c.filterIcon; delete c.filterMultiple;
     // antd exige que TODAS las columnas tengan o NO tengan filteredValue.
@@ -1005,8 +1029,12 @@ export default function OrdenesTrabajoPage() {
     return c;
   });
 
+  // OJO: NO pasamos `{ data }` — este listado es server-side paginado y los
+  // auto-filtros del hook se arman con la página visible (50 filas), generando
+  // dropdowns cuyos valores el server ignora ("el filtro no aplica"). Todos
+  // los filtros reales se inyectan arriba en serverColumns.
   const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper, orden: ordenColumnas } =
-    useColumnasRedimensionables<OTRecord>(serverColumns, "ot-list-cols-widths-v1", { data });
+    useColumnasRedimensionables<OTRecord>(serverColumns, "ot-list-cols-widths-v1");
 
   return (
     <div>

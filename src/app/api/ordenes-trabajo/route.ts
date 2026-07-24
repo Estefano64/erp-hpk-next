@@ -148,6 +148,10 @@ export async function GET(req: NextRequest) {
       "equipo_codigo", "descripcion", "tipo", "np", "cod_rep_flota", "cod_rep_posicion",
       "plaqueteo", "wo_cliente", "po_cliente", "po_item", "id_viajero",
       "guia_remision", "empresa_entrega", "usuario_crea", "comentarios",
+      // Ciclo evaluación/cotización: antes estos filtros existían solo
+      // client-side (se armaban con los datos de la página visible) y el
+      // server los ignoraba — "el filtro no aplica". Ahora son server-side.
+      "evaluador", "evaluacion_aprobado_por", "vendor_externo",
     ];
     for (const f of TEXT_FIELDS) {
       const v = searchParams.get(`txt_${f}`)?.trim();
@@ -163,6 +167,34 @@ export async function GET(req: NextRequest) {
       if (fHasta) where.fecha_recepcion.lte = new Date(fHasta + "T23:59:59.999Z");
     }
 
+    // Característica del cilindro: ESTANDAR / NO_ESTANDAR / __vacio__ (null).
+    const caracRaw = searchParams.get("caracteristica_cilindro");
+    if (caracRaw) {
+      const vals = caracRaw.split(",").map((s) => s.trim()).filter(Boolean);
+      const conVacio = vals.includes("__vacio__");
+      const concretos = vals.filter((v) => v !== "__vacio__");
+      if (conVacio && concretos.length > 0) {
+        // AND separado — no se mezcla con el OR del search de texto libre.
+        where.AND = [
+          ...(where.AND ?? []),
+          { OR: [{ caracteristica_cilindro: null }, { caracteristica_cilindro: { in: concretos } }] },
+        ];
+      } else if (conVacio) {
+        where.caracteristica_cilindro = null;
+      } else if (concretos.length === 1) {
+        where.caracteristica_cilindro = concretos[0];
+      } else if (concretos.length > 1) {
+        where.caracteristica_cilindro = { in: concretos };
+      }
+    }
+
+    // Reparación externa (boolean). Si vienen ambos valores no se filtra.
+    const repExtRaw = searchParams.get("reparacion_externa");
+    if (repExtRaw) {
+      const vals = new Set(repExtRaw.split(",").map((s) => s.trim()).filter(Boolean));
+      if (vals.size === 1) where.reparacion_externa = vals.has("true");
+    }
+
     // Por defecto solo OTs activas; las desactivadas (anuladas) se ocultan.
     // El admin puede pedirlas con ?incluirInactivas=1 (para reactivarlas).
     if (searchParams.get("incluirInactivas") !== "1") where.activo = true;
@@ -174,6 +206,19 @@ export async function GET(req: NextRequest) {
       ot: true, equipo_codigo: true, descripcion: true, fecha_recepcion: true,
       porcentaje_pcr: true, pcr: true, horas: true, contrato_dias: true,
       fecha_requerimiento_cliente: true, fecha_reprogramada: true, fecha_creacion: true,
+      // Antes solo se podía ordenar por el bloque de arriba — el resto de
+      // columnas mostraba flecha de sort pero el server ignoraba el campo
+      // ("no puedo hacer sort"). Todos estos son escalares reales de la OT.
+      cantidad: true, tipo: true, np: true, cod_rep_flota: true, cod_rep_posicion: true,
+      plaqueteo: true, wo_cliente: true, po_cliente: true, po_item: true,
+      id_viajero: true, guia_remision: true, empresa_entrega: true,
+      comentarios: true, usuario_crea: true,
+      // Ciclo evaluación → cotización → aprobación → facturación:
+      fecha_evaluacion: true, evaluador: true,
+      fecha_aprobacion_evaluacion: true, evaluacion_aprobado_por: true,
+      fecha_cotizacion: true, monto_cotizacion: true,
+      fecha_aprobacion: true, fecha_facturacion: true, dias_en_taller: true,
+      vendor_externo: true, caracteristica_cilindro: true, reparacion_externa: true,
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let orderBy: any = { id: "desc" };
@@ -183,6 +228,10 @@ export async function GET(req: NextRequest) {
     else if (sortField === "ot_status") orderBy = { ot_status: { nombre: sortOrder } };
     else if (sortField === "recursos_status") orderBy = { recursos_status: { nombre: sortOrder } };
     else if (sortField === "taller_status") orderBy = { taller_status: { nombre: sortOrder } };
+    // "Días en taller" (calculado en vivo) no existe en BD: para las OTs en
+    // curso equivale a hoy - fecha_recepcion, así que ordenamos por
+    // fecha_recepcion invertida (más días = recepción más antigua).
+    else if (sortField === "dias_taller") orderBy = { fecha_recepcion: sortOrder === "asc" ? "desc" : "asc" };
     else if (SORT_SCALAR[sortField]) orderBy = { [sortField]: sortOrder };
 
     // Modo mínimo para selects (?min=1): solo id + ot, sin joins ni el resto
