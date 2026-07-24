@@ -64,7 +64,7 @@ import { useEscrituraApi } from "@/lib/use-escritura";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import dayjs, { Dayjs } from "dayjs";
 
-import { formatDateOnly } from "@/lib/dates";
+import { formatDateOnly, dateOnlyLocal } from "@/lib/dates";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import { uploadToR2 } from "@/lib/r2-client";
 import { R2FileLink } from "@/components/R2FileLink";
@@ -424,16 +424,19 @@ function TabMovimientos({ onRefresh }: { onRefresh: () => void }) {
                 ],
               }]}
               columns={[
-                { key: "fecha_movimiento", label: "Fecha", value: (r) => formatDateOnly(r.fecha_movimiento) },
+                // Fecha como Date real (celda fecha); dateOnlyLocal evita el
+                // corrimiento de día en Lima (la columna es @db.Date → UTC).
+                { key: "fecha_movimiento", label: "Fecha", value: (r) => dateOnlyLocal(r.fecha_movimiento) },
                 { key: "tipo_movimiento", label: "Tipo", value: (r) => r.tipo_movimiento },
                 { key: "material_codigo", label: "Código", value: (r) => r.material_codigo ?? "" },
                 { key: "material_nombre", label: "Material", value: (r) => r.material_nombre ?? "" },
                 { key: "cantidad", label: "Cantidad", value: (r) => Number(r.cantidad) },
                 { key: "unidad_medida", label: "UM", value: (r) => r.unidad_medida ?? "" },
-                { key: "precio_unitario", label: "Precio Unit.", value: (r) => r.precio_unitario ?? "" },
-                { key: "costo_total", label: "Costo Total", value: (r) => r.costo_total ?? "" },
+                // Decimales de Prisma: llegan como string por JSON → Number().
+                { key: "precio_unitario", label: "Precio Unit.", value: (r) => (r.precio_unitario != null ? Number(r.precio_unitario) : ""), z: "#,##0.00" },
+                { key: "costo_total", label: "Costo Total", value: (r) => (r.costo_total != null ? Number(r.costo_total) : ""), z: "#,##0.00" },
                 { key: "moneda", label: "Moneda", value: (r) => r.moneda ?? "" },
-                { key: "stock_actual", label: "Stock Final", value: (r) => r.stock_actual ?? "" },
+                { key: "stock_actual", label: "Stock Final", value: (r) => (r.stock_actual != null ? Number(r.stock_actual) : "") },
                 { key: "documento_referencia", label: "Documento Ref.", value: (r) => r.documento_referencia ?? "" },
                 { key: "usuario", label: "Usuario", value: (r) => r.usuario },
                 { key: "observacion", label: "Observación", value: (r) => r.observacion ?? "" },

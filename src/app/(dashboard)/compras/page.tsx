@@ -71,7 +71,7 @@ import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import { R2FileLink } from "@/components/R2FileLink";
 import { uploadToR2 } from "@/lib/r2-client";
 
-import { formatDateOnly, formatDateOnlyShort } from "@/lib/dates";
+import { formatDateOnly, dateOnlyLocal } from "@/lib/dates";
 const { Title, Text } = Typography;
 
 interface Compra {
@@ -1033,24 +1033,26 @@ export default function ComprasPage() {
               { key: "estado", label: "Estado", value: (r) => r.estado },
               { key: "proveedor_nombre", label: "Proveedor", value: (r) => r.proveedor_nombre ?? "" },
               { key: "almacen_nombre", label: "Almacén", value: (r) => r.almacen_nombre ?? "" },
-              { key: "fecha_solicitud", label: "F. Solicitud", value: (r) => r.fecha_solicitud ? formatDateOnly(r.fecha_solicitud) : "" },
-              { key: "fecha_req_creacion", label: "Creación REQ", value: (r) => r.fecha_req_creacion ? formatDateOnlyShort(r.fecha_req_creacion) : "" },
-              { key: "fecha_oc_creacion", label: "Creación OC", value: (r) => r.fecha_oc_creacion ? dayjs(r.fecha_oc_creacion).format("DD/MM/YY HH:mm") : "" },
-              { key: "fecha_entrega_esperada", label: "F. Entrega Esp.", value: (r) => r.fecha_entrega_esperada ? formatDateOnly(r.fecha_entrega_esperada) : "" },
+              // Fechas como Date real (celda fecha en Excel). dateOnlyLocal
+              // evita el corrimiento de día en Lima con medianoche UTC.
+              { key: "fecha_solicitud", label: "F. Solicitud", value: (r) => dateOnlyLocal(r.fecha_solicitud) },
+              { key: "fecha_req_creacion", label: "Creación REQ", value: (r) => dateOnlyLocal(r.fecha_req_creacion) },
+              { key: "fecha_oc_creacion", label: "Creación OC", value: (r) => (r.fecha_oc_creacion ? new Date(r.fecha_oc_creacion) : null), z: "dd/mm/yyyy hh:mm" },
+              { key: "fecha_entrega_esperada", label: "F. Entrega Esp.", value: (r) => dateOnlyLocal(r.fecha_entrega_esperada) },
               { key: "cantidad_items", label: "Items", value: (r) => r.cantidad_items },
-              { key: "pu_sin_igv", label: "PU (sin IGV)", value: (r) => r.cantidad_items > 0 ? Number((Number(r.subtotal) / r.cantidad_items).toFixed(2)) : 0 },
-              { key: "total_sin_igv", label: "Total (sin IGV)", value: (r) => Number(r.subtotal) },
+              { key: "pu_sin_igv", label: "PU (sin IGV)", value: (r) => r.cantidad_items > 0 ? Number((Number(r.subtotal) / r.cantidad_items).toFixed(2)) : 0, z: "#,##0.00" },
+              { key: "total_sin_igv", label: "Total (sin IGV)", value: (r) => Number(r.subtotal), z: "#,##0.00" },
               { key: "nro_guia", label: "Guía", value: (r) => r.nro_guia ?? "" },
               { key: "nro_factura", label: "Factura", value: (r) => r.nro_factura ?? "" },
               { key: "observaciones", label: "Comentarios", value: (r) => r.observaciones ?? "" },
               { key: "usuario_solicita", label: "Usuario", value: (r) => r.usuario_solicita ?? "" },
               { key: "numero_req", label: "Nro Req.", value: (r) => r.numero_req ?? "" },
               { key: "ot_numero", label: "OT", value: (r) => r.ot_numero ?? "" },
-              { key: "fecha_entrega_real", label: "F. Entrega real", value: (r) => r.fecha_entrega_real ? formatDateOnly(r.fecha_entrega_real) : "" },
-              { key: "impuesto", label: "Impuesto", value: (r) => r.impuesto != null ? Number(r.impuesto) : "" },
+              { key: "fecha_entrega_real", label: "F. Entrega real", value: (r) => dateOnlyLocal(r.fecha_entrega_real) },
+              { key: "impuesto", label: "Impuesto", value: (r) => r.impuesto != null ? Number(r.impuesto) : "", z: "#,##0.00" },
               { key: "moneda", label: "Moneda", value: (r) => r.moneda ?? "" },
               // No es columna de la tabla, pero el export anterior la incluía.
-              { key: "total_con_igv", label: "Total (con IGV)", value: (r) => Number(r.total), defaultSelected: false },
+              { key: "total_con_igv", label: "Total (con IGV)", value: (r) => Number(r.total), defaultSelected: false, z: "#,##0.00" },
             ]}
           />
           <Button

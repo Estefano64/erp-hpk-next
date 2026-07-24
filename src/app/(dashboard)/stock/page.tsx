@@ -525,9 +525,11 @@ export default function StockPage() {
               { key: "ubicacion", label: "Ubicación", value: (r) => r.ubicacion ?? "" },
               { key: "fabricante", label: "Fabricante", value: (r) => r.fabricante ?? "" },
               { key: "categoria", label: "Categoría", value: (r) => r.categoria ?? "" },
-              { key: "precio", label: "Precio Último", value: (r) => r.precio ?? "" },
+              // El API ya devuelve números reales (Number()/::float) — solo
+              // agregamos formato de moneda para que Excel los muestre bien.
+              { key: "precio", label: "Precio Último", value: (r) => r.precio ?? "", z: "#,##0.00" },
               { key: "moneda", label: "Moneda", value: (r) => r.moneda ?? "" },
-              { key: "valor_total", label: "Valor Total", value: (r) => r.valor_total },
+              { key: "valor_total", label: "Valor Total", value: (r) => r.valor_total, z: "#,##0.00" },
             ]}
           />
         </Space>
