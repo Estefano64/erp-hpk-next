@@ -382,7 +382,7 @@ export default function ContabilidadView({
     },
   ];
 
-  const { columnas: columnsResizable, components: tableComponents } =
+  const { columnas: columnsResizable, components: tableComponents, TableDragWrapper } =
     useColumnasRedimensionables<CompraRow>(columns, "contabilidad-compras-cols-widths-v1");
 
   return (
@@ -439,21 +439,23 @@ export default function ContabilidadView({
       {filtradas.length === 0 && !loading ? (
         <Empty description="No hay OCs con esos filtros." />
       ) : (
-        <Table<CompraRow>
-          rowKey="id"
-          size="small"
-          columns={visibleColumns(columnsResizable, ocultas)}
-          components={tableComponents}
-          dataSource={filtradas}
-          loading={loading}
-          sticky={STICKY_HEADER}
-          scroll={{ x: "max-content" }}
-          pagination={paginacionEstandar({
-            current: page, pageSize, total: filtradas.length,
-            onChange: (p, s) => { setPage(p); setPageSize(s); },
-            label: "órdenes de compra",
-          })}
-        />
+        <TableDragWrapper>
+          <Table<CompraRow>
+            rowKey="id"
+            size="small"
+            columns={visibleColumns(columnsResizable, ocultas)}
+            components={tableComponents}
+            dataSource={filtradas}
+            loading={loading}
+            sticky={STICKY_HEADER}
+            scroll={{ x: "max-content" }}
+            pagination={paginacionEstandar({
+              current: page, pageSize, total: filtradas.length,
+              onChange: (p, s) => { setPage(p); setPageSize(s); },
+              label: "órdenes de compra",
+            })}
+          />
+        </TableDragWrapper>
       )}
     </div>
   );

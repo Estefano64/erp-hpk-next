@@ -197,7 +197,7 @@ export default function OCAbiertasListPage() {
     },
   ];
 
-  const { columnas: columnsResizable, components: tableComponents } =
+  const { columnas: columnsResizable, components: tableComponents, TableDragWrapper } =
     useColumnasRedimensionables<OCAbierta>(columns, "oc-abiertas-cols-widths-v1");
 
   return (
@@ -232,30 +232,32 @@ export default function OCAbiertasListPage() {
       {filtradas.length === 0 && !loading ? (
         <Empty description="No hay OCs abiertas activas." />
       ) : (
-        <Table<OCAbierta>
-          rowKey="id"
-          size="small"
-          columns={columnsResizable}
-          components={tableComponents}
-          dataSource={filtradas}
-          loading={loading}
-          sticky={STICKY_HEADER}
-          scroll={{ x: "max-content" }}
-          pagination={paginacionEstandar({
-            current: page, pageSize, total: filtradas.length,
-            onChange: (p, s) => { setPage(p); setPageSize(s); },
-            label: "OCs abiertas",
-          })}
-          onRow={(r) => ({
-            style: { cursor: "pointer" },
-            onClick: (e) => {
-              // Si el click es sobre un botón, no navegar al detalle.
-              const target = e.target as HTMLElement;
-              if (target.closest("button")) return;
-              router.push(`/compras/oc-abiertas/${r.id}`);
-            },
-          })}
-        />
+        <TableDragWrapper>
+          <Table<OCAbierta>
+            rowKey="id"
+            size="small"
+            columns={columnsResizable}
+            components={tableComponents}
+            dataSource={filtradas}
+            loading={loading}
+            sticky={STICKY_HEADER}
+            scroll={{ x: "max-content" }}
+            pagination={paginacionEstandar({
+              current: page, pageSize, total: filtradas.length,
+              onChange: (p, s) => { setPage(p); setPageSize(s); },
+              label: "OCs abiertas",
+            })}
+            onRow={(r) => ({
+              style: { cursor: "pointer" },
+              onClick: (e) => {
+                // Si el click es sobre un botón, no navegar al detalle.
+                const target = e.target as HTMLElement;
+                if (target.closest("button")) return;
+                router.push(`/compras/oc-abiertas/${r.id}`);
+              },
+            })}
+          />
+        </TableDragWrapper>
       )}
     </div>
   );

@@ -424,7 +424,7 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
     },
   ];
 
-  const { columnas: columnsItemsResizable, components: itemsTableComponents } =
+  const { columnas: columnsItemsResizable, components: itemsTableComponents, TableDragWrapper } =
     useColumnasRedimensionables<CompraDetalle["ot_repuestos"][0]>(
       columnsItems,
       "compra-detalle-items-cols-widths-v1",
@@ -740,15 +740,17 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
               />
             }
           >
-            <Table
-              rowKey="id"
-              columns={visibleColumns(columnsItemsResizable, itemsOcultas)}
-              components={itemsTableComponents}
-              dataSource={compra.ot_repuestos}
-              pagination={false}
-              size="small"
-              scroll={{ x: 1100 }}
-            />
+            <TableDragWrapper>
+              <Table
+                rowKey="id"
+                columns={visibleColumns(columnsItemsResizable, itemsOcultas)}
+                components={itemsTableComponents}
+                dataSource={compra.ot_repuestos}
+                pagination={false}
+                size="small"
+                scroll={{ x: 1100 }}
+              />
+            </TableDragWrapper>
           </Card>
         </div>
       )}

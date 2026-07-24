@@ -249,7 +249,7 @@ export default function NoCatalogadosPage() {
     },
   ];
 
-  const { columnas: columnsResizable, components: tableComponents } =
+  const { columnas: columnsResizable, components: tableComponents, TableDragWrapper } =
     useColumnasRedimensionables<MatRow>(columns, "no-catalogados-cols-widths-v1");
 
   return (
@@ -299,17 +299,19 @@ export default function NoCatalogadosPage() {
       {filtradas.length === 0 && !loading ? (
         <Empty description="Aún no hay materiales no catalogados. Agregá uno con 'Nuevo material'." />
       ) : (
-        <Table<MatRow>
-          rowKey="id" size="small"
-          columns={visibleColumns(columnsResizable, ocultas)}
-          components={tableComponents}
-          dataSource={filtradas}
-          loading={loading}
-          sticky={STICKY_HEADER}
-          scroll={{ x: "max-content" }}
-          onChange={onTablaChange}
-          pagination={paginacionEstandar({ current: page, pageSize, total: filtradas.length, onChange: (p, s) => { setPage(p); setPageSize(s); }, label: "materiales" })}
-        />
+        <TableDragWrapper>
+          <Table<MatRow>
+            rowKey="id" size="small"
+            columns={visibleColumns(columnsResizable, ocultas)}
+            components={tableComponents}
+            dataSource={filtradas}
+            loading={loading}
+            sticky={STICKY_HEADER}
+            scroll={{ x: "max-content" }}
+            onChange={onTablaChange}
+            pagination={paginacionEstandar({ current: page, pageSize, total: filtradas.length, onChange: (p, s) => { setPage(p); setPageSize(s); }, label: "materiales" })}
+          />
+        </TableDragWrapper>
       )}
 
       {/* Modal nuevo material */}

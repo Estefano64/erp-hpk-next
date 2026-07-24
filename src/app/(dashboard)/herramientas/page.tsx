@@ -215,7 +215,7 @@ function TabCatalogo() {
     }] : []),
   ];
 
-  const { columnas: columnsResizable, components: tableComponents } =
+  const { columnas: columnsResizable, components: tableComponents, TableDragWrapper } =
     useColumnasRedimensionables<Herramienta>(columns, "herramientas-catalogo-cols-widths-v1");
 
   // Filas visibles tras los filtros de columna de AntD (para exportar a Excel).
@@ -266,22 +266,24 @@ function TabCatalogo() {
           </Space>
         }
       >
-        <Table<Herramienta>
-          rowKey="id"
-          columns={visibleColumns(columnsResizable, ocultas)}
-          components={tableComponents}
-          dataSource={data}
-          loading={loading}
-          onChange={onTablaChange}
-          size="small"
-          sticky={STICKY_HEADER}
-          scroll={{ x: 900 }}
-          pagination={paginacionEstandar({
-            current: page, pageSize, total: data.length,
-            onChange: (p, s) => { setPage(p); setPageSize(s); },
-            label: "herramientas",
-          })}
-        />
+        <TableDragWrapper>
+          <Table<Herramienta>
+            rowKey="id"
+            columns={visibleColumns(columnsResizable, ocultas)}
+            components={tableComponents}
+            dataSource={data}
+            loading={loading}
+            onChange={onTablaChange}
+            size="small"
+            sticky={STICKY_HEADER}
+            scroll={{ x: 900 }}
+            pagination={paginacionEstandar({
+              current: page, pageSize, total: data.length,
+              onChange: (p, s) => { setPage(p); setPageSize(s); },
+              label: "herramientas",
+            })}
+          />
+        </TableDragWrapper>
       </Card>
 
       <Modal
@@ -551,7 +553,7 @@ function TabPrestamos() {
     },
   ];
 
-  const { columnas: columnsResizable, components: tableComponents } =
+  const { columnas: columnsResizable, components: tableComponents, TableDragWrapper } =
     useColumnasRedimensionables<Prestamo>(columns, "herramientas-prestamos-cols-widths-v1");
 
   // Filas visibles tras los filtros de columna de AntD (para exportar a Excel).
@@ -612,22 +614,24 @@ function TabPrestamos() {
         {data.length === 0 ? (
           <Empty description="Sin préstamos." />
         ) : (
-          <Table<Prestamo>
-            rowKey="id"
-            columns={visibleColumns(columnsResizable, ocultas)}
-            components={tableComponents}
-            dataSource={data}
-            loading={loading}
-            onChange={onTablaChange}
-            size="small"
-            sticky={STICKY_HEADER}
-            scroll={{ x: 1500 }}
-            pagination={paginacionEstandar({
-              current: page, pageSize, total: data.length,
-              onChange: (p, s) => { setPage(p); setPageSize(s); },
-              label: "préstamos",
-            })}
-          />
+          <TableDragWrapper>
+            <Table<Prestamo>
+              rowKey="id"
+              columns={visibleColumns(columnsResizable, ocultas)}
+              components={tableComponents}
+              dataSource={data}
+              loading={loading}
+              onChange={onTablaChange}
+              size="small"
+              sticky={STICKY_HEADER}
+              scroll={{ x: 1500 }}
+              pagination={paginacionEstandar({
+                current: page, pageSize, total: data.length,
+                onChange: (p, s) => { setPage(p); setPageSize(s); },
+                label: "préstamos",
+              })}
+            />
+          </TableDragWrapper>
         )}
       </Card>
 

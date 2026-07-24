@@ -180,7 +180,7 @@ export function ImportarExcelModal({
     },
   ];
 
-  const { columnas: mappingColumnsResizable, components: mappingTableComponents } =
+  const { columnas: mappingColumnsResizable, components: mappingTableComponents, TableDragWrapper: MappingDragWrapper } =
     useColumnasRedimensionables<MappingRow>(mappingColumns, "importar-excel-mapping-cols-widths-v1");
 
   type PreviewRow = Record<string, unknown> & { _key: number };
@@ -188,7 +188,7 @@ export function ImportarExcelModal({
     .filter((f) => camposMapeados.has(f.key))
     .map((f) => ({ title: f.label, dataIndex: f.key, key: f.key, ellipsis: true }));
 
-  const { columnas: previewColumnsResizable, components: previewTableComponents } =
+  const { columnas: previewColumnsResizable, components: previewTableComponents, TableDragWrapper: PreviewDragWrapper } =
     useColumnasRedimensionables<PreviewRow>(previewColumns, "importar-excel-preview-cols-widths-v1");
 
   async function submit() {
@@ -329,13 +329,15 @@ export function ImportarExcelModal({
               title={`Falta mapear: ${requiredFaltantes.join(", ")}`}
             />
           )}
-          <Table
-            size="small"
-            pagination={false}
-            dataSource={headers.map((h, idx) => ({ key: idx, idx, header: h, mapping: mapping[String(idx)] }))}
-            columns={mappingColumnsResizable}
-            components={mappingTableComponents}
-          />
+          <MappingDragWrapper>
+            <Table
+              size="small"
+              pagination={false}
+              dataSource={headers.map((h, idx) => ({ key: idx, idx, header: h, mapping: mapping[String(idx)] }))}
+              columns={mappingColumnsResizable}
+              components={mappingTableComponents}
+            />
+          </MappingDragWrapper>
 
           <Divider style={{ margin: "16px 0" }}>
             Preview ({payloadRows.length} fila(s) válida(s)
@@ -357,15 +359,17 @@ export function ImportarExcelModal({
             />
           )}
 
-          <Table
-            size="small"
-            pagination={{ pageSize: 5, showSizeChanger: false, placement: ["topEnd", "bottomEnd"] }}
-            dataSource={payloadRows.slice(0, 50).map((r, i) => ({ ...r, _key: i }))}
-            rowKey="_key"
-            columns={previewColumnsResizable}
-            components={previewTableComponents}
-            scroll={{ x: 600 }}
-          />
+          <PreviewDragWrapper>
+            <Table
+              size="small"
+              pagination={{ pageSize: 5, showSizeChanger: false, placement: ["topEnd", "bottomEnd"] }}
+              dataSource={payloadRows.slice(0, 50).map((r, i) => ({ ...r, _key: i }))}
+              rowKey="_key"
+              columns={previewColumnsResizable}
+              components={previewTableComponents}
+              scroll={{ x: 600 }}
+            />
+          </PreviewDragWrapper>
         </>
       )}
 

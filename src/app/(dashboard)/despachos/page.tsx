@@ -603,7 +603,7 @@ function GrupoCard({
     },
   ];
 
-  const { columnas: columnsResizable, components: tableComponents } =
+  const { columnas: columnsResizable, components: tableComponents, TableDragWrapper } =
     useColumnasRedimensionables<Item>(columns, "despachos-list-cols-widths-v1");
 
   // Solo items que pueden despacharse (stock suficiente para lo pendiente)
@@ -678,31 +678,33 @@ function GrupoCard({
         </Space>
       }
     >
-      <Table<Item>
-        rowKey="id"
-        size="small"
-        columns={visibleColumns(columnsResizable, ocultas)}
-        components={tableComponents}
-        dataSource={grupo.items}
-        sticky={STICKY_HEADER}
-        scroll={{ x: 1200 }}
-        pagination={false}
-        rowSelection={{
-          selectedRowKeys: seleccionados,
-          onChange: (keys) => onSelectChange(keys as number[]),
-          getCheckboxProps: (r) => ({ disabled: !r._puede_despachar }),
-        }}
-        footer={() => (
-          <Space>
-            <Button size="small" onClick={() => onSelectChange(itemsConStock.map((i) => i.id))} disabled={itemsConStock.length === 0}>
-              Seleccionar todos con stock ({itemsConStock.length})
-            </Button>
-            <Button size="small" onClick={() => onSelectChange([])} disabled={seleccionados.length === 0}>
-              Limpiar selección
-            </Button>
-          </Space>
-        )}
-      />
+      <TableDragWrapper>
+        <Table<Item>
+          rowKey="id"
+          size="small"
+          columns={visibleColumns(columnsResizable, ocultas)}
+          components={tableComponents}
+          dataSource={grupo.items}
+          sticky={STICKY_HEADER}
+          scroll={{ x: 1200 }}
+          pagination={false}
+          rowSelection={{
+            selectedRowKeys: seleccionados,
+            onChange: (keys) => onSelectChange(keys as number[]),
+            getCheckboxProps: (r) => ({ disabled: !r._puede_despachar }),
+          }}
+          footer={() => (
+            <Space>
+              <Button size="small" onClick={() => onSelectChange(itemsConStock.map((i) => i.id))} disabled={itemsConStock.length === 0}>
+                Seleccionar todos con stock ({itemsConStock.length})
+              </Button>
+              <Button size="small" onClick={() => onSelectChange([])} disabled={seleccionados.length === 0}>
+                Limpiar selección
+              </Button>
+            </Space>
+          )}
+        />
+      </TableDragWrapper>
     </Card>
   );
 }

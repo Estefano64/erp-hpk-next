@@ -1814,6 +1814,7 @@ export default function OTRequerimientosTab({
           )}
           columns={visibleColumns(columnsResizable, ocultas, ["item_req", "desc"])}
           components={tableComponents}
+          DragWrapper={TableDragWrapper}
           loading={loading}
           onAddItems={(nro) => abrirDraft(nro)}
           onEnviarGrupo={enviarGrupo}
@@ -2079,6 +2080,7 @@ function RequerimientosAgrupados({
   onSetFechaRequerida,
   otFechaRecepcion,
   onEliminarLote,
+  DragWrapper,
 }: {
   rows: RequerimientoRow[];
   columns: ColumnsType<RequerimientoRow>;
@@ -2090,6 +2092,10 @@ function RequerimientosAgrupados({
   onSetFechaRequerida?: (nroReq: string, fecha: dayjs.Dayjs | null) => Promise<void>;
   otFechaRecepcion?: string | Date | null;
   onEliminarLote?: (ids: number[]) => Promise<void>;
+  // Wrapper DndContext del hook useColumnasRedimensionables — habilita el
+  // drag-to-reorder de columnas. Se envuelve CADA tabla de grupo por separado
+  // para no duplicar ids de sortable dentro de un mismo contexto.
+  DragWrapper?: React.ComponentType<{ children: React.ReactNode }>;
 }) {
   // Selección multi-item por grupo. Guardamos las keys por nro_req para que
   // colapsar/expandir o cambiar de grupo no pierda la selección de otros.
@@ -2281,32 +2287,35 @@ function RequerimientosAgrupados({
               </Space>
             }
           >
-            {!isCollapsed && (
-              <Table
-                rowKey="id"
-                columns={columns.filter((c) => (c as { key?: React.Key }).key !== "nro")}
-                components={components as never}
-                dataSource={items}
-                pagination={false}
-                size="small"
-                scroll={{ x: 2160 }}
-                rowClassName={(r) => r.status_requerimiento_codigo === "ANULADO" ? "req-anulado" : ""}
-                rowSelection={onEliminarLote ? {
-                  selectedRowKeys: (selByGrupo[nro] ?? []),
-                  onChange: (keys) => setSelDelGrupo(nro, keys),
-                  // Solo permitimos seleccionar items eliminables por el backend:
-                  // sin OC y en estados donde DELETE está aceptado (BORRADOR /
-                  // SIN_APROBACION / DESAPROBADO). Los ya aprobados / con OC /
-                  // anulados salen greyed-out.
-                  getCheckboxProps: (r) => {
-                    const sr = r.status_requerimiento_codigo ?? "BORRADOR";
-                    const tieneOC = r.po_id != null;
-                    const bloqueado = tieneOC || sr === "APROBADO" || sr === "ANULADO";
-                    return { disabled: bloqueado };
-                  },
-                } : undefined}
-              />
-            )}
+            {!isCollapsed && (() => {
+              const tabla = (
+                <Table
+                  rowKey="id"
+                  columns={columns.filter((c) => (c as { key?: React.Key }).key !== "nro")}
+                  components={components as never}
+                  dataSource={items}
+                  pagination={false}
+                  size="small"
+                  scroll={{ x: 2160 }}
+                  rowClassName={(r) => r.status_requerimiento_codigo === "ANULADO" ? "req-anulado" : ""}
+                  rowSelection={onEliminarLote ? {
+                    selectedRowKeys: (selByGrupo[nro] ?? []),
+                    onChange: (keys) => setSelDelGrupo(nro, keys),
+                    // Solo permitimos seleccionar items eliminables por el backend:
+                    // sin OC y en estados donde DELETE está aceptado (BORRADOR /
+                    // SIN_APROBACION / DESAPROBADO). Los ya aprobados / con OC /
+                    // anulados salen greyed-out.
+                    getCheckboxProps: (r) => {
+                      const sr = r.status_requerimiento_codigo ?? "BORRADOR";
+                      const tieneOC = r.po_id != null;
+                      const bloqueado = tieneOC || sr === "APROBADO" || sr === "ANULADO";
+                      return { disabled: bloqueado };
+                    },
+                  } : undefined}
+                />
+              );
+              return DragWrapper ? <DragWrapper>{tabla}</DragWrapper> : tabla;
+            })()}
           </Card>
         );
       })}

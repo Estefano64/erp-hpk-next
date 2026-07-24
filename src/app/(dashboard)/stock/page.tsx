@@ -476,7 +476,7 @@ export default function StockPage() {
     },
   ];
 
-  const { columnas: columnsResizable, components: tableComponents, resetAnchos } =
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
   useColumnasRedimensionables<StockItem>(columns, "stock-list-cols-widths-v1", { data: displayData });
 
   return (
@@ -581,24 +581,26 @@ export default function StockPage() {
         </Row>
       </Card>
 
-      <Table
-        rowKey="material_id"
-        columns={visibleColumns(columnsResizable, ocultas)}
-        components={tableComponents}
-        dataSource={displayData}
-        loading={loading}
-        pagination={paginacionEstandar({
-          current: page,
-          pageSize,
-          total: data.length,
-          onChange: (p, s) => { setPage(p); setPageSize(s); },
-          label: "materiales",
-        })}
-        scroll={{ x: 1700 }}
-        sticky={{ offsetHeader: 56, offsetScroll: 0 }}
-        size="small"
-        onChange={(_p, _f, _s, extra) => setVistaActual(extra.currentDataSource)}
-      />
+      <TableDragWrapper>
+        <Table
+          rowKey="material_id"
+          columns={visibleColumns(columnsResizable, ocultas)}
+          components={tableComponents}
+          dataSource={displayData}
+          loading={loading}
+          pagination={paginacionEstandar({
+            current: page,
+            pageSize,
+            total: data.length,
+            onChange: (p, s) => { setPage(p); setPageSize(s); },
+            label: "materiales",
+          })}
+          scroll={{ x: 1700 }}
+          sticky={{ offsetHeader: 56, offsetScroll: 0 }}
+          size="small"
+          onChange={(_p, _f, _s, extra) => setVistaActual(extra.currentDataSource)}
+        />
+      </TableDragWrapper>
     </div>
   );
 }
