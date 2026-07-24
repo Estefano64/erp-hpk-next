@@ -36,7 +36,7 @@ import { useTabSync } from "@/lib/useTabSync";
 import { useSession } from "next-auth/react";
 import { useEditLock } from "@/lib/useEditLock";
 
-import { formatDateOnlyShort } from "@/lib/dates";
+import { formatDateOnlyShort, dateOnlyLocal } from "@/lib/dates";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 dayjs.extend(isoWeek);
 // Necesario para que dayjs(text, format, strict) acepte nuestros formatos cortos
@@ -1708,7 +1708,9 @@ export default function PlanificacionPage() {
               { key: "cliente", label: "Cliente", value: (r) => r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "" },
               { key: "flota", label: "Flota", value: (r) => r.orden_trabajo?.codigo_reparacion?.flota?.codigo ?? r.orden_trabajo?.cod_rep_flota ?? "" },
               { key: "otDesc", label: "Descripción OT", value: (r) => r.orden_trabajo?.descripcion ?? "" },
-              { key: "recep", label: "F. Recepción", value: (r) => r.orden_trabajo?.fecha_recepcion ? formatDateOnlyShort(r.orden_trabajo.fecha_recepcion) : "" },
+              // Fechas como Date real (celda fecha en Excel); dateOnlyLocal
+              // evita el corrimiento de día en Lima con medianoche UTC.
+              { key: "recep", label: "F. Recepción", value: (r) => dateOnlyLocal(r.orden_trabajo?.fecha_recepcion) },
               { key: "prior", label: "Prioridad", value: (r) => r.orden_trabajo?.prioridad_atencion?.nombre ?? "" },
               { key: "taller", label: "Taller Status", value: (r) => r.orden_trabajo?.taller_status?.nombre ?? "" },
               { key: "orden", label: "N°", value: (r) => r.orden },
@@ -1719,15 +1721,15 @@ export default function PlanificacionPage() {
               { key: "semana", label: "Semana", value: (r) => r.semana_plan ?? "" },
               { key: "tecnico", label: "Operario", value: (r) => r.tecnico ?? "" },
               { key: "maquina", label: "Equipo", value: (r) => r.maquina ?? "" },
-              { key: "inicio", label: "Inicio Est.", value: (r) => r.fecha_inicio ? dayjs(r.fecha_inicio).format("DD/MM/YY HH:mm") : "" },
+              { key: "inicio", label: "Inicio Est.", value: (r) => (r.fecha_inicio ? new Date(r.fecha_inicio) : null), z: "dd/mm/yyyy hh:mm" },
               { key: "dur", label: "Dur. (hrs)", value: (r) => r.horas_estimadas != null ? Number(r.horas_estimadas) : "" },
               { key: "he", label: "HE", value: (r) => r.horas_extras ? "Sí" : "No" },
               { key: "qtyhe", label: "Qty HE", value: (r) => r.horas_extras_qty != null ? Number(r.horas_extras_qty) : "" },
-              { key: "fin", label: "Fin Est.", value: (r) => r.fecha_fin ? dayjs(r.fecha_fin).format("DD/MM/YY HH:mm") : "" },
+              { key: "fin", label: "Fin Est.", value: (r) => (r.fecha_fin ? new Date(r.fecha_fin) : null), z: "dd/mm/yyyy hh:mm" },
               { key: "qty", label: "Qty", value: (r) => r.qty_personal ?? 1 },
               { key: "hh", label: "HH", value: (r) => calcularHH({ duracionHrs: Number(r.horas_estimadas ?? 0), qtyPersonal: r.qty_personal ?? 1, horasExtras: r.horas_extras ?? false, horasExtrasQty: r.horas_extras_qty != null ? Number(r.horas_extras_qty) : 0 }) },
-              { key: "fecha_inicio_real", label: "Inicio Real", value: (r) => r.fecha_inicio_real ? dayjs(r.fecha_inicio_real).format("DD/MM/YY HH:mm") : "" },
-              { key: "fecha_fin_real", label: "Fin Real", value: (r) => r.fecha_fin_real ? dayjs(r.fecha_fin_real).format("DD/MM/YY HH:mm") : "" },
+              { key: "fecha_inicio_real", label: "Inicio Real", value: (r) => (r.fecha_inicio_real ? new Date(r.fecha_inicio_real) : null), z: "dd/mm/yyyy hh:mm" },
+              { key: "fecha_fin_real", label: "Fin Real", value: (r) => (r.fecha_fin_real ? new Date(r.fecha_fin_real) : null), z: "dd/mm/yyyy hh:mm" },
               { key: "horas_reales", label: "Dur. Real (hrs)", value: (r) => r.horas_reales != null ? Number(r.horas_reales) : "" },
               { key: "estado", label: "Estado", value: (r) => estados.find((e) => e.codigo === r.estado)?.nombre ?? r.estado ?? "" },
               { label: "Correctiva", value: (r) => (r.es_correctivo ? "Sí" : "No"), defaultSelected: false },

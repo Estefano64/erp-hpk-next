@@ -12,7 +12,7 @@ import type { ColumnsType } from "antd/es/table";
 import dayjs, { type Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
 import { brand } from "@/lib/theme";
-import { formatDateOnly } from "@/lib/dates";
+import { formatDateOnly, dateOnlyLocal } from "@/lib/dates";
 import { paginacionEstandar, useAbortableFetch } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
@@ -182,8 +182,9 @@ export default function MisTareasPage() {
               { label: "Operación", value: (r) => r.operacion_codigo || "" },
               { label: "Descripción", value: (r) => r.descripcion || "" },
               { label: "Estado", value: (r) => r.status_tarea?.nombre ?? r.estado ?? "" },
-              { label: "Inicio real", value: (r) => r.fecha_inicio_real ? formatDateOnly(r.fecha_inicio_real) : "" },
-              { label: "Fin real", value: (r) => r.fecha_fin_real ? formatDateOnly(r.fecha_fin_real) : "" },
+              // Fechas como Date real (celda fecha en Excel); dateOnlyLocal evita el corrimiento de día en Lima.
+              { label: "Inicio real", value: (r) => dateOnlyLocal(r.fecha_inicio_real) },
+              { label: "Fin real", value: (r) => dateOnlyLocal(r.fecha_fin_real) },
               { label: "H. est.", value: (r) => r.horas_estimadas != null ? Number(r.horas_estimadas) : "" },
               { label: "H. real", value: (r) => r.horas_reales != null ? Number(r.horas_reales) : "" },
               { label: "Efic. (%)", value: (r) => eficiencia(r.horas_estimadas, r.horas_reales) ?? "" },

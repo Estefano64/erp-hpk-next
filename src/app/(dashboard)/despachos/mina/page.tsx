@@ -17,7 +17,7 @@ import { paginacionEstandar } from "@/lib/tables";
 import { brand } from "@/lib/theme";
 import { useEscrituraApi } from "@/lib/use-escritura";
 import { useResponsive, modalWidth } from "@/lib/responsive";
-import { formatDateOnly } from "@/lib/dates";
+import { formatDateOnly, dateOnlyLocal } from "@/lib/dates";
 import { uploadToR2, openR2File } from "@/lib/r2-client";
 import { useColumnasRedimensionables, STICKY_HEADER } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
@@ -284,9 +284,10 @@ export default function DespachoMinaPage() {
               { key: "wo", label: "WO Cliente", value: (r) => r.wo_cliente ?? "" },
               { key: "po", label: "PO Cliente", value: (r) => r.po_cliente ?? "" },
               { key: "items", label: "Items entreg.", value: (r) => r.items_count },
-              { key: "fecha_recepcion", label: "F. Recepción", value: (r) => r.fecha_recepcion ? formatDateOnly(r.fecha_recepcion) : "" },
+              // Fechas como Date real (celda fecha en Excel); dateOnlyLocal evita el corrimiento de día en Lima.
+              { key: "fecha_recepcion", label: "F. Recepción", value: (r) => dateOnlyLocal(r.fecha_recepcion) },
               { key: "guia", label: "N° Guía remisión", value: (r) => r.guia_entrega_salida ?? "Pendiente" },
-              { key: "fecha_entrega", label: "F. Entrega", value: (r) => r.fecha_entrega ? formatDateOnly(r.fecha_entrega) : "" },
+              { key: "fecha_entrega", label: "F. Entrega", value: (r) => dateOnlyLocal(r.fecha_entrega) },
               { key: "adjuntos", label: "Archivos", value: (r) => r.adjuntos_despacho.length },
             ]}
           />

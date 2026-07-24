@@ -423,7 +423,7 @@ export default function CodigosReparacionPage() {
               { label: "Fabricante", value: (r) => r.fabricante?.nombre ?? r.fabricante_codigo ?? "" },
               { label: "Nº Parte", value: (r) => r.np ?? "" },
               { label: "Posición", value: (r) => r.posicion?.nombre ?? r.posicion_codigo ?? "" },
-              { label: "Precio", value: (r) => r.precio != null ? Number(r.precio) : "" },
+              { label: "Precio", value: (r) => r.precio != null ? Number(r.precio) : "", z: "#,##0.00" },
               { label: "Moneda", value: (r) => r.moneda_codigo ?? "" },
             ]}
           >
@@ -458,7 +458,7 @@ export default function CodigosReparacionPage() {
               { label: "Descripción tarea", value: (r) => r.descripcion },
               { label: "Cantidad", value: (r) => Number(r.requerimiento) },
               { label: "Nº Parte", value: (r) => r.np ?? "" },
-              { label: "Precio", value: (r) => r.precio != null ? Number(r.precio) : "" },
+              { label: "Precio", value: (r) => r.precio != null ? Number(r.precio) : "", z: "#,##0.00" },
             ]}
           >
             Descargar Tareas

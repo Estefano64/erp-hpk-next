@@ -303,8 +303,9 @@ export default function TicketsPage() {
           { label: "Asignado a", value: (t) => t.asignado_a ?? "" },
         ] satisfies ExportColumn<Ticket>[])
       : []),
-    { label: "Creado", value: (t) => dayjs(t.created_at).format("DD/MM/YY HH:mm") },
-    { label: "Resuelto", value: (t) => (t.fecha_resolucion ? dayjs(t.fecha_resolucion).format("DD/MM/YY HH:mm") : "") },
+    // Fechas como Date real (celda fecha en Excel); acá van con hora (timestamps, no solo-día).
+    { label: "Creado", value: (t) => new Date(t.created_at), z: "dd/mm/yyyy hh:mm" },
+    { label: "Resuelto", value: (t) => (t.fecha_resolucion ? new Date(t.fecha_resolucion) : null), z: "dd/mm/yyyy hh:mm" },
   ];
 
   return (

@@ -808,10 +808,12 @@ export default function TrabajadoresPage() {
               {
                 key: "costo_hh", label: "Costo H.H.",
                 value: (r) => r.costo_hora_hombre != null ? Number(r.costo_hora_hombre) : "",
+                z: "#,##0.00",
               },
               {
                 key: "costo_he", label: "Costo H.E.",
                 value: (r) => r.costo_hora_extra != null ? Number(r.costo_hora_extra) : "",
+                z: "#,##0.00",
               },
               // La columna Cuenta del export solo tiene datos para admin.
               ...(esAdmin ? [{

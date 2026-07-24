@@ -36,7 +36,7 @@ import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import dayjs, { Dayjs } from "dayjs";
-import { formatDateOnly } from "@/lib/dates";
+import { formatDateOnly, dateOnlyLocal } from "@/lib/dates";
 import {
   numeracionColumn,
   paginacionEstandar,
@@ -400,12 +400,13 @@ export default function VehiculosPage() {
               { key: "serie", label: "Serie", value: (r) => r.serie },
               { key: "placa", label: "Placa", value: (r) => r.placa },
               { key: "anio", label: "Año", value: (r) => r.anio ?? "" },
-              { key: "revision_tecnica_vencimiento", label: "Revisión Téc.", value: (r) => r.revision_tecnica_vencimiento ? formatDateOnly(r.revision_tecnica_vencimiento) : "" },
+              // Fechas como Date real (celda fecha en Excel); dateOnlyLocal evita el corrimiento de día en Lima.
+              { key: "revision_tecnica_vencimiento", label: "Revisión Téc.", value: (r) => dateOnlyLocal(r.revision_tecnica_vencimiento) },
               { key: "empresa_soat", label: "Empresa SOAT", value: (r) => r.empresa_soat ?? "" },
-              { key: "soat_vencimiento", label: "SOAT", value: (r) => r.soat_vencimiento ? formatDateOnly(r.soat_vencimiento) : "" },
+              { key: "soat_vencimiento", label: "SOAT", value: (r) => dateOnlyLocal(r.soat_vencimiento) },
               { key: "empresa_poliza", label: "Empresa Póliza", value: (r) => r.empresa_poliza ?? "" },
-              { key: "poliza_vencimiento", label: "Póliza", value: (r) => r.poliza_vencimiento ? formatDateOnly(r.poliza_vencimiento) : "" },
-              { key: "monto_poliza", label: "Monto Póliza", value: (r) => r.monto_poliza ?? "" },
+              { key: "poliza_vencimiento", label: "Póliza", value: (r) => dateOnlyLocal(r.poliza_vencimiento) },
+              { key: "monto_poliza", label: "Monto Póliza", value: (r) => r.monto_poliza != null ? Number(r.monto_poliza) : "", z: "#,##0.00" },
               { key: "observaciones", label: "Observaciones", value: (r) => r.observaciones ?? "" },
             ]}
           />

@@ -26,7 +26,7 @@ import {
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import { useCachedFetch } from "@/lib/useCachedFetch";
 
-import { formatDateOnly, formatDateOnlyShort } from "@/lib/dates";
+import { formatDateOnly, formatDateOnlyShort, dateOnlyLocal } from "@/lib/dates";
 import { R2FileLink } from "@/components/R2FileLink";
 const { Title, Text } = Typography;
 
@@ -1462,10 +1462,12 @@ export default function AceptacionesPage() {
                             { key: "proveedor", label: "Proveedor", value: (o) => o.proveedor?.razon_social ?? "" },
                             { key: "ot", label: "OT", value: (o) => o.orden_trabajo?.ot ?? "" },
                             { key: "items", label: "Items", value: (o) => o.ot_repuestos.length || o.detalles.length },
-                            { key: "total", label: "Total", value: (o) => Number(o.total) },
+                            { key: "total", label: "Total", value: (o) => Number(o.total), z: "#,##0.00" },
                             { key: "moneda", label: "Moneda", value: (o) => o.moneda_codigo ?? "USD" },
-                            { key: "fecha_solicitud", label: "F. Solicitud", value: (o) => formatDateOnlyShort(o.fecha_solicitud) },
-                            { key: "fecha_entrega", label: "F. Entrega Esp.", value: (o) => o.fecha_entrega_esperada ? formatDateOnlyShort(o.fecha_entrega_esperada) : "" },
+                            // Fechas como Date real (celda fecha en Excel). dateOnlyLocal
+                            // evita el corrimiento de día en Lima con medianoche UTC.
+                            { key: "fecha_solicitud", label: "F. Solicitud", value: (o) => dateOnlyLocal(o.fecha_solicitud) },
+                            { key: "fecha_entrega", label: "F. Entrega Esp.", value: (o) => dateOnlyLocal(o.fecha_entrega_esperada) },
                             { key: "usuario", label: "Solicita", value: (o) => o.usuario_solicita },
                           ]}
                         />
@@ -1562,11 +1564,13 @@ export default function AceptacionesPage() {
                             { key: "cantidad", label: "Cant.", value: (r) => Number(r.cantidad) },
                             { key: "um", label: "UM", value: (r) => r.unidad_medida ?? "" },
                             { key: "stock", label: "Stock", value: (r) => r.material?.stock_actual != null ? Number(r.material.stock_actual) : "" },
-                            { key: "precio_cat", label: "P. catálogo", value: (r) => r.material?.precio != null ? Number(r.material.precio) : "" },
-                            { key: "total_estimado", label: "P. Estimado Total", value: (r) => r.material?.precio != null ? Number(r.material.precio) * Number(r.cantidad) : "" },
+                            { key: "precio_cat", label: "P. catálogo", value: (r) => r.material?.precio != null ? Number(r.material.precio) : "", z: "#,##0.00" },
+                            { key: "total_estimado", label: "P. Estimado Total", value: (r) => r.material?.precio != null ? Number(r.material.precio) * Number(r.cantidad) : "", z: "#,##0.00" },
                             { key: "moneda", label: "Moneda", value: (r) => r.material?.moneda_codigo ?? "USD" },
-                            { key: "fecha_solicitud", label: "F. Solicitud", value: (r) => formatDateOnlyShort(r.fecha_solicitud) },
-                            { key: "fecha_requerida", label: "F. Requerida", value: (r) => r.fecha_requerida ? formatDateOnlyShort(r.fecha_requerida) : "" },
+                            // Fechas como Date real (celda fecha en Excel). dateOnlyLocal
+                            // evita el corrimiento de día en Lima con medianoche UTC.
+                            { key: "fecha_solicitud", label: "F. Solicitud", value: (r) => dateOnlyLocal(r.fecha_solicitud) },
+                            { key: "fecha_requerida", label: "F. Requerida", value: (r) => dateOnlyLocal(r.fecha_requerida) },
                             { key: "usuario", label: "Solicita", value: (r) => r.usuario_solicita },
                             { key: "observaciones", label: "Observaciones", value: (r) => r.observaciones ?? "" },
                           ]}

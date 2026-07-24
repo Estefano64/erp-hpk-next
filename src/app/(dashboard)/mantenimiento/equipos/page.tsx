@@ -33,7 +33,7 @@ import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import dayjs from "dayjs";
-import { formatDateOnly } from "@/lib/dates";
+import { formatDateOnly, dateOnlyLocal } from "@/lib/dates";
 import {
   numeracionColumn,
   paginacionEstandar,
@@ -609,12 +609,13 @@ export default function EquiposPage() {
               { label: "UM Capacidad", value: (r) => r.unidad_medida?.abreviatura ?? r.unidad_medida_codigo ?? "" },
               { label: "Criticidad", value: (r) => r.criticidad?.nombre ?? r.criticidad_codigo ?? "" },
               { label: "Cantidad", value: (r) => r.cantidad },
-              { label: "Precio", value: (r) => r.precio != null ? Number(r.precio) : "" },
+              { label: "Precio", value: (r) => r.precio != null ? Number(r.precio) : "", z: "#,##0.00" },
               { label: "Moneda", value: (r) => r.moneda_codigo ?? "" },
               { label: "Ubicación", value: (r) => r.ubicacion?.nombre ?? r.ubicacion_codigo ?? "" },
               { label: "Responsable", value: (r) => r.usuario_responsable ?? "" },
-              { label: "Fecha inicio", value: (r) => r.fecha_inicio ?? "" },
-              { label: "Fecha fabricación", value: (r) => r.fecha_fabricacion ?? "" },
+              // Fechas como Date real (celda fecha en Excel); dateOnlyLocal evita el corrimiento de día en Lima.
+              { label: "Fecha inicio", value: (r) => dateOnlyLocal(r.fecha_inicio) },
+              { label: "Fecha fabricación", value: (r) => dateOnlyLocal(r.fecha_fabricacion) },
               { label: "Observaciones", value: (r) => r.observaciones ?? "" },
             ]}
           />

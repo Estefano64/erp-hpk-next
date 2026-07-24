@@ -861,15 +861,17 @@ export default function OrdenesTrabajoInternasPage() {
               { key: "comentarios", label: "Comentarios", value: (r) => r.comentarios ?? "" },
               { key: "estrategia", label: "Estrategia", value: (r) => r.estrategia ? `${r.estrategia.codigo} — ${r.estrategia.descripcion}` : "" },
               { key: "task_list", label: "Task List", value: (r) => r.task_list ?? "" },
-              { key: "fecha_inicio_plan", label: "Inicio Plan", value: (r) => r.fecha_inicio_plan ? dayjs(r.fecha_inicio_plan).format("DD/MM/YYYY HH:mm") : "" },
-              { key: "fecha_fin_plan", label: "Fin Plan", value: (r) => r.fecha_fin_plan ? dayjs(r.fecha_fin_plan).format("DD/MM/YYYY HH:mm") : "" },
-              { key: "fecha_inicio_real", label: "Inicio Real", value: (r) => r.fecha_inicio_real ? dayjs(r.fecha_inicio_real).format("DD/MM/YYYY HH:mm") : "" },
-              { key: "fecha_fin_real", label: "Fin Real", value: (r) => r.fecha_fin_real ? dayjs(r.fecha_fin_real).format("DD/MM/YYYY HH:mm") : "" },
-              { key: "fecha_cierre", label: "Cierre", value: (r) => r.fecha_cierre ? dayjs(r.fecha_cierre).format("DD/MM/YYYY HH:mm") : "" },
+              // Fechas como Date real (celda fecha en Excel); estas llevan hora,
+              // por eso el formato z "dd/mm/yyyy hh:mm".
+              { key: "fecha_inicio_plan", label: "Inicio Plan", value: (r) => (r.fecha_inicio_plan ? new Date(r.fecha_inicio_plan) : null), z: "dd/mm/yyyy hh:mm" },
+              { key: "fecha_fin_plan", label: "Fin Plan", value: (r) => (r.fecha_fin_plan ? new Date(r.fecha_fin_plan) : null), z: "dd/mm/yyyy hh:mm" },
+              { key: "fecha_inicio_real", label: "Inicio Real", value: (r) => (r.fecha_inicio_real ? new Date(r.fecha_inicio_real) : null), z: "dd/mm/yyyy hh:mm" },
+              { key: "fecha_fin_real", label: "Fin Real", value: (r) => (r.fecha_fin_real ? new Date(r.fecha_fin_real) : null), z: "dd/mm/yyyy hh:mm" },
+              { key: "fecha_cierre", label: "Cierre", value: (r) => (r.fecha_cierre ? new Date(r.fecha_cierre) : null), z: "dd/mm/yyyy hh:mm" },
               { key: "reqs", label: "Reqs / Items", value: (r) => `${r.n_reqs_distintos ?? 0} reqs / ${r._count?.repuestos ?? 0} items` },
               { key: "costo_real", label: "Costo Real", value: (r) => Object.entries(r.costo_real_por_moneda ?? {}).filter(([, n]) => n > 0).map(([m, n]) => `${m} ${Number(n).toFixed(2)}`).join(" · ") },
               { key: "costo_estimado", label: "Costo Estimado", value: (r) => Object.entries(r.costo_estimado_por_moneda ?? {}).filter(([, n]) => n > 0).map(([m, n]) => `${m} ${Number(n).toFixed(2)}`).join(" · ") },
-              { key: "fecha_creacion", label: "F. Creación", value: (r) => r.fecha_creacion ? dayjs(r.fecha_creacion).format("DD/MM/YYYY HH:mm") : "" },
+              { key: "fecha_creacion", label: "F. Creación", value: (r) => (r.fecha_creacion ? new Date(r.fecha_creacion) : null), z: "dd/mm/yyyy hh:mm" },
             ]}
           />
           <Button type="primary" icon={<PlusOutlined />} onClick={openNuevoModal}>

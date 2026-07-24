@@ -51,7 +51,7 @@ import {
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import dayjs from "dayjs";
 
-import { formatDateOnly } from "@/lib/dates";
+import { formatDateOnly, dateOnlyLocal } from "@/lib/dates";
 const { Title, Text } = Typography;
 const { TextArea } = Input;
 
@@ -406,10 +406,11 @@ export default function EvaluacionesPage() {
               { key: "estado", label: "Estado", value: (r) => estadoLabel[r.estado] || r.estado },
               { key: "modelo_evaluacion", label: "Tipo Cilindro", value: (r) => r.modelo_evaluacion },
               { key: "evaluado_por", label: "Evaluado por", value: (r) => r.evaluado_por ?? "" },
-              { key: "fecha_evaluacion", label: "F. Evaluación", value: (r) => (r.fecha_evaluacion ? formatDateOnly(r.fecha_evaluacion) : "") },
+              // Fechas como Date real (celda fecha en Excel); dateOnlyLocal evita el corrimiento de día en Lima.
+              { key: "fecha_evaluacion", label: "F. Evaluación", value: (r) => dateOnlyLocal(r.fecha_evaluacion) },
               { key: "solicitado_revision_por", label: "Solicitada por", value: (r) => r.solicitado_revision_por ?? "" },
               { key: "revisado_por", label: "Revisada por", value: (r) => r.revisado_por ?? "" },
-              { key: "fecha_revision", label: "F. Revisión", value: (r) => (r.fecha_revision ? formatDateOnly(r.fecha_revision) : "") },
+              { key: "fecha_revision", label: "F. Revisión", value: (r) => dateOnlyLocal(r.fecha_revision) },
               { key: "informe_nombre", label: "Informe", value: (r) => (r.informe_nombre ? "Sí" : "No") },
             ]}
           />

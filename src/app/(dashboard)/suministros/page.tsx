@@ -28,7 +28,7 @@ import { useResponsive, modalWidth } from "@/lib/responsive";
 import { EditableCell } from "@/components/EditableCell";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import { filtroPorColumna, useColumnasRedimensionables, STICKY_HEADER, paginacionEstandar, useTablaFiltrada } from "@/lib/tables";
-import { formatDateOnly } from "@/lib/dates";
+import { dateOnlyLocal } from "@/lib/dates";
 
 const { Title, Text } = Typography;
 
@@ -230,7 +230,7 @@ function TabCatalogo() {
             { label: "Máximo", value: (r) => r.stock_maximo > 0 ? r.stock_maximo : "" },
             { label: "Ubicación", value: (r) => r.ubicacion ?? "" },
             { label: "Fabricante", value: (r) => r.fabricante ?? "" },
-            { label: "Precio Último", value: (r) => r.precio != null ? Number(r.precio) : "" },
+            { label: "Precio Último", value: (r) => r.precio != null ? Number(r.precio) : "", z: "#,##0.00" },
             { label: "Moneda", value: (r) => r.moneda ?? "" },
           ]}
         />
@@ -549,7 +549,8 @@ function TabEntregas() {
             sheetName="Entregas"
             currentRows={rows}
             columns={[
-              { label: "Fecha", value: (r) => r.fecha_movimiento ? formatDateOnly(r.fecha_movimiento) : "" },
+              // Fechas como Date real (celda fecha en Excel); dateOnlyLocal evita el corrimiento de día en Lima.
+              { label: "Fecha", value: (r) => dateOnlyLocal(r.fecha_movimiento) },
               { label: "Código", value: (r) => r.material_codigo ?? "" },
               { label: "Suministro", value: (r) => r.material_nombre ?? "" },
               { label: "Cant.", value: (r) => Number(r.cantidad) },

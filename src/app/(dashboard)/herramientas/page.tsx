@@ -14,7 +14,7 @@ import dayjs, { Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
 import { useEscrituraApi } from "@/lib/use-escritura";
 import { useResponsive, modalWidth } from "@/lib/responsive";
-import { formatDateOnly } from "@/lib/dates";
+import { formatDateOnly, dateOnlyLocal } from "@/lib/dates";
 import {
   numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE,
   useColumnasOcultas, ColumnasToggleButton, visibleColumns, filtroPorColumna,
@@ -602,9 +602,10 @@ function TabPrestamos() {
                 { key: "cantidad", label: "Cant.", value: (p) => p.cantidad },
                 { key: "prestado_a", label: "Prestado a", value: (p) => p.prestado_a },
                 { key: "ot", label: "OT", value: (p) => p.orden_trabajo?.ot ?? "" },
-                { key: "fecha_entrega", label: "F. Entrega", value: (p) => formatDateOnly(p.fecha_entrega) },
-                { key: "fecha_devolucion_prevista", label: "F. Devol. Prevista", value: (p) => (p.fecha_devolucion_prevista ? formatDateOnly(p.fecha_devolucion_prevista) : "") },
-                { key: "fecha_devolucion_real", label: "F. Devol. Real", value: (p) => (p.fecha_devolucion_real ? formatDateOnly(p.fecha_devolucion_real) : "") },
+                // Fechas como Date real (celda fecha en Excel); dateOnlyLocal evita el corrimiento de día en Lima.
+                { key: "fecha_entrega", label: "F. Entrega", value: (p) => dateOnlyLocal(p.fecha_entrega) },
+                { key: "fecha_devolucion_prevista", label: "F. Devol. Prevista", value: (p) => dateOnlyLocal(p.fecha_devolucion_prevista) },
+                { key: "fecha_devolucion_real", label: "F. Devol. Real", value: (p) => dateOnlyLocal(p.fecha_devolucion_real) },
                 { key: "usuario_entrega", label: "Entrega (usr.)", value: (p) => p.usuario_entrega },
               ]}
             />

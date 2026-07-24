@@ -46,7 +46,7 @@ import {
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import dayjs from "dayjs";
 
-import { formatDateOnly } from "@/lib/dates";
+import { formatDateOnly, dateOnlyLocal } from "@/lib/dates";
 const { Title } = Typography;
 
 interface ContratoRecord {
@@ -328,10 +328,12 @@ export default function ContratosPage() {
                 key: "cod_rep_id", label: "Cód. Reparable",
                 value: (r) => r.codigo_reparacion ? `${r.codigo_reparacion.codigo} - ${r.codigo_reparacion.descripcion}` : "",
               },
-              { key: "fecha_inicio", label: "Inicio", value: (r) => formatDateOnly(r.fecha_inicio) },
-              { key: "fecha_termino", label: "Término", value: (r) => formatDateOnly(r.fecha_termino) },
+              // Fechas como Date real (celda fecha en Excel). dateOnlyLocal
+              // evita el corrimiento de día en Lima con medianoche UTC.
+              { key: "fecha_inicio", label: "Inicio", value: (r) => dateOnlyLocal(r.fecha_inicio) },
+              { key: "fecha_termino", label: "Término", value: (r) => dateOnlyLocal(r.fecha_termino) },
               { key: "dias_reparacion", label: "Días Rep.", value: (r) => r.dias_reparacion },
-              { key: "precio", label: "Precio", value: (r) => Number(r.precio) },
+              { key: "precio", label: "Precio", value: (r) => Number(r.precio), z: "#,##0.00" },
             ]}
           />
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nuevo</Button>

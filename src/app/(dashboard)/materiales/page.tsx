@@ -578,7 +578,7 @@ export default function MaterialesPage() {
               { label: "Categoría", value: (r) => r.categoria_codigo },
               { label: "Clasificación", value: (r) => r.clasificacion_codigo },
               { label: "Unidad medida", value: (r) => r.unidad_medida_codigo },
-              { label: "Precio", value: (r) => r.precio != null ? Number(r.precio) : "" },
+              { label: "Precio", value: (r) => r.precio != null ? Number(r.precio) : "", z: "#,##0.00" },
               { label: "Moneda", value: (r) => r.moneda_codigo ?? "" },
               { label: "Fabricante", value: (r) => r.fabricante_codigo ?? "" },
               { label: "Nº Parte", value: (r) => r.np ?? "" },
