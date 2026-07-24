@@ -34,6 +34,11 @@ const Schema = z.object({
   dias_credito: z.coerce.number().int().min(0).max(365).nullable().optional(),
   // Flag: cuando false, no se calcula IGV (impuesto=0). Para OCs exoneradas.
   aplica_igv: z.boolean().optional(),
+  // Moneda de la OC (USD/SOL). Cuando se cambia desde el editor, tambien
+  // se propaga a todos los items para que quede consistente en la BD y
+  // en el PDF. Normaliza PEN → SOL (legacy) por si algun cliente antiguo
+  // manda el codigo viejo.
+  moneda_oc: z.string().trim().max(10).optional(),
 });
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -52,7 +57,9 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Validación", detail: parsed.error.flatten() }, { status: 400 });
     }
-    const { items, deleteIds, descuento, otros, numero_req, tipo_pago, dias_credito, aplica_igv } = parsed.data;
+    const { items, deleteIds, descuento, otros, numero_req, tipo_pago, dias_credito, aplica_igv, moneda_oc: monedaOcRaw } = parsed.data;
+    // Normalizar PEN legacy → SOL (unico codigo aceptado ahora).
+    const monedaOC = monedaOcRaw === "PEN" ? "SOL" : monedaOcRaw;
 
     const result = await prisma.$transaction(async (tx) => {
       const compra = await tx.compra.findUnique({
@@ -242,6 +249,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
           otros: otrosDec,
           total,
           ...(aplica_igv !== undefined ? { aplica_igv } : {}),
+          ...(monedaOC !== undefined ? { moneda_codigo: monedaOC } : {}),
           ...(numero_req !== undefined ? { numero_req: numero_req || null } : {}),
           ...(tipo_pago !== undefined ? { tipo_pago: tipo_pago || null } : {}),
           ...(dias_credito !== undefined
@@ -249,6 +257,16 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
             : {}),
         },
       });
+
+      // Si cambio la moneda a nivel OC, propagarla a TODOS los ot_repuestos
+      // vinculados. Sin esto, quedarian rows con moneda vieja mientras la OC
+      // muestra la nueva → inconsistencia en /compras y en el PDF.
+      if (monedaOC !== undefined) {
+        await tx.oTRepuesto.updateMany({
+          where: { po_id: compraId },
+          data: { moneda: monedaOC },
+        });
+      }
 
       return { count: itemsActuales.length, subtotal, descuento: descuentoDec, impuesto, otros: otrosDec, total };
     });

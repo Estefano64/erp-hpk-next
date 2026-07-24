@@ -359,43 +359,78 @@ export async function POST(req: NextRequest) {
         .filter((r) => Number(r.cantidad_recibida ?? 0) >= Number(r.cantidad) - 0.0001)
         .map((r) => r.id);
 
-      // 3. Items 100% recibidos → set fecha_entrega_real + metadata.
+      // 3. Items 100% recibidos → set fecha_entrega_real + status ENTREGADO +
+      //    metadata. Se agrega status_oc_codigo = ENTREGADO para que la UI del
+      //    tab Requerimientos de la OT muestre "Recibido" en vez de quedar
+      //    en "En proceso" (antes solo se actualizaba fecha_entrega_real y
+      //    Compra.status_oc_codigo, dejando OTRepuesto.status_oc_codigo en
+      //    PROCESO indefinidamente). NO pisamos los estados finales
+      //    CONSUMIDO_ALMACEN / CONSUMIDO_OC_ABIERTA / ENTREGADO / COMPLETO
+      //    para no revivir reps ya cerrados.
       const dataConFecha: Prisma.OTRepuestoUncheckedUpdateManyInput = {
         fecha_entrega_real: ahora,
+        status_oc_codigo: "ENTREGADO",
         ...(d.nro_guia ? { nro_guia: d.nro_guia } : {}),
         ...(d.nro_factura ? { nro_factura_proveedor: d.nro_factura } : {}),
       };
+      const ESTADOS_FINALES_PROTEGIDOS = [
+        "CONSUMIDO_ALMACEN",
+        "CONSUMIDO_OC_ABIERTA",
+        "ENTREGADO",
+        "COMPLETO",
+        "ANULADO",
+      ];
       if (materialesFullRec.size > 0) {
         await tx.oTRepuesto.updateMany({
           where: {
             po_id: d.po_id,
             material_id: { in: Array.from(materialesFullRec) },
+            NOT: { status_oc_codigo: { in: ESTADOS_FINALES_PROTEGIDOS } },
           },
           data: dataConFecha,
         });
+        // Reflejar cantidad_recibida = cantidad para MAC items al 100% en la OC.
+        // updateMany no puede referenciar la propia cantidad → SQL raw.
+        // Solo aplica a reps que no estén en un estado final (protegemos los
+        // consumos ya cerrados).
+        const matIdsArr = Array.from(materialesFullRec);
+        await tx.$executeRawUnsafe(
+          `UPDATE ot_repuestos
+             SET cantidad_recibida = cantidad
+           WHERE po_id = $1
+             AND material_id = ANY($2::int[])
+             AND (status_oc_codigo IS NULL OR status_oc_codigo NOT IN ('CONSUMIDO_ALMACEN','CONSUMIDO_OC_ABIERTA','ENTREGADO','COMPLETO','ANULADO'))`,
+          d.po_id,
+          matIdsArr,
+        );
       }
       if (freeFullIds.length > 0) {
         await tx.oTRepuesto.updateMany({
-          where: { id: { in: freeFullIds } },
+          where: {
+            id: { in: freeFullIds },
+            NOT: { status_oc_codigo: { in: ESTADOS_FINALES_PROTEGIDOS } },
+          },
           data: dataConFecha,
         });
       }
 
-      // 4. Items parciales / no llegados → solo metadata (sin fecha de entrega).
-      if (d.nro_guia || d.nro_factura) {
-        await tx.oTRepuesto.updateMany({
-          where: {
-            po_id: d.po_id,
-            fecha_entrega_real: null,
-            // El where excluye implícitamente los recién actualizados arriba
-            // (fecha_entrega_real ya no es null para ellos en esta tx).
-          },
-          data: {
-            ...(d.nro_guia ? { nro_guia: d.nro_guia } : {}),
-            ...(d.nro_factura ? { nro_factura_proveedor: d.nro_factura } : {}),
-          },
-        });
-      }
+      // 4. Items parciales / no llegados → solo metadata + status INCOMPLETO
+      //    (para reflejar en la UI que hubo recepcion parcial en la OC pero
+      //    este item especifico todavia no llego al 100%).
+      await tx.oTRepuesto.updateMany({
+        where: {
+          po_id: d.po_id,
+          fecha_entrega_real: null,
+          // El where excluye implicitamente los recien actualizados arriba
+          // (fecha_entrega_real ya no es null para ellos en esta tx).
+          NOT: { status_oc_codigo: { in: ESTADOS_FINALES_PROTEGIDOS } },
+        },
+        data: {
+          status_oc_codigo: "INCOMPLETO",
+          ...(d.nro_guia ? { nro_guia: d.nro_guia } : {}),
+          ...(d.nro_factura ? { nro_factura_proveedor: d.nro_factura } : {}),
+        },
+      });
 
       // Actualizar las OTs afectadas por esta PO: ubicación física + estado
       // de recursos. La OC puede agrupar items de OT externas + internas;
