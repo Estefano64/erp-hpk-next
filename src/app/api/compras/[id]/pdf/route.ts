@@ -227,6 +227,16 @@ export async function GET(_req: NextRequest, { params }: Params) {
     const firmaAprobo = rutaFirmaDe(compra.usuario_aprueba);
     const nombreElaboro = nombreParaFirma(compra.usuario_solicita);
     const nombreAprobo = nombreParaFirma(compra.usuario_aprueba);
+    // Email del creador de la OC: se busca por nombre en Usuario. Si no
+    // matchea (nombre libre, alias, cuenta borrada) se degrada a null y
+    // el PDF simplemente omite la linea "Correo emisor".
+    const usuarioCreador = compra.usuario_solicita
+      ? await prisma.usuario.findFirst({
+          where: { nombre: compra.usuario_solicita, activo: true },
+          select: { email: true },
+        })
+      : null;
+    const emailCreador = usuarioCreador?.email ?? null;
     const renderFirma = (rutaImg: string | null, nombre: string) =>
       rutaImg
         ? `<img class="img-firma" src="${esc(rutaImg)}" alt="Firma" /><div class="nombre">${esc(nombre)}</div>`
@@ -422,6 +432,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
           <div class="company-text">
             <div class="company-name">HP&amp;K INVERSIONES S.R.L.</div>
             <div class="company-data">
+              RUC: 20532384088<br/>
               Parque Industrial Río Seco Mz C lote 17,<br/>
               Cerro Colorado - Arequipa - Perú<br/>
               ventas@hpkinv.com
@@ -435,6 +446,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
           <tr><td class="lbl">Proyecto:</td><td>AREQUIPA</td></tr>
           <tr><td class="lbl">OT:</td><td>${esc(otReferencias || "-")}</td></tr>
           <tr><td class="lbl">${areasTallerSet.size > 0 ? "Área:" : "REQ:"}</td><td>${esc(reqHeaderLabel)}</td></tr>
+          ${emailCreador ? `<tr><td class="lbl">Correo emisor:</td><td>${esc(emailCreador)}</td></tr>` : ""}
         </table>
       </td>
     </tr>
