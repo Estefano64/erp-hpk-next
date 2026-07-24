@@ -27,7 +27,7 @@ import {
   useAbortableFetch,
 } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
-import { formatDateOnly } from "@/lib/dates";
+import { dateOnlyLocal } from "@/lib/dates";
 import { formatReporteCorrectivoCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
 import { areasTallerGrouped } from "@/lib/areas-taller";
 
@@ -507,9 +507,10 @@ export default function CorrectivosPage() {
                   },
                   { key: "ot_estado", label: "Estado OT", value: (r) => r.ot_interna?.ot_status?.nombre ?? "" },
                   { key: "reportado_por", label: "Reportado por", value: (r) => r.reportado_por ?? "" },
-                  { key: "fecha", label: "Fecha", value: (r) => r.fecha ? formatDateOnly(r.fecha) : "" },
+                  // Fechas como Date real (celda fecha en Excel, ordenable).
+                  { key: "fecha", label: "Fecha", value: (r) => dateOnlyLocal(r.fecha) },
                   { key: "realizado_por", label: "Realizado por", value: (r) => r.realizado_por ?? "" },
-                  { key: "fecha_correctivo", label: "Fecha cierre", value: (r) => r.fecha_correctivo ? formatDateOnly(r.fecha_correctivo) : "" },
+                  { key: "fecha_correctivo", label: "Fecha cierre", value: (r) => dateOnlyLocal(r.fecha_correctivo) },
                 ]}
               />
             </Space>

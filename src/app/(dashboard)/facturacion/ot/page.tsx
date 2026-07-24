@@ -18,7 +18,7 @@ import dayjs, { Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
 import { useEscrituraApi } from "@/lib/use-escritura";
 import { useResponsive, modalWidth } from "@/lib/responsive";
-import { formatDateOnly } from "@/lib/dates";
+import { formatDateOnly, dateOnlyLocal } from "@/lib/dates";
 import { useColumnasRedimensionables, STICKY_HEADER, paginacionEstandar } from "@/lib/tables";
 import { uploadToR2, openR2File } from "@/lib/r2-client";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
@@ -378,8 +378,9 @@ export default function FacturacionOTPage() {
                 value: (r) => r.pdfs_ok ? "5/5 PDFs OK" : `Faltan: ${r.faltantes.join(", ")}`,
               },
               { key: "fact", label: "N° Factura", value: (r) => r.nro_factura ?? "Pendiente" },
-              { key: "fecha_fact", label: "F. Facturación", value: (r) => r.fecha_facturacion ? formatDateOnly(r.fecha_facturacion) : "" },
-              { key: "monto", label: "Monto", value: (r) => r.monto_cotizacion != null ? Number(r.monto_cotizacion) : "" },
+              // Fecha como Date real y monto con formato — celdas tipadas.
+              { key: "fecha_fact", label: "F. Facturación", value: (r) => dateOnlyLocal(r.fecha_facturacion) },
+              { key: "monto", label: "Monto", value: (r) => r.monto_cotizacion != null ? Number(r.monto_cotizacion) : "", z: "#,##0.00" },
             ]}
           />
         </Space>

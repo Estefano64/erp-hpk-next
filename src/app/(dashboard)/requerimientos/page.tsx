@@ -22,7 +22,7 @@ import { useResponsive, modalWidth } from "@/lib/responsive";
 
 dayjs.extend(isoWeek);
 import { useCachedFetch } from "@/lib/useCachedFetch";
-import { formatDateOnly, formatDateOnlyShort } from "@/lib/dates";
+import { formatDateOnly, formatDateOnlyShort, dateOnlyLocal } from "@/lib/dates";
 import { formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
 import { R2FileLink } from "@/components/R2FileLink";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
@@ -1348,14 +1348,16 @@ export default function RequerimientosPage() {
               { label: "UM", value: (r) => r.unidad_medida ?? r.material?.unidad_medida_codigo ?? "" },
               { label: "Stock", value: (r) => r.material ? Number(r.material.stock_actual ?? 0) : "" },
               { label: "Cliente", value: (r) => r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "" },
-              { label: "P. Unit", value: (r) => r.precio_unitario != null ? Number(r.precio_unitario) : "" },
+              { label: "P. Unit", value: (r) => r.precio_unitario != null ? Number(r.precio_unitario) : "", z: "#,##0.00" },
               { label: "Moneda", value: (r) => r.moneda ?? "" },
-              { label: "Subtotal", value: (r) => r.precio_unitario != null ? Number(r.precio_unitario) * Number(r.cantidad) : "" },
+              { label: "Subtotal", value: (r) => r.precio_unitario != null ? Number(r.precio_unitario) * Number(r.cantidad) : "", z: "#,##0.00" },
               { label: "Nro OC", value: (r) => r.compra?.numero_po ?? "" },
               { label: "Proveedor", value: (r) => r.proveedor?.razon_social ?? "" },
-              { label: "F. Solicitud", value: (r) => r.fecha_solicitud ? formatDateOnly(r.fecha_solicitud) : "" },
-              { label: "F. Requerida", value: (r) => r.fecha_requerida ? formatDateOnly(r.fecha_requerida) : "" },
-              { label: "F. Entrega", value: (r) => r.fecha_entrega_esperada ? formatDateOnly(r.fecha_entrega_esperada) : "" },
+              // Fechas como Date real (celda fecha en Excel); dateOnlyLocal
+              // toma la parte de fecha UTC — mismo día que muestra la tabla.
+              { label: "F. Solicitud", value: (r) => dateOnlyLocal(r.fecha_solicitud) },
+              { label: "F. Requerida", value: (r) => dateOnlyLocal(r.fecha_requerida) },
+              { label: "F. Entrega", value: (r) => dateOnlyLocal(r.fecha_entrega_esperada) },
             ]}
           />
           <ColumnasToggleButton<GrupoReq>
