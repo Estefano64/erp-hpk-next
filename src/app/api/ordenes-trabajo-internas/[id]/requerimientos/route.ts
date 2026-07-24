@@ -34,7 +34,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
         status_cotizacion: { select: { codigo: true, nombre: true } },
         status_oc: { select: { codigo: true, nombre: true } },
         proveedor: { select: { id: true, razon_social: true } },
-        compra: { select: { id: true, numero_po: true, fecha_entrega_esperada: true } },
+        compra: { select: { id: true, numero_po: true, fecha_entrega_esperada: true, moneda_codigo: true } },
         adjuntos: { select: { id: true, nombre_archivo: true, r2_key: true, tamano: true } },
       },
       orderBy: { item_req: "asc" },
