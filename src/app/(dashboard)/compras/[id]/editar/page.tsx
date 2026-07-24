@@ -132,6 +132,11 @@ export default function EditarOCPage() {
   // aplica_igv en la BD) y afecta el cálculo del total y el render del PDF.
   const [aplicaIgv, setAplicaIgv] = useState<boolean>(true);
   const [originalAplicaIgv, setOriginalAplicaIgv] = useState<boolean>(true);
+  // Moneda de la OC (SOL/USD). El cambio afecta el compra.moneda_codigo Y se
+  // propaga a todos los OTRepuesto de la OC — sin la propagacion, quedaban
+  // items con moneda vieja mientras la OC mostraba la nueva.
+  const [monedaOC, setMonedaOC] = useState<string>("USD");
+  const [originalMonedaOC, setOriginalMonedaOC] = useState<string>("USD");
   const [messageApi, contextHolder] = message.useMessage();
 
   const fetchCompra = useCallback(async () => {
@@ -197,6 +202,11 @@ export default function EditarOCPage() {
       const aig = c.aplica_igv ?? true;
       setAplicaIgv(aig);
       setOriginalAplicaIgv(aig);
+      // Moneda: normalizamos PEN legacy → SOL en la UI para consistencia.
+      const monRaw = c.moneda ?? "USD";
+      const mon = monRaw === "PEN" ? "SOL" : monRaw;
+      setMonedaOC(mon);
+      setOriginalMonedaOC(mon);
     } catch (e) {
       messageApi.error(e instanceof Error ? e.message : "Error");
     } finally {
@@ -382,13 +392,14 @@ export default function EditarOCPage() {
     tipoPago !== originalTipoPago ||
     diasCredito !== originalDiasCredito ||
     aplicaIgv !== originalAplicaIgv ||
+    monedaOC !== originalMonedaOC ||
     JSON.stringify(visibleRows) !== originalRowsHash
     || rows.some((r) => r._deleted && r.id != null)
     || descuento !== originalDescuento
     || otros !== originalOtros
     || otrosSigno !== originalOtrosSigno
     || numeroReq !== originalNumeroReq,
-  [visibleRows, originalRowsHash, rows, descuento, originalDescuento, otros, originalOtros, otrosSigno, originalOtrosSigno, numeroReq, originalNumeroReq, tipoPago, originalTipoPago, diasCredito, originalDiasCredito, aplicaIgv, originalAplicaIgv]);
+  [visibleRows, originalRowsHash, rows, descuento, originalDescuento, otros, originalOtros, otrosSigno, originalOtrosSigno, numeroReq, originalNumeroReq, tipoPago, originalTipoPago, diasCredito, originalDiasCredito, aplicaIgv, originalAplicaIgv, monedaOC, originalMonedaOC]);
 
   useUnsavedChangesWarning(hayCambios, "Hay cambios sin guardar en la OC.", `compra-editar-${params?.id ?? "?"}`);
 
@@ -439,6 +450,9 @@ export default function EditarOCPage() {
         tipo_pago: tipoPago,
         dias_credito: tipoPago === "CONTADO" ? 0 : (diasCredito ?? null),
         aplica_igv: aplicaIgv,
+        // Solo enviamos moneda_oc si el user la cambio, para no tocar
+        // otros_repuestos.moneda cuando no hace falta.
+        ...(monedaOC !== originalMonedaOC ? { moneda_oc: monedaOC } : {}),
       };
       const res = await fetch(`/api/compras/${compraId}/items`, {
         method: "PATCH",
@@ -684,7 +698,7 @@ export default function EditarOCPage() {
             OC es exonerada: el cálculo del total no suma el 18% y el PDF
             omite la línea de IGV. */}
         <Row gutter={12} align="middle" style={{ marginTop: 10 }}>
-          <Col xs={24} md={12}>
+          <Col xs={24} md={8}>
             <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 2 }}>
               <Tooltip title="Cuando está ACTIVADO, el total incluye IGV (18%) — comportamiento estándar. Cuando está DESACTIVADO, la OC es EXONERADA de IGV: el cálculo no suma el 18% y la plantilla PDF omite la línea de IGV. Útil para importaciones, servicios sin IGV o proveedores no domiciliados.">
                 Aplicar IGV a esta OC
@@ -703,6 +717,27 @@ export default function EditarOCPage() {
                   : "EXONERADA: sin IGV — el total NO incluye el 18%"}
               </Text>
             </Space>
+          </Col>
+          <Col xs={24} md={8}>
+            <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 2 }}>
+              <Tooltip title="Moneda de esta OC. Al cambiar, se actualiza la moneda de todos los items vinculados — los importes numericos no cambian, solo la etiqueta y el prefijo en el PDF.">
+                Moneda de la OC
+              </Tooltip>
+            </div>
+            <Select
+              value={monedaOC}
+              onChange={(v) => setMonedaOC(v)}
+              options={[
+                { value: "SOL", label: "SOL (S/)" },
+                { value: "USD", label: "USD ($)" },
+              ]}
+              style={{ width: "100%" }}
+            />
+            {monedaOC !== originalMonedaOC && (
+              <Text type="warning" style={{ fontSize: 11, display: "block", marginTop: 4 }}>
+                Cambio: {originalMonedaOC} → {monedaOC}. Se aplicara a los {visibleRows.length} item(s) al guardar.
+              </Text>
+            )}
           </Col>
         </Row>
 
@@ -759,7 +794,7 @@ export default function EditarOCPage() {
             <Statistic title="Items" value={visibleRows.length} />
           </Col>
           <Col xs={12} md={4}>
-            <Statistic title="Subtotal" value={totales.subtotal} precision={2} prefix={compra.moneda} />
+            <Statistic title="Subtotal" value={totales.subtotal} precision={2} prefix={monedaOC} />
           </Col>
           <Col xs={12} md={4}>
             <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 2 }}>Descuento</div>
@@ -769,7 +804,7 @@ export default function EditarOCPage() {
               step={0.01}
               precision={2}
               style={{ width: "100%" }}
-              prefix={compra.moneda}
+              prefix={monedaOC}
               onChange={(v) => setDescuento(v == null ? 0 : Number(v))}
             />
           </Col>
@@ -778,7 +813,7 @@ export default function EditarOCPage() {
               title={aplicaIgv ? "IGV (18%)" : "IGV"}
               value={totales.igv}
               precision={2}
-              prefix={compra.moneda}
+              prefix={monedaOC}
               suffix={aplicaIgv ? undefined : <Tag color="orange" style={{ marginLeft: 4 }}>Exonerado</Tag>}
             />
           </Col>
@@ -805,13 +840,13 @@ export default function EditarOCPage() {
                 step={0.01}
                 precision={2}
                 style={{ width: "100%" }}
-                prefix={compra.moneda}
+                prefix={monedaOC}
                 onChange={(v) => setOtros(v == null ? 0 : Number(v))}
               />
             </Space.Compact>
           </Col>
           <Col xs={12} md={4}>
-            <Statistic title="TOTAL" value={totales.total} precision={2} prefix={compra.moneda} styles={{ content: { color: brand.navy, fontWeight: 700 } }} />
+            <Statistic title="TOTAL" value={totales.total} precision={2} prefix={monedaOC} styles={{ content: { color: brand.navy, fontWeight: 700 } }} />
           </Col>
         </Row>
       </Card>
