@@ -9,6 +9,7 @@ import {
   PlusOutlined, ReloadOutlined, CloseOutlined, SaveOutlined,
   EditOutlined, DeleteOutlined, FileSyncOutlined, SendOutlined,
   PaperClipOutlined, CalendarOutlined, ThunderboltOutlined,
+  EyeOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
@@ -1227,7 +1228,18 @@ export default function OTRequerimientosTab({
             </Tag>
           ) : <Text type="secondary">—</Text>}
           {r.compra?.numero_po && (
-            <Text style={{ fontSize: 10 }} code>{r.compra.numero_po}</Text>
+            <Space size={2}>
+              <Text style={{ fontSize: 10 }} code>{r.compra.numero_po}</Text>
+              <Tooltip title="Ver PDF de la OC">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<EyeOutlined style={{ fontSize: 12 }} />}
+                  onClick={() => window.open(`/api/compras/${r.compra?.id}/pdf`, "_blank")}
+                  style={{ padding: "0 4px", height: 18, lineHeight: 1 }}
+                />
+              </Tooltip>
+            </Space>
           )}
           {r.compra?.fecha_entrega_esperada && (
             <Text type="secondary" style={{ fontSize: 10 }}>
