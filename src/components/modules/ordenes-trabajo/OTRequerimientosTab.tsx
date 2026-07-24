@@ -56,7 +56,7 @@ interface RequerimientoRow {
   status_cotizacion: { codigo: string; nombre: string } | null;
   status_oc: { codigo: string; nombre: string } | null;
   proveedor: { id: number; razon_social: string } | null;
-  compra: { id: number; numero_po: string; fecha_entrega_esperada: string | null } | null;
+  compra: { id: number; numero_po: string; fecha_entrega_esperada: string | null; moneda_codigo: string | null } | null;
   adjuntos?: { id: number; nombre_archivo: string; r2_key: string; tamano: number }[];
   po_id: number | null;
   nro_oc: string | null;
@@ -979,17 +979,23 @@ export default function OTRequerimientosTab({
   //   3. precio_unitario sin OC → ESTIMADO: cotización pendiente
   //   4. material.precio → ESTIMADO: precio de catálogo (fallback)
   function precioEfectivo(r: RequerimientoRow): { precio: number; moneda: string; esEstimado: boolean } | null {
+    // La moneda de la OC vinculada gana sobre r.moneda si el rep esta
+    // pegado a una OC. Sin esto, items con moneda desincronizada muestran
+    // USD 900 mientras la OC dice SOL 900. Normalizamos PEN legacy → SOL.
+    const monedaOCRaw = r.compra?.moneda_codigo;
+    const monedaOC = monedaOCRaw === "PEN" ? "SOL" : monedaOCRaw;
+    const preferMoneda = (fallback: string): string => monedaOC ?? fallback;
     if (r.oc_precio_unitario != null) {
       const pu = Number(r.oc_precio_unitario);
-      if (Number.isFinite(pu)) return { precio: pu, moneda: r.moneda ?? "USD", esEstimado: false };
+      if (Number.isFinite(pu)) return { precio: pu, moneda: preferMoneda(r.moneda ?? "USD"), esEstimado: false };
     }
     if (r.precio_unitario != null) {
       const pu = Number(r.precio_unitario);
-      if (Number.isFinite(pu)) return { precio: pu, moneda: r.moneda ?? "USD", esEstimado: r.po_id == null };
+      if (Number.isFinite(pu)) return { precio: pu, moneda: preferMoneda(r.moneda ?? "USD"), esEstimado: r.po_id == null };
     }
     if (r.material?.precio != null) {
       const pu = Number(r.material.precio);
-      if (Number.isFinite(pu)) return { precio: pu, moneda: r.material.moneda_codigo ?? r.moneda ?? "USD", esEstimado: true };
+      if (Number.isFinite(pu)) return { precio: pu, moneda: preferMoneda(r.material.moneda_codigo ?? r.moneda ?? "USD"), esEstimado: true };
     }
     return null;
   }
@@ -2098,13 +2104,31 @@ function RequerimientosAgrupados({
       if (!m.has(key)) m.set(key, []);
       m.get(key)!.push(r);
     }
-    // Ordenar grupos: primero por fecha_solicitud desc del item más reciente
+    // Ordenar grupos por SUFIJO NUMERICO ascendente del nro_req.
+    // Antes se ordenaba por fecha_solicitud desc, que daba un orden
+    // "temporal" util al ver la actividad reciente pero rompia la
+    // secuencia natural de los requerimientos (aparecia OI003126-6
+    // antes que -2). Se extrae el numero despues del ultimo guion
+    // (comun a todos los formatos: OI003126-N, V000126-N, 3926-N).
+    // "(sin nro)" queda al final.
+    const suffijoNum = (nro: string): number => {
+      if (nro === "(sin nro)") return Number.MAX_SAFE_INTEGER;
+      const m = nro.match(/-(\d+)$/);
+      return m ? Number(m[1]) : Number.MAX_SAFE_INTEGER;
+    };
     return [...m.entries()]
       .map(([nro, items]) => {
         const sorted = [...items].sort((a, b) => (a.item_req ?? 0) - (b.item_req ?? 0));
         return { nro, items: sorted };
       })
-      .sort((a, b) => (b.items[0]?.fecha_solicitud ?? "").localeCompare(a.items[0]?.fecha_solicitud ?? ""));
+      .sort((a, b) => {
+        const na = suffijoNum(a.nro);
+        const nb = suffijoNum(b.nro);
+        if (na !== nb) return na - nb;
+        // Tiebreak: nro_req completo alfabetico (para distintos prefijos
+        // en una misma OT — raro pero posible).
+        return a.nro.localeCompare(b.nro);
+      });
   }, [rows]);
 
   // Estado de colapso por grupo
@@ -2137,14 +2161,23 @@ function RequerimientosAgrupados({
           if (sr === "ANULADO" || sr === "DESAPROBADO") continue;
           const cant = Number(it.cantidad);
           let pu: number | null = null;
-          let moneda = it.moneda ?? "USD";
+          // La moneda de la OC vinculada (compra.moneda_codigo) es la
+          // fuente de verdad — pisa a it.moneda si difieren. Sin esto,
+          // items cuyo OTRepuesto.moneda quedo desincronizado (OC creada
+          // en USD y luego cambiada a SOL en el editor pre-fix) siguen
+          // mostrando la moneda vieja aunque el PDF de la OC muestre la
+          // nueva. Normalizamos PEN legacy → SOL.
+          const monedaOC = it.compra?.moneda_codigo === "PEN" ? "SOL" : it.compra?.moneda_codigo;
+          let moneda = monedaOC ?? it.moneda ?? "USD";
           if (it.oc_precio_unitario != null) {
             pu = Number(it.oc_precio_unitario);
           } else if (it.precio_unitario != null) {
             pu = Number(it.precio_unitario);
           } else if (it.material?.precio != null) {
             pu = Number(it.material.precio);
-            moneda = it.material.moneda_codigo ?? moneda;
+            // Si NO hay OC vinculada, el fallback al material puede tener
+            // su propia moneda. Con OC vinculada, ya se decidio antes.
+            if (!monedaOC) moneda = it.material.moneda_codigo ?? moneda;
           }
           if (pu != null && Number.isFinite(pu)) {
             subtotalGrupo[moneda] = (subtotalGrupo[moneda] ?? 0) + cant * pu;
