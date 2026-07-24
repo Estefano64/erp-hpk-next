@@ -10,6 +10,7 @@ import {
 } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
 import { brand, space as spc } from "@/lib/theme";
+import { construirLibroExcel, type ValorCelda } from "@/lib/excel-export";
 
 const { Text } = Typography;
 
@@ -18,8 +19,22 @@ export interface ExportColumn<T> {
   key?: string;
   /** Header de la columna en el .xlsx */
   label: string;
-  /** Cómo extraer el valor desde el record */
-  value: (record: T) => string | number | boolean | null | undefined;
+  /**
+   * Cómo extraer el valor desde el record. El TIPO del valor define la celda:
+   *   - `Date`   → celda fecha real (ordenable/filtrable en Excel). Para
+   *     columnas solo-día usar `dateOnlyLocal` de @/lib/dates (los ISO de
+   *     medianoche UTC corren un día en Lima con `new Date()` directo).
+   *   - `number` → celda numérica (los Decimal de Prisma llegan como string
+   *     por JSON: convertir con Number() cuando corresponda).
+   *   - `string`/`boolean` → texto, como siempre.
+   */
+  value: (record: T) => string | number | boolean | Date | null | undefined;
+  /**
+   * Formato numérico Excel de la columna (código `z`), opcional.
+   * Ej: "#,##0.00" para montos, "dd/mm/yyyy hh:mm" para fecha+hora.
+   * Las celdas Date sin esto usan dd/mm/yyyy.
+   */
+  z?: string;
   /** Si false, arranca DESMARCADA en el selector. Default: true. */
   defaultSelected?: boolean;
 }
@@ -372,17 +387,20 @@ export function ExportarExcelButton<T>({
         colsParaExport = columns.filter((c) => selectedCols.includes(colKey(c)));
       }
 
-      const XLSX = await import("xlsx");
       const rows = filtrados.map((r) => {
-        const row: Record<string, unknown> = {};
+        const row: Record<string, ValorCelda> = {};
         for (const col of colsParaExport) {
           row[col.label] = col.value(r) ?? "";
         }
         return row;
       });
-      const ws = XLSX.utils.json_to_sheet(rows);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, sheetName ?? filename);
+      // Formatos por label (solo columnas que declaran `z`).
+      const formatos: Record<string, string> = {};
+      for (const col of colsParaExport) {
+        if (col.z) formatos[col.label] = col.z;
+      }
+      const wb = await construirLibroExcel(rows, sheetName ?? filename, formatos);
+      const XLSX = await import("xlsx");
       const ts = dayjs().format("YYYYMMDD-HHmm");
       XLSX.writeFile(wb, `${filename}-${ts}.xlsx`);
       message.success(`Excel descargado: ${filtrados.length} registro(s)`);

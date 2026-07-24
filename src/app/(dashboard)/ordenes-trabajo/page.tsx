@@ -47,7 +47,7 @@ import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
-import { formatDateOnly } from "@/lib/dates";
+import { formatDateOnly, dateOnlyLocal } from "@/lib/dates";
 import { diasEnTaller } from "@/lib/dias-taller";
 import { puedeVerCostosOT } from "@/lib/acceso-rutas";
 import OTDetalleModal from "@/components/modules/ordenes-trabajo/OTDetalleModal";
@@ -1113,11 +1113,16 @@ export default function OrdenesTrabajoPage() {
               { key: "id_viajero", label: "ID Viajero", value: (r) => r.id_viajero ?? "" },
               { key: "guia_remision", label: "Guía Remisión", value: (r) => r.guia_remision ?? "" },
               { key: "empresa_entrega", label: "Empresa entrega", value: (r) => r.empresa_entrega ?? "" },
-              { key: "fecha_recepcion", label: "Fecha Recepción", value: (r) => formatDateOnly(r.fecha_recepcion) ?? "" },
-              { key: "fecha_requerimiento_cliente", label: "F. Req. Cliente", value: (r) => formatDateOnly(r.fecha_requerimiento_cliente) ?? "" },
-              { key: "fecha_reprogramada", label: "F. Reprogramada", value: (r) => formatDateOnly(r.fecha_reprogramada) ?? "" },
-              { key: "pcr", label: "PCR", value: (r) => r.pcr ?? "" },
-              { key: "horas", label: "Horas", value: (r) => r.horas ?? "" },
+              // Fechas: se exportan como Date real (celda fecha en Excel,
+              // ordenable/filtrable). dateOnlyLocal evita el corrimiento de
+              // día en Lima con los ISO de medianoche UTC.
+              { key: "fecha_recepcion", label: "Fecha Recepción", value: (r) => dateOnlyLocal(r.fecha_recepcion) },
+              { key: "fecha_requerimiento_cliente", label: "F. Req. Cliente", value: (r) => dateOnlyLocal(r.fecha_requerimiento_cliente) },
+              { key: "fecha_reprogramada", label: "F. Reprogramada", value: (r) => dateOnlyLocal(r.fecha_reprogramada) },
+              // Decimales de Prisma: por JSON llegan como string → Number()
+              // para que Excel los trate como número (sumables).
+              { key: "pcr", label: "PCR", value: (r) => (r.pcr != null ? Number(r.pcr) : "") },
+              { key: "horas", label: "Horas", value: (r) => (r.horas != null ? Number(r.horas) : "") },
               { key: "porcentaje_pcr", label: "% PCR", value: (r) => r.porcentaje_pcr ?? "" },
               { key: "contrato_dias", label: "Días contrato", value: (r) => r.contrato_dias ?? "" },
               { key: "prioridad_atencion", label: "Prioridad", value: (r) => r.prioridad_atencion?.nombre ?? "" },
@@ -1140,21 +1145,22 @@ export default function OrdenesTrabajoPage() {
                 { key: "costo_hh", label: "Costo HH", value: (r: OTRecord) => monedaTotStr(r.costos_resumen?.hh), defaultSelected: false },
               ] : []),
               // Histórico (importado del Excel)
-              { label: "Fecha Evaluación", value: (r) => formatDateOnly(r.fecha_evaluacion ?? null) ?? "" },
+              { label: "Fecha Evaluación", value: (r) => dateOnlyLocal(r.fecha_evaluacion ?? null) },
               { label: "Evaluador", value: (r) => r.evaluador ?? "" },
               { label: "Nro Informe Evaluación", value: (r) => r.nro_informe_evaluacion ?? "" },
-              { label: "Fecha Cotización", value: (r) => formatDateOnly(r.fecha_cotizacion ?? null) ?? "" },
+              { label: "Fecha Cotización", value: (r) => dateOnlyLocal(r.fecha_cotizacion ?? null) },
               { label: "Nro Cotización", value: (r) => r.nro_cotizacion ?? "" },
-              { label: "Monto Cotización", value: (r) => r.monto_cotizacion ?? "" },
-              { label: "Fecha Aprobación", value: (r) => formatDateOnly(r.fecha_aprobacion ?? null) ?? "" },
-              { label: "Fecha Entrega", value: (r) => formatDateOnly(r.fecha_entrega ?? null) ?? "" },
+              { label: "Monto Cotización", value: (r) => (r.monto_cotizacion != null && r.monto_cotizacion !== "" ? Number(r.monto_cotizacion) : ""), z: "#,##0.00" },
+              { label: "Fecha Aprobación", value: (r) => dateOnlyLocal(r.fecha_aprobacion ?? null) },
+              { label: "Fecha Entrega", value: (r) => dateOnlyLocal(r.fecha_entrega ?? null) },
               { label: "Cumplimiento", value: (r) => r.cumplimiento ?? "" },
               { label: "Días Proceso", value: (r) => r.dias_proceso ?? "" },
               { label: "Días en Taller", value: (r) => r.dias_en_taller ?? "" },
               { label: "Nro Factura", value: (r) => r.nro_factura ?? "" },
-              { label: "Fecha Facturación", value: (r) => formatDateOnly(r.fecha_facturacion ?? null) ?? "" },
+              { label: "Fecha Facturación", value: (r) => dateOnlyLocal(r.fecha_facturacion ?? null) },
               { label: "Usuario Crea", value: (r) => r.usuario_crea ?? "" },
-              { label: "Fecha Creación", value: (r) => formatDateOnly(r.fecha_creacion) ?? "" },
+              // Fecha+hora real de creación (no solo el día).
+              { label: "Fecha Creación", value: (r) => (r.fecha_creacion ? new Date(r.fecha_creacion) : null), z: "dd/mm/yyyy hh:mm" },
             ]}
           />
           <Button type="primary" icon={<PlusOutlined />} onClick={() => router.push("/ordenes-trabajo/nueva")}>
