@@ -131,6 +131,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
           ...AUDIT_OT_SELECT_FIELDS,
           // Fechas que se exigen para cerrar — necesarias para validar el
           // gate de "cerrar OT" mezclando body + valores actuales.
+          tipo_codigo: true,
           fecha_recepcion: true,
           fecha_evaluacion: true,
           fecha_aprobacion_evaluacion: true,
@@ -175,10 +176,17 @@ export async function PUT(req: NextRequest, { params }: Params) {
         type FechaKey =
           | "fecha_recepcion" | "fecha_evaluacion" | "fecha_aprobacion_evaluacion"
           | "fecha_cotizacion" | "fecha_aprobacion" | "fecha_entrega" | "fecha_facturacion";
+        // BIE/SER no tienen recepción ni hoja de evaluación (son de cilindros),
+        // así que esas fechas no pueden llenarse y no se exigen para cerrar.
+        const tipoEfectivo = (body.tipo_codigo as string | undefined)
+          ?? (beforeRec.tipo_codigo as string | null | undefined);
+        const esBienOServicio = tipoEfectivo === "BIE" || tipoEfectivo === "SER";
         const FECHAS_REQUERIDAS_CIERRE: Array<{ key: FechaKey; label: string }> = [
-          { key: "fecha_recepcion", label: "Fecha Recepción" },
-          { key: "fecha_evaluacion", label: "Fecha Evaluación" },
-          { key: "fecha_aprobacion_evaluacion", label: "Fecha Aprobación Evaluación" },
+          ...(esBienOServicio ? [] : [
+            { key: "fecha_recepcion", label: "Fecha Recepción" },
+            { key: "fecha_evaluacion", label: "Fecha Evaluación" },
+            { key: "fecha_aprobacion_evaluacion", label: "Fecha Aprobación Evaluación" },
+          ] as Array<{ key: FechaKey; label: string }>),
           { key: "fecha_cotizacion", label: "Fecha Cotización" },
           { key: "fecha_aprobacion", label: "Fecha Aprobación (cliente)" },
           { key: "fecha_entrega", label: "Fecha Entrega" },
