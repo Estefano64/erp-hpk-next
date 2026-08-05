@@ -836,6 +836,10 @@ export default function AceptacionesPage() {
   // ── Popover preview de un requerimiento ─────────────────────────────
   function popoverRQ(r: ReqPendiente) {
     const precioCat = r.material?.precio != null ? Number(r.material.precio) : null;
+    // Total estimado: precio del req con fallback a catálogo (mismo criterio
+    // que la columna "P. Estimado Total" de la tabla).
+    const unitTotal = r.precio_unitario != null ? Number(r.precio_unitario) : precioCat;
+    const monTotal = r.precio_unitario != null ? (r.moneda ?? "USD") : (r.material?.moneda_codigo ?? "USD");
     return (
       <div style={{ maxWidth: 400, fontSize: 12 }}>
         <div style={{ fontWeight: 600, color: brand.navy, marginBottom: 6 }}>
@@ -856,6 +860,12 @@ export default function AceptacionesPage() {
           <Col span={12}>
             <span style={{ color: "#888" }}>Precio catálogo:</span>{" "}
             <b>{precioCat != null ? `${r.material?.moneda_codigo ?? "USD"} ${precioCat.toFixed(2)}` : "—"}</b>
+          </Col>
+          <Col span={12}>
+            <span style={{ color: "#888" }}>Total estimado:</span>{" "}
+            <b style={{ color: brand.navy }}>
+              {unitTotal != null ? `${monTotal} ${(unitTotal * Number(r.cantidad)).toFixed(2)}` : "—"}
+            </b>
           </Col>
           <Col span={12}><span style={{ color: "#888" }}>F. Solicitud:</span> <b>{formatDateOnly(r.fecha_solicitud)}</b></Col>
           <Col span={12}><span style={{ color: "#888" }}>F. Requerida:</span> <b>{r.fecha_requerida ? formatDateOnly(r.fecha_requerida) : "—"}</b></Col>
@@ -1153,17 +1163,22 @@ export default function AceptacionesPage() {
     },
     {
       key: "total_estimado", title: "P. Estimado Total", width: 140, align: "right",
+      // Total = cantidad × precio del req; si el solicitante no cargó precio,
+      // cae al precio de catálogo (mismo criterio que los KPIs del listado).
+      // Antes solo usaba catálogo y los servicios / no catalogados quedaban "—".
       sorter: (a, b) => {
-        const pa = Number(a.material?.precio ?? 0) * Number(a.cantidad ?? 0);
-        const pb = Number(b.material?.precio ?? 0) * Number(b.cantidad ?? 0);
-        return pa - pb;
+        const ua = Number(a.precio_unitario ?? a.material?.precio ?? 0);
+        const ub = Number(b.precio_unitario ?? b.material?.precio ?? 0);
+        return ua * Number(a.cantidad ?? 0) - ub * Number(b.cantidad ?? 0);
       },
       render: (_, r) => {
-        if (r.material?.precio == null) return <Text type="secondary">—</Text>;
-        const total = Number(r.material.precio) * Number(r.cantidad);
+        const usaReq = r.precio_unitario != null;
+        const unit = usaReq ? Number(r.precio_unitario) : (r.material?.precio != null ? Number(r.material.precio) : null);
+        if (unit == null) return <Text type="secondary">—</Text>;
+        const mon = usaReq ? (r.moneda ?? "USD") : (r.material?.moneda_codigo ?? "USD");
         return (
           <Text strong style={{ color: brand.navy }}>
-            {r.material.moneda_codigo ?? "USD"} {total.toFixed(2)}
+            {mon} {(unit * Number(r.cantidad)).toFixed(2)}
           </Text>
         );
       },
@@ -1267,8 +1282,8 @@ export default function AceptacionesPage() {
   const totalPendientes = useMemo(() => ocs.length + reqs.length, [ocs, reqs]);
 
   // Sumas de los items seleccionados, agrupadas por moneda. Para OCs se usa el
-  // `total`; para RQs se usa `cantidad * precio_unitario` (si falta alguno se
-  // suma 0). Devuelve un array de strings tipo "USD 1,234.56".
+  // `total`; para RQs, `cantidad * precio` (precio del req, fallback catálogo;
+  // sin ninguno suma 0). Devuelve un array de strings tipo "USD 1,234.56".
   function formatSumasPorMoneda(sumas: Record<string, number>): string {
     const entries = Object.entries(sumas).filter(([, v]) => v > 0);
     if (entries.length === 0) return "";
@@ -1291,9 +1306,11 @@ export default function AceptacionesPage() {
     for (const id of selReqs) {
       const r = reqs.find((x) => x.id === id);
       if (!r) continue;
-      const m = r.moneda ?? "USD";
-      const sub = Number(r.cantidad ?? 0) * Number(r.precio_unitario ?? 0);
-      sumas[m] = (sumas[m] ?? 0) + sub;
+      // Mismo criterio que "P. Estimado Total": precio del req, fallback catálogo.
+      const usaReq = r.precio_unitario != null;
+      const unit = usaReq ? Number(r.precio_unitario) : Number(r.material?.precio ?? 0);
+      const m = usaReq ? (r.moneda ?? "USD") : (r.material?.moneda_codigo ?? "USD");
+      sumas[m] = (sumas[m] ?? 0) + Number(r.cantidad ?? 0) * unit;
     }
     return formatSumasPorMoneda(sumas);
   }, [selReqs, reqs]);
@@ -1564,9 +1581,15 @@ export default function AceptacionesPage() {
                             { key: "cantidad", label: "Cant.", value: (r) => Number(r.cantidad) },
                             { key: "um", label: "UM", value: (r) => r.unidad_medida ?? "" },
                             { key: "stock", label: "Stock", value: (r) => r.material?.stock_actual != null ? Number(r.material.stock_actual) : "" },
+                            { key: "precio_unit_req", label: "P. Unit. Req", value: (r) => r.precio_unitario != null ? Number(r.precio_unitario) : "", z: "#,##0.00" },
                             { key: "precio_cat", label: "P. catálogo", value: (r) => r.material?.precio != null ? Number(r.material.precio) : "", z: "#,##0.00" },
-                            { key: "total_estimado", label: "P. Estimado Total", value: (r) => r.material?.precio != null ? Number(r.material.precio) * Number(r.cantidad) : "", z: "#,##0.00" },
-                            { key: "moneda", label: "Moneda", value: (r) => r.material?.moneda_codigo ?? "USD" },
+                            // Total con el mismo criterio de la columna: precio del req,
+                            // fallback catálogo (antes solo catálogo → servicios en blanco).
+                            { key: "total_estimado", label: "P. Estimado Total", value: (r) => {
+                              const unit = r.precio_unitario != null ? Number(r.precio_unitario) : (r.material?.precio != null ? Number(r.material.precio) : null);
+                              return unit != null ? unit * Number(r.cantidad) : "";
+                            }, z: "#,##0.00" },
+                            { key: "moneda", label: "Moneda", value: (r) => (r.precio_unitario != null ? (r.moneda ?? "USD") : (r.material?.moneda_codigo ?? "USD")) },
                             // Fechas como Date real (celda fecha en Excel). dateOnlyLocal
                             // evita el corrimiento de día en Lima con medianoche UTC.
                             { key: "fecha_solicitud", label: "F. Solicitud", value: (r) => dateOnlyLocal(r.fecha_solicitud) },
