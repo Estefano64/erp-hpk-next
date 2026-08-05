@@ -52,7 +52,10 @@ export async function GET(req: NextRequest) {
         { equipo_codigo: { contains: search, mode: "insensitive" } },
         { ns: { contains: search, mode: "insensitive" } },
         { wo_cliente: { contains: search, mode: "insensitive" } },
+        { po_cliente: { contains: search, mode: "insensitive" } },
         { descripcion: { contains: search, mode: "insensitive" } },
+        { cliente: { is: { razon_social: { contains: search, mode: "insensitive" } } } },
+        { cliente: { is: { nombre_comercial: { contains: search, mode: "insensitive" } } } },
       ];
     }
     // Selects/filtros por columna FK (value = codigo del catálogo).

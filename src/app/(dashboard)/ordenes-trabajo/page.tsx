@@ -1198,7 +1198,7 @@ export default function OrdenesTrabajoPage() {
         <Row gutter={[12, 12]}>
           <Col xs={24} sm={12} md={6}>
             <Input
-              placeholder="Buscar OT, equipo, NS..."
+              placeholder="Buscar OT, cliente, equipo, NS, PO Cliente..."
               prefix={<SearchOutlined />}
               allowClear
               value={search}
