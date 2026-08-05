@@ -43,10 +43,9 @@ export async function GET(req: NextRequest) {
           { orden_trabajo: { ot: otNum } },
           { orden_trabajo_interna: { ot: otNum } },
         ];
-        // Si ya había un OR (por `search`) hay que combinar; acá `ot` viene
-        // como query param dedicado y antes era único filtro — preservamos
-        // ese comportamiento estricto.
-        where.OR = otOR as unknown as typeof where.OR;
+        // Va como bloque dentro del AND para no pisar (ni ser pisado por)
+        // el OR del search de texto libre.
+        (where.AND as unknown[]).push({ OR: otOR });
       }
     }
 
@@ -89,13 +88,21 @@ export async function GET(req: NextRequest) {
 
     const search = sp.get("search")?.trim();
     if (search) {
-      where.OR = [
-        { descripcion: { contains: search, mode: "insensitive" } },
-        { texto: { contains: search, mode: "insensitive" } },
-        { nro_req: { contains: search, mode: "insensitive" } },
-        { nro_oc: { contains: search, mode: "insensitive" } },
-        { material_codigo: { contains: search, mode: "insensitive" } },
-      ];
+      // Si el texto parece un número/código de OT ("390126" / "V000126" /
+      // "OI000126"), también matchea por la OT externa o interna del req.
+      const searchOtNum = parseOtCodigoSearch(search);
+      (where.AND as unknown[]).push({
+        OR: [
+          ...(searchOtNum != null
+            ? [{ orden_trabajo: { ot: searchOtNum } }, { orden_trabajo_interna: { ot: searchOtNum } }]
+            : []),
+          { descripcion: { contains: search, mode: "insensitive" } },
+          { texto: { contains: search, mode: "insensitive" } },
+          { nro_req: { contains: search, mode: "insensitive" } },
+          { nro_oc: { contains: search, mode: "insensitive" } },
+          { material_codigo: { contains: search, mode: "insensitive" } },
+        ],
+      });
     }
 
     const soloAprobadosSinOC = sp.get("solo_aprobados_sin_oc") === "1";

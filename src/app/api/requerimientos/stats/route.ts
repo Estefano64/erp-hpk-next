@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { parseInt4Safe } from "@/lib/ot-formato";
+import { parseInt4Safe, parseOtCodigoSearch } from "@/lib/ot-formato";
 
 // GET /api/requerimientos/stats — KPIs agregados sobre TODO el conjunto filtrado,
 // no sólo la página actual. Replica el `where` de GET /api/requerimientos.
 export async function GET(req: NextRequest) {
   try {
     const sp = req.nextUrl.searchParams;
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = { AND: [] };
 
     const otId = sp.get("ot_id");
     const otIdNum = parseInt4Safe(otId);
@@ -15,8 +15,14 @@ export async function GET(req: NextRequest) {
 
     const ot = sp.get("ot")?.trim();
     if (ot) {
-      const otNum = parseInt4Safe(ot);
-      if (otNum != null) where.orden_trabajo = { ot: otNum };
+      // Igual que el listado: acepta raw y código visible (V/S/OI) y matchea
+      // OT externa o interna. Va dentro del AND para convivir con el search.
+      const otNum = parseOtCodigoSearch(ot);
+      if (otNum != null) {
+        (where.AND as unknown[]).push({
+          OR: [{ orden_trabajo: { ot: otNum } }, { orden_trabajo_interna: { ot: otNum } }],
+        });
+      }
     }
 
     const statusReq = sp.get("status_req")?.trim();
@@ -61,13 +67,20 @@ export async function GET(req: NextRequest) {
 
     const search = sp.get("search")?.trim();
     if (search) {
-      where.OR = [
-        { descripcion: { contains: search, mode: "insensitive" } },
-        { texto: { contains: search, mode: "insensitive" } },
-        { nro_req: { contains: search, mode: "insensitive" } },
-        { nro_oc: { contains: search, mode: "insensitive" } },
-        { material_codigo: { contains: search, mode: "insensitive" } },
-      ];
+      // Espejo del search del listado (incluye match por nro/código de OT).
+      const searchOtNum = parseOtCodigoSearch(search);
+      (where.AND as unknown[]).push({
+        OR: [
+          ...(searchOtNum != null
+            ? [{ orden_trabajo: { ot: searchOtNum } }, { orden_trabajo_interna: { ot: searchOtNum } }]
+            : []),
+          { descripcion: { contains: search, mode: "insensitive" } },
+          { texto: { contains: search, mode: "insensitive" } },
+          { nro_req: { contains: search, mode: "insensitive" } },
+          { nro_oc: { contains: search, mode: "insensitive" } },
+          { material_codigo: { contains: search, mode: "insensitive" } },
+        ],
+      });
     }
 
     const rows = await prisma.oTRepuesto.findMany({

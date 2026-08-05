@@ -1396,7 +1396,7 @@ export default function RequerimientosPage() {
         <Row gutter={[8, 8]}>
           <Col xs={24} md={6}>
             <Input
-              placeholder="Buscar (descripción, nro req, OC, material)…"
+              placeholder="Buscar (descripción, OT, nro req, OC, material)…"
               prefix={<SearchOutlined />}
               value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1); }}
