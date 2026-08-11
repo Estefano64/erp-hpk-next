@@ -20,7 +20,13 @@ export type R2Resource =
   | "compra-pago"
   | "compra-guia-llegada"
   | "evaluacion-informe"
-  | "ticket-captura";
+  | "ticket-captura"
+  // SSOMA - SIG: fotos de evidencia (tabla hija, resourceId = id de la foto)
+  // y foto de cierre (campo en línea, resourceId = id del reporte/salida).
+  | "reporte-seguridad-foto"
+  | "reporte-seguridad-cierre"
+  | "snc-foto"
+  | "snc-cierre";
 
 const VALID_RESOURCES: ReadonlySet<R2Resource> = new Set([
   "ot-adjunto",
@@ -33,6 +39,10 @@ const VALID_RESOURCES: ReadonlySet<R2Resource> = new Set([
   "compra-guia-llegada",
   "evaluacion-informe",
   "ticket-captura",
+  "reporte-seguridad-foto",
+  "reporte-seguridad-cierre",
+  "snc-foto",
+  "snc-cierre",
 ]);
 
 export function isValidResource(value: unknown): value is R2Resource {
@@ -127,6 +137,34 @@ export async function authorizeR2Access(params: {
     case "ticket-captura": {
       const row = await prisma.ticket.findFirst({
         where: { id: resourceId, captura_key: key },
+        select: { id: true },
+      });
+      return row ? { ok: true } : notFound();
+    }
+    case "reporte-seguridad-foto": {
+      const row = await prisma.reporteSeguridadFoto.findFirst({
+        where: { id: resourceId, r2_key: key },
+        select: { id: true },
+      });
+      return row ? { ok: true } : notFound();
+    }
+    case "reporte-seguridad-cierre": {
+      const row = await prisma.reporteSeguridad.findFirst({
+        where: { id: resourceId, cierre_foto_key: key },
+        select: { id: true },
+      });
+      return row ? { ok: true } : notFound();
+    }
+    case "snc-foto": {
+      const row = await prisma.salidaNoConformeFoto.findFirst({
+        where: { id: resourceId, r2_key: key },
+        select: { id: true },
+      });
+      return row ? { ok: true } : notFound();
+    }
+    case "snc-cierre": {
+      const row = await prisma.salidaNoConforme.findFirst({
+        where: { id: resourceId, cierre_foto_key: key },
         select: { id: true },
       });
       return row ? { ok: true } : notFound();

@@ -102,6 +102,11 @@ export const R2Keys = {
   compraSueltaPago: (ocCodigo: string) => `compras-sueltas/${sanitize(ocCodigo)}/pago`,
   // Capturas de tickets (bugs/mejoras del ERP). No vinculados a OT.
   ticket: () => `tickets`,
+  // Módulo SSOMA - SIG. Namespace plano (como tickets): la foto puede subirse
+  // ANTES de que exista el registro (se adjunta al crear), así que no hay
+  // carpeta por id. El vínculo foto↔registro vive en BD.
+  ssomaReporteSeguridad: () => `ssoma/reportes-seguridad`,
+  ssomaSalidaNoConforme: () => `ssoma/salidas-no-conformes`,
   // Adjuntos de OT Interna — mismo patrón que OT Externa pero en otro namespace.
   // `etapa` solo se usa para internas si en el futuro se agregan etapas; hoy
   // todas las internas usan "general" y la subcarpeta sigue siendo opcional.
