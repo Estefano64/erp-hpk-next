@@ -9,15 +9,18 @@
 //   { ids: number[] }         → aprueba esos ids específicos (fallback para
 //                                  items sin nro_req)
 //
-// Permiso por MONTO (esquema de gerencia 2026-07-08, ver aprobacion-montos.ts):
-// hasta US$ 5,000 (o sin precios) el aprobador_requerimiento (Diego); más de
-// eso solo gerencia. El monto del lote = Σ cantidad × precio_unitario en USD.
+// Liberación multi-nivel (esquema A/B/C, 2026-08-11): cada ITEM se clasifica
+// por su monto (≤ US$5,000 → nivel A; más → A+B secuencial) y esta llamada
+// firma en cada item los niveles que le correspondan al usuario. Los items
+// cuya liberación queda completa pasan a APROBADO; los demás quedan en
+// SIN_APROBACION con firmas parciales (los libera gerencia después).
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { recalcularRecursosStatusOT, recalcularRecursosStatusOTInterna } from "@/lib/recursos-ot";
-import { montoEnUSD, puedeAprobarReq } from "@/lib/aprobacion-montos";
+import { montoEnUSD } from "@/lib/aprobacion-montos";
+import { firmarNiveles, errorNivelNoAutorizado } from "@/lib/liberacion";
 
 export async function POST(req: NextRequest) {
   const token = await getToken({ req });
@@ -55,6 +58,7 @@ export async function POST(req: NextRequest) {
   }
 
   const usuario = (await getAuditUser(req)) ?? "sistema";
+  const roles = (token.roles as string[] | undefined) ?? [];
 
   try {
     const result = await prisma.$transaction(async (tx) => {
@@ -70,59 +74,91 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // Tope de aprobación por monto del lote (items sin precio suman 0).
-      const montoLoteUSD = candidatos.reduce((s, c) => {
-        const precio = Number(c.precio_unitario ?? 0);
-        const cant = Number(c.cantidad ?? 0);
-        if (!Number.isFinite(precio) || !Number.isFinite(cant)) return s;
-        return s + montoEnUSD(precio * cant, c.moneda);
-      }, 0);
-      const permiso = puedeAprobarReq((token.roles as string[] | undefined) ?? [], montoLoteUSD);
-      if (!permiso.ok) {
-        throw Object.assign(new Error(permiso.error), { status: 403 });
-      }
-
       if (candidatos.length === 0) {
         return {
           aprobados: 0,
+          parciales: 0,
           ot_ids: [] as number[],
           ot_internas_ids: [] as number[],
           ref: nroReq ?? `${ids?.length ?? 0} items`,
+          pendientes: [] as string[],
         };
       }
 
-      const idsParaAprobar = candidatos.map((c) => c.id);
-      await tx.oTRepuesto.updateMany({
-        where: { id: { in: idsParaAprobar } },
-        data: {
-          status_requerimiento_codigo: "APROBADO",
-          usuario_aprueba: usuario,
-          fecha_aprobacion: new Date(),
-          status_cotizacion_codigo: "PEND_COT", // arranca flujo de cotización
-          // Los 3 campos aplican a todos los items del lote. Si no vinieron,
-          // se mantienen null (no se borra uno previo accidentalmente porque
-          // solo aprobamos items en estado SIN_APROBACION).
-          comentario_aprobacion: comentario,
-          descripcion_aprobacion: descripcionAprob,
-          detalle_aprobacion: detalleAprob,
-        },
-      });
+      // Firma nivel a nivel por ITEM (clasificación individual por monto).
+      const liberadosIds: number[] = [];
+      let firmasParciales = 0;
+      let primerError: string | null = null;
+      const nivelesPendientes = new Set<string>();
+
+      for (const c of candidatos) {
+        const precio = Number(c.precio_unitario ?? 0);
+        const cant = Number(c.cantidad ?? 0);
+        const montoUSD = Number.isFinite(precio) && Number.isFinite(cant)
+          ? montoEnUSD(precio * cant, c.moneda)
+          : 0;
+        const firma = await firmarNiveles(tx, {
+          tipo: "REQ",
+          otRepuestoId: c.id,
+          montoUSD,
+          roles,
+          usuario,
+          comentario,
+        });
+        if (firma.estado.liberado) {
+          liberadosIds.push(c.id);
+        } else if (firma.firmadosAhora.length > 0) {
+          firmasParciales++;
+          firma.estado.pendientes.forEach((n) => nivelesPendientes.add(n));
+        } else {
+          firma.estado.pendientes.forEach((n) => nivelesPendientes.add(n));
+          if (!primerError) primerError = errorNivelNoAutorizado("REQ", firma.estado, montoUSD);
+        }
+      }
+
+      // Si el usuario no pudo firmar NADA en ningún item, es un 403 claro.
+      if (liberadosIds.length === 0 && firmasParciales === 0) {
+        throw Object.assign(new Error(primerError ?? "No tenés el rol del siguiente nivel de liberación."), { status: 403 });
+      }
+
+      if (liberadosIds.length > 0) {
+        await tx.oTRepuesto.updateMany({
+          where: { id: { in: liberadosIds } },
+          data: {
+            status_requerimiento_codigo: "APROBADO",
+            usuario_aprueba: usuario,
+            fecha_aprobacion: new Date(),
+            status_cotizacion_codigo: "PEND_COT", // arranca flujo de cotización
+            // Los 3 campos aplican a todos los items del lote. Si no vinieron,
+            // se mantienen null (no se borra uno previo accidentalmente porque
+            // solo aprobamos items en estado SIN_APROBACION).
+            comentario_aprobacion: comentario,
+            descripcion_aprobacion: descripcionAprob,
+            detalle_aprobacion: detalleAprob,
+          },
+        });
+      }
 
       // Historial: una entrada por OT afectada (no por item — sería ruidoso).
-      // Las OT internas iban silenciosamente sin historial antes — ahora se
-      // loggean por separado para que la auditoría sea completa.
+      const afectados = candidatos.filter(
+        (c) => liberadosIds.includes(c.id) || firmasParciales > 0,
+      );
       const otsExternasUnicas = [
-        ...new Set(candidatos.filter((c) => c.ot_id != null).map((c) => c.ot_id as number)),
+        ...new Set(afectados.filter((c) => c.ot_id != null).map((c) => c.ot_id as number)),
       ];
       const otsInternasUnicas = [
         ...new Set(
-          candidatos
+          afectados
             .filter((c) => c.orden_trabajo_interna_id != null)
             .map((c) => c.orden_trabajo_interna_id as number),
         ),
       ];
       const refTexto = nroReq ?? `${candidatos.length} item(s)`;
-      const baseHist = `Requerimiento ${refTexto} aprobado (${candidatos.length} item${candidatos.length === 1 ? "" : "s"})`;
+      const partes = [
+        liberadosIds.length > 0 ? `${liberadosIds.length} item(s) aprobado(s)` : null,
+        firmasParciales > 0 ? `${firmasParciales} con firma parcial (pendiente: ${[...nivelesPendientes].join(", ")})` : null,
+      ].filter(Boolean);
+      const baseHist = `Requerimiento ${refTexto}: ${partes.join(" · ")}`;
       const descripcionHist = comentario ? `${baseHist} — ${comentario}` : baseHist;
       for (const ot_id of otsExternasUnicas) {
         await tx.oTHistorial.create({
@@ -135,15 +171,32 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // Recalcular estado de recursos de cada OT afectada.
-      for (const ot_id of otsExternasUnicas) await recalcularRecursosStatusOT(tx, ot_id);
-      for (const iid of otsInternasUnicas) await recalcularRecursosStatusOTInterna(tx, iid);
+      // Recalcular estado de recursos SOLO de las OTs con items liberados
+      // (las firmas parciales no mueven la etapa).
+      const otsLiberadas = [
+        ...new Set(
+          candidatos
+            .filter((c) => liberadosIds.includes(c.id) && c.ot_id != null)
+            .map((c) => c.ot_id as number),
+        ),
+      ];
+      const otsInternasLiberadas = [
+        ...new Set(
+          candidatos
+            .filter((c) => liberadosIds.includes(c.id) && c.orden_trabajo_interna_id != null)
+            .map((c) => c.orden_trabajo_interna_id as number),
+        ),
+      ];
+      for (const ot_id of otsLiberadas) await recalcularRecursosStatusOT(tx, ot_id);
+      for (const iid of otsInternasLiberadas) await recalcularRecursosStatusOTInterna(tx, iid);
 
       return {
-        aprobados: candidatos.length,
+        aprobados: liberadosIds.length,
+        parciales: firmasParciales,
         ot_ids: otsExternasUnicas,
         ot_internas_ids: otsInternasUnicas,
         ref: refTexto,
+        pendientes: [...nivelesPendientes],
       };
     });
 

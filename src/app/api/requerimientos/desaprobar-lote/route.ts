@@ -14,6 +14,7 @@ import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { recalcularRecursosStatusOT, recalcularRecursosStatusOTInterna } from "@/lib/recursos-ot";
+import { resetLiberaciones } from "@/lib/liberacion";
 
 export async function POST(req: NextRequest) {
   const token = await getToken({ req });
@@ -63,6 +64,9 @@ export async function POST(req: NextRequest) {
           { status: 409 },
         );
       }
+
+      // Reset de firmas de liberación parciales (A/B): desaprobar las anula.
+      await resetLiberaciones(tx, { otRepuestoIds: candidatos.map((c) => c.id) });
 
       // Update item por item porque cada uno tiene `observaciones` distintas.
       for (const c of candidatos) {

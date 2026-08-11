@@ -3,22 +3,22 @@ import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { recalcularRecursosStatusDesdeRep } from "@/lib/recursos-ot";
-import { montoEnUSD, puedeAprobarReq } from "@/lib/aprobacion-montos";
+import { montoEnUSD } from "@/lib/aprobacion-montos";
+import { firmarNiveles, errorNivelNoAutorizado } from "@/lib/liberacion";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
 
 // POST /api/requerimientos/[id]/aprobar
-// Aprueba UN item de requerimiento. La vía principal hoy es /aprobar-lote
-// (que aprueba todos los items de un nro_req juntos); este endpoint queda
-// para callers legacy que aprueban item por item.
+// Liberación multi-nivel (esquema A/B/C, 2026-08-11): el item se clasifica
+// por monto (≤ US$5,000 → nivel A; más → A+B secuencial). Cada llamada firma
+// el/los niveles que le correspondan al usuario; el item pasa a APROBADO
+// recién cuando TODOS los niveles requeridos están firmados — mientras tanto
+// sigue en SIN_APROBACION con firmas parciales en `liberacion_codigo`.
 //
 // Body opcional: { precio_estimado?: number, moneda?: string }
-//   Si se proveen, se setean en precio_unitario/moneda del item ANTES de
-//   aprobarlo (todo en la misma transacción). Útil para que el aprobador
-//   registre el costo estimado al momento de aprobar.
-//
-// Permiso: cualquier usuario autenticado (decisión del usuario, 2026-05-27).
+//   Si se proveen, se setean en precio_unitario/moneda del item en la misma
+//   transacción (y la clasificación usa ese monto).
 export async function POST(req: NextRequest, ctx: Ctx) {
   const token = await getToken({ req });
   if (!token) {
@@ -27,6 +27,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
     const usuario = (await getAuditUser(req)) ?? "sistema";
+    const roles = (token.roles as string[] | undefined) ?? [];
 
     // Body con precio estimado + 3 campos de aprobación (todos opcionales):
     //   comentario   ≤500  → nota breve (la que ya existía)
@@ -55,8 +56,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       // Body inválido / vacío: seguimos con valores por defecto.
     }
 
+    const itemId = parseInt4Safe(id) ?? 0;
     const current = await prisma.oTRepuesto.findUnique({
-      where: { id: (parseInt4Safe(id) ?? 0) },
+      where: { id: itemId },
       select: {
         status_requerimiento_codigo: true,
         ot_id: true,
@@ -73,41 +75,59 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         error: `Solo se puede aprobar desde SIN_APROBACION. Estado actual: ${current.status_requerimiento_codigo}`,
       }, { status: 409 });
     }
-    // Tope de aprobación por monto (aprobacion-montos.ts). Si el body trae
-    // precio estimado, se usa ese (es el que quedará registrado al aprobar).
+    // Clasificación por monto (Werteschema). Si el body trae precio estimado,
+    // se usa ese (es el que quedará registrado en el item).
     const precioTope = precioEstimado ?? Number(current.precio_unitario ?? 0);
     const monedaTope = monedaEstimado ?? current.moneda;
     const montoUSD = montoEnUSD((Number.isFinite(precioTope) ? precioTope : 0) * Number(current.cantidad ?? 0), monedaTope);
-    const permiso = puedeAprobarReq((token.roles as string[] | undefined) ?? [], montoUSD);
-    if (!permiso.ok) {
-      return NextResponse.json({ error: permiso.error }, { status: 403 });
-    }
 
-    const updated = await prisma.$transaction(async (tx) => {
+    const resultado = await prisma.$transaction(async (tx) => {
+      const firma = await firmarNiveles(tx, {
+        tipo: "REQ",
+        otRepuestoId: itemId,
+        montoUSD,
+        roles,
+        usuario,
+        comentario: comentario || null,
+      });
+      if (firma.firmadosAhora.length === 0 && !firma.estado.liberado) {
+        throw Object.assign(new Error(errorNivelNoAutorizado("REQ", firma.estado, montoUSD)), { status: 403 });
+      }
+
+      const liberado = firma.estado.liberado;
       const r = await tx.oTRepuesto.update({
-        where: { id: (parseInt4Safe(id) ?? 0) },
+        where: { id: itemId },
         data: {
-          status_requerimiento_codigo: "APROBADO",
-          usuario_aprueba: usuario,
-          fecha_aprobacion: new Date(),
-          status_cotizacion_codigo: "PEND_COT", // arranca el flujo de cotización
-          // Solo actualiza precio/moneda si vinieron en el body.
+          // Precio/moneda se persisten en cada firma para que los niveles
+          // siguientes clasifiquen con el mismo monto que ve este aprobador.
           ...(precioEstimado != null ? { precio_unitario: precioEstimado } : {}),
           ...(monedaEstimado ? { moneda: monedaEstimado } : {}),
-          comentario_aprobacion: comentario || null,
-          descripcion_aprobacion: descripcion || null,
-          detalle_aprobacion: detalle || null,
+          ...(liberado
+            ? {
+                status_requerimiento_codigo: "APROBADO",
+                usuario_aprueba: usuario, // último firmante = quien libera
+                fecha_aprobacion: new Date(),
+                status_cotizacion_codigo: "PEND_COT", // arranca el flujo de cotización
+                comentario_aprobacion: comentario || null,
+                descripcion_aprobacion: descripcion || null,
+                detalle_aprobacion: detalle || null,
+              }
+            : {}),
         },
       });
+
       // Historial polimórfico (OT externa o interna).
-      const baseDesc = precioEstimado != null
-        ? `Requerimiento ${current.nro_req ?? id} aprobado (precio estimado: ${monedaEstimado ?? "USD"} ${precioEstimado.toFixed(2)})`
-        : `Requerimiento ${current.nro_req ?? id} aprobado`;
+      const ref = `Requerimiento ${current.nro_req ?? id}`;
       const piezas = [
         descripcion ? `Desc: ${descripcion}` : null,
         detalle ? `Detalle: ${detalle}` : null,
         comentario || null,
       ].filter(Boolean);
+      const baseDesc = liberado
+        ? (precioEstimado != null
+            ? `${ref} aprobado — liberación ${firma.estado.requeridos.join("→") || "auto"} completa (precio estimado: ${monedaEstimado ?? "USD"} ${precioEstimado.toFixed(2)})`
+            : `${ref} aprobado — liberación ${firma.estado.requeridos.join("→") || "auto"} completa`)
+        : `${ref}: código(s) de liberación ${firma.firmadosAhora.join(", ")} firmado(s) — pendiente(s): ${firma.estado.pendientes.join(", ")}`;
       await tx.oTHistorial.create({
         data: {
           ot_id: current.ot_id,
@@ -117,16 +137,35 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           usuario,
         },
       });
-      // Recalcular el estado de recursos de la OT (aprobar mueve la etapa).
-      await recalcularRecursosStatusDesdeRep(tx, {
-        ot_id: current.ot_id,
-        orden_trabajo_interna_id: current.orden_trabajo_interna_id,
-      });
-      return r;
+      // La etapa de recursos solo se mueve con la liberación completa.
+      if (liberado) {
+        await recalcularRecursosStatusDesdeRep(tx, {
+          ot_id: current.ot_id,
+          orden_trabajo_interna_id: current.orden_trabajo_interna_id,
+        });
+      }
+      return { r, firma };
     });
 
-    return NextResponse.json({ data: updated });
+    const { estado } = resultado.firma;
+    return NextResponse.json({
+      data: resultado.r,
+      liberacion: {
+        liberado: estado.liberado,
+        requeridos: estado.requeridos,
+        firmados: estado.firmados,
+        pendientes: estado.pendientes,
+        firmados_ahora: resultado.firma.firmadosAhora,
+      },
+      message: estado.liberado
+        ? "Requerimiento aprobado (liberación completa)."
+        : `Nivel ${resultado.firma.firmadosAhora.join(", ")} liberado — pendiente: ${estado.pendientes.join(", ")}.`,
+    });
   } catch (error) {
+    const err = error as { status?: number; message?: string };
+    if (err?.status) {
+      return NextResponse.json({ error: err.message ?? "Error" }, { status: err.status });
+    }
     console.error("POST aprobar error:", error);
     return NextResponse.json({ error: "Error al aprobar" }, { status: 500 });
   }

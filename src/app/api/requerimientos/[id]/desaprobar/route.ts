@@ -3,6 +3,7 @@ import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { recalcularRecursosStatusDesdeRep } from "@/lib/recursos-ot";
+import { resetLiberaciones } from "@/lib/liberacion";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
@@ -37,6 +38,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     }
 
     const updated = await prisma.$transaction(async (tx) => {
+      // Reset de firmas de liberación parciales (A/B): desaprobar las anula.
+      await resetLiberaciones(tx, { otRepuestoId: parseInt4Safe(id) ?? 0 });
       const r = await tx.oTRepuesto.update({
         where: { id: (parseInt4Safe(id) ?? 0) },
         data: {
