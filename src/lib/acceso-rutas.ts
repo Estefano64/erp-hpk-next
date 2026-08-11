@@ -200,6 +200,14 @@ export const REGLAS_ESCRITURA_API: ReglaApi[] = [
   { prefijo: "/api/mantenimiento", roles: ["admin", "mantenimiento"] },
   // ── Facturación de OT
   { prefijo: "/api/facturacion", roles: ["admin", "logistica", "contabilidad"] },
+  // ── SSOMA - SIG. Crear/editar reportes de seguridad y salidas no conformes
+  //    queda ABIERTO (default permitido: cualquier personal reporta). Lo que
+  //    sí se gatea es el flujo del encargado de seguridad (rol "ssoma"):
+  //    aprobar/cerrar reportes de seguridad y todo lo relativo a SACs.
+  { prefijo: "/api/ssoma/reportes-seguridad", sufijo: "/aprobar", roles: ["admin", "ssoma"] },
+  { prefijo: "/api/ssoma/reportes-seguridad", sufijo: "/cerrar", roles: ["admin", "ssoma"] },
+  { prefijo: "/api/ssoma/salidas-no-conformes", sufijo: "/generar-sac", roles: ["admin", "ssoma"] },
+  { prefijo: "/api/ssoma/sacs", roles: ["admin", "ssoma"] },
 ];
 
 const METODOS_ESCRITURA = new Set(["POST", "PUT", "PATCH", "DELETE"]);

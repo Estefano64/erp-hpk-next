@@ -22,6 +22,7 @@ import {
   TeamOutlined,
   MoonOutlined,
   SunOutlined,
+  SafetyOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { brand } from "@/lib/theme";
@@ -96,6 +97,16 @@ function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
       { key: "/dashboard", icon: <DashboardOutlined />, label: linkLabel("/dashboard", "Dashboard") },
       { key: "/mis-tareas", icon: <ToolOutlined />, label: linkLabel("/mis-tareas", "Mis Tareas") },
       { key: "/tickets", icon: <BugOutlined />, label: linkLabel("/tickets", "Tickets") },
+      // Cualquier personal (incluidos operarios) puede reportar seguridad / SNC.
+      {
+        key: "ssoma",
+        icon: <SafetyOutlined />,
+        label: "SSOMA - SIG",
+        children: [
+          { key: "/ssoma/reportes-seguridad", label: linkLabel("/ssoma/reportes-seguridad", "Reportes de Seguridad") },
+          { key: "/ssoma/salidas-no-conformes", label: linkLabel("/ssoma/salidas-no-conformes", "Salidas No Conformes") },
+        ],
+      },
     ];
   }
   const configChildren: NonNullable<MenuProps["items"]> = [
@@ -144,6 +155,16 @@ function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
         { key: "/mantenimiento/equipos", label: linkLabel("/mantenimiento/equipos", "Equipos") },
         { key: "/mantenimiento/vehiculos", label: linkLabel("/mantenimiento/vehiculos", "Vehículos") },
         { key: "/mantenimiento/task-lists", label: linkLabel("/mantenimiento/task-lists", "Task Lists") },
+      ],
+    },
+    {
+      key: "ssoma",
+      icon: <SafetyOutlined />,
+      label: "SSOMA - SIG",
+      children: [
+        { key: "/ssoma/reportes-seguridad", label: linkLabel("/ssoma/reportes-seguridad", "Reportes de Seguridad") },
+        { key: "/ssoma/salidas-no-conformes", label: linkLabel("/ssoma/salidas-no-conformes", "Salidas No Conformes") },
+        { key: "/ssoma/sacs", label: linkLabel("/ssoma/sacs", "SACs (Acciones Correctivas)") },
       ],
     },
     {
@@ -257,6 +278,7 @@ const rolLabels: Record<string, { label: string; color: string }> = {
   logistica: { label: "Logística", color: brand.warning },
   planner: { label: "Planner", color: brand.cyan },
   produccion: { label: "Producción", color: brand.success },
+  ssoma: { label: "SSOMA", color: brand.error },
   viewer: { label: "Viewer", color: brand.textSecondary },
 };
 
@@ -296,7 +318,7 @@ export default function DashboardLayout({
 
   // Rol "principal" para el badge del header: el primero según una prioridad
   // visual (admin gana). Para chequeos de acceso se debe usar roles.includes(x).
-  const PRIORIDAD_VISIBLE = ["admin", "supervisor", "planner", "produccion", "tecnico", "evaluador", "aprobador_evaluacion", "aprobador_requerimiento", "logistica", "mantenimiento", "contabilidad", "viewer"];
+  const PRIORIDAD_VISIBLE = ["admin", "supervisor", "ssoma", "planner", "produccion", "tecnico", "evaluador", "aprobador_evaluacion", "aprobador_requerimiento", "logistica", "mantenimiento", "contabilidad", "viewer"];
   const rolPrincipal = PRIORIDAD_VISIBLE.find((r) => roles.includes(r)) ?? null;
   const rolInfo = rolPrincipal ? (rolLabels[rolPrincipal] ?? rolLabels.viewer) : null;
 

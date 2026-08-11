@@ -13,7 +13,9 @@
 // (p. ej. /tickets/123) también se permite por prefijo.
 // `/perfil` se incluye para que cualquier usuario logueado pueda cambiar su
 // propia contraseña, sin importar el rol.
-export const RUTAS_TECNICO = ["/dashboard", "/mis-tareas", "/tickets", "/perfil"] as const;
+// `/ssoma` se incluye porque el Reporte de Seguridad y la Salida No Conforme
+// los puede crear CUALQUIER personal, incluidos los operarios de taller.
+export const RUTAS_TECNICO = ["/dashboard", "/mis-tareas", "/tickets", "/perfil", "/ssoma"] as const;
 
 export function esTecnicoRestringido(roles: string[] | null | undefined): boolean {
   const r = roles ?? [];
