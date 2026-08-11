@@ -1366,6 +1366,7 @@ model Compra {
   moneda                 Moneda?         @relation(fields: [moneda_codigo], references: [codigo])
   detalles               CompraDetalle[]
   ot_repuestos           OTRepuesto[]
+  liberaciones           LiberacionCodigo[]
 
   @@index([numero_po])
   @@index([status_oc_codigo])
@@ -1615,6 +1616,7 @@ model OTRepuesto {
   adjuntos                    OTRepuestoAdjunto[]
   almacen_zona                AlmacenZona?         @relation(fields: [almacen_zona_id], references: [id])
   almacen_posicion            AlmacenPosicion?     @relation(fields: [almacen_posicion_id], references: [id])
+  liberaciones                LiberacionCodigo[]
 
   @@index([ot_id])
   @@index([orden_trabajo_interna_id])
@@ -2289,6 +2291,38 @@ model SolicitudAccionCorrectiva {
   @@index([salida_no_conforme_id])
   @@index([created_at])
   @@map("solicitud_accion_correctiva")
+}
+
+// ── Liberación multi-nivel de documentos (estrategia A/B/C) ──────
+// Firma de UN nivel de liberación sobre una OC o un requerimiento.
+// Diseño: solo se guardan FIRMAS — los niveles requeridos se calculan al
+// vuelo desde el monto (src/lib/aprobacion-montos.ts, Werteschema). Así, si
+// el monto cambia antes de la liberación total, la clasificación se
+// recalcula sin reconciliar filas "pendientes". El documento queda liberado
+// (APROBADO / PROCESO) recién cuando todos los niveles requeridos tienen
+// firma; mientras tanto conserva su estado previo (SIN_APROBACION / PEND_OC).
+// XOR: exactamente uno de compra_id / ot_repuesto_id está seteado (valida la app).
+model LiberacionCodigo {
+  id               Int         @id @default(autoincrement())
+  compra_id        Int?
+  ot_repuesto_id   Int?
+  // A | B | C — ver NIVELES_OC / NIVELES_REQ en src/lib/aprobacion-montos.ts.
+  nivel            String      @db.VarChar(5)
+  liberado_por     String      @db.VarChar(100)
+  fecha_liberacion DateTime    @default(now())
+  comentario       String?     @db.VarChar(500)
+  // Monto USD con el que se clasificó el documento al momento de esta firma
+  // (auditoría: permite detectar firmas hechas con un monto distinto al final).
+  monto_usd        Decimal?    @db.Decimal(14, 2)
+
+  compra           Compra?     @relation(fields: [compra_id], references: [id], onDelete: Cascade)
+  ot_repuesto      OTRepuesto? @relation(fields: [ot_repuesto_id], references: [id], onDelete: Cascade)
+
+  // Un nivel se firma una sola vez por documento.
+  @@unique([compra_id, nivel])
+  @@unique([ot_repuesto_id, nivel])
+  @@index([ot_repuesto_id])
+  @@map("liberacion_codigo")
 }
 
 // Acción/actividad del bloque "Acciones a Tomar" de la SAC.
