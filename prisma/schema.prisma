@@ -31,7 +31,8 @@ model Usuario {
   // Roles del usuario. Multi-rol: una cuenta puede tener varios. Por ejemplo
   // un jefe que también es operario lleva ["admin", "tecnico", "evaluador"].
   // Roles bien definidos hoy:
-  //   admin, viewer, tecnico, evaluador, aprobador_evaluacion, aprobador_requerimiento.
+  //   admin, viewer, tecnico, evaluador, aprobador_evaluacion, aprobador_requerimiento,
+  //   ssoma (encargado de seguridad: aprueba/cierra reportes de seguridad y gestiona SACs).
   // Roles "placeholder" (el admin los puede asignar pero su efecto en sidebar
   // y accesos se define en una fase posterior): planner, supervisor,
   // logistica, mantenimiento, contabilidad.
@@ -2065,4 +2066,242 @@ model Vehiculo {
   @@index([soat_vencimiento])
   @@index([revision_tecnica_vencimiento])
   @@map("vehiculo")
+}
+
+// ── Módulo SSOMA - SIG ───────────────────────────────────────────
+// Tres formatos del Sistema Integrado de Gestión:
+//   - ReporteSeguridad          (HPK-S-F-03)  actos / condiciones inseguras
+//   - SalidaNoConforme          (HPK-SIG-F-05)
+//   - SolicitudAccionCorrectiva (SIG-G-F-10, "SAC")
+// Los correlativos son per-año y per-formato (RS/SNC/SAC-NNNN-YY), generados
+// con advisory lock en src/lib/ssoma-numero.ts. Estados como String (no enum),
+// fotos en R2 bajo el namespace `ssoma/`.
+
+// Reporte de Seguridad (HPK-S-F-03).
+// Parte A la llena cualquier trabajador; Parte B (plan de acción) el
+// supervisor/encargado SSOMA. Flujo: ABIERTO → APROBADO → CERRADO.
+// El cierre exige foto + comentario (campos cierre_*).
+model ReporteSeguridad {
+  id                    Int       @id @default(autoincrement())
+  // Código visible RS-NNNN-YY (numero = correlativo crudo, anio = 2 dígitos).
+  numero                Int?
+  anio                  Int?
+
+  // Parte A — trabajador
+  lugar                 String?   @db.VarChar(200)
+  fecha                 DateTime  @default(now()) @db.Date
+  hora                  String?   @db.VarChar(10)
+  // ACTO_INSEGURO | CONDICION_INSEGURA
+  tipo                  String?   @db.VarChar(30)
+  reportado_por         String?   @db.VarChar(150)
+  cargo                 String?   @db.VarChar(100)
+  // Multi-check del formato: PERSONAL | EQUIPOS_MATERIALES_AMBIENTALES | VEHICULARES
+  danos_potenciales     String[]  @default([])
+  descripcion           String?
+
+  // Parte B — supervisor SSOMA (las acciones inmediatas van en tabla hija)
+  supervisor_ssoma      String?   @db.VarChar(150)
+
+  estado                String    @default("ABIERTO") @db.VarChar(20)
+  aprobado_por          String?   @db.VarChar(150)
+  fecha_aprobacion      DateTime?
+  comentario_aprobacion String?
+  cerrado_por           String?   @db.VarChar(150)
+  fecha_cierre          DateTime?
+  comentario_cierre     String?
+  cierre_foto_key       String?   @db.VarChar(500)
+  cierre_foto_nombre    String?   @db.VarChar(300)
+  cierre_foto_mime      String?   @db.VarChar(100)
+  cierre_foto_tamano    Int?
+
+  activo                Boolean   @default(true)
+  usuario_crea          String?   @db.VarChar(100)
+  usuario_actualiza     String?   @db.VarChar(100)
+  created_at            DateTime  @default(now())
+  updated_at            DateTime  @default(now()) @updatedAt
+
+  acciones              ReporteSeguridadAccion[]
+  fotos                 ReporteSeguridadFoto[]
+
+  @@index([anio])
+  @@index([estado])
+  @@index([created_at])
+  @@map("reporte_seguridad")
+}
+
+// Acción inmediata del plan de acción (Parte B del HPK-S-F-03).
+model ReporteSeguridadAccion {
+  id                   Int       @id @default(autoincrement())
+  reporte_seguridad_id Int
+  orden                Int       @default(1)
+  descripcion          String
+  responsable          String?   @db.VarChar(150)
+  fecha_cumplimiento   DateTime? @db.Date
+
+  reporte              ReporteSeguridad @relation(fields: [reporte_seguridad_id], references: [id], onDelete: Cascade)
+
+  @@index([reporte_seguridad_id])
+  @@map("reporte_seguridad_accion")
+}
+
+// Fotos de evidencia del reporte de seguridad (namespace R2 `ssoma/reportes-seguridad`).
+model ReporteSeguridadFoto {
+  id                   Int      @id @default(autoincrement())
+  reporte_seguridad_id Int
+  nombre_archivo       String   @db.VarChar(255)
+  r2_key               String   @db.VarChar(500)
+  tipo_mime            String   @db.VarChar(100)
+  tamano               Int
+  fecha_subida         DateTime @default(now())
+  usuario_sube         String?  @db.VarChar(100)
+
+  reporte              ReporteSeguridad @relation(fields: [reporte_seguridad_id], references: [id], onDelete: Cascade)
+
+  @@index([reporte_seguridad_id])
+  @@map("reporte_seguridad_foto")
+}
+
+// Reporte de Salida No Conforme (HPK-SIG-F-05).
+// Lo crea cualquiera, es editable mientras está ABIERTO y se cierra con
+// observaciones (foto + comentario de cierre opcionales). Puede generar una
+// SolicitudAccionCorrectiva (o la SAC puede nacer standalone).
+model SalidaNoConforme {
+  id                 Int       @id @default(autoincrement())
+  // Código visible SNC-NNNN-YY.
+  numero             Int?
+  anio               Int?
+
+  fecha              DateTime  @default(now()) @db.Date
+  area               String?   @db.VarChar(100)
+  descripcion        String?
+  reportado_por      String?   @db.VarChar(150)
+  area_reportante    String?   @db.VarChar(100)
+  accion_tomada      String?
+  generado_por       String?   @db.VarChar(150)
+  responsable_salida String?   @db.VarChar(150)
+  requiere_sac       Boolean   @default(false)
+  observaciones      String?
+
+  // ABIERTO → CERRADO
+  estado             String    @default("ABIERTO") @db.VarChar(20)
+  cerrado_por        String?   @db.VarChar(150)
+  fecha_cierre       DateTime?
+  comentario_cierre  String?
+  cierre_foto_key    String?   @db.VarChar(500)
+  cierre_foto_nombre String?   @db.VarChar(300)
+  cierre_foto_mime   String?   @db.VarChar(100)
+  cierre_foto_tamano Int?
+
+  activo             Boolean   @default(true)
+  usuario_crea       String?   @db.VarChar(100)
+  usuario_actualiza  String?   @db.VarChar(100)
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @default(now()) @updatedAt
+
+  fotos              SalidaNoConformeFoto[]
+  sacs               SolicitudAccionCorrectiva[]
+
+  @@index([anio])
+  @@index([estado])
+  @@index([created_at])
+  @@map("salida_no_conforme")
+}
+
+// Fotos de evidencia de la salida no conforme (namespace R2 `ssoma/salidas-no-conformes`).
+model SalidaNoConformeFoto {
+  id                    Int      @id @default(autoincrement())
+  salida_no_conforme_id Int
+  nombre_archivo        String   @db.VarChar(255)
+  r2_key                String   @db.VarChar(500)
+  tipo_mime             String   @db.VarChar(100)
+  tamano                Int
+  fecha_subida          DateTime @default(now())
+  usuario_sube          String?  @db.VarChar(100)
+
+  salida                SalidaNoConforme @relation(fields: [salida_no_conforme_id], references: [id], onDelete: Cascade)
+
+  @@index([salida_no_conforme_id])
+  @@map("salida_no_conforme_foto")
+}
+
+// Solicitud de Acciones Correctivas (SIG-G-F-10).
+// Puede nacer desde una SalidaNoConforme (salida_no_conforme_id) o standalone.
+// La gestiona el encargado SSOMA. Flujo: ABIERTA → CERRADA.
+model SolicitudAccionCorrectiva {
+  id                      Int       @id @default(autoincrement())
+  // Código visible SAC-NNNN-YY.
+  numero                  Int?
+  anio                    Int?
+  salida_no_conforme_id   Int?
+
+  // NC_REAL | NC_POTENCIAL | SERVICIO_NO_CONFORME | SUGERENCIAS | QUEJAS
+  tipo_desviacion         String?   @db.VarChar(30)
+  // AUDITORIA_INTERNA | AUDITORIA_EXTERNA | REVISION_DIRECCION | INSPECCION |
+  // CLIENTE | REPORTE_INCIDENTES | OTROS
+  fuente                  String?   @db.VarChar(30)
+  fuente_otros            String?   @db.VarChar(200)
+  // Multi-check: CALIDAD | MEDIO_AMBIENTE | SEGURIDAD
+  sistemas                String[]  @default([])
+
+  descripcion             String?
+  norma_requisito         String?
+  documento_referencia    String?
+  proceso_responsable     String?   @db.VarChar(200)
+  identificado_por        String?   @db.VarChar(150)
+  fecha_identificacion    DateTime? @db.Date
+
+  // Si la corrección inmediata basta, se cierra sin análisis causa raíz.
+  correccion_inmediata    String?
+  analisis_causa_raiz     String?
+
+  // Responsable + fecha programada del bloque "Acciones a Tomar"
+  // (las acciones individuales van en tabla hija SacAccion).
+  responsable_cierre      String?   @db.VarChar(150)
+  fecha_cierre_programada DateTime? @db.Date
+
+  // Verificación de la eficacia
+  verificacion_eficacia   String?
+  verificado_por          String?   @db.VarChar(150)
+  fecha_verificacion      DateTime? @db.Date
+
+  // Bloque de riesgos (implementación de las acciones)
+  genera_riesgo           Boolean?
+  riesgo_identificado     String?
+  proceso_afectado        String?   @db.VarChar(200)
+  accion_riesgo           String?
+
+  // ABIERTA → CERRADA
+  estado                  String    @default("ABIERTA") @db.VarChar(20)
+  cerrado_por             String?   @db.VarChar(150)
+  fecha_cierre            DateTime?
+
+  activo                  Boolean   @default(true)
+  usuario_crea            String?   @db.VarChar(100)
+  usuario_actualiza       String?   @db.VarChar(100)
+  created_at              DateTime  @default(now())
+  updated_at              DateTime  @default(now()) @updatedAt
+
+  salida_no_conforme      SalidaNoConforme? @relation(fields: [salida_no_conforme_id], references: [id])
+  acciones                SacAccion[]
+
+  @@index([anio])
+  @@index([estado])
+  @@index([salida_no_conforme_id])
+  @@index([created_at])
+  @@map("solicitud_accion_correctiva")
+}
+
+// Acción/actividad del bloque "Acciones a Tomar" de la SAC.
+model SacAccion {
+  id          Int       @id @default(autoincrement())
+  sac_id      Int
+  orden       Int       @default(1)
+  descripcion String
+  responsable String?   @db.VarChar(150)
+  fecha       DateTime? @db.Date
+
+  sac         SolicitudAccionCorrectiva @relation(fields: [sac_id], references: [id], onDelete: Cascade)
+
+  @@index([sac_id])
+  @@map("sac_accion")
 }
