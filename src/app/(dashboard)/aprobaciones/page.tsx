@@ -28,7 +28,68 @@ import { useCachedFetch } from "@/lib/useCachedFetch";
 
 import { formatDateOnly, formatDateOnlyShort, dateOnlyLocal } from "@/lib/dates";
 import { R2FileLink } from "@/components/R2FileLink";
+import {
+  montoEnUSD, estadoLiberacion, nombreNivel, puedeFirmarNivel,
+  tieneAlgunNivel, type TipoDocLiberacion,
+} from "@/lib/aprobacion-montos";
 const { Title, Text } = Typography;
+
+// ── Semáforo de liberación A/B/C (esquema multi-nivel 2026-08-11) ─────────
+// Cada documento se clasifica por monto USD; muestra un chip por nivel
+// requerido: verde = firmado, azul = siguiente en turno, gris = en cola.
+interface FirmaLiberacion {
+  nivel: string;
+  liberado_por: string;
+  fecha_liberacion: string;
+  comentario: string | null;
+}
+
+function LiberacionChips({ tipo, montoUSD, firmas }: {
+  tipo: TipoDocLiberacion;
+  montoUSD: number;
+  firmas: FirmaLiberacion[];
+}) {
+  const est = estadoLiberacion(tipo, montoUSD, firmas.map((f) => f.nivel));
+  if (est.requeridos.length === 0) {
+    return (
+      <Tooltip title="Menor a US$ 1,000: la libera quien la elaboró (o un aprobador)">
+        <Tag style={{ margin: 0 }}>Auto</Tag>
+      </Tooltip>
+    );
+  }
+  return (
+    <Space size={2}>
+      {est.requeridos.map((nivel) => {
+        const firma = firmas.find((f) => f.nivel === nivel);
+        const esSiguiente = est.siguiente === nivel;
+        const titulo = firma
+          ? `Nivel ${nivel} (${nombreNivel(tipo, nivel)}) — liberado por ${firma.liberado_por} el ${dayjs(firma.fecha_liberacion).format("DD/MM/YYYY HH:mm")}${firma.comentario ? ` — ${firma.comentario}` : ""}`
+          : esSiguiente
+            ? `Nivel ${nivel} (${nombreNivel(tipo, nivel)}) — SIGUIENTE en firmar`
+            : `Nivel ${nivel} (${nombreNivel(tipo, nivel)}) — en cola (espera al nivel anterior)`;
+        return (
+          <Tooltip key={nivel} title={titulo}>
+            <Tag
+              color={firma ? "green" : esSiguiente ? "blue" : "default"}
+              style={{ margin: 0, fontWeight: 600 }}
+            >
+              {firma ? `${nivel} ✓` : nivel}
+            </Tag>
+          </Tooltip>
+        );
+      })}
+    </Space>
+  );
+}
+
+// Monto USD de un req (mismo criterio que el server: precio del req con
+// fallback a catálogo, × cantidad, convertido a USD).
+function montoUsdReq(r: { precio_unitario: number | string | null; moneda: string | null; cantidad: number | string; material: { precio: number | string | null; moneda_codigo: string | null } | null }): number {
+  const usaReq = r.precio_unitario != null;
+  const unit = usaReq ? Number(r.precio_unitario) : (r.material?.precio != null ? Number(r.material.precio) : 0);
+  const mon = usaReq ? (r.moneda ?? "USD") : (r.material?.moneda_codigo ?? "USD");
+  return montoEnUSD((Number.isFinite(unit) ? unit : 0) * Number(r.cantidad ?? 0), mon);
+}
 
 // ── Tipos del payload del endpoint /api/aprobaciones ──────────────────────
 interface OCItem {
@@ -69,6 +130,8 @@ interface OCPendiente {
   ubicacion: { codigo: string; nombre: string } | null;
   ot_repuestos: OCItem[];
   detalles: OCDetalle[];
+  // Firmas de liberación A/B/C ya estampadas.
+  liberaciones?: FirmaLiberacion[];
 }
 interface ReqPendiente {
   id: number;
@@ -103,6 +166,8 @@ interface ReqPendiente {
   po_id?: number | null;
   nro_oc?: string | null;
   compra?: { id: number; numero_po: string; status_oc_codigo: string | null } | null;
+  // Firmas de liberación A/B ya estampadas.
+  liberaciones?: FirmaLiberacion[];
 }
 interface HistorialItem {
   tipo: "OC" | "RQ";
@@ -170,6 +235,22 @@ export default function AceptacionesPage() {
 
   const [data, setData] = useState<AceptacionesPayload | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Roles del usuario logueado — para pintar qué nivel de liberación puede
+  // firmar (el server valida igual; esto es solo UX).
+  const [misRoles, setMisRoles] = useState<string[]>([]);
+  const [miNombre, setMiNombre] = useState<string | null>(null);
+  useEffect(() => {
+    fetch("/api/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.user) {
+          setMisRoles(Array.isArray(d.user.roles) ? d.user.roles : []);
+          setMiNombre(d.user.name ?? null);
+        }
+      })
+      .catch(() => { /* ignore */ });
+  }, []);
 
   // Filtros
   const [filterTipo, setFilterTipo] = useState<"ALL" | "OC" | "RQ">("ALL");
@@ -304,7 +385,9 @@ export default function AceptacionesPage() {
       });
       const j = await res.json().catch(() => null);
       if (!res.ok) throw new Error(j?.error ?? "Error al aceptar OC");
-      message.success(`OC ${numero_po} aceptada.`);
+      // El server distingue liberación completa ("OC aceptada") de firma
+      // parcial ("Nivel A liberado — pendiente: B, C").
+      message.success(j?.message ? `OC ${numero_po}: ${j.message}` : `OC ${numero_po} aceptada.`);
       fetchData();
     } catch (e: unknown) {
       message.error(e instanceof Error ? e.message : "Error");
@@ -402,7 +485,8 @@ export default function AceptacionesPage() {
       });
       const j = await res.json().catch(() => null);
       if (!res.ok) throw new Error(j?.error ?? "Error al aprobar requerimiento");
-      message.success(`Req ${ref} aprobado.`);
+      // El server distingue liberación completa de firma parcial.
+      message.success(j?.message ? `Req ${ref}: ${j.message}` : `Req ${ref} aprobado.`);
       fetchData();
     } catch (e: unknown) {
       message.error(e instanceof Error ? e.message : "Error");
@@ -902,6 +986,43 @@ export default function AceptacionesPage() {
   const reqs = useMemo(() => data?.reqs_pendientes ?? [], [data]);
   const historial = data?.historial ?? [];
 
+  // ¿Le toca firmar al usuario actual? (turno secuencial A→B→C). El server
+  // valida igual — esto solo habilita/deshabilita el botón con un tooltip claro.
+  function turnoOC(o: OCPendiente): { puedo: boolean; titulo: string } {
+    const montoUSD = montoEnUSD(Number(o.total ?? 0), o.moneda_codigo);
+    const est = estadoLiberacion("OC", montoUSD, (o.liberaciones ?? []).map((f) => f.nivel));
+    if (est.requeridos.length === 0) {
+      const puedo = o.usuario_solicita === miNombre || tieneAlgunNivel("OC", misRoles);
+      return {
+        puedo,
+        titulo: puedo
+          ? "Liberar OC (< US$ 1,000 — autoliberación del elaborador)"
+          : "OC < US$ 1,000: la libera quien la elaboró o un aprobador",
+      };
+    }
+    const sig = est.siguiente!;
+    const puedo = puedeFirmarNivel("OC", sig, misRoles);
+    return {
+      puedo,
+      titulo: puedo
+        ? `Firmar código de liberación ${sig} (${nombreNivel("OC", sig)})`
+        : `Turno del nivel ${sig} (${nombreNivel("OC", sig)}) — tu usuario no tiene ese rol`,
+    };
+  }
+  function turnoRQ(r: ReqPendiente): { puedo: boolean; titulo: string } {
+    const montoUSD = montoUsdReq(r);
+    const est = estadoLiberacion("REQ", montoUSD, (r.liberaciones ?? []).map((f) => f.nivel));
+    const sig = est.siguiente;
+    if (!sig) return { puedo: true, titulo: "Aprobar requerimiento" };
+    const puedo = puedeFirmarNivel("REQ", sig, misRoles);
+    return {
+      puedo,
+      titulo: puedo
+        ? `Firmar código de liberación ${sig} (${nombreNivel("REQ", sig)})`
+        : `Turno del nivel ${sig} (${nombreNivel("REQ", sig)}) — tu usuario no tiene ese rol`,
+    };
+  }
+
   // Filas visibles tras los filtros de columna de cada tabla — para el export.
   const { filtradas: ocsFiltradas, onChange: onChangeTablaOC } = useTablaFiltrada(ocs);
   const { filtradas: reqsFiltradas, onChange: onChangeTablaRQ } = useTablaFiltrada(reqs);
@@ -956,6 +1077,16 @@ export default function AceptacionesPage() {
       render: (_, o) => <span style={{ fontWeight: 600, color: brand.navy }}>{o.moneda_codigo ?? "USD"} {Number(o.total).toFixed(2)}</span>,
     },
     {
+      key: "liberacion", title: "Liberación", width: 130, align: "center",
+      render: (_, o) => (
+        <LiberacionChips
+          tipo="OC"
+          montoUSD={montoEnUSD(Number(o.total ?? 0), o.moneda_codigo)}
+          firmas={o.liberaciones ?? []}
+        />
+      ),
+    },
+    {
       key: "fecha_solicitud", title: "F. Solicitud", width: 100,
       sorter: (a, b) => a.fecha_solicitud.localeCompare(b.fecha_solicitud),
       render: (_, o) => <Text style={{ fontSize: 11 }}>{formatDateOnlyShort(o.fecha_solicitud)}</Text>,
@@ -971,17 +1102,20 @@ export default function AceptacionesPage() {
     },
     {
       key: "acciones", title: "Acciones", width: 220, fixed: "right", align: "center",
-      render: (_, o) => (
+      render: (_, o) => {
+        const turno = turnoOC(o);
+        return (
         <Space size={4}>
-          <Tooltip title="Aprobar OC (pasa a En Proceso) — abre el modal con Descripción / Detalle / Comentario">
-            {/* Antes había un Popconfirm de "sí/no" antes de abrir el modal.
-                Eliminado a pedido del user: clic directo abre el modal de
-                aceptación con los 3 campos (descripción + detalle + comentario)
-                que sirven como confirmación + auditoría en un solo paso. */}
+          <Tooltip title={turno.titulo}>
+            {/* Clic directo abre el modal de aceptación con los 3 campos
+                (descripción + detalle + comentario). Con el esquema A/B/C el
+                botón firma el SIGUIENTE nivel pendiente del usuario; queda
+                deshabilitado si no es su turno (el server valida igual). */}
             <Button
               type="primary"
               size="small"
               icon={<CheckOutlined />}
+              disabled={!turno.puedo}
               onClick={() => aceptarOC(o.id, o.numero_po)}
             >
               Aprobar
@@ -1008,7 +1142,8 @@ export default function AceptacionesPage() {
             />
           </Tooltip>
         </Space>
-      ),
+        );
+      },
     },
   ];
 
@@ -1184,6 +1319,12 @@ export default function AceptacionesPage() {
       },
     },
     {
+      key: "liberacion", title: "Liberación", width: 110, align: "center",
+      render: (_, r) => (
+        <LiberacionChips tipo="REQ" montoUSD={montoUsdReq(r)} firmas={r.liberaciones ?? []} />
+      ),
+    },
+    {
       key: "fecha_solicitud", title: "F. Solicitud", width: 100,
       sorter: (a, b) => a.fecha_solicitud.localeCompare(b.fecha_solicitud),
       render: (_, r) => <Text style={{ fontSize: 11 }}>{formatDateOnlyShort(r.fecha_solicitud)}</Text>,
@@ -1195,11 +1336,14 @@ export default function AceptacionesPage() {
     },
     {
       key: "acciones", title: "Acciones", width: 220, fixed: "right", align: "center",
-      render: (_, r) => (
+      render: (_, r) => {
+        const turno = turnoRQ(r);
+        return (
         <Space size={4}>
-          <Tooltip title="Aprobar requerimiento">
+          <Tooltip title={turno.titulo}>
             <Button
               type="primary" size="small" icon={<CheckOutlined />}
+              disabled={!turno.puedo}
               onClick={() => openAprobarModal(r)}
             >
               Aprobar
@@ -1226,7 +1370,8 @@ export default function AceptacionesPage() {
             />
           </Tooltip>
         </Space>
-      ),
+        );
+      },
     },
   ];
 

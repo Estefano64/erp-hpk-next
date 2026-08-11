@@ -33,6 +33,8 @@ export async function GET(req: NextRequest) {
       ocs_pendientes = await prisma.compra.findMany({
         where: whereOC,
         include: {
+          // Firmas de liberación A/B/C ya estampadas (esquema multi-nivel).
+          liberaciones: { select: { nivel: true, liberado_por: true, fecha_liberacion: true, comentario: true } },
           proveedor: { select: { id: true, razon_social: true, ruc: true } },
           orden_trabajo: { select: { id: true, ot: true } },
           ubicacion: { select: { codigo: true, nombre: true } },
@@ -73,6 +75,8 @@ export async function GET(req: NextRequest) {
       reqs_pendientes = await prisma.oTRepuesto.findMany({
         where: whereRQ,
         include: {
+          // Firmas de liberación A/B ya estampadas (esquema multi-nivel).
+          liberaciones: { select: { nivel: true, liberado_por: true, fecha_liberacion: true, comentario: true } },
           orden_trabajo: {
             select: {
               id: true, ot: true,
