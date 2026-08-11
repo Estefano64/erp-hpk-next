@@ -3,6 +3,7 @@ import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { recalcularRecursosStatusOT, recalcularRecursosStatusOTInterna } from "@/lib/recursos-ot";
+import { resetLiberaciones } from "@/lib/liberacion";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
@@ -52,6 +53,9 @@ export async function POST(req: NextRequest, { params }: Params) {
           { status: 400 },
         );
       }
+
+      // Reset de firmas de liberación parciales (A/B/C): anular las descarta.
+      await resetLiberaciones(tx, { compraId });
 
       // Anular la OC + sus items vinculados. Persistimos también descripción
       // + detalle de aprobación (los 3 campos del modal de rechazo).

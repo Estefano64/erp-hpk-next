@@ -218,6 +218,11 @@ export async function PUT(req: NextRequest, { params }: Params) {
         where: { id: record.id },
         data: { total },
       });
+      // Reset de firmas de liberación A/B/C: si la OC sigue pendiente y el
+      // total cambió, las firmas hechas con el monto anterior dejan de valer.
+      if (updated.status_oc_codigo === "PEND_OC" && !total.equals(new Prisma.Decimal(record.total))) {
+        await prisma.liberacionCodigo.deleteMany({ where: { compra_id: record.id } });
+      }
       return NextResponse.json({ data: updated });
     }
     return NextResponse.json({ data: record });

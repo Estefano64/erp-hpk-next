@@ -3,6 +3,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { parseDateOnly, hoyEnLima } from "@/lib/dates";
+import { resetLiberaciones } from "@/lib/liberacion";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
 const IGV_PCT = new Prisma.Decimal("0.18");
@@ -240,6 +241,12 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
         ? baseImponible.mul(IGV_PCT)
         : new Prisma.Decimal(0);
       const total = baseImponible.plus(impuesto).plus(otrosDec);
+      // Reset de firmas de liberación A/B/C: si la OC sigue pendiente y el
+      // total cambió, las firmas hechas con el monto anterior dejan de valer
+      // (la clasificación por monto se recalcula con el total nuevo).
+      if (compra.status_oc_codigo === "PEND_OC" && !total.equals(new Prisma.Decimal(compra.total))) {
+        await resetLiberaciones(tx, { compraId });
+      }
       await tx.compra.update({
         where: { id: compraId },
         data: {

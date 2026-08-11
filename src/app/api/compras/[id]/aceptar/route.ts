@@ -3,20 +3,23 @@ import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { recalcularRecursosStatusOT, recalcularRecursosStatusOTInterna } from "@/lib/recursos-ot";
-import { montoEnUSD, puedeAprobarOC } from "@/lib/aprobacion-montos";
+import { montoEnUSD, nivelesRequeridosOC, tieneAlgunNivel, fmtUSD } from "@/lib/aprobacion-montos";
+import { firmarNiveles, errorNivelNoAutorizado } from "@/lib/liberacion";
 import { hoyEnLima } from "@/lib/dates";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
 
 // POST /api/compras/[id]/aceptar
-// Acepta una OC en estado PEND_OC y la pasa a PROCESO.
-// Registra el usuario que acepta en `usuario_aprueba` y deja traza
-// en OTHistorial de cada OT vinculada.
-//
-// Permiso por MONTO (esquema de gerencia 2026-07-08, ver aprobacion-montos.ts):
-// hasta $1,000 quien la elaboró; $2,500 aprobador_oc_2500; $5,000
-// aprobador_oc_5000; más de $5,000 solo gerencia.
+// Liberación multi-nivel (esquema A/B/C, 2026-08-11): la OC se clasifica por
+// su total en USD (Werteschema) y cada llamada firma el/los códigos de
+// liberación que le correspondan al usuario, en orden secuencial:
+//   < $1,000            autoliberación (elaborador o cualquier nivel)
+//   $1,000 – 2,500      A (Supervisor de Compras)
+//   $2,500 – 5,000      A → B (Gerente de Compras)
+//   > $5,000            A → B → C (Director Financiero)
+// La OC pasa a PROCESO recién cuando todos los niveles requeridos firmaron;
+// mientras tanto sigue en PEND_OC con firmas parciales en `liberacion_codigo`.
 export async function POST(req: NextRequest, { params }: Params) {
   try {
     const token = await getToken({ req });
@@ -64,19 +67,79 @@ export async function POST(req: NextRequest, { params }: Params) {
           { status: 400 },
         );
       }
-      // Tope de aprobación por monto (aprobacion-montos.ts).
-      const montoUSD = montoEnUSD(Number(compra.total ?? 0), compra.moneda_codigo);
-      const roles = (token.roles as string[] | undefined) ?? [];
-      const permiso = puedeAprobarOC(roles, montoUSD, compra.usuario_solicita === usuario);
-      if (!permiso.ok) {
-        throw Object.assign(new Error(permiso.error), { status: 403 });
-      }
       // Una OC sin detalles ni reqs vinculados no se puede recibir.
       if (compra._count.detalles === 0 && compra._count.ot_repuestos === 0) {
         throw Object.assign(
           new Error("La OC no tiene items. Agregá al menos uno antes de aceptarla."),
           { status: 400 },
         );
+      }
+
+      // Clasificación por monto (Werteschema) + firma de niveles.
+      const montoUSD = montoEnUSD(Number(compra.total ?? 0), compra.moneda_codigo);
+      const roles = (token.roles as string[] | undefined) ?? [];
+      const requeridos = nivelesRequeridosOC(montoUSD);
+      let liberacion = null as Awaited<ReturnType<typeof firmarNiveles>> | null;
+      if (requeridos.length === 0) {
+        // Autoliberación < $1,000: el elaborador o quien tenga algún nivel.
+        const esElaborador = compra.usuario_solicita === usuario;
+        if (!esElaborador && !tieneAlgunNivel("OC", roles)) {
+          throw Object.assign(
+            new Error(`Una OC de hasta ${fmtUSD(1000)} la aprueba quien la elaboró o un aprobador designado.`),
+            { status: 403 },
+          );
+        }
+      } else {
+        liberacion = await firmarNiveles(tx, {
+          tipo: "OC",
+          compraId,
+          montoUSD,
+          roles,
+          usuario,
+          comentario: comentario || null,
+        });
+        if (liberacion.firmadosAhora.length === 0 && !liberacion.estado.liberado) {
+          throw Object.assign(new Error(errorNivelNoAutorizado("OC", liberacion.estado, montoUSD)), { status: 403 });
+        }
+      }
+      const liberado = liberacion == null || liberacion.estado.liberado;
+
+      // Firma parcial: la OC sigue PEND_OC — solo dejamos traza y salimos.
+      if (!liberado) {
+        const otsParciales = await tx.oTRepuesto.findMany({
+          where: { po_id: compraId, ot_id: { not: null } },
+          select: { ot_id: true },
+          distinct: ["ot_id"],
+        });
+        const otsInternasParciales = await tx.oTRepuesto.findMany({
+          where: { po_id: compraId, orden_trabajo_interna_id: { not: null } },
+          select: { orden_trabajo_interna_id: true },
+          distinct: ["orden_trabajo_interna_id"],
+        });
+        const descParcial =
+          `OC ${compra.numero_po}: código(s) de liberación ${liberacion!.firmadosAhora.join(", ")} firmado(s) por ${usuario}` +
+          ` — pendiente(s): ${liberacion!.estado.pendientes.join(", ")}`;
+        const datosParcial = JSON.stringify({
+          po_id: compraId,
+          numero_po: compra.numero_po,
+          accion: "LIBERAR_NIVEL_OC",
+          niveles_firmados: liberacion!.firmadosAhora,
+          pendientes: liberacion!.estado.pendientes,
+          comentario: comentario || null,
+        });
+        for (const { ot_id } of otsParciales) {
+          if (ot_id == null) continue;
+          await tx.oTHistorial.create({
+            data: { ot_id, tipo_operacion: "Otro", descripcion: descParcial, usuario, datos_adicionales: datosParcial },
+          });
+        }
+        for (const { orden_trabajo_interna_id } of otsInternasParciales) {
+          if (orden_trabajo_interna_id == null) continue;
+          await tx.oTHistorial.create({
+            data: { orden_trabajo_interna_id, tipo_operacion: "Otro", descripcion: descParcial, usuario, datos_adicionales: datosParcial },
+          });
+        }
+        return { compra: null, liberacion };
       }
 
       const actualizada = await tx.compra.update({
@@ -164,10 +227,26 @@ export async function POST(req: NextRequest, { params }: Params) {
         if (orden_trabajo_interna_id != null) await recalcularRecursosStatusOTInterna(tx, orden_trabajo_interna_id);
       }
 
-      return actualizada;
+      return { compra: actualizada, liberacion };
     });
 
-    return NextResponse.json({ data: result, message: "OC aceptada" });
+    const est = result.liberacion?.estado ?? null;
+    const liberadoFinal = result.compra != null;
+    return NextResponse.json({
+      data: result.compra,
+      liberacion: est
+        ? {
+            liberado: est.liberado,
+            requeridos: est.requeridos,
+            firmados: est.firmados,
+            pendientes: est.pendientes,
+            firmados_ahora: result.liberacion!.firmadosAhora,
+          }
+        : { liberado: true, requeridos: [], firmados: [], pendientes: [], firmados_ahora: [] },
+      message: liberadoFinal
+        ? "OC aceptada"
+        : `Nivel ${result.liberacion!.firmadosAhora.join(", ")} liberado — pendiente: ${est!.pendientes.join(", ")}.`,
+    });
   } catch (error: unknown) {
     const err = error as { status?: number; message?: string };
     if (err?.status) {
