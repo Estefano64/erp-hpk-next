@@ -183,6 +183,17 @@ export async function GET(_req: NextRequest, { params }: Params) {
       compra.proveedor_ruc_override?.trim() ||
       compra.proveedor?.ruc ||
       "";
+    // Campo "Señor (es)" del PDF: SIEMPRE la razón social del proveedor
+    // (pedido 2026-08-13) — no el nombre comercial ni el contacto (el
+    // contacto ya sale en su propia línea "Atención"). El override manual
+    // (caso "PROVEEDOR VARIOS") sigue ganando porque ahí no hay registro
+    // real de proveedor. El nombre del ARCHIVO sí mantiene el nombre
+    // comercial (formato aprobado en jul-2026).
+    const provRazonSocial =
+      compra.proveedor_nombre_override?.trim() ||
+      compra.proveedor?.razon_social ||
+      compra.proveedor?.nombre_comercial ||
+      "";
     const provFile = sanitizeNombreArchivo(provNombreEffectivo.toUpperCase()).slice(0, 40);
     const partes = [
       `OC ${ocFile}`,
@@ -459,7 +470,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
   <table class="prov-table">
     <tr>
       <td class="lbl">Señor (es):</td>
-      <td class="val">${esc(provNombreEffectivo || "-")}</td>
+      <td class="val">${esc(provRazonSocial || "-")}</td>
       <td class="lbl">Ruc:</td>
       <td class="val">${esc(provRucEffectivo || "-")}</td>
     </tr>

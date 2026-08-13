@@ -166,8 +166,6 @@ export async function PUT(req: NextRequest, { params }: Params) {
   try {
     const { id } = await params;
     const body = await req.json();
-    const usuario = await getAuditUser(req);
-
     const data: Record<string, unknown> = {};
     // Aliases POs2 → current
     if (body.proveedor_id !== undefined) data.proveedor_id = body.proveedor_id;
@@ -200,7 +198,11 @@ export async function PUT(req: NextRequest, { params }: Params) {
     let recalcularTotal = false;
     if (body.descuento !== undefined) { data.descuento = body.descuento; recalcularTotal = true; }
     if (body.otros !== undefined) { data.otros = body.otros; recalcularTotal = true; }
-    if (usuario && data.usuario_aprueba === undefined) data.usuario_aprueba = usuario;
+    // NO auto-pisar usuario_aprueba con quien edita (legacy 2026-04-30): la
+    // aprobación real pasa por /aceptar (liberación A/B/C) y este PUT lo usa
+    // p.ej. el almacenero al registrar factura/guía en la recepción — dejaba
+    // "Almacenero" como APROBADO POR en el PDF (120 OCs pisadas jun-ago).
+    // Si el body trae usuario_aprueba explícito (línea de arriba), se respeta.
 
     const record = await prisma.compra.update({
       where: { id: (parseInt4Safe(id) ?? 0) },
