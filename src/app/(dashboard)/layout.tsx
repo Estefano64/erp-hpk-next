@@ -29,6 +29,7 @@ import { brand } from "@/lib/theme";
 import { useResponsive } from "@/lib/responsive";
 import IdleLogout from "@/components/IdleLogout";
 import BfcacheGuard from "@/components/BfcacheGuard";
+import { NotificacionesBell } from "@/components/NotificacionesBell";
 import { confirmLeave } from "@/lib/unsaved-changes";
 import { esTecnicoRestringido, rutaPermitidaTecnico } from "@/lib/tecnico-acceso";
 import { puedeVerRuta } from "@/lib/acceso-rutas";
@@ -467,6 +468,7 @@ export default function DashboardLayout({
           />
 
           <Space size={4}>
+          <NotificacionesBell />
           <Tooltip title={tema === "oscuro" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}>
             <Button
               type="text"

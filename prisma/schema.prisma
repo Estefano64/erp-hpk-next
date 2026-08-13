@@ -32,7 +32,8 @@ model Usuario {
   // un jefe que también es operario lleva ["admin", "tecnico", "evaluador"].
   // Roles bien definidos hoy:
   //   admin, viewer, tecnico, evaluador, aprobador_evaluacion, aprobador_requerimiento,
-  //   ssoma (encargado de seguridad: aprueba/cierra reportes de seguridad y gestiona SACs).
+  //   ssoma (encargado de seguridad: cierra reportes de seguridad y gestiona SACs),
+  //   responsable_ssoma (puede ser asignado como responsable de una acción correctiva).
   // Roles "placeholder" (el admin los puede asignar pero su efecto en sidebar
   // y accesos se define en una fase posterior): planner, supervisor,
   // logistica, mantenimiento, contabilidad.
@@ -49,6 +50,8 @@ model Usuario {
   // Solo ve /portal y únicamente las OTs de SU cliente con visible_portal.
   clienteId      Int?     @map("cliente_id")
   cliente        Cliente? @relation(fields: [clienteId], references: [cliente_id], onDelete: SetNull)
+  // Buzón de notificaciones in-app (campanita del header).
+  notificaciones Notificacion[]
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -2138,6 +2141,8 @@ model ReporteSeguridadAccion {
   orden                Int       @default(1)
   descripcion          String
   responsable          String?   @db.VarChar(150)
+  // Cuenta del responsable (rol "responsable_ssoma") — para notificarlo.
+  responsable_usuario_id Int?
   fecha_cumplimiento   DateTime? @db.Date
 
   reporte              ReporteSeguridad @relation(fields: [reporte_seguridad_id], references: [id], onDelete: Cascade)
@@ -2332,10 +2337,38 @@ model SacAccion {
   orden       Int       @default(1)
   descripcion String
   responsable String?   @db.VarChar(150)
+  // Cuenta del responsable (rol "responsable_ssoma"). Se guarda además del
+  // nombre para poder notificarlo; el nombre queda como texto del formato.
+  responsable_usuario_id Int?
   fecha       DateTime? @db.Date
 
   sac         SolicitudAccionCorrectiva @relation(fields: [sac_id], references: [id], onDelete: Cascade)
 
   @@index([sac_id])
   @@map("sac_accion")
+}
+
+// ── Notificaciones in-app ────────────────────────────────────────
+// Buzón por usuario que alimenta la campanita del header. Hoy lo escribe el
+// módulo SSOMA (asignación de acciones correctivas); el modelo es genérico a
+// propósito para que otros flujos puedan usarlo sin migrar de nuevo.
+model Notificacion {
+  id         Int       @id @default(autoincrement())
+  usuario_id Int
+  // Tipo del evento que la originó (ver TIPOS_NOTIFICACION en src/lib/notificaciones.ts).
+  tipo       String    @db.VarChar(40)
+  titulo     String    @db.VarChar(200)
+  mensaje    String?   @db.VarChar(600)
+  // Ruta interna a la que navega al hacer clic (ej. /ssoma/sacs?search=SAC-0001-26).
+  url        String?   @db.VarChar(300)
+  leida      Boolean   @default(false)
+  fecha_lectura DateTime?
+  creada_por String?   @db.VarChar(100)
+  created_at DateTime  @default(now())
+
+  usuario    Usuario   @relation(fields: [usuario_id], references: [id], onDelete: Cascade)
+
+  @@index([usuario_id, leida])
+  @@index([usuario_id, created_at])
+  @@map("notificacion")
 }
