@@ -1069,13 +1069,11 @@ function SeccionInventario({
 // ───────────────────────────────────────────────────────────────────────────
 interface OTResp {
   estadoAlmacen: { completas: number; incompletas: number };
-  tiempoAlmacen: number[];
-  tiempoAlmacenPromedio: number;
-  tiempoAlmacenMediana: number;
+  enAlmacen: { total: number; aging: number[]; promedio: number; mediana: number };
   avanceMes: { entregadasArmado: number; despachadas: number; facturadas: number };
 }
 
-const TIEMPO_ALMACEN_LABELS = ["1-3d", "4-7d", "8-14d", "15-30d", "+30d"];
+const AGING_ALMACEN_LABELS = ["0-30d", "31-60d", "61-90d", "91-180d", "+180d"];
 
 function SeccionOT({
   modo, anio, mes, sem,
@@ -1100,9 +1098,9 @@ function SeccionOT({
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const tiempoData = useMemo(
-    () => (data?.tiempoAlmacen ?? []).map((v, i) => ({ name: TIEMPO_ALMACEN_LABELS[i], value: v })),
-    [data?.tiempoAlmacen],
+  const agingData = useMemo(
+    () => (data?.enAlmacen?.aging ?? []).map((v, i) => ({ name: AGING_ALMACEN_LABELS[i], value: v })),
+    [data?.enAlmacen],
   );
   const avanceData = useMemo(() => {
     if (!data) return [];
@@ -1176,10 +1174,10 @@ function SeccionOT({
           </Col>
           <Col xs={24} md={8}>
             <Card
-              title="OT despachadas · tiempo en almacén"
-              extra={(data.tiempoAlmacenPromedio ?? 0) > 0 && (
-                <Text style={{ fontSize: 12, color: "#1D9E75", fontWeight: 600 }}>
-                  <ClockCircleOutlined /> Prom: {data.tiempoAlmacenPromedio.toFixed(1)} d · Med: {(data.tiempoAlmacenMediana ?? 0).toFixed(0)} d
+              title={`OTs en almacén sin despachar (${data.enAlmacen?.total ?? 0})`}
+              extra={(data.enAlmacen?.total ?? 0) > 0 && (
+                <Text style={{ fontSize: 12, color: "#854F0B", fontWeight: 600 }}>
+                  <ClockCircleOutlined /> Med: {(data.enAlmacen.mediana ?? 0).toFixed(0)} d · Prom: {(data.enAlmacen.promedio ?? 0).toFixed(0)} d
                 </Text>
               )}
               size="small"
@@ -1187,13 +1185,13 @@ function SeccionOT({
             >
               <div style={{ width: "100%", height: 220 }}>
                 <ResponsiveContainer>
-                  <BarChart data={tiempoData}>
+                  <BarChart data={agingData}>
                     <CartesianGrid stroke="var(--erp-chart-grid)" vertical={false} />
                     <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} />
                     <ReTooltip />
                     <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                      {tiempoData.map((_, i) => (
+                      {agingData.map((_, i) => (
                         <Cell key={i} fill={COLORS_TIEMPO_ALM[i] ?? brand.navy} />
                       ))}
                     </Bar>

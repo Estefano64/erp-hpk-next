@@ -12,15 +12,17 @@
 // Respuesta:
 //   {
 //     estadoAlmacen: { completas: number; incompletas: number },
-//     tiempoAlmacen: number[5],  // OT cerradas: días en almacén [1-3, 4-7, 8-14, 15-30, +30]
+//     enAlmacen: { total, aging: number[5], promedio, mediana },
+//       // OTs abiertas recibidas sin despachar (stock actual de almacén),
+//       // antigüedad en días desde recepción: [0-30, 31-60, 61-90, 91-180, +180]
 //     avanceMes: { entregadasArmado: number; despachadas: number; facturadas: number },
 //   }
 //
 // Reglas:
 //   - "OT abiertas": ot_status="Abierta". "Completas" en almacén =
 //     recursos_status = "Recursos completos"; "incompletas" = el resto activo.
-//   - "Tiempo en almacén" = fecha_despacho - fecha_recepcion en días, para OT
-//     con ambos campos seteados y fecha_despacho dentro del rango activo.
+//   - "En almacén" es la foto de HOY (no usa el rango de fechas), igual que
+//     estadoAlmacen.
 //   - "Avance del mes" cuenta OTs cuyos hitos (fin real / despacho / facturación)
 //     cayeron en el rango activo.
 
@@ -62,31 +64,36 @@ export async function GET(req: NextRequest) {
     ]);
     const incompletas = Math.max(0, abiertasTotal - completas);
 
-    // ── Tiempo en almacén: días entre recepción y despacho ──────────────
-    // De las OT con fecha_despacho en el rango activo.
-    const tiempoAlmacen = [0, 0, 0, 0, 0]; // [1-3, 4-7, 8-14, 15-30, +30]
+    // ── OTs en almacén AHORA (stock): recibidas y sin despachar ─────────
+    // Reemplaza al viejo "tiempo en almacén de despachadas", que dependía de
+    // que hubiera despachos en el rango (en prod solo jun/jul 2026 tienen —
+    // el chart salía vacío casi siempre). Esto es la foto actual, igual que
+    // el card de estado: independiente del filtro de fechas. Solo Abiertas —
+    // hay ~2,900 OTs Cerradas históricas (BDU) sin fecha_despacho registrada
+    // que NO son stock real.
+    const agingRows = await prisma.$queryRaw<Array<{ d: number }>>`
+      SELECT (CURRENT_DATE - fecha_recepcion)::int AS d
+      FROM orden_trabajo
+      WHERE activo = true AND ot_status_codigo = 'Abierta'
+        AND fecha_recepcion IS NOT NULL AND fecha_despacho IS NULL`;
+    const aging = [0, 0, 0, 0, 0]; // [0-30, 31-60, 61-90, 91-180, +180]
     const diasAlmacen: number[] = [];
-    const otsDespachadas = await prisma.ordenTrabajo.findMany({
-      where: {
-        fecha_despacho: { gte: desde, lt: hasta, not: null },
-        fecha_recepcion: { not: null },
-      },
-      select: { fecha_recepcion: true, fecha_despacho: true },
-    });
-    for (const ot of otsDespachadas) {
-      if (!ot.fecha_recepcion || !ot.fecha_despacho) continue;
-      const dias = dayjs(ot.fecha_despacho).diff(dayjs(ot.fecha_recepcion), "day");
-      if (dias < 0) continue;
-      diasAlmacen.push(dias);
-      if (dias <= 3) tiempoAlmacen[0]++;
-      else if (dias <= 7) tiempoAlmacen[1]++;
-      else if (dias <= 14) tiempoAlmacen[2]++;
-      else if (dias <= 30) tiempoAlmacen[3]++;
-      else tiempoAlmacen[4]++;
+    for (const { d } of agingRows) {
+      if (d < 0) continue;
+      diasAlmacen.push(d);
+      if (d <= 30) aging[0]++;
+      else if (d <= 60) aging[1]++;
+      else if (d <= 90) aging[2]++;
+      else if (d <= 180) aging[3]++;
+      else aging[4]++;
     }
-    const tiempoAlmacenPromedio = diasAlmacen.length > 0
-      ? diasAlmacen.reduce((a, b) => a + b, 0) / diasAlmacen.length : 0;
-    const tiempoAlmacenMediana = mediana(diasAlmacen);
+    const enAlmacen = {
+      total: diasAlmacen.length,
+      aging,
+      promedio: diasAlmacen.length > 0
+        ? diasAlmacen.reduce((a, b) => a + b, 0) / diasAlmacen.length : 0,
+      mediana: mediana(diasAlmacen),
+    };
 
     // ── Avance del mes: hitos del rango ────────────────────────────────
     // OT externa no tiene `fecha_fin_real` — usamos `fecha_entrega` (entrega
@@ -106,9 +113,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       estadoAlmacen: { completas, incompletas },
-      tiempoAlmacen,
-      tiempoAlmacenPromedio,
-      tiempoAlmacenMediana,
+      enAlmacen,
       avanceMes: { entregadasArmado, despachadas, facturadas },
       meta: { modo, anio, mes, sem },
     });
