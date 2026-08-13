@@ -1442,7 +1442,10 @@ function CierreGuardAlert({
   if (!fFinReal) faltantes.push("Fecha de fin real");
   if (!asignado) faltantes.push("Asignado a");
   if (recursos !== "Recursos completos") faltantes.push("Recursos completos");
-  if (ot.aprobacion_status_codigo !== "APROBADA") faltantes.push("Aprobación (debe estar APROBADA)");
+  // La aprobación (APROBADA) dejó de ser requisito de cierre el 2026-08-13:
+  // el circuito de aprobación casi no se usaba (30/38 OTs abiertas en
+  // BORRADOR) y bloqueaba el cierre. El flujo de aprobación sigue existiendo
+  // como trazabilidad opcional; pendiente de revisión con el equipo.
 
   if (faltantes.length === 0) return null;
 

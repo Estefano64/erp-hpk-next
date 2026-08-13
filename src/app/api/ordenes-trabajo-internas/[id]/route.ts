@@ -92,8 +92,12 @@ export async function PUT(req: NextRequest, { params }: Params) {
     const usuarioActualiza = (await getAuditUser(req)) ?? "sistema";
 
     // Guard de cierre: la OT solo se puede pasar a "Cerrada" cuando todos los
-    // campos clave estén completos (fechas reales + responsable + recursos +
-    // aprobación). Evita cerrar OTs con datos huérfanos.
+    // campos clave estén completos (fechas reales + responsable + recursos).
+    // Evita cerrar OTs con datos huérfanos.
+    // 2026-08-13: la aprobación (APROBADA) dejó de ser requisito de cierre —
+    // el circuito casi no se usaba (30/38 OTs abiertas en BORRADOR) y trababa
+    // la operación. El flujo de aprobación sigue disponible como trazabilidad
+    // opcional; pendiente de revisión con el equipo.
     if (data.ot_status_codigo === "Cerrada") {
       const actual = await prisma.ordenTrabajoInterna.findUnique({
         where: { id: otId },
@@ -103,7 +107,6 @@ export async function PUT(req: NextRequest, { params }: Params) {
           fecha_fin_real: true,
           asignado_a: true,
           recursos_status_codigo: true,
-          aprobacion_status_codigo: true,
         },
       });
       if (!actual) {
@@ -118,14 +121,12 @@ export async function PUT(req: NextRequest, { params }: Params) {
           fecha_fin_real: "fecha_fin_real" in data ? data.fecha_fin_real : actual.fecha_fin_real,
           asignado_a: "asignado_a" in data ? data.asignado_a : actual.asignado_a,
           recursos_status_codigo: "recursos_status_codigo" in data ? data.recursos_status_codigo : actual.recursos_status_codigo,
-          aprobacion_status_codigo: "aprobacion_status_codigo" in data ? data.aprobacion_status_codigo : actual.aprobacion_status_codigo,
         };
         const faltantes: string[] = [];
         if (!merged.fecha_inicio_real) faltantes.push("Fecha de inicio real");
         if (!merged.fecha_fin_real) faltantes.push("Fecha de fin real");
         if (!merged.asignado_a) faltantes.push("Asignado a");
         if (merged.recursos_status_codigo !== "Recursos completos") faltantes.push("Recursos completos");
-        if (merged.aprobacion_status_codigo !== "APROBADA") faltantes.push("Aprobación (debe estar APROBADA)");
         if (faltantes.length > 0) {
           return NextResponse.json(
             {
