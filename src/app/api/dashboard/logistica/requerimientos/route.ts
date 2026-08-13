@@ -15,7 +15,8 @@
 //     kpis: { emitidos, aprobados, enProceso, l1Label },
 //     porMes: number[12],          // emitidos por mes del año
 //     porSemana: { label, value }[], // emitidos por semana del mes (4-5 valores)
-//     porOt: number[5],            // distribución: cuántas OTs tienen [1, 2, 3, 4, 5+] reqs/items
+//     porOt: number[5],            // distribución: cuántas OTs (con actividad en el rango)
+//                                  // tienen [1, 2, 3, 4, 5+] reqs/items EN TOTAL (histórico)
 //     porTiempo: number[4],        // tiempo aprobación: [1-3d, 4-6d, 7-10d, +10d]
 //   }
 //
@@ -61,7 +62,17 @@ export async function GET(req: NextRequest) {
 
     const { desde, hasta } = rangoUTC(modo, anio, mes, sem);
     const tipos = tipoCodigoFiltro(tipo);
-    const tipoWhere = tipos ? { tipo_codigo: { in: tipos } } : {};
+    // Los items "libres" de OC (solo_para_oc) NO son requerimientos reales:
+    // se crean directo en el editor de OC con status APROBADO y el resto de
+    // vistas (/requerimientos, /detalle, tabs de OT) los excluye. Acá también
+    // — antes inflaban emitidos/aprobados y la distribución por OT.
+    const tipoWhere = {
+      ...(tipos ? { tipo_codigo: { in: tipos } } : {}),
+      solo_para_oc: { not: true },
+    };
+
+    // Estados que cuentan como "emitido" (BORRADOR queda fuera).
+    const STATUS_EMITIDOS = ["SIN_APROBACION", "APROBADO", "ANULADO", "DESAPROBADO"];
 
     // ── KPIs del rango activo ─────────────────────────────────────────
     // Counts paralelos para los 3 KPIs.
@@ -89,7 +100,7 @@ export async function GET(req: NextRequest) {
       prisma.oTRepuesto.count({
         where: {
           ...baseWhere,
-          status_requerimiento_codigo: { in: ["SIN_APROBACION", "APROBADO", "ANULADO", "DESAPROBADO"] },
+          status_requerimiento_codigo: { in: STATUS_EMITIDOS },
         },
       }),
       prisma.oTRepuesto.count({
@@ -147,7 +158,7 @@ export async function GET(req: NextRequest) {
           gte: anioUTC(anio).inicio,
           lt: anioUTC(anio).fin,
         },
-        status_requerimiento_codigo: { in: ["SIN_APROBACION", "APROBADO", "ANULADO", "DESAPROBADO"] },
+        status_requerimiento_codigo: { in: STATUS_EMITIDOS },
       },
       select: {
         id: true,
@@ -207,36 +218,49 @@ export async function GET(req: NextRequest) {
     }
 
     // ── Por OT (distribución 1/2/3/4/5+) ──────────────────────────────
-    // Para cada OT, cuántos reqs (o items) tiene en el rango activo.
-    const porOtTmp: Record<string, number> = {};
+    // De las OTs que emitieron requerimientos en el rango, contar TODOS sus
+    // requerimientos emitidos (histórico completo, no solo los del rango).
+    // Antes se contaban solo los reqs con fecha_solicitud dentro del rango:
+    // una OT con 4 reqs repartidos en varios meses caía en el bucket "1" o
+    // "2" al mirar un mes — el usuario la ve con 4 en su pestaña de reqs.
+    const otsExternas = new Set<number>();
+    const otsInternas = new Set<number>();
     for (const it of items) {
-      const otKey = `${it.ot_id ?? "i"}_${it.orden_trabajo_interna_id ?? "e"}`;
-      if (vista === "gen") {
-        if (!it.nro_req) continue;
-        const k = `${otKey}_${it.nro_req}`;
-        if (!porOtTmp[k]) porOtTmp[k] = 1; // dedup por req único
-        porOtTmp[otKey] = (porOtTmp[otKey] ?? 0); // marcar OT
-      }
-    }
-    // Calcular cuántos reqs/items por OT.
-    const reqsPorOt: Record<string, Set<string>> = {};
-    for (const it of items) {
-      const otKey = `${it.ot_id ?? "i"}_${it.orden_trabajo_interna_id ?? "e"}`;
-      if (!reqsPorOt[otKey]) reqsPorOt[otKey] = new Set();
-      if (vista === "gen") {
-        if (it.nro_req) reqsPorOt[otKey].add(it.nro_req);
-      } else {
-        reqsPorOt[otKey].add(String(it.id));
-      }
+      if (!STATUS_EMITIDOS.includes(it.status_requerimiento_codigo ?? "")) continue;
+      if (it.ot_id != null) otsExternas.add(it.ot_id);
+      else if (it.orden_trabajo_interna_id != null) otsInternas.add(it.orden_trabajo_interna_id);
     }
     const porOt: number[] = [0, 0, 0, 0, 0]; // [1, 2, 3, 4, 5+]
-    for (const otKey of Object.keys(reqsPorOt)) {
-      const n = reqsPorOt[otKey].size;
-      if (n === 1) porOt[0]++;
-      else if (n === 2) porOt[1]++;
-      else if (n === 3) porOt[2]++;
-      else if (n === 4) porOt[3]++;
-      else if (n >= 5) porOt[4]++;
+    if (otsExternas.size > 0 || otsInternas.size > 0) {
+      const reqsDeOts = await prisma.oTRepuesto.findMany({
+        where: {
+          ...tipoWhere,
+          status_requerimiento_codigo: { in: STATUS_EMITIDOS },
+          OR: [
+            { ot_id: { in: Array.from(otsExternas) } },
+            { orden_trabajo_interna_id: { in: Array.from(otsInternas) } },
+          ],
+        },
+        select: { id: true, nro_req: true, ot_id: true, orden_trabajo_interna_id: true },
+      });
+      const reqsPorOt: Record<string, Set<string>> = {};
+      for (const it of reqsDeOts) {
+        const otKey = `${it.ot_id ?? "i"}_${it.orden_trabajo_interna_id ?? "e"}`;
+        if (!reqsPorOt[otKey]) reqsPorOt[otKey] = new Set();
+        if (vista === "gen") {
+          if (it.nro_req) reqsPorOt[otKey].add(it.nro_req);
+        } else {
+          reqsPorOt[otKey].add(String(it.id));
+        }
+      }
+      for (const otKey of Object.keys(reqsPorOt)) {
+        const n = reqsPorOt[otKey].size;
+        if (n === 1) porOt[0]++;
+        else if (n === 2) porOt[1]++;
+        else if (n === 3) porOt[2]++;
+        else if (n === 4) porOt[3]++;
+        else if (n >= 5) porOt[4]++;
+      }
     }
 
     // ── Por tiempo de aprobación (1-3d, 4-6d, 7-10d, +10d) ───────────

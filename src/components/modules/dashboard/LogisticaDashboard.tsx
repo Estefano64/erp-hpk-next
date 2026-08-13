@@ -401,7 +401,7 @@ function SeccionRequerimientos({
               </Card>
             </Col>
             <Col xs={24} md={12}>
-              <Card title="Reqs/Ítems por OT" size="small" styles={{ body: { padding: 12 } }}>
+              <Card title={vista === "gen" ? "Requerimientos por OT" : "Ítems por OT"} size="small" styles={{ body: { padding: 12 } }}>
                 <div style={{ width: "100%", height: 200 }}>
                   <ResponsiveContainer>
                     <BarChart data={porOtData}>
