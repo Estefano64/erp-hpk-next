@@ -76,7 +76,8 @@ const ROLES = [
   { value: "logistica", label: "Logística — ciclo de compra y almacén" },
   { value: "mantenimiento", label: "Mantenimiento — OTs internas + equipos" },
   { value: "contabilidad", label: "Contabilidad — compras y facturación" },
-  { value: "ssoma", label: "SSOMA — encargado de seguridad: aprueba/cierra reportes y gestiona SACs" },
+  { value: "ssoma", label: "SSOMA — encargado de seguridad: cierra reportes y gestiona SACs" },
+  { value: "responsable_ssoma", label: "Responsable SSOMA — puede recibir acciones correctivas asignadas" },
   { value: "sin_costos", label: "Sin costos — oculta la pestaña Costos de OT (modificador)" },
   // Placeholders (sin efecto todavía)
   { value: "supervisor", label: "Supervisor (placeholder)" },
@@ -93,6 +94,7 @@ const COLOR_POR_ROL: Record<string, string> = {
   produccion: "green",
   logistica: "gold",
   ssoma: "red",
+  responsable_ssoma: "orange",
   viewer: "default",
 };
 

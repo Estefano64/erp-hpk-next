@@ -75,7 +75,8 @@ const ROLES = [
   "logistica",              // ciclo de compra/almacén + dashboards
   "mantenimiento",          // OTs internas + equipos/vehículos/task lists
   "contabilidad",           // contabilidad de compras + facturación
-  "ssoma",                  // encargado de seguridad: aprueba/cierra reportes SSOMA + SACs
+  "ssoma",                  // encargado de seguridad: cierra reportes SSOMA + gestiona SACs
+  "responsable_ssoma",      // asignable como responsable de una acción correctiva (le llega notificación)
   // Modificador restrictivo: oculta la pestaña Costos de las OTs (externas e
   // internas). Se combina con otros roles (ej. admin + sin_costos).
   "sin_costos",

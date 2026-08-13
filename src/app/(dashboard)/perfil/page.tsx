@@ -42,6 +42,8 @@ const ROL_TAG: Record<string, { label: string; color: string }> = {
   logistica: { label: "Logística", color: "orange" },
   mantenimiento: { label: "Mantenimiento", color: "green" },
   contabilidad: { label: "Contabilidad", color: "gold" },
+  ssoma: { label: "SSOMA", color: "red" },
+  responsable_ssoma: { label: "Responsable SSOMA", color: "orange" },
 };
 
 export default function PerfilPage() {
