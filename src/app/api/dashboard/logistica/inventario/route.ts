@@ -22,7 +22,6 @@
 //       salidas: { usd, sol },
 //       salidasQ,
 //     },
-//     porMesValorizacion: { usd: number[12], sol: number[12] }, // snapshot aprox.
 //     porMesIngresos: { usd: number[12], sol: number[12] },
 //     porMesSalidas: { usd: number[12], sol: number[12] },
 //     topProductos: { codigo, np, descripcion, salidaQ, salidaMonto, moneda }[],
@@ -31,10 +30,10 @@
 // Notas:
 //   - Stock actual es siempre "ahora" (no históricamente). Los KPIs ingresos/
 //     salidas SÍ usan el rango.
-//   - "Valorización mensual" es una aproximación: stock_actual_HOY × precio
-//     dividido en una proyección por meses. La valorización histórica exacta
-//     requeriría snapshots — no los tenemos. Solo se grafica el rango activo
-//     como referencia plana.
+//   - La "valorización mensual" se ELIMINÓ (2026-08-13): era el stock actual
+//     × precio repetido plano en cada mes — un dato falso que aparentaba
+//     historia. La valorización real (de hoy) queda solo como KPI. Para tener
+//     la serie histórica de verdad harían falta snapshots mensuales de stock.
 //   - Sin filtro de cat: combina catalogados (con precio) y no-cat (sin precio).
 //   - El precio del MovimientoInventario tiene snapshot (precio_unitario +
 //     moneda); si no, cae a material.precio/material.moneda_codigo.
@@ -207,15 +206,6 @@ export async function GET(req: NextRequest) {
       if (r.mon === "SOL") target.sol[r.mes - 1] += r.monto;
       else target.usd[r.mes - 1] += r.monto;
     }
-    // Valorización mensual: aproximación plana (stock × precio actual) por
-    // cada mes que ya ocurrió. Más sofisticado requeriría snapshots históricos.
-    const porMesValorizacion = mesesVacios();
-    const mesActual = dayjs().year() === anio ? dayjs().month() : 11;
-    for (let i = 0; i <= Math.min(mesActual, 11); i++) {
-      porMesValorizacion.usd[i] = valorizacion.usd;
-      porMesValorizacion.sol[i] = valorizacion.sol;
-    }
-
     const top10 = topRows.map((t) => ({
       codigo: t.codigo, np: t.np, descripcion: t.descripcion,
       salidaQ: t.salidaQ, salidaMonto: t.salidaMonto, moneda: t.moneda ?? "USD",
@@ -223,7 +213,6 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       kpis: { stock, valorizacion, ingresos, ingresosQ, salidas, salidasQ },
-      porMesValorizacion,
       porMesIngresos,
       porMesSalidas,
       topProductos: top10,

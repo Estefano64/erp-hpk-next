@@ -73,3 +73,16 @@ export function mesUTC(d: Date | string): number {
 export function isoWeekUTC(d: Date | string): number {
   return dayjs.utc(d).isoWeek();
 }
+
+/**
+ * Mediana de una lista de números. Los indicadores de tiempo del dashboard
+ * la muestran junto al promedio porque las distribuciones están sesgadas:
+ * en prod la aprobación de reqs tiene mediana 1 día y promedio ~4 (un caso
+ * de 61 días arrastra la media). Devuelve 0 con lista vacía.
+ */
+export function mediana(nums: number[]): number {
+  if (nums.length === 0) return 0;
+  const s = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 === 1 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}

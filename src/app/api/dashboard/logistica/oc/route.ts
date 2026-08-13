@@ -35,7 +35,7 @@ import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import dayjs from "dayjs";
 import {
-  rangoUTC, anioUTC, mesUTC, esSol, montoCero, sumarMonto,
+  rangoUTC, anioUTC, mesUTC, esSol, montoCero, sumarMonto, mediana,
 } from "@/lib/dashboard-logistica";
 
 type Tipo = "all" | "rep" | "serv";
@@ -161,22 +161,22 @@ export async function GET(req: NextRequest) {
     // Para cada compra: días entre fecha_aprobacion del req más reciente y
     // fecha_solicitud de la compra. Si no hay fecha_aprobacion → se omite.
     const porTiempo: number[] = [0, 0, 0, 0, 0]; // [mismo día, 1-2, 3-5, 6-10, +10]
-    let sumDias = 0;
-    let muestras = 0;
+    const diasColocar: number[] = [];
     for (const c of compras) {
       const aprob = c.ot_repuestos[0]?.fecha_aprobacion;
       if (!aprob) continue;
       const dias = dayjs(c.fecha_solicitud).diff(dayjs(aprob), "day");
       if (dias < 0) continue;
-      sumDias += dias;
-      muestras++;
+      diasColocar.push(dias);
       if (dias === 0) porTiempo[0]++;
       else if (dias <= 2) porTiempo[1]++;
       else if (dias <= 5) porTiempo[2]++;
       else if (dias <= 10) porTiempo[3]++;
       else porTiempo[4]++;
     }
-    const tiempoPromedio = muestras > 0 ? sumDias / muestras : 0;
+    const tiempoPromedio = diasColocar.length > 0
+      ? diasColocar.reduce((a, b) => a + b, 0) / diasColocar.length : 0;
+    const tiempoMediana = mediana(diasColocar);
 
     return NextResponse.json({
       kpis: { colocadas, costo, ticket },
@@ -186,6 +186,7 @@ export async function GET(req: NextRequest) {
       porMesCosto,
       porTiempo,
       tiempoPromedio,
+      tiempoMediana,
       meta: { modo, anio, mes, sem, tipo },
     });
   } catch (e) {

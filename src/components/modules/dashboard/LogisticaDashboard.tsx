@@ -231,6 +231,7 @@ interface ReqResp {
   porOt: number[];
   porTiempo: number[];
   tiempoAprobacionPromedio: number;
+  tiempoAprobacionMediana: number;
 }
 
 const MES_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
@@ -425,7 +426,7 @@ function SeccionRequerimientos({
                 title="Tiempo de aprobación"
                 extra={(data.tiempoAprobacionPromedio ?? 0) > 0 && (
                   <Text style={{ fontSize: 12, color: "#1D9E75", fontWeight: 600 }}>
-                    <ClockCircleOutlined /> Promedio: {data.tiempoAprobacionPromedio.toFixed(1)} d
+                    <ClockCircleOutlined /> Prom: {data.tiempoAprobacionPromedio.toFixed(1)} d · Med: {(data.tiempoAprobacionMediana ?? 0).toFixed(0)} d
                   </Text>
                 )}
                 size="small"
@@ -477,6 +478,7 @@ interface OCResp {
   porMesCosto: { usd: number[]; sol: number[] };
   porTiempo: number[];
   tiempoPromedio: number;
+  tiempoMediana: number;
 }
 
 const TIEMPO_OC_LABELS = ["Mismo día", "1-2d", "3-5d", "6-10d", "+10d"];
@@ -652,6 +654,9 @@ function SeccionOC({
                   prefix={<ClockCircleOutlined style={{ color: "#1D9E75" }} />}
                   styles={{ content: { color: "#1D9E75", fontSize: 20, fontWeight: 600 } }}
                 />
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  Mediana: {(data.tiempoMediana ?? 0).toFixed(0)} d
+                </Text>
               </Card>
             </Col>
           </Row>
@@ -805,7 +810,6 @@ interface InvResp {
     stock: number; valorizacion: MontoDualT; ingresos: MontoDualT; ingresosQ: number;
     salidas: MontoDualT; salidasQ: number;
   };
-  porMesValorizacion: { usd: number[]; sol: number[] };
   porMesIngresos: { usd: number[]; sol: number[] };
   porMesSalidas: { usd: number[]; sol: number[] };
   topProductos: { codigo: string; np: string | null; descripcion: string; salidaQ: number; salidaMonto: number; moneda: string }[];
@@ -818,7 +822,6 @@ function SeccionInventario({
 }) {
   const [catFilter, setCatFilter] = useState<"all" | "cat" | "nocat">("all");
   const [unidad, setUnidad] = useState<"np" | "cant">("np");
-  const [monedaSel, setMonedaSel] = useState<MonedaSel>("usd");
   const [data, setData] = useState<InvResp | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -839,15 +842,20 @@ function SeccionInventario({
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Ingresos y salidas por mes, cada moneda como barra propia (sin sumar).
+  // La "valorización mensual" se quitó del chart: era el valor de HOY
+  // repetido plano en cada mes (no hay snapshots históricos) — aparentaba
+  // una serie histórica que no existe. La valorización real queda como KPI.
   const porMesData = useMemo(() => {
     if (!data) return [];
     return MES_LABELS.map((name, i) => ({
       name,
-      valorizacion: data.porMesValorizacion[monedaSel]?.[i] ?? 0,
-      ingresos: data.porMesIngresos[monedaSel]?.[i] ?? 0,
-      salidas: data.porMesSalidas[monedaSel]?.[i] ?? 0,
+      ing_usd: data.porMesIngresos.usd?.[i] ?? 0,
+      ing_sol: data.porMesIngresos.sol?.[i] ?? 0,
+      sal_usd: data.porMesSalidas.usd?.[i] ?? 0,
+      sal_sol: data.porMesSalidas.sol?.[i] ?? 0,
     }));
-  }, [data, monedaSel]);
+  }, [data]);
 
   const topData = useMemo(() => {
     if (!data) return [];
@@ -887,12 +895,6 @@ function SeccionInventario({
           <Title level={5} style={{ margin: 0 }}>Inventario</Title>
         </div>
         <Space style={{ marginLeft: "auto" }} size={10} wrap>
-          <Segmented
-            size="small"
-            value={monedaSel}
-            onChange={(v) => setMonedaSel(v as MonedaSel)}
-            options={MONEDA_OPTS}
-          />
           <Segmented
             size="small"
             value={catFilter}
@@ -967,11 +969,12 @@ function SeccionInventario({
               <Card
                 title={
                   <Space size={12}>
-                    <span>{`Valorización y movimientos por mes (${monedaSel === "usd" ? "USD" : "S/"})`}</span>
+                    <span>Ingresos y salidas por mes</span>
                     <Space size={8} style={{ fontSize: 11, color: brand.textSecondary, fontWeight: 400 }}>
-                      <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#97C459", borderRadius: 2, marginRight: 4 }} />Valoriz.</span>
-                      <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#1D9E75", borderRadius: 2, marginRight: 4 }} />Ingresos</span>
-                      <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#E24B4A", borderRadius: 2, marginRight: 4 }} />Salidas</span>
+                      <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#1D9E75", borderRadius: 2, marginRight: 4 }} />Ing. $</span>
+                      <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#8FD4BD", borderRadius: 2, marginRight: 4 }} />Ing. S/</span>
+                      <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#E24B4A", borderRadius: 2, marginRight: 4 }} />Sal. $</span>
+                      <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#F2A6A5", borderRadius: 2, marginRight: 4 }} />Sal. S/</span>
                     </Space>
                   </Space>
                 }
@@ -984,10 +987,11 @@ function SeccionInventario({
                       <CartesianGrid stroke="var(--erp-chart-grid)" vertical={false} />
                       <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
-                      <ReTooltip formatter={(v) => fmtMoneda(Number(v), monedaSel)} />
-                      <Bar dataKey="valorizacion" fill="#97C459" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="ingresos" fill="#1D9E75" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="salidas" fill="#E24B4A" radius={[4, 4, 0, 0]} />
+                      <ReTooltip formatter={(v, name) => [fmtMoneda(Number(v), String(name).includes("S/") ? "sol" : "usd"), String(name)]} />
+                      <Bar dataKey="ing_usd" name="Ingresos $" fill="#1D9E75" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="ing_sol" name="Ingresos S/" fill="#8FD4BD" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="sal_usd" name="Salidas $" fill="#E24B4A" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="sal_sol" name="Salidas S/" fill="#F2A6A5" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -1067,6 +1071,7 @@ interface OTResp {
   estadoAlmacen: { completas: number; incompletas: number };
   tiempoAlmacen: number[];
   tiempoAlmacenPromedio: number;
+  tiempoAlmacenMediana: number;
   avanceMes: { entregadasArmado: number; despachadas: number; facturadas: number };
 }
 
@@ -1174,7 +1179,7 @@ function SeccionOT({
               title="OT despachadas · tiempo en almacén"
               extra={(data.tiempoAlmacenPromedio ?? 0) > 0 && (
                 <Text style={{ fontSize: 12, color: "#1D9E75", fontWeight: 600 }}>
-                  <ClockCircleOutlined /> Promedio: {data.tiempoAlmacenPromedio.toFixed(1)} d
+                  <ClockCircleOutlined /> Prom: {data.tiempoAlmacenPromedio.toFixed(1)} d · Med: {(data.tiempoAlmacenMediana ?? 0).toFixed(0)} d
                 </Text>
               )}
               size="small"
@@ -1243,7 +1248,6 @@ function SeccionFacturacion({
   modo: Modo; anio: number; mes: number; sem: number;
 }) {
   const [tipo, setTipo] = useState<"all" | "rep" | "bien" | "serv">("all");
-  const [monedaSel, setMonedaSel] = useState<MonedaSel>("usd");
   const [data, setData] = useState<FactResp | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -1262,20 +1266,28 @@ function SeccionFacturacion({
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Dos pilas por mes (una por moneda), cada una apilada por tipo de OT.
+  // Los montos de monedas distintas nunca se suman ni se apilan juntos.
   const porMesData = useMemo(() => {
     if (!data) return [];
-    const bucket = data.porMes[monedaSel];
     return MES_LABELS.map((name, i) => ({
       name,
-      rep: bucket?.rep[i] ?? 0,
-      bien: bucket?.bien[i] ?? 0,
-      serv: bucket?.serv[i] ?? 0,
+      usd_rep: data.porMes.usd?.rep[i] ?? 0,
+      usd_bien: data.porMes.usd?.bien[i] ?? 0,
+      usd_serv: data.porMes.usd?.serv[i] ?? 0,
+      sol_rep: data.porMes.sol?.rep[i] ?? 0,
+      sol_bien: data.porMes.sol?.bien[i] ?? 0,
+      sol_serv: data.porMes.sol?.serv[i] ?? 0,
     }));
-  }, [data, monedaSel]);
+  }, [data]);
 
-  // Participación por tipo dentro de la moneda seleccionada (los % nunca
-  // mezclan monedas).
-  const kpisSel = data?.kpis[monedaSel];
+  // Participación por tipo, calculada dentro de cada moneda por separado.
+  const partLinea = (usdPct: number, solPct: number) => {
+    const partes: string[] = [];
+    if ((data?.kpis.usd.total ?? 0) > 0) partes.push(`${usdPct.toFixed(0)}% $`);
+    if ((data?.kpis.sol.total ?? 0) > 0) partes.push(`${solPct.toFixed(0)}% S/`);
+    return partes.length > 0 ? partes.join(" · ") : "—";
+  };
 
   return (
     <div style={{ marginBottom: 20 }}>
@@ -1299,30 +1311,23 @@ function SeccionFacturacion({
           </div>
           <Title level={5} style={{ margin: 0 }}>Facturación</Title>
         </div>
-        <Space style={{ marginLeft: "auto" }} size={10} wrap>
-          <Segmented
-            size="small"
-            value={monedaSel}
-            onChange={(v) => setMonedaSel(v as MonedaSel)}
-            options={MONEDA_OPTS}
-          />
-          <Segmented
-            size="small"
-            value={tipo}
-            onChange={(v) => setTipo(v as "all" | "rep" | "bien" | "serv")}
-            options={[
-              { value: "all", label: "Todas" },
-              { value: "rep", label: "Reparación" },
-              { value: "bien", label: "Bien" },
-              { value: "serv", label: "Servicio" },
-            ]}
-          />
-        </Space>
+        <Segmented
+          size="small"
+          value={tipo}
+          onChange={(v) => setTipo(v as "all" | "rep" | "bien" | "serv")}
+          options={[
+            { value: "all", label: "Todas" },
+            { value: "rep", label: "Reparación" },
+            { value: "bien", label: "Bien" },
+            { value: "serv", label: "Servicio" },
+          ]}
+          style={{ marginLeft: "auto" }}
+        />
       </div>
 
       {loading && !data ? (
         <div style={{ textAlign: "center", padding: 40 }}><Spin /></div>
-      ) : !data || !kpisSel ? (
+      ) : !data ? (
         <Empty />
       ) : (
         <>
@@ -1338,7 +1343,7 @@ function SeccionFacturacion({
                 <Text type="secondary" style={{ fontSize: 14 }}>OT Reparación</Text>
                 <MontoDual usd={data.kpis.usd.rep} sol={data.kpis.sol.rep} color="#185FA5" fontSize={18} />
                 <Text type="secondary" style={{ fontSize: 11 }}>
-                  Participación ({monedaSel === "usd" ? "USD" : "S/"}): {kpisSel.repPct.toFixed(0)}%
+                  Participación: {partLinea(data.kpis.usd.repPct, data.kpis.sol.repPct)}
                 </Text>
               </Card>
             </Col>
@@ -1347,7 +1352,7 @@ function SeccionFacturacion({
                 <Text type="secondary" style={{ fontSize: 14 }}>OT Bien</Text>
                 <MontoDual usd={data.kpis.usd.bien} sol={data.kpis.sol.bien} color="#0F6E56" fontSize={18} />
                 <Text type="secondary" style={{ fontSize: 11 }}>
-                  Participación ({monedaSel === "usd" ? "USD" : "S/"}): {kpisSel.bienPct.toFixed(0)}%
+                  Participación: {partLinea(data.kpis.usd.bienPct, data.kpis.sol.bienPct)}
                 </Text>
               </Card>
             </Col>
@@ -1356,17 +1361,20 @@ function SeccionFacturacion({
                 <Text type="secondary" style={{ fontSize: 14 }}>OT Servicio</Text>
                 <MontoDual usd={data.kpis.usd.serv} sol={data.kpis.sol.serv} color="#854F0B" fontSize={18} />
                 <Text type="secondary" style={{ fontSize: 11 }}>
-                  Participación ({monedaSel === "usd" ? "USD" : "S/"}): {kpisSel.servPct.toFixed(0)}%
+                  Participación: {partLinea(data.kpis.usd.servPct, data.kpis.sol.servPct)}
                 </Text>
               </Card>
             </Col>
           </Row>
 
-          <Card title={`Facturación mensual · sin IGV (${monedaSel === "usd" ? "USD" : "S/"})`} size="small" styles={{ body: { padding: 12 } }}>
-            <Space size={14} style={{ marginBottom: 6, fontSize: 12, color: brand.textSecondary }}>
-              <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#185FA5", borderRadius: 2, marginRight: 4 }} />Reparación</span>
-              <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#0F6E56", borderRadius: 2, marginRight: 4 }} />Bien</span>
-              <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#854F0B", borderRadius: 2, marginRight: 4 }} />Servicio</span>
+          <Card title="Facturación mensual · sin IGV (pila izquierda $, derecha S/)" size="small" styles={{ body: { padding: 12 } }}>
+            <Space size={14} style={{ marginBottom: 6, fontSize: 12, color: brand.textSecondary }} wrap>
+              <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#185FA5", borderRadius: 2, marginRight: 4 }} />Reparación $</span>
+              <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#0F6E56", borderRadius: 2, marginRight: 4 }} />Bien $</span>
+              <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#854F0B", borderRadius: 2, marginRight: 4 }} />Servicio $</span>
+              <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#8FB8DD", borderRadius: 2, marginRight: 4 }} />Reparación S/</span>
+              <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#7FC4B2", borderRadius: 2, marginRight: 4 }} />Bien S/</span>
+              <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#D8A76A", borderRadius: 2, marginRight: 4 }} />Servicio S/</span>
             </Space>
             <div style={{ width: "100%", height: 240 }}>
               <ResponsiveContainer>
@@ -1374,10 +1382,13 @@ function SeccionFacturacion({
                   <CartesianGrid stroke="var(--erp-chart-grid)" vertical={false} />
                   <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
-                  <ReTooltip formatter={(v) => fmtMoneda(Number(v), monedaSel)} />
-                  <Bar dataKey="rep" stackId="a" fill="#185FA5" />
-                  <Bar dataKey="bien" stackId="a" fill="#0F6E56" />
-                  <Bar dataKey="serv" stackId="a" fill="#854F0B" />
+                  <ReTooltip formatter={(v, name) => [fmtMoneda(Number(v), String(name).includes("S/") ? "sol" : "usd"), String(name)]} />
+                  <Bar dataKey="usd_rep" name="Reparación $" stackId="usd" fill="#185FA5" />
+                  <Bar dataKey="usd_bien" name="Bien $" stackId="usd" fill="#0F6E56" />
+                  <Bar dataKey="usd_serv" name="Servicio $" stackId="usd" fill="#854F0B" />
+                  <Bar dataKey="sol_rep" name="Reparación S/" stackId="sol" fill="#8FB8DD" />
+                  <Bar dataKey="sol_bien" name="Bien S/" stackId="sol" fill="#7FC4B2" />
+                  <Bar dataKey="sol_serv" name="Servicio S/" stackId="sol" fill="#D8A76A" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
