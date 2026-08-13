@@ -12,7 +12,13 @@ export function cachedFetch<T = unknown>(url: string): Promise<T> {
       url,
       fetch(url)
         .then((r) => (r.ok ? r.json() : null))
-        .catch(() => null),
+        .catch(() => null)
+        // Un fallo (null) no se cachea: el próximo consumidor reintenta.
+        // Antes un 500 transitorio dejaba el catálogo vacío hasta recargar.
+        .then((data) => {
+          if (data === null) cache.delete(url);
+          return data;
+        }),
     );
   }
   return cache.get(url) as Promise<T>;
