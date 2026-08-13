@@ -41,6 +41,7 @@ import { uploadToR2 } from "@/lib/r2-client";
 import {
   SsomaFotosUpload, SsomaFotosGaleria, type FotoPendiente,
 } from "@/components/modules/ssoma/SsomaFotos";
+import { SelectTrabajador } from "@/components/modules/ssoma/SsomaPersonas";
 import { R2Image } from "@/components/R2Image";
 
 const { Title, Text } = Typography;
@@ -662,7 +663,7 @@ export default function SalidasNoConformesPage() {
             </Col>
             <Col xs={24} md={9}>
               <Form.Item name="responsable_salida" label="Responsable de salida">
-                <Input placeholder="Firma y nombre del responsable" maxLength={150} />
+                <SelectTrabajador placeholder="Elegí al responsable" />
               </Form.Item>
             </Col>
           </Row>
@@ -676,7 +677,7 @@ export default function SalidasNoConformesPage() {
           <Row gutter={12}>
             <Col xs={24} md={12}>
               <Form.Item name="reportado_por" label="Reportado por" tooltip="Si lo dejás vacío, se usa tu usuario.">
-                <Input maxLength={150} />
+                <SelectTrabajador placeholder="Elegí al trabajador" />
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
@@ -691,9 +692,12 @@ export default function SalidasNoConformesPage() {
           <Form.Item name="observaciones" label="Observaciones">
             <TextArea rows={2} maxLength={2000} showCount />
           </Form.Item>
-          <Form.Item name="requiere_sac" valuePropName="checked">
-            <Checkbox>¿Requiere solicitud de acción correctiva / preventiva (SAC)?</Checkbox>
-          </Form.Item>
+          {/* Solicitar una SAC es del encargado de seguridad (o admin). */}
+          {esSsoma && (
+            <Form.Item name="requiere_sac" valuePropName="checked">
+              <Checkbox>¿Requiere solicitud de acción correctiva / preventiva (SAC)?</Checkbox>
+            </Form.Item>
+          )}
           <Form.Item label="Fotos de evidencia">
             <SsomaFotosUpload uploadUrlEndpoint={UPLOAD_URL} value={fotosNuevas} onChange={setFotosNuevas} />
           </Form.Item>
@@ -730,7 +734,7 @@ export default function SalidasNoConformesPage() {
               </Col>
               <Col xs={24} md={9}>
                 <Form.Item name="responsable_salida" label="Responsable de salida">
-                  <Input maxLength={150} />
+                  <SelectTrabajador placeholder="Elegí al responsable" />
                 </Form.Item>
               </Col>
             </Row>
@@ -740,7 +744,7 @@ export default function SalidasNoConformesPage() {
             <Row gutter={12}>
               <Col xs={24} md={12}>
                 <Form.Item name="reportado_por" label="Reportado por">
-                  <Input maxLength={150} />
+                  <SelectTrabajador placeholder="Elegí al trabajador" />
                 </Form.Item>
               </Col>
               <Col xs={24} md={12}>
@@ -755,9 +759,12 @@ export default function SalidasNoConformesPage() {
             <Form.Item name="observaciones" label="Observaciones">
               <TextArea rows={2} maxLength={2000} showCount />
             </Form.Item>
-            <Form.Item name="requiere_sac" valuePropName="checked">
-              <Checkbox>¿Requiere solicitud de acción correctiva / preventiva (SAC)?</Checkbox>
-            </Form.Item>
+            {/* Solicitar una SAC es del encargado de seguridad (o admin). */}
+            {esSsoma && (
+              <Form.Item name="requiere_sac" valuePropName="checked">
+                <Checkbox>¿Requiere solicitud de acción correctiva / preventiva (SAC)?</Checkbox>
+              </Form.Item>
+            )}
             <Form.Item label="Fotos de evidencia">
               <SsomaFotosGaleria fotos={editTarget.fotos} resource="snc-foto" editable onDelete={borrarFotoEdit} />
               <div style={{ marginTop: 8 }}>

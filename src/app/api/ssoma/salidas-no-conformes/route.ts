@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { nextNumeroSalidaNoConforme } from "@/lib/ssoma-numero";
 import { parseSsomaCodigoSearch } from "@/lib/ssoma";
-import { parseFotoInput, esKeySsoma } from "@/lib/ssoma-server";
+import { parseFotoInput, esKeySsoma, esEncargadoSsoma } from "@/lib/ssoma-server";
 import { R2Keys } from "@/lib/r2";
 
 // GET — lista de salidas no conformes con filtros y paginación.
@@ -88,7 +88,9 @@ export async function POST(req: NextRequest) {
           accion_tomada: body.accion_tomada?.trim() || null,
           generado_por: body.generado_por?.trim() || usuarioCrea,
           responsable_salida: body.responsable_salida?.trim() || null,
-          requiere_sac: body.requiere_sac === true,
+          // Solicitar una SAC es del encargado de seguridad (o admin): para
+          // el resto el flag se ignora aunque venga en el body.
+          requiere_sac: body.requiere_sac === true && (await esEncargadoSsoma(req)),
           observaciones: body.observaciones?.trim() || null,
           estado: "ABIERTO",
           usuario_crea: usuarioCrea,

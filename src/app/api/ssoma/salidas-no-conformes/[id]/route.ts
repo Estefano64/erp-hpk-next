@@ -80,7 +80,11 @@ export async function PATCH(
     if (body.accion_tomada !== undefined) data.accion_tomada = body.accion_tomada?.trim() || null;
     if (body.generado_por !== undefined) data.generado_por = body.generado_por?.trim() || null;
     if (body.responsable_salida !== undefined) data.responsable_salida = body.responsable_salida?.trim() || null;
-    if (body.requiere_sac !== undefined) data.requiere_sac = body.requiere_sac === true;
+    // Solicitar una SAC es del encargado de seguridad (o admin): para el
+    // resto el flag se ignora aunque venga en el body.
+    if (body.requiere_sac !== undefined && (await esEncargadoSsoma(req))) {
+      data.requiere_sac = body.requiere_sac === true;
+    }
     if (body.observaciones !== undefined) data.observaciones = body.observaciones?.trim() || null;
 
     const updated = await prisma.salidaNoConforme.update({
