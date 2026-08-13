@@ -69,25 +69,39 @@ export async function GET(req: NextRequest) {
       where.status_oc_codigo = code;
     }
     if (search) {
-      const orFilters: Record<string, unknown>[] = [
-        { numero_po: { contains: search, mode: "insensitive" } },
-        { numero_req: { contains: search, mode: "insensitive" } },
-        { nro_factura: { contains: search, mode: "insensitive" } },
-        { nro_guia: { contains: search, mode: "insensitive" } },
-        { nombre: { contains: search, mode: "insensitive" } },
-        { observaciones: { contains: search, mode: "insensitive" } },
-        { proveedor: { razon_social: { contains: search, mode: "insensitive" } } },
-        { proveedor: { nombre_comercial: { contains: search, mode: "insensitive" } } },
-        { proveedor: { ruc: { contains: search, mode: "insensitive" } } },
-      ];
+      const s = search.trim();
+      // Los datos (SUNAT) están casi todos SIN tilde: si el usuario tipea
+      // "TÉCNICO" igual tiene que matchear "TECNICO". Buscamos el término tal
+      // cual Y su versión sin diacríticos.
+      const sinTildes = s.normalize("NFD").replace(/[̀-ͯ]/g, "");
+      const terms = [...new Set([s, sinTildes])];
+      const orFilters: Record<string, unknown>[] = terms.flatMap((t) => [
+        { numero_po: { contains: t, mode: "insensitive" } },
+        { numero_req: { contains: t, mode: "insensitive" } },
+        { nro_factura: { contains: t, mode: "insensitive" } },
+        { nro_guia: { contains: t, mode: "insensitive" } },
+        { nombre: { contains: t, mode: "insensitive" } },
+        { observaciones: { contains: t, mode: "insensitive" } },
+        { proveedor: { razon_social: { contains: t, mode: "insensitive" } } },
+        { proveedor: { nombre_comercial: { contains: t, mode: "insensitive" } } },
+        { proveedor: { ruc: { contains: t, mode: "insensitive" } } },
+      ]);
+      // "OC 260195" / "OC-260195" / "PO 260195" → numero_po por los dígitos.
+      const mOc = s.match(/^(?:oc|po)[\s\-#°ºn.]*(\d+)$/i);
+      if (mOc) orFilters.push({ numero_po: { contains: mOc[1] } });
       // Buscar por código de OT (externa o interna). parseOtCodigoSearch
-      // acepta tanto el formato raw (390126) como con prefijo (V000126,
-      // S000126, OI000126) — devuelve el Int que matchea contra
-      // OrdenTrabajo.ot o OrdenTrabajoInterna.ot.
-      const otInt = parseOtCodigoSearch(search);
+      // acepta el formato raw (390126) o con prefijo pegado (V000126,
+      // S000126, OI000126); acá además normalizamos "OT 393926", "V-393926"
+      // y "V 393926" antes de parsear.
+      const otTerm = s
+        .replace(/^ot[\s\-]*/i, "")
+        .replace(/^(v|s|oi)[\s\-]+(?=\d)/i, "$1");
+      const otInt = parseOtCodigoSearch(otTerm);
       if (otInt != null) {
         orFilters.push({ orden_trabajo: { ot: otInt } });
-        // OT internas no setean compra.ot_id — se llega vía los ot_repuestos.
+        // compra.ot_id suele venir NULL (OCs nacidas de requerimientos): la
+        // OT real está en los items. Buscar por ítems de externas E internas.
+        orFilters.push({ ot_repuestos: { some: { orden_trabajo: { ot: otInt } } } });
         orFilters.push({ ot_repuestos: { some: { orden_trabajo_interna: { ot: otInt } } } });
       }
       where.OR = orFilters;

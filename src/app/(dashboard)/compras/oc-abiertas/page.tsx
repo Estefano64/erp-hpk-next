@@ -82,13 +82,19 @@ export default function OCAbiertasListPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const filtradas = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    // Sin tildes y case-insensitive: "TÉCNICO" tiene que matchear "TECNICO".
+    const limpiar = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+    const q = limpiar(search.trim());
     if (!q) return rows;
+    // "OC 260195" / "OC-260195" → matchear numero_po por los dígitos.
+    const mOc = q.match(/^(?:oc|po)[\s\-#°ºn.]*(\d+)$/i);
+    const qPo = mOc ? mOc[1] : q;
     return rows.filter((r) =>
-      r.numero_po.toLowerCase().includes(q)
-      || (r.nombre ?? "").toLowerCase().includes(q)
-      || r.fuente_display.toLowerCase().includes(q)
-      || (r.proveedor?.razon_social ?? "").toLowerCase().includes(q),
+      r.numero_po.toLowerCase().includes(qPo)
+      || limpiar(r.nombre ?? "").includes(q)
+      || limpiar(r.fuente_display).includes(q)
+      || limpiar(r.proveedor?.razon_social ?? "").includes(q)
+      || limpiar(r.proveedor?.nombre_comercial ?? "").includes(q),
     );
   }, [rows, search]);
 
