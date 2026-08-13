@@ -230,6 +230,7 @@ interface ReqResp {
   porSemana: { label: string; value: number }[];
   porOt: number[];
   porTiempo: number[];
+  tiempoAprobacionPromedio: number;
 }
 
 const MES_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
@@ -420,7 +421,16 @@ function SeccionRequerimientos({
               </Card>
             </Col>
             <Col xs={24} md={12}>
-              <Card title="Tiempo de aprobación" size="small" styles={{ body: { padding: 12 } }}>
+              <Card
+                title="Tiempo de aprobación"
+                extra={(data.tiempoAprobacionPromedio ?? 0) > 0 && (
+                  <Text style={{ fontSize: 12, color: "#1D9E75", fontWeight: 600 }}>
+                    <ClockCircleOutlined /> Promedio: {data.tiempoAprobacionPromedio.toFixed(1)} d
+                  </Text>
+                )}
+                size="small"
+                styles={{ body: { padding: 12 } }}
+              >
                 <div style={{ width: "100%", height: 200 }}>
                   <ResponsiveContainer>
                     <BarChart data={porTiempoData}>
@@ -534,9 +544,15 @@ function SeccionOC({
     () => (data?.porMesCantidad ?? []).map((v, i) => ({ name: MES_LABELS[i], value: v })),
     [data?.porMesCantidad],
   );
+  // Costo mensual con ambas monedas lado a lado (barras agrupadas) — los
+  // soles siempre visibles sin depender del toggle.
   const porMesCostoData = useMemo(
-    () => (data?.porMesCosto?.[monedaSel] ?? []).map((v, i) => ({ name: MES_LABELS[i], value: v })),
-    [data?.porMesCosto, monedaSel],
+    () => MES_LABELS.map((name, i) => ({
+      name,
+      usd: data?.porMesCosto?.usd?.[i] ?? 0,
+      sol: data?.porMesCosto?.sol?.[i] ?? 0,
+    })),
+    [data?.porMesCosto],
   );
   const porTiempoData = useMemo(
     () => (data?.porTiempo ?? []).map((v, i) => ({ name: TIEMPO_OC_LABELS[i], value: v })),
@@ -722,15 +738,26 @@ function SeccionOC({
               </Card>
             </Col>
             <Col xs={24} md={8}>
-              <Card title={`OC colocadas por mes · costo (${monedaSel === "usd" ? "USD" : "S/"})`} size="small" styles={{ body: { padding: 12 } }}>
+              <Card
+                title="OC colocadas por mes · costo"
+                extra={
+                  <Space size={8} style={{ fontSize: 11, color: brand.textSecondary }}>
+                    <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#EF9F27", borderRadius: 2, marginRight: 4 }} />$ USD</span>
+                    <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#0090B4", borderRadius: 2, marginRight: 4 }} />S/ Soles</span>
+                  </Space>
+                }
+                size="small"
+                styles={{ body: { padding: 12 } }}
+              >
                 <div style={{ width: "100%", height: 200 }}>
                   <ResponsiveContainer>
                     <BarChart data={porMesCostoData}>
                       <CartesianGrid stroke="var(--erp-chart-grid)" vertical={false} />
                       <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
-                      <ReTooltip formatter={(v) => fmtMoneda(Number(v), monedaSel)} />
-                      <Bar dataKey="value" fill="#EF9F27" radius={[4, 4, 0, 0]} />
+                      <ReTooltip formatter={(v, name) => [fmtMoneda(Number(v), name === "S/ Soles" ? "sol" : "usd"), String(name)]} />
+                      <Bar dataKey="usd" name="$ USD" fill="#EF9F27" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="sol" name="S/ Soles" fill="#0090B4" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -1039,6 +1066,7 @@ function SeccionInventario({
 interface OTResp {
   estadoAlmacen: { completas: number; incompletas: number };
   tiempoAlmacen: number[];
+  tiempoAlmacenPromedio: number;
   avanceMes: { entregadasArmado: number; despachadas: number; facturadas: number };
 }
 
@@ -1142,7 +1170,16 @@ function SeccionOT({
             </Card>
           </Col>
           <Col xs={24} md={8}>
-            <Card title="OT despachadas · tiempo en almacén" size="small" styles={{ body: { padding: 12 } }}>
+            <Card
+              title="OT despachadas · tiempo en almacén"
+              extra={(data.tiempoAlmacenPromedio ?? 0) > 0 && (
+                <Text style={{ fontSize: 12, color: "#1D9E75", fontWeight: 600 }}>
+                  <ClockCircleOutlined /> Promedio: {data.tiempoAlmacenPromedio.toFixed(1)} d
+                </Text>
+              )}
+              size="small"
+              styles={{ body: { padding: 12 } }}
+            >
               <div style={{ width: "100%", height: 220 }}>
                 <ResponsiveContainer>
                   <BarChart data={tiempoData}>

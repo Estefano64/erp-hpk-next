@@ -263,17 +263,22 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // ── Por tiempo de aprobación (1-3d, 4-6d, 7-10d, +10d) ───────────
+    // ── Por tiempo de aprobación (1-3d, 4-6d, 7-10d, +10d) + promedio ──
     const porTiempo: number[] = [0, 0, 0, 0];
+    let sumDiasAprob = 0;
+    let muestrasAprob = 0;
     for (const it of items) {
       if (!it.fecha_aprobacion || !it.fecha_solicitud) continue;
       const dias = dayjs(it.fecha_aprobacion).diff(dayjs(it.fecha_solicitud), "day");
       if (dias < 0) continue;
+      sumDiasAprob += dias;
+      muestrasAprob++;
       if (dias <= 3) porTiempo[0]++;
       else if (dias <= 6) porTiempo[1]++;
       else if (dias <= 10) porTiempo[2]++;
       else porTiempo[3]++;
     }
+    const tiempoAprobacionPromedio = muestrasAprob > 0 ? sumDiasAprob / muestrasAprob : 0;
 
     return NextResponse.json({
       kpis: {
@@ -286,6 +291,7 @@ export async function GET(req: NextRequest) {
       porSemana: semanasMes,
       porOt,
       porTiempo,
+      tiempoAprobacionPromedio,
       meta: { modo, anio, mes, sem, vista, tipo },
     });
   } catch (e) {

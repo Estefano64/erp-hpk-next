@@ -65,6 +65,8 @@ export async function GET(req: NextRequest) {
     // ── Tiempo en almacén: días entre recepción y despacho ──────────────
     // De las OT con fecha_despacho en el rango activo.
     const tiempoAlmacen = [0, 0, 0, 0, 0]; // [1-3, 4-7, 8-14, 15-30, +30]
+    let sumDiasAlmacen = 0;
+    let muestrasAlmacen = 0;
     const otsDespachadas = await prisma.ordenTrabajo.findMany({
       where: {
         fecha_despacho: { gte: desde, lt: hasta, not: null },
@@ -76,12 +78,15 @@ export async function GET(req: NextRequest) {
       if (!ot.fecha_recepcion || !ot.fecha_despacho) continue;
       const dias = dayjs(ot.fecha_despacho).diff(dayjs(ot.fecha_recepcion), "day");
       if (dias < 0) continue;
+      sumDiasAlmacen += dias;
+      muestrasAlmacen++;
       if (dias <= 3) tiempoAlmacen[0]++;
       else if (dias <= 7) tiempoAlmacen[1]++;
       else if (dias <= 14) tiempoAlmacen[2]++;
       else if (dias <= 30) tiempoAlmacen[3]++;
       else tiempoAlmacen[4]++;
     }
+    const tiempoAlmacenPromedio = muestrasAlmacen > 0 ? sumDiasAlmacen / muestrasAlmacen : 0;
 
     // ── Avance del mes: hitos del rango ────────────────────────────────
     // OT externa no tiene `fecha_fin_real` — usamos `fecha_entrega` (entrega
@@ -102,6 +107,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       estadoAlmacen: { completas, incompletas },
       tiempoAlmacen,
+      tiempoAlmacenPromedio,
       avanceMes: { entregadasArmado, despachadas, facturadas },
       meta: { modo, anio, mes, sem },
     });
