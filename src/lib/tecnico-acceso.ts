@@ -15,7 +15,12 @@
 // propia contraseña, sin importar el rol.
 // `/ssoma` se incluye porque el Reporte de Seguridad y la Salida No Conforme
 // los puede crear CUALQUIER personal, incluidos los operarios de taller.
-export const RUTAS_TECNICO = ["/dashboard", "/mis-tareas", "/tickets", "/perfil", "/ssoma"] as const;
+// `/mantenimiento/correctivos` ídem: cualquier personal reporta fallas de
+// equipos (HPK-M-F-07).
+export const RUTAS_TECNICO = [
+  "/dashboard", "/mis-tareas", "/tickets", "/perfil", "/ssoma",
+  "/mantenimiento/correctivos",
+] as const;
 
 export function esTecnicoRestringido(roles: string[] | null | undefined): boolean {
   const r = roles ?? [];

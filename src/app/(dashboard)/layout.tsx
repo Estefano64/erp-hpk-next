@@ -98,7 +98,8 @@ function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
       { key: "/dashboard", icon: <DashboardOutlined />, label: linkLabel("/dashboard", "Dashboard") },
       { key: "/mis-tareas", icon: <ToolOutlined />, label: linkLabel("/mis-tareas", "Mis Tareas") },
       { key: "/tickets", icon: <BugOutlined />, label: linkLabel("/tickets", "Tickets") },
-      // Cualquier personal (incluidos operarios) puede reportar seguridad / SNC.
+      // Cualquier personal (incluidos operarios) puede reportar seguridad / SNC
+      // y fallas de equipos (reporte de mantenimiento correctivo).
       {
         key: "ssoma",
         icon: <SafetyOutlined />,
@@ -106,6 +107,14 @@ function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
         children: [
           { key: "/ssoma/reportes-seguridad", label: linkLabel("/ssoma/reportes-seguridad", "Reportes de Seguridad") },
           { key: "/ssoma/salidas-no-conformes", label: linkLabel("/ssoma/salidas-no-conformes", "Salidas No Conformes") },
+        ],
+      },
+      {
+        key: "mantenimiento",
+        icon: <ControlOutlined />,
+        label: "Mantenimiento",
+        children: [
+          { key: "/mantenimiento/correctivos", label: linkLabel("/mantenimiento/correctivos", "Reportes de Mantenimiento") },
         ],
       },
     ];
@@ -153,6 +162,7 @@ function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
       icon: <ControlOutlined />,
       label: "Mantenimiento",
       children: [
+        { key: "/mantenimiento/correctivos", label: linkLabel("/mantenimiento/correctivos", "Reportes de Mantenimiento") },
         { key: "/mantenimiento/equipos", label: linkLabel("/mantenimiento/equipos", "Equipos") },
         { key: "/mantenimiento/vehiculos", label: linkLabel("/mantenimiento/vehiculos", "Vehículos") },
         { key: "/mantenimiento/task-lists", label: linkLabel("/mantenimiento/task-lists", "Task Lists") },

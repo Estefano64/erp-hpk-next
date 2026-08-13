@@ -23,7 +23,9 @@
 
 const AREAS = ["admin", "planner", "produccion", "logistica", "mantenimiento", "contabilidad"] as const;
 
-export const RUTAS_RESTRINGIDAS: { prefijo: string; roles: readonly string[] }[] = [
+// `roles: null` = ABIERTA a todo usuario logueado. Sirve para re-abrir una
+// subruta específica dentro de un prefijo restringido (gana la más específica).
+export const RUTAS_RESTRINGIDAS: { prefijo: string; roles: readonly string[] | null }[] = [
   // ── Configuración: catálogos de códigos y config de cotización — solo admin
   { prefijo: "/catalogos", roles: ["admin"] },
   { prefijo: "/configuracion-cotizacion", roles: ["admin"] },
@@ -40,6 +42,9 @@ export const RUTAS_RESTRINGIDAS: { prefijo: string; roles: readonly string[] }[]
   { prefijo: "/contratos", roles: ["admin", "planner", "produccion", "logistica", "contabilidad", "viewer"] },
   // ── Módulo Mantenimiento (equipos, vehículos, task lists)
   { prefijo: "/mantenimiento", roles: ["admin", "planner", "produccion", "mantenimiento", "viewer"] },
+  //    …pero el reporte de mantenimiento correctivo (HPK-M-F-07) lo puede
+  //    CREAR cualquier personal (como los reportes SSOMA) — página abierta.
+  { prefijo: "/mantenimiento/correctivos", roles: null },
   // ── Herramientas y suministros: contabilidad no
   { prefijo: "/herramientas", roles: ["admin", "planner", "produccion", "logistica", "mantenimiento", "viewer"] },
   { prefijo: "/suministros", roles: ["admin", "planner", "produccion", "logistica", "mantenimiento", "viewer"] },
@@ -54,13 +59,14 @@ export const RUTAS_RESTRINGIDAS: { prefijo: string; roles: readonly string[] }[]
 export function puedeVerRuta(roles: string[] | null | undefined, pathname: string): boolean {
   const r = roles ?? [];
   if (r.includes("admin")) return true;
-  let regla: { prefijo: string; roles: readonly string[] } | null = null;
+  let regla: { prefijo: string; roles: readonly string[] | null } | null = null;
   for (const it of RUTAS_RESTRINGIDAS) {
     if (pathname === it.prefijo || pathname.startsWith(it.prefijo + "/")) {
       if (!regla || it.prefijo.length > regla.prefijo.length) regla = it;
     }
   }
   if (!regla) return true;
+  if (regla.roles === null) return true; // abierta a todos los logueados
   return regla.roles.some((rol) => r.includes(rol));
 }
 
@@ -198,6 +204,9 @@ export const REGLAS_ESCRITURA_API: ReglaApi[] = [
   { prefijo: "/api/equipos", roles: ["admin", "mantenimiento"] },
   { prefijo: "/api/vehiculos", roles: ["admin", "mantenimiento"] },
   { prefijo: "/api/mantenimiento", roles: ["admin", "mantenimiento"] },
+  //    …los reportes correctivos quedan EXENTOS: crear puede cualquiera y
+  //    las etapas del encargado (generar OT, cerrar, anular) validan in-route.
+  { prefijo: "/api/mantenimiento/correctivos", roles: null },
   // ── Facturación de OT
   { prefijo: "/api/facturacion", roles: ["admin", "logistica", "contabilidad"] },
   // ── SSOMA - SIG. Crear/editar reportes de seguridad y salidas no conformes
