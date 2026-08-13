@@ -2,8 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { nextNumeroSac } from "@/lib/ssoma-numero";
-import { parseSsomaCodigoSearch } from "@/lib/ssoma";
-import { esEncargadoSsoma, sacDataDesdeBody, sacAccionesDesdeBody } from "@/lib/ssoma-server";
+import { parseSsomaCodigoSearch, formatSacCodigo } from "@/lib/ssoma";
+import {
+  esEncargadoSsoma, sacDataDesdeBody, sacAccionesDesdeBody,
+  responsablesSsomaPorNombre, notificarNuevosResponsables,
+} from "@/lib/ssoma-server";
+import { getUsuarioIdSesion } from "@/lib/notificaciones-server";
+import { TIPOS_NOTIFICACION } from "@/lib/notificaciones";
 
 // GET — lista de SACs con filtros y paginación.
 // Filtros: search (código SAC, descripción, proceso), estado, anio.
@@ -75,7 +80,8 @@ export async function POST(req: NextRequest) {
     if (parsed.error) {
       return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
-    const acciones = sacAccionesDesdeBody(body) ?? [];
+    const mapaResponsables = await responsablesSsomaPorNombre();
+    const acciones = sacAccionesDesdeBody(body, mapaResponsables) ?? [];
 
     const usuarioCrea = (await getAuditUser(req)) ?? "sistema";
 
@@ -97,6 +103,19 @@ export async function POST(req: NextRequest) {
           salida_no_conforme: { select: { id: true, numero: true, anio: true } },
         },
       });
+    });
+
+    // Aviso a los responsables asignados (acciones + responsable del cierre).
+    const codigo = formatSacCodigo(created.numero, created.anio);
+    await notificarNuevosResponsables({
+      antes: [],
+      ahora: [...acciones.map((a) => a.responsable), created.responsable_cierre],
+      tipo: TIPOS_NOTIFICACION.SSOMA_ACCION_SAC,
+      titulo: `${codigo}: te asignaron una acción correctiva`,
+      mensaje: created.descripcion?.slice(0, 200) ?? null,
+      url: `/ssoma/sacs?search=${codigo}`,
+      creadaPor: usuarioCrea,
+      omitirUsuarioId: await getUsuarioIdSesion(req),
     });
 
     return NextResponse.json({ data: created }, { status: 201 });

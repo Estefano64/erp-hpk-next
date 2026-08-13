@@ -37,6 +37,7 @@ import {
   SAC_ESTADOS, SAC_TIPOS_DESVIACION, SAC_FUENTES, SAC_SISTEMAS, labelDe,
   formatSacCodigo, formatSalidaNoConformeCodigo,
 } from "@/lib/ssoma";
+import { SelectResponsableSsoma } from "@/components/modules/ssoma/SsomaPersonas";
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -716,8 +717,12 @@ export default function SacsPage() {
                       </Form.Item>
                     </Col>
                     <Col xs={12} md={6}>
-                      <Form.Item {...rest} name={[name, "responsable"]}>
-                        <Input placeholder="Responsable" maxLength={150} />
+                      <Form.Item
+                        {...rest}
+                        name={[name, "responsable"]}
+                        tooltip="Solo cuentas con rol «Responsable SSOMA» — al guardar les llega una notificación."
+                      >
+                        <SelectResponsableSsoma />
                       </Form.Item>
                     </Col>
                     <Col xs={10} md={5}>
@@ -740,8 +745,12 @@ export default function SacsPage() {
           </Form.List>
           <Row gutter={12} style={{ marginTop: 16 }}>
             <Col xs={24} md={14}>
-              <Form.Item name="responsable_cierre" label="Responsable">
-                <Input maxLength={150} />
+              <Form.Item
+                name="responsable_cierre"
+                label="Responsable"
+                tooltip="Solo cuentas con rol «Responsable SSOMA» — al guardar le llega una notificación."
+              >
+                <SelectResponsableSsoma />
               </Form.Item>
             </Col>
             <Col xs={24} md={10}>
