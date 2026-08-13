@@ -7,6 +7,8 @@ export const TIPOS_NOTIFICACION = {
   // SSOMA: te asignaron una acción correctiva/inmediata.
   SSOMA_ACCION_REPORTE: "SSOMA_ACCION_REPORTE",
   SSOMA_ACCION_SAC: "SSOMA_ACCION_SAC",
+  // Mantenimiento: alguien reportó una falla de equipo (HPK-M-F-07).
+  MANTENIMIENTO_REPORTE: "MANTENIMIENTO_REPORTE",
 } as const;
 
 export type TipoNotificacion = (typeof TIPOS_NOTIFICACION)[keyof typeof TIPOS_NOTIFICACION];
@@ -16,6 +18,7 @@ export type TipoNotificacion = (typeof TIPOS_NOTIFICACION)[keyof typeof TIPOS_NO
 export const NOTIFICACION_META: Record<string, { label: string; color: string }> = {
   SSOMA_ACCION_REPORTE: { label: "Reporte de seguridad", color: "orange" },
   SSOMA_ACCION_SAC: { label: "SAC", color: "volcano" },
+  MANTENIMIENTO_REPORTE: { label: "Mantenimiento", color: "blue" },
 };
 
 export function metaNotificacion(tipo: string): { label: string; color: string } {

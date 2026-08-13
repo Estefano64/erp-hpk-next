@@ -107,6 +107,8 @@ export const R2Keys = {
   // carpeta por id. El vínculo foto↔registro vive en BD.
   ssomaReporteSeguridad: () => `ssoma/reportes-seguridad`,
   ssomaSalidaNoConforme: () => `ssoma/salidas-no-conformes`,
+  // Foto de cierre del reporte de mantenimiento correctivo (HPK-M-F-07).
+  mantenimientoCorrectivo: () => `mantenimiento/correctivos`,
   // Adjuntos de OT Interna — mismo patrón que OT Externa pero en otro namespace.
   // `etapa` solo se usa para internas si en el futuro se agregan etapas; hoy
   // todas las internas usan "general" y la subcarpeta sigue siendo opcional.

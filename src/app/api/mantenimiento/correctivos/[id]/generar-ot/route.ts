@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getAuditUser } from "@/lib/audit";
+import { getAuditUser, tieneRolApi } from "@/lib/audit";
 import { nextNumeroOTInterna } from "@/lib/ot-numero";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
@@ -24,6 +24,12 @@ export async function POST(
     const idNum = parseInt4Safe(id) ?? 0;
     if (idNum == null) {
       return NextResponse.json({ error: "id inválido" }, { status: 400 });
+    }
+    if (!(await tieneRolApi(req, "admin", "mantenimiento"))) {
+      return NextResponse.json(
+        { error: "Solo el encargado de mantenimiento puede generar la OT" },
+        { status: 403 },
+      );
     }
     const body = await req.json().catch(() => ({}));
     const usuario = (await getAuditUser(req)) ?? "sistema";

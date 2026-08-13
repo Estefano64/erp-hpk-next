@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { nextNumeroCorrectivo } from "@/lib/ot-numero";
+import { crearNotificaciones, getUsuarioIdSesion } from "@/lib/notificaciones-server";
+import { TIPOS_NOTIFICACION } from "@/lib/notificaciones";
+import { formatReporteCorrectivoCodigo } from "@/lib/ot-formato";
 
 // GET — lista con filtros y paginación.
 // Filtros: search (código RC, equipo, falla), estado, equipo, anio.
@@ -114,6 +117,28 @@ export async function POST(req: NextRequest) {
         },
       });
     });
+
+    // Aviso in-app al encargado de mantenimiento (rol "mantenimiento") para
+    // que atienda la falla. Fuera de la tx: no voltea la creación.
+    try {
+      const encargados = await prisma.usuario.findMany({
+        where: { activo: true, roles: { has: "mantenimiento" } },
+        select: { id: true },
+      });
+      const codigo = formatReporteCorrectivoCodigo(created.numero, created.anio);
+      await crearNotificaciones(
+        encargados.map((u) => ({
+          usuario_id: u.id,
+          tipo: TIPOS_NOTIFICACION.MANTENIMIENTO_REPORTE,
+          titulo: `${codigo}: falla reportada en ${created.equipo?.descripcion ?? created.equipo_codigo}`,
+          mensaje: created.detalle_falla?.slice(0, 200) ?? null,
+          url: `/mantenimiento/correctivos?search=${codigo}`,
+        })),
+        { creadaPor: usuarioCrea, omitirUsuarioId: await getUsuarioIdSesion(req) },
+      );
+    } catch (e) {
+      console.error("notificación reporte correctivo error:", e);
+    }
 
     return NextResponse.json({ data: created }, { status: 201 });
   } catch (e) {

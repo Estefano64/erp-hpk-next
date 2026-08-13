@@ -30,9 +30,14 @@ import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import { dateOnlyLocal } from "@/lib/dates";
 import { formatReporteCorrectivoCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
 import { areasTallerGrouped } from "@/lib/areas-taller";
+import { SelectTrabajador } from "@/components/modules/ssoma/SsomaPersonas";
+import { SsomaFotosUpload, type FotoPendiente } from "@/components/modules/ssoma/SsomaFotos";
+import { R2Image } from "@/components/R2Image";
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
+
+const UPLOAD_URL = "/api/mantenimiento/correctivos/upload-url";
 
 interface EquipoOption {
   codigo: string;
@@ -61,6 +66,9 @@ interface CorrectivoRow {
   realizado_por: string | null;
   fecha_correctivo: string | null;
   responsable_area: string | null;
+  comentario_cierre: string | null;
+  cierre_foto_key: string | null;
+  cierre_foto_nombre: string | null;
   estado: "REPORTADO" | "EN_PROCESO" | "COMPLETADO";
   activo: boolean;
   created_at: string;
@@ -85,8 +93,28 @@ export default function CorrectivosPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
 
+  // Rol: crear puede cualquiera; generar OT / cerrar / anular es del
+  // encargado de mantenimiento (rol "mantenimiento") o admin.
+  const [esMantenimiento, setEsMantenimiento] = useState(false);
+  useEffect(() => {
+    fetch("/api/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const roles: string[] = Array.isArray(data?.user?.roles) ? data.user.roles : [];
+        setEsMantenimiento(roles.includes("admin") || roles.includes("mantenimiento"));
+      })
+      .catch(() => { /* ignore */ });
+  }, []);
+
   // Filtros persistidos por usuario
   const [search, setSearch] = usePersistedState<string>("correctivos-search", "");
+
+  // ?search=RC-0001-26 al llegar desde una notificación.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("search");
+    if (q) setSearch(q);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [estadoFiltro, setEstadoFiltro] = usePersistedState<string>("correctivos-estado", "");
   const [columnFilters, setColumnFilters] = usePersistedState<Record<string, (string | number | boolean | null)[] | null>>(
     "correctivos-col-filters",
@@ -108,6 +136,7 @@ export default function CorrectivosPage() {
   const [cerrarOpen, setCerrarOpen] = useState(false);
   const [cerrarTarget, setCerrarTarget] = useState<CorrectivoRow | null>(null);
   const [formCerrar] = Form.useForm();
+  const [fotoCierre, setFotoCierre] = useState<FotoPendiente[]>([]);
 
   const [verOpen, setVerOpen] = useState(false);
   const [verTarget, setVerTarget] = useState<CorrectivoRow | null>(null);
@@ -231,13 +260,24 @@ export default function CorrectivosPage() {
     if (!cerrarTarget) return;
     try {
       const values = await formCerrar.validateFields();
+      const foto = fotoCierre[0];
       const res = await fetch(`/api/mantenimiento/correctivos/${cerrarTarget.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           descripcion_correctivo: values.descripcion_correctivo,
           realizado_por: values.realizado_por || null,
-          responsable_area: values.responsable_area || null,
+          comentario_cierre: values.comentario_cierre || null,
+          ...(foto
+            ? {
+                foto: {
+                  key: foto.key,
+                  nombre_archivo: foto.nombre_archivo,
+                  tipo_mime: foto.tipo_mime,
+                  tamano: foto.tamano,
+                },
+              }
+            : {}),
         }),
       });
       const json = await res.json();
@@ -245,6 +285,7 @@ export default function CorrectivosPage() {
       message.success("Correctivo cerrado.");
       setCerrarOpen(false);
       setCerrarTarget(null);
+      setFotoCierre([]);
       fetchData();
     } catch (e) {
       const err = e as { errorFields?: unknown; message?: string };
@@ -392,40 +433,42 @@ export default function CorrectivosPage() {
             <Tooltip title="Descargar PDF (HPK-M-F-07)">
               <Button size="small" icon={<FilePdfOutlined />} onClick={() => abrirPDF(r.id)} />
             </Tooltip>
-            {r.estado === "REPORTADO" && (
-              <Tooltip title="Generar OT interna correctiva">
-                <Button size="small" type="primary" icon={<PlayCircleOutlined />} onClick={() => openGenerar(r)}>
+            {esMantenimiento && r.estado === "REPORTADO" && (
+              <Tooltip title="Generar OT interna correctiva (opcional)">
+                <Button size="small" icon={<PlayCircleOutlined />} onClick={() => openGenerar(r)}>
                   Generar OT
                 </Button>
               </Tooltip>
             )}
-            {(r.estado === "EN_PROCESO" || r.estado === "COMPLETADO") && (
-              <Tooltip title={r.estado === "COMPLETADO" ? "Editar correctivo" : "Registrar correctivo realizado"}>
+            {esMantenimiento && (
+              <Tooltip title={r.estado === "COMPLETADO" ? "Editar correctivo" : "Registrar correctivo y cerrar (comentario y foto opcionales)"}>
                 <Button
                   size="small"
-                  type={r.estado === "EN_PROCESO" ? "primary" : "default"}
-                  icon={r.estado === "EN_PROCESO" ? <CheckCircleOutlined /> : <EditOutlined />}
+                  type={r.estado === "COMPLETADO" ? "default" : "primary"}
+                  icon={r.estado === "COMPLETADO" ? <EditOutlined /> : <CheckCircleOutlined />}
                   onClick={() => openCerrar(r)}
                 >
-                  {r.estado === "EN_PROCESO" ? "Cerrar" : "Editar"}
+                  {r.estado === "COMPLETADO" ? "Editar" : "Cerrar"}
                 </Button>
               </Tooltip>
             )}
-            <Popconfirm
-              title="¿Anular este reporte?"
-              description="Se ocultará del listado. La OT interna asociada no se modifica."
-              okText="Anular"
-              okButtonProps={{ danger: true }}
-              cancelText="Cancelar"
-              onConfirm={() => handleAnular(r.id)}
-            >
-              <Button size="small" danger icon={<DeleteOutlined />} />
-            </Popconfirm>
+            {esMantenimiento && (
+              <Popconfirm
+                title="¿Anular este reporte?"
+                description="Se ocultará del listado. La OT interna asociada no se modifica."
+                okText="Anular"
+                okButtonProps={{ danger: true }}
+                cancelText="Cancelar"
+                onConfirm={() => handleAnular(r.id)}
+              >
+                <Button size="small" danger icon={<DeleteOutlined />} />
+              </Popconfirm>
+            )}
           </Space>
         ),
       },
     ],
-    [rows, columnFilters, router],
+    [rows, columnFilters, router, esMantenimiento],
   );
 
   // Filas visibles tras los filtros de columna — `rows` ya viene filtrado
@@ -447,8 +490,9 @@ export default function CorrectivosPage() {
         <ToolOutlined /> Reportes de Mantenimiento Correctivo
       </Title>
       <Text type="secondary">
-        Flujo: <strong>1)</strong> Alguien reporta la falla. <strong>2)</strong> El encargado genera la OT interna correctiva (pide
-        requerimientos por el flujo normal). <strong>3)</strong> Al terminar, se registra la descripción del correctivo realizado.
+        Formato HPK-M-F-07. <strong>1)</strong> Cualquier personal reporta la falla de un equipo.{" "}
+        <strong>2)</strong> El encargado de mantenimiento recibe la notificación y atiende (puede generar una OT interna).{" "}
+        <strong>3)</strong> Registra la descripción del correctivo y cierra conforme (comentario y foto opcionales).
       </Text>
 
       <Card size="small" style={{ marginTop: 16, marginBottom: 8 }}>
@@ -581,7 +625,7 @@ export default function CorrectivosPage() {
             label="Reportado por"
             tooltip="Si lo dejás vacío, se usa tu usuario."
           >
-            <Input placeholder="Nombre del operario que detectó la falla" maxLength={150} />
+            <SelectTrabajador placeholder="Elegí al trabajador que detectó la falla" />
           </Form.Item>
         </Form>
       </Modal>
@@ -657,7 +701,7 @@ export default function CorrectivosPage() {
             <Text strong>{cerrarTarget ? formatReporteCorrectivoCodigo(cerrarTarget.numero, cerrarTarget.anio) : ""}</Text>
           </>
         }
-        onCancel={() => { setCerrarOpen(false); setCerrarTarget(null); }}
+        onCancel={() => { setCerrarOpen(false); setCerrarTarget(null); setFotoCierre([]); }}
         onOk={handleCerrar}
         okText={cerrarTarget?.estado === "COMPLETADO" ? "Guardar cambios" : "Cerrar correctivo"}
         width={modalWidth(screens.screens, 720)}
@@ -692,29 +736,32 @@ export default function CorrectivosPage() {
               initialValues={{
                 descripcion_correctivo: cerrarTarget.descripcion_correctivo ?? "",
                 realizado_por: cerrarTarget.realizado_por ?? "",
-                responsable_area: cerrarTarget.responsable_area ?? "",
+                comentario_cierre: cerrarTarget.comentario_cierre ?? "",
               }}
             >
               <Form.Item
                 name="descripcion_correctivo"
-                label="Descripción del correctivo realizado"
+                label="Descripción del mantenimiento correctivo"
                 rules={[{ required: true, message: "Describí cómo se realizó el correctivo" }]}
-                tooltip="Detalle el trabajo de reparación. Esto cierra el reporte."
+                tooltip="Detalle el trabajo de reparación. Esto cierra el reporte conforme."
               >
                 <TextArea rows={6} maxLength={3000} showCount placeholder="¿Cómo se reparó la falla? Repuestos usados, procedimiento, etc." />
               </Form.Item>
-              <Row gutter={12}>
-                <Col xs={24} md={12}>
-                  <Form.Item name="realizado_por" label="Realizado por">
-                    <Input placeholder="Nombre del técnico" maxLength={150} />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} md={12}>
-                  <Form.Item name="responsable_area" label="Responsable de área">
-                    <Input placeholder="Nombre del responsable" maxLength={150} />
-                  </Form.Item>
-                </Col>
-              </Row>
+              <Form.Item name="realizado_por" label="Realizado por">
+                <SelectTrabajador placeholder="Elegí al técnico que realizó el trabajo" />
+              </Form.Item>
+              <Form.Item name="comentario_cierre" label="Comentario de cierre (opcional)">
+                <TextArea rows={2} maxLength={2000} showCount placeholder="Observaciones al dar conforme el trabajo" />
+              </Form.Item>
+              <Form.Item label="Foto de evidencia (opcional)">
+                <SsomaFotosUpload
+                  uploadUrlEndpoint={UPLOAD_URL}
+                  value={fotoCierre}
+                  onChange={setFotoCierre}
+                  max={1}
+                  label="Subir foto"
+                />
+              </Form.Item>
             </Form>
           </>
         )}
@@ -774,6 +821,24 @@ export default function CorrectivosPage() {
             <div>
               <Text type="secondary">Responsable de área:</Text> {verTarget.responsable_area || "—"}
             </div>
+            {(verTarget.comentario_cierre || verTarget.cierre_foto_key) && (
+              <Card size="small" title="Cierre conforme">
+                {verTarget.comentario_cierre && (
+                  <Text style={{ whiteSpace: "pre-wrap" }}>{verTarget.comentario_cierre}</Text>
+                )}
+                {verTarget.cierre_foto_key && (
+                  <div style={{ marginTop: 8 }}>
+                    <R2Image
+                      resource="correctivo-cierre"
+                      resourceId={verTarget.id}
+                      r2Key={verTarget.cierre_foto_key}
+                      alt={verTarget.cierre_foto_nombre ?? "Foto de cierre"}
+                      style={{ maxWidth: "100%", maxHeight: 260, borderRadius: 6 }}
+                    />
+                  </div>
+                )}
+              </Card>
+            )}
             <Button block icon={<FilePdfOutlined />} onClick={() => abrirPDF(verTarget.id)}>
               Descargar PDF (HPK-M-F-07)
             </Button>

@@ -1923,7 +1923,16 @@ model ReporteCorrectivo {
   fecha_correctivo         DateTime?
 
   // Responsable del área que firma como aprobador final del trabajo.
+  // Desde 2026-08-13 reemplaza a la firma: se sella con quien cierra.
   responsable_area         String?   @db.VarChar(150)
+
+  // Cierre "conforme" (2026-08-13, reemplaza las firmas del formato):
+  // comentario y foto de evidencia, ambos OPCIONALES.
+  comentario_cierre        String?
+  cierre_foto_key          String?   @db.VarChar(500)
+  cierre_foto_nombre       String?   @db.VarChar(300)
+  cierre_foto_mime         String?   @db.VarChar(100)
+  cierre_foto_tamano       Int?
 
   // REPORTADO = solo falla. EN_PROCESO = OT generada en curso. COMPLETADO = cerrado.
   estado                   String    @default("REPORTADO") @db.VarChar(20)

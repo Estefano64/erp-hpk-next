@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getAuditUser } from "@/lib/audit";
-
+import { getAuditUser, tieneRolApi } from "@/lib/audit";
 import { parseInt4Safe } from "@/lib/ot-formato";
+import { parseFotoInput, esKeySsoma } from "@/lib/ssoma-server";
+import { R2Keys } from "@/lib/r2";
 // GET — detalle del reporte correctivo con todas las relaciones.
 export async function GET(
   _req: NextRequest,
@@ -54,10 +55,13 @@ export async function GET(
   }
 }
 
-// PATCH — actualiza campos del reporte. Permite:
+// PATCH — actualiza campos del reporte. SOLO el encargado de mantenimiento
+// (rol "mantenimiento") o admin: la creación es abierta a todo el personal,
+// pero la descripción del correctivo y el cierre son del encargado. Permite:
 //   - editar detalle_falla / reportado_por (etapa 1, mientras esté REPORTADO)
-//   - llenar descripcion_correctivo + realizado_por + responsable_area (etapa 3)
-//     y cambiar el estado a COMPLETADO automáticamente si la descripción no es vacía
+//   - llenar descripcion_correctivo + realizado_por (etapa 3) y cambiar el
+//     estado a COMPLETADO automáticamente si la descripción no es vacía;
+//     comentario_cierre y foto de cierre OPCIONALES (reemplazan las firmas)
 //   - editar fecha
 export async function PATCH(
   req: NextRequest,
@@ -68,6 +72,12 @@ export async function PATCH(
     const idNum = parseInt4Safe(id) ?? 0;
     if (idNum == null) {
       return NextResponse.json({ error: "id inválido" }, { status: 400 });
+    }
+    if (!(await tieneRolApi(req, "admin", "mantenimiento"))) {
+      return NextResponse.json(
+        { error: "Solo el encargado de mantenimiento puede editar el reporte" },
+        { status: 403 },
+      );
     }
     const body = await req.json();
     const usuario = (await getAuditUser(req)) ?? "sistema";
@@ -95,9 +105,22 @@ export async function PATCH(
     if (body.area_codigo !== undefined) data.area_codigo = body.area_codigo;
     if (body.fecha !== undefined) data.fecha = body.fecha ? new Date(body.fecha) : new Date();
     if (body.responsable_area !== undefined) data.responsable_area = body.responsable_area?.trim() || null;
+    if (body.comentario_cierre !== undefined) data.comentario_cierre = body.comentario_cierre?.trim() || null;
+
+    // Foto de cierre opcional (reemplaza la firma). Si viene, valida la key.
+    if (body.foto !== undefined && body.foto !== null) {
+      const foto = parseFotoInput(body.foto);
+      if (!foto || !esKeySsoma(foto.key, R2Keys.mantenimientoCorrectivo())) {
+        return NextResponse.json({ error: "Datos de la foto de cierre inválidos" }, { status: 400 });
+      }
+      data.cierre_foto_key = foto.key;
+      data.cierre_foto_nombre = foto.nombre_archivo;
+      data.cierre_foto_mime = foto.tipo_mime;
+      data.cierre_foto_tamano = foto.tamano;
+    }
 
     // Cierre del correctivo: si llega descripcion_correctivo no vacío, marcamos COMPLETADO
-    // y sellamos fecha_correctivo + realizado_por.
+    // y sellamos fecha_correctivo + realizado_por + responsable_area (quien cierra).
     if (body.descripcion_correctivo !== undefined) {
       const txt = (body.descripcion_correctivo || "").trim();
       data.descripcion_correctivo = txt || null;
@@ -105,6 +128,9 @@ export async function PATCH(
         data.realizado_por = (body.realizado_por?.trim() || usuario);
         data.fecha_correctivo = body.fecha_correctivo ? new Date(body.fecha_correctivo) : new Date();
         data.estado = "COMPLETADO";
+        // En vez de firma: el "Responsable de Área Mantenimiento" queda
+        // sellado con quien cierra (salvo que se haya mandado explícito).
+        if (data.responsable_area === undefined) data.responsable_area = usuario;
       } else if (actual.estado === "COMPLETADO") {
         // si vacían la descripción tras haberlo completado, vuelve a EN_PROCESO o REPORTADO según OT
         data.estado = "EN_PROCESO";
@@ -135,7 +161,7 @@ export async function PATCH(
   }
 }
 
-// DELETE — soft-delete (anular). Marca activo=false.
+// DELETE — soft-delete (anular). Marca activo=false. Solo encargado o admin.
 export async function DELETE(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
@@ -145,6 +171,12 @@ export async function DELETE(
     const idNum = parseInt4Safe(id) ?? 0;
     if (idNum == null) {
       return NextResponse.json({ error: "id inválido" }, { status: 400 });
+    }
+    if (!(await tieneRolApi(req, "admin", "mantenimiento"))) {
+      return NextResponse.json(
+        { error: "Solo el encargado de mantenimiento puede anular" },
+        { status: 403 },
+      );
     }
     const usuario = (await getAuditUser(req)) ?? "sistema";
     await prisma.reporteCorrectivo.update({
