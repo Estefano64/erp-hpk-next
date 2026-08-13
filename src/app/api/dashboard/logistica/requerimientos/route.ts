@@ -30,9 +30,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import dayjs from "dayjs";
-import isoWeek from "dayjs/plugin/isoWeek";
-
-dayjs.extend(isoWeek);
+import { rangoUTC, anioUTC, mesUTC, isoWeekUTC } from "@/lib/dashboard-logistica";
 
 type Vista = "gen" | "item";
 type Tipo = "all" | "rep" | "serv";
@@ -42,25 +40,6 @@ function tipoCodigoFiltro(tipo: Tipo): string[] | null {
   if (tipo === "rep") return ["MAC", "CAD"];
   if (tipo === "serv") return ["SER"];
   return null; // all → sin filtro
-}
-
-// Resuelve el rango [desde, hasta) (intervalo semi-abierto) para el modo+anio+mes+sem.
-function rango(modo: string, anio: number, mes: number | null, sem: number | null): { desde: Date; hasta: Date } {
-  if (modo === "mes" && mes != null) {
-    const desde = dayjs(`${anio}-${String(mes).padStart(2, "0")}-01`).startOf("month").toDate();
-    const hasta = dayjs(desde).add(1, "month").toDate();
-    return { desde, hasta };
-  }
-  if (modo === "sem" && sem != null) {
-    // Semana ISO sem de anio: empieza lunes.
-    const desde = dayjs(`${anio}-01-04`).startOf("isoWeek").add(sem - 1, "week").toDate();
-    const hasta = dayjs(desde).add(7, "day").toDate();
-    return { desde, hasta };
-  }
-  // modo=anio (default fallback)
-  const desde = dayjs(`${anio}-01-01`).startOf("year").toDate();
-  const hasta = dayjs(desde).add(1, "year").toDate();
-  return { desde, hasta };
 }
 
 export async function GET(req: NextRequest) {
@@ -80,7 +59,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "anio inválido" }, { status: 400 });
     }
 
-    const { desde, hasta } = rango(modo, anio, mes, sem);
+    const { desde, hasta } = rangoUTC(modo, anio, mes, sem);
     const tipos = tipoCodigoFiltro(tipo);
     const tipoWhere = tipos ? { tipo_codigo: { in: tipos } } : {};
 
@@ -165,8 +144,8 @@ export async function GET(req: NextRequest) {
       where: {
         ...tipoWhere,
         fecha_solicitud: {
-          gte: dayjs(`${anio}-01-01`).startOf("year").toDate(),
-          lt: dayjs(`${anio + 1}-01-01`).startOf("year").toDate(),
+          gte: anioUTC(anio).inicio,
+          lt: anioUTC(anio).fin,
         },
         status_requerimiento_codigo: { in: ["SIN_APROBACION", "APROBADO", "ANULADO", "DESAPROBADO"] },
       },
@@ -183,7 +162,7 @@ export async function GET(req: NextRequest) {
     if (vista === "gen") {
       const reqsPorMes: Array<Set<string>> = Array.from({ length: 12 }, () => new Set());
       for (const it of itemsAnio) {
-        const m = dayjs(it.fecha_solicitud).month(); // 0-11
+        const m = mesUTC(it.fecha_solicitud); // 0-11
         if (!it.nro_req) continue;
         const k = `${it.ot_id ?? "i"}_${it.orden_trabajo_interna_id ?? "e"}_${it.nro_req}`;
         reqsPorMes[m].add(k);
@@ -191,7 +170,7 @@ export async function GET(req: NextRequest) {
       for (let i = 0; i < 12; i++) porMes[i] = reqsPorMes[i].size;
     } else {
       for (const it of itemsAnio) {
-        const m = dayjs(it.fecha_solicitud).month();
+        const m = mesUTC(it.fecha_solicitud);
         porMes[m]++;
       }
     }
@@ -199,14 +178,15 @@ export async function GET(req: NextRequest) {
     // ── Por semana (4-5 semanas del mes seleccionado) ─────────────────
     const semanasMes: Array<{ label: string; value: number }> = [];
     if (modo === "mes" && mes != null) {
-      const inicioMes = dayjs(`${anio}-${String(mes).padStart(2, "0")}-01`).startOf("month");
-      const finMes = inicioMes.endOf("month");
+      // Semanas ISO que tocan el mes — calculadas en UTC (fecha-pura).
       const semanasSet = new Set<number>();
-      let cur = inicioMes.startOf("isoWeek");
-      while (cur.isBefore(finMes) || cur.isSame(finMes, "day")) {
-        semanasSet.add(cur.isoWeek());
-        cur = cur.add(7, "day");
+      let cur = new Date(Date.UTC(anio, mes - 1, 1));
+      const finMes = new Date(Date.UTC(anio, mes, 1));
+      while (cur < finMes) {
+        semanasSet.add(isoWeekUTC(cur));
+        cur = new Date(cur.getTime() + 7 * 24 * 3600 * 1000);
       }
+      semanasSet.add(isoWeekUTC(new Date(finMes.getTime() - 24 * 3600 * 1000)));
       const semsArr = Array.from(semanasSet).sort((a, b) => a - b);
       // Para cada semana del mes contar items del rango activo.
       const itemsRango = items;
@@ -215,13 +195,13 @@ export async function GET(req: NextRequest) {
           ? (() => {
               const reqs = new Set<string>();
               for (const it of itemsRango) {
-                if (dayjs(it.fecha_solicitud).isoWeek() !== s) continue;
+                if (isoWeekUTC(it.fecha_solicitud) !== s) continue;
                 if (!it.nro_req) continue;
                 reqs.add(`${it.ot_id ?? "i"}_${it.orden_trabajo_interna_id ?? "e"}_${it.nro_req}`);
               }
               return reqs.size;
             })()
-          : itemsRango.filter((it) => dayjs(it.fecha_solicitud).isoWeek() === s).length;
+          : itemsRango.filter((it) => isoWeekUTC(it.fecha_solicitud) === s).length;
         semanasMes.push({ label: `S${s}`, value: count });
       }
     }

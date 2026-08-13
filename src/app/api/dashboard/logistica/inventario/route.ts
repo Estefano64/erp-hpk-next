@@ -11,21 +11,21 @@
 //   ?cat=all|cat|nocat             default all (cat = catalogados; nocat = no catalogados)
 //   ?unidad=np|cant                default np (np = NP únicos; cant = cantidad)
 //
-// Respuesta:
+// Respuesta (montos SIEMPRE separados por moneda {usd, sol} — un material en
+// soles nunca se suma con uno en dólares):
 //   {
 //     kpis: {
-//       stock,            // según unidad: NP únicos o cantidad total
-//       valorizacion,     // SUM(stock_actual × precio) — solo aplica a catalogados
-//       ingresos,         // monto $ del rango (solo catalogados; no-cat no tiene precio)
-//       ingresosQ,        // cantidad de NP o piezas según unidad
-//       salidas,
+//       stock,                       // según unidad: NP únicos o cantidad total
+//       valorizacion: { usd, sol },  // SUM(stock_actual × precio) — solo catalogados
+//       ingresos: { usd, sol },      // monto del rango (solo catalogados; no-cat no tiene precio)
+//       ingresosQ,                   // cantidad de NP o piezas según unidad
+//       salidas: { usd, sol },
 //       salidasQ,
-//       moneda,
 //     },
-//     porMesValorizacion: number[12], // snapshot al cierre de cada mes (aproximado)
-//     porMesIngresos: number[12],     // monto de ENTRADAs por mes
-//     porMesSalidas: number[12],      // monto de SALIDAs por mes
-//     topProductos: { codigo, descripcion, salidaQ, salidaMonto }[],
+//     porMesValorizacion: { usd: number[12], sol: number[12] }, // snapshot aprox.
+//     porMesIngresos: { usd: number[12], sol: number[12] },
+//     porMesSalidas: { usd: number[12], sol: number[12] },
+//     topProductos: { codigo, np, descripcion, salidaQ, salidaMonto, moneda }[],
 //   }
 //
 // Notas:
@@ -36,34 +36,18 @@
 //     requeriría snapshots — no los tenemos. Solo se grafica el rango activo
 //     como referencia plana.
 //   - Sin filtro de cat: combina catalogados (con precio) y no-cat (sin precio).
-//   - El precio del MovimientoInventario tiene snapshot; si no, cae a material.precio.
+//   - El precio del MovimientoInventario tiene snapshot (precio_unitario +
+//     moneda); si no, cae a material.precio/material.moneda_codigo.
+//   - Moneda: SOL/PEN → bucket "sol"; el resto (USD o null) → "usd".
 
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import dayjs from "dayjs";
-import isoWeek from "dayjs/plugin/isoWeek";
-
-dayjs.extend(isoWeek);
+import { rangoUTC, anioUTC, montoCero } from "@/lib/dashboard-logistica";
 
 type CatFilter = "all" | "cat" | "nocat";
 type UnidadFilter = "np" | "cant";
-
-function rango(modo: string, anio: number, mes: number | null, sem: number | null): { desde: Date; hasta: Date } {
-  if (modo === "mes" && mes != null) {
-    const desde = dayjs(`${anio}-${String(mes).padStart(2, "0")}-01`).startOf("month").toDate();
-    const hasta = dayjs(desde).add(1, "month").toDate();
-    return { desde, hasta };
-  }
-  if (modo === "sem" && sem != null) {
-    const desde = dayjs(`${anio}-01-04`).startOf("isoWeek").add(sem - 1, "week").toDate();
-    const hasta = dayjs(desde).add(7, "day").toDate();
-    return { desde, hasta };
-  }
-  const desde = dayjs(`${anio}-01-01`).startOf("year").toDate();
-  const hasta = dayjs(desde).add(1, "year").toDate();
-  return { desde, hasta };
-}
 
 export async function GET(req: NextRequest) {
   try {
@@ -82,20 +66,20 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "anio inválido" }, { status: 400 });
     }
 
-    const { desde, hasta } = rango(modo, anio, mes, sem);
-    const inicioAnio = dayjs(`${anio}-01-01`).startOf("year").toDate();
-    const finAnio = dayjs(`${anio + 1}-01-01`).startOf("year").toDate();
+    const { desde, hasta } = rangoUTC(modo, anio, mes, sem);
+    const { inicio: inicioAnio, fin: finAnio } = anioUTC(anio);
 
-    // Todos los agregados se calculan en SQL (antes: findMany de tablas
-    // completas + loops en JS) y se lanzan en un solo Promise.all.
+    // Todos los agregados se calculan en SQL y se lanzan en un solo
+    // Promise.all. Los montos se agrupan por bucket de moneda (USD/SOL) en
+    // el propio SQL — nunca se suman monedas distintas.
     const wantCat = cat === "all" || cat === "cat";
     const wantNoCat = cat === "all" || cat === "nocat";
 
-    type MatAggRow = { nps: number; cant: number; valorizacion: number; moneda: string | null };
-    type RangoRow = { tipo: string; monto: number; cant: number; nps: number };
+    type MatAggRow = { nps: number; cant: number; val_usd: number; val_sol: number };
+    type RangoRow = { tipo: string; mon: string; monto: number; cant: number; nps: number };
     type RangoNcRow = { tipo: string; cant: number; nps: number };
-    type PorMesRow = { mes: number; tipo: string; monto: number };
-    type TopRow = { codigo: string; np: string | null; descripcion: string; salidaQ: number; salidaMonto: number };
+    type PorMesRow = { mes: number; tipo: string; mon: string; monto: number };
+    type TopRow = { codigo: string; np: string | null; descripcion: string; salidaQ: number; salidaMonto: number; moneda: string | null };
 
     const [matAgg, ncAgg, rangoCat, rangoNc, porMesRows, topRows] = await Promise.all([
       // ── KPIs de stock + valorización (siempre "ahora") ───────────────
@@ -103,9 +87,12 @@ export async function GET(req: NextRequest) {
         ? prisma.$queryRaw<MatAggRow[]>`
             SELECT COUNT(*) FILTER (WHERE stock_actual > 0)::int AS nps,
                    COALESCE(SUM(stock_actual) FILTER (WHERE stock_actual > 0), 0)::float AS cant,
-                   COALESCE(SUM(stock_actual * precio) FILTER (WHERE stock_actual > 0 AND precio > 0), 0)::float AS valorizacion,
-                   MODE() WITHIN GROUP (ORDER BY COALESCE(moneda_codigo, 'USD'))
-                     FILTER (WHERE stock_actual > 0 AND precio > 0) AS moneda
+                   COALESCE(SUM(stock_actual * precio) FILTER (
+                     WHERE stock_actual > 0 AND precio > 0
+                       AND COALESCE(moneda_codigo, 'USD') NOT IN ('SOL', 'PEN')), 0)::float AS val_usd,
+                   COALESCE(SUM(stock_actual * precio) FILTER (
+                     WHERE stock_actual > 0 AND precio > 0
+                       AND COALESCE(moneda_codigo, 'USD') IN ('SOL', 'PEN')), 0)::float AS val_sol
             FROM material
             WHERE activo = true
           `
@@ -118,10 +105,12 @@ export async function GET(req: NextRequest) {
           })
         : Promise.resolve(null),
       // ── Ingresos / salidas del rango (catalogados, con precio snapshot
-      //    del movimiento o precio de catálogo) ───────────────────────────
+      //    del movimiento o precio de catálogo), por bucket de moneda ─────
       wantCat
         ? prisma.$queryRaw<RangoRow[]>`
             SELECT m.tipo_movimiento::text AS tipo,
+                   CASE WHEN COALESCE(m.moneda, mat.moneda_codigo, 'USD') IN ('SOL', 'PEN')
+                        THEN 'SOL' ELSE 'USD' END AS mon,
                    COALESCE(SUM(m.cantidad * COALESCE(m.precio_unitario, mat.precio, 0)), 0)::float AS monto,
                    COALESCE(SUM(m.cantidad), 0)::float AS cant,
                    COUNT(DISTINCT m.material_id)::int AS nps
@@ -129,7 +118,7 @@ export async function GET(req: NextRequest) {
             LEFT JOIN material mat ON mat.material_id = m.material_id
             WHERE m.fecha_movimiento >= ${desde} AND m.fecha_movimiento < ${hasta}
               AND m.cantidad > 0
-            GROUP BY 1
+            GROUP BY 1, 2
           `
         : Promise.resolve([] as RangoRow[]),
       wantNoCat
@@ -148,12 +137,14 @@ export async function GET(req: NextRequest) {
         ? prisma.$queryRaw<PorMesRow[]>`
             SELECT EXTRACT(MONTH FROM m.fecha_movimiento)::int AS mes,
                    m.tipo_movimiento::text AS tipo,
+                   CASE WHEN COALESCE(m.moneda, mat.moneda_codigo, 'USD') IN ('SOL', 'PEN')
+                        THEN 'SOL' ELSE 'USD' END AS mon,
                    COALESCE(SUM(m.cantidad * COALESCE(m.precio_unitario, mat.precio, 0)), 0)::float AS monto
             FROM movimientos_inventario m
             LEFT JOIN material mat ON mat.material_id = m.material_id
             WHERE m.fecha_movimiento >= ${inicioAnio} AND m.fecha_movimiento < ${finAnio}
               AND m.cantidad > 0
-            GROUP BY 1, 2
+            GROUP BY 1, 2, 3
           `
         : Promise.resolve([] as PorMesRow[]),
       // ── Top 10 productos más movidos por cantidad de SALIDA ──────────
@@ -163,7 +154,8 @@ export async function GET(req: NextRequest) {
                    mat.np,
                    mat.descripcion,
                    COALESCE(SUM(m.cantidad), 0)::float AS "salidaQ",
-                   COALESCE(SUM(m.cantidad * COALESCE(m.precio_unitario, mat.precio, 0)), 0)::float AS "salidaMonto"
+                   COALESCE(SUM(m.cantidad * COALESCE(m.precio_unitario, mat.precio, 0)), 0)::float AS "salidaMonto",
+                   MODE() WITHIN GROUP (ORDER BY COALESCE(m.moneda, mat.moneda_codigo, 'USD')) AS moneda
             FROM movimientos_inventario m
             JOIN material mat ON mat.material_id = m.material_id
             WHERE m.tipo_movimiento = 'SALIDA'
@@ -177,51 +169,60 @@ export async function GET(req: NextRequest) {
     ]);
 
     let stock = 0;
-    let valorizacion = 0;
-    let moneda = "USD";
+    const valorizacion = montoCero();
     if (matAgg[0]) {
       stock += unidad === "np" ? matAgg[0].nps : matAgg[0].cant;
-      valorizacion = matAgg[0].valorizacion;
-      moneda = matAgg[0].moneda ?? "USD";
+      valorizacion.usd = matAgg[0].val_usd;
+      valorizacion.sol = matAgg[0].val_sol;
     }
     if (ncAgg) {
       // no-cat no tiene precio → no aporta a valorización
       stock += unidad === "np" ? ncAgg._count._all : Number(ncAgg._sum.stock_actual ?? 0);
     }
 
-    let ingresos = 0;
+    const ingresos = montoCero();
+    const salidas = montoCero();
     let ingresosQ = 0;
-    let salidas = 0;
     let salidasQ = 0;
     for (const r of rangoCat) {
-      if (r.tipo === "ENTRADA") { ingresos = r.monto; ingresosQ += unidad === "np" ? r.nps : r.cant; }
-      else if (r.tipo === "SALIDA") { salidas = r.monto; salidasQ += unidad === "np" ? r.nps : r.cant; }
+      const bucket = r.tipo === "ENTRADA" ? ingresos : r.tipo === "SALIDA" ? salidas : null;
+      if (!bucket) continue;
+      if (r.mon === "SOL") bucket.sol += r.monto;
+      else bucket.usd += r.monto;
+      // Un material tiene una sola moneda → los nps de cada bucket no se repiten.
+      if (r.tipo === "ENTRADA") ingresosQ += unidad === "np" ? r.nps : r.cant;
+      else salidasQ += unidad === "np" ? r.nps : r.cant;
     }
     for (const r of rangoNc) {
       if (r.tipo === "ENTRADA") ingresosQ += unidad === "np" ? r.nps : r.cant;
       else if (r.tipo === "SALIDA") salidasQ += unidad === "np" ? r.nps : r.cant;
     }
 
-    const porMesIngresos: number[] = Array(12).fill(0);
-    const porMesSalidas: number[] = Array(12).fill(0);
+    const mesesVacios = () => ({ usd: Array(12).fill(0) as number[], sol: Array(12).fill(0) as number[] });
+    const porMesIngresos = mesesVacios();
+    const porMesSalidas = mesesVacios();
     for (const r of porMesRows) {
-      if (r.tipo === "ENTRADA") porMesIngresos[r.mes - 1] = r.monto;
-      else if (r.tipo === "SALIDA") porMesSalidas[r.mes - 1] = r.monto;
+      const target = r.tipo === "ENTRADA" ? porMesIngresos : r.tipo === "SALIDA" ? porMesSalidas : null;
+      if (!target) continue;
+      if (r.mon === "SOL") target.sol[r.mes - 1] += r.monto;
+      else target.usd[r.mes - 1] += r.monto;
     }
     // Valorización mensual: aproximación plana (stock × precio actual) por
     // cada mes que ya ocurrió. Más sofisticado requeriría snapshots históricos.
-    const porMesValorizacion: number[] = Array(12).fill(0);
+    const porMesValorizacion = mesesVacios();
     const mesActual = dayjs().year() === anio ? dayjs().month() : 11;
     for (let i = 0; i <= Math.min(mesActual, 11); i++) {
-      porMesValorizacion[i] = valorizacion;
+      porMesValorizacion.usd[i] = valorizacion.usd;
+      porMesValorizacion.sol[i] = valorizacion.sol;
     }
 
     const top10 = topRows.map((t) => ({
-      codigo: t.codigo, np: t.np, descripcion: t.descripcion, salidaQ: t.salidaQ, salidaMonto: t.salidaMonto,
+      codigo: t.codigo, np: t.np, descripcion: t.descripcion,
+      salidaQ: t.salidaQ, salidaMonto: t.salidaMonto, moneda: t.moneda ?? "USD",
     }));
 
     return NextResponse.json({
-      kpis: { stock, valorizacion, ingresos, ingresosQ, salidas, salidasQ, moneda },
+      kpis: { stock, valorizacion, ingresos, ingresosQ, salidas, salidasQ },
       porMesValorizacion,
       porMesIngresos,
       porMesSalidas,

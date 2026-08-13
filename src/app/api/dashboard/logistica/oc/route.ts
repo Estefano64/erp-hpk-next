@@ -11,11 +11,11 @@
 //
 // Respuesta:
 //   {
-//     kpis: { colocadas, costoTotal, ticketPromedio, moneda },
+//     kpis: { colocadas, costo: {usd,sol}, ticket: {usd,sol} },
 //     estado: { recibidas, enProceso, pendientes, anuladas },
-//     topProveedores: [{ nombre, monto }, ...],
+//     topProveedores: [{ nombre, usd, sol }, ...],   // top 10; la UI ordena por la moneda elegida
 //     porMesCantidad: number[12],
-//     porMesCosto: number[12],
+//     porMesCosto: { usd: number[12], sol: number[12] },
 //     porTiempo: number[5],   // [Mismo día, 1-2d, 3-5d, 6-10d, +10d] desde apr. del primer req hasta crear OC
 //     tiempoPromedio: number, // en días, desde aprob. promedio del primer req hasta crear OC
 //   }
@@ -25,34 +25,20 @@
 //     "Pendientes" = PEND_OC; "Anuladas" = ANULADO.
 //   - Filtro por tipo: si tipo=rep, solo OCs que tienen items OTRepuesto MAC/CAD;
 //     serv → items SER; all → todas las OCs.
-//   - "Costo total" se reporta como suma de Compra.total (moneda dominante).
+//   - Los montos se separan SIEMPRE por moneda (USD vs SOL) — nunca se suman
+//     entre sí. Las OCs ANULADAS cuentan en `colocadas`/`estado` pero quedan
+//     fuera de todos los montos (costo, ticket, top proveedores, costo mensual).
 //   - Tiempo de colocación = Compra.fecha_solicitud - max(req.fecha_aprobacion) del OTRepuesto vinculado.
 
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import dayjs from "dayjs";
-import isoWeek from "dayjs/plugin/isoWeek";
-
-dayjs.extend(isoWeek);
+import {
+  rangoUTC, anioUTC, mesUTC, esSol, montoCero, sumarMonto,
+} from "@/lib/dashboard-logistica";
 
 type Tipo = "all" | "rep" | "serv";
-
-function rango(modo: string, anio: number, mes: number | null, sem: number | null): { desde: Date; hasta: Date } {
-  if (modo === "mes" && mes != null) {
-    const desde = dayjs(`${anio}-${String(mes).padStart(2, "0")}-01`).startOf("month").toDate();
-    const hasta = dayjs(desde).add(1, "month").toDate();
-    return { desde, hasta };
-  }
-  if (modo === "sem" && sem != null) {
-    const desde = dayjs(`${anio}-01-04`).startOf("isoWeek").add(sem - 1, "week").toDate();
-    const hasta = dayjs(desde).add(7, "day").toDate();
-    return { desde, hasta };
-  }
-  const desde = dayjs(`${anio}-01-01`).startOf("year").toDate();
-  const hasta = dayjs(desde).add(1, "year").toDate();
-  return { desde, hasta };
-}
 
 // Filtro de Compra que tiene al menos un OTRepuesto del tipo dado.
 function tipoComprasWhere(tipo: Tipo): Record<string, unknown> {
@@ -81,7 +67,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "anio inválido" }, { status: 400 });
     }
 
-    const { desde, hasta } = rango(modo, anio, mes, sem);
+    const { desde, hasta } = rangoUTC(modo, anio, mes, sem);
     const tipoWhere = tipoComprasWhere(tipo);
 
     // OCs del rango activo (para KPIs, estado, top proveedores, tiempo)
@@ -105,21 +91,23 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    // KPIs
+    // KPIs — montos por moneda, anuladas fuera.
     const colocadas = compras.length;
-    let costoTotal = 0;
+    const costo = montoCero();
+    let countUsd = 0;
+    let countSol = 0;
     for (const c of compras) {
+      if (c.status_oc_codigo === "ANULADO") continue;
       const t = Number(c.total ?? 0);
-      if (Number.isFinite(t)) costoTotal += t;
+      if (!Number.isFinite(t)) continue;
+      sumarMonto(costo, t, c.moneda_codigo);
+      if (esSol(c.moneda_codigo)) countSol++;
+      else countUsd++;
     }
-    const ticketPromedio = colocadas > 0 ? costoTotal / colocadas : 0;
-    // Moneda dominante (la que más se repite)
-    const monedaCount: Record<string, number> = {};
-    for (const c of compras) {
-      const m = c.moneda_codigo ?? "USD";
-      monedaCount[m] = (monedaCount[m] ?? 0) + 1;
-    }
-    const moneda = Object.entries(monedaCount).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "USD";
+    const ticket = {
+      usd: countUsd > 0 ? costo.usd / countUsd : 0,
+      sol: countSol > 0 ? costo.sol / countSol : 0,
+    };
 
     // Estado
     const estado = { recibidas: 0, enProceso: 0, pendientes: 0, anuladas: 0 };
@@ -131,37 +119,42 @@ export async function GET(req: NextRequest) {
       else if (s === "ANULADO") estado.anuladas++;
     }
 
-    // Top 5 proveedores por monto
-    const provTotales: Record<string, number> = {};
+    // Top proveedores por monto, separado por moneda. Devolvemos 10 y la UI
+    // ordena/recorta según la moneda que el usuario elija — así el ranking
+    // nunca compara dólares contra soles.
+    const provTotales: Record<string, { usd: number; sol: number }> = {};
     for (const c of compras) {
+      if (c.status_oc_codigo === "ANULADO") continue;
       const nombre = c.proveedor?.razon_social ?? "(sin proveedor)";
       const t = Number(c.total ?? 0);
-      if (!Number.isFinite(t)) continue;
-      provTotales[nombre] = (provTotales[nombre] ?? 0) + t;
+      if (!Number.isFinite(t) || t === 0) continue;
+      if (!provTotales[nombre]) provTotales[nombre] = montoCero();
+      sumarMonto(provTotales[nombre], t, c.moneda_codigo);
     }
     const topProveedores = Object.entries(provTotales)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([nombre, monto]) => ({ nombre, monto }));
+      .sort((a, b) => Math.max(b[1].usd, b[1].sol) - Math.max(a[1].usd, a[1].sol))
+      .slice(0, 10)
+      .map(([nombre, m]) => ({ nombre, usd: m.usd, sol: m.sol }));
 
     // ── Por mes (12 valores) — del año, ignora modo ──────────────────
+    const { inicio, fin } = anioUTC(anio);
     const comprasAnio = await prisma.compra.findMany({
       where: {
         ...tipoWhere,
-        fecha_solicitud: {
-          gte: dayjs(`${anio}-01-01`).startOf("year").toDate(),
-          lt: dayjs(`${anio + 1}-01-01`).startOf("year").toDate(),
-        },
+        fecha_solicitud: { gte: inicio, lt: fin },
       },
-      select: { fecha_solicitud: true, total: true },
+      select: { fecha_solicitud: true, total: true, moneda_codigo: true, status_oc_codigo: true },
     });
     const porMesCantidad: number[] = Array(12).fill(0);
-    const porMesCosto: number[] = Array(12).fill(0);
+    const porMesCosto = { usd: Array(12).fill(0) as number[], sol: Array(12).fill(0) as number[] };
     for (const c of comprasAnio) {
-      const m = dayjs(c.fecha_solicitud).month();
+      const m = mesUTC(c.fecha_solicitud);
       porMesCantidad[m]++;
+      if (c.status_oc_codigo === "ANULADO") continue;
       const t = Number(c.total ?? 0);
-      if (Number.isFinite(t)) porMesCosto[m] += t;
+      if (!Number.isFinite(t)) continue;
+      if (esSol(c.moneda_codigo)) porMesCosto.sol[m] += t;
+      else porMesCosto.usd[m] += t;
     }
 
     // ── Tiempo para colocar OC (distribución + promedio) ──────────────
@@ -186,7 +179,7 @@ export async function GET(req: NextRequest) {
     const tiempoPromedio = muestras > 0 ? sumDias / muestras : 0;
 
     return NextResponse.json({
-      kpis: { colocadas, costoTotal, ticketPromedio, moneda },
+      kpis: { colocadas, costo, ticket },
       estado,
       topProveedores,
       porMesCantidad,

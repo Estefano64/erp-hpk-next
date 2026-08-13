@@ -455,12 +455,16 @@ function SeccionRequerimientos({
 // top 5 proveedores + 3 charts (cantidad mes, costo mes, tiempo) + tiempo
 // promedio para colocar OC.
 // ───────────────────────────────────────────────────────────────────────────
+// Montos separados por moneda — la API nunca suma USD con soles.
+type MontoDualT = { usd: number; sol: number };
+type MonedaSel = "usd" | "sol";
+
 interface OCResp {
-  kpis: { colocadas: number; costoTotal: number; ticketPromedio: number; moneda: string };
+  kpis: { colocadas: number; costo: MontoDualT; ticket: MontoDualT };
   estado: { recibidas: number; enProceso: number; pendientes: number; anuladas: number };
-  topProveedores: { nombre: string; monto: number }[];
+  topProveedores: { nombre: string; usd: number; sol: number }[];
   porMesCantidad: number[];
-  porMesCosto: number[];
+  porMesCosto: { usd: number[]; sol: number[] };
   porTiempo: number[];
   tiempoPromedio: number;
 }
@@ -468,8 +472,37 @@ interface OCResp {
 const TIEMPO_OC_LABELS = ["Mismo día", "1-2d", "3-5d", "6-10d", "+10d"];
 
 function fmtMoneda(n: number, moneda: string): string {
-  const simbolo = moneda === "SOL" || moneda === "PEN" ? "S/" : "$";
+  const simbolo = moneda === "SOL" || moneda === "PEN" || moneda === "sol" ? "S/" : "$";
   return `${simbolo} ${n.toLocaleString("es-PE", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+}
+
+// Opciones del toggle de moneda que llevan las secciones con montos.
+const MONEDA_OPTS = [
+  { value: "usd", label: "$ USD" },
+  { value: "sol", label: "S/ Soles" },
+];
+
+// Muestra un monto en cada moneda, en líneas separadas (nunca sumados).
+// Si una moneda está en cero se omite su línea — salvo que ambas estén en
+// cero, en cuyo caso se muestra "$ 0" para no dejar la card vacía.
+function MontoDual({ usd, sol, color, fontSize = 20 }: {
+  usd: number; sol: number; color: string; fontSize?: number;
+}) {
+  const ambasCero = usd === 0 && sol === 0;
+  return (
+    <div style={{ marginTop: 4 }}>
+      {(usd !== 0 || ambasCero) && (
+        <div style={{ color, fontSize, fontWeight: 600, lineHeight: 1.3 }}>
+          {fmtMoneda(usd, "usd")}
+        </div>
+      )}
+      {sol !== 0 && (
+        <div style={{ color, fontSize: usd !== 0 ? fontSize - 4 : fontSize, fontWeight: 600, lineHeight: 1.3 }}>
+          {fmtMoneda(sol, "sol")}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function SeccionOC({
@@ -478,6 +511,7 @@ function SeccionOC({
   modo: Modo; anio: number; mes: number; sem: number;
 }) {
   const [tipo, setTipo] = useState<"all" | "rep" | "serv">("all");
+  const [monedaSel, setMonedaSel] = useState<MonedaSel>("usd");
   const [data, setData] = useState<OCResp | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -501,17 +535,24 @@ function SeccionOC({
     [data?.porMesCantidad],
   );
   const porMesCostoData = useMemo(
-    () => (data?.porMesCosto ?? []).map((v, i) => ({ name: MES_LABELS[i], value: v })),
-    [data?.porMesCosto],
+    () => (data?.porMesCosto?.[monedaSel] ?? []).map((v, i) => ({ name: MES_LABELS[i], value: v })),
+    [data?.porMesCosto, monedaSel],
   );
   const porTiempoData = useMemo(
     () => (data?.porTiempo ?? []).map((v, i) => ({ name: TIEMPO_OC_LABELS[i], value: v })),
     [data?.porTiempo],
   );
 
+  // Ranking de proveedores en la moneda elegida — no se comparan monedas.
+  const topProv = useMemo(() => {
+    const arr = (data?.topProveedores ?? []).filter((p) => p[monedaSel] > 0);
+    arr.sort((a, b) => b[monedaSel] - a[monedaSel]);
+    return arr.slice(0, 5);
+  }, [data?.topProveedores, monedaSel]);
+
   const COLORS_TIEMPO = ["#1D9E75", "#97C459", "#EF9F27", "#E24B4A", "#791F1F"];
   const estadoTotal = data ? (data.estado.recibidas + data.estado.enProceso + data.estado.pendientes + data.estado.anuladas) : 0;
-  const maxProv = data && data.topProveedores.length > 0 ? data.topProveedores[0].monto : 0;
+  const maxProv = topProv.length > 0 ? topProv[0][monedaSel] : 0;
 
   return (
     <div style={{ marginBottom: 20 }}>
@@ -535,17 +576,24 @@ function SeccionOC({
           </div>
           <Title level={5} style={{ margin: 0 }}>Orden de compra</Title>
         </div>
-        <Segmented
-          size="small"
-          value={tipo}
-          onChange={(v) => setTipo(v as "all" | "rep" | "serv")}
-          options={[
-            { value: "all", label: "Todos" },
-            { value: "rep", label: "Repuestos" },
-            { value: "serv", label: "Servicios" },
-          ]}
-          style={{ marginLeft: "auto" }}
-        />
+        <Space style={{ marginLeft: "auto" }} size={10} wrap>
+          <Segmented
+            size="small"
+            value={monedaSel}
+            onChange={(v) => setMonedaSel(v as MonedaSel)}
+            options={MONEDA_OPTS}
+          />
+          <Segmented
+            size="small"
+            value={tipo}
+            onChange={(v) => setTipo(v as "all" | "rep" | "serv")}
+            options={[
+              { value: "all", label: "Todos" },
+              { value: "rep", label: "Repuestos" },
+              { value: "serv", label: "Servicios" },
+            ]}
+          />
+        </Space>
       </div>
 
       {loading && !data ? (
@@ -568,24 +616,14 @@ function SeccionOC({
             </Col>
             <Col xs={12} md={6}>
               <Card>
-                <Statistic
-                  title="Costo total"
-                  value={data.kpis.costoTotal}
-                  precision={0}
-                  prefix={data.kpis.moneda === "SOL" || data.kpis.moneda === "PEN" ? "S/" : "$"}
-                  styles={{ content: { color: brand.navy, fontSize: 20, fontWeight: 600 } }}
-                />
+                <Text type="secondary" style={{ fontSize: 14 }}>Costo total (sin anuladas)</Text>
+                <MontoDual usd={data.kpis.costo.usd} sol={data.kpis.costo.sol} color={brand.navy} />
               </Card>
             </Col>
             <Col xs={12} md={6}>
               <Card>
-                <Statistic
-                  title="Ticket promedio"
-                  value={data.kpis.ticketPromedio}
-                  precision={0}
-                  prefix={data.kpis.moneda === "SOL" || data.kpis.moneda === "PEN" ? "S/" : "$"}
-                  styles={{ content: { color: brand.textSecondary, fontSize: 18, fontWeight: 500 } }}
-                />
+                <Text type="secondary" style={{ fontSize: 14 }}>Ticket promedio</Text>
+                <MontoDual usd={data.kpis.ticket.usd} sol={data.kpis.ticket.sol} color={brand.textSecondary} fontSize={18} />
               </Card>
             </Col>
             <Col xs={24} md={6}>
@@ -627,31 +665,39 @@ function SeccionOC({
               </Card>
             </Col>
             <Col xs={24} md={12}>
-              <Card title="Top 5 proveedores por monto" size="small">
-                {data.topProveedores.length === 0 ? (
-                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              <Card title={`Top 5 proveedores por monto (${monedaSel === "usd" ? "USD" : "S/"})`} size="small">
+                {topProv.length === 0 ? (
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={`Sin OCs en ${monedaSel === "usd" ? "dólares" : "soles"} en el rango`} />
                 ) : (
                   <div>
-                    {data.topProveedores.map((p, i) => (
-                      <div key={p.nombre} style={{
-                        display: "flex", alignItems: "center", gap: 10,
-                        padding: "7px 0", borderBottom: i < data.topProveedores.length - 1 ? `1px solid ${brand.border}` : "none",
-                      }}>
-                        <div style={{
-                          width: 21, height: 21, borderRadius: 6, background: "#DCF0F5", color: "#0090B4",
-                          fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center",
+                    {topProv.map((p, i) => {
+                      const otro = monedaSel === "usd" ? p.sol : p.usd;
+                      return (
+                        <div key={p.nombre} style={{
+                          display: "flex", alignItems: "center", gap: 10,
+                          padding: "7px 0", borderBottom: i < topProv.length - 1 ? `1px solid ${brand.border}` : "none",
                         }}>
-                          {i + 1}
+                          <div style={{
+                            width: 21, height: 21, borderRadius: 6, background: "#DCF0F5", color: "#0090B4",
+                            fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center",
+                          }}>
+                            {i + 1}
+                          </div>
+                          <div style={{ flex: 1, fontSize: 12 }}>{p.nombre}</div>
+                          <div style={{ flex: 1, height: 6, background: "#f0f0f0", borderRadius: 3, overflow: "hidden" }}>
+                            <div style={{ background: "#0090B4", height: "100%", width: `${maxProv > 0 ? (p[monedaSel] / maxProv) * 100 : 0}%` }} />
+                          </div>
+                          <div style={{ minWidth: 90, textAlign: "right" }}>
+                            <div style={{ fontSize: 12, fontWeight: 600 }}>{fmtMoneda(p[monedaSel], monedaSel)}</div>
+                            {otro > 0 && (
+                              <div style={{ fontSize: 10, color: brand.textSecondary }}>
+                                + {fmtMoneda(otro, monedaSel === "usd" ? "sol" : "usd")}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <div style={{ flex: 1, fontSize: 12 }}>{p.nombre}</div>
-                        <div style={{ flex: 1, height: 6, background: "#f0f0f0", borderRadius: 3, overflow: "hidden" }}>
-                          <div style={{ background: "#0090B4", height: "100%", width: `${maxProv > 0 ? (p.monto / maxProv) * 100 : 0}%` }} />
-                        </div>
-                        <div style={{ fontSize: 12, fontWeight: 600, minWidth: 90, textAlign: "right" }}>
-                          {fmtMoneda(p.monto, data.kpis.moneda)}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </Card>
@@ -676,14 +722,14 @@ function SeccionOC({
               </Card>
             </Col>
             <Col xs={24} md={8}>
-              <Card title={`OC colocadas por mes · costo (${data.kpis.moneda})`} size="small" styles={{ body: { padding: 12 } }}>
+              <Card title={`OC colocadas por mes · costo (${monedaSel === "usd" ? "USD" : "S/"})`} size="small" styles={{ body: { padding: 12 } }}>
                 <div style={{ width: "100%", height: 200 }}>
                   <ResponsiveContainer>
                     <BarChart data={porMesCostoData}>
                       <CartesianGrid stroke="var(--erp-chart-grid)" vertical={false} />
                       <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
-                      <ReTooltip formatter={(v) => fmtMoneda(Number(v), data.kpis.moneda)} />
+                      <ReTooltip formatter={(v) => fmtMoneda(Number(v), monedaSel)} />
                       <Bar dataKey="value" fill="#EF9F27" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
@@ -729,13 +775,13 @@ function SeccionOC({
 // ───────────────────────────────────────────────────────────────────────────
 interface InvResp {
   kpis: {
-    stock: number; valorizacion: number; ingresos: number; ingresosQ: number;
-    salidas: number; salidasQ: number; moneda: string;
+    stock: number; valorizacion: MontoDualT; ingresos: MontoDualT; ingresosQ: number;
+    salidas: MontoDualT; salidasQ: number;
   };
-  porMesValorizacion: number[];
-  porMesIngresos: number[];
-  porMesSalidas: number[];
-  topProductos: { codigo: string; np: string | null; descripcion: string; salidaQ: number; salidaMonto: number }[];
+  porMesValorizacion: { usd: number[]; sol: number[] };
+  porMesIngresos: { usd: number[]; sol: number[] };
+  porMesSalidas: { usd: number[]; sol: number[] };
+  topProductos: { codigo: string; np: string | null; descripcion: string; salidaQ: number; salidaMonto: number; moneda: string }[];
 }
 
 function SeccionInventario({
@@ -745,6 +791,7 @@ function SeccionInventario({
 }) {
   const [catFilter, setCatFilter] = useState<"all" | "cat" | "nocat">("all");
   const [unidad, setUnidad] = useState<"np" | "cant">("np");
+  const [monedaSel, setMonedaSel] = useState<MonedaSel>("usd");
   const [data, setData] = useState<InvResp | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -769,11 +816,11 @@ function SeccionInventario({
     if (!data) return [];
     return MES_LABELS.map((name, i) => ({
       name,
-      valorizacion: data.porMesValorizacion[i] ?? 0,
-      ingresos: data.porMesIngresos[i] ?? 0,
-      salidas: data.porMesSalidas[i] ?? 0,
+      valorizacion: data.porMesValorizacion[monedaSel]?.[i] ?? 0,
+      ingresos: data.porMesIngresos[monedaSel]?.[i] ?? 0,
+      salidas: data.porMesSalidas[monedaSel]?.[i] ?? 0,
     }));
-  }, [data]);
+  }, [data, monedaSel]);
 
   const topData = useMemo(() => {
     if (!data) return [];
@@ -783,6 +830,7 @@ function SeccionInventario({
       np: p.np,
       descripcion: p.descripcion,
       monto: p.salidaMonto,
+      moneda: p.moneda,
       value: p.salidaQ,
     }));
   }, [data]);
@@ -812,6 +860,12 @@ function SeccionInventario({
           <Title level={5} style={{ margin: 0 }}>Inventario</Title>
         </div>
         <Space style={{ marginLeft: "auto" }} size={10} wrap>
+          <Segmented
+            size="small"
+            value={monedaSel}
+            onChange={(v) => setMonedaSel(v as MonedaSel)}
+            options={MONEDA_OPTS}
+          />
           <Segmented
             size="small"
             value={catFilter}
@@ -853,24 +907,14 @@ function SeccionInventario({
             </Col>
             <Col xs={12} md={6}>
               <Card>
-                <Statistic
-                  title="Valorización actual"
-                  value={data.kpis.valorizacion}
-                  precision={0}
-                  prefix={data.kpis.moneda === "SOL" || data.kpis.moneda === "PEN" ? "S/" : "$"}
-                  styles={{ content: { color: brand.navy, fontSize: 20, fontWeight: 600 } }}
-                />
+                <Text type="secondary" style={{ fontSize: 14 }}>Valorización actual</Text>
+                <MontoDual usd={data.kpis.valorizacion.usd} sol={data.kpis.valorizacion.sol} color={brand.navy} />
               </Card>
             </Col>
             <Col xs={12} md={6}>
               <Card>
-                <Statistic
-                  title={`Ingresos ${unidadLbl}`}
-                  value={data.kpis.ingresos}
-                  precision={0}
-                  prefix={data.kpis.moneda === "SOL" || data.kpis.moneda === "PEN" ? "S/" : "$"}
-                  styles={{ content: { color: "#1D9E75", fontSize: 18, fontWeight: 600 } }}
-                />
+                <Text type="secondary" style={{ fontSize: 14 }}>{`Ingresos ${unidadLbl}`}</Text>
+                <MontoDual usd={data.kpis.ingresos.usd} sol={data.kpis.ingresos.sol} color="#1D9E75" fontSize={18} />
                 {data.kpis.ingresosQ > 0 && (
                   <Text type="secondary" style={{ fontSize: 11 }}>
                     {data.kpis.ingresosQ} {unidad === "np" ? "NP" : "piezas"}
@@ -880,13 +924,8 @@ function SeccionInventario({
             </Col>
             <Col xs={12} md={6}>
               <Card>
-                <Statistic
-                  title={`Salidas ${unidadLbl}`}
-                  value={data.kpis.salidas}
-                  precision={0}
-                  prefix={data.kpis.moneda === "SOL" || data.kpis.moneda === "PEN" ? "S/" : "$"}
-                  styles={{ content: { color: "#854F0B", fontSize: 18, fontWeight: 600 } }}
-                />
+                <Text type="secondary" style={{ fontSize: 14 }}>{`Salidas ${unidadLbl}`}</Text>
+                <MontoDual usd={data.kpis.salidas.usd} sol={data.kpis.salidas.sol} color="#854F0B" fontSize={18} />
                 {data.kpis.salidasQ > 0 && (
                   <Text type="secondary" style={{ fontSize: 11 }}>
                     {data.kpis.salidasQ} {unidad === "np" ? "NP" : "piezas"}
@@ -901,7 +940,7 @@ function SeccionInventario({
               <Card
                 title={
                   <Space size={12}>
-                    <span>Valorización y movimientos por mes</span>
+                    <span>{`Valorización y movimientos por mes (${monedaSel === "usd" ? "USD" : "S/"})`}</span>
                     <Space size={8} style={{ fontSize: 11, color: brand.textSecondary, fontWeight: 400 }}>
                       <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#97C459", borderRadius: 2, marginRight: 4 }} />Valoriz.</span>
                       <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#1D9E75", borderRadius: 2, marginRight: 4 }} />Ingresos</span>
@@ -918,7 +957,7 @@ function SeccionInventario({
                       <CartesianGrid stroke="var(--erp-chart-grid)" vertical={false} />
                       <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
-                      <ReTooltip formatter={(v) => fmtMoneda(Number(v), data.kpis.moneda)} />
+                      <ReTooltip formatter={(v) => fmtMoneda(Number(v), monedaSel)} />
                       <Bar dataKey="valorizacion" fill="#97C459" radius={[4, 4, 0, 0]} />
                       <Bar dataKey="ingresos" fill="#1D9E75" radius={[4, 4, 0, 0]} />
                       <Bar dataKey="salidas" fill="#E24B4A" radius={[4, 4, 0, 0]} />
@@ -947,7 +986,7 @@ function SeccionInventario({
                             if (!active || !payload?.length) return null;
                             const p = payload[0].payload as {
                               codigo: string; np: string | null; descripcion: string;
-                              value: number; monto: number;
+                              value: number; monto: number; moneda: string;
                             };
                             return (
                               <div style={{
@@ -972,7 +1011,7 @@ function SeccionInventario({
                                   Salidas: {p.value}
                                   {p.monto > 0 && (
                                     <span style={{ color: brand.textSecondary, fontWeight: 400, marginLeft: 6 }}>
-                                      ({fmtMoneda(p.monto, data.kpis.moneda)})
+                                      ({fmtMoneda(p.monto, p.moneda)})
                                     </span>
                                   )}
                                 </div>
@@ -1149,9 +1188,16 @@ function SeccionOT({
 // ───────────────────────────────────────────────────────────────────────────
 // Sección: Facturación
 // ───────────────────────────────────────────────────────────────────────────
+type FactKpisMoneda = {
+  total: number; rep: number; bien: number; serv: number;
+  repPct: number; bienPct: number; servPct: number;
+};
 interface FactResp {
-  kpis: { total: number; rep: number; bien: number; serv: number; moneda: string; repPct: number; bienPct: number; servPct: number };
-  porMes: { rep: number[]; bien: number[]; serv: number[] };
+  kpis: { usd: FactKpisMoneda; sol: FactKpisMoneda };
+  porMes: {
+    usd: { rep: number[]; bien: number[]; serv: number[] };
+    sol: { rep: number[]; bien: number[]; serv: number[] };
+  };
 }
 
 function SeccionFacturacion({
@@ -1160,6 +1206,7 @@ function SeccionFacturacion({
   modo: Modo; anio: number; mes: number; sem: number;
 }) {
   const [tipo, setTipo] = useState<"all" | "rep" | "bien" | "serv">("all");
+  const [monedaSel, setMonedaSel] = useState<MonedaSel>("usd");
   const [data, setData] = useState<FactResp | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -1180,13 +1227,18 @@ function SeccionFacturacion({
 
   const porMesData = useMemo(() => {
     if (!data) return [];
+    const bucket = data.porMes[monedaSel];
     return MES_LABELS.map((name, i) => ({
       name,
-      rep: data.porMes.rep[i] ?? 0,
-      bien: data.porMes.bien[i] ?? 0,
-      serv: data.porMes.serv[i] ?? 0,
+      rep: bucket?.rep[i] ?? 0,
+      bien: bucket?.bien[i] ?? 0,
+      serv: bucket?.serv[i] ?? 0,
     }));
-  }, [data]);
+  }, [data, monedaSel]);
+
+  // Participación por tipo dentro de la moneda seleccionada (los % nunca
+  // mezclan monedas).
+  const kpisSel = data?.kpis[monedaSel];
 
   return (
     <div style={{ marginBottom: 20 }}>
@@ -1210,77 +1262,70 @@ function SeccionFacturacion({
           </div>
           <Title level={5} style={{ margin: 0 }}>Facturación</Title>
         </div>
-        <Segmented
-          size="small"
-          value={tipo}
-          onChange={(v) => setTipo(v as "all" | "rep" | "bien" | "serv")}
-          options={[
-            { value: "all", label: "Todas" },
-            { value: "rep", label: "Reparación" },
-            { value: "bien", label: "Bien" },
-            { value: "serv", label: "Servicio" },
-          ]}
-          style={{ marginLeft: "auto" }}
-        />
+        <Space style={{ marginLeft: "auto" }} size={10} wrap>
+          <Segmented
+            size="small"
+            value={monedaSel}
+            onChange={(v) => setMonedaSel(v as MonedaSel)}
+            options={MONEDA_OPTS}
+          />
+          <Segmented
+            size="small"
+            value={tipo}
+            onChange={(v) => setTipo(v as "all" | "rep" | "bien" | "serv")}
+            options={[
+              { value: "all", label: "Todas" },
+              { value: "rep", label: "Reparación" },
+              { value: "bien", label: "Bien" },
+              { value: "serv", label: "Servicio" },
+            ]}
+          />
+        </Space>
       </div>
 
       {loading && !data ? (
         <div style={{ textAlign: "center", padding: 40 }}><Spin /></div>
-      ) : !data ? (
+      ) : !data || !kpisSel ? (
         <Empty />
       ) : (
         <>
           <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
             <Col xs={24} md={6}>
               <Card>
-                <Statistic
-                  title="Facturación del rango (sin IGV)"
-                  value={data.kpis.total}
-                  precision={0}
-                  prefix={data.kpis.moneda === "SOL" || data.kpis.moneda === "PEN" ? "S/" : "$"}
-                  styles={{ content: { color: "#A32D2D", fontSize: 20, fontWeight: 700 } }}
-                />
+                <Text type="secondary" style={{ fontSize: 14 }}>Facturación del rango (sin IGV)</Text>
+                <MontoDual usd={data.kpis.usd.total} sol={data.kpis.sol.total} color="#A32D2D" />
               </Card>
             </Col>
             <Col xs={12} md={6}>
               <Card>
-                <Statistic
-                  title="OT Reparación"
-                  value={data.kpis.rep}
-                  precision={0}
-                  prefix={data.kpis.moneda === "SOL" || data.kpis.moneda === "PEN" ? "S/" : "$"}
-                  styles={{ content: { color: "#185FA5", fontSize: 18, fontWeight: 600 } }}
-                />
-                <Text type="secondary" style={{ fontSize: 11 }}>Participación: {data.kpis.repPct.toFixed(0)}%</Text>
+                <Text type="secondary" style={{ fontSize: 14 }}>OT Reparación</Text>
+                <MontoDual usd={data.kpis.usd.rep} sol={data.kpis.sol.rep} color="#185FA5" fontSize={18} />
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  Participación ({monedaSel === "usd" ? "USD" : "S/"}): {kpisSel.repPct.toFixed(0)}%
+                </Text>
               </Card>
             </Col>
             <Col xs={12} md={6}>
               <Card>
-                <Statistic
-                  title="OT Bien"
-                  value={data.kpis.bien}
-                  precision={0}
-                  prefix={data.kpis.moneda === "SOL" || data.kpis.moneda === "PEN" ? "S/" : "$"}
-                  styles={{ content: { color: "#0F6E56", fontSize: 18, fontWeight: 600 } }}
-                />
-                <Text type="secondary" style={{ fontSize: 11 }}>Participación: {data.kpis.bienPct.toFixed(0)}%</Text>
+                <Text type="secondary" style={{ fontSize: 14 }}>OT Bien</Text>
+                <MontoDual usd={data.kpis.usd.bien} sol={data.kpis.sol.bien} color="#0F6E56" fontSize={18} />
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  Participación ({monedaSel === "usd" ? "USD" : "S/"}): {kpisSel.bienPct.toFixed(0)}%
+                </Text>
               </Card>
             </Col>
             <Col xs={12} md={6}>
               <Card>
-                <Statistic
-                  title="OT Servicio"
-                  value={data.kpis.serv}
-                  precision={0}
-                  prefix={data.kpis.moneda === "SOL" || data.kpis.moneda === "PEN" ? "S/" : "$"}
-                  styles={{ content: { color: "#854F0B", fontSize: 18, fontWeight: 600 } }}
-                />
-                <Text type="secondary" style={{ fontSize: 11 }}>Participación: {data.kpis.servPct.toFixed(0)}%</Text>
+                <Text type="secondary" style={{ fontSize: 14 }}>OT Servicio</Text>
+                <MontoDual usd={data.kpis.usd.serv} sol={data.kpis.sol.serv} color="#854F0B" fontSize={18} />
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  Participación ({monedaSel === "usd" ? "USD" : "S/"}): {kpisSel.servPct.toFixed(0)}%
+                </Text>
               </Card>
             </Col>
           </Row>
 
-          <Card title="Facturación mensual · sin IGV" size="small" styles={{ body: { padding: 12 } }}>
+          <Card title={`Facturación mensual · sin IGV (${monedaSel === "usd" ? "USD" : "S/"})`} size="small" styles={{ body: { padding: 12 } }}>
             <Space size={14} style={{ marginBottom: 6, fontSize: 12, color: brand.textSecondary }}>
               <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#185FA5", borderRadius: 2, marginRight: 4 }} />Reparación</span>
               <span><span style={{ display: "inline-block", width: 10, height: 10, background: "#0F6E56", borderRadius: 2, marginRight: 4 }} />Bien</span>
@@ -1292,7 +1337,7 @@ function SeccionFacturacion({
                   <CartesianGrid stroke="var(--erp-chart-grid)" vertical={false} />
                   <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
-                  <ReTooltip formatter={(v) => fmtMoneda(Number(v), data.kpis.moneda)} />
+                  <ReTooltip formatter={(v) => fmtMoneda(Number(v), monedaSel)} />
                   <Bar dataKey="rep" stackId="a" fill="#185FA5" />
                   <Bar dataKey="bien" stackId="a" fill="#0F6E56" />
                   <Bar dataKey="serv" stackId="a" fill="#854F0B" />

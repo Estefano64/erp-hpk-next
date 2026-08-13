@@ -28,25 +28,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import dayjs from "dayjs";
-import isoWeek from "dayjs/plugin/isoWeek";
-
-dayjs.extend(isoWeek);
-
-function rango(modo: string, anio: number, mes: number | null, sem: number | null): { desde: Date; hasta: Date } {
-  if (modo === "mes" && mes != null) {
-    const desde = dayjs(`${anio}-${String(mes).padStart(2, "0")}-01`).startOf("month").toDate();
-    const hasta = dayjs(desde).add(1, "month").toDate();
-    return { desde, hasta };
-  }
-  if (modo === "sem" && sem != null) {
-    const desde = dayjs(`${anio}-01-04`).startOf("isoWeek").add(sem - 1, "week").toDate();
-    const hasta = dayjs(desde).add(7, "day").toDate();
-    return { desde, hasta };
-  }
-  const desde = dayjs(`${anio}-01-01`).startOf("year").toDate();
-  const hasta = dayjs(desde).add(1, "year").toDate();
-  return { desde, hasta };
-}
+import { rangoUTC } from "@/lib/dashboard-logistica";
 
 export async function GET(req: NextRequest) {
   try {
@@ -63,7 +45,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "anio inválido" }, { status: 400 });
     }
 
-    const { desde, hasta } = rango(modo, anio, mes, sem);
+    const { desde, hasta } = rangoUTC(modo, anio, mes, sem);
 
     // ── Estado en almacén: OT abiertas, completas vs incompletas ────────
     const [completas, abiertasTotal] = await Promise.all([

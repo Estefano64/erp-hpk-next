@@ -10,36 +10,34 @@
 //   ?sem=23               obligatorio cuando modo=sem
 //   ?tipo=all|rep|bien|serv  default all
 //
-// Respuesta:
+// Respuesta (todos los montos separados por moneda — nunca se suman USD y
+// soles entre sí; los % de participación se calculan dentro de cada moneda):
 //   {
-//     kpis: { total, rep, bien, serv, moneda, repPct, bienPct, servPct },
-//     porMes: { rep: number[12]; bien: number[12]; serv: number[12] },
+//     kpis: {
+//       usd: { total, rep, bien, serv, repPct, bienPct, servPct },
+//       sol: { total, rep, bien, serv, repPct, bienPct, servPct },
+//     },
+//     porMes: {
+//       usd: { rep: number[12]; bien: number[12]; serv: number[12] },
+//       sol: { rep: number[12]; bien: number[12]; serv: number[12] },
+//     },
 //   }
 
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import dayjs from "dayjs";
-import isoWeek from "dayjs/plugin/isoWeek";
-
-dayjs.extend(isoWeek);
+import { rangoUTC, anioUTC, mesUTC, esSol } from "@/lib/dashboard-logistica";
 
 type Tipo = "all" | "rep" | "bien" | "serv";
 
-function rango(modo: string, anio: number, mes: number | null, sem: number | null): { desde: Date; hasta: Date } {
-  if (modo === "mes" && mes != null) {
-    const desde = dayjs(`${anio}-${String(mes).padStart(2, "0")}-01`).startOf("month").toDate();
-    const hasta = dayjs(desde).add(1, "month").toDate();
-    return { desde, hasta };
-  }
-  if (modo === "sem" && sem != null) {
-    const desde = dayjs(`${anio}-01-04`).startOf("isoWeek").add(sem - 1, "week").toDate();
-    const hasta = dayjs(desde).add(7, "day").toDate();
-    return { desde, hasta };
-  }
-  const desde = dayjs(`${anio}-01-01`).startOf("year").toDate();
-  const hasta = dayjs(desde).add(1, "year").toDate();
-  return { desde, hasta };
+type KpisMoneda = {
+  total: number; rep: number; bien: number; serv: number;
+  repPct: number; bienPct: number; servPct: number;
+};
+
+function kpisVacios(): KpisMoneda {
+  return { total: 0, rep: 0, bien: 0, serv: 0, repPct: 0, bienPct: 0, servPct: 0 };
 }
 
 export async function GET(req: NextRequest) {
@@ -58,9 +56,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "anio inválido" }, { status: 400 });
     }
 
-    const { desde, hasta } = rango(modo, anio, mes, sem);
-    const inicioAnio = dayjs(`${anio}-01-01`).startOf("year").toDate();
-    const finAnio = dayjs(`${anio + 1}-01-01`).startOf("year").toDate();
+    const { desde, hasta } = rangoUTC(modo, anio, mes, sem);
+    const { inicio: inicioAnio, fin: finAnio } = anioUTC(anio);
 
     // KPIs del rango: total + por tipo
     const tipos = tipo === "all" ? ["REP", "BIE", "SER"]
@@ -70,6 +67,7 @@ export async function GET(req: NextRequest) {
 
     const otsRango = await prisma.ordenTrabajo.findMany({
       where: {
+        activo: true,
         fecha_facturacion: { gte: desde, lt: hasta, not: null },
         tipo_codigo: { in: tipos },
       },
@@ -80,45 +78,55 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    let total = 0;
-    let rep = 0; let bien = 0; let serv = 0;
-    const monedaCount: Record<string, number> = {};
+    const kpis = { usd: kpisVacios(), sol: kpisVacios() };
     for (const ot of otsRango) {
       const m = Number(ot.monto_cotizacion ?? 0);
       if (!Number.isFinite(m) || m <= 0) continue;
-      total += m;
-      if (ot.tipo_codigo === "REP") rep += m;
-      else if (ot.tipo_codigo === "BIE") bien += m;
-      else if (ot.tipo_codigo === "SER") serv += m;
-      const mc = ot.moneda_cotizacion_codigo ?? "USD";
-      monedaCount[mc] = (monedaCount[mc] ?? 0) + 1;
+      const k = esSol(ot.moneda_cotizacion_codigo) ? kpis.sol : kpis.usd;
+      k.total += m;
+      if (ot.tipo_codigo === "REP") k.rep += m;
+      else if (ot.tipo_codigo === "BIE") k.bien += m;
+      else if (ot.tipo_codigo === "SER") k.serv += m;
     }
-    const moneda = Object.entries(monedaCount).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "USD";
-    const repPct = total > 0 ? (rep / total) * 100 : 0;
-    const bienPct = total > 0 ? (bien / total) * 100 : 0;
-    const servPct = total > 0 ? (serv / total) * 100 : 0;
+    for (const k of [kpis.usd, kpis.sol]) {
+      k.repPct = k.total > 0 ? (k.rep / k.total) * 100 : 0;
+      k.bienPct = k.total > 0 ? (k.bien / k.total) * 100 : 0;
+      k.servPct = k.total > 0 ? (k.serv / k.total) * 100 : 0;
+    }
 
     // Por mes (12 valores) — del año, ignora modo
     const otsAnio = await prisma.ordenTrabajo.findMany({
       where: {
+        activo: true,
         fecha_facturacion: { gte: inicioAnio, lt: finAnio, not: null },
         tipo_codigo: { in: ["REP", "BIE", "SER"] },
       },
-      select: { fecha_facturacion: true, tipo_codigo: true, monto_cotizacion: true },
+      select: {
+        fecha_facturacion: true,
+        tipo_codigo: true,
+        monto_cotizacion: true,
+        moneda_cotizacion_codigo: true,
+      },
     });
-    const porMes = { rep: Array(12).fill(0), bien: Array(12).fill(0), serv: Array(12).fill(0) };
+    const mesesVacios = () => ({
+      rep: Array(12).fill(0) as number[],
+      bien: Array(12).fill(0) as number[],
+      serv: Array(12).fill(0) as number[],
+    });
+    const porMes = { usd: mesesVacios(), sol: mesesVacios() };
     for (const ot of otsAnio) {
       if (!ot.fecha_facturacion) continue;
-      const m = dayjs(ot.fecha_facturacion).month();
+      const m = mesUTC(ot.fecha_facturacion);
       const monto = Number(ot.monto_cotizacion ?? 0);
       if (!Number.isFinite(monto) || monto <= 0) continue;
-      if (ot.tipo_codigo === "REP") porMes.rep[m] += monto;
-      else if (ot.tipo_codigo === "BIE") porMes.bien[m] += monto;
-      else if (ot.tipo_codigo === "SER") porMes.serv[m] += monto;
+      const bucket = esSol(ot.moneda_cotizacion_codigo) ? porMes.sol : porMes.usd;
+      if (ot.tipo_codigo === "REP") bucket.rep[m] += monto;
+      else if (ot.tipo_codigo === "BIE") bucket.bien[m] += monto;
+      else if (ot.tipo_codigo === "SER") bucket.serv[m] += monto;
     }
 
     return NextResponse.json({
-      kpis: { total, rep, bien, serv, moneda, repPct, bienPct, servPct },
+      kpis,
       porMes,
       meta: { modo, anio, mes, sem, tipo },
     });
