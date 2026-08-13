@@ -2,6 +2,8 @@
 import { getToken } from "next-auth/jwt";
 import type { NextRequest } from "next/server";
 import { SAC_TIPOS_DESVIACION, SAC_FUENTES, SAC_SISTEMAS } from "./ssoma";
+import { crearNotificaciones } from "./notificaciones-server";
+import { prisma } from "./prisma";
 
 // ¿El usuario es encargado de seguridad (rol "ssoma") o admin?
 // Gatea las acciones del flujo: aprobar/cerrar reportes de seguridad,
@@ -37,6 +39,66 @@ export function parseFotoInput(raw: unknown): FotoInput | null {
 // que no pertenezcan al namespace — evita registrar en BD una key ajena.
 export function esKeySsoma(key: string, prefijo: string): boolean {
   return key.startsWith(prefijo + "/") && !key.includes("..");
+}
+
+// ── Responsables de acciones correctivas ─────────────────────────
+// Solo pueden ser responsables las cuentas con rol "responsable_ssoma"
+// (se administra desde /rrhh, pestaña de cuentas). El nombre que guarda el
+// formato se resuelve acá a la cuenta para (a) persistir el vínculo
+// responsable_usuario_id y (b) mandarle la notificación in-app.
+export async function responsablesSsomaPorNombre(): Promise<Map<string, { id: number; nombre: string }>> {
+  const cuentas = await prisma.usuario.findMany({
+    where: { activo: true, roles: { has: "responsable_ssoma" } },
+    select: { id: true, nombre: true },
+  });
+  const mapa = new Map<string, { id: number; nombre: string }>();
+  for (const c of cuentas) mapa.set(c.nombre.trim().toLowerCase(), c);
+  return mapa;
+}
+
+export function usuarioIdResponsable(
+  mapa: Map<string, { id: number; nombre: string }>,
+  nombre: string | null | undefined,
+): number | null {
+  if (!nombre) return null;
+  return mapa.get(nombre.trim().toLowerCase())?.id ?? null;
+}
+
+// Notifica a los responsables NUEVOS de un plan de acción (los que aparecen
+// en `ahora` y no estaban en `antes`). Se llama después del commit; nunca
+// tira: crear la notificación no puede voltear el guardado del plan.
+export async function notificarNuevosResponsables(opts: {
+  antes: (string | null | undefined)[];
+  ahora: (string | null | undefined)[];
+  tipo: string;
+  titulo: string;
+  mensaje?: string | null;
+  url: string;
+  creadaPor?: string | null;
+  omitirUsuarioId?: number | null;
+}): Promise<void> {
+  const norm = (n: string | null | undefined) => n?.trim().toLowerCase() ?? "";
+  const previos = new Set(opts.antes.map(norm).filter(Boolean));
+  const nuevos = [...new Set(opts.ahora.map(norm).filter(Boolean))].filter((n) => !previos.has(n));
+  if (nuevos.length === 0) return;
+  try {
+    const mapa = await responsablesSsomaPorNombre();
+    await crearNotificaciones(
+      nuevos
+        .map((n) => mapa.get(n))
+        .filter((c): c is { id: number; nombre: string } => c != null)
+        .map((c) => ({
+          usuario_id: c.id,
+          tipo: opts.tipo,
+          titulo: opts.titulo,
+          mensaje: opts.mensaje ?? null,
+          url: opts.url,
+        })),
+      { creadaPor: opts.creadaPor ?? null, omitirUsuarioId: opts.omitirUsuarioId ?? null },
+    );
+  } catch (e) {
+    console.error("notificarNuevosResponsables error:", e);
+  }
 }
 
 // ── Normalización de body de SAC (compartido por POST y PATCH) ───
@@ -93,17 +155,23 @@ export function sacDataDesdeBody(body: any): { error?: string; data?: any } {
 }
 
 // Normaliza el array `acciones` del body (o null si no vino — no tocar).
+// `mapaResponsables` (responsablesSsomaPorNombre) resuelve el nombre a la
+// cuenta para persistir responsable_usuario_id.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function sacAccionesDesdeBody(body: any):
-  | { orden: number; descripcion: string; responsable: string | null; fecha: Date | null }[]
+export function sacAccionesDesdeBody(body: any, mapaResponsables: Map<string, { id: number; nombre: string }>):
+  | { orden: number; descripcion: string; responsable: string | null; responsable_usuario_id: number | null; fecha: Date | null }[]
   | null {
   if (!Array.isArray(body.acciones)) return null;
   return body.acciones
-    .map((a: Record<string, unknown>, i: number) => ({
-      orden: i + 1,
-      descripcion: typeof a.descripcion === "string" ? a.descripcion.trim() : "",
-      responsable: typeof a.responsable === "string" ? a.responsable.trim() || null : null,
-      fecha: a.fecha ? new Date(String(a.fecha)) : null,
-    }))
+    .map((a: Record<string, unknown>, i: number) => {
+      const responsable = typeof a.responsable === "string" ? a.responsable.trim() || null : null;
+      return {
+        orden: i + 1,
+        descripcion: typeof a.descripcion === "string" ? a.descripcion.trim() : "",
+        responsable,
+        responsable_usuario_id: usuarioIdResponsable(mapaResponsables, responsable),
+        fecha: a.fecha ? new Date(String(a.fecha)) : null,
+      };
+    })
     .filter((a: { descripcion: string }) => a.descripcion.length > 0);
 }

@@ -2,8 +2,9 @@
 
 // Reportes de Seguridad (formato HPK-S-F-03).
 // Flujo: cualquier personal crea (Parte A + fotos) → el encargado de
-// seguridad (rol "ssoma") revisa y aprueba → llena el plan de acción
-// (Parte B) → cierra con foto + comentario obligatorios.
+// seguridad (rol "ssoma") llena el plan de acción (Parte B, responsables
+// con rol "responsable_ssoma" que reciben notificación) → cierra con
+// comentario obligatorio (foto opcional).
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Typography, Table, Button, Input, Select, Space, Tag, Modal, Form,
@@ -12,7 +13,7 @@ import {
 } from "antd";
 import {
   SafetyOutlined, PlusOutlined, ReloadOutlined, SearchOutlined,
-  EditOutlined, EyeOutlined, DeleteOutlined, CheckCircleOutlined,
+  EditOutlined, EyeOutlined, DeleteOutlined,
   LockOutlined, CameraOutlined, MinusCircleOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
@@ -41,6 +42,7 @@ import { uploadToR2 } from "@/lib/r2-client";
 import {
   SsomaFotosUpload, SsomaFotosGaleria, type FotoPendiente,
 } from "@/components/modules/ssoma/SsomaFotos";
+import { SelectTrabajador, SelectResponsableSsoma } from "@/components/modules/ssoma/SsomaPersonas";
 import { R2Image } from "@/components/R2Image";
 
 const { Title, Text } = Typography;
@@ -74,11 +76,7 @@ interface ReporteRow {
   cargo: string | null;
   danos_potenciales: string[];
   descripcion: string | null;
-  supervisor_ssoma: string | null;
   estado: string;
-  aprobado_por: string | null;
-  fecha_aprobacion: string | null;
-  comentario_aprobacion: string | null;
   cerrado_por: string | null;
   fecha_cierre: string | null;
   comentario_cierre: string | null;
@@ -100,7 +98,7 @@ export default function ReportesSeguridadPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
 
-  // Rol del usuario: el flujo aprobar/cerrar/anular es del encargado SSOMA.
+  // Rol del usuario: el flujo cerrar/anular es del encargado SSOMA.
   const [esSsoma, setEsSsoma] = useState(false);
   useEffect(() => {
     fetch("/api/me")
@@ -114,6 +112,13 @@ export default function ReportesSeguridadPage() {
 
   // Filtros persistidos
   const [search, setSearch] = usePersistedState<string>("rs-search", "");
+
+  // ?search=RS-0001-26 al llegar desde una notificación.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("search");
+    if (q) setSearch(q);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [estadoFiltro, setEstadoFiltro] = usePersistedState<string>("rs-estado", "");
   const [, setColumnFilters] = usePersistedState<Record<string, (string | number | boolean | null)[] | null>>(
     "rs-col-filters",
@@ -129,10 +134,6 @@ export default function ReportesSeguridadPage() {
   const [editTarget, setEditTarget] = useState<ReporteRow | null>(null);
   const [formEdit] = Form.useForm();
   const [subiendoFotoEdit, setSubiendoFotoEdit] = useState(false);
-
-  const [aprobarOpen, setAprobarOpen] = useState(false);
-  const [aprobarTarget, setAprobarTarget] = useState<ReporteRow | null>(null);
-  const [formAprobar] = Form.useForm();
 
   const [cerrarOpen, setCerrarOpen] = useState(false);
   const [cerrarTarget, setCerrarTarget] = useState<ReporteRow | null>(null);
@@ -213,7 +214,6 @@ export default function ReportesSeguridadPage() {
       cargo: row.cargo ?? "",
       danos_potenciales: row.danos_potenciales ?? [],
       descripcion: row.descripcion ?? "",
-      supervisor_ssoma: row.supervisor_ssoma ?? "",
       acciones: (row.acciones ?? []).map((a) => ({
         descripcion: a.descripcion,
         responsable: a.responsable ?? "",
@@ -239,7 +239,6 @@ export default function ReportesSeguridadPage() {
           cargo: values.cargo || null,
           danos_potenciales: values.danos_potenciales || [],
           descripcion: values.descripcion,
-          supervisor_ssoma: values.supervisor_ssoma || null,
           acciones: (values.acciones || []).map(
             (a: { descripcion?: string; responsable?: string; fecha_cumplimiento?: dayjs.Dayjs | null }) => ({
               descripcion: a.descripcion || "",
@@ -300,44 +299,26 @@ export default function ReportesSeguridadPage() {
     }
   }
 
-  async function handleAprobar() {
-    if (!aprobarTarget) return;
-    try {
-      const values = await formAprobar.validateFields();
-      const res = await fetch(`/api/ssoma/reportes-seguridad/${aprobarTarget.id}/aprobar`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ comentario: values.comentario || null }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Error");
-      message.success("Reporte aprobado.");
-      setAprobarOpen(false);
-      setAprobarTarget(null);
-      formAprobar.resetFields();
-      fetchData();
-    } catch (e) {
-      const err = e as { errorFields?: unknown; message?: string };
-      if (err.errorFields) return;
-      message.error(err.message || "Error");
-    }
-  }
-
   async function handleCerrar() {
     if (!cerrarTarget) return;
     try {
       const values = await formCerrar.validateFields();
-      if (fotoCierre.length === 0) {
-        message.error("La foto de cierre es obligatoria.");
-        return;
-      }
-      const { key, nombre_archivo, tipo_mime, tamano } = fotoCierre[0];
+      const foto = fotoCierre[0];
       const res = await fetch(`/api/ssoma/reportes-seguridad/${cerrarTarget.id}/cerrar`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           comentario: values.comentario,
-          foto: { key, nombre_archivo, tipo_mime, tamano },
+          ...(foto
+            ? {
+                foto: {
+                  key: foto.key,
+                  nombre_archivo: foto.nombre_archivo,
+                  tipo_mime: foto.tipo_mime,
+                  tamano: foto.tamano,
+                },
+              }
+            : {}),
         }),
       });
       const json = await res.json();
@@ -458,13 +439,6 @@ export default function ReportesSeguridadPage() {
           r.acciones.length > 0 ? `${r.acciones.length} acción(es)` : <Text type="secondary">—</Text>,
       },
       {
-        key: "aprobado_por",
-        title: "Aprobado por",
-        dataIndex: "aprobado_por",
-        width: 150,
-        render: (v: string | null) => v || <Text type="secondary">—</Text>,
-      },
-      {
         key: "fecha_cierre",
         title: "Cierre",
         dataIndex: "fecha_cierre",
@@ -487,14 +461,7 @@ export default function ReportesSeguridadPage() {
               </Tooltip>
             )}
             {esSsoma && r.estado === "ABIERTO" && (
-              <Tooltip title="Revisar y aprobar">
-                <Button size="small" type="primary" icon={<CheckCircleOutlined />} onClick={() => { setAprobarTarget(r); setAprobarOpen(true); }}>
-                  Aprobar
-                </Button>
-              </Tooltip>
-            )}
-            {esSsoma && r.estado === "APROBADO" && (
-              <Tooltip title="Cerrar (requiere foto + comentario)">
+              <Tooltip title="Cerrar (comentario obligatorio, foto opcional)">
                 <Button size="small" type="primary" icon={<LockOutlined />} onClick={() => { setCerrarTarget(r); setCerrarOpen(true); }}>
                   Cerrar
                 </Button>
@@ -537,8 +504,8 @@ export default function ReportesSeguridadPage() {
       </Title>
       <Text type="secondary">
         Formato HPK-S-F-03. <strong>1)</strong> Cualquier personal reporta un acto o condición insegura (con fotos).{" "}
-        <strong>2)</strong> El encargado de seguridad revisa, aprueba y registra el plan de acción.{" "}
-        <strong>3)</strong> Se cierra con foto y comentario de evidencia.
+        <strong>2)</strong> El encargado de seguridad registra el plan de acción y notifica a los responsables.{" "}
+        <strong>3)</strong> Se cierra con comentario de evidencia (foto opcional).
       </Text>
 
       <Card size="small" style={{ marginTop: 16, marginBottom: 8 }}>
@@ -595,8 +562,6 @@ export default function ReportesSeguridadPage() {
                     key: "plan", label: "Plan de acción",
                     value: (r) => r.acciones.map((a) => `${a.orden}) ${a.descripcion}`).join(" | "),
                   },
-                  { key: "supervisor", label: "Superv. SSOMA", value: (r) => r.supervisor_ssoma ?? "" },
-                  { key: "aprobado_por", label: "Aprobado por", value: (r) => r.aprobado_por ?? "" },
                   { key: "fecha_cierre", label: "Fecha cierre", value: (r) => dateOnlyLocal(r.fecha_cierre) },
                   { key: "comentario_cierre", label: "Comentario cierre", value: (r) => r.comentario_cierre ?? "" },
                 ]}
@@ -663,11 +628,16 @@ export default function ReportesSeguridadPage() {
           <Row gutter={12}>
             <Col xs={24} md={12}>
               <Form.Item name="reportado_por" label="Reportado por" tooltip="Si lo dejás vacío, se usa tu usuario.">
-                <Input placeholder="Apellidos y nombres" maxLength={150} />
+                <SelectTrabajador
+                  placeholder="Elegí al trabajador"
+                  onSelectPersona={(t) => {
+                    if (t?.puesto) formCrear.setFieldValue("cargo", t.puesto);
+                  }}
+                />
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
-              <Form.Item name="cargo" label="Cargo">
+              <Form.Item name="cargo" label="Cargo" tooltip="Se completa solo al elegir al trabajador.">
                 <Input placeholder="Cargo del trabajador" maxLength={100} />
               </Form.Item>
             </Col>
@@ -733,7 +703,12 @@ export default function ReportesSeguridadPage() {
             <Row gutter={12}>
               <Col xs={24} md={12}>
                 <Form.Item name="reportado_por" label="Reportado por">
-                  <Input maxLength={150} />
+                  <SelectTrabajador
+                    placeholder="Elegí al trabajador"
+                    onSelectPersona={(t) => {
+                      if (t?.puesto) formEdit.setFieldValue("cargo", t.puesto);
+                    }}
+                  />
                 </Form.Item>
               </Col>
               <Col xs={24} md={12}>
@@ -767,7 +742,7 @@ export default function ReportesSeguridadPage() {
               </div>
             </Form.Item>
 
-            <Divider titlePlacement="start" plain>Parte B — Plan de acción y seguimiento (supervisor)</Divider>
+            <Divider titlePlacement="start" plain>Parte B — Plan de acción y seguimiento (encargado de seguridad)</Divider>
             <Form.List name="acciones">
               {(fields, { add, remove }) => (
                 <>
@@ -783,8 +758,12 @@ export default function ReportesSeguridadPage() {
                         </Form.Item>
                       </Col>
                       <Col xs={12} md={6}>
-                        <Form.Item {...rest} name={[name, "responsable"]}>
-                          <Input placeholder="Responsable" maxLength={150} />
+                        <Form.Item
+                          {...rest}
+                          name={[name, "responsable"]}
+                          tooltip="Solo cuentas con rol «Responsable SSOMA» — al guardar les llega una notificación."
+                        >
+                          <SelectResponsableSsoma />
                         </Form.Item>
                       </Col>
                       <Col xs={10} md={5}>
@@ -805,44 +784,11 @@ export default function ReportesSeguridadPage() {
                 </>
               )}
             </Form.List>
-            <Form.Item name="supervisor_ssoma" label="Superv. SSOMA / Encargado (apellidos y nombres)" style={{ marginTop: 16 }}>
-              <Input maxLength={150} />
-            </Form.Item>
           </Form>
         )}
       </Modal>
 
-      {/* ── Modal Aprobar ───────────────────────────── */}
-      <Modal
-        open={aprobarOpen}
-        title={
-          <>
-            Revisar y aprobar —{" "}
-            <Text strong>{aprobarTarget ? formatReporteSeguridadCodigo(aprobarTarget.numero, aprobarTarget.anio) : ""}</Text>
-          </>
-        }
-        onCancel={() => { setAprobarOpen(false); setAprobarTarget(null); }}
-        onOk={handleAprobar}
-        okText="Aprobar reporte"
-        width={modalWidth(screens.screens, 560)}
-        destroyOnHidden
-      >
-        {aprobarTarget && (
-          <>
-            <Card size="small" style={{ marginBottom: 12 }}>
-              <Text type="secondary">Descripción:</Text>{" "}
-              <Text>{aprobarTarget.descripcion}</Text>
-            </Card>
-            <Form form={formAprobar} layout="vertical">
-              <Form.Item name="comentario" label="Comentario de revisión (opcional)">
-                <TextArea rows={3} maxLength={1000} showCount />
-              </Form.Item>
-            </Form>
-          </>
-        )}
-      </Modal>
-
-      {/* ── Modal Cerrar (foto + comentario obligatorios) ── */}
+      {/* ── Modal Cerrar (comentario obligatorio, foto opcional) ── */}
       <Modal
         open={cerrarOpen}
         title={
@@ -865,7 +811,7 @@ export default function ReportesSeguridadPage() {
           >
             <TextArea rows={4} maxLength={2000} showCount placeholder="¿Cómo se levantó la condición / acto inseguro?" />
           </Form.Item>
-          <Form.Item label="Foto de evidencia del cierre" required>
+          <Form.Item label="Foto de evidencia del cierre (opcional)">
             <SsomaFotosUpload
               uploadUrlEndpoint={UPLOAD_URL}
               value={fotoCierre}
@@ -938,19 +884,7 @@ export default function ReportesSeguridadPage() {
                   ]}
                 />
               )}
-              <div style={{ marginTop: 8 }}>
-                <Text type="secondary">Superv. SSOMA:</Text> {verTarget.supervisor_ssoma || "—"}
-              </div>
             </Card>
-            {verTarget.aprobado_por && (
-              <div>
-                <Text type="secondary">Aprobado por:</Text> {verTarget.aprobado_por}
-                {verTarget.fecha_aprobacion ? ` — ${new Date(verTarget.fecha_aprobacion).toLocaleString("es-PE")}` : ""}
-                {verTarget.comentario_aprobacion && (
-                  <div><Text type="secondary">Comentario:</Text> {verTarget.comentario_aprobacion}</div>
-                )}
-              </div>
-            )}
             {verTarget.estado === "CERRADO" && (
               <Card size="small" title="Cierre">
                 <div>

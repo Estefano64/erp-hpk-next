@@ -3,10 +3,12 @@
 // Los correlativos (server-only, Prisma) viven en src/lib/ssoma-numero.ts.
 
 // ── Estados ──────────────────────────────────────────────────────
-// Reporte de Seguridad (HPK-S-F-03): ABIERTO → APROBADO → CERRADO.
+// Reporte de Seguridad (HPK-S-F-03): ABIERTO → CERRADO.
+// El paso intermedio "APROBADO" se eliminó el 2026-08-13 a pedido del equipo:
+// el encargado de seguridad llena el plan de acción y cierra directo, sin una
+// aprobación previa que no agregaba nada al flujo real.
 export const RS_ESTADOS: Record<string, { label: string; color: string }> = {
   ABIERTO: { label: "Abierto", color: "orange" },
-  APROBADO: { label: "Aprobado", color: "blue" },
   CERRADO: { label: "Cerrado", color: "green" },
 };
 

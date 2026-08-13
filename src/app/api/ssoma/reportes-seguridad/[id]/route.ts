@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { parseInt4Safe } from "@/lib/ot-formato";
-import { esEncargadoSsoma } from "@/lib/ssoma-server";
+import {
+  esEncargadoSsoma, responsablesSsomaPorNombre, usuarioIdResponsable,
+  notificarNuevosResponsables,
+} from "@/lib/ssoma-server";
+import { getUsuarioIdSesion } from "@/lib/notificaciones-server";
+import { TIPOS_NOTIFICACION } from "@/lib/notificaciones";
+import { formatReporteSeguridadCodigo } from "@/lib/ssoma";
 
 // GET — detalle del reporte de seguridad.
 export async function GET(
@@ -34,12 +40,9 @@ export async function GET(
   }
 }
 
-// PATCH — edita el reporte mientras NO esté cerrado.
-//   - Parte A (lugar/fecha/hora/tipo/reportador/daños/descripción): editable
-//     en ABIERTO.
-//   - Parte B (plan de acción `acciones` + supervisor_ssoma): editable en
-//     ABIERTO y APROBADO (el encargado va llenando el seguimiento).
-// `acciones` reemplaza el plan completo (deleteMany + create).
+// PATCH — edita el reporte mientras NO esté cerrado (Parte A + Parte B).
+// `acciones` reemplaza el plan completo (deleteMany + create); a los
+// responsables recién asignados se les manda una notificación in-app.
 export async function PATCH(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
@@ -55,7 +58,10 @@ export async function PATCH(
 
     const actual = await prisma.reporteSeguridad.findUnique({
       where: { id: idNum },
-      select: { id: true, activo: true, estado: true },
+      select: {
+        id: true, activo: true, estado: true, numero: true, anio: true,
+        acciones: { select: { responsable: true } },
+      },
     });
     if (!actual) {
       return NextResponse.json({ error: "No encontrado" }, { status: 404 });
@@ -95,14 +101,21 @@ export async function PATCH(
     }
     if (body.supervisor_ssoma !== undefined) data.supervisor_ssoma = body.supervisor_ssoma?.trim() || null;
 
+    // Plan de acción: además del nombre, resolvemos la CUENTA del responsable
+    // (rol "responsable_ssoma") para vincularla y poder notificarlo.
+    const mapaResponsables = Array.isArray(body.acciones) ? await responsablesSsomaPorNombre() : null;
     const accionesNuevas = Array.isArray(body.acciones)
       ? body.acciones
-          .map((a: Record<string, unknown>, i: number) => ({
-            orden: i + 1,
-            descripcion: typeof a.descripcion === "string" ? a.descripcion.trim() : "",
-            responsable: typeof a.responsable === "string" ? a.responsable.trim() || null : null,
-            fecha_cumplimiento: a.fecha_cumplimiento ? new Date(String(a.fecha_cumplimiento)) : null,
-          }))
+          .map((a: Record<string, unknown>, i: number) => {
+            const responsable = typeof a.responsable === "string" ? a.responsable.trim() || null : null;
+            return {
+              orden: i + 1,
+              descripcion: typeof a.descripcion === "string" ? a.descripcion.trim() : "",
+              responsable,
+              responsable_usuario_id: usuarioIdResponsable(mapaResponsables!, responsable),
+              fecha_cumplimiento: a.fecha_cumplimiento ? new Date(String(a.fecha_cumplimiento)) : null,
+            };
+          })
           .filter((a: { descripcion: string }) => a.descripcion.length > 0)
       : null;
 
@@ -124,6 +137,22 @@ export async function PATCH(
         },
       });
     });
+
+    // Aviso in-app a los responsables recién asignados (fuera de la tx: si
+    // fallara, el plan igual quedó guardado).
+    if (accionesNuevas !== null) {
+      const codigo = formatReporteSeguridadCodigo(actual.numero, actual.anio);
+      await notificarNuevosResponsables({
+        antes: actual.acciones.map((a) => a.responsable),
+        ahora: accionesNuevas.map((a: { responsable: string | null }) => a.responsable),
+        tipo: TIPOS_NOTIFICACION.SSOMA_ACCION_REPORTE,
+        titulo: `${codigo}: te asignaron una acción del plan`,
+        mensaje: "Revisá el plan de acción del reporte de seguridad.",
+        url: `/ssoma/reportes-seguridad?search=${codigo}`,
+        creadaPor: usuario,
+        omitirUsuarioId: await getUsuarioIdSesion(req),
+      });
+    }
 
     return NextResponse.json({ data: updated });
   } catch (e) {
