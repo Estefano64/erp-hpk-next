@@ -96,8 +96,8 @@ export async function PUT(req: NextRequest, { params }: Params) {
     // Evita cerrar OTs con datos huérfanos.
     // 2026-08-13: la aprobación (APROBADA) dejó de ser requisito de cierre —
     // el circuito casi no se usaba (30/38 OTs abiertas en BORRADOR) y trababa
-    // la operación. El flujo de aprobación sigue disponible como trazabilidad
-    // opcional; pendiente de revisión con el equipo.
+    // la operación. 2026-08-17: confirmado por el equipo — cualquiera cierra
+    // la OT interna; la UI de aprobación se retiró del detalle.
     if (data.ot_status_codigo === "Cerrada") {
       const actual = await prisma.ordenTrabajoInterna.findUnique({
         where: { id: otId },

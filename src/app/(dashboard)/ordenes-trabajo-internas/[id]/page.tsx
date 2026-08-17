@@ -5,7 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   Alert, Button, Card, Tag, Space, Spin, Tabs, Row, Col, Form, Input, Select,
-  DatePicker, App, Typography, Tooltip, Modal, Table, Empty, Checkbox, Progress,
+  DatePicker, App, Typography, Tooltip, Table, Empty, Checkbox, Progress,
 } from "antd";
 import type { FormInstance } from "antd";
 import { useEditLock } from "@/lib/useEditLock";
@@ -100,23 +100,10 @@ const PRIORIDAD_COLOR: Record<string, string> = {
   "1": "red", "2": "orange", "3": "default", "E": "volcano",
 };
 
-// Mapeo del aprobacion_status_codigo a color/label para el Tag del header.
-const APROBACION_META: Record<string, { color: string; label: string }> = {
-  BORRADOR: { color: "default", label: "Borrador" },
-  SIN_APROBACION: { color: "orange", label: "Pendiente aprobación" },
-  APROBADA: { color: "green", label: "Aprobada" },
-  RECHAZADA: { color: "red", label: "Rechazada" },
-};
-
-const ACCION_META: Record<
-  "enviar" | "aprobar" | "rechazar" | "reabrir",
-  { titulo: string; ok: string; comentarioRequerido: boolean; danger?: boolean }
-> = {
-  enviar: { titulo: "Enviar OT a aprobación", ok: "Enviar", comentarioRequerido: false },
-  aprobar: { titulo: "Aprobar OT", ok: "Aprobar", comentarioRequerido: false },
-  rechazar: { titulo: "Rechazar OT", ok: "Rechazar", comentarioRequerido: true, danger: true },
-  reabrir: { titulo: "Reabrir OT a borrador", ok: "Reabrir", comentarioRequerido: false },
-};
+// El flujo de aprobación de OT interna (BORRADOR → SIN_APROBACION → APROBADA)
+// se retiró de la UI el 2026-08-17 por decisión del equipo: cualquiera cierra
+// la OT interna sin pasar por aprobación. Las columnas aprobacion_* siguen en
+// BD por historial, y el endpoint /aprobacion queda dormido.
 
 export default function OTInternaDetallePage() {
   const params = useParams<{ id: string }>();
@@ -156,13 +143,6 @@ export default function OTInternaDetallePage() {
   const [userStatusFS, setUserStatusFS] = useState<string | null>(null);
   const [comentariosFS, setComentariosFS] = useState<string>("");
   const [savingStatus, setSavingStatus] = useState(false);
-  // Flujo de aprobación: modal abierto + acción objetivo + textarea de comentario.
-  // Mantenemos un único modal y cambiamos el copy/severidad según la acción.
-  const [aprobacionModal, setAprobacionModal] = useState<{
-    accion: "enviar" | "aprobar" | "rechazar" | "reabrir";
-  } | null>(null);
-  const [aprobacionComentario, setAprobacionComentario] = useState("");
-  const [aprobacionSaving, setAprobacionSaving] = useState(false);
   // Resumen de costos (real + estimado) para mostrar en el header. Se llena
   // con una llamada al endpoint /costos en mount — el cálculo es liviano
   // porque OT interna no tiene HH ni OCs joinables pesadas.
@@ -389,38 +369,6 @@ export default function OTInternaDetallePage() {
     }
   }
 
-  function abrirAprobacion(accion: "enviar" | "aprobar" | "rechazar" | "reabrir") {
-    setAprobacionComentario("");
-    setAprobacionModal({ accion });
-  }
-
-  async function confirmarAprobacion() {
-    if (!aprobacionModal) return;
-    const meta = ACCION_META[aprobacionModal.accion];
-    const comentario = aprobacionComentario.trim();
-    if (meta.comentarioRequerido && !comentario) {
-      message.error("El comentario es obligatorio para rechazar.");
-      return;
-    }
-    setAprobacionSaving(true);
-    try {
-      const res = await fetch(`/api/ordenes-trabajo-internas/${otId}/aprobacion`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accion: aprobacionModal.accion, comentario }),
-      });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j.error ?? "Error en la transición");
-      message.success(`${meta.titulo} — ok`);
-      setAprobacionModal(null);
-      fetchOt();
-    } catch (e) {
-      message.error(e instanceof Error ? e.message : "Error");
-    } finally {
-      setAprobacionSaving(false);
-    }
-  }
-
   if (!Number.isFinite(otId) || otId <= 0) {
     return <Card><div style={{ padding: 40, textAlign: "center" }}>OT inválida</div></Card>;
   }
@@ -471,11 +419,6 @@ export default function OTInternaDetallePage() {
                   Prio {ot.prioridad_atencion.codigo}
                 </Tag>
               )}
-              {(() => {
-                const code = ot.aprobacion_status_codigo ?? "BORRADOR";
-                const meta = APROBACION_META[code] ?? APROBACION_META.BORRADOR;
-                return <Tag color={meta.color}>{meta.label}</Tag>;
-              })()}
             </Space>
             <div style={{ fontSize: 12, opacity: 0.9, marginTop: 4 }}>
               {ot.equipo ? `${ot.equipo.codigo} — ${ot.equipo.descripcion}` : "Sin equipo asignado"}
@@ -510,37 +453,6 @@ export default function OTInternaDetallePage() {
             })()}
           </div>
           <Space wrap>
-            {(() => {
-              const code = ot.aprobacion_status_codigo ?? "BORRADOR";
-              const btnStyle = { background: "rgba(255,255,255,0.18)", border: "none", color: brand.white };
-              if (code === "BORRADOR" || code === "RECHAZADA") {
-                return (
-                  <Button onClick={() => abrirAprobacion("enviar")} style={btnStyle}>
-                    Enviar a aprobación
-                  </Button>
-                );
-              }
-              if (code === "SIN_APROBACION") {
-                return (
-                  <>
-                    <Button type="primary" onClick={() => abrirAprobacion("aprobar")}>
-                      Aprobar
-                    </Button>
-                    <Button danger onClick={() => abrirAprobacion("rechazar")}>
-                      Rechazar
-                    </Button>
-                  </>
-                );
-              }
-              if (code === "APROBADA") {
-                return (
-                  <Button onClick={() => abrirAprobacion("reabrir")} style={btnStyle}>
-                    Reabrir
-                  </Button>
-                );
-              }
-              return null;
-            })()}
             {!editing ? (
               <Button
                 icon={<EditOutlined />}
@@ -596,8 +508,8 @@ export default function OTInternaDetallePage() {
         />
       )}
 
-      {/* Alerts de validaciones. Espejo de la OT externa (fecha vencida,
-          aprobación pendiente). Se muestran fuera del modo edición. */}
+      {/* Alerts de validaciones. Espejo de la OT externa (fecha vencida).
+          Se muestran fuera del modo edición. */}
       {!editing && (() => {
         const alerts: ReactNode[] = [];
         const finPlan = ot.fecha_fin_plan ? dayjs(ot.fecha_fin_plan) : null;
@@ -612,18 +524,6 @@ export default function OTInternaDetallePage() {
               style={{ marginBottom: 12 }}
               message={`Fecha fin plan vencida (${finPlan.format("DD/MM/YYYY")})`}
               description="La OT interna pasó su fecha fin planificada y todavía no está cerrada."
-            />,
-          );
-        }
-        if (ot.aprobacion_status_codigo === "SIN_APROBACION") {
-          alerts.push(
-            <Alert
-              key="aprob-pend"
-              type="warning"
-              showIcon
-              style={{ marginBottom: 12 }}
-              message="Aprobación pendiente"
-              description="La OT fue enviada a aprobación y espera decisión de un aprobador."
             />,
           );
         }
@@ -778,41 +678,6 @@ export default function OTInternaDetallePage() {
         }
       `}</style>
 
-      <Modal
-        title={aprobacionModal ? ACCION_META[aprobacionModal.accion].titulo : ""}
-        open={!!aprobacionModal}
-        onCancel={() => (aprobacionSaving ? null : setAprobacionModal(null))}
-        onOk={confirmarAprobacion}
-        confirmLoading={aprobacionSaving}
-        okText={aprobacionModal ? ACCION_META[aprobacionModal.accion].ok : "OK"}
-        okButtonProps={{ danger: aprobacionModal?.accion === "rechazar" }}
-        destroyOnHidden
-      >
-        {aprobacionModal && (
-          <>
-            <Paragraph style={{ marginBottom: 12 }}>
-              {aprobacionModal.accion === "enviar" && "La OT pasará a SIN_APROBACION y otro usuario deberá aprobarla o rechazarla."}
-              {aprobacionModal.accion === "aprobar" && "La OT quedará APROBADA y podrá ejecutarse."}
-              {aprobacionModal.accion === "rechazar" && "La OT quedará RECHAZADA. El creador podrá corregir y reenviar. El comentario es obligatorio."}
-              {aprobacionModal.accion === "reabrir" && "La OT volverá a BORRADOR y deberá enviarse nuevamente a aprobación."}
-            </Paragraph>
-            <FieldLabel>
-              Comentario {ACCION_META[aprobacionModal.accion].comentarioRequerido && <Text type="danger">*</Text>}
-            </FieldLabel>
-            <TextArea
-              rows={4}
-              maxLength={500}
-              value={aprobacionComentario}
-              onChange={(e) => setAprobacionComentario(e.target.value)}
-              placeholder={
-                aprobacionModal.accion === "rechazar"
-                  ? "Indicá el motivo del rechazo…"
-                  : "Comentario opcional"
-              }
-            />
-          </>
-        )}
-      </Modal>
     </div>
   );
 }
@@ -867,14 +732,6 @@ function EstrategiaSelect({
         options={filtradas.map((e) => ({ value: e.estrategia_id, label: `${e.codigo} — ${e.descripcion}` }))}
       />
     </Form.Item>
-  );
-}
-
-function FieldLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <Text type="secondary" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.3, display: "block", marginBottom: 4 }}>
-      {children}
-    </Text>
   );
 }
 
