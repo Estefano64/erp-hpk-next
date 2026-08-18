@@ -136,6 +136,30 @@ const HORAS_DIA = JORNADA_FIN - JORNADA_INICIO; // 12
 const ALMUERZO_INI = 12.5;         // hora decimal — la franja real es 12:30 → 13:30
 const ALMUERZO_FIN = 13.5;
 const ROW_HEIGHT = 64;
+// Alto de cada sub-carril cuando una fila apila tareas solapadas. Un poco
+// menor que la fila simple para que 2-3 solapes no disparen la altura.
+const SUBLANE_HEIGHT = 52;
+
+// Asigna a cada tarea de un recurso un sub-carril (0, 1, 2…) de modo que dos
+// tareas que se solapan en el tiempo NUNCA compartan sub-carril. Antes todos
+// los bloques iban a top:8 y una tarea solapada quedaba tapada por la otra
+// ("tareas escondidas debajo de otras"). Los solapes se dejan a propósito
+// (decisión 2026-06-08), así que la salida es apilarlos, no impedirlos.
+// Greedy por inicio: primer sub-carril cuyo último fin <= mi inicio.
+function asignarSubcarriles(
+  tasks: { id: number; ini: number; fin: number }[],
+): { carril: Map<number, number>; total: number } {
+  const carril = new Map<number, number>();
+  const finPorCarril: number[] = [];
+  const ordenadas = [...tasks].sort((a, b) => a.ini - b.ini || a.fin - b.fin);
+  for (const t of ordenadas) {
+    let idx = finPorCarril.findIndex((fin) => fin <= t.ini);
+    if (idx === -1) { idx = finPorCarril.length; finPorCarril.push(t.fin); }
+    else finPorCarril[idx] = t.fin;
+    carril.set(t.id, idx);
+  }
+  return { carril, total: Math.max(1, finPorCarril.length) };
+}
 const SNAP_MIN = 15; // snap a 15 minutos
 const HOUR_PX_MIN = 28;
 const HOUR_PX_DEFAULT = 56;
@@ -1612,13 +1636,47 @@ export default function ProgramacionSemanalPage() {
     });
   }
 
-  function renderTaskBlock(r: PlanRow, recurso: string) {
+  // Intervalo [ini, fin] con el que se DIBUJA una tarea en la vista actual
+  // (plan vs real, iniciadas, sin duración). Lo comparten renderTaskBlock y el
+  // cálculo de sub-carriles, para que el apilado use exactamente el mismo
+  // rectángulo que se pinta.
+  function intervaloVisual(r: PlanRow): { ini: Dayjs; fin: Dayjs } | null {
     if (!r.fecha_inicio) return null;
     const planIni = dayjs(r.fecha_inicio);
     // Tarea agendada SIN duración (horas_estimadas 0/null → el server deja
     // fecha_fin en null): antes no se renderizaba — quedaba invisible (con fecha
     // no está en el pool, sin fin no tenía bloque). Se dibuja con 1h visual para
     // que el planner la vea y le ajuste la duración.
+    const sinDuracion = !r.fecha_fin;
+    const planFin = sinDuracion ? planIni.add(1, "hour") : dayjs(r.fecha_fin);
+    const empezada = haEmpezado(r.estado);
+    let ini = planIni;
+    let fin = planFin;
+    if (vistaTiempo === "plan" && empezada && r.fecha_inicio_real) {
+      ini = dayjs(r.fecha_inicio_real);
+      const durPlan = Number(r.horas_estimadas ?? 0) * Math.max(1, Number(r.qty_personal ?? 1));
+      if (r.estado === "realizado") {
+        fin = r.fecha_fin_real
+          ? dayjs(r.fecha_fin_real)
+          : dayjs(calcularFin(ini.toDate(), Math.max(Number(r.horas_reales ?? 0), 0.25), !!r.horas_extras));
+      } else {
+        const finEsperado = durPlan > 0
+          ? dayjs(calcularFin(ini.toDate(), durPlan, !!r.horas_extras))
+          : ini.add(1, "hour");
+        const ahora = ahoraTick ?? dayjs();
+        fin = r.estado === "en_proceso" && ahora.isAfter(finEsperado) ? ahora : finEsperado;
+      }
+      if (!fin.isAfter(ini)) fin = ini.add(15, "minute");
+    }
+    return { ini, fin };
+  }
+
+  // `carril` / `carriles`: sub-carril de esta tarea dentro de la fila y cuántos
+  // hay en total (ver asignarSubcarriles). Con 1 carril el bloque ocupa la
+  // fila entera como siempre.
+  function renderTaskBlock(r: PlanRow, recurso: string, carril = 0, carriles = 1) {
+    if (!r.fecha_inicio) return null;
+    const planIni = dayjs(r.fecha_inicio);
     const sinDuracion = !r.fecha_fin;
     const planFin = sinDuracion ? planIni.add(1, "hour") : dayjs(r.fecha_fin);
     // Desvíos vs el plan ENVIADO — solo en vista "Semana real":
@@ -1639,25 +1697,8 @@ export default function ProgramacionSemanalPage() {
     //     operario con trabajo que no le entra. Si se pasa del plan, crece en
     //     vivo hasta "ahora" (el atraso se ve).
     // Es seguro: las iniciadas no se arrastran ni se redimensionan.
-    let ini = planIni;
-    let fin = planFin;
-    if (vistaTiempo === "plan" && empezada && r.fecha_inicio_real) {
-      ini = dayjs(r.fecha_inicio_real);
-      const durPlan = Number(r.horas_estimadas ?? 0) * Math.max(1, Number(r.qty_personal ?? 1));
-      if (r.estado === "realizado") {
-        // Terminada: recién acá se acorta a lo que realmente duró.
-        fin = r.fecha_fin_real
-          ? dayjs(r.fecha_fin_real)
-          : dayjs(calcularFin(ini.toDate(), Math.max(Number(r.horas_reales ?? 0), 0.25), !!r.horas_extras));
-      } else {
-        const finEsperado = durPlan > 0
-          ? dayjs(calcularFin(ini.toDate(), durPlan, !!r.horas_extras))
-          : ini.add(1, "hour");
-        const ahora = ahoraTick ?? dayjs();
-        fin = r.estado === "en_proceso" && ahora.isAfter(finEsperado) ? ahora : finEsperado;
-      }
-      if (!fin.isAfter(ini)) fin = ini.add(15, "minute"); // guard tamaño mínimo
-    }
+    // (La regla vive en intervaloVisual: la comparte el apilado en sub-carriles.)
+    const { ini, fin } = intervaloVisual(r)!;
     // Bordes de la semana visible (lunes 8:00 → viernes 18:00)
     const semanaIni = lunes.hour(JORNADA_INICIO).minute(0).second(0).millisecond(0);
     const semanaFin = lunes.add(4, "day").hour(JORNADA_FIN).minute(0).second(0).millisecond(0);
@@ -1765,8 +1806,10 @@ export default function ProgramacionSemanalPage() {
           style={{
             left: startPx,
             width: widthPx,
-            top: 8,
-            height: ROW_HEIGHT - 16,
+            // 1 carril: fila entera (como siempre). N carriles: apilados, cada
+            // uno con su franja, así ninguna tarea queda debajo de otra.
+            top: carriles > 1 ? 4 + carril * SUBLANE_HEIGHT : 8,
+            height: carriles > 1 ? SUBLANE_HEIGHT - 6 : ROW_HEIGHT - 16,
             opacity: drag?.taskId === r.id || (drag && selectedIds.has(r.id)) ? 0.25 : 1,
             cursor: continuaDeAntes ? "pointer" : undefined,
           }}
@@ -2487,6 +2530,15 @@ export default function ProgramacionSemanalPage() {
           ) : (
             recursos.map((res) => {
               const tasks = tareasPorRecurso.get(res.key) ?? [];
+              // Sub-carriles: las tareas que se solapan en esta fila se apilan
+              // (antes se pintaban una encima de otra y la de abajo no se veía).
+              const { carril: subcarril, total: nCarriles } = asignarSubcarriles(
+                tasks.flatMap((t) => {
+                  const iv = intervaloVisual(t);
+                  return iv ? [{ id: t.id, ini: iv.ini.valueOf(), fin: iv.fin.valueOf() }] : [];
+                }),
+              );
+              const rowH = nCarriles > 1 ? nCarriles * SUBLANE_HEIGHT + 8 : ROW_HEIGHT;
               return (
                 <div key={res.key} className="psg-row">
                   <div className="psg-resource-cell">
@@ -2554,7 +2606,7 @@ export default function ProgramacionSemanalPage() {
                   <div
                     ref={(el) => registerStrip(res.key, el)}
                     className={`psg-row-strip ${drag?.targetRow === res.key ? (dragConflict ? "psg-row-target-conflict" : "psg-row-target") : ""}`}
-                    style={{ width: dayPx * 5, height: ROW_HEIGHT }}
+                    style={{ width: dayPx * 5, height: rowH }}
                   >
                     {/* Drop preview: rectángulo en la posición exacta donde caerá el bloque */}
                     {drag && drag.targetRow === res.key && drag.snappedDate && (() => {
@@ -2576,7 +2628,7 @@ export default function ProgramacionSemanalPage() {
                         <>
                           <div
                             className={`psg-drop-preview ${dragConflict ? "psg-drop-preview-conflict" : ""}`}
-                            style={{ left: startPx, width, top: 6, height: ROW_HEIGHT - 12 }}
+                            style={{ left: startPx, width, top: 6, height: rowH - 12 }}
                           >
                             <span className="psg-drop-preview-label">
                               {previewIni.format("HH:mm")} → {previewFin.format("HH:mm")}
@@ -2605,8 +2657,8 @@ export default function ProgramacionSemanalPage() {
                         />
                       </div>
                     ))}
-                    {/* Bloques */}
-                    {tasks.map((t) => renderTaskBlock(t, res.key))}
+                    {/* Bloques (cada uno en su sub-carril) */}
+                    {tasks.map((t) => renderTaskBlock(t, res.key, subcarril.get(t.id) ?? 0, nCarriles))}
                   </div>
                 </div>
               );
