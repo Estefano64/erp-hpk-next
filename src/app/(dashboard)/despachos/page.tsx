@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, type Key } from "react";
 import { useRouter } from "next/navigation";
 import {
   Typography, Card, Table, Tag, Space, Button, Row, Col, Statistic, Empty,
-  App, Tooltip, Modal, Form, Input, DatePicker,
+  App, Tooltip, Modal, Form, Input, DatePicker, Select,
 } from "antd";
 import {
   ExportOutlined, ReloadOutlined, CheckCircleOutlined, WarningOutlined,
@@ -91,6 +91,7 @@ interface GrupoOT {
   codigo_reparacion: string | null;
   recursos_status: string | null;
   ubicacion: string | null;
+  ubicacion_codigo: string | null;
   items: Item[];
   entregados: Entregado[];
   con_stock: number;
@@ -102,8 +103,10 @@ interface GrupoOT {
   items_sin_oc: number;
   items_oc_pendiente: number;
   items_sin_stock: number;
-  estado_ot: "completa" | "incompleta";
+  estado_ot: "completa" | "incompleta" | "entregada";
 }
+
+interface UbicacionOpt { codigo: string; nombre: string }
 
 export default function DespachosPage() {
   const { message } = App.useApp();
@@ -121,6 +124,8 @@ export default function DespachosPage() {
   // al viejo toggle General/Detalle (dos vistas + salto con filtro, fuente del
   // bug "This page couldn't load").
   const [expandidas, setExpandidas] = useState<readonly Key[]>([]);
+  // Catálogo de ubicaciones (para el editor inline de ubicación de la OT).
+  const [ubicaciones, setUbicaciones] = useState<UbicacionOpt[]>([]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -136,6 +141,30 @@ export default function DespachosPage() {
   }, [message]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    fetch("/api/almacenes")
+      .then((r) => r.json())
+      .then((j) => setUbicaciones((j.data ?? []).map((u: { codigo: string; nombre: string }) => ({ codigo: u.codigo, nombre: u.nombre }))))
+      .catch(() => {});
+  }, []);
+
+  // Cambio manual de la ubicación de la OT (permiso: quien escribe OTs —
+  // logística/planner/producción/admin; misma matriz que el servidor).
+  const cambiarUbicacion = async (otId: number, codigo: string | null) => {
+    try {
+      const res = await fetch(`/api/ordenes-trabajo/${otId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ubicacion_codigo: codigo }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Error al cambiar la ubicación");
+      message.success("Ubicación actualizada");
+      fetchData();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Error al cambiar la ubicación");
+    }
+  };
 
   // Modal de "Datos del despacho" antes de confirmar.
   const [modalDespacho, setModalDespacho] = useState<{ otId: number; otLabel: string } | null>(null);
@@ -368,6 +397,8 @@ export default function DespachosPage() {
                 onSelectChange={(ids) => setSeleccionados((prev) => ({ ...prev, [g.ot_id]: ids }))}
                 onDespachar={() => abrirModalDespacho(g.ot_id, g.ot ?? `OT #${g.ot_id}`)}
                 submitting={submitting === g.ot_id}
+                ubicaciones={ubicaciones}
+                onUbicacionChange={(codigo) => cambiarUbicacion(g.ot_id, codigo)}
               />
             ),
           }}
@@ -413,15 +444,22 @@ export default function DespachosPage() {
               ),
             },
             {
-              key: "estado_ot", title: "Estado", width: 130, align: "center",
+              // Estado SOLO de repuestos (los servicios no cuentan):
+              //   ENTREGADO  → todos los repuestos ya salieron de almacén.
+              //   COMPLETO   → todo lo pendiente tiene stock listo.
+              //   INCOMPLETO → falta material ("2 de 3 sigue incompleto").
+              key: "estado_ot", title: "Estado", width: 140, align: "center",
               filters: [
                 { text: "COMPLETO", value: "completa" },
                 { text: "INCOMPLETO", value: "incompleta" },
+                { text: "ENTREGADO", value: "entregada" },
               ],
               onFilter: (value, g) => g.estado_ot === value,
-              render: (_, g) => g.estado_ot === "completa"
-                ? <Tag icon={<CheckCircleOutlined />} color="success">COMPLETO</Tag>
-                : <Tag icon={<WarningOutlined />} color="warning">INCOMPLETO</Tag>,
+              render: (_, g) => g.estado_ot === "entregada"
+                ? <Tag icon={<CheckCircleOutlined />} color="blue">ENTREGADO</Tag>
+                : g.estado_ot === "completa"
+                  ? <Tag icon={<CheckCircleOutlined />} color="success">COMPLETO</Tag>
+                  : <Tag icon={<WarningOutlined />} color="warning">INCOMPLETO</Tag>,
             },
             {
               key: "acciones", title: "Acciones", width: 80, fixed: "right", align: "center",
@@ -488,20 +526,28 @@ export default function DespachosPage() {
 // y botón Despachar. Es la vieja vista "Detalle" (GrupoCard) sin el Card ni
 // los datos que ya muestra la fila madre (OT, cliente, avance, estado).
 function GrupoItemsExpandido({
-  grupo, seleccionados, onSelectChange, onDespachar, submitting,
+  grupo, seleccionados, onSelectChange, onDespachar, submitting, ubicaciones, onUbicacionChange,
 }: {
   grupo: GrupoOT;
   seleccionados: number[];
   onSelectChange: (ids: number[]) => void;
   onDespachar: () => void;
   submitting: boolean;
+  ubicaciones: UbicacionOpt[];
+  onUbicacionChange: (codigo: string | null) => void;
 }) {
   const { ocultas, setOcultas } = useColumnasOcultas(`despachos-ot-${grupo.ot_id}-cols-v1`);
   // Despachar es de logística (misma matriz que el servidor).
   const esLogistica = useEscrituraApi("/api/despachos/ot/0", "POST");
+  // Editar la ubicación de la OT: pedido "con permiso compras-logística"
+  // (2026-08-18) → misma regla que Despachar (admin + logistica). El servidor
+  // (PUT OT) es más amplio; acá solo escondemos el lápiz a los demás roles.
+  const puedeEditarUbic = esLogistica;
+  const [editandoUbic, setEditandoUbic] = useState(false);
   // Sección "Entregados": colapsada por defecto — lo operativo son los
-  // pendientes; el histórico de a quién/cuándo se entregó se abre a demanda.
-  const [verEntregados, setVerEntregados] = useState(false);
+  // pendientes. Si la OT ya no tiene pendientes (estado ENTREGADO), se abre
+  // directo porque es lo único que hay para ver.
+  const [verEntregados, setVerEntregados] = useState(grupo.items.length === 0);
 
   const columns: ColumnsType<Item> = [
     numeracionColumn<Item>(),
@@ -645,9 +691,36 @@ function GrupoItemsExpandido({
         <Space wrap size={4}>
           {grupo.codigo_reparacion && <Text type="secondary">{grupo.codigo_reparacion}</Text>}
           {grupo.recursos_status && <Tag color="blue">{grupo.recursos_status}</Tag>}
-          {grupo.ubicacion
-            ? <Tag color="purple">📍 {grupo.ubicacion}</Tag>
-            : <Tag>📍 Sin ubicación (asignar al recibir PO)</Tag>}
+          {/* Ubicación de la OT: editable inline para quien escribe OTs. */}
+          {editandoUbic ? (
+            <Select
+              size="small"
+              autoFocus
+              defaultOpen
+              style={{ minWidth: 220 }}
+              placeholder="Elegir ubicación..."
+              value={grupo.ubicacion_codigo ?? undefined}
+              options={ubicaciones.map((u) => ({ value: u.codigo, label: `${u.codigo} — ${u.nombre}` }))}
+              showSearch
+              optionFilterProp="label"
+              allowClear
+              onChange={(v) => {
+                setEditandoUbic(false);
+                onUbicacionChange(v ?? null);
+              }}
+              onBlur={() => setEditandoUbic(false)}
+            />
+          ) : (
+            <Tooltip title={puedeEditarUbic ? "Click para cambiar la ubicación de la OT" : undefined}>
+              <Tag
+                color={grupo.ubicacion ? "purple" : undefined}
+                style={puedeEditarUbic ? { cursor: "pointer" } : undefined}
+                onClick={puedeEditarUbic ? () => setEditandoUbic(true) : undefined}
+              >
+                📍 {grupo.ubicacion ?? "Sin ubicación (asignar al recibir PO)"}{puedeEditarUbic ? " ✎" : ""}
+              </Tag>
+            </Tooltip>
+          )}
           <Tag color="green">{grupo.con_stock} listo(s)</Tag>
           {grupo.items_sin_oc > 0 && (
             <Tooltip title="Hay items aprobados que todavía no tienen OC generada">
@@ -666,13 +739,15 @@ function GrupoItemsExpandido({
           )}
         </Space>
         <Space wrap>
-          <ColumnasToggleButton<Item>
-            columns={columns}
-            ocultas={ocultas}
-            setOcultas={setOcultas}
-            obligatorias={["nro_req", "desc", "cantidad", "puede"]}
-          />
-          {esLogistica && (
+          {grupo.items.length > 0 && (
+            <ColumnasToggleButton<Item>
+              columns={columns}
+              ocultas={ocultas}
+              setOcultas={setOcultas}
+              obligatorias={["nro_req", "desc", "cantidad", "puede"]}
+            />
+          )}
+          {esLogistica && grupo.items.length > 0 && (
             <Button
               type="primary"
               icon={<ExportOutlined />}
@@ -685,32 +760,36 @@ function GrupoItemsExpandido({
           )}
         </Space>
       </div>
-      <TableDragWrapper>
-        <Table<Item>
-          rowKey="id"
-          size="small"
-          columns={visibleColumns(columnsResizable, ocultas)}
-          components={tableComponents}
-          dataSource={grupo.items}
-          scroll={{ x: 1200 }}
-          pagination={false}
-          rowSelection={{
-            selectedRowKeys: seleccionados,
-            onChange: (keys) => onSelectChange(keys as number[]),
-            getCheckboxProps: (r) => ({ disabled: !r._puede_despachar }),
-          }}
-          footer={() => (
-            <Space>
-              <Button size="small" onClick={() => onSelectChange(itemsConStock.map((i) => i.id))} disabled={itemsConStock.length === 0}>
-                Seleccionar todos con stock ({itemsConStock.length})
-              </Button>
-              <Button size="small" onClick={() => onSelectChange([])} disabled={seleccionados.length === 0}>
-                Limpiar selección
-              </Button>
-            </Space>
-          )}
-        />
-      </TableDragWrapper>
+      {/* OT ENTREGADA: sin repuestos pendientes — no hay tabla de despacho,
+          solo el histórico de entregas (abajo, abierto por defecto). */}
+      {grupo.items.length > 0 && (
+        <TableDragWrapper>
+          <Table<Item>
+            rowKey="id"
+            size="small"
+            columns={visibleColumns(columnsResizable, ocultas)}
+            components={tableComponents}
+            dataSource={grupo.items}
+            scroll={{ x: 1200 }}
+            pagination={false}
+            rowSelection={{
+              selectedRowKeys: seleccionados,
+              onChange: (keys) => onSelectChange(keys as number[]),
+              getCheckboxProps: (r) => ({ disabled: !r._puede_despachar }),
+            }}
+            footer={() => (
+              <Space>
+                <Button size="small" onClick={() => onSelectChange(itemsConStock.map((i) => i.id))} disabled={itemsConStock.length === 0}>
+                  Seleccionar todos con stock ({itemsConStock.length})
+                </Button>
+                <Button size="small" onClick={() => onSelectChange([])} disabled={seleccionados.length === 0}>
+                  Limpiar selección
+                </Button>
+              </Space>
+            )}
+          />
+        </TableDragWrapper>
+      )}
 
       {/* Histórico de entregas de la OT: a quién se entregó cada item y cuándo. */}
       {grupo.entregados.length > 0 && (

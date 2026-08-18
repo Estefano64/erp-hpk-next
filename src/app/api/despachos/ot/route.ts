@@ -46,6 +46,10 @@ export async function GET(_req: NextRequest) {
         material_id: true,
         po_id: true,
         status_oc_codigo: true,
+        // Para excluir SERVICIOS del payload (no se "despachan" físicamente).
+        // El query igual los trae: un item SER pendiente mantiene la OT en el
+        // listado (su estado será ENTREGADO si los repuestos ya salieron).
+        tipo_codigo: true,
         material: { select: { codigo: true, descripcion: true, stock_actual: true, ubicacion: true } },
         // Ubicación física donde se guardó al recepcionar la PO. Esta es la
         // fuente de verdad para "dónde está el material" — `material.ubicacion`
@@ -56,8 +60,8 @@ export async function GET(_req: NextRequest) {
         orden_trabajo: {
           select: {
             id: true, ot: true,
-            // tipo_codigo permite formatear el código visible (V/S para
-            // BIE/SER) en el front — `ot` es el entero crudo NNNNYY.
+            // tipo_codigo (de la OT) permite formatear el código visible
+            // (V/S para BIE/SER) en el front — `ot` es el entero crudo NNNNYY.
             tipo_codigo: true,
             recursos_status_codigo: true,
             ubicacion_codigo: true,
@@ -243,7 +247,12 @@ export async function GET(_req: NextRequest) {
       items_sin_oc: number;
       items_oc_pendiente: number;
       items_sin_stock: number;
-      estado_ot: "completa" | "incompleta";
+      // entregada = TODOS los repuestos de la OT ya salieron (la OT sigue acá
+      // porque le quedan servicios pendientes u otros items no-físicos).
+      estado_ot: "completa" | "incompleta" | "entregada";
+      // Código crudo de la ubicación (catálogo Ubicacion) — la UI lo necesita
+      // para el editor inline de ubicación.
+      ubicacion_codigo: string | null;
       // Items YA entregados de la OT, con fecha y quién recibió — para la
       // sección "Entregados" de la fila expandida en /despachos.
       entregados: Array<{
@@ -270,6 +279,7 @@ export async function GET(_req: NextRequest) {
           ubicacion: it.orden_trabajo?.ubicacion
             ? `${it.orden_trabajo.ubicacion.codigo} — ${it.orden_trabajo.ubicacion.nombre}`
             : null,
+          ubicacion_codigo: it.orden_trabajo?.ubicacion_codigo ?? null,
           items: [],
           con_stock: 0,
           sin_stock: 0,
@@ -283,6 +293,10 @@ export async function GET(_req: NextRequest) {
         });
       }
       const g = grupos.get(otId)!;
+      // SERVICIOS: no figuran como items de despacho (no hay entrega física).
+      // El item SER pendiente solo sirvió para crear/retener el grupo de la
+      // OT — no se agrega al payload ni cuenta en stock/motivos.
+      if (it.tipo_codigo === "SER") continue;
       if (it._puede_despachar) g.con_stock++;
       else g.sin_stock++;
       if (it._motivo_pendiente === "sin_oc") g.items_sin_oc++;
@@ -303,6 +317,9 @@ export async function GET(_req: NextRequest) {
           // Excluimos anulados/desaprobados — son items "muertos", no cuentan
           // contra el avance del despacho.
           status_requerimiento_codigo: { notIn: ["ANULADO", "DESAPROBADO"] },
+          // Solo REPUESTOS: los servicios no cuentan en el avance X/Y ni en
+          // el estado del despacho (no hay entrega física de un servicio).
+          OR: [{ tipo_codigo: null }, { tipo_codigo: { not: "SER" } }],
         },
         _count: { id: true },
       });
@@ -333,6 +350,7 @@ export async function GET(_req: NextRequest) {
           ot_id: { in: otIds },
           status_requerimiento_codigo: { notIn: ["ANULADO", "DESAPROBADO"] },
           status_oc_codigo: { in: ["ENTREGADO", "COMPLETO"] },
+          OR: [{ tipo_codigo: null }, { tipo_codigo: { not: "SER" } }],
         },
         select: {
           id: true, ot_id: true, nro_req: true, item_req: true, descripcion: true,
@@ -392,10 +410,21 @@ export async function GET(_req: NextRequest) {
       }
     }
 
-    // Una OT está "completa" cuando TODOS sus items pendientes pueden despacharse
-    // (material ya en almacén con stock suficiente). Si alguno no, queda "incompleta".
-    for (const g of grupos.values()) {
-      g.estado_ot = g.sin_stock === 0 && g.con_stock > 0 ? "completa" : "incompleta";
+    // Estado por OT — SOLO mira repuestos (pedido 2026-08-18):
+    //   entregada   → sin repuestos pendientes y con al menos 1 ya entregado
+    //                 (la OT sigue listada por sus servicios pendientes).
+    //   completa    → todo lo pendiente tiene stock listo para despachar.
+    //   incompleta  → falta material (aunque parte ya se haya entregado:
+    //                 "2 de 3 sigue incompleto").
+    // Las OTs SIN repuestos (solo servicios) se eliminan del listado.
+    for (const [otId, g] of grupos) {
+      if (g.total_items_ot === 0) {
+        grupos.delete(otId);
+        continue;
+      }
+      g.estado_ot = g.items.length === 0
+        ? "entregada"
+        : g.sin_stock === 0 && g.con_stock > 0 ? "completa" : "incompleta";
     }
 
     return NextResponse.json({ data: Array.from(grupos.values()) });
