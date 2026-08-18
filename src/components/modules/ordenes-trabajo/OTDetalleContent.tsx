@@ -1158,14 +1158,11 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
                 <Col xs={12} md={6}><Field label="Fecha aprob. cotización" value={fmtDate(ot.fecha_aprobacion)} /></Col>
                 <Col xs={12} md={6}><Field label="Cotización conforme" value={ot.po_cliente_ok ? <span style={{ color: brand.success, fontWeight: 600 }}>✓ Sí</span> : "No"} /></Col>
               </Row>
+              {/* Guía / Empresa que entrega / Fecha Recepción se muestran una
+                  sola vez, en el bloque de arriba (antes estaban repetidas acá:
+                  quedaron duplicadas en un merge). Prioridad se movió al bloque
+                  "Estados y Fecha Requerimiento" (pedido del equipo). */}
               <Row gutter={[16, 4]}>
-                <Col xs={12} md={6}><Field label="Guía Remisión" value={ot.guia_remision} /></Col>
-              </Row>
-              <Row gutter={[16, 4]}>
-                <Col xs={12} md={6}><Field label="Empresa que entrega" value={ot.empresa_entrega} /></Col>
-                <Col xs={12} md={6}><Field label="Fecha Recepción" value={fmtDate(ot.fecha_recepcion)} /></Col>
-                {/* Prioridad se movió al bloque de arriba "Estados y Fecha
-                    Requerimiento" (pedido del equipo: verla sin scrollear). */}
                 <Col xs={12} md={6}><Field label="Fecha Req. Cliente" value={fmtDate(ot.fecha_requerimiento_cliente)} /></Col>
               </Row>
               {/* Despacho / recepción del cliente (flujo comercial-logístico que llegó desde main). */}
