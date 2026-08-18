@@ -38,6 +38,10 @@ import {
   formatSacCodigo, formatSalidaNoConformeCodigo,
 } from "@/lib/ssoma";
 import { SelectResponsableSsoma } from "@/components/modules/ssoma/SsomaPersonas";
+import { SsomaFotosUpload, type FotoPendiente } from "@/components/modules/ssoma/SsomaFotos";
+import { R2Image } from "@/components/R2Image";
+
+const UPLOAD_URL = "/api/ssoma/sacs/upload-url";
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -85,6 +89,8 @@ interface SacRow {
   estado: string;
   cerrado_por: string | null;
   fecha_cierre: string | null;
+  cierre_foto_key: string | null;
+  cierre_foto_nombre: string | null;
   activo: boolean;
   created_at: string;
   acciones: AccionRow[];
@@ -138,6 +144,7 @@ export default function SacsPage() {
   const [cerrarOpen, setCerrarOpen] = useState(false);
   const [cerrarTarget, setCerrarTarget] = useState<SacRow | null>(null);
   const [formCerrar] = Form.useForm();
+  const [fotoCierre, setFotoCierre] = useState<FotoPendiente[]>([]);
 
   const [verOpen, setVerOpen] = useState(false);
   const [verTarget, setVerTarget] = useState<SacRow | null>(null);
@@ -263,6 +270,7 @@ export default function SacsPage() {
     if (!cerrarTarget) return;
     try {
       const values = await formCerrar.validateFields();
+      const foto = fotoCierre[0];
       const res = await fetch(`/api/ssoma/sacs/${cerrarTarget.id}/cerrar`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -270,6 +278,16 @@ export default function SacsPage() {
           verificacion_eficacia: values.verificacion_eficacia || null,
           verificado_por: values.verificado_por || null,
           fecha_verificacion: values.fecha_verificacion ? values.fecha_verificacion.format("YYYY-MM-DD") : null,
+          ...(foto
+            ? {
+                foto: {
+                  key: foto.key,
+                  nombre_archivo: foto.nombre_archivo,
+                  tipo_mime: foto.tipo_mime,
+                  tamano: foto.tamano,
+                },
+              }
+            : {}),
         }),
       });
       const json = await res.json();
@@ -278,6 +296,7 @@ export default function SacsPage() {
       setCerrarOpen(false);
       setCerrarTarget(null);
       formCerrar.resetFields();
+      setFotoCierre([]);
       fetchData();
     } catch (e) {
       const err = e as { errorFields?: unknown; message?: string };
@@ -807,7 +826,7 @@ export default function SacsPage() {
             <Text strong>{cerrarTarget ? formatSacCodigo(cerrarTarget.numero, cerrarTarget.anio) : ""}</Text>
           </>
         }
-        onCancel={() => { setCerrarOpen(false); setCerrarTarget(null); }}
+        onCancel={() => { setCerrarOpen(false); setCerrarTarget(null); setFotoCierre([]); }}
         onOk={handleCerrar}
         okText="Cerrar SAC"
         width={modalWidth(screens.screens, 560)}
@@ -829,6 +848,15 @@ export default function SacsPage() {
               </Form.Item>
             </Col>
           </Row>
+          <Form.Item label="Foto de evidencia (opcional)">
+            <SsomaFotosUpload
+              uploadUrlEndpoint={UPLOAD_URL}
+              value={fotoCierre}
+              onChange={setFotoCierre}
+              max={1}
+              label="Subir foto de cierre"
+            />
+          </Form.Item>
         </Form>
       </Modal>
 
@@ -946,10 +974,23 @@ export default function SacsPage() {
               )}
             </Card>
             {verTarget.estado === "CERRADA" && (
-              <div>
-                <Text type="secondary">Cerrada por:</Text> {verTarget.cerrado_por || "—"}
-                {verTarget.fecha_cierre ? ` — ${new Date(verTarget.fecha_cierre).toLocaleString("es-PE")}` : ""}
-              </div>
+              <Card size="small" title="Cierre">
+                <div>
+                  <Text type="secondary">Cerrada por:</Text> {verTarget.cerrado_por || "—"}
+                  {verTarget.fecha_cierre ? ` — ${new Date(verTarget.fecha_cierre).toLocaleString("es-PE")}` : ""}
+                </div>
+                {verTarget.cierre_foto_key && (
+                  <div style={{ marginTop: 8 }}>
+                    <R2Image
+                      resource="sac-cierre"
+                      resourceId={verTarget.id}
+                      r2Key={verTarget.cierre_foto_key}
+                      alt={verTarget.cierre_foto_nombre ?? "Foto de cierre"}
+                      style={{ maxWidth: "100%", maxHeight: 260, borderRadius: 6 }}
+                    />
+                  </div>
+                )}
+              </Card>
             )}
           </Space>
         )}

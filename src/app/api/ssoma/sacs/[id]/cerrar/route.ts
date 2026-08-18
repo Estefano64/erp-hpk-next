@@ -2,11 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { parseInt4Safe } from "@/lib/ot-formato";
-import { esEncargadoSsoma } from "@/lib/ssoma-server";
+import { esEncargadoSsoma, parseFotoInput, esKeySsoma } from "@/lib/ssoma-server";
+import { R2Keys } from "@/lib/r2";
 
 // POST — cierra la SAC (ABIERTA → CERRADA). Solo encargado SSOMA.
-// Body opcional: { verificacion_eficacia?, verificado_por?, fecha_verificacion? }
-// para sellar la verificación de la eficacia en el mismo acto de cierre.
+// Body opcional: { verificacion_eficacia?, verificado_por?, fecha_verificacion?,
+// foto? } — sella la verificación de la eficacia en el mismo acto de cierre;
+// `foto` ({ key, nombre_archivo, tipo_mime, tamano }) es evidencia OPCIONAL
+// subida antes vía /api/ssoma/sacs/upload-url.
 export async function POST(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
@@ -22,6 +25,15 @@ export async function POST(
     }
     const body = await req.json().catch(() => ({}));
     const usuario = (await getAuditUser(req)) ?? "sistema";
+
+    // Foto opcional: si viene, tiene que ser una key válida del namespace.
+    const foto = parseFotoInput(body.foto);
+    if (body.foto != null && !foto) {
+      return NextResponse.json({ error: "Datos de la foto de cierre inválidos" }, { status: 400 });
+    }
+    if (foto && !esKeySsoma(foto.key, R2Keys.ssomaSac())) {
+      return NextResponse.json({ error: "La foto de cierre no pertenece al módulo SSOMA" }, { status: 400 });
+    }
 
     const actual = await prisma.solicitudAccionCorrectiva.findUnique({
       where: { id: idNum },
@@ -47,6 +59,14 @@ export async function POST(
           : {}),
         ...(body.fecha_verificacion !== undefined
           ? { fecha_verificacion: body.fecha_verificacion ? new Date(body.fecha_verificacion) : new Date() }
+          : {}),
+        ...(foto
+          ? {
+              cierre_foto_key: foto.key,
+              cierre_foto_nombre: foto.nombre_archivo,
+              cierre_foto_mime: foto.tipo_mime,
+              cierre_foto_tamano: foto.tamano,
+            }
           : {}),
         usuario_actualiza: usuario,
       },

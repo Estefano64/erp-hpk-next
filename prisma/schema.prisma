@@ -2294,6 +2294,11 @@ model SolicitudAccionCorrectiva {
   estado                  String    @default("ABIERTA") @db.VarChar(20)
   cerrado_por             String?   @db.VarChar(150)
   fecha_cierre            DateTime?
+  // Foto de evidencia del cierre (opcional; namespace R2 `ssoma/sacs`).
+  cierre_foto_key         String?   @db.VarChar(500)
+  cierre_foto_nombre      String?   @db.VarChar(300)
+  cierre_foto_mime        String?   @db.VarChar(100)
+  cierre_foto_tamano      Int?
 
   activo                  Boolean   @default(true)
   usuario_crea            String?   @db.VarChar(100)

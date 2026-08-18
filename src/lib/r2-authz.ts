@@ -27,6 +27,7 @@ export type R2Resource =
   | "reporte-seguridad-cierre"
   | "snc-foto"
   | "snc-cierre"
+  | "sac-cierre"
   // Mantenimiento: foto de cierre del reporte correctivo (resourceId = id del reporte).
   | "correctivo-cierre";
 
@@ -45,6 +46,7 @@ const VALID_RESOURCES: ReadonlySet<R2Resource> = new Set([
   "reporte-seguridad-cierre",
   "snc-foto",
   "snc-cierre",
+  "sac-cierre",
   "correctivo-cierre",
 ]);
 
@@ -167,6 +169,13 @@ export async function authorizeR2Access(params: {
     }
     case "snc-cierre": {
       const row = await prisma.salidaNoConforme.findFirst({
+        where: { id: resourceId, cierre_foto_key: key },
+        select: { id: true },
+      });
+      return row ? { ok: true } : notFound();
+    }
+    case "sac-cierre": {
+      const row = await prisma.solicitudAccionCorrectiva.findFirst({
         where: { id: resourceId, cierre_foto_key: key },
         select: { id: true },
       });
