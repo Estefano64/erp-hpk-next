@@ -547,10 +547,11 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
   const [nroFactura, setNroFactura] = useState("");
   const [comentariosRec, setComentariosRec] = useState("");
   const [ubicacionRec, setUbicacionRec] = useState<string | undefined>();
-  // Zona seleccionada para "Aplicar a todos los items" (botón de atajo arriba).
-  // No persiste — solo es un buffer para que el usuario elija una zona y la
-  // copie a todos los slots de la tabla con un click.
+  // Zona + posición seleccionadas para "Aplicar a todos los items" (atajo).
+  // No persisten — solo son un buffer para copiar a todos los slots de la
+  // tabla con un click. La posición es opcional (2026-08-18).
   const [zonaBulk, setZonaBulk] = useState<number | null>(null);
+  const [posBulk, setPosBulk] = useState<number | null>(null);
   const [ubicaciones, setUbicaciones] = useState<{ codigo: string; nombre: string }[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
@@ -684,6 +685,8 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
     setUbicacionRec(undefined);
     setPreviewItems([]);
     setUbicByMaterial({});
+    setZonaBulk(null);
+    setPosBulk(null);
     // Cargamos preview con la sugerencia de ubicación por req (basada en otras
     // ubicaciones de la misma OT). Lo usamos para pre-llenar zona+posición por
     // material en la tabla del modal.
@@ -1165,26 +1168,43 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
               <Row gutter={12}>
                 <Col xs={24} sm={16}>
                   <Text strong style={{ fontSize: 12 }}>
-                    Asignar zona a todos los items
+                    Asignar zona y posición a todos los items
                   </Text>
                   <Space.Compact style={{ width: "100%" }}>
                     <Select
-                      placeholder="Elegí una zona y aplicala a todos los items de la tabla"
+                      placeholder="Zona para todos los items"
                       value={zonaBulk ?? undefined}
-                      onChange={(v) => setZonaBulk(v ?? null)}
+                      onChange={(v) => {
+                        setZonaBulk(v ?? null);
+                        // La posición pertenece a una zona: al cambiar de zona
+                        // la posición elegida deja de ser válida.
+                        setPosBulk(null);
+                      }}
                       options={zonasAlmacen.map((z) => ({ value: z.id, label: `${z.codigo} — ${z.nombre}` }))}
                       showSearch
                       optionFilterProp="label"
                       allowClear
                       style={{ flex: 1 }}
                     />
+                    <Select
+                      placeholder="Posición (opcional)"
+                      value={posBulk ?? undefined}
+                      onChange={(v) => setPosBulk(v ?? null)}
+                      disabled={zonaBulk == null}
+                      options={(zonasAlmacen.find((z) => z.id === zonaBulk)?.posiciones ?? [])
+                        .map((p) => ({ value: p.id, label: p.nombre ? `${p.codigo} — ${p.nombre}` : p.codigo }))}
+                      showSearch
+                      optionFilterProp="label"
+                      allowClear
+                      style={{ width: 170 }}
+                    />
                     <Button
                       type="primary"
                       disabled={zonaBulk == null}
                       onClick={() => {
-                        // Aplica la zona elegida a los items regulares. Los
-                        // metálicos (BARR/TUBO/ACER) van SIEMPRE a la zona
-                        // TALLER — el operario no las mezcla con el resto.
+                        // Aplica zona (+posición si se eligió) a los items
+                        // regulares. Los metálicos (BARR/TUBO/ACER) van SIEMPRE
+                        // a la zona TALLER — el operario no las mezcla.
                         const zonaTaller = zonasAlmacen.find((z) => z.codigo === "TALLER");
                         const next: typeof ubicByMaterial = { ...ubicByMaterial };
                         let aplicadosRegular = 0;
@@ -1203,13 +1223,13 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                               sinTaller++;
                             }
                           } else {
-                            next[matKey] = { zona_id: zonaBulk, posicion_id: null };
+                            next[matKey] = { zona_id: zonaBulk, posicion_id: posBulk };
                             aplicadosRegular++;
                           }
                         }
                         setUbicByMaterial(next);
                         const partes: string[] = [];
-                        if (aplicadosRegular > 0) partes.push(`${aplicadosRegular} a la zona seleccionada`);
+                        if (aplicadosRegular > 0) partes.push(`${aplicadosRegular} a la zona${posBulk != null ? " y posición" : ""} seleccionada`);
                         if (aplicadosTaller > 0) partes.push(`${aplicadosTaller} a TALLER (barras/tubos/acero)`);
                         message.success(`Zonas aplicadas: ${partes.join(", ")}.`);
                         if (sinTaller > 0) {
