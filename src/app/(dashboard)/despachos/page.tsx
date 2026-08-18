@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type Key } from "react";
 import { useRouter } from "next/navigation";
 import {
   Typography, Card, Table, Tag, Space, Button, Row, Col, Statistic, Empty,
-  App, Tooltip, Modal, Form, Input, DatePicker, Segmented,
+  App, Tooltip, Modal, Form, Input, DatePicker,
 } from "antd";
 import {
   ExportOutlined, ReloadOutlined, CheckCircleOutlined, WarningOutlined,
@@ -18,7 +18,6 @@ import { useResponsive, modalWidth } from "@/lib/responsive";
 import {
   numeracionColumn, useColumnasOcultas, ColumnasToggleButton, visibleColumns,
   filtroPorColumna, STICKY_HEADER, useColumnasRedimensionables,
-  usePersistedState,
 } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import { formatOtCodigo } from "@/lib/ot-formato";
@@ -103,9 +102,11 @@ export default function DespachosPage() {
   // Búsqueda libre — filtra por OT, cliente, código reparación, código material,
   // N° de parte (np en descripción) o descripción del item.
   const [filtro, setFiltro] = useState("");
-  // Vista general (tabla resumen de OTs) vs Detalle (cards expandidas con items).
-  // Persistido en localStorage para que la elección sobreviva al refresh.
-  const [vistaModo, setVistaModo] = usePersistedState<"general" | "detalle">("despachos-vista-modo", "general");
+  // Vista única (2026-08-18): tabla resumen con FILAS EXPANDIBLES — la fila
+  // expandida muestra los items de esa OT con selección + despachar. Reemplaza
+  // al viejo toggle General/Detalle (dos vistas + salto con filtro, fuente del
+  // bug "This page couldn't load").
+  const [expandidas, setExpandidas] = useState<readonly Key[]>([]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -240,14 +241,6 @@ export default function DespachosPage() {
           Inventario por OT
         </Title>
         <Space wrap>
-          <Segmented
-            value={vistaModo}
-            onChange={(v) => setVistaModo(v as "general" | "detalle")}
-            options={[
-              { value: "general", label: "General" },
-              { value: "detalle", label: "Detalle" },
-            ]}
-          />
           <Input
             placeholder="Buscar OT, OC, cliente, código o N° parte..."
             prefix={<SearchOutlined />}
@@ -338,10 +331,10 @@ export default function DespachosPage() {
 
       {gruposFiltrados.length === 0 && !loading ? (
         <Empty description={filtro ? `Sin resultados para "${filtro}".` : "No hay despachos pendientes."} />
-      ) : vistaModo === "general" ? (
-        // Vista General: tabla resumen de TODAS las OTs abiertas con su
-        // estado (COMPLETO / INCOMPLETO). Click en el ojo cambia a Detalle
-        // para ver/despachar items de esa OT.
+      ) : (
+        // Vista única: tabla resumen de TODAS las OTs con despacho pendiente.
+        // Click en la fila (o en el +) la expande y muestra los items con
+        // selección + botón Despachar — lo que antes era la vista "Detalle".
         <Table<GrupoOT>
           rowKey="ot_id"
           dataSource={gruposFiltrados}
@@ -350,6 +343,20 @@ export default function DespachosPage() {
           pagination={{ pageSize: 50, showSizeChanger: true }}
           scroll={{ x: 1000 }}
           sticky={STICKY_HEADER}
+          expandable={{
+            expandedRowKeys: expandidas,
+            onExpandedRowsChange: setExpandidas,
+            expandRowByClick: true,
+            expandedRowRender: (g) => (
+              <GrupoItemsExpandido
+                grupo={g}
+                seleccionados={seleccionados[g.ot_id] ?? []}
+                onSelectChange={(ids) => setSeleccionados((prev) => ({ ...prev, [g.ot_id]: ids }))}
+                onDespachar={() => abrirModalDespacho(g.ot_id, g.ot ?? `OT #${g.ot_id}`)}
+                submitting={submitting === g.ot_id}
+              />
+            ),
+          }}
           columns={[
             {
               key: "ot", title: "OT", dataIndex: "ot", width: 130,
@@ -364,7 +371,16 @@ export default function DespachosPage() {
               },
             },
             {
-              key: "items", title: "Items", width: 90, align: "right",
+              // Avance global de la OT: entregados / total (incluye los que ya
+              // salieron del listado de pendientes).
+              key: "avance", title: "Avance", width: 100, align: "center",
+              sorter: (a, b) => (a.items_entregados / Math.max(1, a.total_items_ot)) - (b.items_entregados / Math.max(1, b.total_items_ot)),
+              render: (_, g) => g.total_items_ot > 0
+                ? <Tag color={brand.cyan} style={{ fontWeight: 600, margin: 0 }}>{g.items_entregados} / {g.total_items_ot}</Tag>
+                : <Text type="secondary">—</Text>,
+            },
+            {
+              key: "items", title: "Pendientes", width: 100, align: "right",
               sorter: (a, b) => a.items.length - b.items.length,
               render: (_, g) => <Text strong>{g.items.length}</Text>,
             },
@@ -394,42 +410,25 @@ export default function DespachosPage() {
                 : <Tag icon={<WarningOutlined />} color="warning">INCOMPLETO</Tag>,
             },
             {
-              key: "acciones", title: "Acciones", width: 130, fixed: "right", align: "center",
+              key: "acciones", title: "Acciones", width: 80, fixed: "right", align: "center",
               render: (_, g) => (
-                <Space size={4}>
-                  <Tooltip title="Abrir la OT completa (detalle, requerimientos, adjuntos, etc.)">
-                    <Button
-                      size="small"
-                      type="primary"
-                      icon={<EyeOutlined />}
-                      onClick={() => router.push(`/ordenes-trabajo/${g.ot_id}`)}
-                    />
-                  </Tooltip>
-                  <Tooltip title="Ver items de despacho de esta OT (acá mismo)">
-                    <Button
-                      size="small"
-                      icon={<InboxOutlined />}
-                      onClick={() => {
-                        setFiltro(g.ot ?? "");
-                        setVistaModo("detalle");
-                      }}
-                    />
-                  </Tooltip>
-                </Space>
+                <Tooltip title="Abrir la OT completa (detalle, requerimientos, adjuntos, etc.)">
+                  <Button
+                    size="small"
+                    type="primary"
+                    icon={<EyeOutlined />}
+                    onClick={(e) => {
+                      // expandRowByClick: sin esto el click también expande/
+                      // colapsa la fila antes de navegar.
+                      e.stopPropagation();
+                      router.push(`/ordenes-trabajo/${g.ot_id}`);
+                    }}
+                  />
+                </Tooltip>
               ),
             },
           ]}
         />
-      ) : (
-        gruposFiltrados.map((g) => <GrupoCard
-          key={g.ot_id}
-          grupo={g}
-          seleccionados={seleccionados[g.ot_id] ?? []}
-          onSelectChange={(ids) => setSeleccionados((prev) => ({ ...prev, [g.ot_id]: ids }))}
-          onDespachar={() => abrirModalDespacho(g.ot_id, g.ot ?? `OT #${g.ot_id}`)}
-          submitting={submitting === g.ot_id}
-          router={router}
-        />)
       )}
 
       {/* Modal de datos del despacho */}
@@ -467,15 +466,17 @@ export default function DespachosPage() {
   );
 }
 
-function GrupoCard({
-  grupo, seleccionados, onSelectChange, onDespachar, submitting, router,
+// Contenido de la fila expandida: items de despacho de la OT con selección
+// y botón Despachar. Es la vieja vista "Detalle" (GrupoCard) sin el Card ni
+// los datos que ya muestra la fila madre (OT, cliente, avance, estado).
+function GrupoItemsExpandido({
+  grupo, seleccionados, onSelectChange, onDespachar, submitting,
 }: {
   grupo: GrupoOT;
   seleccionados: number[];
   onSelectChange: (ids: number[]) => void;
   onDespachar: () => void;
   submitting: boolean;
-  router: ReturnType<typeof useRouter>;
 }) {
   const { ocultas, setOcultas } = useColumnasOcultas(`despachos-ot-${grupo.ot_id}-cols-v1`);
   // Despachar es de logística (misma matriz que el servidor).
@@ -616,31 +617,16 @@ function GrupoCard({
   const itemsConStock = grupo.items.filter((i) => i._puede_despachar);
 
   return (
-    <Card
-      size="small"
-      style={{ marginBottom: 12 }}
-      title={
-        <Space wrap>
-          <Tag color={brand.navy} style={{ fontSize: 14, padding: "4px 8px" }}>{grupo.ot ?? `OT #${grupo.ot_id}`}</Tag>
-          <Text>{grupo.cliente ?? "—"}</Text>
-          {grupo.codigo_reparacion && <Text type="secondary">| {grupo.codigo_reparacion}</Text>}
-          {grupo.estado_ot === "completa"
-            ? <Tag color="green" style={{ fontWeight: 600 }}>OT COMPLETA — lista para despachar</Tag>
-            : <Tag color="orange" style={{ fontWeight: 600 }}>OT INCOMPLETA — falta material</Tag>}
+    <div style={{ padding: "4px 0 8px" }}>
+      {/* Header de la expansión: contexto que NO está en la fila madre +
+          botón de despacho. */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+        <Space wrap size={4}>
+          {grupo.codigo_reparacion && <Text type="secondary">{grupo.codigo_reparacion}</Text>}
           {grupo.recursos_status && <Tag color="blue">{grupo.recursos_status}</Tag>}
           {grupo.ubicacion
             ? <Tag color="purple">📍 {grupo.ubicacion}</Tag>
             : <Tag>📍 Sin ubicación (asignar al recibir PO)</Tag>}
-          {/* "X de Y items" — avance global incluyendo los ya entregados.
-              El user nos pidió ver esto para entender que la OT 390926
-              tiene 6/7 items resueltos, solo falta 1 (sin OC). */}
-          {grupo.total_items_ot > 0 && (
-            <Tooltip title={`${grupo.items_entregados} ya entregado(s) + ${grupo.items.length} pendiente(s)`}>
-              <Tag color={brand.cyan} style={{ fontWeight: 600 }}>
-                {grupo.items_entregados} / {grupo.total_items_ot} items
-              </Tag>
-            </Tooltip>
-          )}
           <Tag color="green">{grupo.con_stock} listo(s)</Tag>
           {grupo.items_sin_oc > 0 && (
             <Tooltip title="Hay items aprobados que todavía no tienen OC generada">
@@ -658,12 +644,7 @@ function GrupoCard({
             </Tooltip>
           )}
         </Space>
-      }
-      extra={
         <Space wrap>
-          <Tooltip title="Ver OT">
-            <Button size="small" icon={<EyeOutlined />} onClick={() => router.push(`/ordenes-trabajo/${grupo.ot_id}`)} />
-          </Tooltip>
           <ColumnasToggleButton<Item>
             columns={columns}
             ocultas={ocultas}
@@ -682,8 +663,7 @@ function GrupoCard({
             </Button>
           )}
         </Space>
-      }
-    >
+      </div>
       <TableDragWrapper>
         <Table<Item>
           rowKey="id"
@@ -691,7 +671,6 @@ function GrupoCard({
           columns={visibleColumns(columnsResizable, ocultas)}
           components={tableComponents}
           dataSource={grupo.items}
-          sticky={STICKY_HEADER}
           scroll={{ x: 1200 }}
           pagination={false}
           rowSelection={{
@@ -711,6 +690,6 @@ function GrupoCard({
           )}
         />
       </TableDragWrapper>
-    </Card>
+    </div>
   );
 }
