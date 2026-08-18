@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { formatOtCodigo } from "@/lib/ot-formato";
 
 // GET /api/despachos/ot
 // Lista OTs con requerimientos APROBADOS pendientes de entrega a la OT (aún
@@ -55,6 +56,9 @@ export async function GET(_req: NextRequest) {
         orden_trabajo: {
           select: {
             id: true, ot: true,
+            // tipo_codigo permite formatear el código visible (V/S para
+            // BIE/SER) en el front — `ot` es el entero crudo NNNNYY.
+            tipo_codigo: true,
             recursos_status_codigo: true,
             ubicacion_codigo: true,
             ubicacion: { select: { codigo: true, nombre: true } },
@@ -218,7 +222,12 @@ export async function GET(_req: NextRequest) {
 
     const grupos = new Map<number, {
       ot_id: number;
-      ot: number | null;
+      // Código VISIBLE de la OT ("390126", "V014326", …) — string formateado,
+      // no el entero crudo. El front lo usa para mostrar Y para filtrar; el
+      // bug viejo ("This page couldn't load" al filtrar desde la vista
+      // General) venía de mandar acá el número crudo: filtro.trim() sobre un
+      // number reventaba el render.
+      ot: string | null;
       cliente: string | null;
       codigo_reparacion: string | null;
       recursos_status: string | null;
@@ -244,7 +253,9 @@ export async function GET(_req: NextRequest) {
       if (!grupos.has(otId)) {
         grupos.set(otId, {
           ot_id: otId,
-          ot: it.orden_trabajo?.ot ?? null,
+          ot: it.orden_trabajo?.ot != null
+            ? formatOtCodigo(it.orden_trabajo.ot, it.orden_trabajo.tipo_codigo)
+            : null,
           cliente: it.orden_trabajo?.cliente?.nombre_comercial ?? it.orden_trabajo?.cliente?.razon_social ?? null,
           codigo_reparacion: it.orden_trabajo?.codigo_reparacion?.codigo ?? null,
           recursos_status: it.orden_trabajo?.recursos_status_codigo ?? null,

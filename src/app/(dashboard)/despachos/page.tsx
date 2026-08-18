@@ -21,6 +21,7 @@ import {
   usePersistedState,
 } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
+import { formatOtCodigo } from "@/lib/ot-formato";
 
 const { Title, Text } = Typography;
 
@@ -41,7 +42,9 @@ interface Item {
   almacen_posicion: { id: number; codigo: string } | null;
   compra: { numero_po: string; status_oc_codigo: string | null } | null;
   orden_trabajo: {
-    id: number; ot: string | null;
+    // `ot` es el entero crudo NNNNYY; `tipo_codigo` (REP/BIE/SER) permite
+    // formatear el código visible con formatOtCodigo (V014326, S000126, …).
+    id: number; ot: number | string | null; tipo_codigo: string | null;
     cliente: { codigo: string; razon_social: string; nombre_comercial: string | null } | null;
     codigo_reparacion: { codigo: string; descripcion: string } | null;
   } | null;
@@ -182,7 +185,10 @@ export default function DespachosPage() {
   // distintos del grupo — así escribir "260055" muestra cualquier OT que tenga
   // un item asociado a esa OC.
   const gruposFiltrados = (() => {
-    const term = filtro.trim().toLowerCase();
+    // String() defensivo: si `filtro` llegara como number (el bug histórico
+    // del botón de la vista General: "This page couldn't load"), .trim()
+    // sobre un number tumba el render entero.
+    const term = String(filtro).trim().toLowerCase();
     if (!term) return grupos;
     return grupos
       .map((g) => {
@@ -258,7 +264,7 @@ export default function DespachosPage() {
             filename="Despachos-pendientes"
             currentRows={itemsFiltrados}
             columns={[
-              { key: "ot", label: "OT", value: (r) => r.orden_trabajo?.ot ?? `#${r.ot_id}` },
+              { key: "ot", label: "OT", value: (r) => formatOtCodigo(r.orden_trabajo?.ot, r.orden_trabajo?.tipo_codigo, `#${r.ot_id}`) },
               { key: "cliente", label: "Cliente", value: (r) => r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "" },
               { key: "codrep", label: "Código reparación", value: (r) => r.orden_trabajo?.codigo_reparacion?.codigo ?? "" },
               { key: "nro_req", label: "Req / Item", value: (r) => `${r.nro_req ?? "—"}/${r.item_req ?? "—"}` },
