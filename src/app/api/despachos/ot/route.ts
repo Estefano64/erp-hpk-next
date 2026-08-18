@@ -336,12 +336,40 @@ export async function GET(_req: NextRequest) {
         },
         select: {
           id: true, ot_id: true, nro_req: true, item_req: true, descripcion: true,
+          material_id: true,
           cantidad: true, unidad_medida: true, fecha_salida_almacen: true,
           fecha_entrega_real: true, persona_recibe: true, observaciones: true,
           material: { select: { codigo: true, descripcion: true } },
         },
         orderBy: [{ fecha_salida_almacen: "desc" }, { nro_req: "asc" }, { item_req: "asc" }],
       });
+
+      // Tercer fallback: el movimiento SALIDA del despacho registró
+      // persona_recibe desde antes de que existiera la columna en el item.
+      // Se matchea por documento_referencia ("REQ-{nro_req}") + material; el
+      // registro es por req (no por item), así que items del mismo req
+      // comparten receptor — en la práctica un despacho es una sola entrega.
+      const refKeys = [...new Set(
+        entregadosRows.filter((r) => r.nro_req).map((r) => `REQ-${r.nro_req}`),
+      )];
+      const movsConPersona = refKeys.length > 0
+        ? await prisma.movimientoInventario.findMany({
+            where: {
+              tipo_movimiento: "SALIDA",
+              persona_recibe: { not: null },
+              documento_referencia: { in: refKeys },
+            },
+            select: { documento_referencia: true, material_id: true, persona_recibe: true },
+            orderBy: { fecha_movimiento: "asc" }, // asc: el más reciente pisa al escribir el Map
+          })
+        : [];
+      const personaPorMov = new Map<string, string>();
+      for (const m of movsConPersona) {
+        if (!m.persona_recibe) continue;
+        personaPorMov.set(`${m.documento_referencia}|${m.material_id}`, m.persona_recibe);
+        personaPorMov.set(`${m.documento_referencia}|*`, m.persona_recibe);
+      }
+
       for (const r of entregadosRows) {
         if (r.ot_id == null) continue;
         const g = grupos.get(r.ot_id);
@@ -355,7 +383,11 @@ export async function GET(_req: NextRequest) {
           cantidad: Number(r.cantidad),
           unidad_medida: r.unidad_medida,
           fecha: r.fecha_salida_almacen ?? r.fecha_entrega_real,
-          persona: r.persona_recibe ?? personaDesdeObs(r.observaciones),
+          persona: r.persona_recibe
+            ?? personaDesdeObs(r.observaciones)
+            ?? personaPorMov.get(`REQ-${r.nro_req}|${r.material_id}`)
+            ?? personaPorMov.get(`REQ-${r.nro_req}|*`)
+            ?? null,
         });
       }
     }

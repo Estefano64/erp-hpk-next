@@ -468,6 +468,10 @@ export default function DespachosPage() {
             name="persona_recibe"
             label="Persona que recibe"
             tooltip="Nombre de quien retira el material en la planta del cliente"
+            // Obligatorio desde 2026-08-18: el histórico quedó lleno de
+            // entregas sin receptor porque el campo era opcional — el equipo
+            // pidió poder ver siempre a quién se entregó.
+            rules={[{ required: true, message: "Indicá quién recibe el material" }]}
           >
             <Input placeholder="Nombre de la persona" maxLength={150} />
           </Form.Item>
