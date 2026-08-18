@@ -51,6 +51,7 @@ import EvaluacionFormulario, {
 } from "@/components/modules/evaluacion/EvaluacionFormulario";
 import { generarWordEvaluacion } from "@/components/modules/evaluacion/generarWord";
 import { uploadToR2 } from "@/lib/r2-client";
+import { validarContenidoInforme } from "@/lib/file-uploads";
 import { R2FileLink } from "@/components/R2FileLink";
 import { useUnsavedChangesWarning, confirmLeave } from "@/lib/unsaved-changes";
 import { useSession } from "next-auth/react";
@@ -361,6 +362,15 @@ export default function EvaluacionPage() {
     }
     try {
       setUploading(true);
+      // Validar el contenido REAL antes de subir: un .doc que en realidad es
+      // HTML "Página web" de Word trae las fotos en una carpeta externa que no
+      // se sube — en otras PCs salen como "no se puede mostrar la imagen".
+      const cabecera = new Uint8Array(await file.slice(0, 1024).arrayBuffer());
+      const contenido = validarContenidoInforme(file.name, cabecera);
+      if (!contenido.ok) {
+        Modal.warning({ title: "No se puede subir este archivo", content: contenido.error, width: modalWidth(screens, 520) });
+        return false;
+      }
       const meta = await uploadToR2({
         file,
         uploadUrlEndpoint: `/api/evaluaciones/${evaluacion.id}/informe/upload-url`,
@@ -879,7 +889,8 @@ export default function EvaluacionPage() {
           </Button>
         </Upload>
         <Text type="secondary" style={{ display: "block", marginTop: 8, fontSize: 12 }}>
-          Formatos aceptados: PDF, Word, Excel. Maximo 20MB.
+          Formatos aceptados: PDF (recomendado), Word (.docx), Excel. Maximo 20MB.
+          Si editaste el Word generado por el sistema, guardalo como PDF o .docx antes de subirlo — asi las fotos quedan dentro del archivo.
           {!puedeEditar && (
             <span style={{ color: "#cf1322", marginLeft: 8 }}>
               <LockOutlined /> Bloqueado mientras la evaluacion este {estadoLabelPage[estado] || estado}. Reabrela para modificar.

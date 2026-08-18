@@ -8,8 +8,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
-import { sanitizarNombreArchivo } from "@/lib/file-uploads";
-import { deleteObject, copyObjectToFolder } from "@/lib/r2-helpers";
+import { sanitizarNombreArchivo, validarContenidoInforme } from "@/lib/file-uploads";
+import { deleteObject, copyObjectToFolder, readObjectHead } from "@/lib/r2-helpers";
 import { R2Keys, otCodigoFor } from "@/lib/r2";
 import { getAuditUser } from "@/lib/audit";
 
@@ -69,6 +69,20 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
     if (typeof tamano !== "number" || !Number.isFinite(tamano) || tamano <= 0) {
       return NextResponse.json({ error: "tamano inválido" }, { status: 400 });
+    }
+
+    // Validar el contenido REAL del archivo subido (bytes mágicos). Caso típico:
+    // un .doc que en realidad es HTML "Página web" de Word con las fotos en una
+    // carpeta externa que nunca se subió — en otras PCs las imágenes salen rotas.
+    // Si no cuadra, borramos el objeto huérfano y rechazamos.
+    const cabecera = await readObjectHead(key, 1024);
+    if (!cabecera || cabecera.length === 0) {
+      return NextResponse.json({ error: "El archivo no se encontró en el almacenamiento. Vuelve a subirlo." }, { status: 400 });
+    }
+    const contenido = validarContenidoInforme(nombre_archivo, cabecera);
+    if (!contenido.ok) {
+      try { await deleteObject(key); } catch { /* best-effort */ }
+      return NextResponse.json({ error: contenido.error }, { status: 400 });
     }
 
     // Eliminar archivo anterior en R2 si existe.

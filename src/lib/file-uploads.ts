@@ -78,3 +78,57 @@ export function sanitizarNombreArchivo(nombre: string, fallback = "archivo"): st
     .trim();
   return limpio.length > 0 ? limpio : fallback;
 }
+
+// ── Detección de formato real por bytes mágicos ────────────────────────────
+// Motivo: los técnicos abren el Word que genera el ERP (HTML con extensión
+// .doc), lo editan en Word de escritorio y guardan con Ctrl+S. Word lo vuelve
+// a guardar como "Página web": el texto queda en el .doc y las fotos se van a
+// una carpeta externa `NOMBRE_archivos/` que NUNCA se sube. En cualquier otra
+// PC las imágenes salen como "No se puede mostrar la imagen vinculada".
+// Detectamos ese caso mirando los primeros bytes: un .doc/.docx/.xls/.xlsx
+// legítimo es OLE (D0 CF 11 E0) o ZIP (50 4B); un PDF empieza con %PDF.
+export type FormatoArchivo = "ole" | "zip" | "pdf" | "html" | "desconocido";
+
+export function detectarFormatoArchivo(bytes: Uint8Array): FormatoArchivo {
+  if (bytes.length >= 4 && bytes[0] === 0xd0 && bytes[1] === 0xcf && bytes[2] === 0x11 && bytes[3] === 0xe0) return "ole";
+  if (bytes.length >= 2 && bytes[0] === 0x50 && bytes[1] === 0x4b) return "zip";
+  if (bytes.length >= 4 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) return "pdf";
+  // HTML: texto plano (UTF-8 con/sin BOM) o UTF-16 LE con BOM (así lo guarda Word).
+  let texto = "";
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
+    const chars: number[] = [];
+    for (let i = 2; i + 1 < bytes.length && chars.length < 512; i += 2) chars.push(bytes[i] | (bytes[i + 1] << 8));
+    texto = String.fromCharCode(...chars);
+  } else {
+    texto = String.fromCharCode(...Array.from(bytes.slice(0, 512)));
+  }
+  if (/<(!doctype|html|\?xml)[\s>]/i.test(texto)) return "html";
+  return "desconocido";
+}
+
+export const MSG_INFORME_HTML =
+  "Este Word tiene las fotos en una carpeta externa (Word lo guardó como \"Página web\"), " +
+  "por eso en otras PCs salen como \"no se puede mostrar la imagen\". " +
+  "Ábrelo en Word y usa Archivo → Guardar como → PDF (o Documento de Word .docx) y sube ese archivo.";
+
+// Valida que el contenido (primeros bytes) coincida con la extensión declarada.
+// Solo para la categoría "informes" (informe técnico de evaluación).
+export function validarContenidoInforme(fileName: string, cabecera: Uint8Array): ValidacionUpload {
+  const lower = (fileName || "").toLowerCase();
+  const ext = lower.slice(lower.lastIndexOf("."));
+  const fmt = detectarFormatoArchivo(cabecera);
+  if (ext === ".pdf") {
+    return fmt === "pdf" ? { ok: true } : { ok: false, error: "El archivo no es un PDF válido." };
+  }
+  if (ext === ".doc" || ext === ".xls") {
+    if (fmt === "ole" || fmt === "zip") return { ok: true };
+    if (fmt === "html") return { ok: false, error: MSG_INFORME_HTML };
+    return { ok: false, error: `El archivo ${ext} no es un documento de Office válido.` };
+  }
+  if (ext === ".docx" || ext === ".xlsx") {
+    if (fmt === "zip") return { ok: true };
+    if (fmt === "html") return { ok: false, error: MSG_INFORME_HTML };
+    return { ok: false, error: `El archivo ${ext} no es un documento de Office válido.` };
+  }
+  return { ok: true };
+}

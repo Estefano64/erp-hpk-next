@@ -90,3 +90,18 @@ export async function objectExists(key: string): Promise<boolean> {
     return false;
   }
 }
+
+// Lee los primeros `bytes` de un objeto (Range GET). Se usa para validar el
+// formato real de un archivo recién subido (bytes mágicos) sin bajarlo entero.
+// Devuelve null si el objeto no existe o falla la lectura.
+export async function readObjectHead(key: string, bytes = 16): Promise<Uint8Array | null> {
+  try {
+    const res = await getR2Client().send(
+      new GetObjectCommand({ Bucket: getR2Bucket(), Key: key, Range: `bytes=0-${bytes - 1}` }),
+    );
+    if (!res.Body) return null;
+    return await res.Body.transformToByteArray();
+  } catch {
+    return null;
+  }
+}
