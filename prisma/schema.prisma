@@ -1559,6 +1559,10 @@ model OTRepuesto {
   fecha_entrega_esperada      DateTime?            @db.Date
   fecha_entrega_real          DateTime?            @db.Date
   fecha_salida_almacen        DateTime?            @db.Date
+  // Quién recibió el material en el despacho al técnico/OT (2026-08-18).
+  // Antes solo quedaba como texto dentro de `observaciones` y en el
+  // MovimientoInventario; los históricos se muestran parseando ese texto.
+  persona_recibe              String?              @db.VarChar(150)
   fecha_envio_mina            DateTime?            @db.Date
   fecha_facturacion           DateTime?            @db.Date
   nro_guia                    String?              @db.VarChar(100)

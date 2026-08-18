@@ -244,6 +244,14 @@ export async function GET(_req: NextRequest) {
       items_oc_pendiente: number;
       items_sin_stock: number;
       estado_ot: "completa" | "incompleta";
+      // Items YA entregados de la OT, con fecha y quién recibió — para la
+      // sección "Entregados" de la fila expandida en /despachos.
+      entregados: Array<{
+        id: number; nro_req: string | null; item_req: number | null;
+        codigo: string | null; descripcion: string | null;
+        cantidad: number; unidad_medida: string | null;
+        fecha: Date | null; persona: string | null;
+      }>;
     }>();
 
     for (const it of pendientes) {
@@ -271,6 +279,7 @@ export async function GET(_req: NextRequest) {
           items_oc_pendiente: 0,
           items_sin_stock: 0,
           estado_ot: "completa",
+          entregados: [],
         });
       }
       const g = grupos.get(otId)!;
@@ -305,6 +314,49 @@ export async function GET(_req: NextRequest) {
         if (t.status_oc_codigo === "ENTREGADO" || t.status_oc_codigo === "COMPLETO") {
           g.items_entregados += t._count.id;
         }
+      }
+
+      // Detalle de los items ya entregados: fecha y quién recibió. La persona
+      // vive en `persona_recibe` desde 2026-08-18; los despachos anteriores
+      // solo la registraron dentro de `observaciones` ("… — recibe: NOMBRE"),
+      // de ahí el fallback parseado (se toma la ÚLTIMA mención, que es la del
+      // despacho más reciente del item).
+      const personaDesdeObs = (obs: string | null): string | null => {
+        if (!obs) return null;
+        const matches = obs.match(/recibe:\s*([^·\n]+)/gi);
+        if (!matches || matches.length === 0) return null;
+        const persona = matches[matches.length - 1].replace(/recibe:\s*/i, "").trim();
+        return persona || null;
+      };
+      const entregadosRows = await prisma.oTRepuesto.findMany({
+        where: {
+          ot_id: { in: otIds },
+          status_requerimiento_codigo: { notIn: ["ANULADO", "DESAPROBADO"] },
+          status_oc_codigo: { in: ["ENTREGADO", "COMPLETO"] },
+        },
+        select: {
+          id: true, ot_id: true, nro_req: true, item_req: true, descripcion: true,
+          cantidad: true, unidad_medida: true, fecha_salida_almacen: true,
+          fecha_entrega_real: true, persona_recibe: true, observaciones: true,
+          material: { select: { codigo: true, descripcion: true } },
+        },
+        orderBy: [{ fecha_salida_almacen: "desc" }, { nro_req: "asc" }, { item_req: "asc" }],
+      });
+      for (const r of entregadosRows) {
+        if (r.ot_id == null) continue;
+        const g = grupos.get(r.ot_id);
+        if (!g) continue;
+        g.entregados.push({
+          id: r.id,
+          nro_req: r.nro_req,
+          item_req: r.item_req,
+          codigo: r.material?.codigo ?? null,
+          descripcion: r.material?.descripcion ?? r.descripcion ?? null,
+          cantidad: Number(r.cantidad),
+          unidad_medida: r.unidad_medida,
+          fecha: r.fecha_salida_almacen ?? r.fecha_entrega_real,
+          persona: r.persona_recibe ?? personaDesdeObs(r.observaciones),
+        });
       }
     }
 

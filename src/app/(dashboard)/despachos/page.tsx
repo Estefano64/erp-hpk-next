@@ -21,6 +21,7 @@ import {
 } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import { formatOtCodigo } from "@/lib/ot-formato";
+import { formatDateOnly } from "@/lib/dates";
 
 const { Title, Text } = Typography;
 
@@ -71,6 +72,18 @@ interface Item {
   _motivo_pendiente?: "ok" | "sin_oc" | "oc_pendiente" | "sin_stock" | null;
 }
 
+interface Entregado {
+  id: number;
+  nro_req: string | null;
+  item_req: number | null;
+  codigo: string | null;
+  descripcion: string | null;
+  cantidad: number;
+  unidad_medida: string | null;
+  fecha: string | null;
+  persona: string | null;
+}
+
 interface GrupoOT {
   ot_id: number;
   ot: string | null;
@@ -79,6 +92,7 @@ interface GrupoOT {
   recursos_status: string | null;
   ubicacion: string | null;
   items: Item[];
+  entregados: Entregado[];
   con_stock: number;
   sin_stock: number;
   // Totales globales de la OT (incluye los ya entregados). Permite mostrar
@@ -481,6 +495,9 @@ function GrupoItemsExpandido({
   const { ocultas, setOcultas } = useColumnasOcultas(`despachos-ot-${grupo.ot_id}-cols-v1`);
   // Despachar es de logística (misma matriz que el servidor).
   const esLogistica = useEscrituraApi("/api/despachos/ot/0", "POST");
+  // Sección "Entregados": colapsada por defecto — lo operativo son los
+  // pendientes; el histórico de a quién/cuándo se entregó se abre a demanda.
+  const [verEntregados, setVerEntregados] = useState(false);
 
   const columns: ColumnsType<Item> = [
     numeracionColumn<Item>(),
@@ -690,6 +707,52 @@ function GrupoItemsExpandido({
           )}
         />
       </TableDragWrapper>
+
+      {/* Histórico de entregas de la OT: a quién se entregó cada item y cuándo. */}
+      {grupo.entregados.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <Button
+            size="small"
+            type="link"
+            style={{ paddingLeft: 0 }}
+            icon={<CheckCircleOutlined />}
+            onClick={() => setVerEntregados((v) => !v)}
+          >
+            {verEntregados ? "Ocultar" : "Ver"} entregados ({grupo.entregados.length})
+          </Button>
+          {verEntregados && (
+            <Table<Entregado>
+              rowKey="id"
+              size="small"
+              dataSource={grupo.entregados}
+              pagination={false}
+              scroll={{ x: 800 }}
+              columns={[
+                {
+                  key: "req", title: "Req / Item", width: 130,
+                  render: (_, r) => <Text style={{ fontSize: 12 }}>{r.nro_req ?? "—"}/{r.item_req ?? "—"}</Text>,
+                },
+                { key: "codigo", title: "Código", width: 110, render: (_, r) => r.codigo ?? "—" },
+                { key: "desc", title: "Descripción", ellipsis: true, render: (_, r) => r.descripcion ?? "—" },
+                {
+                  key: "cant", title: "Cant.", width: 90, align: "right",
+                  render: (_, r) => `${r.cantidad.toLocaleString()} ${r.unidad_medida ?? ""}`,
+                },
+                {
+                  key: "fecha", title: "F. entrega", width: 110, align: "center",
+                  render: (_, r) => r.fecha ? formatDateOnly(r.fecha) : <Text type="secondary">—</Text>,
+                },
+                {
+                  key: "persona", title: "Recibió", width: 180, ellipsis: true,
+                  render: (_, r) => r.persona
+                    ? <Tag color="green" style={{ margin: 0 }}>{r.persona}</Tag>
+                    : <Text type="secondary">—</Text>,
+                },
+              ]}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -84,6 +84,9 @@ export async function POST(req: NextRequest, { params }: Ctx) {
               cantidad_recibida: nuevaDespachada,
               fecha_entrega_real: quedaCompleto ? fechaDespacho : rep.fecha_entrega_real,
               fecha_salida_almacen: fechaDespacho,
+              // Solo pisar si vino un nombre — un despacho parcial posterior
+              // sin persona no debe borrar al receptor registrado antes.
+              persona_recibe: personaRecibe ?? undefined,
               observaciones: `${obsPrev}Despacho a OT (item free) el ${fechaDespacho.toLocaleDateString("es-PE")} — ${etiqueta} (${usuario})${personaRecibe ? ` — recibe: ${personaRecibe}` : ""}${comentariosBulk ? ` · ${comentariosBulk}` : ""}`,
             },
           });
@@ -139,6 +142,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
               cantidad_recibida: nuevaDespachada,
               fecha_entrega_real: quedaCompleto ? fechaDespacho : rep.fecha_entrega_real,
               fecha_salida_almacen: rep.fecha_salida_almacen ?? fechaDespacho,
+              persona_recibe: personaRecibe ?? undefined,
               observaciones: `${obsPrev}Entregado al técnico desde ${fuente} el ${fechaDespacho.toLocaleDateString("es-PE")} — ${etiqueta} (${usuario})${personaRecibe ? ` — recibe: ${personaRecibe}` : ""}${comentariosBulk ? ` · ${comentariosBulk}` : ""}`,
             },
           });
@@ -196,6 +200,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
             cantidad_recibida: nuevaDespachada,
             fecha_entrega_real: quedaCompleto ? fechaDespacho : rep.fecha_entrega_real,
             fecha_salida_almacen: fechaDespacho,
+            persona_recibe: personaRecibe ?? undefined,
             observaciones: `${obsPrev}Despacho desde almacén el ${fechaDespacho.toLocaleDateString("es-PE")} — ${etiqueta} (${usuario})${personaRecibe ? ` — recibe: ${personaRecibe}` : ""}${comentariosBulk ? ` · ${comentariosBulk}` : ""}`,
           },
         });
