@@ -1,6 +1,7 @@
 import { MODELOS_EVALUACION } from "./EvaluacionFormulario";
 import { CATALOGOS_EVALUACION } from "@/lib/evaluacion-catalogos";
 import { VAS, type CampoMedida } from "@/lib/evaluacion-campos";
+import { htmlADocx } from "@/lib/html-a-docx";
 
 interface OTDetalle {
   ot: string | null;
@@ -1356,11 +1357,17 @@ ${
 
 </body></html>`;
 
-  const blob = new Blob(["\ufeff" + html], { type: "application/msword" });
+  // .docx REAL (no HTML con extensi\u00f3n .doc): as\u00ed, cuando el t\u00e9cnico lo edita
+  // en Word y guarda, las fotos quedan embebidas en el archivo en vez de irse
+  // a una carpeta externa `_archivos/` que nunca se sube al ERP.
+  const blob = await htmlADocx(html, {
+    orientation: "landscape",
+    margenesCm: { top: 1.5, right: 1.2, bottom: 1.5, left: 1.2 }, // = @page del CSS
+  });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `Evaluacion-${otNumero}-${fechaHoy.replace(/\//g, "")}.doc`;
+  a.download = `Evaluacion-${otNumero}-${fechaHoy.replace(/\//g, "")}.docx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
