@@ -1110,7 +1110,10 @@ export default function ProgramacionDashboardPage() {
         const esStd = clase === "std";
         const ck = `${comp.codigo}::${esStd ? "STD" : "NSTD"}`;
         const bg = esStd ? "#389E0D" : "#D46B08";
-        const label = esStd ? "Estándar" : "No estándar";
+        // Rótulo abreviado (pedido 2026-08-20) — el nombre completo queda en
+        // el tooltip nativo (atributo title).
+        const label = esStd ? "STD" : "No STD";
+        const labelCompleto = esStd ? "Estándar" : "No estándar";
         if (clasifColapsadas.has(ck)) {
           return {
             key: `comp-${comp.codigo}-${clase}-collapsed`,
@@ -1120,7 +1123,7 @@ export default function ProgramacionDashboardPage() {
             title: (
               <div
                 onClick={() => toggleClasif(ck)}
-                title={`Expandir ${label} de ${comp.nombre}`}
+                title={`Expandir ${labelCompleto} de ${comp.nombre}`}
                 style={{ cursor: "pointer", fontWeight: 700, color: brand.white, fontSize: 10, writingMode: "vertical-rl", transform: "rotate(180deg)", whiteSpace: "nowrap", maxHeight: 140, overflow: "hidden", display: "inline-block", verticalAlign: "middle" }}
               >
                 ▸ {label}
@@ -1135,8 +1138,8 @@ export default function ProgramacionDashboardPage() {
           title: (
             <div
               onClick={() => toggleClasif(ck)}
-              title={`Colapsar ${label} de ${comp.nombre}`}
-              style={{ cursor: "pointer", fontSize: 12, fontWeight: 700, color: brand.white, letterSpacing: 0.3 }}
+              title={`Colapsar ${labelCompleto} de ${comp.nombre}`}
+              style={{ cursor: "pointer", fontSize: 12, fontWeight: 700, color: brand.white, letterSpacing: 0.3, textAlign: "center" }}
             >
               {label} <span style={{ opacity: 0.85 }}>▾</span>
             </div>
@@ -1164,6 +1167,7 @@ export default function ProgramacionDashboardPage() {
               color: brand.white,
               fontSize: 11,
               letterSpacing: 0.5,
+              textAlign: "center",
             }}>
             {comp.nombre} <span style={{ opacity: 0.85 }}>▾</span>
           </div>
