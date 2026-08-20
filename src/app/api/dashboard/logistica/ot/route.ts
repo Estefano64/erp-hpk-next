@@ -98,6 +98,61 @@ export async function GET(req: NextRequest) {
     // ── Avance del mes: hitos del rango ────────────────────────────────
     // OT externa no tiene `fecha_fin_real` — usamos `fecha_entrega` (entrega
     // final del componente) como proxy de "entregadas a armado/final".
+    // ── Tiempos del ciclo logístico de la OT (pedido 2026-08-20) ────────
+    // Tres indicadores, cada uno {promedio, mediana, n} en días. El rango se
+    // aplica sobre la fecha de CIERRE de cada intervalo (misma lógica que los
+    // hitos de "Avance del rango").
+    const stats = (dias: number[]) => ({
+      promedio: dias.length > 0 ? dias.reduce((a, b) => a + b, 0) / dias.length : 0,
+      mediana: mediana(dias),
+      n: dias.length,
+    });
+    const soloPositivos = (rows: Array<{ d: number | null }>) =>
+      rows.map((r) => r.d).filter((d): d is number => d != null && d >= 0);
+
+    // (a) OT almacenada: desde que llegó el ÚLTIMO repuesto a HPK hasta la
+    //     ÚLTIMA entrega al trabajador (max fecha_salida_almacen). Solo OTs
+    //     con todos sus repuestos ya entregados; servicios y anulados fuera.
+    //     La llegada se lee de compras.fecha_entrega_real (la setea la
+    //     RECEPCIÓN) — NO de ot_repuestos.fecha_entrega_real, porque el
+    //     despacho al técnico la pisa con la fecha de despacho y el
+    //     indicador daría siempre 0.
+    const almacenadaRows = await prisma.$queryRaw<Array<{ d: number | null }>>`
+      SELECT (MAX(r.fecha_salida_almacen) - MAX(c.fecha_entrega_real))::int AS d
+      FROM ot_repuestos r
+      LEFT JOIN compras c ON c.id = r.po_id
+      WHERE r.ot_id IS NOT NULL
+        AND (r.status_requerimiento_codigo IS NULL OR r.status_requerimiento_codigo NOT IN ('ANULADO', 'DESAPROBADO'))
+        AND (r.tipo_codigo IS NULL OR r.tipo_codigo <> 'SER')
+      GROUP BY r.ot_id
+      HAVING COUNT(*) FILTER (WHERE r.fecha_salida_almacen IS NULL) = 0
+        AND MAX(c.fecha_entrega_real) IS NOT NULL
+        AND MAX(r.fecha_salida_almacen) >= ${desde} AND MAX(r.fecha_salida_almacen) < ${hasta}`;
+
+    // (b) Tiempo de armado: desde la guía de remisión de despacho del
+    //     componente (fecha_despacho, salida del taller) hasta el ingreso de
+    //     la guía firmada por el almacén de mina — Hagemsa/Ransa —
+    //     (fecha_entrega, la setea el flujo de despacho a mina).
+    const armadoRows = await prisma.$queryRaw<Array<{ d: number | null }>>`
+      SELECT (fecha_entrega - fecha_despacho)::int AS d
+      FROM orden_trabajo
+      WHERE fecha_entrega >= ${desde} AND fecha_entrega < ${hasta}
+        AND fecha_despacho IS NOT NULL`;
+
+    // (c) Tiempo de facturación: desde la guía de remisión de despacho
+    //     (fecha_despacho) hasta la fecha de facturación de la OT.
+    const facturacionRows = await prisma.$queryRaw<Array<{ d: number | null }>>`
+      SELECT (fecha_facturacion - fecha_despacho)::int AS d
+      FROM orden_trabajo
+      WHERE fecha_facturacion >= ${desde} AND fecha_facturacion < ${hasta}
+        AND fecha_despacho IS NOT NULL`;
+
+    const tiempos = {
+      almacenada: stats(soloPositivos(almacenadaRows)),
+      armado: stats(soloPositivos(armadoRows)),
+      facturacion: stats(soloPositivos(facturacionRows)),
+    };
+
     const [entregadas, despachadas, facturadas] = await Promise.all([
       prisma.ordenTrabajo.count({
         where: { fecha_entrega: { gte: desde, lt: hasta, not: null } },
@@ -114,6 +169,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       estadoAlmacen: { completas, incompletas },
       enAlmacen,
+      tiempos,
       avanceMes: { entregadasArmado, despachadas, facturadas },
       meta: { modo, anio, mes, sem },
     });
