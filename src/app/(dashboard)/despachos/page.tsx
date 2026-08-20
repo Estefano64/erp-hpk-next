@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, type Key } from "react";
 import { useRouter } from "next/navigation";
 import {
   Typography, Card, Table, Tag, Space, Button, Row, Col, Statistic, Empty,
-  App, Tooltip, Modal, Form, Input, DatePicker, Select,
+  App, Tooltip, Modal, Form, Input, DatePicker, Select, Cascader,
 } from "antd";
 import {
   ExportOutlined, ReloadOutlined, CheckCircleOutlined, WarningOutlined,
@@ -45,6 +45,8 @@ interface Item {
     // `ot` es el entero crudo NNNNYY; `tipo_codigo` (REP/BIE/SER) permite
     // formatear el código visible con formatOtCodigo (V014326, S000126, …).
     id: number; ot: number | string | null; tipo_codigo: string | null;
+    descripcion: string | null;
+    cod_rep_flota: string | null;
     cliente: { codigo: string; razon_social: string; nombre_comercial: string | null } | null;
     codigo_reparacion: { codigo: string; descripcion: string } | null;
   } | null;
@@ -88,6 +90,8 @@ interface GrupoOT {
   ot_id: number;
   ot: string | null;
   cliente: string | null;
+  descripcion_ot: string | null;
+  flota: string | null;
   codigo_reparacion: string | null;
   recursos_status: string | null;
   ubicacion: string | null;
@@ -107,6 +111,10 @@ interface GrupoOT {
 }
 
 interface UbicacionOpt { codigo: string; nombre: string }
+// Zonas físicas del almacén HP&K con sus posiciones — para el editor inline
+// de ubicación del ITEM (distinto de la ubicación de la OT, que es catálogo
+// Ubicacion).
+interface ZonaOpt { id: number; codigo: string; nombre: string; posiciones: { id: number; codigo: string }[] }
 
 export default function DespachosPage() {
   const { message } = App.useApp();
@@ -126,6 +134,8 @@ export default function DespachosPage() {
   const [expandidas, setExpandidas] = useState<readonly Key[]>([]);
   // Catálogo de ubicaciones (para el editor inline de ubicación de la OT).
   const [ubicaciones, setUbicaciones] = useState<UbicacionOpt[]>([]);
+  // Zonas/posiciones físicas del almacén (para el editor de ubicación del ITEM).
+  const [zonas, setZonas] = useState<ZonaOpt[]>([]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -146,6 +156,10 @@ export default function DespachosPage() {
       .then((r) => r.json())
       .then((j) => setUbicaciones((j.data ?? []).map((u: { codigo: string; nombre: string }) => ({ codigo: u.codigo, nombre: u.nombre }))))
       .catch(() => {});
+    fetch("/api/almacen-zonas")
+      .then((r) => r.json())
+      .then((j) => setZonas(j.data ?? []))
+      .catch(() => {});
   }, []);
 
   // Cambio manual de la ubicación de la OT (permiso: quien escribe OTs —
@@ -163,6 +177,24 @@ export default function DespachosPage() {
       fetchData();
     } catch (err) {
       message.error(err instanceof Error ? err.message : "Error al cambiar la ubicación");
+    }
+  };
+
+  // Cambio de zona/posición física de un ITEM en almacén (logística) — solo
+  // mientras no esté entregado (el servidor rechaza los ENTREGADO).
+  const cambiarUbicacionItem = async (itemId: number, zonaId: number | null, posicionId: number | null) => {
+    try {
+      const res = await fetch(`/api/requerimientos/${itemId}/ubicacion`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ almacen_zona_id: zonaId, almacen_posicion_id: posicionId }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Error al cambiar la ubicación del item");
+      message.success("Ubicación del item actualizada");
+      fetchData();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Error al cambiar la ubicación del item");
     }
   };
 
@@ -239,6 +271,8 @@ export default function DespachosPage() {
         const otStr = `${g.ot ?? g.ot_id}`.toLowerCase();
         const clienteStr = (g.cliente ?? "").toLowerCase();
         const codRepStr = (g.codigo_reparacion ?? "").toLowerCase();
+        const descOtStr = (g.descripcion_ot ?? "").toLowerCase();
+        const flotaStr = (g.flota ?? "").toLowerCase();
         // Set de OCs presentes en este grupo (un mismo nro_po puede aparecer
         // en varios items — usamos Set para deduplicar el match).
         const ocsDelGrupo = new Set(
@@ -248,6 +282,8 @@ export default function DespachosPage() {
           otStr.includes(term)
           || clienteStr.includes(term)
           || codRepStr.includes(term)
+          || descOtStr.includes(term)
+          || flotaStr.includes(term)
           || [...ocsDelGrupo].some((oc) => oc.includes(term));
         const itemsMatch = g.items.filter((it) => {
           const m = it.material;
@@ -276,6 +312,103 @@ export default function DespachosPage() {
   const otsCompletas = gruposFiltrados.filter((g) => g.estado_ot === "completa").length;
   const otsIncompletas = gruposFiltrados.filter((g) => g.estado_ot === "incompleta").length;
 
+  // Columnas de la tabla de OTs — extraídas a variable para el editor de
+  // mostrar/ocultar columnas (ColumnasToggleButton).
+  const { ocultas: ocultasOTs, setOcultas: setOcultasOTs } = useColumnasOcultas("despachos-ots-cols-v1");
+  const columnasOTs: ColumnsType<GrupoOT> = [
+    {
+      key: "ot", title: "OT", dataIndex: "ot", width: 130,
+      sorter: (a, b) => (a.ot ?? "").localeCompare(b.ot ?? ""),
+      render: (v: string | null) => v ? <Tag color={brand.navy}>{v}</Tag> : <Text type="secondary">—</Text>,
+    },
+    {
+      // `g.cliente` viene armado del backend con TODOS los items (incluye
+      // servicios). Antes se leía items[0], que en OTs ENTREGADO (sin
+      // repuestos pendientes) está vacío y la columna quedaba en blanco.
+      key: "cliente", title: "Cliente", width: 220, ellipsis: true,
+      render: (_, g) => g.cliente ?? <Text type="secondary">—</Text>,
+    },
+    {
+      key: "descripcion_ot", title: "Descripción OT", width: 240, ellipsis: true,
+      render: (_, g) => g.descripcion_ot
+        ? <Tooltip title={g.descripcion_ot}><span>{g.descripcion_ot}</span></Tooltip>
+        : <Text type="secondary">—</Text>,
+    },
+    {
+      key: "flota", title: "Flota", width: 130, align: "center",
+      filters: [...new Set(grupos.map((g) => g.flota).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
+      filterSearch: true,
+      onFilter: (value, g) => g.flota === value,
+      render: (_, g) => g.flota
+        ? <Tag color="geekblue" style={{ margin: 0 }}>{g.flota}</Tag>
+        : <Text type="secondary">—</Text>,
+    },
+    {
+      // Avance global de la OT: entregados / total (incluye los que ya
+      // salieron del listado de pendientes).
+      key: "avance", title: "Avance", width: 100, align: "center",
+      sorter: (a, b) => (a.items_entregados / Math.max(1, a.total_items_ot)) - (b.items_entregados / Math.max(1, b.total_items_ot)),
+      render: (_, g) => g.total_items_ot > 0
+        ? <Tag color={brand.cyan} style={{ fontWeight: 600, margin: 0 }}>{g.items_entregados} / {g.total_items_ot}</Tag>
+        : <Text type="secondary">—</Text>,
+    },
+    {
+      key: "items", title: "Pendientes", width: 100, align: "right",
+      sorter: (a, b) => a.items.length - b.items.length,
+      render: (_, g) => <Text strong>{g.items.length}</Text>,
+    },
+    {
+      key: "con_stock", title: "Con stock", width: 100, align: "right",
+      sorter: (a, b) => a.con_stock - b.con_stock,
+      render: (_, g) => (
+        <Text style={{ color: g.con_stock > 0 ? "#52c41a" : "#bbb" }}>{g.con_stock}</Text>
+      ),
+    },
+    {
+      key: "sin_stock", title: "Sin stock", width: 100, align: "right",
+      sorter: (a, b) => a.sin_stock - b.sin_stock,
+      render: (_, g) => (
+        <Text style={{ color: g.sin_stock > 0 ? "#cf1322" : "#bbb" }}>{g.sin_stock}</Text>
+      ),
+    },
+    {
+      // Estado SOLO de repuestos (los servicios no cuentan):
+      //   ENTREGADO  → todos los repuestos ya salieron de almacén.
+      //   COMPLETO   → todo lo pendiente tiene stock listo.
+      //   INCOMPLETO → falta material ("2 de 3 sigue incompleto").
+      key: "estado_ot", title: "Estado", width: 140, align: "center",
+      filters: [
+        { text: "COMPLETO", value: "completa" },
+        { text: "INCOMPLETO", value: "incompleta" },
+        { text: "ENTREGADO", value: "entregada" },
+      ],
+      onFilter: (value, g) => g.estado_ot === value,
+      render: (_, g) => g.estado_ot === "entregada"
+        ? <Tag icon={<CheckCircleOutlined />} color="blue">ENTREGADO</Tag>
+        : g.estado_ot === "completa"
+          ? <Tag icon={<CheckCircleOutlined />} color="success">COMPLETO</Tag>
+          : <Tag icon={<WarningOutlined />} color="warning">INCOMPLETO</Tag>,
+    },
+    {
+      key: "acciones", title: "Acciones", width: 80, fixed: "right", align: "center",
+      render: (_, g) => (
+        <Tooltip title="Abrir la OT completa (detalle, requerimientos, adjuntos, etc.)">
+          <Button
+            size="small"
+            type="primary"
+            icon={<EyeOutlined />}
+            onClick={(e) => {
+              // expandRowByClick: sin esto el click también expande/
+              // colapsa la fila antes de navegar.
+              e.stopPropagation();
+              router.push(`/ordenes-trabajo/${g.ot_id}`);
+            }}
+          />
+        </Tooltip>
+      ),
+    },
+  ];
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 12 }}>
@@ -293,6 +426,12 @@ export default function DespachosPage() {
             style={{ width: 320, maxWidth: "100%" }}
           />
           <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>Actualizar</Button>
+          <ColumnasToggleButton<GrupoOT>
+            columns={columnasOTs}
+            ocultas={ocultasOTs}
+            setOcultas={setOcultasOTs}
+            obligatorias={["ot", "acciones"]}
+          />
           {/* El endpoint agrupa por OT (no devuelve items planos), así que la
               descarga usa las filas planas ya filtradas por la búsqueda. */}
           <ExportarExcelButton<Item>
@@ -302,6 +441,8 @@ export default function DespachosPage() {
             columns={[
               { key: "ot", label: "OT", value: (r) => formatOtCodigo(r.orden_trabajo?.ot, r.orden_trabajo?.tipo_codigo, `#${r.ot_id}`) },
               { key: "cliente", label: "Cliente", value: (r) => r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "" },
+              { key: "desc_ot", label: "Descripción OT", value: (r) => r.orden_trabajo?.descripcion ?? "" },
+              { key: "flota", label: "Flota", value: (r) => r.orden_trabajo?.cod_rep_flota ?? "" },
               { key: "codrep", label: "Código reparación", value: (r) => r.orden_trabajo?.codigo_reparacion?.codigo ?? "" },
               { key: "nro_req", label: "Req / Item", value: (r) => `${r.nro_req ?? "—"}/${r.item_req ?? "—"}` },
               { key: "codigo", label: "Código", value: (r) => r.material?.codigo ?? "" },
@@ -383,8 +524,15 @@ export default function DespachosPage() {
           dataSource={gruposFiltrados}
           loading={loading}
           size="small"
-          pagination={{ pageSize: 50, showSizeChanger: true }}
-          scroll={{ x: 1000 }}
+          // "¿Por qué solo salen 50?" (2026-08-20): son páginas de 50 — se
+          // agregó el total visible y tamaños más grandes para verlo claro.
+          pagination={{
+            defaultPageSize: 50,
+            showSizeChanger: true,
+            pageSizeOptions: [50, 100, 200, 500],
+            showTotal: (t) => `${t.toLocaleString("es-PE")} OTs`,
+          }}
+          scroll={{ x: 1400 }}
           sticky={STICKY_HEADER}
           expandable={{
             expandedRowKeys: expandidas,
@@ -399,87 +547,12 @@ export default function DespachosPage() {
                 submitting={submitting === g.ot_id}
                 ubicaciones={ubicaciones}
                 onUbicacionChange={(codigo) => cambiarUbicacion(g.ot_id, codigo)}
+                zonas={zonas}
+                onUbicacionItemChange={cambiarUbicacionItem}
               />
             ),
           }}
-          columns={[
-            {
-              key: "ot", title: "OT", dataIndex: "ot", width: 130,
-              sorter: (a, b) => (a.ot ?? "").localeCompare(b.ot ?? ""),
-              render: (v: string | null) => v ? <Tag color={brand.navy}>{v}</Tag> : <Text type="secondary">—</Text>,
-            },
-            {
-              key: "cliente", title: "Cliente", width: 220, ellipsis: true,
-              render: (_, g) => {
-                const c = g.items[0]?.orden_trabajo?.cliente;
-                return c?.nombre_comercial ?? c?.razon_social ?? <Text type="secondary">—</Text>;
-              },
-            },
-            {
-              // Avance global de la OT: entregados / total (incluye los que ya
-              // salieron del listado de pendientes).
-              key: "avance", title: "Avance", width: 100, align: "center",
-              sorter: (a, b) => (a.items_entregados / Math.max(1, a.total_items_ot)) - (b.items_entregados / Math.max(1, b.total_items_ot)),
-              render: (_, g) => g.total_items_ot > 0
-                ? <Tag color={brand.cyan} style={{ fontWeight: 600, margin: 0 }}>{g.items_entregados} / {g.total_items_ot}</Tag>
-                : <Text type="secondary">—</Text>,
-            },
-            {
-              key: "items", title: "Pendientes", width: 100, align: "right",
-              sorter: (a, b) => a.items.length - b.items.length,
-              render: (_, g) => <Text strong>{g.items.length}</Text>,
-            },
-            {
-              key: "con_stock", title: "Con stock", width: 100, align: "right",
-              sorter: (a, b) => a.con_stock - b.con_stock,
-              render: (_, g) => (
-                <Text style={{ color: g.con_stock > 0 ? "#52c41a" : "#bbb" }}>{g.con_stock}</Text>
-              ),
-            },
-            {
-              key: "sin_stock", title: "Sin stock", width: 100, align: "right",
-              sorter: (a, b) => a.sin_stock - b.sin_stock,
-              render: (_, g) => (
-                <Text style={{ color: g.sin_stock > 0 ? "#cf1322" : "#bbb" }}>{g.sin_stock}</Text>
-              ),
-            },
-            {
-              // Estado SOLO de repuestos (los servicios no cuentan):
-              //   ENTREGADO  → todos los repuestos ya salieron de almacén.
-              //   COMPLETO   → todo lo pendiente tiene stock listo.
-              //   INCOMPLETO → falta material ("2 de 3 sigue incompleto").
-              key: "estado_ot", title: "Estado", width: 140, align: "center",
-              filters: [
-                { text: "COMPLETO", value: "completa" },
-                { text: "INCOMPLETO", value: "incompleta" },
-                { text: "ENTREGADO", value: "entregada" },
-              ],
-              onFilter: (value, g) => g.estado_ot === value,
-              render: (_, g) => g.estado_ot === "entregada"
-                ? <Tag icon={<CheckCircleOutlined />} color="blue">ENTREGADO</Tag>
-                : g.estado_ot === "completa"
-                  ? <Tag icon={<CheckCircleOutlined />} color="success">COMPLETO</Tag>
-                  : <Tag icon={<WarningOutlined />} color="warning">INCOMPLETO</Tag>,
-            },
-            {
-              key: "acciones", title: "Acciones", width: 80, fixed: "right", align: "center",
-              render: (_, g) => (
-                <Tooltip title="Abrir la OT completa (detalle, requerimientos, adjuntos, etc.)">
-                  <Button
-                    size="small"
-                    type="primary"
-                    icon={<EyeOutlined />}
-                    onClick={(e) => {
-                      // expandRowByClick: sin esto el click también expande/
-                      // colapsa la fila antes de navegar.
-                      e.stopPropagation();
-                      router.push(`/ordenes-trabajo/${g.ot_id}`);
-                    }}
-                  />
-                </Tooltip>
-              ),
-            },
-          ]}
+          columns={visibleColumns(columnasOTs, ocultasOTs)}
         />
       )}
 
@@ -527,6 +600,7 @@ export default function DespachosPage() {
 // los datos que ya muestra la fila madre (OT, cliente, avance, estado).
 function GrupoItemsExpandido({
   grupo, seleccionados, onSelectChange, onDespachar, submitting, ubicaciones, onUbicacionChange,
+  zonas, onUbicacionItemChange,
 }: {
   grupo: GrupoOT;
   seleccionados: number[];
@@ -535,6 +609,8 @@ function GrupoItemsExpandido({
   submitting: boolean;
   ubicaciones: UbicacionOpt[];
   onUbicacionChange: (codigo: string | null) => void;
+  zonas: ZonaOpt[];
+  onUbicacionItemChange: (itemId: number, zonaId: number | null, posicionId: number | null) => void;
 }) {
   const { ocultas, setOcultas } = useColumnasOcultas(`despachos-ot-${grupo.ot_id}-cols-v1`);
   // Despachar es de logística (misma matriz que el servidor).
@@ -544,6 +620,11 @@ function GrupoItemsExpandido({
   // (PUT OT) es más amplio; acá solo escondemos el lápiz a los demás roles.
   const puedeEditarUbic = esLogistica;
   const [editandoUbic, setEditandoUbic] = useState(false);
+  // Editar la zona/posición física de un ITEM: logística, mientras el item no
+  // esté entregado (todos los de esta tabla son pendientes; el servidor
+  // igual rechaza los ENTREGADO).
+  const puedeEditarUbicItem = useEscrituraApi("/api/requerimientos/0/ubicacion", "PATCH");
+  const [editandoUbicItem, setEditandoUbicItem] = useState<number | null>(null);
   // Sección "Entregados": colapsada por defecto — lo operativo son los
   // pendientes. Si la OT ya no tiene pendientes (estado ENTREGADO), se abre
   // directo porque es lo único que hay para ver.
@@ -623,19 +704,67 @@ function GrupoItemsExpandido({
       },
     },
     {
-      key: "ubicacion", title: "Ubicación", width: 140,
+      key: "ubicacion", title: "Ubicación", width: 170,
       render: (_, r) => {
+        // Editor inline (logística): Cascader zona → posición. Click en una
+        // zona asigna solo la zona; hover expande sus celdas para afinar.
+        if (editandoUbicItem === r.id) {
+          const zonaActualId = zonas.find((z) => z.codigo === r.almacen_zona?.codigo)?.id;
+          const valorActual = zonaActualId != null
+            ? (r.almacen_posicion ? [zonaActualId, r.almacen_posicion.id] : [zonaActualId])
+            : undefined;
+          return (
+            <Cascader
+              size="small"
+              autoFocus
+              defaultOpen
+              allowClear
+              style={{ minWidth: 150 }}
+              placeholder="Zona / celda..."
+              expandTrigger="hover"
+              changeOnSelect
+              defaultValue={valorActual}
+              options={zonas.map((z) => ({
+                value: z.id,
+                label: `${z.codigo} — ${z.nombre}`,
+                children: z.posiciones.length > 0
+                  ? z.posiciones.map((p) => ({ value: p.id, label: p.codigo }))
+                  : undefined,
+              }))}
+              onChange={(vals) => {
+                setEditandoUbicItem(null);
+                const [zonaId, posId] = (vals ?? []) as number[];
+                onUbicacionItemChange(r.id, zonaId ?? null, posId ?? null);
+              }}
+              onBlur={() => setEditandoUbicItem(null)}
+            />
+          );
+        }
         // Prioridad: zona/posición física (asignada al recepcionar la PO)
         // > campo libre legacy en Material.ubicacion.
+        const editable = puedeEditarUbicItem;
+        const abrirEditor = editable ? () => setEditandoUbicItem(r.id) : undefined;
+        const estiloEditable = editable ? { cursor: "pointer" } : undefined;
         if (r.almacen_zona) {
           const pos = r.almacen_posicion?.codigo;
           return (
-            <Tag color="purple" style={{ margin: 0 }}>
-              {r.almacen_zona.codigo}{pos ? ` · ${pos}` : ""}
-            </Tag>
+            <Tooltip title={editable ? "Click para cambiar la ubicación del item" : undefined}>
+              <Tag color="purple" style={{ margin: 0, ...estiloEditable }} onClick={abrirEditor}>
+                {r.almacen_zona.codigo}{pos ? ` · ${pos}` : ""}{editable ? " ✎" : ""}
+              </Tag>
+            </Tooltip>
           );
         }
-        if (r.material?.ubicacion) return <Tag>{r.material.ubicacion}</Tag>;
+        if (r.material?.ubicacion && !editable) return <Tag>{r.material.ubicacion}</Tag>;
+        if (editable) {
+          return (
+            <Tooltip title="Click para asignar zona/celda de almacén">
+              <Tag style={{ margin: 0, ...estiloEditable }} onClick={abrirEditor}>
+                {r.material?.ubicacion ?? "Sin ubicación"} ✎
+              </Tag>
+            </Tooltip>
+          );
+        }
         return <Text type="secondary">—</Text>;
       },
     },

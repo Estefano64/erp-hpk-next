@@ -63,6 +63,10 @@ export async function GET(_req: NextRequest) {
             // tipo_codigo (de la OT) permite formatear el código visible
             // (V/S para BIE/SER) en el front — `ot` es el entero crudo NNNNYY.
             tipo_codigo: true,
+            // Descripción y flota de la OT — columnas del listado de
+            // Inventario por OT (pedido 2026-08-20).
+            descripcion: true,
+            cod_rep_flota: true,
             recursos_status_codigo: true,
             ubicacion_codigo: true,
             ubicacion: { select: { codigo: true, nombre: true } },
@@ -233,6 +237,8 @@ export async function GET(_req: NextRequest) {
       // number reventaba el render.
       ot: string | null;
       cliente: string | null;
+      descripcion_ot: string | null;
+      flota: string | null;
       codigo_reparacion: string | null;
       recursos_status: string | null;
       ubicacion: string | null;
@@ -274,6 +280,8 @@ export async function GET(_req: NextRequest) {
             ? formatOtCodigo(it.orden_trabajo.ot, it.orden_trabajo.tipo_codigo)
             : null,
           cliente: it.orden_trabajo?.cliente?.nombre_comercial ?? it.orden_trabajo?.cliente?.razon_social ?? null,
+          descripcion_ot: it.orden_trabajo?.descripcion ?? null,
+          flota: it.orden_trabajo?.cod_rep_flota ?? null,
           codigo_reparacion: it.orden_trabajo?.codigo_reparacion?.codigo ?? null,
           recursos_status: it.orden_trabajo?.recursos_status_codigo ?? null,
           ubicacion: it.orden_trabajo?.ubicacion
