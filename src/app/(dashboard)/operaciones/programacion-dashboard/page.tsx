@@ -839,6 +839,10 @@ export default function ProgramacionDashboardPage() {
   }, [operaciones, filtroComponentes, filtroClasificacion, opsOcultasSet]);
 
   // Renderer de celda de operación: muestra abreviatura sobre fondo del color del estado.
+  // El toggle Compacto/Cómodo cambia el alto del chip además del `size` de la
+  // tabla — sin esto ambos modos se veían iguales (los paddings fijos de las
+  // celdas de operación pisaban el ajuste de antd).
+  const esComodo = densidad === "comodo";
   const renderCelda = (estado: string | null, externo: boolean | null, comentario?: string | null) => {
     if (!estado) return <div style={{ width: "100%", textAlign: "center", color: brand.textSecondary, fontSize: 13 }}>—</div>;
     const color = colorDeEstado(estado);
@@ -865,8 +869,8 @@ export default function ProgramacionDashboardPage() {
             fontSize: 12,
             textAlign: "center",
             borderRadius: 2,
-            padding: "2px 4px",
-            minHeight: 22,
+            padding: esComodo ? "7px 4px" : "2px 4px",
+            minHeight: esComodo ? 32 : 22,
             lineHeight: "18px",
             position: "relative",
             cursor: comentario ? "help" : "default",
@@ -1088,7 +1092,7 @@ export default function ProgramacionDashboardPage() {
           width: 44,
           align: "center" as const,
           onHeaderCell: () => ({ style: { background: tinte } }),
-          onCell: () => ({ style: { background: tinte, padding: "2px 3px" } }),
+          onCell: () => ({ style: { background: tinte, padding: esComodo ? "5px 3px" : "2px 3px" } }),
           render: (_: unknown, r: OTRow) => {
             // El backend normaliza las claves de planMap (trim + uppercase) para
             // que coincidan aunque la planificación tenga casing distinto.
@@ -1168,7 +1172,7 @@ export default function ProgramacionDashboardPage() {
       cols.push(groupCol);
     }
     return cols;
-  }, [componentesOrdenados, operacionesPorComponente, estados, colorDeEstado, gruposColapsados, toggleGrupo, clasifColapsadas, toggleClasif]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [componentesOrdenados, operacionesPorComponente, estados, colorDeEstado, gruposColapsados, toggleGrupo, clasifColapsadas, toggleClasif, densidad]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const columns: ColumnsType<OTRow> = [...infoColumns, ...operacionColumns];
 
