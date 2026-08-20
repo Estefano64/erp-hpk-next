@@ -159,6 +159,7 @@ export const REGLAS_ESCRITURA_API: ReglaApi[] = [
   { prefijo: "/api/requerimientos", sufijo: "/precio", roles: COMPRA },
   { prefijo: "/api/requerimientos", sufijo: "/dividir", roles: COMPRA },
   { prefijo: "/api/requerimientos", sufijo: "/vincular-material", roles: COMPRA },
+  { prefijo: "/api/requerimientos", sufijo: "/ubicacion", roles: COMPRA },
   //    …y el flujo de APROBACIONES queda exento (no tocar por ahora)
   { prefijo: "/api/requerimientos", sufijo: "/aprobar", roles: null },
   { prefijo: "/api/requerimientos", sufijo: "/desaprobar", roles: null },
