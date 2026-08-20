@@ -1052,7 +1052,9 @@ export default function ProgramacionDashboardPage() {
             <div
               onClick={() => toggleGrupo(comp.codigo)}
               title={`Expandir ${comp.nombre}`}
-              style={{ cursor: "pointer", fontWeight: 700, color: brand.white, fontSize: 10, writingMode: "vertical-rl", transform: "rotate(180deg)", whiteSpace: "nowrap", maxHeight: 140, overflow: "hidden" }}
+              // inline-block + text-align center del th = título vertical
+              // CENTRADO en la celda (como div de bloque quedaba pegado a la izquierda).
+              style={{ cursor: "pointer", fontWeight: 700, color: brand.white, fontSize: 10, writingMode: "vertical-rl", transform: "rotate(180deg)", whiteSpace: "nowrap", maxHeight: 140, overflow: "hidden", display: "inline-block", verticalAlign: "middle" }}
             >
               ▸ {comp.nombre}
             </div>
@@ -1083,7 +1085,7 @@ export default function ProgramacionDashboardPage() {
                   el texto largo se parte en 2-3 líneas verticales y lo que no
                   entra se corta — el nombre completo queda en el tooltip. Antes
                   un nombre de 50 caracteres estiraba TODA la cabecera a ~300px. */}
-              <div style={{ fontSize: 11, fontWeight: 600, lineHeight: 1.15, writingMode: "vertical-rl", transform: "rotate(180deg)", padding: "3px 0", maxHeight: 140, overflow: "hidden" }}>
+              <div style={{ fontSize: 11, fontWeight: 600, lineHeight: 1.15, writingMode: "vertical-rl", transform: "rotate(180deg)", padding: "3px 0", maxHeight: 140, overflow: "hidden", display: "inline-block", verticalAlign: "middle" }}>
                 {nombreCortoOp(op.nombre, comp.nombre)}
               </div>
             </Tooltip>
@@ -1119,7 +1121,7 @@ export default function ProgramacionDashboardPage() {
               <div
                 onClick={() => toggleClasif(ck)}
                 title={`Expandir ${label} de ${comp.nombre}`}
-                style={{ cursor: "pointer", fontWeight: 700, color: brand.white, fontSize: 10, writingMode: "vertical-rl", transform: "rotate(180deg)", whiteSpace: "nowrap", maxHeight: 140, overflow: "hidden" }}
+                style={{ cursor: "pointer", fontWeight: 700, color: brand.white, fontSize: 10, writingMode: "vertical-rl", transform: "rotate(180deg)", whiteSpace: "nowrap", maxHeight: 140, overflow: "hidden", display: "inline-block", verticalAlign: "middle" }}
               >
                 ▸ {label}
               </div>
