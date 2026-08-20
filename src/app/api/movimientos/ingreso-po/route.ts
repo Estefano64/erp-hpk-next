@@ -359,17 +359,20 @@ export async function POST(req: NextRequest) {
         .filter((r) => Number(r.cantidad_recibida ?? 0) >= Number(r.cantidad) - 0.0001)
         .map((r) => r.id);
 
-      // 3. Items 100% recibidos → set fecha_entrega_real + status ENTREGADO +
-      //    metadata. Se agrega status_oc_codigo = ENTREGADO para que la UI del
-      //    tab Requerimientos de la OT muestre "Recibido" en vez de quedar
-      //    en "En proceso" (antes solo se actualizaba fecha_entrega_real y
-      //    Compra.status_oc_codigo, dejando OTRepuesto.status_oc_codigo en
-      //    PROCESO indefinidamente). NO pisamos los estados finales
-      //    CONSUMIDO_ALMACEN / CONSUMIDO_OC_ABIERTA / ENTREGADO / COMPLETO
-      //    para no revivir reps ya cerrados.
+      // 3. Items 100% recibidos → set fecha_entrega_real + status COMPLETO +
+      //    metadata. COMPLETO = "llegó todo a HPK" (el tab Requerimientos lo
+      //    muestra como Completo/Recibido en vez de quedar en "En proceso").
+      //    OJO: NO se marca ENTREGADO acá — ENTREGADO significa "entregado al
+      //    TÉCNICO" y lo pone el despacho (/despachos) con fecha de salida y
+      //    persona que recibe. Entre el 24/07 y el 20/08/2026 la recepción
+      //    marcaba ENTREGADO y los items se salteaban el despacho: quedaban
+      //    "entregados" con la fecha de llegada y sin receptor (OT 392626).
+      //    NO pisamos los estados finales CONSUMIDO_ALMACEN /
+      //    CONSUMIDO_OC_ABIERTA / ENTREGADO / COMPLETO para no revivir reps
+      //    ya cerrados.
       const dataConFecha: Prisma.OTRepuestoUncheckedUpdateManyInput = {
         fecha_entrega_real: ahora,
-        status_oc_codigo: "ENTREGADO",
+        status_oc_codigo: "COMPLETO",
         ...(d.nro_guia ? { nro_guia: d.nro_guia } : {}),
         ...(d.nro_factura ? { nro_factura_proveedor: d.nro_factura } : {}),
       };
