@@ -9,7 +9,7 @@
 // Basado en mockup dashboard_logistica.html (Chart.js + Tabler icons).
 
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { Card, Typography, Segmented, Select, Tag, Row, Col, Empty, Space, Spin, Statistic } from "antd";
+import { Card, Typography, Segmented, Select, Tag, Row, Col, Empty, Space, Spin, Statistic, Tooltip as AntTooltip } from "antd";
 import {
   FileTextOutlined,
   ShoppingCartOutlined,
@@ -20,6 +20,7 @@ import {
   FilterOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
+  InfoCircleOutlined,
 } from "@ant-design/icons";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, Cell,
@@ -33,6 +34,19 @@ dayjs.extend(isoWeek);
 const { Title, Text } = Typography;
 
 type Modo = "anio" | "mes" | "sem";
+
+// Título de KPI con un ícono ⓘ que explica de dónde sale el dato (pedido
+// 2026-08-20: "al pasar el mouse que salga un texto descriptivo").
+function TituloConInfo({ texto, info }: { texto: string; info: string }) {
+  return (
+    <Space size={4}>
+      <span>{texto}</span>
+      <AntTooltip title={info}>
+        <InfoCircleOutlined style={{ color: brand.textSecondary, fontSize: 12, cursor: "help" }} />
+      </AntTooltip>
+    </Space>
+  );
+}
 
 // Lista de años: del 2024 al año actual + 1.
 function aniosDisponibles(): number[] {
@@ -479,6 +493,8 @@ interface OCResp {
   porTiempo: number[];
   tiempoPromedio: number;
   tiempoMediana: number;
+  // Días entre generar la OC y su llegada a HPK (recepción).
+  tiempoLlegada: { promedio: number; mediana: number; n: number };
 }
 
 const TIEMPO_OC_LABELS = ["Mismo día", "1-2d", "3-5d", "6-10d", "+10d"];
@@ -622,7 +638,7 @@ function SeccionOC({
         <>
           {/* KPIs + Estado */}
           <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
-            <Col xs={24} md={6}>
+            <Col xs={24} md={4}>
               <Card>
                 <Statistic
                   title="OCs colocadas"
@@ -632,30 +648,58 @@ function SeccionOC({
                 />
               </Card>
             </Col>
-            <Col xs={12} md={6}>
+            <Col xs={12} md={5}>
               <Card>
                 <Text type="secondary" style={{ fontSize: 14 }}>Costo total (sin anuladas)</Text>
                 <MontoDual usd={data.kpis.costo.usd} sol={data.kpis.costo.sol} color={brand.navy} />
               </Card>
             </Col>
-            <Col xs={12} md={6}>
+            <Col xs={12} md={5}>
               <Card>
-                <Text type="secondary" style={{ fontSize: 14 }}>Ticket promedio</Text>
+                <Text type="secondary" style={{ fontSize: 14 }}>
+                  <TituloConInfo
+                    texto="Ticket promedio"
+                    info="Costo total de las OCs del rango (sin anuladas) dividido por la cantidad de OCs, calculado por moneda: las OCs en dólares y las OCs en soles se promedian por separado, nunca se suman entre sí."
+                  />
+                </Text>
                 <MontoDual usd={data.kpis.ticket.usd} sol={data.kpis.ticket.sol} color={brand.textSecondary} fontSize={18} />
               </Card>
             </Col>
-            <Col xs={24} md={6}>
+            <Col xs={12} md={5}>
               <Card>
                 <Statistic
-                  title="Tiempo prom. para colocar OC"
-                  value={data.tiempoPromedio}
-                  precision={1}
+                  title={(
+                    <TituloConInfo
+                      texto="Tiempo prom. para colocar OC"
+                      info="Días entre la aprobación del requerimiento (fecha de aprobación más reciente de los items vinculados) y la generación de la OC. Redondeado a días enteros."
+                    />
+                  )}
+                  value={Math.round(data.tiempoPromedio ?? 0)}
                   suffix="d"
                   prefix={<ClockCircleOutlined style={{ color: "#1D9E75" }} />}
                   styles={{ content: { color: "#1D9E75", fontSize: 20, fontWeight: 600 } }}
                 />
                 <Text type="secondary" style={{ fontSize: 11 }}>
-                  Mediana: {(data.tiempoMediana ?? 0).toFixed(0)} d
+                  Mediana: {Math.round(data.tiempoMediana ?? 0)} d
+                </Text>
+              </Card>
+            </Col>
+            <Col xs={12} md={5}>
+              <Card>
+                <Statistic
+                  title={(
+                    <TituloConInfo
+                      texto="Llegada desde generación de OC"
+                      info="Días entre la generación de la OC y su llegada a HPK (fecha de recepción). Solo cuenta OCs del rango que ya fueron recibidas."
+                    />
+                  )}
+                  value={Math.round(data.tiempoLlegada?.promedio ?? 0)}
+                  suffix="d"
+                  prefix={<ClockCircleOutlined style={{ color: "#0090B4" }} />}
+                  styles={{ content: { color: "#0090B4", fontSize: 20, fontWeight: 600 } }}
+                />
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  Mediana: {Math.round(data.tiempoLlegada?.mediana ?? 0)} d · {data.tiempoLlegada?.n ?? 0} OCs
                 </Text>
               </Card>
             </Col>
@@ -1067,9 +1111,15 @@ function SeccionInventario({
 // ───────────────────────────────────────────────────────────────────────────
 // Sección: Órdenes de trabajo (OT)
 // ───────────────────────────────────────────────────────────────────────────
+type TiempoStat = { promedio: number; mediana: number; n: number };
+
 interface OTResp {
   estadoAlmacen: { completas: number; incompletas: number };
   enAlmacen: { total: number; aging: number[]; promedio: number; mediana: number };
+  // Tiempos del ciclo logístico (en días): almacenada = llegada completa a
+  // HPK → última entrega al trabajador; armado = guía de despacho → guía
+  // firmada por almacén mina; facturacion = guía de despacho → facturación.
+  tiempos: { almacenada: TiempoStat; armado: TiempoStat; facturacion: TiempoStat };
   avanceMes: { entregadasArmado: number; despachadas: number; facturadas: number };
 }
 
@@ -1149,6 +1199,68 @@ function SeccionOT({
       ) : !data ? (
         <Empty />
       ) : (
+        <>
+        {/* Tiempos del ciclo logístico (pedido 2026-08-20). Cada KPI aclara
+            de dónde salen las fechas al pasar el mouse por el ⓘ. */}
+        <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+          <Col xs={24} md={8}>
+            <Card>
+              <Statistic
+                title={(
+                  <TituloConInfo
+                    texto="OT almacenada (prom.)"
+                    info="Días entre la llegada del último repuesto de la OT a HPK y la última entrega al trabajador. Solo OTs con todos sus repuestos ya entregados, cuya última entrega cae en el rango."
+                  />
+                )}
+                value={Math.round(data.tiempos?.almacenada?.promedio ?? 0)}
+                suffix="d"
+                prefix={<InboxOutlined style={{ color: "#854F0B" }} />}
+                styles={{ content: { color: "#854F0B", fontSize: 20, fontWeight: 600 } }}
+              />
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                Mediana: {Math.round(data.tiempos?.almacenada?.mediana ?? 0)} d · {data.tiempos?.almacenada?.n ?? 0} OTs
+              </Text>
+            </Card>
+          </Col>
+          <Col xs={12} md={8}>
+            <Card>
+              <Statistic
+                title={(
+                  <TituloConInfo
+                    texto="Tiempo de armado (prom.)"
+                    info="Días entre la guía de remisión de despacho del componente (salida del taller) y el ingreso de la guía firmada por el almacén de mina (Hagemsa / Ransa), registrado como fecha de entrega."
+                  />
+                )}
+                value={Math.round(data.tiempos?.armado?.promedio ?? 0)}
+                suffix="d"
+                prefix={<ToolOutlined style={{ color: "#3C3489" }} />}
+                styles={{ content: { color: "#3C3489", fontSize: 20, fontWeight: 600 } }}
+              />
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                Mediana: {Math.round(data.tiempos?.armado?.mediana ?? 0)} d · {data.tiempos?.armado?.n ?? 0} OTs
+              </Text>
+            </Card>
+          </Col>
+          <Col xs={12} md={8}>
+            <Card>
+              <Statistic
+                title={(
+                  <TituloConInfo
+                    texto="Tiempo de facturación (prom.)"
+                    info="Días entre la guía de remisión de despacho del componente y la fecha de facturación de la OT."
+                  />
+                )}
+                value={Math.round(data.tiempos?.facturacion?.promedio ?? 0)}
+                suffix="d"
+                prefix={<DollarOutlined style={{ color: "#A32D2D" }} />}
+                styles={{ content: { color: "#A32D2D", fontSize: 20, fontWeight: 600 } }}
+              />
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                Mediana: {Math.round(data.tiempos?.facturacion?.mediana ?? 0)} d · {data.tiempos?.facturacion?.n ?? 0} OTs
+              </Text>
+            </Card>
+          </Col>
+        </Row>
         <Row gutter={[12, 12]}>
           <Col xs={24} md={8}>
             <Card
@@ -1220,6 +1332,7 @@ function SeccionOT({
             </Card>
           </Col>
         </Row>
+        </>
       )}
     </div>
   );
