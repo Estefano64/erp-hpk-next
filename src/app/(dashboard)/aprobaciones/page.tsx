@@ -4,14 +4,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Typography, Card, Tabs, Table, Tag, Space, Button, Input, Select, Row, Col,
-  Statistic, Popconfirm, Empty, Tooltip, Popover, Divider, Badge, App,
+  Popconfirm, Empty, Tooltip, Popover, Divider, Badge, App,
   Alert, Segmented, Modal, Upload,
 } from "antd";
 import type { UploadFile } from "antd";
 import {
   CheckOutlined, CloseOutlined, ReloadOutlined, EyeOutlined, FileProtectOutlined,
   ShoppingCartOutlined, InboxOutlined, InfoCircleOutlined, HistoryOutlined,
-  ClockCircleOutlined, CheckCircleOutlined, PaperClipOutlined, DeleteOutlined,
+  ClockCircleOutlined, PaperClipOutlined, DeleteOutlined,
 } from "@ant-design/icons";
 import { uploadToR2 } from "@/lib/r2-client";
 import type { ColumnsType } from "antd/es/table";
@@ -28,6 +28,7 @@ import { useCachedFetch } from "@/lib/useCachedFetch";
 
 import { formatDateOnly, formatDateOnlyShort, dateOnlyLocal } from "@/lib/dates";
 import { R2FileLink } from "@/components/R2FileLink";
+import CompraDetalleModal from "@/components/modules/compras/CompraDetalleModal";
 import {
   montoEnUSD, estadoLiberacion, nombreNivel, puedeFirmarNivel,
   tieneAlgunNivel, type TipoDocLiberacion,
@@ -278,6 +279,10 @@ export default function AceptacionesPage() {
 
   // Tab activo
   const [tab, setTab] = useState<"pendientes" | "historial">("pendientes");
+
+  // Detalle de OC (mismo modal que usa /compras) — lo abre el ojito de la
+  // tabla de OCs pendientes, sin navegar fuera de la página.
+  const [detalleOcId, setDetalleOcId] = useState<number | null>(null);
 
   // Paginación por tabla
   const [pageOC, setPageOC] = useState(1);
@@ -1129,16 +1134,12 @@ export default function AceptacionesPage() {
               Rechazar
             </Button>
           </Tooltip>
-          <Tooltip title={o.orden_trabajo?.ot ? `Ver OT ${o.orden_trabajo.ot}` : "Ver compras"}>
+          <Tooltip title={`Ver detalle de la OC ${o.numero_po}`}>
             <Button
               type="text"
               size="small"
               icon={<EyeOutlined />}
-              onClick={() =>
-                router.push(
-                  o.orden_trabajo?.id ? `/ordenes-trabajo/${o.orden_trabajo.id}` : "/compras",
-                )
-              }
+              onClick={() => setDetalleOcId(o.id)}
             />
           </Tooltip>
         </Space>
@@ -1357,14 +1358,18 @@ export default function AceptacionesPage() {
               Rechazar
             </Button>
           </Tooltip>
-          <Tooltip title={r.orden_trabajo?.ot ? `Ver OT ${r.orden_trabajo.ot}` : "Ver requerimientos"}>
+          <Tooltip title={r.nro_req ? `Ver detalle del req ${r.nro_req}` : "Ver requerimientos"}>
+            {/* Al detalle por ítem del requerimiento (filtrado por nro_req),
+                no a la OT — la OT ya tiene su propio link en la columna OT. */}
             <Button
               type="text"
               size="small"
               icon={<EyeOutlined />}
               onClick={() =>
                 router.push(
-                  r.orden_trabajo?.id ? `/ordenes-trabajo/${r.orden_trabajo.id}` : "/requerimientos",
+                  r.nro_req
+                    ? `/requerimientos/detalle?nro_req=${encodeURIComponent(r.nro_req)}`
+                    : "/requerimientos/detalle",
                 )
               }
             />
@@ -1469,50 +1474,6 @@ export default function AceptacionesPage() {
         </Title>
         <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>Actualizar</Button>
       </div>
-
-      {/* KPIs */}
-      <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
-        <Col xs={12} md={6}>
-          <Card styles={{ body: { padding: 14 } }}>
-            <Statistic
-              title="OC pendientes"
-              value={ocs.length}
-              prefix={<ShoppingCartOutlined style={{ color: "#faad14" }} />}
-              styles={{ content: { color: "#faad14" } }}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card styles={{ body: { padding: 14 } }}>
-            <Statistic
-              title="RQ pendientes"
-              value={reqs.length}
-              prefix={<InboxOutlined style={{ color: "#1890ff" }} />}
-              styles={{ content: { color: "#1890ff" } }}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card styles={{ body: { padding: 14 } }}>
-            <Statistic
-              title="Total pendientes"
-              value={totalPendientes}
-              prefix={<ClockCircleOutlined style={{ color: brand.navy }} />}
-              styles={{ content: { color: brand.navy } }}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card styles={{ body: { padding: 14 } }}>
-            <Statistic
-              title="En historial"
-              value={historial.length}
-              prefix={<CheckCircleOutlined style={{ color: "#52c41a" }} />}
-              styles={{ content: { color: "#52c41a" } }}
-            />
-          </Card>
-        </Col>
-      </Row>
 
       {/* Filtros */}
       <Card size="small" style={{ marginBottom: 12 }} styles={{ body: { padding: 12 } }}>
@@ -1983,6 +1944,14 @@ export default function AceptacionesPage() {
           </div>
         )}
       </Modal>
+
+      {/* Detalle de OC — abierto por el ojito de la tabla de OCs pendientes. */}
+      <CompraDetalleModal
+        compraId={detalleOcId}
+        open={!!detalleOcId}
+        onClose={() => setDetalleOcId(null)}
+        onUpdated={fetchData}
+      />
     </div>
   );
 }
