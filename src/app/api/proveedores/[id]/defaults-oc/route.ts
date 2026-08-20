@@ -66,7 +66,7 @@ export async function GET(req: NextRequest, { params }: Params) {
     let tipo_pago: string | null = proveedor.tipo_pago_default ?? null;
     let dias_credito: number | null = proveedor.dias_credito_default ?? null;
     let tiempo_entrega_dias: number | null = proveedor.tiempo_entrega_dias ?? null;
-    let precios_incluyen_igv: boolean | null = proveedor.precios_incluyen_igv_default ?? null;
+    const precios_incluyen_igv: boolean | null = proveedor.precios_incluyen_igv_default ?? null;
     let aplica_igv: boolean | null = proveedor.aplica_igv_default ?? null;
     if (moneda) fuente.moneda = "default";
     if (tipo_pago) fuente.tipo_pago = "default";
@@ -128,7 +128,9 @@ export async function GET(req: NextRequest, { params }: Params) {
     // Observaciones sugeridas — texto que el frontend puede pre-llenar.
     const obsParts: string[] = [];
     obsParts.push(`RUC: ${proveedor.ruc}`);
-    obsParts.push(`Prov: ${proveedor.nombre_comercial ?? proveedor.razon_social}`);
+    // Razón social COMPLETA (pedido 2026-08-20): antes iba el nombre
+    // comercial corto y en observaciones quedaba "Prov: DETROIT" a secas.
+    obsParts.push(`Prov: ${proveedor.razon_social ?? proveedor.nombre_comercial}`);
     const observaciones_sugeridas = obsParts.join(" | ");
 
     return NextResponse.json({

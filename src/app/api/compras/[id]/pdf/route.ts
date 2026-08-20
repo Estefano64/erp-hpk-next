@@ -170,15 +170,9 @@ export async function GET(_req: NextRequest, { params }: Params) {
         .trim();
     const ocFile = sanitizeNombreArchivo(compra.numero_po);
     const otFile = sanitizeNombreArchivo(otCodigosFormateados.join(" "));
-    // Nombre y RUC del proveedor mostrados en el PDF: si hay override
-    // manual seteado al crear la OC (caso "PROVEEDOR VARIOS"), gana el
-    // override; sino cae al registro del proveedor. Aplica al filename +
-    // header + cualquier otro spot que muestre esos campos.
-    const provNombreEffectivo =
-      compra.proveedor_nombre_override?.trim() ||
-      compra.proveedor?.nombre_comercial ||
-      compra.proveedor?.razon_social ||
-      "";
+    // RUC del proveedor mostrado en el PDF: si hay override manual seteado
+    // al crear la OC (caso "PROVEEDOR VARIOS"), gana el override; sino cae
+    // al registro del proveedor.
     const provRucEffectivo =
       compra.proveedor_ruc_override?.trim() ||
       compra.proveedor?.ruc ||
@@ -187,14 +181,16 @@ export async function GET(_req: NextRequest, { params }: Params) {
     // (pedido 2026-08-13) — no el nombre comercial ni el contacto (el
     // contacto ya sale en su propia línea "Atención"). El override manual
     // (caso "PROVEEDOR VARIOS") sigue ganando porque ahí no hay registro
-    // real de proveedor. El nombre del ARCHIVO sí mantiene el nombre
-    // comercial (formato aprobado en jul-2026).
+    // real de proveedor.
     const provRazonSocial =
       compra.proveedor_nombre_override?.trim() ||
       compra.proveedor?.razon_social ||
       compra.proveedor?.nombre_comercial ||
       "";
-    const provFile = sanitizeNombreArchivo(provNombreEffectivo.toUpperCase()).slice(0, 40);
+    // Nombre del ARCHIVO: razón social COMPLETA (pedido 2026-08-20 — antes
+    // usaba el nombre comercial corto, "DETROIT" en vez de "DETROIT POWER
+    // SYSTEM PERU LIMITADA S.R.L."). Tope 80 por largo de ruta en Windows.
+    const provFile = sanitizeNombreArchivo(provRazonSocial.toUpperCase()).slice(0, 80).trim();
     const partes = [
       `OC ${ocFile}`,
       otFile ? `OT ${otFile}` : "OT SinOT",
@@ -446,7 +442,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
               RUC: 20532384088<br/>
               Parque Industrial Río Seco Mz C lote 17,<br/>
               Cerro Colorado - Arequipa - Perú<br/>
-              ventas@hpkinv.com
+              compras@hpkinv.com
             </div>
           </div>
         </div>
