@@ -26,6 +26,7 @@ import {
   Space,
   Modal,
   Tag,
+  Tooltip,
 } from "antd";
 import {
   SaveOutlined,
@@ -228,9 +229,9 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   const [messageApi, contextHolder] = message.useMessage();
   const [modalApi, modalCtx] = Modal.useModal();
 
-  // Status (siempre editable)
+  // Status (siempre editable). Estado Recursos NO está acá: es 100% automático
+  // (recursos-ot.ts, pisa lo manual) — se muestra solo-lectura desde 2026-08-20.
   const [otStatus, setOtStatus] = useState("");
-  const [recursosStatus, setRecursosStatus] = useState("");
   const [tallerStatus, setTallerStatus] = useState("");
   const [savingStatus, setSavingStatus] = useState(false);
 
@@ -249,7 +250,6 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   // Catálogos cacheados a nivel módulo: si abrís otra OT, no se refetchan.
   type Wrapped<T> = { data: T[] } | null;
   const otStatusesRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=otStatus");
-  const recursosStatusesRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=recursosStatus");
   const tallerStatusesRes = useCachedFetch<Wrapped<CatalogOption>>("/api/catalogos?tabla=tallerStatus");
   const clientesRes = useCachedFetch<Wrapped<ClienteOption>>("/api/clientes?limit=10000");
   const codRepsRes = useCachedFetch<Wrapped<CodRepOption>>("/api/codigos-reparacion?limit=10000");
@@ -270,7 +270,6 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   const materialesRes = useCachedFetch<Wrapped<{ codigo: string; descripcion: string }>>("/api/materiales?limit=10000");
 
   const otStatuses = otStatusesRes?.data ?? [];
-  const recursosStatuses = recursosStatusesRes?.data ?? [];
   const tallerStatuses = tallerStatusesRes?.data ?? [];
   const clientes = clientesRes?.data ?? [];
   const codReps = codRepsRes?.data ?? [];
@@ -305,7 +304,6 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
       const d = json.data;
       setOt(d);
       setOtStatus(d.ot_status_codigo ?? "");
-      setRecursosStatus(d.recursos_status_codigo ?? "");
       setTallerStatus(d.taller_status_codigo ?? "");
       setComentarios(d.comentarios ?? "");
     }
@@ -330,7 +328,6 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
   const dirty = useMemo(() => {
     if (!ot) return false;
     if ((otStatus || "") !== (ot.ot_status_codigo ?? "")) return true;
-    if ((recursosStatus || "") !== (ot.recursos_status_codigo ?? "")) return true;
     if ((tallerStatus || "") !== (ot.taller_status_codigo ?? "")) return true;
     if ((comentarios ?? "") !== (ot.comentarios ?? "")) return true;
     if (editing) {
@@ -345,7 +342,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
       }
     }
     return false;
-  }, [ot, otStatus, recursosStatus, tallerStatus, comentarios, editing, editData]);
+  }, [ot, otStatus, tallerStatus, comentarios, editing, editData]);
 
   useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
   useUnsavedChangesWarning(dirty, "Hay cambios sin guardar en esta OT.", `ot-detalle-${otId ?? "?"}`);
@@ -470,7 +467,9 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ot_status_codigo: otStatus,
-          recursos_status_codigo: recursosStatus,
+          // recursos_status_codigo NO se manda: es automático (recursos-ot.ts).
+          // Mandarlo revertía el estado si el sistema recalculaba mientras la
+          // pantalla estaba abierta (valor viejo pisaba al auto-recalculado).
           // Estado Taller no aplica a Bien/Servicio → se guarda null.
           taller_status_codigo: bloqueoBien ? null : tallerStatus,
           comentarios: comentarios || null,
@@ -852,13 +851,19 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
               />
             </Col>
             <Col xs={12} md={6}>
-              <FieldLabel>Estado Recursos</FieldLabel>
-              <Select showSearch optionFilterProp="label"
-                style={{ width: "100%" }}
-                value={recursosStatus || undefined}
-                onChange={setRecursosStatus}
-                options={recursosStatuses.map((s) => ({ value: s.codigo, label: s.nombre }))}
-              />
+              {/* Solo-lectura (2026-08-20): lo calcula el sistema según los
+                  requerimientos/OCs de la OT y pisa cualquier valor manual —
+                  editarlo acá solo generaba confusión y podía revertir el
+                  estado automático al guardar. */}
+              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <FieldLabel>Estado Recursos</FieldLabel>
+                <Tooltip title="Se calcula automáticamente según el avance de los requerimientos y OCs de la OT (solicitado → cotización → aprobación → espera → completo → entregado). No se edita manualmente.">
+                  <InfoCircleOutlined style={{ color: brand.textSecondary, fontSize: 11, cursor: "help", marginBottom: 4 }} />
+                </Tooltip>
+              </div>
+              <div style={{ fontWeight: 600, fontSize: 14, paddingTop: 5 }}>
+                {ot?.recursos_status?.nombre ?? ot?.recursos_status_codigo ?? "—"}
+              </div>
             </Col>
             {/* Estado Taller: NO aplica a Bien/Servicio → se oculta. */}
             {!bloqueoBien && (
@@ -1580,7 +1585,10 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
               <b style={{ color: brand.navy }}>{ot.usuario_actualiza ?? "—"}</b>
               {" · "}
               <span style={{ color: "#888" }}>el</span>{" "}
-              <b>{dayjs(ot.fecha_actualizacion).format("DD/MM/YYYY HH:mm")}</b>
+              {/* fecha_actualizacion es @db.Date (solo día, medianoche UTC):
+                  formatearla con hora local la corría al día ANTERIOR en Lima
+                  y quedaba "antes" que la creación. formatDateOnly usa UTC. */}
+              <b>{formatDateOnly(ot.fecha_actualizacion)}</b>
             </div>
           )}
         </div>
