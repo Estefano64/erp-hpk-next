@@ -266,6 +266,9 @@ export async function GET(_req: NextRequest) {
         codigo: string | null; descripcion: string | null;
         cantidad: number; unidad_medida: string | null;
         fecha: Date | null; persona: string | null;
+        // true = solo se registró la LLEGADA a HPK (recepción de OC); la
+        // entrega al técnico no quedó registrada — `fecha` es la llegada.
+        solo_recibido: boolean;
       }>;
     }>();
 
@@ -400,6 +403,17 @@ export async function GET(_req: NextRequest) {
         if (r.ot_id == null) continue;
         const g = grupos.get(r.ot_id);
         if (!g) continue;
+        const persona = r.persona_recibe
+          ?? personaDesdeObs(r.observaciones)
+          ?? personaPorMov.get(`REQ-${r.nro_req}|${r.material_id}`)
+          ?? personaPorMov.get(`REQ-${r.nro_req}|*`)
+          ?? null;
+        // Items marcados ENTREGADO por la RECEPCIÓN (ingreso-po pone status
+        // ENTREGADO al llegar el 100%) pero sin despacho al técnico
+        // registrado: su única fecha es la de LLEGADA a HPK, no una entrega.
+        // El flag deja que la UI lo diga en vez de mostrar la llegada como
+        // si fuera entrega (detectado por el user 2026-08-20, OT 392626).
+        const soloRecibido = r.fecha_salida_almacen == null && persona == null;
         g.entregados.push({
           id: r.id,
           nro_req: r.nro_req,
@@ -409,11 +423,8 @@ export async function GET(_req: NextRequest) {
           cantidad: Number(r.cantidad),
           unidad_medida: r.unidad_medida,
           fecha: r.fecha_salida_almacen ?? r.fecha_entrega_real,
-          persona: r.persona_recibe
-            ?? personaDesdeObs(r.observaciones)
-            ?? personaPorMov.get(`REQ-${r.nro_req}|${r.material_id}`)
-            ?? personaPorMov.get(`REQ-${r.nro_req}|*`)
-            ?? null,
+          solo_recibido: soloRecibido,
+          persona,
         });
       }
     }

@@ -84,6 +84,10 @@ interface Entregado {
   unidad_medida: string | null;
   fecha: string | null;
   persona: string | null;
+  // true = el item quedó ENTREGADO por la RECEPCIÓN (llegó el 100% a HPK)
+  // pero no hay despacho al técnico registrado — `fecha` es la llegada a
+  // HPK, no una entrega. La UI lo distingue para no confundir.
+  solo_recibido?: boolean;
 }
 
 interface GrupoOT {
@@ -951,14 +955,34 @@ function GrupoItemsExpandido({
                   render: (_, r) => `${r.cantidad.toLocaleString()} ${r.unidad_medida ?? ""}`,
                 },
                 {
-                  key: "fecha", title: "F. entrega", width: 110, align: "center",
-                  render: (_, r) => r.fecha ? formatDateOnly(r.fecha) : <Text type="secondary">—</Text>,
+                  key: "fecha", title: "F. entrega", width: 130, align: "center",
+                  render: (_, r) => {
+                    if (!r.fecha) return <Text type="secondary">—</Text>;
+                    // solo_recibido: la única fecha registrada es la LLEGADA
+                    // a HPK (recepción de la OC) — no mostrarla como entrega.
+                    if (r.solo_recibido) {
+                      return (
+                        <Tooltip title="Fecha de llegada a HPK (recepción de la OC). La entrega al técnico no quedó registrada — la recepción marcó el item como entregado.">
+                          <Text type="secondary">{formatDateOnly(r.fecha)} 📦</Text>
+                        </Tooltip>
+                      );
+                    }
+                    return formatDateOnly(r.fecha);
+                  },
                 },
                 {
                   key: "persona", title: "Recibió", width: 180, ellipsis: true,
-                  render: (_, r) => r.persona
-                    ? <Tag color="green" style={{ margin: 0 }}>{r.persona}</Tag>
-                    : <Text type="secondary">—</Text>,
+                  render: (_, r) => {
+                    if (r.persona) return <Tag color="green" style={{ margin: 0 }}>{r.persona}</Tag>;
+                    if (r.solo_recibido) {
+                      return (
+                        <Tooltip title="Recibido en almacén HPK al recepcionar la OC — sin entrega al técnico registrada">
+                          <Tag style={{ margin: 0 }}>📦 En almacén</Tag>
+                        </Tooltip>
+                      );
+                    }
+                    return <Text type="secondary">—</Text>;
+                  },
                 },
               ]}
             />
