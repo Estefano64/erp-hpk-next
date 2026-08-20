@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Typography, Card, Tabs, Table, Tag, Space, Button, Input, Select, Row, Col,
   Popconfirm, Empty, Tooltip, Popover, Divider, Badge, App,
-  Alert, Segmented, Modal, Upload,
+  Alert, Segmented, Modal, Upload, DatePicker,
 } from "antd";
 import type { UploadFile } from "antd";
 import {
@@ -15,7 +15,7 @@ import {
 } from "@ant-design/icons";
 import { uploadToR2 } from "@/lib/r2-client";
 import type { ColumnsType } from "antd/es/table";
-import dayjs from "dayjs";
+import dayjs, { type Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import {
@@ -257,6 +257,9 @@ export default function AceptacionesPage() {
   const [filterTipo, setFilterTipo] = useState<"ALL" | "OC" | "RQ">("ALL");
   const [filterOt, setFilterOt] = useState("");
   const [filterProveedor, setFilterProveedor] = useState<number | undefined>();
+  // Rango de fechas del historial (server-side). Sin rango: últimas 25;
+  // con rango: todo lo del período (tope 500).
+  const [histRango, setHistRango] = useState<[Dayjs | null, Dayjs | null] | null>(null);
 
   // Selección bulk
   const [selOcs, setSelOcs] = useState<number[]>([]);
@@ -309,6 +312,8 @@ export default function AceptacionesPage() {
       params.set("tipo", filterTipo);
       if (filterOt) params.set("ot", filterOt);
       if (filterProveedor) params.set("proveedor_id", String(filterProveedor));
+      if (histRango?.[0]) params.set("hist_desde", histRango[0].format("YYYY-MM-DD"));
+      if (histRango?.[1]) params.set("hist_hasta", histRango[1].format("YYYY-MM-DD"));
       const res = await fetch(`/api/aprobaciones?${params}`);
       if (res.ok) setData(await res.json());
     } catch {
@@ -316,7 +321,7 @@ export default function AceptacionesPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterTipo, filterOt, filterProveedor, message]);
+  }, [filterTipo, filterOt, filterProveedor, histRango, message]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -1759,6 +1764,19 @@ export default function AceptacionesPage() {
                 }
                 extra={
                   <Space wrap>
+                    <DatePicker.RangePicker
+                      size="small"
+                      value={histRango}
+                      onChange={(v) => setHistRango(v)}
+                      format="DD/MM/YYYY"
+                      allowClear
+                      placeholder={["Desde", "Hasta"]}
+                    />
+                    <Tooltip title="Sin rango se muestran las últimas 25 aprobaciones; con rango, todo lo del período (hasta 500).">
+                      <Text type="secondary" style={{ fontSize: 11 }}>
+                        {histRango?.[0] || histRango?.[1] ? `${historial.length} en el período` : "últimas 25"}
+                      </Text>
+                    </Tooltip>
                     <ColumnasToggleButton<HistorialItem>
                       columns={histColumns}
                       ocultas={ocultasHist}

@@ -11,13 +11,32 @@ import { parseInt4Safe } from "@/lib/ot-formato";
 //   tipo          OC | RQ | all  (default all)
 //   ot            string (contains, busca en orden_trabajo.ot)
 //   proveedor_id  number (sólo OCs)
+//   hist_desde / hist_hasta  YYYY-MM-DD — rango (días de Lima) para el historial.
+//                            Con rango el tope sube a 500 filas; sin rango, hist_limit (25).
 export async function GET(req: NextRequest) {
   try {
     const sp = req.nextUrl.searchParams;
     const tipo = (sp.get("tipo") ?? "all").toUpperCase();
     const ot = sp.get("ot")?.trim();
     const proveedorId = sp.get("proveedor_id");
-    const histLimit = Math.min(100, Math.max(5, Number(sp.get("hist_limit") ?? 25)));
+    // Rango de fechas del historial. Las columnas (updatedAt, fecha_aprobacion)
+    // son timestamps UTC de eventos hechos en Lima (UTC-5): los límites se
+    // construyen como día completo de Lima para que una aprobación de las
+    // 21:00 del "hasta" (02:00 UTC del día siguiente) no quede afuera.
+    const histDesdeRaw = sp.get("hist_desde")?.trim();
+    const histHastaRaw = sp.get("hist_hasta")?.trim();
+    const esFecha = (s: string | undefined): s is string => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
+    const histRango: { gte?: Date; lt?: Date } = {};
+    if (esFecha(histDesdeRaw)) histRango.gte = new Date(`${histDesdeRaw}T00:00:00-05:00`);
+    if (esFecha(histHastaRaw)) {
+      const fin = new Date(`${histHastaRaw}T00:00:00-05:00`);
+      fin.setUTCDate(fin.getUTCDate() + 1);
+      histRango.lt = fin;
+    }
+    const hayRango = histRango.gte != null || histRango.lt != null;
+    const histLimit = hayRango
+      ? 500
+      : Math.min(100, Math.max(5, Number(sp.get("hist_limit") ?? 25)));
 
     // ─── OCs pendientes (PEND_OC) ─────────────────────────────────────────
     let ocs_pendientes: Awaited<ReturnType<typeof prisma.compra.findMany>> = [];
@@ -106,7 +125,11 @@ export async function GET(req: NextRequest) {
     // ─── Historial (últimas aprobaciones/aceptaciones) ────────────────────
     // OCs aceptadas: status != PEND_OC y usuario_aprueba != null. Ordena por updatedAt.
     const histOCs = await prisma.compra.findMany({
-      where: { usuario_aprueba: { not: null }, status_oc_codigo: { not: "PEND_OC" } },
+      where: {
+        usuario_aprueba: { not: null },
+        status_oc_codigo: { not: "PEND_OC" },
+        ...(hayRango ? { updatedAt: histRango } : {}),
+      },
       select: {
         id: true, numero_po: true, total: true, moneda_codigo: true,
         status_oc_codigo: true, usuario_aprueba: true, updatedAt: true, fecha_solicitud: true,
@@ -122,7 +145,7 @@ export async function GET(req: NextRequest) {
       where: {
         status_requerimiento_codigo: "APROBADO",
         usuario_aprueba: { not: null },
-        fecha_aprobacion: { not: null },
+        fecha_aprobacion: hayRango ? histRango : { not: null },
         OR: [{ solo_para_oc: false }, { solo_para_oc: null }],
       },
       select: {
