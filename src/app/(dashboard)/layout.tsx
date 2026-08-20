@@ -98,8 +98,10 @@ function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
       { key: "/dashboard", icon: <DashboardOutlined />, label: linkLabel("/dashboard", "Dashboard") },
       { key: "/mis-tareas", icon: <ToolOutlined />, label: linkLabel("/mis-tareas", "Mis Tareas") },
       { key: "/tickets", icon: <BugOutlined />, label: linkLabel("/tickets", "Tickets") },
-      // Cualquier personal (incluidos operarios) puede reportar seguridad / SNC
-      // y fallas de equipos (reporte de mantenimiento correctivo).
+      // Cualquier personal (incluidos operarios) puede reportar seguridad y
+      // fallas de equipos (reporte de mantenimiento correctivo). El ítem de
+      // Salidas No Conformes se auto-oculta vía filtrarMenuPorRoles salvo que
+      // el usuario tenga ssoma/responsable_ssoma (matriz de acceso-rutas.ts).
       {
         key: "ssoma",
         icon: <SafetyOutlined />,

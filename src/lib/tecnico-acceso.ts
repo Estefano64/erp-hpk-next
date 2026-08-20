@@ -13,8 +13,10 @@
 // (p. ej. /tickets/123) también se permite por prefijo.
 // `/perfil` se incluye para que cualquier usuario logueado pueda cambiar su
 // propia contraseña, sin importar el rol.
-// `/ssoma` se incluye porque el Reporte de Seguridad y la Salida No Conforme
-// los puede crear CUALQUIER personal, incluidos los operarios de taller.
+// `/ssoma` se incluye porque el Reporte de Seguridad lo puede crear CUALQUIER
+// personal, incluidos los operarios de taller. (Las Salidas No Conformes ya
+// no: la matriz de acceso-rutas.ts las limita a ssoma/responsable_ssoma y ese
+// chequeo corre DESPUÉS de este whitelist, así que igual quedan bloqueadas.)
 // `/mantenimiento/correctivos` ídem: cualquier personal reporta fallas de
 // equipos (HPK-M-F-07).
 export const RUTAS_TECNICO = [

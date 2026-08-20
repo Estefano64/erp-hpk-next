@@ -52,6 +52,11 @@ export const RUTAS_RESTRINGIDAS: { prefijo: string; roles: readonly string[] | n
   //    (/despachos/mina es más específico que /despachos, que queda abierto)
   { prefijo: "/despachos/mina", roles: ["admin", "planner", "produccion", "logistica", "contabilidad", "viewer"] },
   { prefijo: "/facturacion", roles: ["admin", "planner", "produccion", "logistica", "contabilidad", "viewer"] },
+  // ── SSOMA: las Salidas No Conformes son SOLO del equipo responsable
+  //    (pedido 2026-08-20): encargado de seguridad (ssoma) + los 7 con rol
+  //    responsable_ssoma. Los Reportes de Seguridad siguen abiertos a todos.
+  //    Esta regla también saca el ítem del menú (incluido el del técnico).
+  { prefijo: "/ssoma/salidas-no-conformes", roles: ["admin", "ssoma", "responsable_ssoma"] },
 ];
 
 // ¿El usuario puede VER esta ruta de página? Matchea por prefijo; si varios
@@ -210,11 +215,13 @@ export const REGLAS_ESCRITURA_API: ReglaApi[] = [
   { prefijo: "/api/mantenimiento/correctivos", roles: null },
   // ── Facturación de OT
   { prefijo: "/api/facturacion", roles: ["admin", "logistica", "contabilidad"] },
-  // ── SSOMA - SIG. Crear/editar reportes de seguridad y salidas no conformes
-  //    queda ABIERTO (default permitido: cualquier personal reporta). Lo que
-  //    sí se gatea es el flujo del encargado de seguridad (rol "ssoma"):
-  //    cerrar reportes de seguridad y todo lo relativo a SACs.
+  // ── SSOMA - SIG. Crear/editar reportes de seguridad queda ABIERTO (default
+  //    permitido: cualquier personal reporta). Las SALIDAS NO CONFORMES son
+  //    solo del equipo responsable (ssoma + responsable_ssoma, 2026-08-20);
+  //    el flujo del encargado (cerrar reportes, generar SAC, SACs) sigue
+  //    siendo del rol "ssoma".
   { prefijo: "/api/ssoma/reportes-seguridad", sufijo: "/cerrar", roles: ["admin", "ssoma"] },
+  { prefijo: "/api/ssoma/salidas-no-conformes", roles: ["admin", "ssoma", "responsable_ssoma"] },
   { prefijo: "/api/ssoma/salidas-no-conformes", sufijo: "/generar-sac", roles: ["admin", "ssoma"] },
   { prefijo: "/api/ssoma/sacs", roles: ["admin", "ssoma"] },
 ];
