@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getAuditUser } from "@/lib/audit";
 import { resolverPrecioSalida } from "@/lib/inventario";
 import { recalcularRecursosStatusDesdeRep } from "@/lib/recursos-ot";
 
@@ -37,7 +38,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Validación", detail: parsed.error.flatten() }, { status: 400 });
     }
-    const usuario = parsed.data.usuario || "Logistica";
+    // Firma: la persona logueada; el `usuario` del body queda como respaldo.
+    const usuario = (await getAuditUser(req)) || parsed.data.usuario || "Logistica";
 
     // ── Lecturas y validaciones FUERA de la transacción ──────────────────
     // La transacción interactiva tiene timeout (5 s default) y cada query

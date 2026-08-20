@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getAuditUser } from "@/lib/audit";
 import { recalcularRecursosStatusDesdeRep } from "@/lib/recursos-ot";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
@@ -37,7 +38,9 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Validación", detail: parsed.error.flatten() }, { status: 400 });
     }
-    const usuario = parsed.data.usuario || "Logistica";
+    // Firma: la persona logueada; el `usuario` del body queda como respaldo y
+    // "Logistica" como último recurso (igual que el resto de endpoints).
+    const usuario = (await getAuditUser(req)) || parsed.data.usuario || "Logistica";
 
     const result = await prisma.$transaction(async (tx) => {
       const rep = await tx.oTRepuesto.findUnique({ where: { id: (parseInt4Safe(id) ?? 0) } });

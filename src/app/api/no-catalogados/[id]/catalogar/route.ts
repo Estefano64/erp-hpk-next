@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getAuditUser } from "@/lib/audit";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
@@ -32,7 +33,8 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       return NextResponse.json({ error: "Validación", detail: parsed.error.flatten() }, { status: 400 });
     }
     const d = parsed.data;
-    const usuario = d.usuario || "Logistica";
+    // Firma: la persona logueada; el `usuario` del body queda como respaldo.
+    const usuario = (await getAuditUser(req)) || d.usuario || "Logistica";
 
     const result = await prisma.$transaction(async (tx) => {
       const noCat = await tx.materialNoCatalogado.findUnique({ where: { id: matNoCatId } });
