@@ -629,7 +629,10 @@ export default function ProgramacionDashboardPage() {
   const [filtroClasificacion, setFiltroClasificacion] = useState<"STD" | "NO_STD" | null>(null);
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("todas");
   const [leyendaVisible, setLeyendaVisible] = useState(true);
-  const [densidad, setDensidad] = useState<"compacto" | "comodo">("compacto");
+  // Modo de vista: "comodo" = matriz normal expandida (default); "compacto" =
+  // todos los componentes colapsados a su columna resumen. El Segmented del
+  // header setea/limpia gruposColapsados en bloque.
+  const [densidad, setDensidad] = useState<"compacto" | "comodo">("comodo");
   // Componentes (grupos de columnas) colapsados → muestran una sola columna resumen.
   const [gruposColapsados, setGruposColapsados] = useState<Set<string>>(new Set());
   const toggleGrupo = useCallback((cod: string) => {
@@ -839,10 +842,6 @@ export default function ProgramacionDashboardPage() {
   }, [operaciones, filtroComponentes, filtroClasificacion, opsOcultasSet]);
 
   // Renderer de celda de operación: muestra abreviatura sobre fondo del color del estado.
-  // El toggle Compacto/Cómodo cambia el alto del chip además del `size` de la
-  // tabla — sin esto ambos modos se veían iguales (los paddings fijos de las
-  // celdas de operación pisaban el ajuste de antd).
-  const esComodo = densidad === "comodo";
   const renderCelda = (estado: string | null, externo: boolean | null, comentario?: string | null) => {
     if (!estado) return <div style={{ width: "100%", textAlign: "center", color: brand.textSecondary, fontSize: 13 }}>—</div>;
     const color = colorDeEstado(estado);
@@ -869,8 +868,8 @@ export default function ProgramacionDashboardPage() {
             fontSize: 12,
             textAlign: "center",
             borderRadius: 2,
-            padding: esComodo ? "7px 4px" : "2px 4px",
-            minHeight: esComodo ? 32 : 22,
+            padding: "2px 4px",
+            minHeight: 22,
             lineHeight: "18px",
             position: "relative",
             cursor: comentario ? "help" : "default",
@@ -1092,7 +1091,7 @@ export default function ProgramacionDashboardPage() {
           width: 44,
           align: "center" as const,
           onHeaderCell: () => ({ style: { background: tinte } }),
-          onCell: () => ({ style: { background: tinte, padding: esComodo ? "5px 3px" : "2px 3px" } }),
+          onCell: () => ({ style: { background: tinte, padding: "2px 3px" } }),
           render: (_: unknown, r: OTRow) => {
             // El backend normaliza las claves de planMap (trim + uppercase) para
             // que coincidan aunque la planificación tenga casing distinto.
@@ -1172,7 +1171,7 @@ export default function ProgramacionDashboardPage() {
       cols.push(groupCol);
     }
     return cols;
-  }, [componentesOrdenados, operacionesPorComponente, estados, colorDeEstado, gruposColapsados, toggleGrupo, clasifColapsadas, toggleClasif, densidad]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [componentesOrdenados, operacionesPorComponente, estados, colorDeEstado, gruposColapsados, toggleGrupo, clasifColapsadas, toggleClasif]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const columns: ColumnsType<OTRow> = [...infoColumns, ...operacionColumns];
 
@@ -1292,7 +1291,19 @@ export default function ProgramacionDashboardPage() {
           <Segmented
             size="small"
             value={densidad}
-            onChange={(v) => setDensidad(v as "compacto" | "comodo")}
+            onChange={(v) => {
+              const modo = v as "compacto" | "comodo";
+              setDensidad(modo);
+              // Compacto = TODOS los componentes colapsados a su columna
+              // resumen; Cómodo = vista normal expandida. En ambos modos se
+              // puede abrir/cerrar un grupo puntual con clic en su cabecera.
+              if (modo === "compacto") {
+                setGruposColapsados(new Set(componentes.map((c) => c.codigo)));
+              } else {
+                setGruposColapsados(new Set());
+                setClasifColapsadas(new Set());
+              }
+            }}
             options={[{ label: "Compacto", value: "compacto" }, { label: "Cómodo", value: "comodo" }]}
           />
           {(gruposColapsados.size > 0 || clasifColapsadas.size > 0) && (
@@ -1414,7 +1425,6 @@ export default function ProgramacionDashboardPage() {
           columns={visibleColumns(columns, ocultas)}
           data={otsVisibles}
           loading={loading}
-          densidad={densidad}
           onRowClick={(r) => setDetalle(r)}
           page={page}
           pageSize={pageSize}
@@ -1726,10 +1736,9 @@ function ConfigurarVistaDrawer({
 }
 
 function TablaProgramacion({
-  columns, data, loading, densidad, onRowClick, page, pageSize, onPageChange,
+  columns, data, loading, onRowClick, page, pageSize, onPageChange,
 }: {
   columns: ColumnsType<OTRow>; data: OTRow[]; loading: boolean;
-  densidad: "compacto" | "comodo";
   onRowClick: (r: OTRow) => void;
   page: number;
   pageSize: number;
@@ -1759,7 +1768,7 @@ function TablaProgramacion({
       <div className="pdash-tabla">
         <Table<OTRow>
           rowKey="id"
-          size={densidad === "comodo" ? "middle" : "small"}
+          size="small"
           columns={columnas}
           components={components}
           dataSource={data}
