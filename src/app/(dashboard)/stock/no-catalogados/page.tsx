@@ -14,6 +14,7 @@ import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
+import { useMiNombre } from "@/lib/useMiNombre";
 import {
   numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE,
   useColumnasOcultas, ColumnasToggleButton, visibleColumns,
@@ -46,6 +47,9 @@ interface Movimiento {
 }
 
 export default function NoCatalogadosPage() {
+  // Firma de las acciones: la persona logueada (los genéricos "Almacenero" /
+  // "Logistica" quedan solo como último recurso si la sesión no carga).
+  const miNombre = useMiNombre();
   const { message } = App.useApp();
   const { screens } = useResponsive();
   const [rows, setRows] = useState<MatRow[]>([]);
@@ -119,7 +123,7 @@ export default function NoCatalogadosPage() {
       setSavingCat(true);
       const res = await fetch(`/api/no-catalogados/${catOpen.id}/catalogar`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...v, usuario: "Logistica" }),
+        body: JSON.stringify({ ...v, usuario: miNombre || "Logistica" }),
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "Error");
@@ -149,7 +153,7 @@ export default function NoCatalogadosPage() {
       setSavingNuevo(true);
       const res = await fetch("/api/no-catalogados", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...v, usuario: "Almacenero" }),
+        body: JSON.stringify({ ...v, usuario: miNombre || "Almacenero" }),
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "Error");
@@ -168,7 +172,7 @@ export default function NoCatalogadosPage() {
       setSavingMov(true);
       const res = await fetch(`/api/no-catalogados/${movOpen.id}/movimiento`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...v, usuario: "Almacenero" }),
+        body: JSON.stringify({ ...v, usuario: miNombre || "Almacenero" }),
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "Error");

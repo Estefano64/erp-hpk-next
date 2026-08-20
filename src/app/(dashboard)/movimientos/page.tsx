@@ -61,6 +61,7 @@ import {
 } from "@/lib/tables";
 import { brand } from "@/lib/theme";
 import { useEscrituraApi } from "@/lib/use-escritura";
+import { useMiNombre } from "@/lib/useMiNombre";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import dayjs, { Dayjs } from "dayjs";
 
@@ -526,6 +527,9 @@ interface ItemFila {
 export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
   const { message } = App.useApp();
   const { screens } = useResponsive();
+  // Firma de la recepción: la persona logueada ("Almacenero" solo si la
+  // sesión no carga).
+  const miNombre = useMiNombre();
   const [pos, setPos] = useState<POPendiente[]>([]);
   const [loading, setLoading] = useState(false);
   const [itemsPage, setItemsPage] = useState(1);
@@ -754,7 +758,7 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
         body: JSON.stringify({
           po_id: poSeleccionada.id,
           items,
-          usuario: "Almacenero",
+          usuario: miNombre || "Almacenero",
           nro_guia: nroGuia || undefined,
           nro_factura: nroFactura || undefined,
           comentarios: comentariosRec || undefined,
@@ -1525,6 +1529,14 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
 function TabSalida({ onRefresh }: { onRefresh: () => void }) {
   const { message } = App.useApp();
   const [form] = Form.useForm();
+  // Usuario logueado: pre-llena el campo "Usuario" (antes venía fijo
+  // "Almacenero" y todos los movimientos quedaban firmados igual).
+  const miNombre = useMiNombre();
+  useEffect(() => {
+    if (miNombre && !form.getFieldValue("usuario")) {
+      form.setFieldsValue({ usuario: miNombre });
+    }
+  }, [miNombre, form]);
   const [materiales, setMateriales] = useState<StockItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [matSel, setMatSel] = useState<StockItem | null>(null);
@@ -1573,7 +1585,7 @@ function TabSalida({ onRefresh }: { onRefresh: () => void }) {
             cantidad: values.cantidad,
             motivo: values.observacion,
             documento_referencia: values.documento_referencia,
-            usuario: values.usuario || "Almacenero",
+            usuario: values.usuario || miNombre || "Almacenero",
           }),
         });
       } else {
@@ -1586,7 +1598,7 @@ function TabSalida({ onRefresh }: { onRefresh: () => void }) {
             cantidad: values.cantidad,
             documento_referencia: values.documento_referencia,
             observacion: values.observacion,
-            usuario: values.usuario || "Almacenero",
+            usuario: values.usuario || miNombre || "Almacenero",
             tipo_ingreso: tipo === "ENTRADA" ? values.tipo_ingreso : undefined,
             persona_recibe: tipo === "SALIDA" ? values.persona_recibe : undefined,
           }),
@@ -1596,6 +1608,7 @@ function TabSalida({ onRefresh }: { onRefresh: () => void }) {
       if (!res.ok) throw new Error(json.error || "Error");
       message.success(`Movimiento ${tipo} registrado correctamente`);
       form.resetFields();
+      if (miNombre) form.setFieldsValue({ usuario: miNombre });
       setMatSel(null);
       setNoCatSel(null);
       await Promise.all([cargarMateriales(), cargarNoCat()]);
@@ -1724,8 +1737,8 @@ function TabSalida({ onRefresh }: { onRefresh: () => void }) {
                 </Form.Item>
               </Col>
               <Col span={12}>
-                <Form.Item label="Usuario" name="usuario" initialValue="Almacenero">
-                  <Input placeholder="Nombre del usuario" />
+                <Form.Item label="Usuario" name="usuario">
+                  <Input placeholder={miNombre ?? "Nombre del usuario"} />
                 </Form.Item>
               </Col>
             </Row>
