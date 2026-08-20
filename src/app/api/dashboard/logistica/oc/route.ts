@@ -82,6 +82,8 @@ export async function GET(req: NextRequest) {
         total: true,
         moneda_codigo: true,
         fecha_solicitud: true,
+        // La setea la recepción (ingreso-po) — es "cuándo llegó a HPK".
+        fecha_entrega_real: true,
         proveedor: { select: { razon_social: true } },
         ot_repuestos: {
           select: { fecha_aprobacion: true },
@@ -178,6 +180,25 @@ export async function GET(req: NextRequest) {
       ? diasColocar.reduce((a, b) => a + b, 0) / diasColocar.length : 0;
     const tiempoMediana = mediana(diasColocar);
 
+    // ── Tiempo de llegada desde generación de OC (pedido 2026-08-20) ──
+    // Días entre la generación de la OC (fecha_solicitud) y su llegada a HPK
+    // (fecha_entrega_real, seteada por la recepción). Solo OCs del rango ya
+    // recibidas; anuladas fuera.
+    const diasLlegada: number[] = [];
+    for (const c of compras) {
+      if (c.status_oc_codigo === "ANULADO") continue;
+      if (!c.fecha_entrega_real) continue;
+      const dias = dayjs(c.fecha_entrega_real).diff(dayjs(c.fecha_solicitud), "day");
+      if (dias < 0) continue;
+      diasLlegada.push(dias);
+    }
+    const tiempoLlegada = {
+      promedio: diasLlegada.length > 0
+        ? diasLlegada.reduce((a, b) => a + b, 0) / diasLlegada.length : 0,
+      mediana: mediana(diasLlegada),
+      n: diasLlegada.length,
+    };
+
     return NextResponse.json({
       kpis: { colocadas, costo, ticket },
       estado,
@@ -187,6 +208,7 @@ export async function GET(req: NextRequest) {
       porTiempo,
       tiempoPromedio,
       tiempoMediana,
+      tiempoLlegada,
       meta: { modo, anio, mes, sem, tipo },
     });
   } catch (e) {
