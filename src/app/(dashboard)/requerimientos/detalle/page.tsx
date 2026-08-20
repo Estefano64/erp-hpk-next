@@ -291,9 +291,13 @@ function normalize(r: RequerimientoApi): Requerimiento {
     // fallback al campo libre legacy `Material.ubicacion`. Cuando el item
     // aparece en amarillo por tener stock disponible, esta columna muestra
     // en qué zona está para que el usuario sepa dónde ir a buscarlo.
-    ubicacion_almacen: r.almacen_zona?.codigo
-      ? `${r.almacen_zona.codigo}${r.almacen_posicion?.codigo ? ` · ${r.almacen_posicion.codigo}` : ""}`
-      : (r.material?.ubicacion ?? null),
+    // Item ENTREGADO: ya salió del almacén — la ubicación deja de aplicar
+    // (queda en null y la columna/filtros/export muestran "—").
+    ubicacion_almacen: (r.status_oc?.codigo ?? r.status_oc_codigo) === "ENTREGADO"
+      ? null
+      : r.almacen_zona?.codigo
+        ? `${r.almacen_zona.codigo}${r.almacen_posicion?.codigo ? ` · ${r.almacen_posicion.codigo}` : ""}`
+        : (r.material?.ubicacion ?? null),
     adjuntos: r.adjuntos,
     // Elegimos el mejor match: preferimos uno con stock >= cantidad; si nada
     // alcanza, el que tenga más stock; si todos son 0, el primero.

@@ -1244,6 +1244,16 @@ export default function RequerimientosPage() {
     {
       title: "Ubicación", key: "ubic_almacen", width: 110, align: "center",
       render: (_, r) => {
+        // Item ENTREGADO: ya salió del almacén — la ubicación deja de aplicar
+        // (pedido 2026-08-20).
+        const entregado = (r.status_oc?.codigo ?? r.status_oc_codigo) === "ENTREGADO";
+        if (entregado) {
+          return (
+            <Tooltip title="Entregado — ya no está en almacén">
+              <Text type="secondary">—</Text>
+            </Tooltip>
+          );
+        }
         if (!r.almacen_zona) return <Text type="secondary">—</Text>;
         const zona = r.almacen_zona.codigo;
         const pos = r.almacen_posicion?.codigo;
