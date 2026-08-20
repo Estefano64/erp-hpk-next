@@ -98,10 +98,17 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         // De acá en adelante son items MAC. Para items YA CONSUMIDOS
         // (CONSUMIDO_ALMACEN / CONSUMIDO_OC_ABIERTA) NO bloqueamos por
         // pendiente=0 — esos casos legacy se cierran formalmente abajo
-        // sin tocar cantidad_recibida. Para items MAC normales sí: si
-        // pendiente=0 ya está despachado.
+        // sin tocar cantidad_recibida. Los COMPLETO tampoco: la RECEPCIÓN
+        // los dejó con cantidad_recibida = cantidad (llegó todo a HPK) pero
+        // la entrega al técnico todavía no ocurrió — este despacho es
+        // justamente ese paso. Para items MAC ENTREGADO sí: pendiente=0
+        // significa que ya se despachó.
         const esYaConsumido = rep.status_oc_codigo === "CONSUMIDO_ALMACEN" || rep.status_oc_codigo === "CONSUMIDO_OC_ABIERTA";
-        if (pendiente.lte(0) && !esYaConsumido) { errores.push({ id: reqId, error: "Ya despachado completo" }); continue; }
+        const esRecibidoSinEntregar = rep.status_oc_codigo === "COMPLETO";
+        if (pendiente.lte(0) && !esYaConsumido && !esRecibidoSinEntregar) {
+          errores.push({ id: reqId, error: "Ya despachado completo" });
+          continue;
+        }
 
         // ─── Items MAC (con material catálogo): flujo normal ──────────
         const material = await tx.material.findUnique({ where: { material_id: rep.material_id } });
@@ -148,6 +155,56 @@ export async function POST(req: NextRequest, { params }: Ctx) {
           });
           if (quedaCompleto) ok.push(rep.id);
           else parciales.push(rep.id);
+          continue;
+        }
+
+        // ─── Items COMPLETO con pendiente=0: entrega al técnico ─────────
+        // La recepción ya ingresó el stock y dejó cantidad_recibida=cantidad,
+        // así que acá NO se recalcula pendiente: se registra la salida física
+        // del total del item (SALIDA + decremento, acotado al stock contable
+        // por si otra OT consumió parte) y el item cierra como ENTREGADO con
+        // fecha y persona.
+        if (esRecibidoSinEntregar && pendiente.lte(0)) {
+          const stockDisp = new Prisma.Decimal(material.stock_actual ?? 0);
+          const aDespachar = Prisma.Decimal.min(
+            cantTotal,
+            stockDisp.gt(0) ? stockDisp : new Prisma.Decimal(0),
+          );
+          if (aDespachar.gt(0)) {
+            const { precio: precioSnap, moneda: monedaSnap } = await resolverPrecioSalida(tx, rep.material_id);
+            await tx.movimientoInventario.create({
+              data: {
+                material_id: rep.material_id,
+                tipo_movimiento: "SALIDA",
+                cantidad: aDespachar,
+                precio_unitario: precioSnap,
+                moneda: monedaSnap,
+                persona_recibe: personaRecibe,
+                fecha_movimiento: fechaDespacho,
+                documento_referencia: rep.nro_req ? `REQ-${rep.nro_req}` : `REQ-${rep.id}`,
+                observacion: `Entrega al técnico (item recibido completo) — REQ ${rep.nro_req ?? rep.id}/${rep.item_req ?? "-"}${comentariosBulk ? ` · ${comentariosBulk}` : ""}`,
+                usuario,
+              },
+            });
+            await tx.material.update({
+              where: { material_id: rep.material_id },
+              data: { stock_actual: { decrement: aDespachar } },
+            });
+          }
+          const obsPrev = rep.observaciones ? `${rep.observaciones}\n` : "";
+          const notaStock = aDespachar.lt(cantTotal)
+            ? ` (stock contable disponible ${aDespachar} de ${cantTotal})`
+            : "";
+          await tx.oTRepuesto.update({
+            where: { id: rep.id },
+            data: {
+              status_oc_codigo: "ENTREGADO",
+              fecha_salida_almacen: fechaDespacho,
+              persona_recibe: personaRecibe ?? undefined,
+              observaciones: `${obsPrev}Entregado al técnico el ${fechaDespacho.toLocaleDateString("es-PE")}${notaStock} (${usuario})${personaRecibe ? ` — recibe: ${personaRecibe}` : ""}${comentariosBulk ? ` · ${comentariosBulk}` : ""}`,
+            },
+          });
+          ok.push(rep.id);
           continue;
         }
 

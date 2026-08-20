@@ -339,7 +339,10 @@ export async function GET(_req: NextRequest) {
         const g = grupos.get(t.ot_id);
         if (!g) continue;
         g.total_items_ot += t._count.id;
-        if (t.status_oc_codigo === "ENTREGADO" || t.status_oc_codigo === "COMPLETO") {
+        // Solo ENTREGADO cuenta como entregado al técnico. COMPLETO = llegó
+        // a HPK pero sigue en almacén (desde 2026-08-20 la recepción marca
+        // COMPLETO y el despacho es quien pone ENTREGADO).
+        if (t.status_oc_codigo === "ENTREGADO") {
           g.items_entregados += t._count.id;
         }
       }
@@ -360,7 +363,10 @@ export async function GET(_req: NextRequest) {
         where: {
           ot_id: { in: otIds },
           status_requerimiento_codigo: { notIn: ["ANULADO", "DESAPROBADO"] },
-          status_oc_codigo: { in: ["ENTREGADO", "COMPLETO"] },
+          // Solo ENTREGADO: los COMPLETO están en almacén sin entregar y
+          // aparecen del lado de PENDIENTES ("listo para despachar") — si
+          // también salieran acá se verían duplicados.
+          status_oc_codigo: "ENTREGADO",
           OR: [{ tipo_codigo: null }, { tipo_codigo: { not: "SER" } }],
         },
         select: {
