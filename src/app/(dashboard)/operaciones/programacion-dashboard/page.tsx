@@ -1038,16 +1038,18 @@ export default function ProgramacionDashboardPage() {
       };
 
       // Grupo COLAPSADO: una sola columna-resumen (realizadas/total de sus ops).
+      // La celda entera del header va pintada del color del componente.
       if (gruposColapsados.has(comp.codigo)) {
         cols.push({
           key: `comp-${comp.codigo}-collapsed`,
           width: 48,
           align: "center" as const,
+          onHeaderCell: () => ({ style: { background: compColor, padding: "4px 2px" } }),
           title: (
             <div
               onClick={() => toggleGrupo(comp.codigo)}
               title={`Expandir ${comp.nombre}`}
-              style={{ cursor: "pointer", fontWeight: 700, color: brand.white, fontSize: 10, background: compColor, padding: "4px 2px", borderRadius: 4, writingMode: "vertical-rl", transform: "rotate(180deg)", whiteSpace: "nowrap", maxHeight: 140, overflow: "hidden" }}
+              style={{ cursor: "pointer", fontWeight: 700, color: brand.white, fontSize: 10, writingMode: "vertical-rl", transform: "rotate(180deg)", whiteSpace: "nowrap", maxHeight: 140, overflow: "hidden" }}
             >
               ▸ {comp.nombre}
             </div>
@@ -1109,11 +1111,12 @@ export default function ProgramacionDashboardPage() {
             key: `comp-${comp.codigo}-${clase}-collapsed`,
             width: 40,
             align: "center" as const,
+            onHeaderCell: () => ({ style: { background: bg, padding: "4px 2px" } }),
             title: (
               <div
                 onClick={() => toggleClasif(ck)}
                 title={`Expandir ${label} de ${comp.nombre}`}
-                style={{ cursor: "pointer", fontWeight: 700, color: brand.white, fontSize: 10, background: bg, padding: "4px 2px", borderRadius: 3, writingMode: "vertical-rl", transform: "rotate(180deg)", whiteSpace: "nowrap", maxHeight: 140, overflow: "hidden" }}
+                style={{ cursor: "pointer", fontWeight: 700, color: brand.white, fontSize: 10, writingMode: "vertical-rl", transform: "rotate(180deg)", whiteSpace: "nowrap", maxHeight: 140, overflow: "hidden" }}
               >
                 ▸ {label}
               </div>
@@ -1123,11 +1126,12 @@ export default function ProgramacionDashboardPage() {
         }
         return {
           key: `comp-${comp.codigo}-${clase}`,
+          onHeaderCell: () => ({ style: { background: bg, padding: "2px 6px" } }),
           title: (
             <div
               onClick={() => toggleClasif(ck)}
               title={`Colapsar ${label} de ${comp.nombre}`}
-              style={{ cursor: "pointer", fontSize: 12, fontWeight: 700, color: brand.white, letterSpacing: 0.3, background: bg, borderRadius: 3, padding: "1px 6px", display: "inline-block" }}
+              style={{ cursor: "pointer", fontSize: 12, fontWeight: 700, color: brand.white, letterSpacing: 0.3 }}
             >
               {label} <span style={{ opacity: 0.85 }}>▾</span>
             </div>
@@ -1142,6 +1146,9 @@ export default function ProgramacionDashboardPage() {
 
       const groupCol: ColumnGroupType<OTRow> = {
         key: `comp-${comp.codigo}`,
+        // Toda la celda del header pintada del color del componente (antes era
+        // solo una pastilla chica alrededor del título).
+        onHeaderCell: () => ({ style: { background: compColor, padding: "3px 8px" } }),
         title: (
           <div
             onClick={() => toggleGrupo(comp.codigo)}
@@ -1152,10 +1159,6 @@ export default function ProgramacionDashboardPage() {
               color: brand.white,
               fontSize: 11,
               letterSpacing: 0.5,
-              background: compColor,
-              padding: "4px 8px",
-              borderRadius: 4,
-              display: "inline-block",
             }}>
             {comp.nombre} <span style={{ opacity: 0.85 }}>▾</span>
           </div>

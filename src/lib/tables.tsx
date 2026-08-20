@@ -413,6 +413,9 @@ type SortableResizableTitleProps = React.HTMLAttributes<HTMLTableCellElement> & 
   width?: number;
   onResize?: (e: React.SyntheticEvent<Element>, data: ResizeCallbackData) => void;
   onResizeStop?: (e: React.SyntheticEvent<Element>, data: ResizeCallbackData) => void;
+  // Doble clic en el borde de resize → restablece el ancho por defecto de la
+  // columna (estilo auto-ajuste de Excel).
+  onResizeReset?: () => void;
   columnKey?: string;
   sortable?: boolean;
   // Pin/unpin: solo se renderiza el ícono si `onTogglePin` está presente.
@@ -422,7 +425,7 @@ type SortableResizableTitleProps = React.HTMLAttributes<HTMLTableCellElement> & 
 };
 
 function SortableResizableTitle(props: SortableResizableTitleProps) {
-  const { onResize, onResizeStop, width, columnKey, sortable, isPinned, onTogglePin, style: styleProp, children, ...restProps } = props;
+  const { onResize, onResizeStop, onResizeReset, width, columnKey, sortable, isPinned, onTogglePin, style: styleProp, children, ...restProps } = props;
   // Ancho local durante drag para feedback visual sin re-render del Table.
   const [liveWidth, setLiveWidth] = useState<number | null>(null);
   const effectiveWidth = liveWidth ?? width;
@@ -552,7 +555,11 @@ function SortableResizableTitle(props: SortableResizableTitleProps) {
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
-          title="Arrastrar para cambiar ancho"
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            onResizeReset?.();
+          }}
+          title="Arrastrar para cambiar ancho · doble clic para restablecer"
         />
       }
       onResize={(_e, data) => setLiveWidth(Math.max(40, Math.round(data.size.width)))}
@@ -843,6 +850,11 @@ export function useColumnasRedimensionables<T>(
       const pinProps = esFixPorUsuario
         ? { isPinned: pinned.has(k), onTogglePin: () => togglePin(k) }
         : {};
+      // Se preserva el onHeaderCell que la columna traiga de fábrica (estilos
+      // de fondo, etc.) — antes el hook lo pisaba con el suyo.
+      const origOnHeaderCell = col.onHeaderCell as
+        | ((column: unknown) => React.HTMLAttributes<HTMLElement>)
+        | undefined;
       // Las columnas fixed mantienen ancho original (Resizable rompe el sticky)
       if (col.fixed) {
         return {
@@ -850,7 +862,12 @@ export function useColumnasRedimensionables<T>(
           ...auto,
           ...conMultiSelect,
           ...(col.sorter ? {} : { sorter: sorterFinal }),
-          onHeaderCell: () => ({ columnKey: k, sortable: false, ...pinProps }),
+          onHeaderCell: (column: unknown) => ({
+            ...(origOnHeaderCell ? origOnHeaderCell(column) : {}),
+            columnKey: k,
+            sortable: false,
+            ...pinProps,
+          }),
         } as ColumnType<T>;
       }
       // Columnas GRUPO (con children): antd ignora el `width` del grupo (el
@@ -861,7 +878,12 @@ export function useColumnasRedimensionables<T>(
       if (hijos && hijos.length > 0) {
         return {
           ...col,
-          onHeaderCell: () => ({ columnKey: k, sortable: true, ...pinProps }),
+          onHeaderCell: (column: unknown) => ({
+            ...(origOnHeaderCell ? origOnHeaderCell(column) : {}),
+            columnKey: k,
+            sortable: true,
+            ...pinProps,
+          }),
         } as ColumnType<T>;
       }
       return {
@@ -871,6 +893,7 @@ export function useColumnasRedimensionables<T>(
         width: widthActual,
         ...(col.sorter ? {} : { sorter: sorterFinal }),
         onHeaderCell: (column: { width?: number }) => ({
+          ...(origOnHeaderCell ? origOnHeaderCell(column) : {}),
           width: column.width,
           columnKey: k,
           sortable: true,
@@ -879,6 +902,14 @@ export function useColumnasRedimensionables<T>(
           // que interrumpen el drag.
           onResizeStop: (_e: React.SyntheticEvent, data: ResizeCallbackData) => {
             setAnchos((prev) => ({ ...prev, [k]: Math.max(40, Math.round(data.size.width)) }));
+          },
+          // Doble clic en el borde → volver al ancho por defecto de la columna.
+          onResizeReset: () => {
+            setAnchos((prev) => {
+              const next = { ...prev };
+              delete next[k];
+              return next;
+            });
           },
         }),
       } as ColumnType<T>;
