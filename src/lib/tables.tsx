@@ -853,6 +853,17 @@ export function useColumnasRedimensionables<T>(
           onHeaderCell: () => ({ columnKey: k, sortable: false, ...pinProps }),
         } as ColumnType<T>;
       }
+      // Columnas GRUPO (con children): antd ignora el `width` del grupo (el
+      // colgroup sale de las hojas), así que inyectarles width + handle de
+      // resize solo producía un drag fantasma que no cambiaba nada y podía
+      // dejar el header en estado raro. Se mantienen reordenables/pinneables.
+      const hijos = (col as { children?: ColumnsType<T> }).children;
+      if (hijos && hijos.length > 0) {
+        return {
+          ...col,
+          onHeaderCell: () => ({ columnKey: k, sortable: true, ...pinProps }),
+        } as ColumnType<T>;
+      }
       return {
         ...col,
         ...auto,

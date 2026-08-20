@@ -97,6 +97,22 @@ function opKey(op: { componente_codigo: string | null; codigo: string }): string
 function clasifDe(op: OperacionCat): "STD" | "NO_STD" {
   return (op.clasificacion ?? "STD").toUpperCase() === "NO_STD" ? "NO_STD" : "STD";
 }
+// Nombre corto para la cabecera vertical: si el nombre termina en un
+// paréntesis que repite el componente ("Pulido de portasello (hub)" bajo Hub),
+// se quita — la columna ya está agrupada bajo ese componente. Paréntesis con
+// otra información ("Cambio (nuevo)") se conservan.
+function nombreCortoOp(nombre: string, compNombre: string): string {
+  const m = nombre.match(/^(.*?)\s*\(([^)]*)\)\s*$/);
+  if (!m) return nombre;
+  const normTxt = (s: string) =>
+    s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
+  const palabrasComp = new Set(normTxt(compNombre).split(/\s+/));
+  const palabrasParen = normTxt(m[2]).split(/\s+/).filter(Boolean);
+  if (palabrasParen.length > 0 && palabrasParen.every((w) => palabrasComp.has(w))) {
+    return m[1];
+  }
+  return nombre;
+}
 interface EstadoCat { codigo: string; nombre: string; color: string | null }
 
 interface OTRow {
@@ -623,6 +639,19 @@ export default function ProgramacionDashboardPage() {
       return next;
     });
   }, []);
+  // Subgrupos Estándar / No estándar colapsados (clave "componente::STD|NSTD")
+  // → igual que el colapso por componente, pero a nivel clasificación.
+  const [clasifColapsadas, setClasifColapsadas] = useState<Set<string>>(new Set());
+  const toggleClasif = useCallback((key: string) => {
+    setClasifColapsadas((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }, []);
+  // Nonce para "Restablecer anchos": limpia lo persistido y remonta la tabla
+  // (el hook de columnas redimensionables hidrata de localStorage al montar).
+  const [anchosNonce, setAnchosNonce] = useState(0);
   const [detalle, setDetalle] = useState<OTRow | null>(null);
   const { ocultas, setOcultas } = useColumnasOcultas("programacion-dashboard-cols-v1");
   // Vista configurable: lista de operacion_codigos ocultos (persistida en localStorage).
@@ -962,8 +991,8 @@ export default function ProgramacionDashboardPage() {
     },
     {
       key: "progreso",
-      title: "Progreso tareas",
-      width: 140,
+      title: "Progreso",
+      width: 110,
       align: "center",
       sorter: (a, b) => {
         const pa = a.progreso.total > 0 ? a.progreso.realizadas / a.progreso.total : 0;
@@ -995,6 +1024,19 @@ export default function ProgramacionDashboardPage() {
       if (ops.length === 0) continue;
       const compColor = colorDeComponente(comp);
 
+      // Resumen (realizadas/total) sobre un subconjunto de operaciones —
+      // compartido por el colapso de componente y el de clasificación.
+      const resumenDe = (opsSub: OperacionCat[], r: OTRow) => {
+        let tot = 0, ok = 0;
+        for (const op of opsSub) {
+          const key = `${comp.codigo.trim().toUpperCase()}__${op.codigo.trim().toUpperCase()}`;
+          const cell = r.plan[key];
+          if (cell?.estado) { tot++; if (String(cell.estado).toLowerCase() === "realizado") ok++; }
+        }
+        if (tot === 0) return <span style={{ color: brand.textSecondary, fontSize: 10 }}>—</span>;
+        return <span style={{ fontSize: 10, fontWeight: 700, color: ok >= tot ? brand.success : brand.textSecondary }}>{ok}/{tot}</span>;
+      };
+
       // Grupo COLAPSADO: una sola columna-resumen (realizadas/total de sus ops).
       if (gruposColapsados.has(comp.codigo)) {
         cols.push({
@@ -1005,21 +1047,12 @@ export default function ProgramacionDashboardPage() {
             <div
               onClick={() => toggleGrupo(comp.codigo)}
               title={`Expandir ${comp.nombre}`}
-              style={{ cursor: "pointer", fontWeight: 700, color: brand.white, fontSize: 10, background: compColor, padding: "4px 2px", borderRadius: 4, writingMode: "vertical-rl", transform: "rotate(180deg)", whiteSpace: "nowrap" }}
+              style={{ cursor: "pointer", fontWeight: 700, color: brand.white, fontSize: 10, background: compColor, padding: "4px 2px", borderRadius: 4, writingMode: "vertical-rl", transform: "rotate(180deg)", whiteSpace: "nowrap", maxHeight: 140, overflow: "hidden" }}
             >
               ▸ {comp.nombre}
             </div>
           ),
-          render: (_: unknown, r: OTRow) => {
-            let tot = 0, ok = 0;
-            for (const op of ops) {
-              const key = `${comp.codigo.trim().toUpperCase()}__${op.codigo.trim().toUpperCase()}`;
-              const cell = r.plan[key];
-              if (cell?.estado) { tot++; if (String(cell.estado).toLowerCase() === "realizado") ok++; }
-            }
-            if (tot === 0) return <span style={{ color: brand.textSecondary, fontSize: 10 }}>—</span>;
-            return <span style={{ fontSize: 10, fontWeight: 700, color: ok >= tot ? brand.success : brand.textSecondary }}>{ok}/{tot}</span>;
-          },
+          render: (_: unknown, r: OTRow) => resumenDe(ops, r),
         } as ColumnType<OTRow>);
         continue;
       }
@@ -1041,8 +1074,12 @@ export default function ProgramacionDashboardPage() {
           key: `op-${comp.codigo}-${op.codigo}`,
           title: (
             <Tooltip title={`${op.nombre}${op.clasificacion ? ` (${op.clasificacion})` : ""}`}>
-              <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.1, writingMode: "vertical-rl", transform: "rotate(180deg)", padding: "3px 0", whiteSpace: "nowrap" }}>
-                {op.nombre}
+              {/* Nombre corto (sin el "(componente)" redundante) + alto máximo:
+                  el texto largo se parte en 2-3 líneas verticales y lo que no
+                  entra se corta — el nombre completo queda en el tooltip. Antes
+                  un nombre de 50 caracteres estiraba TODA la cabecera a ~300px. */}
+              <div style={{ fontSize: 11, fontWeight: 600, lineHeight: 1.15, writingMode: "vertical-rl", transform: "rotate(180deg)", padding: "3px 0", maxHeight: 140, overflow: "hidden" }}>
+                {nombreCortoOp(op.nombre, comp.nombre)}
               </div>
             </Tooltip>
           ),
@@ -1060,30 +1097,48 @@ export default function ProgramacionDashboardPage() {
         };
       };
 
-      // Subgrupos por clasificación
+      // Subgrupo por clasificación, colapsable igual que el componente: al
+      // colapsar queda una sola columna-resumen de esa clasificación.
+      const buildSubgrupo = (clase: "std" | "nstd", opsCls: OperacionCat[]): ColumnType<OTRow> | ColumnGroupType<OTRow> => {
+        const esStd = clase === "std";
+        const ck = `${comp.codigo}::${esStd ? "STD" : "NSTD"}`;
+        const bg = esStd ? "#389E0D" : "#D46B08";
+        const label = esStd ? "Estándar" : "No estándar";
+        if (clasifColapsadas.has(ck)) {
+          return {
+            key: `comp-${comp.codigo}-${clase}-collapsed`,
+            width: 40,
+            align: "center" as const,
+            title: (
+              <div
+                onClick={() => toggleClasif(ck)}
+                title={`Expandir ${label} de ${comp.nombre}`}
+                style={{ cursor: "pointer", fontWeight: 700, color: brand.white, fontSize: 10, background: bg, padding: "4px 2px", borderRadius: 3, writingMode: "vertical-rl", transform: "rotate(180deg)", whiteSpace: "nowrap", maxHeight: 140, overflow: "hidden" }}
+              >
+                ▸ {label}
+              </div>
+            ),
+            render: (_: unknown, r: OTRow) => resumenDe(opsCls, r),
+          } as ColumnType<OTRow>;
+        }
+        return {
+          key: `comp-${comp.codigo}-${clase}`,
+          title: (
+            <div
+              onClick={() => toggleClasif(ck)}
+              title={`Colapsar ${label} de ${comp.nombre}`}
+              style={{ cursor: "pointer", fontSize: 12, fontWeight: 700, color: brand.white, letterSpacing: 0.3, background: bg, borderRadius: 3, padding: "1px 6px", display: "inline-block" }}
+            >
+              {label} <span style={{ opacity: 0.85 }}>▾</span>
+            </div>
+          ),
+          children: opsCls.map((op) => buildOpCol(op, clase)),
+        } as ColumnGroupType<OTRow>;
+      };
+
       const subgrupos: ColumnsType<OTRow> = [];
-      if (opsSTD.length > 0) {
-        subgrupos.push({
-          key: `comp-${comp.codigo}-std`,
-          title: (
-            <div style={{ fontSize: 12, fontWeight: 700, color: brand.white, letterSpacing: 0.3, background: "#389E0D", borderRadius: 3, padding: "1px 6px", display: "inline-block" }}>
-              Estándar
-            </div>
-          ),
-          children: opsSTD.map((op) => buildOpCol(op, "std")),
-        } as ColumnGroupType<OTRow>);
-      }
-      if (opsNSTD.length > 0) {
-        subgrupos.push({
-          key: `comp-${comp.codigo}-nstd`,
-          title: (
-            <div style={{ fontSize: 12, fontWeight: 700, color: brand.white, letterSpacing: 0.3, background: "#D46B08", borderRadius: 3, padding: "1px 6px", display: "inline-block" }}>
-              No estándar
-            </div>
-          ),
-          children: opsNSTD.map((op) => buildOpCol(op, "nstd")),
-        } as ColumnGroupType<OTRow>);
-      }
+      if (opsSTD.length > 0) subgrupos.push(buildSubgrupo("std", opsSTD));
+      if (opsNSTD.length > 0) subgrupos.push(buildSubgrupo("nstd", opsNSTD));
 
       const groupCol: ColumnGroupType<OTRow> = {
         key: `comp-${comp.codigo}`,
@@ -1110,7 +1165,7 @@ export default function ProgramacionDashboardPage() {
       cols.push(groupCol);
     }
     return cols;
-  }, [componentesOrdenados, operacionesPorComponente, estados, colorDeEstado, gruposColapsados, toggleGrupo]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [componentesOrdenados, operacionesPorComponente, estados, colorDeEstado, gruposColapsados, toggleGrupo, clasifColapsadas, toggleClasif]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const columns: ColumnsType<OTRow> = [...infoColumns, ...operacionColumns];
 
@@ -1233,11 +1288,27 @@ export default function ProgramacionDashboardPage() {
             onChange={(v) => setDensidad(v as "compacto" | "comodo")}
             options={[{ label: "Compacto", value: "compacto" }, { label: "Cómodo", value: "comodo" }]}
           />
-          {gruposColapsados.size > 0 && (
-            <Button size="small" onClick={() => setGruposColapsados(new Set())}>
-              Expandir grupos ({gruposColapsados.size})
+          {(gruposColapsados.size > 0 || clasifColapsadas.size > 0) && (
+            <Button size="small" onClick={() => { setGruposColapsados(new Set()); setClasifColapsadas(new Set()); }}>
+              Expandir grupos ({gruposColapsados.size + clasifColapsadas.size})
             </Button>
           )}
+          <Button
+            size="small"
+            onClick={() => {
+              // Borra anchos/orden/pin persistidos de la matriz y remonta la
+              // tabla — escape para cuando una columna quedó tan angosta que
+              // el título no se ve y el handle de resize no responde.
+              try {
+                localStorage.removeItem("programacion-dashboard-v1");
+                localStorage.removeItem("programacion-dashboard-v1-pinned");
+                localStorage.removeItem("programacion-dashboard-v1-order");
+              } catch { /* ignore */ }
+              setAnchosNonce((n) => n + 1);
+            }}
+          >
+            Restablecer anchos
+          </Button>
           <Button size="small" icon={<FileExcelOutlined />} onClick={exportarMatriz} disabled={otsVisibles.length === 0}>
             Exportar
           </Button>
@@ -1332,6 +1403,7 @@ export default function ProgramacionDashboardPage() {
         </div>
       ) : (
         <TablaProgramacion
+          key={anchosNonce}
           columns={visibleColumns(columns, ocultas)}
           data={otsVisibles}
           loading={loading}
