@@ -15,9 +15,9 @@ type Params = { params: Promise<{ id: string }> };
 // su total en USD (Werteschema) y cada llamada firma el/los códigos de
 // liberación que le correspondan al usuario, en orden secuencial:
 //   < $1,000            autoliberación (elaborador o cualquier nivel)
-//   $1,000 – 2,500      A (Supervisor de Compras)
-//   $2,500 – 5,000      A → B (Gerente de Compras)
-//   > $5,000            A → B → C (Director Financiero)
+//   $1,000 – 2,500      A (Jefe de Logística)
+//   $2,500 – 5,000      A → B (Jefe de Operaciones)
+//   > $5,000            A → B → C (Gerencia)
 // La OC pasa a PROCESO recién cuando todos los niveles requeridos firmaron;
 // mientras tanto sigue en PEND_OC con firmas parciales en `liberacion_codigo`.
 export async function POST(req: NextRequest, { params }: Params) {

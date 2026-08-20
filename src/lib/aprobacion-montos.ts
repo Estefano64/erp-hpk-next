@@ -8,13 +8,13 @@
 //
 //   Órdenes de compra ($, sobre el total con IGV):
 //     0 – 1,000      autoliberación: el elaborador (o quien tenga un nivel)
-//     1,000 – 2,500  nivel A  (aprobador_oc_2500 — Miriam)
-//     2,500 – 5,000  niveles A + B  (B = aprobador_oc_5000 — Juan Diego)
-//     > 5,000        niveles A + B + C  (C = gerencia — Carlos, Pio)
+//     1,000 – 2,500  nivel A  (Jefe de Logística — aprobador_oc_2500)
+//     2,500 – 5,000  niveles A + B  (B = Jefe de Operaciones — aprobador_oc_5000)
+//     > 5,000        niveles A + B + C  (C = Gerencia — Carlos, Pio)
 //
 //   Requerimientos (por item, cantidad × precio):
-//     hasta 5,000 (o sin precio)  nivel A  (aprobador_requerimiento — Diego)
-//     > 5,000                     niveles A + B  (B = gerencia)
+//     hasta 5,000 (o sin precio)  nivel A  (Jefe de Operaciones — aprobador_requerimiento)
+//     > 5,000                     niveles A + B  (B = Gerencia)
 //
 // Notas de diseño:
 //   - Cada nivel lo firma SOLO quien tiene el rol de ese nivel — un nivel
@@ -49,13 +49,13 @@ export interface NivelDef {
 }
 
 export const NIVELES_OC: NivelDef[] = [
-  { nivel: "A", nombre: "Supervisor de Compras", roles: ["aprobador_oc_2500"] },
-  { nivel: "B", nombre: "Gerente de Compras", roles: ["aprobador_oc_5000"] },
-  { nivel: "C", nombre: "Director Financiero", roles: ["gerencia"] },
+  { nivel: "A", nombre: "Jefe de Logística", roles: ["aprobador_oc_2500"] },
+  { nivel: "B", nombre: "Jefe de Operaciones", roles: ["aprobador_oc_5000"] },
+  { nivel: "C", nombre: "Gerencia", roles: ["gerencia"] },
 ];
 
 export const NIVELES_REQ: NivelDef[] = [
-  { nivel: "A", nombre: "Aprobador de Requerimientos", roles: ["aprobador_requerimiento"] },
+  { nivel: "A", nombre: "Jefe de Operaciones", roles: ["aprobador_requerimiento"] },
   { nivel: "B", nombre: "Gerencia", roles: ["gerencia"] },
 ];
 
