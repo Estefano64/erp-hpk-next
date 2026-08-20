@@ -85,6 +85,18 @@ interface OperacionCat {
   componente_codigo: string | null;
   clasificacion: string;
 }
+// Clave única de una operación en la vista: el código puede repetirse entre
+// componentes (las "extra" que vienen de planificaciones — Desarmado, Armado,
+// Limpieza… existen en varios componentes), así que siempre va acompañado del
+// componente. Con el código solo, el árbol de "Configurar vista" generaba keys
+// duplicadas y marcar una operación marcaba/desmarcaba sus tocayas.
+function opKey(op: { componente_codigo: string | null; codigo: string }): string {
+  return `${op.componente_codigo ?? ""}::${op.codigo}`;
+}
+// Normaliza la clasificación a STD / NO_STD (default STD, igual que la BD).
+function clasifDe(op: OperacionCat): "STD" | "NO_STD" {
+  return (op.clasificacion ?? "STD").toUpperCase() === "NO_STD" ? "NO_STD" : "STD";
+}
 interface EstadoCat { codigo: string; nombre: string; color: string | null }
 
 interface OTRow {
@@ -177,16 +189,16 @@ function Kpi({ label, value, color, active, onClick }: {
         background: active ? c : "var(--erp-surface)",
         border: `1px solid ${active ? c : brand.border}`,
         borderRadius: radius.md,
-        padding: "6px 14px",
-        minWidth: 92,
+        padding: "3px 10px",
+        minWidth: 76,
         lineHeight: 1.15,
         boxShadow: shadow.sm,
         transition: "all .15s",
         flex: "0 0 auto",
       }}
     >
-      <div style={{ fontSize: 11, color: active ? "rgba(255,255,255,0.85)" : brand.textSecondary }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 700, color: active ? brand.white : c }}>{value}</div>
+      <div style={{ fontSize: 10, color: active ? "rgba(255,255,255,0.85)" : brand.textSecondary }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: active ? brand.white : c }}>{value}</div>
     </div>
   );
 }
@@ -596,7 +608,9 @@ export default function ProgramacionDashboardPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [search, setSearch] = useState("");
-  const [filtroComponente, setFiltroComponente] = useState<string | null>(null);
+  // Filtro de columnas por componente (multi) y por clasificación STD/NO_STD.
+  const [filtroComponentes, setFiltroComponentes] = useState<string[]>([]);
+  const [filtroClasificacion, setFiltroClasificacion] = useState<"STD" | "NO_STD" | null>(null);
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("todas");
   const [leyendaVisible, setLeyendaVisible] = useState(true);
   const [densidad, setDensidad] = useState<"compacto" | "comodo">("compacto");
@@ -768,19 +782,32 @@ export default function ProgramacionDashboardPage() {
 
   const cargandoInicial = loading && ots.length === 0;
 
-  // Agrupar operaciones por componente para construir las columnas anidadas
-  const opsOcultasSet = useMemo(() => new Set(opsOcultas), [opsOcultas]);
+  // Agrupar operaciones por componente para construir las columnas anidadas.
+  // opsOcultas guarda claves compuestas "componente::codigo"; las entradas
+  // viejas (solo código, formato anterior) se expanden a todos los componentes
+  // que tengan esa operación para no perder la selección guardada.
+  const opsOcultasSet = useMemo(() => {
+    const s = new Set<string>();
+    for (const entry of opsOcultas) {
+      if (entry.includes("::")) { s.add(entry); continue; }
+      for (const op of operaciones) {
+        if (op.codigo === entry) s.add(opKey(op));
+      }
+    }
+    return s;
+  }, [opsOcultas, operaciones]);
   const operacionesPorComponente = useMemo(() => {
     const m = new Map<string, OperacionCat[]>();
     for (const op of operaciones) {
-      if (filtroComponente && op.componente_codigo !== filtroComponente) continue;
-      if (opsOcultasSet.has(op.codigo)) continue; // filtro de vista configurable
+      if (filtroComponentes.length > 0 && !filtroComponentes.includes(op.componente_codigo ?? "")) continue;
+      if (filtroClasificacion && clasifDe(op) !== filtroClasificacion) continue;
+      if (opsOcultasSet.has(opKey(op))) continue; // filtro de vista configurable
       const k = op.componente_codigo ?? "__SIN_COMP__";
       if (!m.has(k)) m.set(k, []);
       m.get(k)!.push(op);
     }
     return m;
-  }, [operaciones, filtroComponente, opsOcultasSet]);
+  }, [operaciones, filtroComponentes, filtroClasificacion, opsOcultasSet]);
 
   // Renderer de celda de operación: muestra abreviatura sobre fondo del color del estado.
   const renderCelda = (estado: string | null, externo: boolean | null, comentario?: string | null) => {
@@ -998,8 +1025,8 @@ export default function ProgramacionDashboardPage() {
       }
 
       // Separar por clasificación
-      const opsSTD = ops.filter((o) => (o.clasificacion ?? "STD").toUpperCase() === "STD");
-      const opsNSTD = ops.filter((o) => (o.clasificacion ?? "").toUpperCase() === "NO_STD");
+      const opsSTD = ops.filter((o) => clasifDe(o) === "STD");
+      const opsNSTD = ops.filter((o) => clasifDe(o) === "NO_STD");
 
       // Tinte de fondo por clasificación (indicación del usuario: diferenciar
       // estándar / no estándar con color). Verde muy suave = estándar, naranja
@@ -1125,9 +1152,9 @@ export default function ProgramacionDashboardPage() {
     <div>
       {/* Encabezado compacto: título + filtros + acciones en una sola fila para
           no comerle espacio vertical a la matriz. */}
-      <Card size="small" style={{ marginBottom: 8 }} styles={{ body: { padding: 10 } }}>
-        <Space wrap>
-          <Title level={5} style={{ margin: 0, color: brand.navy, marginRight: 4 }}>
+      <Card size="small" style={{ marginBottom: 8 }} styles={{ body: { padding: "6px 10px" } }}>
+        <Space wrap size={6}>
+          <Title level={5} style={{ margin: 0, color: brand.navy, marginRight: 4, fontSize: 14 }}>
             <AppstoreOutlined style={{ marginRight: 6 }} />
             Dashboard de Planificación
           </Title>
@@ -1135,6 +1162,7 @@ export default function ProgramacionDashboardPage() {
             <InfoCircleOutlined style={{ color: brand.textSecondary, marginRight: 4 }} />
           </Tooltip>
           <Segmented
+            size="small"
             value={vistaTab}
             onChange={(v) => setVistaTab(v as "resumen" | "matriz" | "rendimiento")}
             options={[
@@ -1145,20 +1173,37 @@ export default function ProgramacionDashboardPage() {
           />
           {vistaTab === "matriz" && (<>
           <Input
+            size="small"
             placeholder="Buscar OT, descripción, cliente, equipo…"
             prefix={<SearchOutlined />}
             allowClear
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            style={{ width: 300 }}
+            style={{ width: 240 }}
           />
           <Select
-            placeholder="Filtrar componente"
+            size="small"
+            mode="multiple"
+            placeholder="Componente(s)"
             allowClear showSearch optionFilterProp="label"
-            value={filtroComponente ?? undefined}
-            onChange={(v) => setFiltroComponente(v ?? null)}
+            maxTagCount="responsive"
+            value={filtroComponentes}
+            onChange={(v) => setFiltroComponentes(v ?? [])}
             options={componentes.map((c) => ({ value: c.codigo, label: c.nombre }))}
-            style={{ minWidth: 200 }}
+            style={{ minWidth: 180, maxWidth: 320 }}
+            suffixIcon={<FilterOutlined />}
+          />
+          <Select
+            size="small"
+            placeholder="Estándar / No estándar"
+            allowClear
+            value={filtroClasificacion ?? undefined}
+            onChange={(v) => setFiltroClasificacion((v as "STD" | "NO_STD" | undefined) ?? null)}
+            options={[
+              { value: "STD", label: "Estándar" },
+              { value: "NO_STD", label: "No estándar" },
+            ]}
+            style={{ minWidth: 150 }}
             suffixIcon={<FilterOutlined />}
           />
           <ColumnasToggleButton<OTRow>
@@ -1168,12 +1213,14 @@ export default function ProgramacionDashboardPage() {
             obligatorias={["ot"]}
           />
           <Button
+            size="small"
             icon={<SettingOutlined />}
             onClick={() => setVistaConfigOpen(true)}
           >
             Configurar vista{opsOcultas.length > 0 ? ` (${opsOcultas.length} ocultas)` : ""}
           </Button>
           <Button
+            size="small"
             icon={<BgColorsOutlined />}
             type={leyendaVisible ? "primary" : "default"}
             onClick={() => setLeyendaVisible((v) => !v)}
@@ -1187,14 +1234,14 @@ export default function ProgramacionDashboardPage() {
             options={[{ label: "Compacto", value: "compacto" }, { label: "Cómodo", value: "comodo" }]}
           />
           {gruposColapsados.size > 0 && (
-            <Button onClick={() => setGruposColapsados(new Set())}>
+            <Button size="small" onClick={() => setGruposColapsados(new Set())}>
               Expandir grupos ({gruposColapsados.size})
             </Button>
           )}
-          <Button icon={<FileExcelOutlined />} onClick={exportarMatriz} disabled={otsVisibles.length === 0}>
+          <Button size="small" icon={<FileExcelOutlined />} onClick={exportarMatriz} disabled={otsVisibles.length === 0}>
             Exportar
           </Button>
-          <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>
+          <Button size="small" icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>
             Refrescar
           </Button>
           </>)}
@@ -1364,27 +1411,30 @@ function ConfigurarVistaDrawer({
 }) {
   const { screens } = useResponsive();
   const { message } = App.useApp();
-  // Build tree
+  // Build tree. Las hojas usan la clave compuesta componente::código (opKey):
+  // con el código solo, operaciones tocayas de distintos componentes generaban
+  // keys duplicadas en el Tree (se veían repetidas y marcar una afectaba a las
+  // otras).
   const treeData = useMemo(() => {
     return componentes
       .map((c) => {
         const opsDeComp = operaciones.filter((o) => o.componente_codigo === c.codigo);
         if (opsDeComp.length === 0) return null;
-        const opsSTD = opsDeComp.filter((o) => (o.clasificacion ?? "STD").toUpperCase() === "STD");
-        const opsNSTD = opsDeComp.filter((o) => (o.clasificacion ?? "").toUpperCase() === "NO_STD");
+        const opsSTD = opsDeComp.filter((o) => clasifDe(o) === "STD");
+        const opsNSTD = opsDeComp.filter((o) => clasifDe(o) === "NO_STD");
         const children: { title: string; key: string; children?: { title: string; key: string }[] }[] = [];
         if (opsSTD.length > 0) {
           children.push({
             title: `Estándar (${opsSTD.length})`,
             key: `cls-${c.codigo}-STD`,
-            children: opsSTD.map((o) => ({ title: o.nombre, key: `op-${o.codigo}` })),
+            children: opsSTD.map((o) => ({ title: o.nombre, key: `op-${opKey(o)}` })),
           });
         }
         if (opsNSTD.length > 0) {
           children.push({
             title: `No estándar (${opsNSTD.length})`,
             key: `cls-${c.codigo}-NO_STD`,
-            children: opsNSTD.map((o) => ({ title: o.nombre, key: `op-${o.codigo}` })),
+            children: opsNSTD.map((o) => ({ title: o.nombre, key: `op-${opKey(o)}` })),
           });
         }
         return { title: c.nombre, key: `comp-${c.codigo}`, children };
@@ -1392,24 +1442,31 @@ function ConfigurarVistaDrawer({
       .filter((n): n is NonNullable<typeof n> => n !== null);
   }, [componentes, operaciones]);
 
-  // Keys visibles = todos los leaves NO en opsOcultas
-  const allOpKeys = useMemo(() => operaciones.map((o) => `op-${o.codigo}`), [operaciones]);
+  // Keys visibles = todos los leaves NO ocultos. Las entradas viejas de
+  // localStorage (solo código) se expanden a todos sus componentes.
+  const allOpKeys = useMemo(() => operaciones.map((o) => `op-${opKey(o)}`), [operaciones]);
   const checkedKeys = useMemo(() => {
-    const ocultas = new Set(opsOcultas.map((c) => `op-${c}`));
-    return allOpKeys.filter((k) => !ocultas.has(k));
-  }, [allOpKeys, opsOcultas]);
+    const ocultasSet = new Set<string>();
+    for (const entry of opsOcultas) {
+      if (entry.includes("::")) { ocultasSet.add(entry); continue; }
+      for (const o of operaciones) {
+        if (o.codigo === entry) ocultasSet.add(opKey(o));
+      }
+    }
+    return allOpKeys.filter((k) => !ocultasSet.has(k.substring(3)));
+  }, [allOpKeys, opsOcultas, operaciones]);
 
   function onCheck(checked: React.Key[] | { checked: React.Key[]; halfChecked: React.Key[] }) {
     const keys = Array.isArray(checked) ? checked : checked.checked;
     const visibleOps = new Set(
       keys.filter((k) => String(k).startsWith("op-")).map((k) => String(k).substring(3)),
     );
-    const nuevasOcultas = operaciones.map((o) => o.codigo).filter((cod) => !visibleOps.has(cod));
+    const nuevasOcultas = operaciones.map(opKey).filter((k) => !visibleOps.has(k));
     setOpsOcultas(nuevasOcultas);
   }
 
   function mostrarTodas() { setOpsOcultas([]); }
-  function ocultarTodas() { setOpsOcultas(operaciones.map((o) => o.codigo)); }
+  function ocultarTodas() { setOpsOcultas(operaciones.map(opKey)); }
 
   // ── ORDEN ──
   // Lista de componentes en orden actual (override del usuario o catálogo).
@@ -1487,12 +1544,13 @@ function ConfigurarVistaDrawer({
                 <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 12 }}>
                   Elegí qué operaciones querés ver. Tu selección queda guardada por navegador.
                 </Text>
+                {/* Sin defaultExpandAll: con 80+ operaciones el drawer abría
+                    con todo desplegado; ahora arranca comprimido por componente. */}
                 <Tree
                   checkable
                   treeData={treeData}
                   checkedKeys={checkedKeys}
                   onCheck={onCheck}
-                  defaultExpandAll
                   selectable={false}
                 />
               </div>
