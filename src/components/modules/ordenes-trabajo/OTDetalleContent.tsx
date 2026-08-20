@@ -97,6 +97,10 @@ interface OTDetalle {
   fecha_creacion: string | null;
   usuario_actualiza: string | null;
   fecha_actualizacion: string | null;
+  // Última entrada del tab Historial (la manda el GET del detalle, take: 1).
+  // Es la fuente de "Última edición": captura TODOS los cambios (ediciones,
+  // estados, automáticos), no solo los endpoints que tocan fecha_actualizacion.
+  historial?: { usuario: string; createdAt: string }[];
   ot: string;
   tipo_codigo: string | null;
   estrategia: boolean;
@@ -769,6 +773,27 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
       description="Solo podés ver hasta que termine. Si se quedó colgado el lock se libera solo a los 3 minutos."
     />
   );
+
+  // "Última edición" = entrada más reciente del tab Historial (createdAt es
+  // timestamp real, así que la hora local es correcta). Fallback al par
+  // usuario_actualiza/fecha_actualizacion para OTs sin historial (legacy).
+  const ultimaEdicion = (() => {
+    const h = ot?.historial?.[0];
+    if (h) {
+      return {
+        usuario: h.usuario,
+        fechaHora: dayjs(h.createdAt).format("DD/MM/YYYY HH:mm"),
+        fechaCorta: dayjs(h.createdAt).format("DD/MM/YYYY"),
+      };
+    }
+    if (ot?.fecha_actualizacion) {
+      // fecha_actualizacion es @db.Date (medianoche UTC): formatear en hora
+      // local la corría al día anterior en Lima — formatDateOnly usa UTC.
+      const f = formatDateOnly(ot.fecha_actualizacion);
+      return { usuario: ot.usuario_actualiza ?? "—", fechaHora: f, fechaCorta: f };
+    }
+    return null;
+  })();
 
   const resumenContent = !ot ? null : (
       <div>
@@ -1579,16 +1604,13 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
               </>
             )}
           </div>
-          {ot.fecha_actualizacion && (
+          {ultimaEdicion && (
             <div>
               <span style={{ color: "#888" }}>Última edición:</span>{" "}
-              <b style={{ color: brand.navy }}>{ot.usuario_actualiza ?? "—"}</b>
+              <b style={{ color: brand.navy }}>{ultimaEdicion.usuario}</b>
               {" · "}
               <span style={{ color: "#888" }}>el</span>{" "}
-              {/* fecha_actualizacion es @db.Date (solo día, medianoche UTC):
-                  formatearla con hora local la corría al día ANTERIOR en Lima
-                  y quedaba "antes" que la creación. formatDateOnly usa UTC. */}
-              <b>{formatDateOnly(ot.fecha_actualizacion)}</b>
+              <b>{ultimaEdicion.fechaHora}</b>
             </div>
           )}
         </div>
@@ -1657,10 +1679,10 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
           </div>
           <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, marginTop: 2 }}>
             Equipo: {ot?.equipo_codigo ?? "-"} &nbsp;|&nbsp; Estado: {ot?.ot_status?.nombre ?? "-"}
-            {ot?.fecha_actualizacion && (
+            {ultimaEdicion && (
               <>
-                &nbsp;|&nbsp; Última edición: {ot.usuario_actualiza ?? "—"}
-                {" · "}{formatDateOnly(ot.fecha_actualizacion)}
+                &nbsp;|&nbsp; Última edición: {ultimaEdicion.usuario}
+                {" · "}{ultimaEdicion.fechaCorta}
               </>
             )}
           </div>

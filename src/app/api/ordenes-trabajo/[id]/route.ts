@@ -37,6 +37,14 @@ export async function GET(_req: NextRequest, { params }: Params) {
           select: { compra: { select: { id: true, numero_po: true, status_oc_codigo: true } } },
           distinct: ["po_id"],
         },
+        // Última entrada del historial — el "Última edición" del detalle la
+        // muestra en vez de fecha_actualizacion (que solo tocan algunos
+        // endpoints y quedaba desfasada del tab Historial).
+        historial: {
+          select: { usuario: true, createdAt: true },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+        },
       },
     });
 
