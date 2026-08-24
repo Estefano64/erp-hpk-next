@@ -65,16 +65,22 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     const result = await prisma.$transaction(async (tx) => {
       const compra = await tx.compra.findUnique({
         where: { id: compraId },
-        include: { ot_repuestos: { select: { id: true, ot_id: true } } },
+        include: { ot_repuestos: { select: { id: true, ot_id: true, orden_trabajo_interna_id: true } } },
       });
       if (!compra) throw Object.assign(new Error("Compra no encontrada"), { code: "NOT_FOUND" });
       if (compra.status_oc_codigo === "ANULADO") {
         throw Object.assign(new Error("No se puede editar una OC anulada"), { code: "ANULADO" });
       }
 
-      // ot_id por defecto para items NUEVOS sin id (toma el primero de los existentes,
-      // o el de la compra). Si no hay, error: necesitamos al menos un ot_id.
-      const otIdDefault = compra.ot_repuestos[0]?.ot_id ?? compra.ot_id ?? null;
+      // OT por defecto para items NUEVOS sin id: primer item existente con OT
+      // externa (no el [0] a secas — podía ser un item libre sin OT), o la de
+      // la compra. Las OCs de OT INTERNA no tienen ot_id en ningún lado
+      // (Compra tampoco tiene campo interna): se deriva del primer item con
+      // orden_trabajo_interna_id — sin esto agregar items en la OC de una OT
+      // interna tiraba "necesita estar vinculada a una OT" (caso OC 271 /
+      // OI003126, 2026-08-24).
+      const otIdDefault = compra.ot_repuestos.find((r) => r.ot_id != null)?.ot_id ?? compra.ot_id ?? null;
+      const otInternaIdDefault = compra.ot_repuestos.find((r) => r.orden_trabajo_interna_id != null)?.orden_trabajo_interna_id ?? null;
       const itemsIds = new Set(compra.ot_repuestos.map((r) => r.id));
 
       // 1) Eliminar de la OC.
@@ -163,8 +169,8 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
             },
           });
         } else {
-          // Crear nuevo (necesita ot_id)
-          if (!otIdDefault) {
+          // Crear nuevo (necesita OT externa O interna)
+          if (!otIdDefault && !otInternaIdDefault) {
             throw Object.assign(
               new Error("Para agregar items libres, la OC necesita al menos un item existente o estar vinculada a una OT."),
               { code: "SIN_OT" },
@@ -176,7 +182,9 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
           // hace que todas las vistas de req los filtren fuera.
           await tx.oTRepuesto.create({
             data: {
+              // Externa gana si existe; sino el item cuelga de la OT interna.
               ot_id: otIdDefault,
+              orden_trabajo_interna_id: otIdDefault ? null : otInternaIdDefault,
               po_id: compraId,
               nro_oc: compra.numero_po,
               fecha_oc: new Date(),
