@@ -17,12 +17,15 @@ import {
   message,
   Descriptions,
   Space,
+  Modal,
 } from "antd";
 import { SaveOutlined, ArrowLeftOutlined, CheckCircleFilled } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 import { useUnsavedChangesWarning, confirmLeave } from "@/lib/unsaved-changes";
+import { useEscrituraApi } from "@/lib/use-escritura";
+import { useResponsive, modalWidth } from "@/lib/responsive";
 import { MaterialQuickCreateModal } from "@/components/modules/materiales/MaterialQuickCreateModal";
 
 const { Title, Text } = Typography;
@@ -92,6 +95,45 @@ export default function NuevaOTPage() {
   // Permiten ofrecer "+ Crear: <texto>" cuando el código no existe en catálogo.
   const [matSearch, setMatSearch] = useState("");
   const [matModalOpen, setMatModalOpen] = useState(false);
+  // Cliente al vuelo (ticket #175: "no se puede crear un nuevo cliente, solo
+  // los de la lista"). El Select de Cliente ofrece "+ Crear cliente" que abre
+  // un modal mínimo (razón social + datos opcionales); el código CLI-#### lo
+  // autogenera el POST. Solo visible para quien puede escribir /api/clientes
+  // (admin + logística — misma matriz que el servidor).
+  const { screens } = useResponsive();
+  const puedeCrearCliente = useEscrituraApi("/api/clientes", "POST");
+  const [cliSearch, setCliSearch] = useState("");
+  const [cliModalOpen, setCliModalOpen] = useState(false);
+  const [cliSaving, setCliSaving] = useState(false);
+  const [formCliente] = Form.useForm<{
+    razon_social: string; nombre_comercial?: string; ruc?: string;
+    email?: string; telefono?: string;
+  }>();
+
+  const crearClienteRapido = async () => {
+    const values = await formCliente.validateFields().catch(() => null);
+    if (!values) return;
+    setCliSaving(true);
+    try {
+      const res = await fetch("/api/clientes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Error al crear el cliente");
+      const nuevo = json.data as ClienteOption;
+      setClientes((prev) => [nuevo, ...prev]);
+      form.setFieldValue("id_cliente", nuevo.cliente_id);
+      buscarContrato(nuevo.cliente_id, undefined);
+      setCliModalOpen(false);
+      messageApi.success(`Cliente ${nuevo.codigo} creado y seleccionado`);
+    } catch (err) {
+      messageApi.error(err instanceof Error ? err.message : "Error al crear el cliente");
+    } finally {
+      setCliSaving(false);
+    }
+  };
 
   // Estado del form para lógica condicional
   const [estrategia, setEstrategia] = useState(false);
@@ -428,12 +470,38 @@ export default function NuevaOTPage() {
                 <Select
                   showSearch
                   optionFilterProp="label"
-                  placeholder="Seleccionar cliente"
+                  placeholder={puedeCrearCliente ? "Buscar o crear cliente..." : "Seleccionar cliente"}
                   onChange={(v) => { buscarContrato(v, undefined); }}
+                  onSearch={(v) => setCliSearch(v)}
+                  onBlur={() => setCliSearch("")}
                   options={clientes.map((c) => ({
                     value: c.cliente_id,
                     label: `${c.codigo} - ${c.nombre_comercial ?? c.razon_social}`,
                   }))}
+                  // Ticket #175: si el cliente no está en la lista, se crea al
+                  // vuelo sin salir del formulario (mismo patrón que material).
+                  dropdownRender={(menu) => (
+                    <div>
+                      {menu}
+                      {puedeCrearCliente && (
+                        <div style={{ borderTop: "1px solid #f0f0f0", padding: "6px 8px" }}>
+                          <Button
+                            type="link" size="small" block
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              formCliente.resetFields();
+                              if (cliSearch.trim()) {
+                                formCliente.setFieldsValue({ razon_social: cliSearch.trim() });
+                              }
+                              setCliModalOpen(true);
+                            }}
+                          >
+                            + Crear cliente nuevo{cliSearch.trim() ? <>: <b>{`"${cliSearch.trim()}"`}</b></> : null}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 />
               </Form.Item>
             </Col>
@@ -950,6 +1018,52 @@ export default function NuevaOTPage() {
           setMatSearch("");
         }}
       />
+
+      {/* Crear cliente al vuelo desde el Select "Cliente" (ticket #175).
+          Datos mínimos — el código CLI-#### lo autogenera el servidor; el
+          resto (dirección, contacto, etc.) se completa después en /clientes. */}
+      <Modal
+        title="Nuevo cliente"
+        open={cliModalOpen}
+        onCancel={() => setCliModalOpen(false)}
+        onOk={crearClienteRapido}
+        confirmLoading={cliSaving}
+        okText="Crear y seleccionar"
+        cancelText="Cancelar"
+        width={modalWidth(screens, 480)}
+      >
+        <Form form={formCliente} layout="vertical" preserve={false}>
+          <Form.Item
+            name="razon_social"
+            label="Razón social"
+            rules={[{ required: true, message: "Razón social requerida" }]}
+          >
+            <Input placeholder="Razón social del cliente" maxLength={200} />
+          </Form.Item>
+          <Form.Item name="nombre_comercial" label="Nombre comercial">
+            <Input placeholder="Opcional" maxLength={200} />
+          </Form.Item>
+          <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item name="ruc" label="RUC">
+                <Input placeholder="Opcional" maxLength={20} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="telefono" label="Teléfono">
+                <Input placeholder="Opcional" maxLength={30} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item name="email" label="Email">
+            <Input placeholder="Opcional" maxLength={150} />
+          </Form.Item>
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            El código CLI-#### se genera automáticamente. Dirección, contacto y
+            demás datos se completan luego en la pantalla Clientes.
+          </Text>
+        </Form>
+      </Modal>
     </div>
   );
 }
