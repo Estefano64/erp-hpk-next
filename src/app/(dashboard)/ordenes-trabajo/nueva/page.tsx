@@ -27,6 +27,7 @@ import { useUnsavedChangesWarning, confirmLeave } from "@/lib/unsaved-changes";
 import { useEscrituraApi } from "@/lib/use-escritura";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import { MaterialQuickCreateModal } from "@/components/modules/materiales/MaterialQuickCreateModal";
+import { ClienteFormFields } from "@/components/modules/clientes/ClienteFormFields";
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -106,8 +107,9 @@ export default function NuevaOTPage() {
   const [cliModalOpen, setCliModalOpen] = useState(false);
   const [cliSaving, setCliSaving] = useState(false);
   const [formCliente] = Form.useForm<{
-    razon_social: string; nombre_comercial?: string; ruc?: string;
-    email?: string; telefono?: string;
+    ruc: string; razon_social: string; nombre_comercial?: string;
+    direccion?: string; contacto_principal?: string;
+    telefono?: string; email?: string; nota?: string;
   }>();
 
   const crearClienteRapido = async () => {
@@ -1020,48 +1022,30 @@ export default function NuevaOTPage() {
       />
 
       {/* Crear cliente al vuelo desde el Select "Cliente" (ticket #175).
-          Datos mínimos — el código CLI-#### lo autogenera el servidor; el
-          resto (dirección, contacto, etc.) se completa después en /clientes. */}
+          MISMO formulario que el maestro /clientes (ClienteFormFields):
+          búsqueda por RUC con autocompletado, hint de duplicados, todos los
+          campos. El código CLI-#### lo autogenera el servidor. */}
       <Modal
-        title="Nuevo cliente"
+        title="Nuevo Cliente"
         open={cliModalOpen}
         onCancel={() => setCliModalOpen(false)}
         onOk={crearClienteRapido}
         confirmLoading={cliSaving}
         okText="Crear y seleccionar"
         cancelText="Cancelar"
-        width={modalWidth(screens, 480)}
+        width={modalWidth(screens, 700)}
+        destroyOnHidden
       >
-        <Form form={formCliente} layout="vertical" preserve={false}>
-          <Form.Item
-            name="razon_social"
-            label="Razón social"
-            rules={[{ required: true, message: "Razón social requerida" }]}
-          >
-            <Input placeholder="Razón social del cliente" maxLength={200} />
-          </Form.Item>
-          <Form.Item name="nombre_comercial" label="Nombre comercial">
-            <Input placeholder="Opcional" maxLength={200} />
-          </Form.Item>
-          <Row gutter={12}>
-            <Col span={12}>
-              <Form.Item name="ruc" label="RUC">
-                <Input placeholder="Opcional" maxLength={20} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="telefono" label="Teléfono">
-                <Input placeholder="Opcional" maxLength={30} />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Form.Item name="email" label="Email">
-            <Input placeholder="Opcional" maxLength={150} />
-          </Form.Item>
-          <Text type="secondary" style={{ fontSize: 11 }}>
-            El código CLI-#### se genera automáticamente. Dirección, contacto y
-            demás datos se completan luego en la pantalla Clientes.
-          </Text>
+        <div style={{ fontSize: 12, color: brand.textSecondary, marginTop: 12 }}>
+          Los campos con <span style={{ color: brand.error }}>*</span> son obligatorios.
+          El código CLI-#### se genera automáticamente.
+        </div>
+        <Form
+          form={formCliente} layout="vertical" style={{ marginTop: 8 }}
+          validateTrigger={["onChange", "onBlur"]}
+          requiredMark
+        >
+          <ClienteFormFields form={formCliente} />
         </Form>
       </Modal>
     </div>

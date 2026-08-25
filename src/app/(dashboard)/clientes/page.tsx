@@ -53,9 +53,8 @@ import {
 } from "@/lib/tables";
 import { ImportarExcelModal } from "@/components/ImportarExcelModal";
 import { EmptyState } from "@/components/EmptyState";
-import { DuplicateHint } from "@/components/DuplicateHint";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
-import { RucLookupInput } from "@/components/RucLookupInput";
+import { ClienteFormFields } from "@/components/modules/clientes/ClienteFormFields";
 
 const { Title } = Typography;
 
@@ -72,18 +71,6 @@ interface ClienteRecord {
   nota: string | null;
   activo?: boolean;
   created_at?: string;
-}
-
-function ClienteDupHint({ form, excludeId }: { form: ReturnType<typeof Form.useForm>[0]; excludeId?: number }) {
-  const value = (Form.useWatch("razon_social", form) ?? "") as string;
-  return (
-    <DuplicateHint<ClienteRecord>
-      value={value}
-      endpoint="/api/clientes"
-      excludeId={excludeId}
-      mapMatch={(c) => ({ id: c.cliente_id, primary: c.razon_social, secondary: c.codigo })}
-    />
-  );
 }
 
 export default function ClientesPage() {
@@ -552,60 +539,9 @@ export default function ClientesPage() {
           validateTrigger={["onChange", "onBlur"]}
           requiredMark
         >
-          <Row gutter={16}>
-            <Col xs={24} sm={8}>
-              <Form.Item
-                name="ruc"
-                label="RUC"
-                rules={[
-                  { required: true, message: "El RUC es obligatorio" },
-                  { pattern: /^\d{11}$/, message: "Debe tener 11 dígitos numéricos" },
-                ]}
-              >
-                <RucLookupInput
-                  form={form}
-                  fieldName="ruc"
-                  targets={{ razonSocial: "razon_social", direccion: "direccion" }}
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={16}>
-              <Form.Item name="razon_social" label="Razón Social" rules={[{ required: true, message: "Razón social obligatoria" }]}>
-                <Input placeholder="Ej. Minera Cuajone S.A." />
-              </Form.Item>
-              {!editing && <ClienteDupHint form={form} />}
-            </Col>
-            <Col span={24}>
-              <Form.Item name="nombre_comercial" label="Nombre Comercial">
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={24}>
-              <Form.Item name="direccion" label="Dirección">
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={8}>
-              <Form.Item name="contacto_principal" label="Contacto Principal">
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col xs={12} sm={8}>
-              <Form.Item name="telefono" label="Teléfono">
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col xs={12} sm={8}>
-              <Form.Item name="email" label="Email" rules={[{ type: "email", message: "Email inválido" }]}>
-                <Input placeholder="contacto@cliente.com" />
-              </Form.Item>
-            </Col>
-            <Col span={24}>
-              <Form.Item name="nota" label="Nota" extra="Útil para distinguir sedes con mismo RUC (ej. Cuajone, Toquepala, Ilo).">
-                <Input maxLength={300} />
-              </Form.Item>
-            </Col>
-          </Row>
+          {/* Campos compartidos con la creación al vuelo de Nueva OT — se
+              editan en ClienteFormFields para que no diverjan. */}
+          <ClienteFormFields form={form} excludeId={editing?.cliente_id} showDupHint={!editing} />
         </Form>
       </Modal>
 
