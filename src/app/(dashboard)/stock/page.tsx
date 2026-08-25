@@ -74,6 +74,13 @@ interface StockItem {
   almacen: string | null;
   stock_proyectado: number;
   por_solicitar: number;
+  // Del stock físico, cuánto ya tiene dueño: material que llegó de una OC y
+  // espera en almacén el despacho a la OT que lo pidió. No es tomable para
+  // otra cosa. Ver src/lib/stock-reservado.ts.
+  cantidad_reservada: number;
+  ots_reservadas: string[];
+  // stock_actual − cantidad_reservada: lo realmente disponible hoy.
+  stock_libre: number;
   origen?: "catalogo" | "no_catalogado";
 }
 
@@ -85,6 +92,8 @@ interface StockKPIs {
   enPO: number;
   enReq: number;
   porSolicitar: number;
+  conReservado: number;
+  sinLibre: number;
   valorTotal: number;
   conMinMax: number;
   conMinMaxSinStock: number;
@@ -107,6 +116,7 @@ export default function StockPage() {
   const [kpis, setKpis] = useState<StockKPIs>({
     totalMateriales: 0, sinStock: 0, bajoStock: 0,
     exceso: 0, enPO: 0, enReq: 0, porSolicitar: 0,
+    conReservado: 0, sinLibre: 0,
     valorTotal: 0, conMinMax: 0, conMinMaxSinStock: 0,
     totalEntradas: 0, totalSalidas: 0, totalAjustes: 0, balanceStock: 0,
   });
@@ -167,6 +177,11 @@ export default function StockPage() {
           almacen: m.ubicacion_nombre,
           stock_proyectado: m.stock_actual,
           por_solicitar: 0,
+          // Los no catalogados no se compran contra requerimientos de OT,
+          // así que su stock nunca está reservado: libre = físico.
+          cantidad_reservada: 0,
+          ots_reservadas: [],
+          stock_libre: m.stock_actual,
           origen: "no_catalogado",
         }));
         setNoCatRaw(mapped);
@@ -236,6 +251,8 @@ export default function StockPage() {
         <Col span={12}><span style={{ color: "#888" }}>En POs (entrante):</span> <b style={{ color: "#1677ff" }}>+{r.cantidad_en_po}</b></Col>
         <Col span={12}><span style={{ color: "#888" }}>En REQ (a solicitar):</span> <b style={{ color: "#faad14" }}>{r.cantidad_en_req}</b></Col>
         <Col span={12}><span style={{ color: "#888" }}>Stock disponible:</span> <b style={{ color: brand.cyan }}>{r.stock_proyectado}</b></Col>
+        <Col span={12}><span style={{ color: "#888" }}>Reservado a OTs:</span> <b style={{ color: r.cantidad_reservada > 0 ? "#faad14" : "#666" }}>{r.cantidad_reservada}</b></Col>
+        <Col span={12}><span style={{ color: "#888" }}>Stock libre:</span> <b style={{ color: r.stock_libre > 0 ? "#52c41a" : "#ff4d4f" }}>{r.stock_libre}</b></Col>
         <Col span={12}><span style={{ color: "#888" }}>Por solicitar:</span> <b style={{ color: r.por_solicitar > 0 ? "#cf1322" : "#666" }}>{r.por_solicitar}</b></Col>
         <Col span={12}><span style={{ color: "#888" }}>Almacén:</span> <b>{r.almacen || "-"}</b></Col>
         <Col span={12}><span style={{ color: "#888" }}>Ubicación:</span> <b>{r.ubicacion || "-"}</b></Col>
@@ -248,6 +265,14 @@ export default function StockPage() {
             <span style={{ color: "#888" }}>POs:</span>{" "}
             {r.pos_pendientes.slice(0, 4).map((po, i) => (
               <Tag key={i} color="blue" style={{ fontSize: 10 }}>{po}</Tag>
+            ))}
+          </Col>
+        )}
+        {r.ots_reservadas.length > 0 && (
+          <Col span={24}>
+            <span style={{ color: "#888" }}>OTs que esperan este material:</span>{" "}
+            {r.ots_reservadas.slice(0, 6).map((ot, i) => (
+              <Tag key={i} color="gold" style={{ fontSize: 10 }}>{ot}</Tag>
             ))}
           </Col>
         )}
@@ -360,12 +385,53 @@ export default function StockPage() {
       align: "right",
       sorter: (a, b) => a.stock_actual - b.stock_actual,
       render: (v: number, r: StockItem) => (
-        <Tooltip title="Stock físico libre en almacén (sin contar lo en tránsito ni lo reservado a OTs)">
+        <Tooltip title="Stock físico contable del almacén. OJO: incluye el material que ya llegó de una OC y espera despacho para una OT — ver la columna Libre.">
           <span style={{ fontWeight: 600, color: r.alerta === "SIN" ? "#ff4d4f" : r.alerta === "BAJO" ? "#faad14" : r.alerta === "EXCESO" ? "#722ed1" : "#52c41a" }}>
             {v.toLocaleString("en", { maximumFractionDigits: 2 })}
           </span>
         </Tooltip>
       ),
+    },
+    {
+      // Lo único que se puede tomar hoy sin quitárselo a otra OT.
+      // Físico − reservado (material recibido de una OC, esperando despacho).
+      key: "stock_libre",
+      title: "Libre",
+      dataIndex: "stock_libre",
+      width: 80,
+      align: "right",
+      sorter: (a, b) => a.stock_libre - b.stock_libre,
+      render: (v: number, r: StockItem) => (
+        <Tooltip
+          title={
+            r.cantidad_reservada > 0
+              ? `Libre = ${r.stock_actual} físico − ${r.cantidad_reservada} reservados${r.ots_reservadas.length ? ` a ${r.ots_reservadas.join(", ")}` : ""}`
+              : "Stock sin dueño: se puede consumir de almacén para cualquier OT"
+          }
+        >
+          <span style={{ fontWeight: 600, color: v <= 0 ? "#ff4d4f" : "#52c41a" }}>
+            {v.toLocaleString("en", { maximumFractionDigits: 2 })}
+          </span>
+        </Tooltip>
+      ),
+    },
+    {
+      // Material que está en el estante pero ya es de una OT concreta:
+      // llegó de una OC y espera que se lo despachen al técnico.
+      key: "cantidad_reservada",
+      title: "Reservado",
+      dataIndex: "cantidad_reservada",
+      width: 100,
+      align: "right",
+      sorter: (a, b) => a.cantidad_reservada - b.cantidad_reservada,
+      render: (v: number, r: StockItem) =>
+        v > 0 ? (
+          <Tooltip title={`En almacén pero asignado a: ${r.ots_reservadas.join(", ") || "otras OTs"}`}>
+            <Tag color="gold" style={{ fontWeight: 600 }}>{v}</Tag>
+          </Tooltip>
+        ) : (
+          <span style={{ color: "#bbb" }}>—</span>
+        ),
     },
     { key: "unidad_medida", title: "UM", dataIndex: "unidad_medida", width: 55, align: "center", ...filtroPorColumna(data, "unidad_medida") },
     {
@@ -512,6 +578,9 @@ export default function StockPage() {
               { key: "descripcion", label: "Descripción", value: (r) => r.descripcion },
               { key: "np", label: "N/P", value: (r) => r.np ?? "" },
               { key: "stock_actual", label: "Stock", value: (r) => r.stock_actual },
+              { key: "stock_libre", label: "Libre", value: (r) => r.stock_libre },
+              { key: "cantidad_reservada", label: "Reservado a OTs", value: (r) => r.cantidad_reservada },
+              { key: "ots_reservadas", label: "OTs que lo esperan", value: (r) => r.ots_reservadas.join(", ") },
               { key: "stock_proyectado", label: "Disponible", value: (r) => r.stock_proyectado },
               { key: "unidad_medida", label: "UM", value: (r) => r.unidad_medida ?? "" },
               { key: "cantidad_en_po", label: "En POs", value: (r) => r.cantidad_en_po },
@@ -559,6 +628,8 @@ export default function StockPage() {
                 { value: "exceso", label: "Solo en exceso" },
                 { value: "en_po", label: "Con cantidad en POs" },
                 { value: "en_req", label: "En requerimientos" },
+                { value: "reservado", label: "Con stock reservado a OTs" },
+                { value: "sin_libre", label: "Sin stock libre (todo reservado)" },
                 { value: "por_solicitar", label: "Por solicitar" },
               ]}
             />
@@ -597,7 +668,7 @@ export default function StockPage() {
             onChange: (p, s) => { setPage(p); setPageSize(s); },
             label: "materiales",
           })}
-          scroll={{ x: 1700 }}
+          scroll={{ x: 1900 }}
           sticky={{ offsetHeader: 56, offsetScroll: 0 }}
           size="small"
           onChange={(_p, _f, _s, extra) => setVistaActual(extra.currentDataSource)}
