@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { resolverPrecioSalida } from "@/lib/inventario";
 import { recalcularRecursosStatusDesdeRep } from "@/lib/recursos-ot";
+import { calcularStockReservado } from "@/lib/stock-reservado";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
@@ -116,9 +117,19 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
 
     const stockActual = new Prisma.Decimal(material.stock_actual ?? 0);
-    if (stockActual.lt(cantidad)) {
+    // El stock físico incluye material que ya llegó de una OC y espera en
+    // almacén asignado a otra OT (recibido, pendiente de despacho al
+    // técnico). Ese saldo NO se puede tomar acá: consumirlo dejaba a la OT
+    // dueña sin su repuesto. Ver src/lib/stock-reservado.ts.
+    const reserva = (await calcularStockReservado(prisma, [materialId])).get(materialId);
+    const reservado = new Prisma.Decimal(reserva?.cantidad ?? 0);
+    const libre = Prisma.Decimal.max(0, stockActual.minus(reservado));
+    if (libre.lt(cantidad)) {
+      const detalle = reservado.gt(0)
+        ? ` Hay ${stockActual} en almacén pero ${reservado} están reservados a ${reserva?.ots?.length ? reserva.ots.join(", ") : "otras OTs"}.`
+        : "";
       throw Object.assign(
-        new Error(`Stock insuficiente. Disponible: ${stockActual}, requerido: ${cantidad}.`),
+        new Error(`Stock libre insuficiente. Disponible: ${libre}, requerido: ${cantidad}.${detalle}`),
         { code: "NO_STOCK" },
       );
     }
@@ -130,13 +141,16 @@ export async function POST(req: NextRequest, { params }: Params) {
       // Guarda atómica 1: descontar stock SOLO si sigue alcanzando. Si otro
       // consumo simultáneo lo bajó entre la validación y acá, count = 0 y se
       // aborta (antes ese caso podía descontar de más).
+      // El piso incluye el reservado: el stock no puede bajar de lo que ya
+      // tiene dueño, aunque físicamente esté en el almacén.
+      const minimoRequerido = cantidad.plus(reservado);
       const decremento = await tx.material.updateMany({
-        where: { material_id: materialId, stock_actual: { gte: cantidad } },
+        where: { material_id: materialId, stock_actual: { gte: minimoRequerido } },
         data: { stock_actual: { decrement: cantidad } },
       });
       if (decremento.count === 0) {
         throw Object.assign(
-          new Error(`Stock insuficiente. Requerido: ${cantidad}.`),
+          new Error(`Stock libre insuficiente. Requerido: ${cantidad}${reservado.gt(0) ? ` (${reservado} reservados a otras OTs)` : ""}.`),
           { code: "NO_STOCK" },
         );
       }
