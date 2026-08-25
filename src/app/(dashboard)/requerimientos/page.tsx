@@ -100,6 +100,11 @@ interface RequerimientoRow {
     descripcion: string | null;
   } | null;
   material: { codigo: string; descripcion: string; unidad_medida_codigo: string | null; stock_actual: string | number | null; precio: string | number | null; moneda_codigo: string | null } | null;
+  // Unidades del material que están en almacén pero ya asignadas a una OT
+  // (llegaron de una OC y esperan despacho). El stock realmente tomable es
+  // stock_actual − _stock_reservado. Ver src/lib/stock-reservado.ts.
+  _stock_reservado?: number;
+  _stock_reservado_ots?: string[];
   observaciones?: string | null;
   adjuntos?: { id: number; nombre_archivo: string; r2_key: string; tamano: number }[];
 }
@@ -107,6 +112,13 @@ interface RequerimientoRow {
 interface CatalogOpt { codigo: string; nombre: string; orden?: number | null }
 interface ProveedorOpt { id: number; razon_social: string; ruc: string | null }
 interface UbicacionOpt { codigo: string; nombre: string }
+
+// Stock que este requerimiento puede realmente tomar del almacén: el físico
+// menos lo que ya tiene dueño (material recibido de una OC para otra OT que
+// todavía no se despachó al técnico).
+function stockLibreDe(r: RequerimientoRow): number {
+  return Math.max(0, Number(r.material?.stock_actual ?? 0) - Number(r._stock_reservado ?? 0));
+}
 
 const TIPO_COLOR: Record<string, string> = { MAC: "blue", CAD: "orange", SER: "purple" };
 const REQ_COLOR: Record<string, string> = { SIN_APROBACION: "default", APROBADO: "success", DESAPROBADO: "error", ANULADO: "default", CERRADO: "blue" };
@@ -1042,10 +1054,18 @@ export default function RequerimientosPage() {
           <b>{Number(r.cantidad).toLocaleString()} {r.unidad_medida ?? ""}</b>
         </Col>
         <Col span={12}>
-          <span style={{ color: "#888" }}>Stock:</span>{" "}
-          <b style={{ color: Number(r.material?.stock_actual ?? 0) > 0 ? "#52c41a" : "#ff4d4f" }}>
-            {r.material?.stock_actual != null ? Number(r.material.stock_actual) : "-"}
+          {/* Stock LIBRE: el físico menos lo reservado a otras OTs. Es lo
+              único que este req puede tomar de almacén. */}
+          <span style={{ color: "#888" }}>Stock libre:</span>{" "}
+          <b style={{ color: stockLibreDe(r) > 0 ? "#52c41a" : "#ff4d4f" }}>
+            {r.material?.stock_actual != null ? stockLibreDe(r) : "-"}
           </b>
+          {(r._stock_reservado ?? 0) > 0 && (
+            <span style={{ color: "#888", fontSize: 11 }}>
+              {" "}(de {Number(r.material?.stock_actual ?? 0)}, {r._stock_reservado} reservados
+              {(r._stock_reservado_ots ?? []).length ? ` a ${(r._stock_reservado_ots ?? []).join(", ")}` : ""})
+            </span>
+          )}
         </Col>
         <Col span={12}>
           <span style={{ color: "#888" }}>P. Unit:</span>{" "}
@@ -1356,7 +1376,9 @@ export default function RequerimientosPage() {
               { label: "Material", value: (r) => r.material?.descripcion ?? r.descripcion ?? "" },
               { label: "Cantidad", value: (r) => Number(r.cantidad) },
               { label: "UM", value: (r) => r.unidad_medida ?? r.material?.unidad_medida_codigo ?? "" },
-              { label: "Stock", value: (r) => r.material ? Number(r.material.stock_actual ?? 0) : "" },
+              { label: "Stock físico", value: (r) => r.material ? Number(r.material.stock_actual ?? 0) : "" },
+              { label: "Reservado a OTs", value: (r) => r.material ? Number(r._stock_reservado ?? 0) : "" },
+              { label: "Stock libre", value: (r) => r.material ? stockLibreDe(r) : "" },
               { label: "Cliente", value: (r) => r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "" },
               { label: "P. Unit", value: (r) => r.precio_unitario != null ? Number(r.precio_unitario) : "", z: "#,##0.00" },
               { label: "Moneda", value: (r) => r.moneda ?? "" },
