@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { calcularStockReservado, stockLibre } from "@/lib/stock-reservado";
 
 // GET — listado de stock de materiales
 export async function GET(req: NextRequest) {
@@ -78,6 +79,16 @@ export async function GET(req: NextRequest) {
       }),
     ]);
 
+    // Del stock físico, cuánto ya tiene dueño: material que llegó de una OC
+    // y espera en almacén a que se despache a la OT que lo pidió. Ese saldo
+    // suma a `stock_actual` pero NO se puede tomar para otra cosa — es la
+    // misma corrección que se aplicó al tab "Almacén" de /requerimientos.
+    // Ver src/lib/stock-reservado.ts.
+    const reservadoMap = await calcularStockReservado(
+      prisma,
+      materiales.map((m: { material_id: number }) => m.material_id),
+    );
+
     const enPOMap = new Map<number, { cantidad: number; pos: string[]; almacenes: string[] }>(
       enPORows.map((r) => [r.material_id, { cantidad: r.cantidad, pos: r.pos, almacenes: r.almacenes }]),
     );
@@ -112,6 +123,12 @@ export async function GET(req: NextRequest) {
       almacen: string | null;
       stock_proyectado: number;
       por_solicitar: number;
+      /** Del stock físico, cuánto está apartado para una OT concreta. */
+      cantidad_reservada: number;
+      /** Códigos de las OTs dueñas de ese material. */
+      ots_reservadas: string[];
+      /** stock_actual − cantidad_reservada: lo realmente tomable hoy. */
+      stock_libre: number;
     };
 
     let data: StockItem[] = materiales.map((m: Mat) => {
@@ -128,11 +145,15 @@ export async function GET(req: NextRequest) {
       // se restaba En REQ pero por convención del área se suma porque ya está
       // "comprometido" al NP (aunque asignado a una OT específica).
       const proyectado = stock + cantPO + cantReq;
-      // "Por solicitar" usa Stock + En POs (sin sumar En REQ) — el material
-      // reservado a una OT NO debería evitar nuevas compras del NP. Si bajamos
+      const reserva = reservadoMap.get(m.material_id);
+      const cantReservada = reserva?.cantidad ?? 0;
+      const libre = stockLibre(stock, cantReservada);
+      // "Por solicitar" usa Stock LIBRE + En POs (sin sumar En REQ) — el
+      // material reservado a una OT NO debería evitar nuevas compras del NP,
+      // ni el que está pedido ni el que ya llegó y espera despacho. Si bajamos
       // del punto de reposición considerando solo lo que efectivamente va a
       // estar libre, sugerimos comprar hasta el máximo.
-      const proyectadoParaCompra = stock + cantPO;
+      const proyectadoParaCompra = libre + cantPO;
       const porSolicitar = punto > 0 && proyectadoParaCompra <= punto && maximo > proyectadoParaCompra
         ? Math.max(0, maximo - proyectadoParaCompra)
         : 0;
@@ -168,6 +189,9 @@ export async function GET(req: NextRequest) {
         almacen: enPO?.almacenes?.[0] ?? null,
         stock_proyectado: proyectado,
         por_solicitar: porSolicitar,
+        cantidad_reservada: cantReservada,
+        ots_reservadas: reserva?.ots ?? [],
+        stock_libre: libre,
       };
     });
 
@@ -177,6 +201,12 @@ export async function GET(req: NextRequest) {
     if (filtro === "por_solicitar") data = data.filter((m: StockItem) => m.por_solicitar > 0);
     if (filtro === "en_po") data = data.filter((m: StockItem) => m.cantidad_en_po > 0);
     if (filtro === "en_req") data = data.filter((m: StockItem) => m.cantidad_en_req > 0);
+    if (filtro === "reservado") data = data.filter((m: StockItem) => m.cantidad_reservada > 0);
+    // Material que "figura" en almacén pero entero comprometido con otras OTs:
+    // el caso que hacía creer que había repuesto disponible cuando no lo había.
+    if (filtro === "sin_libre") {
+      data = data.filter((m: StockItem) => m.stock_actual > 0 && m.stock_libre <= 0);
+    }
     if (filtro === "con_min_max") {
       data = data.filter((m: StockItem) => m.punto_reposicion > 0 && m.stock_maximo > 0);
     }
@@ -193,6 +223,8 @@ export async function GET(req: NextRequest) {
     const exceso = data.filter((m: StockItem) => m.alerta === "EXCESO").length;
     const enPO = data.filter((m: StockItem) => m.cantidad_en_po > 0).length;
     const enReq = data.filter((m: StockItem) => m.cantidad_en_req > 0).length;
+    const conReservado = data.filter((m: StockItem) => m.cantidad_reservada > 0).length;
+    const sinLibre = data.filter((m: StockItem) => m.stock_actual > 0 && m.stock_libre <= 0).length;
     const porSolicitar = data.filter((m: StockItem) => m.por_solicitar > 0).length;
     const valorTotal = data.reduce((s: number, m: StockItem) => s + m.valor_total, 0);
     // Catálogos con punto_reposicion y stock_maximo configurados (>0)
@@ -218,6 +250,7 @@ export async function GET(req: NextRequest) {
       data,
       kpis: {
         totalMateriales, sinStock, bajoStock, exceso, enPO, enReq, porSolicitar, valorTotal,
+        conReservado, sinLibre,
         conMinMax, conMinMaxSinStock,
         totalEntradas, totalSalidas, totalAjustes, balanceStock,
       },
