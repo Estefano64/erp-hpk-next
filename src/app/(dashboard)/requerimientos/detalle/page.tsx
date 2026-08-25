@@ -70,6 +70,7 @@ import { useResponsive, modalWidth } from "@/lib/responsive";
 import dayjs, { Dayjs } from "dayjs";
 
 import { formatDateOnly } from "@/lib/dates";
+import { mensajeErrorApi } from "@/lib/api-error";
 import { formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
 import { R2FileLink } from "@/components/R2FileLink";
 const { Title, Text } = Typography;
@@ -1004,7 +1005,9 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
         }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Error al crear OC");
+      // mensajeErrorApi: incluye el detalle del zod ("campo: mensaje") — antes
+      // solo decía "Validación" y no se sabía qué corregir.
+      if (!res.ok) throw new Error(mensajeErrorApi(json, "Error al crear OC"));
 
       // Subir guía de remisión (opcional). Si el user adjuntó un archivo,
       // ahora que tenemos compra_id lo subimos a R2 y lo registramos.
@@ -3201,7 +3204,14 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                       if (d.tiempo_entrega_dias != null && !cur.fecha_entrega_esperada) {
                         patch.fecha_entrega_esperada = dayjs().add(d.tiempo_entrega_dias, "day");
                       }
-                      if (d.observaciones_sugeridas && !cur.observaciones) {
+                      // Observaciones sugeridas ("RUC: ... | Prov: ..."): se
+                      // pisan si el campo está vacío O si todavía contiene la
+                      // sugerencia AUTOGENERADA de un proveedor elegido antes
+                      // (bug OC 260261, 2026-08-25: al cambiar de proveedor
+                      // quedaba el RUC del anterior porque solo se llenaba con
+                      // el campo vacío). Texto escrito a mano no se toca.
+                      const esSugerenciaAuto = /^RUC: .* \| Prov: .*$/.test((cur.observaciones ?? "").trim());
+                      if (d.observaciones_sugeridas && (!cur.observaciones || esSugerenciaAuto)) {
                         patch.observaciones = d.observaciones_sugeridas;
                       }
                       // Aplica IGV: el default de provider gana solo si el user
