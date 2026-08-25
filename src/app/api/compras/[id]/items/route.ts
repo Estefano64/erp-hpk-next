@@ -56,6 +56,13 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     const body = await req.json();
     const parsed = Schema.safeParse(body);
     if (!parsed.success) {
+      // Log del detalle: el reporte de la OC 260261 (2026-08-25) llegó solo
+      // como "Validación" y no se pudo saber qué campo falló. Con esto queda
+      // en los logs de Railway aunque el usuario no copie el mensaje.
+      console.error(
+        `PATCH /api/compras/${compraId}/items — validación fallida:`,
+        JSON.stringify(parsed.error.flatten()),
+      );
       return NextResponse.json({ error: "Validación", detail: parsed.error.flatten() }, { status: 400 });
     }
     const { items, deleteIds, descuento, otros, numero_req, tipo_pago, dias_credito, aplica_igv, moneda_oc: monedaOcRaw } = parsed.data;

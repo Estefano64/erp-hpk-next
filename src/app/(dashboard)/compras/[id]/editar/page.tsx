@@ -15,6 +15,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
+import { mensajeErrorApi } from "@/lib/api-error";
 import { useEscrituraApi } from "@/lib/use-escritura";
 import { useUnsavedChangesWarning, confirmLeave } from "@/lib/unsaved-changes";
 import { useColumnasRedimensionables, STICKY_HEADER } from "@/lib/tables";
@@ -460,7 +461,9 @@ export default function EditarOCPage() {
         body: JSON.stringify(payload),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Error al guardar");
+      // mensajeErrorApi: incluye el detalle del zod ("campo: mensaje") — antes
+      // solo decía "Validación" y no se sabía qué corregir.
+      if (!res.ok) throw new Error(mensajeErrorApi(json, "Error al guardar"));
       messageApi.success("Items guardados");
       await fetchCompra();
     } catch (e) {
