@@ -938,8 +938,15 @@ export function useColumnasRedimensionables<T>(
     (event: DragEndEvent) => {
       const { active, over } = event;
       if (!over || active.id === over.id) return;
-      setOrden((prev) => {
-        const current = prev ?? movableKeys;
+      // Base del movimiento: el orden VISIBLE actual (movableKeys sale de las
+      // columnas ya ordenadas, con las columnas NUEVAS insertadas en su
+      // posición original). Antes se usaba el `orden` persistido a secas: una
+      // columna agregada después de guardar ese orden no figuraba en él,
+      // indexOf daba -1 y el drag se descartaba — la columna nueva parecía
+      // "fija" hasta borrar el localStorage (bug reportado 2026-08-25 con
+      // las columnas nuevas de /despachos/mina).
+      setOrden(() => {
+        const current = [...movableKeys];
         const oldIndex = current.indexOf(String(active.id));
         const newIndex = current.indexOf(String(over.id));
         if (oldIndex < 0 || newIndex < 0) return current;
