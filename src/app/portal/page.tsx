@@ -5,8 +5,8 @@
 // → Listo → Entregado). Solo timeline: sin costos, sin comentarios internos.
 
 import { useEffect, useMemo, useState } from "react";
-import { Card, Empty, Input, Space, Spin, Steps, Tag, Typography, Alert, Segmented } from "antd";
-import { SearchOutlined, CheckCircleOutlined, ToolOutlined } from "@ant-design/icons";
+import { Card, Empty, Input, Space, Spin, Steps, Tag, Typography, Alert, Segmented, Button, Descriptions } from "antd";
+import { SearchOutlined, CheckCircleOutlined, ToolOutlined, DownOutlined, UpOutlined } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
 import { useResponsive } from "@/lib/responsive";
 import { formatDateOnly } from "@/lib/dates";
@@ -33,6 +33,31 @@ interface OTPortal {
   actualizado: string | null;
   dias_taller: number | null;
   dias_en_curso: boolean;
+  // Ficha completa (2026-08-24) — datos descriptivos, sin montos.
+  estado_taller: string | null;
+  prioridad: string | null;
+  fabricante: string | null;
+  tipo_atencion: string | null;
+  tipo_reparacion: string | null;
+  garantia: string | null;
+  base_metalica: string | null;
+  wo_cliente: string | null;
+  po_cliente: string | null;
+  po_item: string | null;
+  id_viajero: string | null;
+  guia_remision: string | null;
+  nro_cotizacion: string | null;
+  fecha_cotizacion: string | null;
+  fecha_aprobacion_cotizacion: string | null;
+  // Monto cotizado al cliente (es SU precio cotizado, no un costo interno).
+  monto_cotizacion: number | null;
+  moneda_cotizacion: string | null;
+}
+
+// Monto cotizado con símbolo según moneda (SOL/PEN → S/, resto → $).
+function fmtMontoCotizacion(monto: number, moneda: string | null): string {
+  const simbolo = moneda === "SOL" || moneda === "PEN" ? "S/" : "$";
+  return `${simbolo} ${monto.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 interface Resp {
@@ -48,6 +73,17 @@ export default function PortalPage() {
   const [error, setError] = useState<string | null>(null);
   const [buscar, setBuscar] = useState("");
   const [filtro, setFiltro] = useState<"proceso" | "entregadas" | "todas">("proceso");
+  // Fichas expandidas por OT (id). La ficha completa va colapsada por default
+  // para mantener las tarjetas compactas.
+  const [fichasAbiertas, setFichasAbiertas] = useState<Set<number>>(new Set());
+  const toggleFicha = (id: number) => {
+    setFichasAbiertas((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   useEffect(() => {
     (async () => {
@@ -71,7 +107,8 @@ export default function PortalPage() {
     const q = buscar.trim().toLowerCase();
     if (q) {
       lista = lista.filter((o) =>
-        [String(o.ot ?? ""), o.descripcion, o.np, o.equipo, o.flota]
+        [String(o.ot ?? ""), o.descripcion, o.np, o.equipo, o.flota,
+          o.wo_cliente, o.po_cliente, o.guia_remision, o.nro_cotizacion]
           .some((v) => (v ?? "").toLowerCase().includes(q)),
       );
     }
@@ -162,6 +199,52 @@ export default function PortalPage() {
                       : undefined,
                   }))}
                 />
+                {/* Ficha completa (2026-08-24): datos descriptivos de la OT —
+                    documentos del cliente, cotización, catálogos. Sin montos. */}
+                <div style={{ marginTop: 8 }}>
+                  <Button
+                    type="link"
+                    size="small"
+                    style={{ paddingLeft: 0, fontSize: 12 }}
+                    icon={fichasAbiertas.has(o.id) ? <UpOutlined /> : <DownOutlined />}
+                    onClick={() => toggleFicha(o.id)}
+                  >
+                    {fichasAbiertas.has(o.id) ? "Ocultar ficha" : "Ver ficha completa"}
+                  </Button>
+                  {fichasAbiertas.has(o.id) && (
+                    <Descriptions
+                      size="small"
+                      bordered
+                      column={isMobile ? 1 : 3}
+                      style={{ marginTop: 6 }}
+                      styles={{ label: { fontSize: 11, width: 130 }, content: { fontSize: 12 } }}
+                      items={[
+                        { key: "ot", label: "N° OT", children: codigo },
+                        { key: "cliente", label: "Cliente", children: data?.cliente || "—" },
+                        { key: "desc", label: "Descripción", children: o.descripcion ?? "—" },
+                        { key: "estado_taller", label: "Estado taller", children: o.estado_taller ?? "—" },
+                        { key: "prioridad", label: "Prioridad", children: o.prioridad ?? "—" },
+                        { key: "fecha_req", label: "F. requerimiento cliente", children: o.fecha_requerida ? formatDateOnly(o.fecha_requerida) : "—" },
+                        { key: "fabricante", label: "Fabricante", children: o.fabricante ?? "—" },
+                        { key: "flota", label: "Flota equipo", children: o.flota ?? "—" },
+                        { key: "fecha_recepcion", label: "F. recepción", children: o.fecha_recepcion ? formatDateOnly(o.fecha_recepcion) : "—" },
+                        { key: "wo", label: "WO cliente", children: o.wo_cliente ?? "—" },
+                        { key: "po", label: "PO cliente", children: o.po_cliente ?? "—" },
+                        { key: "po_item", label: "PO item", children: o.po_item ?? "—" },
+                        { key: "viajero", label: "ID viajero", children: o.id_viajero ?? "—" },
+                        { key: "guia", label: "Guía remisión", children: o.guia_remision ?? "—" },
+                        { key: "cotizacion", label: "Cotización", children: o.nro_cotizacion ?? "—" },
+                        { key: "monto_cot", label: "Monto cotizado", children: o.monto_cotizacion != null ? fmtMontoCotizacion(o.monto_cotizacion, o.moneda_cotizacion) : "—" },
+                        { key: "f_cot", label: "F. envío cotización", children: o.fecha_cotizacion ? formatDateOnly(o.fecha_cotizacion) : "—" },
+                        { key: "f_aprob_cot", label: "F. aprobación cotización", children: o.fecha_aprobacion_cotizacion ? formatDateOnly(o.fecha_aprobacion_cotizacion) : "—" },
+                        { key: "tipo_atencion", label: "Tipo atención", children: o.tipo_atencion ?? "—" },
+                        { key: "tipo_rep", label: "Tipo reparación", children: o.tipo_reparacion ?? "—" },
+                        { key: "garantia", label: "Garantía", children: o.garantia ?? "—" },
+                        { key: "base", label: "Base metálica", children: o.base_metalica ?? "—" },
+                      ]}
+                    />
+                  )}
+                </div>
               </Card>
             );
           })}

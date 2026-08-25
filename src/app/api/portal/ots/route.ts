@@ -62,6 +62,28 @@ export async function GET(req: NextRequest) {
           fecha_requerimiento_cliente: true,
           fecha_actualizacion: true,
           cantidad: true,
+          // Ficha completa para el cliente (pedido 2026-08-24). Documentos y
+          // catálogos descriptivos — SIN montos (monto_cotizacion NO se expone,
+          // solo el número y las fechas del ciclo de cotización).
+          taller_status: { select: { nombre: true } },
+          prioridad_atencion: { select: { codigo: true, nombre: true } },
+          fabricante: { select: { nombre: true } },
+          atencion_reparacion: { select: { nombre: true } },
+          tipo_reparacion: { select: { nombre: true } },
+          garantia: { select: { nombre: true } },
+          base_metalica: { select: { nombre: true } },
+          wo_cliente: true,
+          po_cliente: true,
+          po_item: true,
+          id_viajero: true,
+          guia_remision: true,
+          nro_cotizacion: true,
+          fecha_cotizacion: true,
+          fecha_aprobacion: true,
+          // Monto cotizado AL CLIENTE (confirmado por el usuario 2026-08-24:
+          // es el precio que ya se le cotizó a él, no un costo interno).
+          monto_cotizacion: true,
+          moneda_cotizacion_codigo: true,
         },
         orderBy: [{ fecha_recepcion: "desc" }, { id: "desc" }],
       }),
@@ -99,6 +121,26 @@ export async function GET(req: NextRequest) {
         actualizado: o.fecha_actualizacion,
         dias_taller: dias?.dias ?? null,
         dias_en_curso: dias?.enCurso ?? false,
+        // Ficha completa (2026-08-24) — solo datos descriptivos, sin montos.
+        estado_taller: o.taller_status?.nombre ?? null,
+        prioridad: o.prioridad_atencion
+          ? `${o.prioridad_atencion.codigo} - ${o.prioridad_atencion.nombre}`
+          : null,
+        fabricante: o.fabricante?.nombre ?? null,
+        tipo_atencion: o.atencion_reparacion?.nombre ?? null,
+        tipo_reparacion: o.tipo_reparacion?.nombre ?? null,
+        garantia: o.garantia?.nombre ?? null,
+        base_metalica: o.base_metalica?.nombre ?? null,
+        wo_cliente: o.wo_cliente,
+        po_cliente: o.po_cliente,
+        po_item: o.po_item,
+        id_viajero: o.id_viajero,
+        guia_remision: o.guia_remision,
+        nro_cotizacion: o.nro_cotizacion,
+        fecha_cotizacion: o.fecha_cotizacion,
+        fecha_aprobacion_cotizacion: o.fecha_aprobacion,
+        monto_cotizacion: o.monto_cotizacion != null ? Number(o.monto_cotizacion) : null,
+        moneda_cotizacion: o.moneda_cotizacion_codigo,
       };
     });
 
