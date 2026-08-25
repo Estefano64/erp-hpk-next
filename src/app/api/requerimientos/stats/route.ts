@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parseInt4Safe, parseOtCodigoSearch } from "@/lib/ot-formato";
+import { calcularStockReservado, stockLibre } from "@/lib/stock-reservado";
 
 // GET /api/requerimientos/stats — KPIs agregados sobre TODO el conjunto filtrado,
 // no sólo la página actual. Replica el `where` de GET /api/requerimientos.
@@ -105,6 +106,17 @@ export async function GET(req: NextRequest) {
       },
     });
 
+    // Stock reservado a OTs: `Material.stock_actual` incluye material que ya
+    // llegó de una OC y espera en almacén con dueño (la OT que lo pidió). Ese
+    // material NO cuenta como "en stock" para otro requerimiento — ver
+    // src/lib/stock-reservado.ts.
+    const reservadoPorMaterial = await calcularStockReservado(
+      prisma,
+      [...new Set(rows.map((r) => r.material_id).filter((x): x is number => x != null))],
+    );
+    const libreDe = (materialId: number | null, stockActual: unknown) =>
+      stockLibre(Number(stockActual ?? 0), materialId != null ? (reservadoPorMaterial.get(materialId)?.cantidad ?? 0) : 0);
+
     // ── Por item ──
     let aprob = 0, sinAprob = 0, conOC = 0, anul = 0;
     let porSolicitar = 0, sinStock = 0;
@@ -128,7 +140,10 @@ export async function GET(req: NextRequest) {
       if (r.po_id) conOC++;
       if (sr === "APROBADO" && !r.po_id) porSolicitar++;
       if (so === "PROCESO" || so === "INCOMPLETO") porLlegar++;
-      const stockMat = Number(r.material?.stock_actual ?? 0);
+      // "En stock" / "Sin stock" se miden sobre el stock LIBRE (sin dueño),
+      // no sobre el físico: un material cuyo saldo entero está reservado a
+      // otra OT hay que comprarlo igual.
+      const stockMat = libreDe(r.material_id, r.material?.stock_actual);
       const cantReq = Number(r.cantidad ?? 0);
       const itemActivo = sr !== "ANULADO" && sr !== "DESAPROBADO";
       if (itemActivo && r.po_id == null && r.material_id != null && stockMat > 0 && stockMat >= cantReq) enStock++;
@@ -217,7 +232,7 @@ export async function GET(req: NextRequest) {
       if (items.some((i) => i.status_requerimiento_codigo === "APROBADO" && !i.po_id)) rqPorSolicitar++;
       if (items.some((i) => i.status_oc_codigo === "PROCESO" || i.status_oc_codigo === "INCOMPLETO")) rqPorLlegar++;
       if (items.some((i) => {
-        const sm = Number(i.material?.stock_actual ?? 0);
+        const sm = libreDe(i.material_id, i.material?.stock_actual);
         const cr = Number(i.cantidad ?? 0);
         const act = i.status_requerimiento_codigo !== "ANULADO" && i.status_requerimiento_codigo !== "DESAPROBADO";
         return act && i.po_id == null && i.material_id != null && sm > 0 && sm >= cr;

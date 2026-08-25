@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parseOtCodigoSearch } from "@/lib/ot-formato";
+import { calcularStockReservado } from "@/lib/stock-reservado";
 
 // GET /api/requerimientos — listado cross-OT con filtros, para módulo global de Logística.
 //
@@ -286,11 +287,38 @@ export async function GET(req: NextRequest) {
         }
       }
     }
+    // ── Stock reservado a OTs ───────────────────────────────────────────
+    // `Material.stock_actual` incluye el material que ya llegó de una OC y
+    // está en el almacén pero pertenece a una OT concreta (todavía sin
+    // despachar al técnico). Ese material NO es stock libre: si lo ofrecemos
+    // como "hay stock, consumí de almacén" para otra OT, el cruce es erróneo.
+    // Mandamos el reservado por material para que la UI calcule
+    // stock_libre = stock_actual − reservado.
+    const materialIdsPayload = [
+      ...new Set([
+        ...data.map((r) => r.material_id).filter((x): x is number => x != null),
+        ...[...matchesPorReq.values()].flat().map((m) => m.material_id as number),
+      ]),
+    ];
+    const reservadoPorMaterial = await calcularStockReservado(prisma, materialIdsPayload);
+
     // Adjuntamos el campo al payload sin modificar reqs con material_id ya seteado.
-    const dataConMatches = data.map((r) => ({
-      ...r,
-      _matches_probables: matchesPorReq.get(r.id) ?? undefined,
-    }));
+    const dataConMatches = data.map((r) => {
+      const res = r.material_id != null ? reservadoPorMaterial.get(r.material_id) : undefined;
+      return {
+        ...r,
+        _matches_probables: matchesPorReq.get(r.id)?.map((m) => {
+          const resM = reservadoPorMaterial.get(m.material_id as number);
+          return {
+            ...m,
+            _stock_reservado: resM?.cantidad ?? 0,
+            _stock_reservado_ots: resM?.ots ?? [],
+          };
+        }) ?? undefined,
+        _stock_reservado: res?.cantidad ?? 0,
+        _stock_reservado_ots: res?.ots ?? [],
+      };
+    });
 
     return NextResponse.json({ data: dataConMatches, total, page });
   } catch (error) {
