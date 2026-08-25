@@ -36,10 +36,12 @@ export async function GET(_req: NextRequest) {
         codigo_reparacion: { select: { codigo: true, descripcion: true } },
         ot_status: true,
         taller_status: true,
-        // Adjuntos de etapa "despacho" (la guía cuando se sube) y "po_cliente"
-        // (PDF de la PO del cliente, requisito para generar la guía).
+        // Adjuntos de etapa "despacho" (la guía cuando se sube), "po_cliente"
+        // (PDF de la PO del cliente, requisito para generar la guía),
+        // "facturacion" y "termino" (flags Sí/No pedidos 2026-08-25: ¿la OT
+        // ya tiene factura cargada? ¿ya tiene Informe Término de Reparación?).
         adjuntos: {
-          where: { etapa_codigo: { in: ["despacho", "po_cliente"] } },
+          where: { etapa_codigo: { in: ["despacho", "po_cliente", "facturacion", "termino"] } },
           select: { id: true, nombre_archivo: true, r2_key: true, fecha_subida: true, tamano: true, etapa_codigo: true },
           orderBy: { fecha_subida: "desc" },
         },
@@ -76,6 +78,13 @@ export async function GET(_req: NextRequest) {
       adjuntos_despacho: o.adjuntos.filter((a) => a.etapa_codigo === "despacho"),
       adjuntos_po_cliente: o.adjuntos.filter((a) => a.etapa_codigo === "po_cliente"),
       tiene_po_cliente: o.adjuntos.some((a) => a.etapa_codigo === "po_cliente"),
+      // Flags derivados de los adjuntos del detalle de la OT (misma lógica
+      // que tiene_po_cliente): factura cargada e Informe Término de Reparación.
+      tiene_factura: o.adjuntos.some((a) => a.etapa_codigo === "facturacion"),
+      tiene_informe_termino: o.adjuntos.some((a) => a.etapa_codigo === "termino"),
+      // Fecha de despacho leída del adjunto de etapa "despacho" más reciente
+      // (los adjuntos vienen ordenados por fecha_subida desc).
+      fecha_despacho_adjunto: o.adjuntos.find((a) => a.etapa_codigo === "despacho")?.fecha_subida ?? null,
     }));
 
     return NextResponse.json({ data });

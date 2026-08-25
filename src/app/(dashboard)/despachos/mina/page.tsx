@@ -45,6 +45,12 @@ interface OTLista {
   adjuntos_despacho: Array<{ id: number; nombre_archivo: string; r2_key: string; fecha_subida: string; tamano: number }>;
   adjuntos_po_cliente: Array<{ id: number; nombre_archivo: string; r2_key: string; fecha_subida: string; tamano: number }>;
   tiene_po_cliente: boolean;
+  // Flags derivados de los adjuntos del detalle de la OT (2026-08-25):
+  // factura cargada (etapa facturacion), Informe Término de Reparación
+  // (etapa termino) y fecha del adjunto de despacho más reciente.
+  tiene_factura: boolean;
+  tiene_informe_termino: boolean;
+  fecha_despacho_adjunto: string | null;
 }
 
 export default function DespachoMinaPage() {
@@ -238,6 +244,29 @@ export default function DespachoMinaPage() {
       },
     },
     {
+      key: "factura", title: "Factura", width: 90, align: "center",
+      filters: [{ text: "Sí", value: 1 }, { text: "No", value: 0 }],
+      onFilter: (v, r) => (v === 1) === r.tiene_factura,
+      render: (_v, r) => r.tiene_factura
+        ? <Tag color="success" style={{ margin: 0 }}>Sí</Tag>
+        : <Tooltip title="Aún sin factura en Adjuntos de la OT (etapa Facturación)"><Tag color="warning" style={{ margin: 0 }}>No</Tag></Tooltip>,
+    },
+    {
+      key: "informe_termino", title: "Inf. Término", width: 110, align: "center",
+      filters: [{ text: "Sí", value: 1 }, { text: "No", value: 0 }],
+      onFilter: (v, r) => (v === 1) === r.tiene_informe_termino,
+      render: (_v, r) => r.tiene_informe_termino
+        ? <Tag color="success" style={{ margin: 0 }}>Sí</Tag>
+        : <Tooltip title="Aún sin Informe Término de Reparación en Adjuntos de la OT (etapa Término)"><Tag color="warning" style={{ margin: 0 }}>No</Tag></Tooltip>,
+    },
+    {
+      key: "fecha_despacho", title: "F. Despacho", width: 110, align: "center",
+      sorter: (a, b) => (a.fecha_despacho_adjunto ?? "").localeCompare(b.fecha_despacho_adjunto ?? ""),
+      render: (_v, r) => r.fecha_despacho_adjunto
+        ? <Tooltip title="Fecha de subida de la guía de despacho en Adjuntos de la OT">{formatDateOnly(r.fecha_despacho_adjunto)}</Tooltip>
+        : <Text type="secondary">—</Text>,
+    },
+    {
       key: "acc", title: "Acciones", width: 200, fixed: "right",
       render: (_v, r) => (
         <Space size={4}>
@@ -288,6 +317,9 @@ export default function DespachoMinaPage() {
               { key: "fecha_recepcion", label: "F. Recepción", value: (r) => dateOnlyLocal(r.fecha_recepcion) },
               { key: "guia", label: "N° Guía remisión", value: (r) => r.guia_entrega_salida ?? "Pendiente" },
               { key: "fecha_entrega", label: "F. Entrega", value: (r) => dateOnlyLocal(r.fecha_entrega) },
+              { key: "factura", label: "Factura", value: (r) => (r.tiene_factura ? "Sí" : "No") },
+              { key: "informe_termino", label: "Inf. Término", value: (r) => (r.tiene_informe_termino ? "Sí" : "No") },
+              { key: "fecha_despacho", label: "F. Despacho", value: (r) => dateOnlyLocal(r.fecha_despacho_adjunto) },
               { key: "adjuntos", label: "Archivos", value: (r) => r.adjuntos_despacho.length },
             ]}
           />
