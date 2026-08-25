@@ -149,7 +149,15 @@ interface RequerimientoApi {
     unidad_medida_codigo: string | null;
     precio: string | number | null;
     moneda_codigo: string | null;
+    // Reservado del match (mismo criterio que `_stock_reservado` de la fila).
+    _stock_reservado?: number;
+    _stock_reservado_ots?: string[];
   }[];
+  // Unidades del material que están en almacén pero YA asignadas a una OT
+  // (recibidas de una OC y pendientes de despacho al técnico). El stock
+  // realmente disponible para otra OT es stock_actual − _stock_reservado.
+  _stock_reservado?: number;
+  _stock_reservado_ots?: string[];
 }
 
 // View-model plano para la tabla
@@ -211,6 +219,12 @@ interface Requerimiento {
   cliente_nombre: string | null;
   observaciones?: string | null;
   stock_actual?: number;
+  // Del stock físico, cuánto ya tiene dueño (OT que lo espera en almacén) y
+  // qué OTs son. `stock_libre` = stock_actual − stock_reservado: es lo único
+  // que se puede tomar para ESTE requerimiento.
+  stock_reservado?: number;
+  stock_reservado_ots?: string[];
+  stock_libre?: number;
   // Ubicación física del material en almacén — zona/posición o legacy libre.
   // Útil especialmente para las filas amarillas (items con stock disponible).
   ubicacion_almacen?: string | null;
@@ -225,6 +239,9 @@ interface Requerimiento {
     descripcion: string;
     np: string | null;
     stock_actual: number;
+    stock_reservado: number;
+    stock_reservado_ots: string[];
+    stock_libre: number;
     unidad_medida: string | null;
     precio: number | null;
     moneda: string | null;
@@ -287,6 +304,13 @@ function normalize(r: RequerimientoApi): Requerimiento {
     cliente_nombre: r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? null,
     observaciones: r.observaciones,
     stock_actual: r.material?.stock_actual != null ? Number(r.material.stock_actual) : undefined,
+    stock_reservado: r._stock_reservado ?? 0,
+    stock_reservado_ots: r._stock_reservado_ots ?? [],
+    // Lo realmente tomable para este req: el stock físico menos lo que ya
+    // está apartado para otras OTs (recibido de OC, esperando despacho).
+    stock_libre: r.material?.stock_actual != null
+      ? Math.max(0, Number(r.material.stock_actual) - (r._stock_reservado ?? 0))
+      : undefined,
     // Ubicación física del material en almacén: prioridad al zona/posición del
     // requerimiento (asignados al recepcionar la OC de esa cantidad puntual);
     // fallback al campo libre legacy `Material.ubicacion`. Cuando el item
@@ -300,27 +324,34 @@ function normalize(r: RequerimientoApi): Requerimiento {
         ? `${r.almacen_zona.codigo}${r.almacen_posicion?.codigo ? ` · ${r.almacen_posicion.codigo}` : ""}`
         : (r.material?.ubicacion ?? null),
     adjuntos: r.adjuntos,
-    // Elegimos el mejor match: preferimos uno con stock >= cantidad; si nada
-    // alcanza, el que tenga más stock; si todos son 0, el primero.
+    // Elegimos el mejor match: preferimos uno con stock LIBRE >= cantidad; si
+    // nada alcanza, el que tenga más stock libre; si todos son 0, el primero.
     match_sugerido: (() => {
       const cands = r._matches_probables;
       if (!cands || cands.length === 0) return null;
       const cantidad = Number(r.cantidad);
-      const normalizados = cands.map((m) => ({
-        material_id: m.material_id,
-        codigo: m.codigo,
-        descripcion: m.descripcion,
-        np: m.np,
-        stock_actual: m.stock_actual != null ? Number(m.stock_actual) : 0,
-        unidad_medida: m.unidad_medida_codigo,
-        precio: m.precio != null ? Number(m.precio) : null,
-        moneda: m.moneda_codigo,
-      }));
-      // 1) primero, uno que tenga stock >= cantidad
-      const suf = normalizados.find((m) => Number.isFinite(cantidad) && m.stock_actual >= cantidad && m.stock_actual > 0);
+      const normalizados = cands.map((m) => {
+        const stock = m.stock_actual != null ? Number(m.stock_actual) : 0;
+        const reservado = m._stock_reservado ?? 0;
+        return {
+          material_id: m.material_id,
+          codigo: m.codigo,
+          descripcion: m.descripcion,
+          np: m.np,
+          stock_actual: stock,
+          stock_reservado: reservado,
+          stock_reservado_ots: m._stock_reservado_ots ?? [],
+          stock_libre: Math.max(0, stock - reservado),
+          unidad_medida: m.unidad_medida_codigo,
+          precio: m.precio != null ? Number(m.precio) : null,
+          moneda: m.moneda_codigo,
+        };
+      });
+      // 1) primero, uno que tenga stock libre >= cantidad
+      const suf = normalizados.find((m) => Number.isFinite(cantidad) && m.stock_libre >= cantidad && m.stock_libre > 0);
       if (suf) return suf;
-      // 2) sino el que tenga más stock
-      const conStock = [...normalizados].sort((a, b) => b.stock_actual - a.stock_actual);
+      // 2) sino el que tenga más stock libre
+      const conStock = [...normalizados].sort((a, b) => b.stock_libre - a.stock_libre);
       return conStock[0];
     })(),
   };
@@ -721,9 +752,14 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
       // consumir del almacén. Un item aparece si:
       //   - está APROBADO y sin OC (mismo criterio que "Listos para OC"),
       //   - NO fue consumido / entregado / anulado,
-      //   - Y tiene stock suficiente: material_id + Material.stock_actual
-      //     >= cantidad,  O el backend detectó un match probable por NP
-      //     con stock (para reqs CAD sin material vinculado).
+      //   - Y tiene stock LIBRE suficiente: material_id + (stock_actual −
+      //     reservado a otras OTs) >= cantidad,  O el backend detectó un
+      //     match probable por NP con stock libre (reqs CAD sin material).
+      //
+      // OJO (2026-08): antes acá se usaba `stock_actual` crudo. Ese número
+      // incluye el material que llegó de una OC y espera en almacén con
+      // dueño (la OT que lo pidió), así que el tab ofrecía repuestos ya
+      // asignados a otra OT. Ahora solo entra el stock sin dueño.
       rows = rows.filter((r) => {
         if (r.status_req !== "APROBADO") return false;
         if (r.po_id != null) return false;
@@ -739,12 +775,12 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
         ) return false;
         const cantReq = Number(r.cantidad ?? 0);
         const conMaterial = r.material_id != null
-          && (r.stock_actual ?? 0) >= cantReq
-          && (r.stock_actual ?? 0) > 0;
+          && (r.stock_libre ?? 0) >= cantReq
+          && (r.stock_libre ?? 0) > 0;
         const conMatchProbable = r.material_id == null
           && r.match_sugerido != null
-          && r.match_sugerido.stock_actual >= cantReq
-          && r.match_sugerido.stock_actual > 0;
+          && r.match_sugerido.stock_libre >= cantReq
+          && r.match_sugerido.stock_libre > 0;
         return conMaterial || conMatchProbable;
       });
     }
@@ -1902,35 +1938,49 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
       onFilter: (value, r) => r.unidad_medida === value,
     },
     {
-      // Stock físico actual del material catalogado. Si el stock alcanza
-      // para cubrir la cantidad pedida, se pinta verde + tag "OK" (este
-      // item se puede consumir de almacén en vez de generar OC). Si hay
-      // algo pero no cubre, queda en ámbar (parcial). Si es 0 o el item
-      // no tiene material catalogado, queda en gris.
+      // Stock LIBRE del material catalogado = stock físico − lo reservado a
+      // otras OTs (material recibido de una OC que espera despacho al
+      // técnico). Ese reservado ya tiene dueño, así que no sirve para este
+      // req: mostrarlo como disponible producía el mal cruce que hacía
+      // "consumir de almacén" repuestos de otra OT.
+      // Verde = el libre cubre la cantidad pedida (se puede consumir de
+      // almacén). Ámbar = hay algo libre pero no alcanza. Gris = 0 / sin
+      // material catalogado. El número chico de abajo es el físico total.
       key: "stock_actual",
-      title: "Stock",
-      dataIndex: "stock_actual",
-      width: 90,
+      title: "Stock libre",
+      dataIndex: "stock_libre",
+      width: 100,
       align: "right",
-      sorter: (a, b) => (a.stock_actual ?? -1) - (b.stock_actual ?? -1),
+      sorter: (a, b) => (a.stock_libre ?? -1) - (b.stock_libre ?? -1),
       render: (_v: unknown, r: Requerimiento) => {
         if (r.material_id == null) {
           return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
         }
         const stock = Number(r.stock_actual ?? 0);
+        const reservado = Number(r.stock_reservado ?? 0);
+        const libre = Number(r.stock_libre ?? Math.max(0, stock - reservado));
         const necesario = Number(r.cantidad ?? 0);
+        const ots = r.stock_reservado_ots ?? [];
+        const detalleReserva = reservado > 0
+          ? ` · Físico ${stock}, reservado ${reservado}${ots.length ? ` a ${ots.join(", ")}` : ""}`
+          : "";
         let color: string = brand.textSecondary;
-        let tip = "Sin stock";
-        if (stock > 0 && stock >= necesario) {
+        let tip = `Sin stock libre${detalleReserva}`;
+        if (libre > 0 && libre >= necesario) {
           color = "#52c41a";
-          tip = `Stock suficiente (${stock} ≥ ${necesario}) — se puede consumir de almacén`;
-        } else if (stock > 0) {
+          tip = `Stock libre suficiente (${libre} ≥ ${necesario}) — se puede consumir de almacén${detalleReserva}`;
+        } else if (libre > 0) {
           color = "#faad14";
-          tip = `Stock parcial (${stock} de ${necesario} pedidos)`;
+          tip = `Stock libre parcial (${libre} de ${necesario} pedidos)${detalleReserva}`;
         }
         return (
           <Tooltip title={tip}>
-            <span style={{ fontWeight: 600, color }}>{stock}</span>
+            <span style={{ fontWeight: 600, color }}>{libre}</span>
+            {reservado > 0 && (
+              <div style={{ fontSize: 10, lineHeight: 1.1, color: brand.textSecondary }}>
+                de {stock}
+              </div>
+            )}
           </Tooltip>
         );
       },
@@ -2058,11 +2108,13 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
         const puedeEliminar = sinOC && sr !== "APROBADO" && sr !== "ANULADO";
 
         // Consumir de almacén: requiere APROBADO, material, sin OC, no anulado,
-        // stock suficiente y NO estar en un estado cerrado (ya consumido /
+        // stock LIBRE suficiente y NO estar en un estado cerrado (ya consumido /
         // entregado / completo). Sin este ultimo check, el operario podia
         // seguir sacando stock sobre un req ya cerrado.
+        // El stock reservado a otras OTs (recibido de OC, esperando despacho)
+        // no habilita el consumo — ese repuesto ya tiene dueño.
         const hayMaterial = r.material_id != null;
-        const stockOk = (r.stock_actual ?? 0) >= Number(r.cantidad);
+        const stockOk = (r.stock_libre ?? 0) >= Number(r.cantidad);
         const esAprobado = sr === "APROBADO";
         const yaCerrado = r.status_oc === "CONSUMIDO_ALMACEN"
           || r.status_oc === "CONSUMIDO_OC_ABIERTA"
@@ -2080,7 +2132,10 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
           : !noStockEstado || !noAnulado
           ? `Estado ${sr ?? r.status_oc} no permite consumir`
           : !stockOk
-          ? `Stock insuficiente (${r.stock_actual ?? 0} / ${r.cantidad})`
+          ? `Stock libre insuficiente (${r.stock_libre ?? 0} / ${r.cantidad})`
+            + ((r.stock_reservado ?? 0) > 0
+              ? ` — hay ${r.stock_actual ?? 0} en almacén pero ${r.stock_reservado} ya están reservados${(r.stock_reservado_ots ?? []).length ? ` a ${(r.stock_reservado_ots ?? []).join(", ")}` : ""}`
+              : "")
           : "";
 
         return (
@@ -2158,7 +2213,7 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
               // preseleccionado.
               const m = r.match_sugerido;
               if (m) {
-                const stockOkMatch = m.stock_actual >= Number(r.cantidad ?? 0) && m.stock_actual > 0;
+                const stockOkMatch = m.stock_libre >= Number(r.cantidad ?? 0) && m.stock_libre > 0;
                 return (
                   <Tooltip
                     title={
@@ -2166,7 +2221,11 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                         Match probable en catálogo: <b>{m.codigo}</b> · {m.descripcion}
                         {m.np ? ` · NP ${m.np}` : ""}
                         <br />
-                        Stock actual: <b>{m.stock_actual}</b> {stockOkMatch ? "(suficiente)" : "(insuficiente)"}
+                        Stock libre: <b>{m.stock_libre}</b> {stockOkMatch ? "(suficiente)" : "(insuficiente)"}
+                        {m.stock_reservado > 0 && (
+                          <> · físico {m.stock_actual}, reservado {m.stock_reservado}
+                            {m.stock_reservado_ots.length ? ` a ${m.stock_reservado_ots.join(", ")}` : ""}</>
+                        )}
                         <br />
                         Click para vincular con material preseleccionado.
                       </span>
@@ -2532,7 +2591,7 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
             >
               En OC
             </Button>
-            <Tooltip title="Filtra items APROBADOS sin OC que tienen stock disponible en almacén (equivalen a las filas amarillas). Sugerencia: consumí de almacén en vez de generar OC.">
+            <Tooltip title="Filtra items APROBADOS sin OC con stock LIBRE en almacén — el material sin dueño, descontando lo que ya llegó de una OC y espera despacho para otra OT (equivalen a las filas amarillas). Sugerencia: consumí de almacén en vez de generar OC.">
               <Button
                 size="small"
                 type={filtroRapido === "almacen" ? "primary" : "default"}
@@ -2589,19 +2648,20 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
             const noBloqueado = r.po_id == null
               && r.status_req !== "ANULADO"
               && r.status_req !== "DESAPROBADO";
-            // Caso A: req vinculado a material con stock suficiente.
+            // Caso A: req vinculado a material con stock LIBRE suficiente
+            // (el reservado a otras OTs no cuenta — ya tiene dueño).
             const conMaterial = r.material_id != null
               && noBloqueado
-              && (r.stock_actual ?? 0) >= Number(r.cantidad ?? 0)
-              && (r.stock_actual ?? 0) > 0;
+              && (r.stock_libre ?? 0) >= Number(r.cantidad ?? 0)
+              && (r.stock_libre ?? 0) > 0;
             // Caso B: req sin material vinculado, pero el backend detectó un
             // match probable (NP embebido en descripción) que tiene stock
             // suficiente. Se resalta para invitar a vincular con un click.
             const conMatchProbable = r.material_id == null
               && noBloqueado
               && r.match_sugerido != null
-              && r.match_sugerido.stock_actual >= Number(r.cantidad ?? 0)
-              && r.match_sugerido.stock_actual > 0;
+              && r.match_sugerido.stock_libre >= Number(r.cantidad ?? 0)
+              && r.match_sugerido.stock_libre > 0;
             return (conMaterial || conMatchProbable) ? "req-row-stock" : "";
           }}
         />
