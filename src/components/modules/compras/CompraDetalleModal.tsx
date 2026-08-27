@@ -90,6 +90,14 @@ interface CompraDetalle {
     descripcion: string | null;
     cantidad: number;
     precio_unitario: number | null;
+    // Overrides que dejó el editor de OC: son los valores REALES negociados
+    // con el proveedor. `precio_unitario` de arriba es el del requerimiento
+    // original, que muchas veces es un placeholder (0.10) puesto al pedir.
+    // Ver `valoresOC()` más abajo.
+    oc_descripcion?: string | null;
+    oc_cantidad?: number | string | null;
+    oc_precio_unitario?: number | string | null;
+    oc_unidad_medida?: string | null;
     estado: string;
     material: { codigo: string; descripcion: string } | null;
     orden_trabajo: { id: number; ot: string } | null;
@@ -285,6 +293,28 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
   };
 
   const items = compra?.ot_repuestos ?? [];
+
+  // Valores EFECTIVOS de la OC para un item. El editor de OC guarda lo que se
+  // negoció con el proveedor en columnas paralelas `oc_*` y deja intacto el
+  // requerimiento original. Esta tabla mostraba el original, así que una OC
+  // creada desde reqs con precio placeholder (0.10) se veía con items a 0.10
+  // aunque su total fuera el real — el caso reportado en la OC 260109, con
+  // tres items a 0.10 y un total de USD 2,586.91. Mismo criterio que ya usan
+  // el PDF de la OC, el editor y el tab de Requerimientos de la OT.
+  type ItemOC = CompraDetalle["ot_repuestos"][0];
+  const valoresOC = (r: ItemOC) => ({
+    descripcion: r.oc_descripcion ?? r.material?.descripcion ?? r.descripcion ?? null,
+    cantidad: Number(r.oc_cantidad ?? r.cantidad ?? 0),
+    precio: r.oc_precio_unitario != null
+      ? Number(r.oc_precio_unitario)
+      : (r.precio_unitario != null ? Number(r.precio_unitario) : null),
+    // true si el precio mostrado viene del override de la OC.
+    esPrecioOC: r.oc_precio_unitario != null,
+  });
+  const subtotalOC = (r: ItemOC) => {
+    const v = valoresOC(r);
+    return v.precio != null ? Number((v.precio * v.cantidad).toFixed(2)) : null;
+  };
   const columnsItems: ColumnsType<CompraDetalle["ot_repuestos"][0]> = [
     {
       key: "ot",
@@ -322,51 +352,60 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
       title: "Descripción",
       width: 250,
       ellipsis: true,
-      filters: [...new Set(items.map((r) => r.material?.descripcion ?? r.descripcion).filter(Boolean) as string[])]
+      filters: [...new Set(items.map((r) => valoresOC(r).descripcion).filter(Boolean) as string[])]
         .sort().map((v) => ({ text: v, value: v })),
       filterSearch: true,
-      onFilter: (value, r) => (r.material?.descripcion ?? r.descripcion) === value,
-      render: (_, r) => r.material?.descripcion ?? r.descripcion ?? "-",
+      onFilter: (value, r) => valoresOC(r).descripcion === value,
+      render: (_, r) => valoresOC(r).descripcion ?? "-",
     },
     {
-      key: "cantidad", title: "Cant.", dataIndex: "cantidad", width: 70, align: "center",
-      sorter: (a, b) => Number(a.cantidad) - Number(b.cantidad),
-      filters: [...new Set(items.map((r) => Number(r.cantidad)))]
+      key: "cantidad", title: "Cant.", width: 70, align: "center",
+      sorter: (a, b) => valoresOC(a).cantidad - valoresOC(b).cantidad,
+      filters: [...new Set(items.map((r) => valoresOC(r).cantidad))]
         .sort((a, b) => a - b).map((v) => ({ text: String(v), value: String(v) })),
       filterSearch: true,
-      onFilter: (value, r) => String(Number(r.cantidad)) === value,
+      onFilter: (value, r) => String(valoresOC(r).cantidad) === value,
+      render: (_, r) => valoresOC(r).cantidad,
     },
     {
       key: "precio_unitario",
       title: "P. Unit.",
-      dataIndex: "precio_unitario",
       width: 90,
       align: "right",
-      sorter: (a, b) => Number(a.precio_unitario ?? 0) - Number(b.precio_unitario ?? 0),
-      filters: [...new Set(items.map((r) => Number(r.precio_unitario ?? 0)))]
+      sorter: (a, b) => (valoresOC(a).precio ?? 0) - (valoresOC(b).precio ?? 0),
+      filters: [...new Set(items.map((r) => valoresOC(r).precio ?? 0))]
         .sort((a, b) => a - b).map((v) => ({ text: v.toFixed(2), value: String(v) })),
       filterSearch: true,
-      onFilter: (value, r) => String(Number(r.precio_unitario ?? 0)) === value,
-      render: (v) => (v != null ? Number(v).toFixed(2) : "-"),
+      onFilter: (value, r) => String(valoresOC(r).precio ?? 0) === value,
+      render: (_, r) => {
+        const v = valoresOC(r);
+        if (v.precio == null) return "-";
+        // Cuando el precio de la OC difiere del que traía el requerimiento,
+        // el tooltip muestra el original para no perder de vista de dónde
+        // salió (típico: req cargado con 0.10 de placeholder).
+        const original = r.precio_unitario != null ? Number(r.precio_unitario) : null;
+        const difiere = v.esPrecioOC && original != null && original !== v.precio;
+        return difiere ? (
+          <Tooltip title={`Precio de la OC. En el requerimiento figuraba ${original.toFixed(2)}.`}>
+            <span>{v.precio.toFixed(2)}</span>
+          </Tooltip>
+        ) : v.precio.toFixed(2);
+      },
     },
     {
       key: "subtotal",
       title: "Subtotal",
       width: 100,
       align: "right",
-      sorter: (a, b) => Number(a.precio_unitario ?? 0) * Number(a.cantidad) - Number(b.precio_unitario ?? 0) * Number(b.cantidad),
-      filters: [...new Set(items.map((r) =>
-        r.precio_unitario != null ? Number((Number(r.precio_unitario) * Number(r.cantidad)).toFixed(2)) : 0
-      ))].sort((a, b) => a - b).map((v) => ({ text: v.toFixed(2), value: String(v) })),
+      sorter: (a, b) => (subtotalOC(a) ?? 0) - (subtotalOC(b) ?? 0),
+      filters: [...new Set(items.map((r) => subtotalOC(r) ?? 0))]
+        .sort((a, b) => a - b).map((v) => ({ text: v.toFixed(2), value: String(v) })),
       filterSearch: true,
-      onFilter: (value, r) => {
-        const sub = r.precio_unitario != null ? Number((Number(r.precio_unitario) * Number(r.cantidad)).toFixed(2)) : 0;
-        return String(sub) === value;
+      onFilter: (value, r) => String(subtotalOC(r) ?? 0) === value,
+      render: (_, r) => {
+        const sub = subtotalOC(r);
+        return sub != null ? sub.toFixed(2) : "-";
       },
-      render: (_, r) =>
-        r.precio_unitario != null
-          ? (Number(r.precio_unitario) * Number(r.cantidad)).toFixed(2)
-          : "-",
     },
     {
       key: "estado",
