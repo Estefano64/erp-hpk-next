@@ -317,7 +317,7 @@ export default function FacturacionOTPage() {
       // descargar); rojo punteado = falta. El tooltip dice qué PDF es.
       // Al final, separado, el chip de la FACTURA: no es requisito para
       // facturar (se sube después), por eso va aparte y no bloquea nada.
-      key: "pdfs", title: "PDFs requeridos + factura", width: 400,
+      key: "pdfs", title: "PDFs requeridos", width: 400,
       render: (_v, r) => (
         <Space size={4} wrap>
           {PDFS_REQUERIDOS.map((p) => {
