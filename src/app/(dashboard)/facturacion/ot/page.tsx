@@ -45,6 +45,9 @@ type PdfsPorEtapa = {
   po_cliente: Array<{ id: number; r2_key: string; nombre_archivo: string; fecha_subida: string }>;
   termino: Array<{ id: number; r2_key: string; nombre_archivo: string; fecha_subida: string }>;
   despacho: Array<{ id: number; r2_key: string; nombre_archivo: string; fecha_subida: string }>;
+  // No es un PDF requerido para facturar (se sube después) — se muestra como
+  // chip informativo aparte.
+  facturacion: Array<{ id: number; r2_key: string; nombre_archivo: string; fecha_subida: string }>;
 };
 
 interface OTLista {
@@ -312,7 +315,9 @@ export default function FacturacionOTPage() {
     {
       // 5 chips compactos, uno por PDF requerido. Verde = subido (click para
       // descargar); rojo punteado = falta. El tooltip dice qué PDF es.
-      key: "pdfs", title: "PDFs requeridos", width: 340,
+      // Al final, separado, el chip de la FACTURA: no es requisito para
+      // facturar (se sube después), por eso va aparte y no bloquea nada.
+      key: "pdfs", title: "PDFs requeridos + factura", width: 400,
       render: (_v, r) => (
         <Space size={4} wrap>
           {PDFS_REQUERIDOS.map((p) => {
@@ -345,6 +350,38 @@ export default function FacturacionOTPage() {
               </Tooltip>
             );
           })}
+          {(() => {
+            // Chip de la FACTURA (etapa "facturacion"). Azul = ya subida;
+            // gris "Sin factura" = todavía no. Nunca en rojo: no es un
+            // requisito incumplido, es el paso siguiente del flujo.
+            const archivos = r.pdfs.facturacion ?? [];
+            const tiene = archivos.length > 0;
+            const primero = archivos[0];
+            return (
+              <Tooltip
+                title={tiene
+                  ? `Factura: ${primero.nombre_archivo}${archivos.length > 1 ? ` (+${archivos.length - 1} más)` : ""} — click para abrir`
+                  : "El PDF de la factura todavía no se subió. Se carga al facturar (queda en Adjuntos de la OT, etapa Facturación)."}
+              >
+                <Tag
+                  color={tiene ? "blue" : "default"}
+                  style={{
+                    margin: 0, fontSize: 11,
+                    cursor: tiene ? "pointer" : "default",
+                    borderStyle: tiene ? "solid" : "dashed",
+                    opacity: tiene ? 1 : 0.7,
+                  }}
+                  icon={tiene ? <FileDoneOutlined /> : <FileTextOutlined />}
+                  onClick={tiene
+                    ? () => openR2File({ key: primero.r2_key, resource: "ot-adjunto", resourceId: primero.id })
+                        .catch((e) => msg.error(e instanceof Error ? e.message : "Error al abrir"))
+                    : undefined}
+                >
+                  {tiene ? `Factura${archivos.length > 1 ? ` (${archivos.length})` : ""}` : "Sin factura"}
+                </Tag>
+              </Tooltip>
+            );
+          })()}
         </Space>
       ),
     },
@@ -437,6 +474,7 @@ export default function FacturacionOTPage() {
                 key: "adjuntos", label: "Adjuntos",
                 value: (r) => r.pdfs_ok ? "5/5 PDFs OK" : `Faltan: ${r.faltantes.join(", ")}`,
               },
+              { key: "pdf_factura", label: "PDF factura", value: (r) => (r.pdfs?.facturacion?.length ? "Sí" : "No") },
               { key: "fact", label: "N° Factura", value: (r) => r.nro_factura ?? "Pendiente" },
               // Fecha como Date real y monto con formato — celdas tipadas.
               { key: "fecha_fact", label: "F. Facturación", value: (r) => dateOnlyLocal(r.fecha_facturacion) },

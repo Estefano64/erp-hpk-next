@@ -28,7 +28,11 @@ import { prisma } from "@/lib/prisma";
 const ETAPAS_REQUERIDAS = [
   "recepcion", "cotizacion", "po_cliente", "termino", "despacho",
 ] as const;
-type Etapa = (typeof ETAPAS_REQUERIDAS)[number];
+// "facturacion" se trae y se muestra, pero NO es requisito: el PDF de la
+// factura se sube DESPUÉS de facturar, así que contarlo como faltante
+// bloquearía el botón para siempre (2026-08-27).
+const ETAPAS_TRAIDAS = [...ETAPAS_REQUERIDAS, "facturacion"] as const;
+type Etapa = (typeof ETAPAS_TRAIDAS)[number];
 
 const ETAPA_LABELS: Record<Etapa, string> = {
   recepcion: "Guía de llegada",
@@ -36,6 +40,7 @@ const ETAPA_LABELS: Record<Etapa, string> = {
   po_cliente: "PO cliente",
   termino: "Informe",
   despacho: "Guía de despacho",
+  facturacion: "Factura",
 };
 
 // Fecha de despacho efectiva: la explícita si existe, sino la de emisión de
@@ -108,7 +113,7 @@ export async function GET(req: NextRequest) {
         codigo_reparacion: { select: { codigo: true, descripcion: true } },
         ot_status: true, taller_status: true,
         adjuntos: {
-          where: { etapa_codigo: { in: [...ETAPAS_REQUERIDAS] } },
+          where: { etapa_codigo: { in: [...ETAPAS_TRAIDAS] } },
           select: { id: true, etapa_codigo: true, nombre_archivo: true, r2_key: true, fecha_subida: true, tamano: true },
           orderBy: { fecha_subida: "desc" },
         },
@@ -123,12 +128,14 @@ export async function GET(req: NextRequest) {
       // lista por categoría (puede haber más de un PDF por etapa).
       const pdfs: Record<Etapa, typeof o.adjuntos> = {
         recepcion: [], cotizacion: [], po_cliente: [], termino: [], despacho: [],
+        facturacion: [],
       };
       for (const a of o.adjuntos) {
         if (a.etapa_codigo in pdfs) {
           pdfs[a.etapa_codigo as Etapa].push(a);
         }
       }
+      // Solo las 5 requeridas cuentan como faltantes (la factura no).
       const faltantes = ETAPAS_REQUERIDAS.filter((et) => pdfs[et].length === 0);
       const pdfs_ok = faltantes.length === 0;
 
