@@ -96,6 +96,12 @@ export async function GET(req: NextRequest) {
         status_requerimiento_codigo: true,
         status_oc_codigo: true,
         precio_unitario: true,
+        // Precio y cantidad REALES de la OC — el editor de OC no pisa el
+        // requerimiento. Sin esto, el KPI de "precio real" sumaba el precio
+        // con que se PIDIÓ el item (a veces un placeholder de 0.10) en vez
+        // del que se pagó: subvaluaba lo comprado en ~USD 13.5k.
+        oc_precio_unitario: true,
+        oc_cantidad: true,
         moneda: true,
         tipo_codigo: true,
         fecha_solicitud: true,
@@ -153,11 +159,15 @@ export async function GET(req: NextRequest) {
         itemsActivos++;
 
         // Precio global: regla pedida (PO → real, sin PO → catálogo).
+        // "Real" = el precio de la OC (oc_precio_unitario) con fallback al del
+        // requerimiento; y la cantidad, la de la OC si fue ajustada.
         let unit = 0;
         let mon = "USD";
         let esReal = false;
+        let cant = cantReq;
         if (r.po_id != null) {
-          unit = Number(r.precio_unitario ?? 0);
+          unit = Number(r.oc_precio_unitario ?? r.precio_unitario ?? 0);
+          cant = Number(r.oc_cantidad ?? r.cantidad ?? 0);
           mon = r.moneda ?? "USD";
           esReal = true;
         } else if (r.material?.precio != null) {
@@ -169,7 +179,7 @@ export async function GET(req: NextRequest) {
           mon = r.moneda ?? "USD";
         }
         if (unit > 0) {
-          const sub = unit * cantReq;
+          const sub = unit * cant;
           precioPorMoneda[mon] = (precioPorMoneda[mon] ?? 0) + sub;
           if (esReal) precioRealPorMoneda[mon] = (precioRealPorMoneda[mon] ?? 0) + sub;
           else precioCatalogoPorMoneda[mon] = (precioCatalogoPorMoneda[mon] ?? 0) + sub;
