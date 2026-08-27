@@ -233,7 +233,11 @@ export default function PortalPage() {
                         { key: "po_item", label: "PO item", children: o.po_item ?? "—" },
                         { key: "viajero", label: "ID viajero", children: o.id_viajero ?? "—" },
                         { key: "guia", label: "Guía remisión", children: o.guia_remision ?? "—" },
-                        { key: "cotizacion", label: "Cotización", children: o.nro_cotizacion ?? "—" },
+                        // La fila "Cotización" (nro_cotizacion) se retiró el
+                        // 2026-08-27: el campo estaba vacío en las 3,375 OTs de
+                        // prod (no hay UI que lo cargue), así que solo mostraba
+                        // "—" al cliente. El dato sigue en la BD y en la API
+                        // por si vuelve a usarse.
                         { key: "monto_cot", label: "Monto cotizado", children: o.monto_cotizacion != null ? fmtMontoCotizacion(o.monto_cotizacion, o.moneda_cotizacion) : "—" },
                         { key: "f_cot", label: "F. envío cotización", children: o.fecha_cotizacion ? formatDateOnly(o.fecha_cotizacion) : "—" },
                         { key: "f_aprob_cot", label: "F. aprobación cotización", children: o.fecha_aprobacion_cotizacion ? formatDateOnly(o.fecha_aprobacion_cotizacion) : "—" },
