@@ -72,6 +72,29 @@ export async function POST(req: NextRequest) {
     }
     const d = parsed.data;
 
+    // La hoja de evaluación es de un componente físico que entra al taller:
+    // solo aplica a OTs de Reparación. Una OT de Bien no tiene cilindro que
+    // evaluar y, al no tener código reparable ni estrategia, la página caía
+    // al modelo por defecto (cilindro de vástago simple) — le habría abierto
+    // una hoja que no le corresponde. Se bloquea acá además de esconder el
+    // botón en la UI, para que no entre por la URL directa. (2026-08-27)
+    //
+    // SER queda fuera de esta guarda por pedido explícito: ese tipo no se
+    // toca hasta que se defina su circuito (hoy hay 0 OTs SER en prod).
+    const otEval = await prisma.ordenTrabajo.findUnique({
+      where: { id: d.ot_id },
+      select: { tipo_codigo: true },
+    });
+    if (!otEval) {
+      return NextResponse.json({ error: "OT no encontrada" }, { status: 404 });
+    }
+    if (otEval.tipo_codigo === "BIE") {
+      return NextResponse.json(
+        { error: "Las OTs de tipo Bien no llevan hoja de evaluación: no hay componente que evaluar." },
+        { status: 400 },
+      );
+    }
+
     // Buscar evaluacion existente para esta OT
     const existing = await prisma.evaluacionTecnica.findFirst({
       where: { ot_id: d.ot_id },

@@ -937,7 +937,10 @@ export default function OrdenesTrabajoPage() {
               onClick={() => { setModalOtId(record.id); setModalOpen(true); }}
             />
           </Tooltip>
-          {(() => {
+          {/* La hoja de evaluación es de un componente que entra al taller:
+              una OT de Bien no tiene nada que evaluar, así que ni se ofrece.
+              SER se deja como estaba (tipo sin circuito definido todavía). */}
+          {record.tipo_codigo !== "BIE" && (() => {
             const estadoEval = record.evaluaciones_tecnicas?.[0]?.estado ?? null;
             const meta = evalEstadoMeta(estadoEval);
             return (

@@ -63,6 +63,8 @@ const { TextArea } = Input;
 interface OTDetalle {
   id: number;
   ot: string | null;
+  // REP / BIE / SER — la hoja de evaluación solo aplica a Reparación.
+  tipo_codigo: string | null;
   estrategia: boolean | null;
   tipo: string | null;
   np: string | null;
@@ -473,6 +475,27 @@ export default function EvaluacionPage() {
 
   if (!ot) {
     return <Alert type="error" title="OT no encontrada" />;
+  }
+
+  // OT de Bien: no hay componente que evaluar. El botón ya no se muestra en
+  // el listado, pero la URL sigue siendo alcanzable (link viejo, historial
+  // del navegador). Sin este corte la página caía al modelo por defecto
+  // (cilindro de vástago simple) y abría una hoja que no corresponde.
+  // El backend también rechaza el guardado — ver POST /api/evaluaciones.
+  if (ot.tipo_codigo === "BIE") {
+    return (
+      <div style={{ maxWidth: 720, margin: "40px auto" }}>
+        <Alert
+          type="info"
+          showIcon
+          title="Esta OT no lleva hoja de evaluación"
+          description={`La OT ${ot.ot ?? otId} es de tipo Bien (venta): no hay componente que entre al taller para evaluar. La hoja de evaluación aplica solo a OTs de Reparación.`}
+        />
+        <div style={{ marginTop: 16 }}>
+          <Button onClick={() => router.push(`/ordenes-trabajo/${otId}`)}>Volver a la OT</Button>
+        </div>
+      </div>
+    );
   }
 
   const clienteNombre = ot.cliente?.nombre_comercial ?? ot.cliente?.razon_social ?? "-";
