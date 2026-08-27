@@ -1,15 +1,16 @@
 // GET /api/facturacion/ot
 //
 // Lista las OTs que YA fueron despachadas (salieron del taller), estén o no
-// facturadas todavía. Para cada OT devuelve los 5 PDFs requeridos para
-// facturar — agrupados por etapa — para que el frontend los muestre como
-// chips clickeables (verde = subido, rojo = falta):
+// facturadas todavía. Para cada OT devuelve los PDFs del expediente agrupados
+// por etapa, para que el frontend los muestre como chips clickeables:
 //
-//   1. Guía de llegada    → adjunto etapa "recepcion"
-//   2. Cotización         → adjunto etapa "cotizacion"
-//   3. PO cliente         → adjunto etapa "po_cliente"
-//   4. Informe            → adjunto etapa "termino"
-//   5. Guía de despacho   → adjunto etapa "despacho"
+//   Guía de llegada  → "recepcion"    Cotización     → "cotizacion"
+//   PO cliente       → "po_cliente"   Informe        → "termino"
+//   Guía de despacho → "despacho"     Factura        → "facturacion"
+//
+// CUÁLES de esos son REQUISITO para facturar depende del tipo de OT — un Bien
+// no tiene guía de llegada ni informe de reparación. La tabla vive en
+// src/lib/facturacion-requisitos.ts y cada fila viaja con su `requeridas`.
 //
 // "Despachada" (ampliado 2026-08-27): con guía de remisión emitida, O con
 // fecha_despacho cargada, O en taller_status "Entregado"/"Cobranza". Antes
@@ -30,27 +31,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { numeroFacturaDesdeArchivo } from "@/lib/factura-numero";
+import {
+  ETAPAS_FACTURACION, ETAPA_LABELS, requisitosFacturacion,
+} from "@/lib/facturacion-requisitos";
 
-const ETAPAS_REQUERIDAS = [
-  "recepcion", "cotizacion", "po_cliente", "termino", "despacho",
-] as const;
+// Todas las etapas del expediente que el frontend renderiza como chips.
+// CUÁLES son requisito depende del tipo — ver requisitosFacturacion().
+const ETAPAS_EXPEDIENTE = ETAPAS_FACTURACION;
 // "facturacion" se trae y se muestra, pero NO es requisito: el PDF de la
 // factura se sube DESPUÉS de facturar, así que contarlo como faltante
 // bloquearía el botón para siempre (2026-08-27).
 //
 // Ese mismo adjunto es, además, una de las señales de "ya facturada" — ver
 // `facturada` más abajo.
-const ETAPAS_TRAIDAS = [...ETAPAS_REQUERIDAS, "facturacion"] as const;
+const ETAPAS_TRAIDAS = [...ETAPAS_EXPEDIENTE, "facturacion"] as const;
 type Etapa = (typeof ETAPAS_TRAIDAS)[number];
-
-const ETAPA_LABELS: Record<Etapa, string> = {
-  recepcion: "Guía de llegada",
-  cotizacion: "Cotización",
-  po_cliente: "PO cliente",
-  termino: "Informe",
-  despacho: "Guía de despacho",
-  facturacion: "Factura",
-};
 
 // Fecha de despacho efectiva: la explícita si existe, sino la de emisión de
 // la guía (POST /api/despachos/mina/[id] sella `fecha_entrega`).
@@ -114,6 +109,9 @@ export async function GET(req: NextRequest) {
       where: { id: { in: ids } },
       select: {
         id: true, ot: true, descripcion: true,
+        // El tipo decide qué PDFs son requisito para facturar (un Bien no
+        // tiene guía de llegada ni informe de término).
+        tipo_codigo: true,
         wo_cliente: true, po_cliente: true, ns: true,
         fecha_entrega: true, fecha_facturacion: true,
         guia_entrega_salida: true, nro_informe_entrega: true,
@@ -144,8 +142,10 @@ export async function GET(req: NextRequest) {
           pdfs[a.etapa_codigo as Etapa].push(a);
         }
       }
-      // Solo las 5 requeridas cuentan como faltantes (la factura no).
-      const faltantes = ETAPAS_REQUERIDAS.filter((et) => pdfs[et].length === 0);
+      // Requisitos según el tipo de OT (la factura nunca es requisito: es la
+      // salida del proceso, no la entrada).
+      const requeridas = requisitosFacturacion(o.tipo_codigo);
+      const faltantes = requeridas.filter((et) => pdfs[et].length === 0);
       const pdfs_ok = faltantes.length === 0;
 
       // ── ¿Está facturada? ────────────────────────────────────────────
@@ -198,8 +198,12 @@ export async function GET(req: NextRequest) {
         monto_cotizacion: o.monto_cotizacion,
         taller_status: o.taller_status?.nombre ?? null,
         // PDFs requeridos agrupados por etapa — el frontend renderiza 5 chips.
+        tipo_codigo: o.tipo_codigo,
         pdfs,
         pdfs_ok,
+        // Etapas exigidas para ESTA OT — el frontend las usa para pintar en
+        // rojo solo los chips que de verdad bloquean.
+        requeridas,
         // true solo si tiene fecha de facturación Y PDF de factura.
         // `falta_factura` lista lo que falte, para el tooltip del frontend.
         facturada,
