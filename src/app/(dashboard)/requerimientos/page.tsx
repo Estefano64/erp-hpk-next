@@ -56,7 +56,12 @@ interface RequerimientoRow {
   descripcion: string | null;
   cantidad: string;
   unidad_medida: string | null;
+  // Precio con el que se PIDIÓ el item.
   precio_unitario: string | null;
+  // Precio y cantidad REALES de la OC — el editor de OC no pisa el
+  // requerimiento, los guarda en columnas paralelas. Null si aún no hay OC.
+  oc_precio_unitario?: string | number | null;
+  oc_cantidad?: string | number | null;
   moneda: string | null;
   proveedor_id: number | null;
   fecha_solicitud: string;
@@ -112,6 +117,18 @@ interface RequerimientoRow {
 interface CatalogOpt { codigo: string; nombre: string; orden?: number | null }
 interface ProveedorOpt { id: number; razon_social: string; ruc: string | null }
 interface UbicacionOpt { codigo: string; nombre: string }
+
+// Precio EFECTIVO del item: el de la OC si ya fue comprado, sino el del
+// requerimiento. Sin esto, un item comprado a 628.94 seguía figurando al
+// precio con que se pidió (a veces un placeholder de 0.10).
+function precioEfectivo(r: RequerimientoRow): number | null {
+  if (r.oc_precio_unitario != null) return Number(r.oc_precio_unitario);
+  return r.precio_unitario != null ? Number(r.precio_unitario) : null;
+}
+// Cantidad efectiva (override de la OC si existe).
+function cantidadEfectiva(r: RequerimientoRow): number {
+  return Number(r.oc_cantidad ?? r.cantidad ?? 0);
+}
 
 // Stock que este requerimiento puede realmente tomar del almacén: el físico
 // menos lo que ya tiene dueño (material recibido de una OC para otra OT que
@@ -356,65 +373,12 @@ export default function RequerimientosPage() {
     fetch("/api/me").then((r) => r.ok ? r.json() : null).then((d) => { if (Array.isArray(d?.user?.roles)) setRoles(d.user.roles); }).catch(() => { /* noop */ });
   }, []);
 
-  // ── Stats (agregadas en backend sobre TODO el conjunto filtrado, no sólo la página visible) ──
-  interface ReqStats {
-    totalItems: number; itemsActivos: number;
-    aprob: number; sinAprob: number; conOC: number; anul: number;
-    porSolicitar: number; porLlegar: number; enStock: number; sinStock: number;
-    cantidadTotal: number; cantidadPromedio: number;
-    otsDistintas: number; rqPorOtProm: number; itemsPorOtProm: number;
-    tiempoAtencionProm: number; tiempoAtencionMuestras: number;
-    tiempoAprobOcProm: number; tiempoAprobOcMuestras: number;
-    rqTotal: number; rqActivos: number;
-    rqSinAprob: number; rqPorSolicitar: number; rqPorLlegar: number;
-    rqEnStock: number; rqSinStock: number;
-    precioPorMoneda: Record<string, number>;
-    precioRealPorMoneda: Record<string, number>;
-    precioCatalogoPorMoneda: Record<string, number>;
-  }
-  const STATS_VACIAS: ReqStats = {
-    totalItems: 0, itemsActivos: 0, aprob: 0, sinAprob: 0, conOC: 0, anul: 0,
-    porSolicitar: 0, porLlegar: 0, enStock: 0, sinStock: 0,
-    cantidadTotal: 0, cantidadPromedio: 0,
-    otsDistintas: 0, rqPorOtProm: 0, itemsPorOtProm: 0,
-    tiempoAtencionProm: 0, tiempoAtencionMuestras: 0,
-    tiempoAprobOcProm: 0, tiempoAprobOcMuestras: 0,
-    rqTotal: 0, rqActivos: 0, rqSinAprob: 0, rqPorSolicitar: 0,
-    rqPorLlegar: 0, rqEnStock: 0, rqSinStock: 0,
-    precioPorMoneda: {}, precioRealPorMoneda: {}, precioCatalogoPorMoneda: {},
-  };
-  const [stats, setStats] = useState<ReqStats>(STATS_VACIAS);
-
-  // Construye los mismos query-params que `fetchData` (sin paginación) para que
-  // los KPIs sigan los filtros activos pero no dependan de page/pageSize.
-  const buildStatsParams = useCallback(() => {
-    const params = new URLSearchParams();
-    if (search) params.set("search", search);
-    if (filterOt) params.set("ot", filterOt);
-    if (filterStatusReq) params.set("status_req", filterStatusReq);
-    if (filterStatusCot) params.set("status_cot", filterStatusCot);
-    if (filterStatusOc) params.set("status_oc", filterStatusOc);
-    if (filterTipo) params.set("tipo", filterTipo);
-    if (filterProveedor) params.set("proveedor_id", String(filterProveedor));
-    if (filterFechas?.[0]) params.set("fecha_desde", filterFechas[0].toISOString());
-    if (filterFechas?.[1]) params.set("fecha_hasta", filterFechas[1].toISOString());
-    if (rangoSol.desde) params.set("sol_desde", rangoSol.desde.toISOString());
-    if (rangoSol.hasta) params.set("sol_hasta", rangoSol.hasta.toISOString());
-    if (rangoReq.desde) params.set("req_desde", rangoReq.desde.toISOString());
-    if (rangoReq.hasta) params.set("req_hasta", rangoReq.hasta.toISOString());
-    if (soloAprobadosSinOC) params.set("solo_aprobados_sin_oc", "1");
-    return params;
-  }, [search, filterOt, filterStatusReq, filterStatusCot, filterStatusOc, filterTipo, filterProveedor, filterFechas, rangoSol, rangoReq, soloAprobadosSinOC]);
-
-  const fetchStats = useCallback(async () => {
-    try {
-      const params = buildStatsParams();
-      const res = await fetch(`/api/requerimientos/stats?${params}`);
-      if (!res.ok) return;
-      const j = await res.json();
-      if (j?.stats) setStats(j.stats);
-    } catch { /* silencioso: las tarjetas mantienen el último valor */ }
-  }, [buildStatsParams]);
+  // NOTA (2026-08-27): acá vivía el fetch a /api/requerimientos/stats. Las
+  // tarjetas de KPI que lo consumían se sacaron en 42daeb6 ("KPIs removidos"),
+  // pero el fetch quedó: cada carga y cada cambio de filtro disparaba un
+  // agregado pesado sobre toda la tabla cuyo resultado no se renderizaba en
+  // ningún lado. El endpoint sigue existiendo (y ya corregido) por si se
+  // vuelven a montar los KPIs.
 
   const abortable = useAbortableFetch();
   const fetchData = useCallback(async () => {
@@ -447,15 +411,13 @@ export default function RequerimientosPage() {
         setRows(j.data ?? []);
         setTotal(j.total ?? 0);
       }
-      // Stats globales (toda la tabla, no sólo esta página).
-      fetchStats();
     } catch (e) {
       if (abortable.isAbort(e)) return;
       throw e;
     } finally {
       if (abortable.isCurrent(controller)) setLoading(false);
     }
-  }, [search, filterOt, filterStatusReq, filterStatusCot, filterStatusOc, filterTipo, filterProveedor, filterFechas, rangoSol, rangoReq, soloAprobadosSinOC, fetchStats, abortable]);
+  }, [search, filterOt, filterStatusReq, filterStatusCot, filterStatusOc, filterTipo, filterProveedor, filterFechas, rangoSol, rangoReq, soloAprobadosSinOC, abortable]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -1069,13 +1031,13 @@ export default function RequerimientosPage() {
         </Col>
         <Col span={12}>
           <span style={{ color: "#888" }}>P. Unit:</span>{" "}
-          <b>{r.precio_unitario != null ? `${Number(r.precio_unitario).toFixed(2)} ${r.moneda ?? ""}` : "-"}</b>
+          <b>{precioEfectivo(r) != null ? `${precioEfectivo(r)!.toFixed(2)} ${r.moneda ?? ""}` : "-"}</b>
         </Col>
         <Col span={12}>
           <span style={{ color: "#888" }}>Subtotal:</span>{" "}
           <b>
-            {r.precio_unitario != null
-              ? `${(Number(r.precio_unitario) * Number(r.cantidad)).toFixed(2)} ${r.moneda ?? ""}`
+            {precioEfectivo(r) != null
+              ? `${(precioEfectivo(r)! * cantidadEfectiva(r)).toFixed(2)} ${r.moneda ?? ""}`
               : "-"}
           </b>
         </Col>
@@ -1183,10 +1145,18 @@ export default function RequerimientosPage() {
       render: (_, r) => `${Number(r.cantidad).toLocaleString()} ${r.unidad_medida ?? ""}`,
     },
     {
+      // Precio efectivo: el de la OC cuando el item ya fue comprado.
       title: "Precio", key: "precio", width: 100, align: "right",
-      render: (_, r) => r.precio_unitario != null
-        ? `${Number(r.precio_unitario).toFixed(2)} ${r.moneda ?? ""}`
-        : <Text type="secondary">—</Text>,
+      render: (_, r) => {
+        const pe = precioEfectivo(r);
+        if (pe == null) return <Text type="secondary">—</Text>;
+        const orig = r.precio_unitario != null ? Number(r.precio_unitario) : null;
+        const difiere = r.oc_precio_unitario != null && orig != null && Math.abs(pe - orig) > 0.0001;
+        const txt = `${pe.toFixed(2)} ${r.moneda ?? ""}`;
+        return difiere
+          ? <Tooltip title={`Precio de la OC. Al pedirlo figuraba ${orig.toFixed(2)}.`}>{txt}</Tooltip>
+          : txt;
+      },
     },
     {
       title: "Proveedor", key: "prov", width: 140, ellipsis: true,
@@ -1380,9 +1350,10 @@ export default function RequerimientosPage() {
               { label: "Reservado a OTs", value: (r) => r.material ? Number(r._stock_reservado ?? 0) : "" },
               { label: "Stock libre", value: (r) => r.material ? stockLibreDe(r) : "" },
               { label: "Cliente", value: (r) => r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "" },
-              { label: "P. Unit", value: (r) => r.precio_unitario != null ? Number(r.precio_unitario) : "", z: "#,##0.00" },
+              { label: "P. Unit", value: (r) => precioEfectivo(r) ?? "", z: "#,##0.00" },
+              { label: "P. Unit pedido", value: (r) => r.precio_unitario != null ? Number(r.precio_unitario) : "", z: "#,##0.00" },
               { label: "Moneda", value: (r) => r.moneda ?? "" },
-              { label: "Subtotal", value: (r) => r.precio_unitario != null ? Number(r.precio_unitario) * Number(r.cantidad) : "", z: "#,##0.00" },
+              { label: "Subtotal", value: (r) => { const pe = precioEfectivo(r); return pe != null ? pe * cantidadEfectiva(r) : ""; }, z: "#,##0.00" },
               { label: "Nro OC", value: (r) => r.compra?.numero_po ?? "" },
               { label: "Proveedor", value: (r) => r.proveedor?.razon_social ?? "" },
               // Fechas como Date real (celda fecha en Excel); dateOnlyLocal

@@ -97,6 +97,10 @@ interface RequerimientoApi {
   fecha_solicitud: string | null;
   fecha_requerida: string | null;
   precio_unitario: string | number | null;
+  // Valores REALES de la OC (el editor de OC no pisa el requerimiento). Si el
+  // item ya está en una OC, este es el precio que se pagó.
+  oc_precio_unitario?: string | number | null;
+  oc_cantidad?: string | number | null;
   moneda: string | null;
   po_id: number | null;
   nro_oc: string | null;
@@ -214,7 +218,14 @@ interface Requerimiento {
   oc_usuario_aprueba: string | null;
   oc_comentario_aprobacion: string | null;
   proveedor_nombre: string | null;
+  // Precio con el que se PIDIÓ el item. Es el que se edita al crear la OC.
   precio_unitario: number | null;
+  // Precio con el que se COMPRÓ (override de la OC), null si aún no hay OC.
+  precio_oc: number | null;
+  // El que se muestra: el de la OC si existe, sino el del requerimiento.
+  precio_efectivo: number | null;
+  // Cantidad efectiva de la OC (override si existe).
+  cantidad_efectiva: number;
   // Precio unitario estimado (catálogo del material). Distinto del precio_unitario,
   // que es el precio efectivo del proveedor cuando ya hay cotización u OC.
   precio_estimado: number | null;
@@ -304,6 +315,13 @@ function normalize(r: RequerimientoApi): Requerimiento {
     oc_comentario_aprobacion: r.compra?.comentario_aprobacion ?? null,
     proveedor_nombre: r.proveedor?.razon_social ?? null,
     precio_unitario: r.precio_unitario != null ? Number(r.precio_unitario) : null,
+    precio_oc: r.oc_precio_unitario != null ? Number(r.oc_precio_unitario) : null,
+    // Mismo criterio que el PDF de la OC, el editor de items y el detalle de
+    // compras: manda el precio de la OC cuando existe.
+    precio_efectivo: r.oc_precio_unitario != null
+      ? Number(r.oc_precio_unitario)
+      : (r.precio_unitario != null ? Number(r.precio_unitario) : null),
+    cantidad_efectiva: Number(r.oc_cantidad ?? r.cantidad ?? 0),
     precio_estimado: r.material?.precio != null ? Number(r.material.precio) : null,
     moneda_estimada: r.material?.moneda_codigo ?? null,
     moneda: r.moneda,
@@ -1706,8 +1724,17 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
         <Col span={12}><Text type="secondary">Cant:</Text> <b>{r.cantidad} {r.unidad_medida || ""}</b></Col>
         <Col span={12}><Text type="secondary">Fabricante:</Text> <b>{r.fabricante_codigo || "-"}</b></Col>
         <Col span={12}><Text type="secondary">Moneda:</Text> <b>{r.moneda || "USD"}</b></Col>
-        <Col span={12}><Text type="secondary">P. Unit:</Text> <b>{r.precio_unitario != null ? r.precio_unitario.toFixed(2) : "-"}</b></Col>
-        <Col span={12}><Text type="secondary">Subtotal:</Text> <b>{r.precio_unitario ? (r.precio_unitario * r.cantidad).toFixed(2) : "-"}</b></Col>
+        <Col span={12}>
+          <Text type="secondary">P. Unit:</Text>{" "}
+          <b>{r.precio_efectivo != null ? r.precio_efectivo.toFixed(2) : "-"}</b>
+          {r.precio_oc != null && r.precio_unitario != null && Math.abs(r.precio_oc - r.precio_unitario) > 0.0001 && (
+            <Text type="secondary" style={{ fontSize: 11 }}> (pedido a {r.precio_unitario.toFixed(2)})</Text>
+          )}
+        </Col>
+        <Col span={12}>
+          <Text type="secondary">Subtotal:</Text>{" "}
+          <b>{r.precio_efectivo ? (r.precio_efectivo * r.cantidad_efectiva).toFixed(2) : "-"}</b>
+        </Col>
         <Col span={24}><Text type="secondary">Cliente:</Text> {r.cliente_nombre || "-"}</Col>
         <Col span={24}><Text type="secondary">Proveedor:</Text> {r.proveedor_nombre || "-"}</Col>
         <Col span={12}><Text type="secondary">F. Solicitud:</Text> {r.fecha_solicitud ? formatDateOnly(r.fecha_solicitud) : "-"}</Col>
@@ -2163,16 +2190,31 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
         : <Text type="secondary">—</Text>,
     },
     {
+      // Precio EFECTIVO: si el item ya está en una OC, el que se pagó
+      // (oc_precio_unitario); si no, el del requerimiento. Antes esta columna
+      // leía siempre el del req, así que un item comprado a 628.94 seguía
+      // figurando a 0.10 — el placeholder con que se había pedido.
       key: "precio_unitario",
       title: "P. Unit.",
-      dataIndex: "precio_unitario",
+      dataIndex: "precio_efectivo",
       width: 80,
       align: "right",
-      sorter: (a, b) => Number(a.precio_unitario || 0) - Number(b.precio_unitario || 0),
-      filters: obtenerValoresUnicos("precio_unitario"),
+      sorter: (a, b) => Number(a.precio_efectivo || 0) - Number(b.precio_efectivo || 0),
+      filters: obtenerValoresUnicos("precio_efectivo"),
       filterSearch: true,
-      onFilter: (value, r) => String(r.precio_unitario ?? "") === String(value),
-      render: (v: number | null) => (v != null ? Number(v).toFixed(2) : "-"),
+      onFilter: (value, r) => String(r.precio_efectivo ?? "") === String(value),
+      render: (_v: unknown, r: Requerimiento) => {
+        if (r.precio_efectivo == null) return "-";
+        const difiere = r.precio_oc != null
+          && r.precio_unitario != null
+          && Math.abs(r.precio_oc - r.precio_unitario) > 0.0001;
+        const txt = Number(r.precio_efectivo).toFixed(2);
+        return difiere ? (
+          <Tooltip title={`Precio de la OC ${r.numero_po ?? ""}. Al pedirlo figuraba ${Number(r.precio_unitario).toFixed(2)}.`}>
+            <span style={{ borderBottom: `1px dotted ${brand.textSecondary}` }}>{txt}</span>
+          </Tooltip>
+        ) : txt;
+      },
     },
     {
       key: "moneda",
