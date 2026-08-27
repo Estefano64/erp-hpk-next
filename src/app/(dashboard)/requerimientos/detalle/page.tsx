@@ -48,6 +48,8 @@ import {
   CloseOutlined,
   StopOutlined,
   FileAddOutlined,
+  RollbackOutlined,
+  ClockCircleOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType, TableRowSelection } from "antd/es/table/interface";
 import {
@@ -102,6 +104,7 @@ interface RequerimientoApi {
   // Aprobación del REQ (no de la OC). Quien lo aprobó + su comentario opcional.
   usuario_aprueba?: string | null;
   comentario_aprobacion?: string | null;
+  fecha_aprobacion?: string | null;
   status_requerimiento_codigo: string | null;
   status_cotizacion_codigo: string | null;
   status_oc_codigo: string | null;
@@ -204,6 +207,8 @@ interface Requerimiento {
   // de los comentarios reales viven acá ("CAT", "ALT.", recomendaciones, etc.).
   req_usuario_aprueba: string | null;
   req_comentario_aprobacion: string | null;
+  // Fecha de aprobación del REQ — base de la columna "Días s/OC".
+  fecha_aprobacion: string | null;
   // Aceptación de la OC: usuario que aceptó + comentario opcional. Es distinto
   // del comentario del REQ — son dos pasos diferentes del flujo.
   oc_usuario_aprueba: string | null;
@@ -294,6 +299,7 @@ function normalize(r: RequerimientoApi): Requerimiento {
     po_id: r.po_id,
     req_usuario_aprueba: r.usuario_aprueba ?? null,
     req_comentario_aprobacion: r.comentario_aprobacion ?? null,
+    fecha_aprobacion: r.fecha_aprobacion ?? null,
     oc_usuario_aprueba: r.compra?.usuario_aprueba ?? null,
     oc_comentario_aprobacion: r.compra?.comentario_aprobacion ?? null,
     proveedor_nombre: r.proveedor?.razon_social ?? null,
@@ -364,7 +370,25 @@ const reqColor: Record<string, string> = {
   APROBADO: "success",
   DESAPROBADO: "error",
   ANULADO: "default",
+  // Devuelto a revisión por logística (mal pedido/aprobado) — pendiente de
+  // corrección y reenvío a aprobación.
+  OBSERVADO: "warning",
 };
+
+// Días transcurridos desde la aprobación para un req APROBADO que sigue sin
+// OC ni cierre (consumo/entrega/anulación). null = no aplica a esta fila.
+// Alimenta la columna "Días s/OC" y el filtro "+15 días sin comprar".
+const ESTADOS_OC_CERRADOS = new Set([
+  "CONSUMIDO_ALMACEN", "CONSUMIDO_OC_ABIERTA", "ENTREGADO", "COMPLETO", "ANULADO", "DEVOLUCION",
+]);
+function diasAprobadoSinOC(r: Requerimiento): number | null {
+  if (r.status_req !== "APROBADO") return null;
+  if (r.po_id != null || r.nro_oc) return null;
+  if (ESTADOS_OC_CERRADOS.has(r.status_oc ?? "")) return null;
+  if (!r.fecha_aprobacion) return null;
+  const d = dayjs().diff(dayjs(r.fecha_aprobacion), "day");
+  return d >= 0 ? d : null;
+}
 const cotColor: Record<string, string> = {
   PEND_COT: "default",
   PEND_APROB: "processing",
@@ -745,6 +769,10 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
       });
     } else if (filtroRapido === "en_oc") {
       rows = rows.filter((r) => r.po_id != null);
+    } else if (filtroRapido === "aprobados_viejos") {
+      // Aprobados hace más de 15 días que siguen sin OC ni consumo — la cola
+      // de "aprobados que se están pudriendo" (pedido 2026-08-27).
+      rows = rows.filter((r) => (diasAprobadoSinOC(r) ?? -1) > 15);
     } else if (filtroRapido === "almacen") {
       // "Almacén" = subconjunto de "Listos para OC" que YA tiene stock
       // disponible en almacén (equivalen a las filas amarillas). Sirve
@@ -1431,6 +1459,9 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
     bodyKey: "comentario" | "motivo";
     url: string;
     successMsg: string;
+    // true = el texto es OBLIGATORIO (el modal no cierra sin él). Lo usa
+    // "Devolver a revisión": sin motivo la devolución no le sirve a nadie.
+    requerido?: boolean;
   }) {
     let texto = "";
     Modal.confirm({
@@ -1457,6 +1488,10 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
       width: modalWidth(screens, 460),
       onOk: async () => {
         const txt = texto.trim();
+        if (opts.requerido && txt.length < 5) {
+          message.warning("El motivo es obligatorio (mínimo 5 caracteres).");
+          throw new Error("motivo requerido"); // mantiene el modal abierto
+        }
         try {
           const res = await fetch(opts.url, {
             method: "POST",
@@ -1483,6 +1518,22 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
     bodyKey: "comentario",
     url: `/api/requerimientos/${r.id}/aprobar`,
     successMsg: `${r.nro_req ?? "Item"} aprobado`,
+  });
+
+  // "Devolver a revisión" (logística): un req APROBADO que está mal pedido o
+  // mal aprobado sale de la cola de compras (→ OBSERVADO) con motivo
+  // obligatorio; se notifica al solicitante y al aprobador. Para volver al
+  // circuito hay que corregirlo y reenviarlo a aprobación.
+  const observarItem = (r: Requerimiento) => pedirMotivoYEjecutar({
+    titulo: `Devolver a revisión ${r.nro_req ?? "requerimiento"}`,
+    okText: "Devolver a revisión",
+    danger: true,
+    campoLabel: "Motivo (obligatorio — le llega al solicitante y al aprobador)",
+    placeholder: "Ej. código de material errado / cantidad no corresponde / pedido duplicado",
+    bodyKey: "motivo",
+    requerido: true,
+    url: `/api/requerimientos/${r.id}/observar`,
+    successMsg: `${r.nro_req ?? "Item"} devuelto a revisión`,
   });
 
   const desaprobarItem = (r: Requerimiento) => pedirMotivoYEjecutar({
@@ -1703,6 +1754,7 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
       filters: [
         { text: "Sin aprobación", value: "SIN_APROBACION" },
         { text: "Aprobado", value: "APROBADO" },
+        { text: "Observado", value: "OBSERVADO" },
         { text: "Desaprobado", value: "DESAPROBADO" },
         { text: "Anulado", value: "ANULADO" },
       ],
@@ -1710,6 +1762,26 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
       render: (_: unknown, r: Requerimiento) => {
         const code = r.status_req ?? "SIN_APROBACION";
         return <Tag color={reqColor[code] || "default"}>{r.status_req_label || code}</Tag>;
+      },
+    },
+    {
+      // Antigüedad de lo aprobado que sigue sin comprarse: días desde la
+      // aprobación para reqs APROBADOS sin OC ni cierre. Semáforo:
+      // gris ≤7, amarillo 8-15, rojo >15 (pedido 2026-08-27).
+      key: "dias_sin_oc",
+      title: "Días s/OC",
+      width: 95,
+      align: "center",
+      sorter: (a, b) => (diasAprobadoSinOC(a) ?? -1) - (diasAprobadoSinOC(b) ?? -1),
+      render: (_: unknown, r: Requerimiento) => {
+        const d = diasAprobadoSinOC(r);
+        if (d == null) return "-";
+        const color = d > 15 ? "error" : d > 7 ? "warning" : "default";
+        return (
+          <Tooltip title={`Aprobado hace ${d} día(s) y todavía sin OC ni consumo de almacén`}>
+            <Tag color={color} style={{ margin: 0, fontWeight: d > 15 ? 700 : 400 }}>{d}d</Tag>
+          </Tooltip>
+        );
       },
     },
     {
@@ -2098,7 +2170,9 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
         const noAnulado = sr !== "ANULADO" && sr !== "DESAPROBADO";
         const noStockEstado = r.status_oc !== "ANULADO" && r.status_oc !== "DEVOLUCION";
 
-        const puedeEnviar = sr === "BORRADOR" && sinOC;
+        // OBSERVADO: devuelto a revisión por logística — el solicitante lo
+        // corrige y lo reenvía a aprobación por el mismo botón.
+        const puedeEnviar = (sr === "BORRADOR" || sr === "OBSERVADO") && sinOC;
         const puedeAprobar = isAdmin && sr === "SIN_APROBACION" && sinOC;
         const puedeDesaprobar = isAdmin && sr === "SIN_APROBACION" && sinOC;
         const puedeAnular = isAdmin && noAnulado && sinOC;
@@ -2251,6 +2325,18 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                 </Tooltip>
               );
             })()}
+            {/* Devolver a revisión (logística): rebota un APROBADO mal pedido
+                de la cola de compras en vez de dejarlo morir sin comprar. */}
+            {esLogistica && sr === "APROBADO" && sinOC && noStockEstado && !yaCerrado && (
+              <Tooltip title="Devolver a revisión: está mal pedido o mal aprobado. Sale de la cola de compras y se notifica al solicitante y al aprobador con el motivo.">
+                <Button
+                  size="small"
+                  danger
+                  icon={<RollbackOutlined />}
+                  onClick={() => observarItem(r)}
+                />
+              </Tooltip>
+            )}
             {esLogistica && (() => {
               // Caja chica: cierra el req con efectivo. Aplica si NO tiene OC
               // y NO está anulado. No requiere material catálogo (puede ser
@@ -2488,6 +2574,7 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
               options={[
                 { value: "SIN_APROBACION", label: "Sin aprobación" },
                 { value: "APROBADO", label: "Aprobado" },
+                { value: "OBSERVADO", label: "Observado" },
                 { value: "DESAPROBADO", label: "Desaprobado" },
                 { value: "ANULADO", label: "Anulado" },
               ]}
@@ -2604,6 +2691,25 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                 Almacén
               </Button>
             </Tooltip>
+            {(() => {
+              // KPI-filtro: aprobados hace +15 días sin OC ni consumo. El
+              // conteo sale del dataset completo (sin filtros) para que el
+              // número sea estable; rojo cuando hay algo que limpiar.
+              const viejos = allData.filter((r) => (diasAprobadoSinOC(r) ?? -1) > 15).length;
+              return (
+                <Tooltip title="Requerimientos APROBADOS hace más de 15 días que siguen sin OC ni consumo de almacén — la cola que hay que limpiar (comprar, consumir o devolver a revisión)">
+                  <Button
+                    size="small"
+                    danger={viejos > 0}
+                    type={filtroRapido === "aprobados_viejos" ? "primary" : "default"}
+                    icon={<ClockCircleOutlined />}
+                    onClick={() => setFiltroRapido(filtroRapido === "aprobados_viejos" ? "todos" : "aprobados_viejos")}
+                  >
+                    +15d sin comprar ({viejos})
+                  </Button>
+                </Tooltip>
+              );
+            })()}
           </Space>
         </div>
       </Card>

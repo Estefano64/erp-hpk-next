@@ -169,7 +169,9 @@ export async function GET(req: NextRequest) {
             fecha_solicitud: true, fecha_requerida: true,
             precio_unitario: true, moneda: true,
             po_id: true, nro_oc: true, observaciones: true,
-            usuario_aprueba: true, comentario_aprobacion: true,
+            // fecha_aprobacion: alimenta la columna "Días s/OC" (antigüedad de
+            // aprobados sin comprar) en /requerimientos/detalle.
+            usuario_aprueba: true, comentario_aprobacion: true, fecha_aprobacion: true,
             status_requerimiento_codigo: true, status_cotizacion_codigo: true, status_oc_codigo: true,
             ...relaciones,
           },

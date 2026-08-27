@@ -24,9 +24,13 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       },
     });
     if (!current) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
-    if (current.status_requerimiento_codigo !== "BORRADOR") {
+    // OBSERVADO: req aprobado que logística devolvió a revisión ("Devolver a
+    // revisión", 2026-08-27) — una vez corregido se reenvía por acá y vuelve
+    // a la cola de aprobaciones.
+    const desde = current.status_requerimiento_codigo;
+    if (desde !== "BORRADOR" && desde !== "OBSERVADO") {
       return NextResponse.json({
-        error: `Solo se puede enviar a aprobación desde BORRADOR. Estado actual: ${current.status_requerimiento_codigo}`,
+        error: `Solo se puede enviar a aprobación desde BORRADOR u OBSERVADO. Estado actual: ${desde}`,
       }, { status: 409 });
     }
     if (!current.fecha_requerida) {
