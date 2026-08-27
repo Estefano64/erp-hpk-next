@@ -447,14 +447,17 @@ export async function POST(req: NextRequest) {
       // filas que el user agregó en el editor de OC. NO aparecen en
       // /requerimientos ni vistas de OT, solo en el editor y PDF de la OC.
       if (itemsLibres.length > 0) {
-        // ot_id requerido (FK no-null en algunos casos). Tomamos el de la
-        // primera OT externa entre los reqs vinculados. Si no hay reqs
-        // externos, queda null — el item libre vive desvinculado de OT.
+        // OT de los items libres: primera OT externa entre los reqs
+        // vinculados; si la OC es de OT INTERNA (reqs sin ot_id), se cuelgan
+        // de la interna. Sin este fallback quedaban huérfanos y la columna
+        // "OT" del PDF salía vacía (caso OC 260255/260281/260282, 2026-08-28).
         const otIdLibres = repuestos.find((r) => r.ot_id != null)?.ot_id ?? null;
+        const otInternaIdLibres = repuestos.find((r) => r.orden_trabajo_interna_id != null)?.orden_trabajo_interna_id ?? null;
         for (const il of itemsLibres) {
           await tx.oTRepuesto.create({
             data: {
               ot_id: otIdLibres,
+              orden_trabajo_interna_id: otIdLibres ? null : otInternaIdLibres,
               po_id: compra.id,
               nro_oc: compra.numero_po,
               fecha_oc: new Date(),
