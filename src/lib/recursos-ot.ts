@@ -12,8 +12,12 @@
 //   2 "En cotización"         → todos los reqs aprobados, aún sin OC
 //   3 "En aprobación"         → hay OC emitida pendiente de aprobar (PEND_OC)
 //   4 "En espera de recursos" → OC aprobada / material llegó parcial
-//   5 "Recursos completos"    → todo el material llegó (listo para recoger)
-//   6 "Recursos entregados"   → material consumido/salido del almacén (final)
+//   5 "Recursos completos"    → todo el material está en HP&K (listo para
+//                               despachar): recibido de la OC (COMPLETO) o ya
+//                               sacado del stock (CONSUMIDO_*), pero todavía
+//                               no entregado al técnico
+//   6 "Recursos entregados"   → el técnico ya recibió el material, con fecha y
+//                               persona que recibe (ENTREGADO) — final
 //
 // Estados eliminados del flujo: "Recursos en recepción", "Recursos incompletos"
 // y "Recursos en almacén" — todos se absorben en "Recursos completos" / "En
@@ -66,8 +70,22 @@ function etapaRep(r: RepLite): number {
   if (sr === "SIN_APROBACION") return 1;                  // enviado, pendiente de aprobar
   // Aprobado en adelante → depende de OC / recepción / consumo.
   const oc = r.status_oc_codigo;
-  if (oc && CONSUMIDOS.has(oc)) return 6;                 // consumido/salido de almacén
-  if (oc === "COMPLETO" || oc === "ENTREGADO") return 5;  // recibido completo (por rep)
+  // ENTREGADO = el técnico ya lo recibió (lo pone /despachos, con fecha de
+  // salida y persona que recibe). Es el final del flujo.
+  if (oc === "ENTREGADO") return 6;
+  // COMPLETO       = llegó de la OC y está en el estante.
+  // CONSUMIDO_*    = ya salió del stock (o se reservó de la OC abierta) pero
+  //                  TODAVÍA no se entregó al técnico — /despachos lo cierra
+  //                  después pasándolo a ENTREGADO.
+  // Los dos son "el material está en HP&K, falta despacharlo" → etapa 5.
+  //
+  // OJO (2026-08-27): antes CONSUMIDO_* devolvía 6 y ENTREGADO devolvía 5 —
+  // estaban invertidos. El mapeo se escribió el 30/06 y quedó descolgado
+  // cuando ee46f97 (20/08) devolvió a ENTREGADO su significado de "entregado
+  // al técnico". Efecto: la etapa 6 era inalcanzable por la vía normal
+  // (OC → recepción → despacho) y 22 OTs con todo entregado figuraban como
+  // "Recursos completos".
+  if (oc === "COMPLETO" || (oc && CONSUMIDOS.has(oc))) return 5;
   const compraOc = r.compra?.status_oc_codigo ?? null;
   // Compra ENTREGADO/COMPLETO ⇒ toda la OC llego (calculado en la recepcion),
   // asi que TODOS sus reps ya estan al 100% aunque OTRepuesto.status_oc_codigo
