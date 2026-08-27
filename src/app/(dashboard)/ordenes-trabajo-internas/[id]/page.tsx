@@ -18,6 +18,7 @@ import {
 import dayjs, { type Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
 import { areasTallerGrouped, areaTallerLabel } from "@/lib/areas-taller";
+import { TextAreaLocal } from "@/components/TextAreaLocal";
 import { formatOtInternaCodigo } from "@/lib/ot-formato";
 import { puedeVerCostosOT } from "@/lib/acceso-rutas";
 import { rolesDesdeUser } from "@/lib/permisos";
@@ -595,10 +596,13 @@ export default function OTInternaDetallePage() {
               <Text style={{ fontSize: 11, color: brand.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 }}>
                 Comentarios
               </Text>
-              <TextArea
+              {/* TextAreaLocal: tipeo local, commit en blur — el controlado
+                  clásico re-renderizaba la página (con la pestaña de ~200 reqs
+                  abierta) en cada tecla y el texto aparecía a ráfagas. */}
+              <TextAreaLocal
                 rows={2}
                 value={comentariosFS}
-                onChange={(e) => setComentariosFS(e.target.value)}
+                onCommit={setComentariosFS}
                 placeholder="Observaciones, motivo de cambio de estado…"
                 style={{ marginTop: 4 }}
               />

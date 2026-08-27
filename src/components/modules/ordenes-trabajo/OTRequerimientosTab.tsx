@@ -200,14 +200,19 @@ const OC_COLOR: Record<string, string> = {
 // (reporte del equipo 2026-08-27; con eventos sintéticos directamente colgaba
 // la página). El commit único en blur elimina el re-render por tecla.
 // Los cambios EXTERNOS del valor (ej. autollenado de descripción al elegir
-// material) se sincronizan con el useEffect sobre `value`.
+// material) se sincronizan ajustando el estado durante el render (patrón
+// "derive state from props" de la doc de React).
 function DraftTextInput({ value, placeholder, onCommit }: {
   value?: string;
   placeholder?: string;
   onCommit: (v: string) => void;
 }) {
   const [local, setLocal] = useState(value ?? "");
-  useEffect(() => { setLocal(value ?? ""); }, [value]);
+  const [prevValue, setPrevValue] = useState(value);
+  if (value !== prevValue) {
+    setPrevValue(value);
+    setLocal(value ?? "");
+  }
   return (
     <Input
       size="small"
@@ -227,7 +232,11 @@ function DraftServicioAutoComplete({ value, options, onCommit }: {
   onCommit: (v: string) => void;
 }) {
   const [local, setLocal] = useState(value ?? "");
-  useEffect(() => { setLocal(value ?? ""); }, [value]);
+  const [prevValue, setPrevValue] = useState(value);
+  if (value !== prevValue) {
+    setPrevValue(value);
+    setLocal(value ?? "");
+  }
   return (
     <AutoComplete
       size="small"

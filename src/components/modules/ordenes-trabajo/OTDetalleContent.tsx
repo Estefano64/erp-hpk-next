@@ -48,6 +48,7 @@ import { diasEnTaller } from "@/lib/dias-taller";
 import { puedeVerCostosOT } from "@/lib/acceso-rutas";
 import { rolesDesdeUser } from "@/lib/permisos";
 import { formatOtCodigo } from "@/lib/ot-formato";
+import { TextAreaLocal } from "@/components/TextAreaLocal";
 import OTAdjuntosTab from "./OTAdjuntosTab";
 import OTTareasTab from "./OTTareasTab";
 import OTHistorialTab from "./OTHistorialTab";
@@ -944,10 +945,13 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
           <Divider style={{ margin: "12px 0" }} />
 
           <FieldLabel>Comentarios</FieldLabel>
-          <TextArea
+          {/* TextAreaLocal: tipeo local, commit en blur — el controlado clásico
+              re-renderizaba la página entera (con la pestaña de reqs abierta)
+              en cada tecla y el texto aparecía a ráfagas. */}
+          <TextAreaLocal
             rows={2}
             value={comentarios}
-            onChange={(e) => setComentarios(e.target.value)}
+            onCommit={setComentarios}
             placeholder="Motivo de reprogramación, observaciones..."
             style={{ marginTop: 4 }}
           />

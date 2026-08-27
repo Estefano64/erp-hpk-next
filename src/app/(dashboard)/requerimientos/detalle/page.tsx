@@ -1536,6 +1536,60 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
     successMsg: `${r.nro_req ?? "Item"} devuelto a revisión`,
   });
 
+  // Versión MASIVA de "Devolver a revisión": aplica el mismo motivo a todos
+  // los seleccionados elegibles (APROBADO sin OC). Espejo del patrón de
+  // "Crear OC (N)" — pedido 2026-08-27.
+  const observarSeleccionados = () => {
+    const items = selectedRecords.filter(
+      (r) => r.status_req === "APROBADO" && r.po_id == null && !r.nro_oc,
+    );
+    if (items.length === 0) return;
+    let motivo = "";
+    Modal.confirm({
+      title: `Devolver a revisión ${items.length} requerimiento(s)`,
+      content: (
+        <div style={{ marginTop: 8 }}>
+          <Text style={{ fontSize: 12 }}>
+            Motivo (obligatorio — se aplica a TODOS los items del lote y le
+            llega al solicitante y al aprobador de cada uno)
+          </Text>
+          <Input.TextArea
+            rows={3}
+            placeholder="Ej. pedidos duplicados / cantidades no corresponden"
+            onChange={(e) => { motivo = e.target.value; }}
+            style={{ marginTop: 8 }}
+            maxLength={500}
+            showCount
+          />
+        </div>
+      ),
+      okText: `Devolver ${items.length} a revisión`,
+      okButtonProps: { danger: true },
+      cancelText: "Cancelar",
+      width: modalWidth(screens, 480),
+      onOk: async () => {
+        const txt = motivo.trim();
+        if (txt.length < 5) {
+          message.warning("El motivo es obligatorio (mínimo 5 caracteres).");
+          throw new Error("motivo requerido"); // mantiene el modal abierto
+        }
+        let ok = 0, errs = 0;
+        for (const it of items) {
+          const res = await fetch(`/api/requerimientos/${it.id}/observar`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ motivo: txt }),
+          });
+          if (res.ok) ok++; else errs++;
+        }
+        if (ok > 0) message.success(`${ok} requerimiento(s) devuelto(s) a revisión.`);
+        if (errs > 0) message.warning(`${errs} con error.`);
+        setSelectedRows([]);
+        await fetchData();
+      },
+    });
+  };
+
   const desaprobarItem = (r: Requerimiento) => pedirMotivoYEjecutar({
     titulo: `Desaprobar ${r.nro_req ?? "requerimiento"}`,
     okText: "Desaprobar",
@@ -2493,6 +2547,31 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                       disabled={bloqueado}
                     >
                       Crear OC ({selectedRows.length})
+                    </Button>
+                  </Tooltip>
+                );
+              })()}
+              {(() => {
+                // Devolver a revisión en lote: actúa sobre el subconjunto
+                // elegible de la selección (APROBADO sin OC) — los demás se
+                // ignoran y el tooltip lo aclara.
+                const elegibles = selectedRecords.filter(
+                  (r) => r.status_req === "APROBADO" && r.po_id == null && !r.nro_oc,
+                );
+                const ignorados = selectedRecords.length - elegibles.length;
+                const tooltip = elegibles.length === 0
+                  ? "Ninguno de los seleccionados es un APROBADO sin OC — no hay nada para devolver a revisión."
+                  : `Devuelve a revisión los ${elegibles.length} APROBADOS sin OC de la selección (pasan a OBSERVADO y se notifica al solicitante y al aprobador).${ignorados > 0 ? ` Se ignoran ${ignorados} seleccionado(s) en otro estado.` : ""}`;
+                return (
+                  <Tooltip title={tooltip}>
+                    <Button
+                      danger
+                      size="large"
+                      icon={<RollbackOutlined />}
+                      disabled={elegibles.length === 0}
+                      onClick={observarSeleccionados}
+                    >
+                      Devolver a revisión ({elegibles.length})
                     </Button>
                   </Tooltip>
                 );
