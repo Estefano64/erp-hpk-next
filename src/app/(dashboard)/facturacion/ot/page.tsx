@@ -25,9 +25,12 @@ import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 
 const { Title, Text } = Typography;
 
-// Los 5 PDFs que se requieren para emitir factura. Cada uno corresponde a
-// una etapa del flujo de la OT. El orden es el del flujo (llegada → despacho).
-const PDFS_REQUERIDOS: Array<{
+// Los PDFs del expediente de la OT, en el orden del flujo (llegada → despacho).
+// CUÁLES son requisito para facturar depende del tipo de OT y lo decide el
+// backend (src/lib/facturacion-requisitos.ts): viaja por fila en `requeridas`.
+// Un Bien, por ejemplo, no tiene guía de llegada ni informe de reparación —
+// esos chips se muestran igual (por si alguien subió algo) pero no bloquean.
+const PDFS_EXPEDIENTE: Array<{
   etapa: "recepcion" | "cotizacion" | "po_cliente" | "termino" | "despacho";
   label: string;
   abrev: string;
@@ -68,8 +71,11 @@ interface OTLista {
   nro_factura: string | null;
   monto_cotizacion: number | string | null;
   taller_status: string | null;
+  tipo_codigo: string | null;
   pdfs: PdfsPorEtapa;
   pdfs_ok: boolean;
+  // Etapas cuyo PDF es requisito para ESTA OT (depende de su tipo).
+  requeridas: Array<"recepcion" | "cotizacion" | "po_cliente" | "termino" | "despacho">;
   faltantes: string[];
   // ¿Ya se facturó? El backend exige LAS DOS señales del circuito real:
   // fecha de facturación cargada Y PDF de la factura subido. Nadie usó nunca
@@ -339,23 +345,27 @@ export default function FacturacionOTPage() {
         : <Text type="secondary">—</Text>,
     },
     {
-      // 5 chips compactos, uno por PDF requerido. Verde = subido (click para
-      // descargar); rojo punteado = falta. El tooltip dice qué PDF es.
+      // Un chip por PDF del expediente. Verde = subido (click para descargar).
+      // Si falta: ámbar punteado cuando es requisito para ESTA OT, y gris
+      // tenue cuando no aplica a su tipo (no bloquea). El tooltip lo aclara.
       // Al final, separado, el chip de la FACTURA: no es requisito para
       // facturar (se sube después), por eso va aparte y no bloquea nada.
-      key: "pdfs", title: "PDFs requeridos", width: 400,
+      key: "pdfs", title: "PDFs del expediente", width: 400,
       render: (_v, r) => (
         <Space size={4} wrap>
-          {PDFS_REQUERIDOS.map((p) => {
+          {PDFS_EXPEDIENTE.map((p) => {
             const archivos = r.pdfs[p.etapa];
             const tiene = archivos.length > 0;
             const primero = archivos[0];
+            const esRequisito = r.requeridas.includes(p.etapa);
             return (
               <Tooltip
                 key={p.etapa}
                 title={tiene
                   ? `${p.label}: ${primero.nombre_archivo}${archivos.length > 1 ? ` (+${archivos.length - 1} más)` : ""} — click para abrir`
-                  : `Falta: ${p.label}. Subilo desde el botón "Adjuntar y facturar".`}
+                  : esRequisito
+                    ? `Falta: ${p.label}. Subilo desde el botón "Adjuntar y facturar".`
+                    : `${p.label}: no aplica a una OT de tipo ${r.tipo_codigo ?? "—"}, no hace falta para facturar.`}
               >
                 <Tag
                   color={tiene ? "green" : "default"}
@@ -363,9 +373,11 @@ export default function FacturacionOTPage() {
                     margin: 0, fontSize: 11,
                     cursor: tiene ? "pointer" : "not-allowed",
                     borderStyle: tiene ? "solid" : "dashed",
-                    opacity: tiene ? 1 : 0.7,
+                    // Un faltante que no aplica al tipo se apaga: está ahí por
+                    // completitud, no como pendiente.
+                    opacity: tiene ? 1 : esRequisito ? 0.7 : 0.35,
                   }}
-                  icon={tiene ? <CheckCircleOutlined /> : <WarningOutlined />}
+                  icon={tiene ? <CheckCircleOutlined /> : esRequisito ? <WarningOutlined /> : undefined}
                   onClick={tiene
                     ? () => openR2File({ key: primero.r2_key, resource: "ot-adjunto", resourceId: primero.id })
                         .catch((e) => msg.error(e instanceof Error ? e.message : "Error al abrir"))
@@ -540,7 +552,7 @@ export default function FacturacionOTPage() {
               { key: "fecha_despacho", label: "F. Despacho", value: (r) => dateOnlyLocal(r.fecha_despacho) },
               {
                 key: "adjuntos", label: "Adjuntos",
-                value: (r) => r.pdfs_ok ? "5/5 PDFs OK" : `Faltan: ${r.faltantes.join(", ")}`,
+                value: (r) => r.pdfs_ok ? "Expediente completo" : `Faltan: ${r.faltantes.join(", ")}`,
               },
               { key: "pdf_factura", label: "PDF factura", value: (r) => (r.pdfs?.facturacion?.length ? "Sí" : "No") },
               { key: "estado_fact", label: "Estado", value: (r) => (r.facturada ? "Facturada" : "Pendiente") },
@@ -558,7 +570,7 @@ export default function FacturacionOTPage() {
       <Alert
         type="info" showIcon icon={<PaperClipOutlined />} style={{ marginBottom: 12 }}
         title="Requisitos para facturar"
-        description="Por defecto se listan las OTs ya despachadas que todavía NO tienen la factura cargada. Una OT cuenta como facturada cuando tiene la fecha de facturación Y el PDF de la factura — ambas cosas se cargan desde el tab Adjuntos del detalle de la OT, etapa Facturación. Si le falta una de las dos sigue apareciendo acá. Con el toggle de arriba podés ver también las ya facturadas. Para facturar desde esta pantalla hacen falta además los 5 PDFs: Guía de llegada, Cotización, PO cliente, Informe y Guía de despacho."
+        description="Por defecto se listan las OTs ya despachadas que todavía NO tienen la factura cargada. Una OT cuenta como facturada cuando tiene la fecha de facturación Y el PDF de la factura — ambas cosas se cargan desde el tab Adjuntos del detalle de la OT, etapa Facturación. Si le falta una de las dos sigue apareciendo acá. Con el toggle de arriba podés ver también las ya facturadas. Para facturar desde esta pantalla hacen falta además los PDFs del expediente, que dependen del tipo de OT: Reparación pide Cotización, PO cliente y Guía de despacho; Bien pide PO cliente y Guía de despacho. Los chips que no aplican al tipo se muestran apagados y no bloquean."
       />
 
       <Row gutter={12} style={{ marginBottom: 12 }}>
@@ -576,14 +588,14 @@ export default function FacturacionOTPage() {
         </Col>
         <Col xs={12} md={6}>
           <Card size="small">
-            <Tooltip title="De las pendientes: ya tienen los 5 PDFs requeridos, se pueden facturar ahora.">
+            <Tooltip title="De las pendientes: ya tienen todos los PDFs que su tipo de OT exige, se pueden facturar ahora.">
               <Statistic title="Listas para facturar" value={listas} styles={{ content: { color: listas > 0 ? "#52c41a" : "#bfbfbf" } }} />
             </Tooltip>
           </Card>
         </Col>
         <Col xs={12} md={6}>
           <Card size="small">
-            <Tooltip title="De las pendientes: les falta al menos uno de los 5 PDFs requeridos.">
+            <Tooltip title="De las pendientes: les falta al menos uno de los PDFs que su tipo de OT exige.">
               <Statistic title="Faltan PDFs" value={faltanPdfs} styles={{ content: { color: faltanPdfs > 0 ? "#fa8c16" : "#bfbfbf" } }} />
             </Tooltip>
           </Card>
@@ -686,10 +698,11 @@ export default function FacturacionOTPage() {
             <div style={{ marginBottom: 12 }}>
               <Text type="secondary" style={{ fontSize: 11, display: "block", marginBottom: 6 }}>
                 Subí los PDFs que falten — cada botón guarda el archivo en su etapa correspondiente.
-                El verde indica que ya hay al menos un archivo subido en esa etapa.
+                El verde indica que ya hay al menos un archivo subido en esa etapa. Según el tipo de
+                OT, no todos son requisito para facturar (ver los chips de la fila).
               </Text>
               <Space wrap>
-                {PDFS_REQUERIDOS.map((p) => {
+                {PDFS_EXPEDIENTE.map((p) => {
                   const yaTiene = (otSel.pdfs[p.etapa] ?? []).length > 0;
                   return (
                     <Upload
