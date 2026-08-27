@@ -146,7 +146,11 @@ export default function FacturacionOTPage() {
   // Filtros año/mes (multi-selección, NO rango). El filtrado es server-side:
   // el universo de despachadas son ~3,000 OTs y traerlas todas con sus
   // adjuntos en cada carga es pesado. Arranca en el año más reciente.
-  const [vista, setVista] = useState<"todas" | "pendientes" | "facturadas">("todas");
+  // Arranca en "pendientes": esta pantalla es la cola de trabajo de
+  // facturación, así que las OTs con la factura ya cargada (fecha + PDF) no
+  // deben estorbar. Siguen accesibles con el toggle — el endpoint devuelve
+  // todas las despachadas — pero no se muestran por defecto.
+  const [vista, setVista] = useState<"todas" | "pendientes" | "facturadas">("pendientes");
   const [filtroAnios, setFiltroAnios] = useState<number[]>([]);
   const [filtroMeses, setFiltroMeses] = useState<number[]>([]);
   const [aniosDisponibles, setAniosDisponibles] = useState<Array<{ anio: number; n: number }>>([]);
@@ -554,7 +558,7 @@ export default function FacturacionOTPage() {
       <Alert
         type="info" showIcon icon={<PaperClipOutlined />} style={{ marginBottom: 12 }}
         title="Requisitos para facturar"
-        description="Figuran todas las OTs ya despachadas, facturadas o no. Una OT cuenta como facturada cuando tiene la fecha de facturación cargada Y el PDF de la factura subido — el circuito histórico fue hacer ambas cosas desde el tab Adjuntos del detalle de la OT, sin pasar por esta pantalla. Si le falta una de las dos sigue como pendiente. Para facturar desde acá hacen falta además los 5 PDFs: Guía de llegada, Cotización, PO cliente, Informe y Guía de despacho."
+        description="Por defecto se listan las OTs ya despachadas que todavía NO tienen la factura cargada. Una OT cuenta como facturada cuando tiene la fecha de facturación Y el PDF de la factura — ambas cosas se cargan desde el tab Adjuntos del detalle de la OT, etapa Facturación. Si le falta una de las dos sigue apareciendo acá. Con el toggle de arriba podés ver también las ya facturadas. Para facturar desde esta pantalla hacen falta además los 5 PDFs: Guía de llegada, Cotización, PO cliente, Informe y Guía de despacho."
       />
 
       <Row gutter={12} style={{ marginBottom: 12 }}>
