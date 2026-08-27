@@ -116,7 +116,6 @@ interface RequerimientoRow {
 
 interface CatalogOpt { codigo: string; nombre: string; orden?: number | null }
 interface ProveedorOpt { id: number; razon_social: string; ruc: string | null }
-interface UbicacionOpt { codigo: string; nombre: string }
 
 // Precio EFECTIVO del item: el de la OC si ya fue comprado, sino el del
 // requerimiento. Sin esto, un item comprado a 628.94 seguía figurando al
@@ -354,20 +353,21 @@ export default function RequerimientosPage() {
   // Catálogos cacheados
   type Wrapped<T> = { data: T[] } | null;
   const srRes = useCachedFetch<Wrapped<CatalogOpt>>("/api/catalogos?tabla=statusRequerimiento");
-  const scRes = useCachedFetch<Wrapped<CatalogOpt>>("/api/catalogos?tabla=statusCotizacion");
   const soRes = useCachedFetch<Wrapped<CatalogOpt>>("/api/catalogos?tabla=statusOc");
+  // NOTA (2026-08-27): acá se cargaban también los catálogos de
+  // statusCotizacion y ubicacion. Sus únicos consumidores (statusCotOpts,
+  // cotLabel, ubicacionesOpts) estaban muertos, así que eran dos requests por
+  // carga de pantalla para nada. Si vuelve el filtro por estado de cotización
+  // o por ubicación, hay que traerlos de nuevo.
   const provRes = useCachedFetch<Wrapped<ProveedorOpt>>("/api/proveedores?limit=10000");
-  const ubicRes = useCachedFetch<Wrapped<UbicacionOpt>>("/api/catalogos?tabla=ubicacion");
   const matsRes = useCachedFetch<Wrapped<{ codigo: string; descripcion: string; fabricante_codigo: string | null; unidad_medida_codigo: string | null }>>("/api/materiales?limit=10000");
   const materiales = matsRes?.data ?? [];
   const fabsRes = useCachedFetch<Wrapped<{ codigo: string; nombre: string }>>("/api/catalogos?tabla=fabricante");
   const fabricantes = fabsRes?.data ?? [];
 
   const statusReqOpts = (srRes?.data ?? []).map((s) => ({ value: s.codigo, label: s.nombre }));
-  const statusCotOpts = (scRes?.data ?? []).map((s) => ({ value: s.codigo, label: s.nombre }));
   const statusOcOpts = (soRes?.data ?? []).map((s) => ({ value: s.codigo, label: s.nombre }));
   const proveedoresOpts = (provRes?.data ?? []).map((p) => ({ value: p.id, label: `${p.razon_social}${p.ruc ? ` (${p.ruc})` : ""}` }));
-  const ubicacionesOpts = (ubicRes?.data ?? []).map((u) => ({ value: u.codigo, label: `${u.codigo} — ${u.nombre}` }));
 
   useEffect(() => {
     fetch("/api/me").then((r) => r.ok ? r.json() : null).then((d) => { if (Array.isArray(d?.user?.roles)) setRoles(d.user.roles); }).catch(() => { /* noop */ });
@@ -685,8 +685,6 @@ export default function RequerimientosPage() {
   // Diccionarios de label desde catálogo cacheado (fallback al código si no está)
   const reqLabel = (c: string) =>
     (srRes?.data ?? []).find((s) => s.codigo === c)?.nombre ?? c;
-  const cotLabel = (c: string) =>
-    (scRes?.data ?? []).find((s) => s.codigo === c)?.nombre ?? c;
   const ocLabel = (c: string) =>
     (soRes?.data ?? []).find((s) => s.codigo === c)?.nombre ?? c;
 
