@@ -167,6 +167,9 @@ interface OTDetalle {
   fecha_cotizacion: string | null;
   fecha_aprobacion: string | null;
   fecha_facturacion: string | null;
+  // N° de factura (serie-correlativo). Se edita desde el tab Adjuntos, etapa
+  // Facturación, junto a la fecha — ver OTAdjuntosTab.
+  nro_factura?: string | null;
   fecha_entrega: string | null;
   // Característica del cilindro (ESTANDAR / NO_ESTANDAR) — del Excel Data_data.
   caracteristica_cilindro: string | null;
@@ -1641,6 +1644,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
           fecha_despacho: ot.fecha_despacho,
           empresa_recibe: ot.empresa_recibe,
           fecha_facturacion: ot.fecha_facturacion,
+          nro_factura: ot.nro_factura ?? null,
         }}
         onMetaSaved={() => fetchOT()}
       />

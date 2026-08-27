@@ -40,6 +40,7 @@ import {
 import dayjs, { type Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
 import { uploadToR2, getDownloadUrl, openR2File } from "@/lib/r2-client";
+import { numeroFacturaDesdeArchivo } from "@/lib/factura-numero";
 
 const { Text } = Typography;
 const { Dragger } = Upload;
@@ -57,6 +58,9 @@ export interface OTAdjuntosMeta {
   fecha_despacho: string | null;
   empresa_recibe: string | null;
   fecha_facturacion: string | null;
+  // N° de factura (serie-correlativo, ej. F001-00003181). Se carga acá mismo,
+  // junto a la fecha: es donde facturación ya venía trabajando.
+  nro_factura: string | null;
 }
 
 const ETAPAS_CON_META = new Set(["cotizacion", "po_cliente", "despacho", "facturacion"]);
@@ -153,11 +157,15 @@ function EtapaMetaForm({
   etapaKey,
   meta,
   onSaved,
+  sugerenciaNroFactura,
 }: {
   otId: number;
   etapaKey: string;
   meta: OTAdjuntosMeta;
   onSaved?: () => void;
+  // N° de factura leído del nombre del PDF ya subido a esta etapa, para
+  // ofrecerlo con un click en vez de tipearlo. null si no se pudo detectar.
+  sugerenciaNroFactura?: string | null;
 }) {
   const [messageApi, contextHolder] = message.useMessage();
   const [saving, setSaving] = useState(false);
@@ -169,6 +177,7 @@ function EtapaMetaForm({
   const [fechaDespacho, setFechaDespacho] = useState<Dayjs | null>(toDayjs(meta.fecha_despacho));
   const [empresaRecibe, setEmpresaRecibe] = useState<string>(meta.empresa_recibe ?? "");
   const [fechaFacturacion, setFechaFacturacion] = useState<Dayjs | null>(toDayjs(meta.fecha_facturacion));
+  const [nroFactura, setNroFactura] = useState<string>(meta.nro_factura ?? "");
 
   // Re-sincroniza los controles cuando la OT cambia (tras guardar y refetch).
   useEffect(() => {
@@ -178,7 +187,8 @@ function EtapaMetaForm({
     setFechaDespacho(toDayjs(meta.fecha_despacho));
     setEmpresaRecibe(meta.empresa_recibe ?? "");
     setFechaFacturacion(toDayjs(meta.fecha_facturacion));
-  }, [meta.fecha_cotizacion, meta.fecha_generacion_po, meta.fecha_aprobacion, meta.fecha_despacho, meta.empresa_recibe, meta.fecha_facturacion]);
+    setNroFactura(meta.nro_factura ?? "");
+  }, [meta.fecha_cotizacion, meta.fecha_generacion_po, meta.fecha_aprobacion, meta.fecha_despacho, meta.empresa_recibe, meta.fecha_facturacion, meta.nro_factura]);
 
   const fmt = (d: Dayjs | null) => (d ? d.format("YYYY-MM-DD") : null);
 
@@ -258,13 +268,37 @@ function EtapaMetaForm({
       </Space>
     );
   } else if (etapaKey === "facturacion") {
+    // Además de la fecha, acá se carga el N° de factura. Hasta 2026-08 ese
+    // campo quedaba siempre vacío porque el único lugar para escribirlo era
+    // /facturacion/ot, que facturación no usaba: subían el PDF y ponían la
+    // fecha desde este tab. Con el input al lado, el número se registra en
+    // el mismo paso. Si el PDF ya está subido, el botón "Usar el del PDF"
+    // lo completa desde el nombre del archivo.
     contenido = (
       <Space wrap align="end" size={16}>
         <div>
           <div style={labelStyle}>Fecha de facturación</div>
           <DatePicker format="DD/MM/YYYY" value={fechaFacturacion} onChange={setFechaFacturacion} disabled={cerrada} style={{ width: 180 }} />
         </div>
-        {guardarBtn({ fecha_facturacion: fmt(fechaFacturacion) })}
+        <div>
+          <div style={labelStyle}>N° de factura</div>
+          <Input
+            value={nroFactura}
+            onChange={(e) => setNroFactura(e.target.value)}
+            disabled={cerrada}
+            placeholder="Ej. F001-00003181"
+            style={{ width: 200 }}
+            maxLength={50}
+          />
+        </div>
+        {sugerenciaNroFactura && sugerenciaNroFactura !== nroFactura.trim() && (
+          <Tooltip title={`Detectado en el nombre del PDF de la factura: ${sugerenciaNroFactura}`}>
+            <Button size="small" disabled={cerrada} onClick={() => setNroFactura(sugerenciaNroFactura)}>
+              Usar {sugerenciaNroFactura}
+            </Button>
+          </Tooltip>
+        )}
+        {guardarBtn({ fecha_facturacion: fmt(fechaFacturacion), nro_factura: nroFactura.trim() || null })}
       </Space>
     );
   }
@@ -413,7 +447,17 @@ function EtapaPanel({
 
       {/* Datos del flujo comercial (fecha + check + empresa) de esta etapa */}
       {ETAPAS_CON_META.has(etapa.key) && meta && (
-        <EtapaMetaForm otId={otId} etapaKey={etapa.key} meta={meta} onSaved={onMetaSaved} />
+        <EtapaMetaForm
+          otId={otId}
+          etapaKey={etapa.key}
+          meta={meta}
+          onSaved={onMetaSaved}
+          sugerenciaNroFactura={
+            etapa.key === "facturacion"
+              ? adjuntos.map((a) => numeroFacturaDesdeArchivo(a.nombre_archivo)).find((n) => n != null) ?? null
+              : null
+          }
+        />
       )}
 
       {/* Zona de drag & drop */}
