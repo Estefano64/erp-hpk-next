@@ -168,6 +168,12 @@ export async function GET(req: NextRequest) {
             descripcion: true, fabricante_codigo: true, unidad_medida: true,
             fecha_solicitud: true, fecha_requerida: true,
             precio_unitario: true, moneda: true,
+            // Precio y cantidad REALES de la OC. El editor de OC no pisa el
+            // requerimiento: guarda lo negociado con el proveedor en estas
+            // columnas paralelas. Sin traerlas, la pantalla mostraba el precio
+            // con que se pidió el item (a veces un placeholder de 0.10)
+            // aunque ya estuviera comprado a otro valor.
+            oc_precio_unitario: true, oc_cantidad: true,
             po_id: true, nro_oc: true, observaciones: true,
             // fecha_aprobacion: alimenta la columna "Días s/OC" (antigüedad de
             // aprobados sin comprar) en /requerimientos/detalle.
