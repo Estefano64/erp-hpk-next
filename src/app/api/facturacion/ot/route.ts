@@ -16,6 +16,11 @@
 // solo se listaban las de guía emitida + sin factura, y en prod eso daba
 // 2 filas cuando hay ~3,000 OTs realmente despachadas.
 //
+// Como ahora la lista incluye facturadas y no facturadas, cada fila viene con
+// `facturada` (= fecha de facturación Y PDF de factura) para que el frontend
+// separe unas de otras (KPIs, filtro y tag), más `falta_factura` con lo que
+// falte y `nro_factura_pdf` con el número leído del nombre del comprobante.
+//
 // Query params (opcionales, multi-valor separado por coma — NO es un rango):
 //   ?anios=2026,2025   filtra por año de la fecha de despacho
 //   ?meses=1,7,12      filtra por mes (1-12) de la fecha de despacho
@@ -24,6 +29,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { numeroFacturaDesdeArchivo } from "@/lib/factura-numero";
 
 const ETAPAS_REQUERIDAS = [
   "recepcion", "cotizacion", "po_cliente", "termino", "despacho",
@@ -31,6 +37,9 @@ const ETAPAS_REQUERIDAS = [
 // "facturacion" se trae y se muestra, pero NO es requisito: el PDF de la
 // factura se sube DESPUÉS de facturar, así que contarlo como faltante
 // bloquearía el botón para siempre (2026-08-27).
+//
+// Ese mismo adjunto es, además, una de las señales de "ya facturada" — ver
+// `facturada` más abajo.
 const ETAPAS_TRAIDAS = [...ETAPAS_REQUERIDAS, "facturacion"] as const;
 type Etapa = (typeof ETAPAS_TRAIDAS)[number];
 
@@ -139,6 +148,35 @@ export async function GET(req: NextRequest) {
       const faltantes = ETAPAS_REQUERIDAS.filter((et) => pdfs[et].length === 0);
       const pdfs_ok = faltantes.length === 0;
 
+      // ── ¿Está facturada? ────────────────────────────────────────────
+      // No alcanza con mirar `nro_factura`: en la práctica nadie usó nunca el
+      // "Registrar factura" de esta pantalla (0 OTs con nro_factura en prod
+      // al 2026-08-27). El circuito real de facturación fue subir el PDF de
+      // la factura a la etapa "facturacion" y cargar la fecha en el detalle
+      // de la OT.
+      //
+      // Regla (definida con el usuario): hacen falta LAS DOS señales —
+      // fecha de facturación Y PDF de la factura. Con una sola el expediente
+      // está a medias: o se cargó la fecha y falta subir el comprobante, o
+      // se subió el PDF y nadie registró cuándo se facturó. Esas quedan como
+      // pendientes a propósito, para que se completen.
+      const tieneFecha = o.fecha_facturacion != null;
+      const tienePdf = pdfs.facturacion.length > 0;
+      const facturada = tieneFecha && tienePdf;
+
+      // Qué falta para darla por facturada (vacío si ya lo está).
+      const falta_factura: string[] = [];
+      if (!tieneFecha) falta_factura.push("fecha de facturación");
+      if (!tienePdf) falta_factura.push("PDF de la factura");
+
+      // Número de factura leído del nombre del PDF (los comprobantes llegan
+      // como "20532384088-01-F001-00003181.pdf" o "F001-00003202 HP&K...pdf").
+      // Es una SUGERENCIA para pre-llenar el campo: el valor persistido sigue
+      // siendo `nro_factura`. Si el nombre no matchea, queda null.
+      const nro_factura_pdf = pdfs.facturacion
+        .map((a) => numeroFacturaDesdeArchivo(a.nombre_archivo))
+        .find((n): n is string => n != null) ?? null;
+
       return {
         id: o.id,
         ot: o.ot,
@@ -162,6 +200,12 @@ export async function GET(req: NextRequest) {
         // PDFs requeridos agrupados por etapa — el frontend renderiza 5 chips.
         pdfs,
         pdfs_ok,
+        // true solo si tiene fecha de facturación Y PDF de factura.
+        // `falta_factura` lista lo que falte, para el tooltip del frontend.
+        facturada,
+        falta_factura,
+        // Número detectado en el nombre del PDF (sugerencia, no persistido).
+        nro_factura_pdf,
         // Labels humanos de los faltantes para mostrar en tooltips/alertas.
         faltantes: faltantes.map((et) => ETAPA_LABELS[et]),
       };
