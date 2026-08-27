@@ -87,16 +87,22 @@ export async function GET(req: NextRequest) {
     // estado=pendientes|facturadas (default: todas) — filtro server-side para
     // que la carga inicial (Pendientes) no arrastre el histórico facturado.
     const estado = sp.get("estado");
-    // Rango de fechas de despacho (días completos, inclusive).
+    // Rango de fechas (días completos, inclusive).
     const esFecha = (s: string | null): s is string => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
     const desdeRaw = sp.get("desde");
     const hastaRaw = sp.get("hasta");
+    // por=facturacion → los filtros de fecha (años/meses/rango) y el orden
+    // usan fecha_facturacion en vez de la fecha de despacho. Lo usa la página
+    // /facturacion/facturas (consulta de lo ya facturado).
+    const CAMPO_FECHA = sp.get("por") === "facturacion"
+      ? Prisma.sql`fecha_facturacion`
+      : FECHA_DESPACHO_SQL;
 
     // Años disponibles (para poblar el filtro) — agregado barato, sin joins.
     const aniosDisponibles = await prisma.$queryRaw<Array<{ anio: number; n: number }>>`
-      SELECT EXTRACT(YEAR FROM ${FECHA_DESPACHO_SQL})::int AS anio, COUNT(*)::int AS n
+      SELECT EXTRACT(YEAR FROM ${CAMPO_FECHA})::int AS anio, COUNT(*)::int AS n
       FROM orden_trabajo
-      WHERE ${ES_DESPACHADA_SQL} AND ${FECHA_DESPACHO_SQL} IS NOT NULL
+      WHERE ${ES_DESPACHADA_SQL} AND ${CAMPO_FECHA} IS NOT NULL
       GROUP BY 1
       ORDER BY 1 DESC`;
 
@@ -105,18 +111,18 @@ export async function GET(req: NextRequest) {
     // Prisma no expresa en orderBy.
     const filtros: Prisma.Sql[] = [ES_DESPACHADA_SQL];
     if (anios.length > 0) {
-      filtros.push(Prisma.sql`EXTRACT(YEAR FROM ${FECHA_DESPACHO_SQL})::int IN (${Prisma.join(anios)})`);
+      filtros.push(Prisma.sql`EXTRACT(YEAR FROM ${CAMPO_FECHA})::int IN (${Prisma.join(anios)})`);
     }
     if (meses.length > 0) {
-      filtros.push(Prisma.sql`EXTRACT(MONTH FROM ${FECHA_DESPACHO_SQL})::int IN (${Prisma.join(meses)})`);
+      filtros.push(Prisma.sql`EXTRACT(MONTH FROM ${CAMPO_FECHA})::int IN (${Prisma.join(meses)})`);
     }
     if (esFecha(desdeRaw)) {
-      filtros.push(Prisma.sql`${FECHA_DESPACHO_SQL} >= ${new Date(`${desdeRaw}T00:00:00Z`)}`);
+      filtros.push(Prisma.sql`${CAMPO_FECHA} >= ${new Date(`${desdeRaw}T00:00:00Z`)}`);
     }
     if (esFecha(hastaRaw)) {
       const fin = new Date(`${hastaRaw}T00:00:00Z`);
       fin.setUTCDate(fin.getUTCDate() + 1);
-      filtros.push(Prisma.sql`${FECHA_DESPACHO_SQL} < ${fin}`);
+      filtros.push(Prisma.sql`${CAMPO_FECHA} < ${fin}`);
     }
 
     // Conteos del universo filtrado (SIN el filtro de estado) — alimentan las
@@ -139,7 +145,7 @@ export async function GET(req: NextRequest) {
       SELECT id, ${FECHA_DESPACHO_SQL} AS f_desp
       FROM orden_trabajo
       WHERE ${Prisma.join(filtros, " AND ")}
-      ORDER BY ${FECHA_DESPACHO_SQL} DESC NULLS LAST, id DESC`;
+      ORDER BY ${CAMPO_FECHA} DESC NULLS LAST, id DESC`;
 
     const ids = filas.map((f) => f.id);
     const fechaDespachoPorId = new Map(filas.map((f) => [f.id, f.f_desp]));

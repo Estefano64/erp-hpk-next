@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Typography, Card, Table, Tag, Space, Button, Row, Col, Statistic, Empty,
   Modal, Form, Input, DatePicker, InputNumber, App, Tooltip, Alert, Upload,
-  Divider, Spin, List, Select, Segmented,
+  Divider, Spin, List, Select,
 } from "antd";
 import {
   AuditOutlined, ReloadOutlined, FileDoneOutlined, EyeOutlined,
@@ -156,7 +156,8 @@ export default function FacturacionOTPage() {
   // facturación, así que las OTs con la factura ya cargada (fecha + PDF) no
   // deben estorbar. Siguen accesibles con el toggle — el endpoint devuelve
   // todas las despachadas — pero no se muestran por defecto.
-  const [vista, setVista] = useState<"todas" | "pendientes" | "facturadas">("pendientes");
+  // Esta pantalla muestra SOLO pendientes (estado=pendientes fijo en el
+  // fetch); lo facturado se consulta en /facturacion/facturas.
   const [filtroAnios, setFiltroAnios] = useState<number[]>([]);
   const [filtroMeses, setFiltroMeses] = useState<number[]>([]);
   // Rango de fechas de despacho (opcional; se combina con año/mes).
@@ -170,9 +171,8 @@ export default function FacturacionOTPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      // Filtro de estado SERVER-side: la carga por defecto (Pendientes) no
-      // arrastra el histórico facturado (pedido 2026-08-28).
-      if (vista !== "todas") params.set("estado", vista);
+      // Filtro de estado SERVER-side: siempre pendientes.
+      params.set("estado", "pendientes");
       if (filtroAnios.length > 0) params.set("anios", filtroAnios.join(","));
       if (filtroMeses.length > 0) params.set("meses", filtroMeses.join(","));
       if (filtroRango?.[0]) params.set("desde", filtroRango[0].format("YYYY-MM-DD"));
@@ -194,7 +194,7 @@ export default function FacturacionOTPage() {
     } finally {
       setLoading(false);
     }
-  }, [msg, vista, filtroAnios, filtroMeses, filtroRango, aniosHidratado]);
+  }, [msg, filtroAnios, filtroMeses, filtroRango, aniosHidratado]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -505,18 +505,8 @@ export default function FacturacionOTPage() {
           Facturación de OTs (mina)
         </Title>
         <Space wrap>
-          {/* El toggle filtra en el SERVER (cambia el fetch): la vista
-              Pendientes —la default— solo trae esa cola. Los contadores de
-              las tres pestañas vienen del endpoint (counts). */}
-          <Segmented
-            value={vista}
-            onChange={(v) => { setVista(v as typeof vista); setPage(1); }}
-            options={[
-              { value: "todas", label: `Todas (${counts.todas})` },
-              { value: "pendientes", label: `Pendientes (${counts.pendientes})` },
-              { value: "facturadas", label: `Facturadas (${counts.facturadas})` },
-            ]}
-          />
+          {/* Esta pantalla es SOLO la cola de pendientes (2026-08-28); lo ya
+              facturado se consulta en /facturacion/facturas. */}
           {/* Filtros año / mes: multi-selección (no rango). Los años salen del
               propio endpoint con su conteo; el filtrado ocurre en el server.
               optionFilterProp="label": sin esto, tipear en el select no
@@ -601,9 +591,14 @@ export default function FacturacionOTPage() {
           </Card>
         </Col>
         <Col xs={12} md={6}>
-          <Card size="small">
-            <Tooltip title="Con fecha de facturación cargada Y el PDF de la factura subido. Con una sola de las dos sigue contando como pendiente.">
-              <Statistic title="Facturadas" value={counts.facturadas} styles={{ content: { color: "#52c41a" } }} />
+          <Card
+            size="small"
+            hoverable
+            onClick={() => router.push("/facturacion/facturas")}
+            style={{ cursor: "pointer" }}
+          >
+            <Tooltip title="Con fecha de facturación cargada Y el PDF de la factura subido. Click para abrir la consulta de Facturas.">
+              <Statistic title="Facturadas (ver Facturas →)" value={counts.facturadas} styles={{ content: { color: "#52c41a" } }} />
             </Tooltip>
           </Card>
         </Col>
@@ -624,11 +619,7 @@ export default function FacturacionOTPage() {
       </Row>
 
       {dataVista.length === 0 && !loading ? (
-        <Empty description={vista === "pendientes"
-          ? "No hay OTs despachadas pendientes de facturar en este período."
-          : vista === "facturadas"
-            ? "No hay OTs facturadas en este período."
-            : "No hay OTs despachadas en este período."} />
+        <Empty description="No hay OTs despachadas pendientes de facturar en este período." />
       ) : (
         <Card>
           <TablaFacturacionOT

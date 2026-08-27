@@ -231,6 +231,9 @@ function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
           children: [
             { key: "/despachos/mina", label: linkLabel("/despachos/mina", "Despacho a mina (Guía de remisión)") },
             { key: "/facturacion/ot", label: linkLabel("/facturacion/ot", "Facturación de OT (mina)") },
+            // Consulta de lo YA facturado (rango de fechas + export). La cola
+            // de trabajo (pendientes) vive en /facturacion/ot.
+            { key: "/facturacion/facturas", label: linkLabel("/facturacion/facturas", "Facturas") },
             // "Guía y factura de OC" se removió del menú: la misma funcionalidad
             // (Nro Guía/Nro Factura editables + subir archivos) ya está en la
             // tabla principal de /compras. La ruta /compras/contabilidad sigue
