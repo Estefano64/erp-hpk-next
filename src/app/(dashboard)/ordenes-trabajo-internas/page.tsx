@@ -233,14 +233,15 @@ export default function OrdenesTrabajoInternasPage() {
   const [equipos, setEquipos] = useState<EquipoOption[]>([]);
   const [plantas, setPlantas] = useState<CatalogOption[]>([]);
   const [prioridades, setPrioridades] = useState<CatalogOption[]>([]);
-  const [userStatuses, setUserStatuses] = useState<CatalogOption[]>([]);
   const [estrategias, setEstrategias] = useState<EstrategiaOption[]>([]);
   const [trabajadores, setTrabajadores] = useState<TrabajadorOpt[]>([]);
-  // Catálogo de Task Lists del taller (importado del Excel HPK). Se usa en el
-  // form para que el usuario elija una tarea en vez de tipearla como texto libre.
-  const [taskLists, setTaskLists] = useState<Array<{
-    id: number; maquina_taller: string; actividad_codigo: string; descripcion: string;
-  }>>([]);
+  // NOTA (2026-08-27): acá había dos catálogos que se cargaban y no se leían
+  // nunca — `userStatuses` (/api/catalogos?tabla=userStatus) y `taskLists`
+  // (/api/mantenimiento/task-lists?limit=10000, 291 filas / ~97 kB en cada
+  // apertura de la pantalla). El selector de Task List que justificaba el
+  // segundo nunca se construyó: el formulario no tiene campo `task_list` y en
+  // prod las 56 OTs internas activas lo tienen vacío. Si algún día se arma ese
+  // selector, hay que volver a traer el catálogo.
 
   // El dropdown "Asignado a" en OTs internas muestra TODO el personal de
   // Logística (incluyendo jefe/compras/almacén) + Mantenimiento + Limpieza
@@ -265,27 +266,22 @@ export default function OrdenesTrabajoInternasPage() {
   // Cargar catálogos una vez
   useEffect(() => {
     (async () => {
-      const [tRes, pRes, prRes, usRes, estRes, trRes, tlRes] = await Promise.all([
+      const [tRes, pRes, prRes, estRes, trRes] = await Promise.all([
         fetch("/api/catalogos?tabla=tipoOTInterna"),
         fetch("/api/catalogos?tabla=planta"),
         fetch("/api/catalogos?tabla=prioridadAtencion"),
-        fetch("/api/catalogos?tabla=userStatus"),
         fetch("/api/catalogos?tabla=estrategia"),
         // No usamos soloOperarios=1 acá: necesitamos incluir JEFE DE LOGISTICA
         // y COMPRAS (que sí pueden ser asignados de OTs internas).
         fetch("/api/trabajadores?limit=10000"),
-        // Catálogo de Task Lists del taller (291 entradas importadas del Excel).
-        fetch("/api/mantenimiento/task-lists?limit=10000"),
       ]);
       if (tRes.ok) setTiposOTInterna((await tRes.json()).data ?? []);
       // NOTA: los equipos se cargan dinámicamente según el área del taller
       // elegida en el formulario (ver useEffect más abajo).
       if (pRes.ok) setPlantas((await pRes.json()).data ?? []);
       if (prRes.ok) setPrioridades((await prRes.json()).data ?? []);
-      if (usRes.ok) setUserStatuses((await usRes.json()).data ?? []);
       if (estRes.ok) setEstrategias((await estRes.json()).data ?? []);
       if (trRes.ok) setTrabajadores((await trRes.json()).data ?? []);
-      if (tlRes.ok) setTaskLists((await tlRes.json()).data ?? []);
     })();
   }, []);
 
