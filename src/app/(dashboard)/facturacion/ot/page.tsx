@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Typography, Card, Table, Tag, Space, Button, Row, Col, Statistic, Empty,
   Modal, Form, Input, DatePicker, InputNumber, App, Tooltip, Alert, Upload,
-  Divider, Spin, List,
+  Divider, Spin, List, Select,
 } from "antd";
 import {
   AuditOutlined, ReloadOutlined, FileDoneOutlined, EyeOutlined,
@@ -56,6 +56,9 @@ interface OTLista {
   wo_cliente: string | null;
   po_cliente: string | null;
   fecha_entrega: string | null;
+  // Fecha de despacho efectiva (fecha_despacho o, si falta, la de emisión de
+  // la guía). Es el criterio de orden y de los filtros año/mes.
+  fecha_despacho: string | null;
   fecha_facturacion: string | null;
   guia_entrega_salida: string | null;
   nro_informe_entrega: string | null;
@@ -88,6 +91,12 @@ const ETAPAS_ADJ: Array<{ key: string; label: string; icon: React.ReactNode; col
   { key: "despacho",    label: "Despacho y GR",          icon: <CarOutlined />,         color: "#eb2f96" },
   { key: "facturacion", label: "Facturación",            icon: <FileTextOutlined />,    color: "#1d6f42" },
 ];
+
+// Opciones del filtro de meses (multi-selección, no rango).
+const MESES = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+].map((label, i) => ({ value: i + 1, label }));
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -122,18 +131,37 @@ export default function FacturacionOTPage() {
   // Subida en curso por etapa (para feedback visual del botón).
   const [uploadingEtapa, setUploadingEtapa] = useState<string | null>(null);
 
+  // Filtros año/mes (multi-selección, NO rango). El filtrado es server-side:
+  // el universo de despachadas son ~3,000 OTs y traerlas todas con sus
+  // adjuntos en cada carga es pesado. Arranca en el año más reciente.
+  const [filtroAnios, setFiltroAnios] = useState<number[]>([]);
+  const [filtroMeses, setFiltroMeses] = useState<number[]>([]);
+  const [aniosDisponibles, setAniosDisponibles] = useState<Array<{ anio: number; n: number }>>([]);
+  const [aniosHidratado, setAniosHidratado] = useState(false);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/facturacion/ot");
+      const params = new URLSearchParams();
+      if (filtroAnios.length > 0) params.set("anios", filtroAnios.join(","));
+      if (filtroMeses.length > 0) params.set("meses", filtroMeses.join(","));
+      const res = await fetch(`/api/facturacion/ot?${params}`);
       const json = await res.json();
       setData(json.data ?? []);
+      const anios = (json.anios_disponibles ?? []) as Array<{ anio: number; n: number }>;
+      setAniosDisponibles(anios);
+      // Primera carga: preseleccionar el año más reciente para no traer todo
+      // el histórico de una. El usuario puede sumar años desde el filtro.
+      if (!aniosHidratado) {
+        setAniosHidratado(true);
+        if (anios.length > 0) setFiltroAnios([anios[0].anio]);
+      }
     } catch {
       msg.error("Error al cargar facturación de OTs");
     } finally {
       setLoading(false);
     }
-  }, [msg]);
+  }, [msg, filtroAnios, filtroMeses, aniosHidratado]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -273,6 +301,15 @@ export default function FacturacionOTPage() {
         : <Tag color="default">—</Tag>,
     },
     {
+      // Fecha de despacho: viene del campo de la OT y, si está vacío, de la
+      // emisión de la guía. Es el orden por defecto de la vista (desc).
+      key: "fecha_despacho", title: "F. Despacho", width: 115, align: "center",
+      sorter: (a, b) => (a.fecha_despacho ?? "").localeCompare(b.fecha_despacho ?? ""),
+      render: (_v, r) => r.fecha_despacho
+        ? formatDateOnly(r.fecha_despacho)
+        : <Text type="secondary">—</Text>,
+    },
+    {
       // 5 chips compactos, uno por PDF requerido. Verde = subido (click para
       // descargar); rojo punteado = falta. El tooltip dice qué PDF es.
       key: "pdfs", title: "PDFs requeridos", width: 340,
@@ -359,9 +396,31 @@ export default function FacturacionOTPage() {
           Facturación de OTs (mina)
         </Title>
         <Space wrap>
+          {/* Filtros año / mes: multi-selección (no rango). Los años salen del
+              propio endpoint con su conteo; el filtrado ocurre en el server. */}
+          <Select
+            mode="multiple"
+            allowClear
+            placeholder="Año(s)"
+            value={filtroAnios}
+            onChange={(v) => setFiltroAnios(v)}
+            options={aniosDisponibles.map((a) => ({ value: a.anio, label: `${a.anio} (${a.n})` }))}
+            style={{ minWidth: 160, maxWidth: 280 }}
+            maxTagCount="responsive"
+          />
+          <Select
+            mode="multiple"
+            allowClear
+            placeholder="Mes(es)"
+            value={filtroMeses}
+            onChange={(v) => setFiltroMeses(v)}
+            options={MESES}
+            style={{ minWidth: 150, maxWidth: 280 }}
+            maxTagCount="responsive"
+          />
           <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>Actualizar</Button>
           {/* La tabla no tiene búsqueda ni filtros de columna: el endpoint
-              devuelve exactamente lo que se ve (OTs Entregado/Cobranza). */}
+              devuelve exactamente lo que se ve (OTs ya despachadas). */}
           <ExportarExcelButton<OTLista>
             endpoint="/api/facturacion/ot"
             filename="Facturacion-OT"
@@ -373,6 +432,7 @@ export default function FacturacionOTPage() {
               { key: "wo", label: "WO Cliente", value: (r) => r.wo_cliente ?? "" },
               { key: "po", label: "PO Cliente", value: (r) => r.po_cliente ?? "" },
               { key: "guia", label: "Guía", value: (r) => r.guia_entrega_salida ?? "" },
+              { key: "fecha_despacho", label: "F. Despacho", value: (r) => dateOnlyLocal(r.fecha_despacho) },
               {
                 key: "adjuntos", label: "Adjuntos",
                 value: (r) => r.pdfs_ok ? "5/5 PDFs OK" : `Faltan: ${r.faltantes.join(", ")}`,

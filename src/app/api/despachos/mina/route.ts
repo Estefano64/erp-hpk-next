@@ -50,7 +50,9 @@ export async function GET(_req: NextRequest) {
           select: { id: true, cantidad: true, descripcion: true, material_codigo: true, unidad_medida: true },
         },
       },
-      orderBy: [{ fecha_recepcion: "asc" }, { id: "asc" }],
+      // Más recientes primero (pedido 2026-08-27); antes era la más antigua
+      // arriba y las OTs nuevas quedaban al final del listado.
+      orderBy: [{ fecha_recepcion: "desc" }, { id: "desc" }],
     });
 
     const data = ots.map((o) => ({

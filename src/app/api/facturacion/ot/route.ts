@@ -1,17 +1,28 @@
 // GET /api/facturacion/ot
 //
-// Lista las OTs que YA fueron despachadas (tienen guía de remisión emitida)
-// y que todavía NO se han facturado. Para cada OT devuelve los 5 PDFs
-// requeridos para facturar — agrupados por etapa — para que el frontend
-// los muestre como chips clickeables (verde = subido, rojo = falta):
+// Lista las OTs que YA fueron despachadas (salieron del taller), estén o no
+// facturadas todavía. Para cada OT devuelve los 5 PDFs requeridos para
+// facturar — agrupados por etapa — para que el frontend los muestre como
+// chips clickeables (verde = subido, rojo = falta):
 //
 //   1. Guía de llegada    → adjunto etapa "recepcion"
 //   2. Cotización         → adjunto etapa "cotizacion"
 //   3. PO cliente         → adjunto etapa "po_cliente"
 //   4. Informe            → adjunto etapa "termino"
 //   5. Guía de despacho   → adjunto etapa "despacho"
+//
+// "Despachada" (ampliado 2026-08-27): con guía de remisión emitida, O con
+// fecha_despacho cargada, O en taller_status "Entregado"/"Cobranza". Antes
+// solo se listaban las de guía emitida + sin factura, y en prod eso daba
+// 2 filas cuando hay ~3,000 OTs realmente despachadas.
+//
+// Query params (opcionales, multi-valor separado por coma — NO es un rango):
+//   ?anios=2026,2025   filtra por año de la fecha de despacho
+//   ?meses=1,7,12      filtra por mes (1-12) de la fecha de despacho
+// La respuesta incluye `anios_disponibles` (año + conteo) para poblar el filtro.
 
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 const ETAPAS_REQUERIDAS = [
@@ -27,15 +38,66 @@ const ETAPA_LABELS: Record<Etapa, string> = {
   despacho: "Guía de despacho",
 };
 
-export async function GET(_req: NextRequest) {
+// Fecha de despacho efectiva: la explícita si existe, sino la de emisión de
+// la guía (POST /api/despachos/mina/[id] sella `fecha_entrega`).
+const FECHA_DESPACHO_SQL = Prisma.sql`COALESCE(fecha_despacho, fecha_entrega)`;
+// Condición "ya despachada".
+const ES_DESPACHADA_SQL = Prisma.sql`
+  activo = true
+  AND (
+    guia_entrega_salida IS NOT NULL
+    OR fecha_despacho IS NOT NULL
+    OR taller_status_codigo IN ('Entregado', 'Cobranza')
+  )`;
+
+// "2026,2025" → [2026, 2025]; descarta lo que no sea número en rango.
+function parseNums(raw: string | null, min: number, max: number): number[] {
+  if (!raw) return [];
+  return [...new Set(
+    raw.split(",")
+      .map((s) => Number(s.trim()))
+      .filter((n) => Number.isInteger(n) && n >= min && n <= max),
+  )];
+}
+
+export async function GET(req: NextRequest) {
   try {
+    const sp = req.nextUrl.searchParams;
+    const anios = parseNums(sp.get("anios"), 2000, 2100);
+    const meses = parseNums(sp.get("meses"), 1, 12);
+
+    // Años disponibles (para poblar el filtro) — agregado barato, sin joins.
+    const aniosDisponibles = await prisma.$queryRaw<Array<{ anio: number; n: number }>>`
+      SELECT EXTRACT(YEAR FROM ${FECHA_DESPACHO_SQL})::int AS anio, COUNT(*)::int AS n
+      FROM orden_trabajo
+      WHERE ${ES_DESPACHADA_SQL} AND ${FECHA_DESPACHO_SQL} IS NOT NULL
+      GROUP BY 1
+      ORDER BY 1 DESC`;
+
+    // IDs que matchean, ya ordenados por fecha de despacho DESC (más reciente
+    // primero). Se resuelve en SQL porque el orden es sobre un COALESCE, que
+    // Prisma no expresa en orderBy.
+    const filtros: Prisma.Sql[] = [ES_DESPACHADA_SQL];
+    if (anios.length > 0) {
+      filtros.push(Prisma.sql`EXTRACT(YEAR FROM ${FECHA_DESPACHO_SQL})::int IN (${Prisma.join(anios)})`);
+    }
+    if (meses.length > 0) {
+      filtros.push(Prisma.sql`EXTRACT(MONTH FROM ${FECHA_DESPACHO_SQL})::int IN (${Prisma.join(meses)})`);
+    }
+    const filas = await prisma.$queryRaw<Array<{ id: number; f_desp: Date | null }>>`
+      SELECT id, ${FECHA_DESPACHO_SQL} AS f_desp
+      FROM orden_trabajo
+      WHERE ${Prisma.join(filtros, " AND ")}
+      ORDER BY ${FECHA_DESPACHO_SQL} DESC NULLS LAST, id DESC`;
+
+    const ids = filas.map((f) => f.id);
+    const fechaDespachoPorId = new Map(filas.map((f) => [f.id, f.f_desp]));
+    if (ids.length === 0) {
+      return NextResponse.json({ data: [], anios_disponibles: aniosDisponibles });
+    }
+
     const ots = await prisma.ordenTrabajo.findMany({
-      where: {
-        // Solo OTs que ya pasaron por /despachos/mina (guía emitida).
-        guia_entrega_salida: { not: null },
-        // Solo pendientes de facturar — una vez facturadas desaparecen.
-        nro_factura: null,
-      },
+      where: { id: { in: ids } },
       select: {
         id: true, ot: true, descripcion: true,
         wo_cliente: true, po_cliente: true, ns: true,
@@ -51,10 +113,12 @@ export async function GET(_req: NextRequest) {
           orderBy: { fecha_subida: "desc" },
         },
       },
-      orderBy: [{ fecha_entrega: "asc" }, { id: "asc" }],
     });
+    // Reordenar según el orden del query raw (findMany con `in` no lo respeta).
+    const porId = new Map(ots.map((o) => [o.id, o]));
+    const ordenadas = ids.map((id) => porId.get(id)).filter((o): o is (typeof ots)[number] => o != null);
 
-    const data = ots.map((o) => {
+    const data = ordenadas.map((o) => {
       // Agrupamos adjuntos por etapa para que el frontend tenga acceso a la
       // lista por categoría (puede haber más de un PDF por etapa).
       const pdfs: Record<Etapa, typeof o.adjuntos> = {
@@ -79,6 +143,9 @@ export async function GET(_req: NextRequest) {
         wo_cliente: o.wo_cliente,
         po_cliente: o.po_cliente,
         fecha_entrega: o.fecha_entrega,
+        // Fecha de despacho efectiva (fecha_despacho o, si falta, la de
+        // emisión de la guía) — también es el criterio de orden y de filtro.
+        fecha_despacho: fechaDespachoPorId.get(o.id) ?? null,
         fecha_facturacion: o.fecha_facturacion,
         guia_entrega_salida: o.guia_entrega_salida,
         nro_informe_entrega: o.nro_informe_entrega,
@@ -93,7 +160,7 @@ export async function GET(_req: NextRequest) {
       };
     });
 
-    return NextResponse.json({ data });
+    return NextResponse.json({ data, anios_disponibles: aniosDisponibles });
   } catch (error) {
     console.error("GET /api/facturacion/ot error:", error);
     return NextResponse.json({ error: "Error obteniendo OTs para facturación" }, { status: 500 });
