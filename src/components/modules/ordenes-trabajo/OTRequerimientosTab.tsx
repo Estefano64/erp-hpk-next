@@ -192,6 +192,57 @@ const OC_COLOR: Record<string, string> = {
   DEVOLUCION: "warning",
 };
 
+// ── Inputs de texto del borrador con estado LOCAL ─────────────────────────
+// El tipeo vive en el propio input y se comitea al draft global recién en
+// onBlur. Antes eran controlados contra `draftItems` (estado del tab entero):
+// CADA TECLA re-renderizaba la pestaña completa —borrador + los cientos de
+// reqs existentes agrupados— y el tipeo se congelaba y aparecía "de golpe"
+// (reporte del equipo 2026-08-27; con eventos sintéticos directamente colgaba
+// la página). El commit único en blur elimina el re-render por tecla.
+// Los cambios EXTERNOS del valor (ej. autollenado de descripción al elegir
+// material) se sincronizan con el useEffect sobre `value`.
+function DraftTextInput({ value, placeholder, onCommit }: {
+  value?: string;
+  placeholder?: string;
+  onCommit: (v: string) => void;
+}) {
+  const [local, setLocal] = useState(value ?? "");
+  useEffect(() => { setLocal(value ?? ""); }, [value]);
+  return (
+    <Input
+      size="small"
+      placeholder={placeholder}
+      value={local}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={() => { if ((value ?? "") !== local) onCommit(local); }}
+    />
+  );
+}
+
+// Ídem para el AutoComplete de servicios (SER): tipeo local; comitea al
+// elegir una opción (onSelect) o al salir del campo (onBlur).
+function DraftServicioAutoComplete({ value, options, onCommit }: {
+  value?: string;
+  options: { value: string; label: string }[];
+  onCommit: (v: string) => void;
+}) {
+  const [local, setLocal] = useState(value ?? "");
+  useEffect(() => { setLocal(value ?? ""); }, [value]);
+  return (
+    <AutoComplete
+      size="small"
+      placeholder="Tipeá un servicio (ej. SVC Cromado)..."
+      value={local}
+      onChange={(v) => setLocal(v)}
+      onSelect={(v) => { setLocal(String(v)); onCommit(String(v)); }}
+      onBlur={() => { if ((value ?? "") !== local) onCommit(local); }}
+      options={options}
+      filterOption={(input, option) => String(option?.value ?? "").toLowerCase().includes(input.toLowerCase())}
+      style={{ width: "100%" }}
+    />
+  );
+}
+
 export default function OTRequerimientosTab({
   otId,
   kind = "externa",
@@ -1581,23 +1632,18 @@ export default function OTRequerimientosTab({
                       return { value: valor, label: valor };
                     });
                     return (
-                      <AutoComplete
-                        size="small"
-                        placeholder="Tipeá un servicio (ej. SVC Cromado)..."
+                      <DraftServicioAutoComplete
                         value={r.descripcion}
-                        onChange={(v) => actualizarDraftItem(r.id, { descripcion: v })}
                         options={opciones}
-                        filterOption={(input, option) => String(option?.value ?? "").toLowerCase().includes(input.toLowerCase())}
-                        style={{ width: "100%" }}
+                        onCommit={(v) => actualizarDraftItem(r.id, { descripcion: v })}
                       />
                     );
                   }
                   return (
-                    <Input
-                      size="small"
+                    <DraftTextInput
                       placeholder="Descripción"
                       value={r.descripcion}
-                      onChange={(e) => actualizarDraftItem(r.id, { descripcion: e.target.value })}
+                      onCommit={(v) => actualizarDraftItem(r.id, { descripcion: v })}
                     />
                   );
                 },
@@ -1720,11 +1766,10 @@ export default function OTRequerimientosTab({
                 render: (_: unknown, r: DraftItem) => (
                   <div>
                     <Space.Compact style={{ width: "100%" }}>
-                      <Input
-                        size="small"
+                      <DraftTextInput
                         placeholder="Obs."
                         value={r.observaciones ?? ""}
-                        onChange={(e) => actualizarDraftItem(r.id, { observaciones: e.target.value })}
+                        onCommit={(v) => actualizarDraftItem(r.id, { observaciones: v })}
                       />
                       <Tooltip title="Adjuntar archivo(s)">
                         <Button
