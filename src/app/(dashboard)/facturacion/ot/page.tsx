@@ -159,18 +159,28 @@ export default function FacturacionOTPage() {
   const [vista, setVista] = useState<"todas" | "pendientes" | "facturadas">("pendientes");
   const [filtroAnios, setFiltroAnios] = useState<number[]>([]);
   const [filtroMeses, setFiltroMeses] = useState<number[]>([]);
+  // Rango de fechas de despacho (opcional; se combina con año/mes).
+  const [filtroRango, setFiltroRango] = useState<[Dayjs | null, Dayjs | null] | null>(null);
   const [aniosDisponibles, setAniosDisponibles] = useState<Array<{ anio: number; n: number }>>([]);
+  // Conteos del universo filtrado (sin el estado) — para las pestañas.
+  const [counts, setCounts] = useState<{ todas: number; pendientes: number; facturadas: number }>({ todas: 0, pendientes: 0, facturadas: 0 });
   const [aniosHidratado, setAniosHidratado] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
+      // Filtro de estado SERVER-side: la carga por defecto (Pendientes) no
+      // arrastra el histórico facturado (pedido 2026-08-28).
+      if (vista !== "todas") params.set("estado", vista);
       if (filtroAnios.length > 0) params.set("anios", filtroAnios.join(","));
       if (filtroMeses.length > 0) params.set("meses", filtroMeses.join(","));
+      if (filtroRango?.[0]) params.set("desde", filtroRango[0].format("YYYY-MM-DD"));
+      if (filtroRango?.[1]) params.set("hasta", filtroRango[1].format("YYYY-MM-DD"));
       const res = await fetch(`/api/facturacion/ot?${params}`);
       const json = await res.json();
       setData(json.data ?? []);
+      if (json.counts) setCounts(json.counts);
       const anios = (json.anios_disponibles ?? []) as Array<{ anio: number; n: number }>;
       setAniosDisponibles(anios);
       // Primera carga: preseleccionar el año más reciente para no traer todo
@@ -184,7 +194,7 @@ export default function FacturacionOTPage() {
     } finally {
       setLoading(false);
     }
-  }, [msg, filtroAnios, filtroMeses, aniosHidratado]);
+  }, [msg, vista, filtroAnios, filtroMeses, filtroRango, aniosHidratado]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -284,20 +294,16 @@ export default function FacturacionOTPage() {
     }
   };
 
-  // El API devuelve TODAS las despachadas (facturadas o no), así que los KPIs
-  // tienen que separar unas de otras. Antes contaban `data.length` como
-  // "pendientes de facturar" y daban 81 cuando las pendientes reales eran 24.
-  // "Listas" y "Faltan PDFs" se miden solo sobre las pendientes: de nada sirve
+  // El API ya filtra por estado en el SERVER (param `estado`), así que `data`
+  // es exactamente la vista activa. Los KPIs "Pendientes"/"Facturadas" usan
+  // los `counts` del endpoint (universo del filtro año/mes/rango); "Listas" y
+  // "Faltan PDFs" se miden sobre las pendientes CARGADAS — de nada sirve
   // avisar que a una OT ya facturada le faltan PDFs.
-  const facturadas = data.filter((o) => o.facturada);
-  const pendientes = data.filter((o) => !o.facturada);
-  const listas = pendientes.filter((o) => o.pdfs_ok).length;
-  const faltanPdfs = pendientes.length - listas;
+  const pendientesCargadas = data.filter((o) => !o.facturada);
+  const listas = pendientesCargadas.filter((o) => o.pdfs_ok).length;
+  const faltanPdfs = pendientesCargadas.length - listas;
 
-  // Vista: todas / solo pendientes / solo facturadas.
-  const dataVista = vista === "pendientes" ? pendientes
-    : vista === "facturadas" ? facturadas
-    : data;
+  const dataVista = data;
 
   const columns: ColumnsType<OTLista> = useMemo(() => [
     {
@@ -499,22 +505,27 @@ export default function FacturacionOTPage() {
           Facturación de OTs (mina)
         </Title>
         <Space wrap>
-          {/* El listado trae facturadas y pendientes juntas; este toggle
-              separa lo que se ve sin volver a pegarle al endpoint. */}
+          {/* El toggle filtra en el SERVER (cambia el fetch): la vista
+              Pendientes —la default— solo trae esa cola. Los contadores de
+              las tres pestañas vienen del endpoint (counts). */}
           <Segmented
             value={vista}
             onChange={(v) => { setVista(v as typeof vista); setPage(1); }}
             options={[
-              { value: "todas", label: `Todas (${data.length})` },
-              { value: "pendientes", label: `Pendientes (${pendientes.length})` },
-              { value: "facturadas", label: `Facturadas (${facturadas.length})` },
+              { value: "todas", label: `Todas (${counts.todas})` },
+              { value: "pendientes", label: `Pendientes (${counts.pendientes})` },
+              { value: "facturadas", label: `Facturadas (${counts.facturadas})` },
             ]}
           />
           {/* Filtros año / mes: multi-selección (no rango). Los años salen del
-              propio endpoint con su conteo; el filtrado ocurre en el server. */}
+              propio endpoint con su conteo; el filtrado ocurre en el server.
+              optionFilterProp="label": sin esto, tipear en el select no
+              filtraba (el match por defecto es contra el value numérico). */}
           <Select
             mode="multiple"
             allowClear
+            showSearch
+            optionFilterProp="label"
             placeholder="Año(s)"
             value={filtroAnios}
             onChange={(v) => setFiltroAnios(v)}
@@ -525,12 +536,22 @@ export default function FacturacionOTPage() {
           <Select
             mode="multiple"
             allowClear
+            showSearch
+            optionFilterProp="label"
             placeholder="Mes(es)"
             value={filtroMeses}
             onChange={(v) => setFiltroMeses(v)}
             options={MESES}
             style={{ minWidth: 150, maxWidth: 280 }}
             maxTagCount="responsive"
+          />
+          {/* Rango de fechas de despacho — se combina (Y) con año/mes. */}
+          <DatePicker.RangePicker
+            value={filtroRango}
+            onChange={(v) => setFiltroRango(v)}
+            format="DD/MM/YYYY"
+            allowClear
+            placeholder={["Desp. desde", "Desp. hasta"]}
           />
           <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>Actualizar</Button>
           {/* La tabla no tiene búsqueda ni filtros de columna: el endpoint
@@ -576,13 +597,13 @@ export default function FacturacionOTPage() {
       <Row gutter={12} style={{ marginBottom: 12 }}>
         <Col xs={12} md={6}>
           <Card size="small">
-            <Statistic title="Pendientes de facturar" value={pendientes.length} styles={{ content: { color: brand.navy } }} />
+            <Statistic title="Pendientes de facturar" value={counts.pendientes} styles={{ content: { color: brand.navy } }} />
           </Card>
         </Col>
         <Col xs={12} md={6}>
           <Card size="small">
             <Tooltip title="Con fecha de facturación cargada Y el PDF de la factura subido. Con una sola de las dos sigue contando como pendiente.">
-              <Statistic title="Facturadas" value={facturadas.length} styles={{ content: { color: "#52c41a" } }} />
+              <Statistic title="Facturadas" value={counts.facturadas} styles={{ content: { color: "#52c41a" } }} />
             </Tooltip>
           </Card>
         </Col>

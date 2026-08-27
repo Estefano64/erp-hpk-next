@@ -50,6 +50,16 @@ type Etapa = (typeof ETAPAS_TRAIDAS)[number];
 // Fecha de despacho efectiva: la explícita si existe, sino la de emisión de
 // la guía (POST /api/despachos/mina/[id] sella `fecha_entrega`).
 const FECHA_DESPACHO_SQL = Prisma.sql`COALESCE(fecha_despacho, fecha_entrega)`;
+// "Facturada" en SQL — misma regla que el flag `facturada` del payload:
+// fecha de facturación cargada Y PDF de factura subido (etapa facturacion).
+// Permite filtrar pendientes/facturadas en el SERVER y no traer todo.
+const ES_FACTURADA_SQL = Prisma.sql`(
+  fecha_facturacion IS NOT NULL
+  AND EXISTS (
+    SELECT 1 FROM ot_adjunto a
+    WHERE a.orden_trabajo_id = orden_trabajo.id AND a.etapa_codigo = 'facturacion'
+  )
+)`;
 // Condición "ya despachada".
 const ES_DESPACHADA_SQL = Prisma.sql`
   activo = true
@@ -74,6 +84,13 @@ export async function GET(req: NextRequest) {
     const sp = req.nextUrl.searchParams;
     const anios = parseNums(sp.get("anios"), 2000, 2100);
     const meses = parseNums(sp.get("meses"), 1, 12);
+    // estado=pendientes|facturadas (default: todas) — filtro server-side para
+    // que la carga inicial (Pendientes) no arrastre el histórico facturado.
+    const estado = sp.get("estado");
+    // Rango de fechas de despacho (días completos, inclusive).
+    const esFecha = (s: string | null): s is string => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
+    const desdeRaw = sp.get("desde");
+    const hastaRaw = sp.get("hasta");
 
     // Años disponibles (para poblar el filtro) — agregado barato, sin joins.
     const aniosDisponibles = await prisma.$queryRaw<Array<{ anio: number; n: number }>>`
@@ -93,6 +110,31 @@ export async function GET(req: NextRequest) {
     if (meses.length > 0) {
       filtros.push(Prisma.sql`EXTRACT(MONTH FROM ${FECHA_DESPACHO_SQL})::int IN (${Prisma.join(meses)})`);
     }
+    if (esFecha(desdeRaw)) {
+      filtros.push(Prisma.sql`${FECHA_DESPACHO_SQL} >= ${new Date(`${desdeRaw}T00:00:00Z`)}`);
+    }
+    if (esFecha(hastaRaw)) {
+      const fin = new Date(`${hastaRaw}T00:00:00Z`);
+      fin.setUTCDate(fin.getUTCDate() + 1);
+      filtros.push(Prisma.sql`${FECHA_DESPACHO_SQL} < ${fin}`);
+    }
+
+    // Conteos del universo filtrado (SIN el filtro de estado) — alimentan las
+    // pestañas Todas/Pendientes/Facturadas aunque solo se cargue un subconjunto.
+    const [conteo] = await prisma.$queryRaw<Array<{ total: number; fact: number }>>`
+      SELECT COUNT(*)::int AS total,
+             COUNT(*) FILTER (WHERE ${ES_FACTURADA_SQL})::int AS fact
+      FROM orden_trabajo
+      WHERE ${Prisma.join(filtros, " AND ")}`;
+    const counts = {
+      todas: conteo?.total ?? 0,
+      facturadas: conteo?.fact ?? 0,
+      pendientes: (conteo?.total ?? 0) - (conteo?.fact ?? 0),
+    };
+
+    if (estado === "pendientes") filtros.push(Prisma.sql`NOT ${ES_FACTURADA_SQL}`);
+    else if (estado === "facturadas") filtros.push(ES_FACTURADA_SQL);
+
     const filas = await prisma.$queryRaw<Array<{ id: number; f_desp: Date | null }>>`
       SELECT id, ${FECHA_DESPACHO_SQL} AS f_desp
       FROM orden_trabajo
@@ -102,7 +144,7 @@ export async function GET(req: NextRequest) {
     const ids = filas.map((f) => f.id);
     const fechaDespachoPorId = new Map(filas.map((f) => [f.id, f.f_desp]));
     if (ids.length === 0) {
-      return NextResponse.json({ data: [], anios_disponibles: aniosDisponibles });
+      return NextResponse.json({ data: [], anios_disponibles: aniosDisponibles, counts });
     }
 
     const ots = await prisma.ordenTrabajo.findMany({
@@ -215,7 +257,7 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({ data, anios_disponibles: aniosDisponibles });
+    return NextResponse.json({ data, anios_disponibles: aniosDisponibles, counts });
   } catch (error) {
     console.error("GET /api/facturacion/ot error:", error);
     return NextResponse.json({ error: "Error obteniendo OTs para facturación" }, { status: 500 });
