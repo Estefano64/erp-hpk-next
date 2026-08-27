@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { crearNotificaciones, getUsuarioIdSesion } from "@/lib/notificaciones-server";
+import { resetLiberaciones } from "@/lib/liberacion";
 import { recalcularRecursosStatusDesdeRep } from "@/lib/recursos-ot";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
@@ -80,6 +81,12 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           }),
         },
       });
+      // Resetear las firmas de liberación A/B: la aprobación fue rebatida,
+      // así que las firmas viejas dejan de valer — el reenvío exige firmas
+      // NUEVAS. Sin esto, un req >$5,000 devuelto conservaba sus firmas y el
+      // "re-aprobar" pasaba sin que nadie firmara de verdad (mismo criterio
+      // que desaprobar/anular).
+      await resetLiberaciones(tx, { otRepuestoId: rep.id });
       await recalcularRecursosStatusDesdeRep(tx, rep);
       return u;
     });
