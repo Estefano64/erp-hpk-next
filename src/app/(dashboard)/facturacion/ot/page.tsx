@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Typography, Card, Table, Tag, Space, Button, Row, Col, Statistic, Empty,
   Modal, Form, Input, DatePicker, InputNumber, App, Tooltip, Alert, Upload,
-  Divider, Spin, List, Select,
+  Divider, Spin, List, Select, Segmented,
 } from "antd";
 import {
   AuditOutlined, ReloadOutlined, FileDoneOutlined, EyeOutlined,
@@ -71,6 +71,15 @@ interface OTLista {
   pdfs: PdfsPorEtapa;
   pdfs_ok: boolean;
   faltantes: string[];
+  // ¿Ya se facturó? El backend exige LAS DOS señales del circuito real:
+  // fecha de facturación cargada Y PDF de la factura subido. Nadie usó nunca
+  // el "Registrar factura" de esta pantalla (0 OTs con nro_factura en prod),
+  // así que mirar solo ese campo daba todas como pendientes.
+  facturada: boolean;
+  // Qué falta para darla por facturada (vacío si ya lo está).
+  falta_factura: string[];
+  // N° de factura leído del nombre del PDF — sugerencia para pre-llenar.
+  nro_factura_pdf: string | null;
 }
 
 // ── Adjuntos del modal — ETAPAS y meta visual.
@@ -137,6 +146,7 @@ export default function FacturacionOTPage() {
   // Filtros año/mes (multi-selección, NO rango). El filtrado es server-side:
   // el universo de despachadas son ~3,000 OTs y traerlas todas con sus
   // adjuntos en cada carga es pesado. Arranca en el año más reciente.
+  const [vista, setVista] = useState<"todas" | "pendientes" | "facturadas">("todas");
   const [filtroAnios, setFiltroAnios] = useState<number[]>([]);
   const [filtroMeses, setFiltroMeses] = useState<number[]>([]);
   const [aniosDisponibles, setAniosDisponibles] = useState<Array<{ anio: number; n: number }>>([]);
@@ -190,7 +200,9 @@ export default function FacturacionOTPage() {
     setOtSel(ot);
     form.resetFields();
     form.setFieldsValue({
-      nro_factura: ot.nro_factura ?? "",
+      // Si no hay número registrado, proponemos el que viene en el nombre del
+      // PDF de la factura — el usuario solo confirma.
+      nro_factura: ot.nro_factura ?? ot.nro_factura_pdf ?? "",
       fecha_facturacion: ot.fecha_facturacion ? dayjs(ot.fecha_facturacion) : dayjs(),
       monto: ot.monto_cotizacion != null ? Number(ot.monto_cotizacion) : undefined,
     });
@@ -262,10 +274,20 @@ export default function FacturacionOTPage() {
     }
   };
 
-  // Como el API ya filtra por "despachadas + sin factura", todas las filas
-  // son pendientes — los stats reflejan ese subconjunto.
-  const listas = data.filter((o) => o.pdfs_ok).length;
-  const faltanPdfs = data.length - listas;
+  // El API devuelve TODAS las despachadas (facturadas o no), así que los KPIs
+  // tienen que separar unas de otras. Antes contaban `data.length` como
+  // "pendientes de facturar" y daban 81 cuando las pendientes reales eran 24.
+  // "Listas" y "Faltan PDFs" se miden solo sobre las pendientes: de nada sirve
+  // avisar que a una OT ya facturada le faltan PDFs.
+  const facturadas = data.filter((o) => o.facturada);
+  const pendientes = data.filter((o) => !o.facturada);
+  const listas = pendientes.filter((o) => o.pdfs_ok).length;
+  const faltanPdfs = pendientes.length - listas;
+
+  // Vista: todas / solo pendientes / solo facturadas.
+  const dataVista = vista === "pendientes" ? pendientes
+    : vista === "facturadas" ? facturadas
+    : data;
 
   const columns: ColumnsType<OTLista> = useMemo(() => [
     {
@@ -386,10 +408,34 @@ export default function FacturacionOTPage() {
       ),
     },
     {
-      key: "fact", title: "N° Factura", width: 140,
-      render: (_v, r) => r.nro_factura
-        ? <Tag color="green" style={{ margin: 0 }}>{r.nro_factura}</Tag>
-        : <Tag color="default">Pendiente</Tag>,
+      // Con nro_factura vacío en TODAS las OTs de prod, esta columna mostraba
+      // "Pendiente" en gris incluso para las ya facturadas. Ahora refleja el
+      // estado real: número si lo hay, sino "Facturada" cuando el backend la
+      // detectó por fecha o por PDF, y recién ahí "Pendiente".
+      key: "fact", title: "N° Factura", width: 150,
+      render: (_v, r) => {
+        if (r.nro_factura) return <Tag color="green" style={{ margin: 0 }}>{r.nro_factura}</Tag>;
+        if (r.facturada) {
+          // Sin número registrado, pero el nombre del PDF suele traerlo.
+          if (r.nro_factura_pdf) {
+            return (
+              <Tooltip title={`Detectado en el nombre del PDF. Abrí el botón de factura para registrarlo (el campo viene pre-llenado).`}>
+                <Tag color="green" style={{ margin: 0, borderStyle: "dashed" }}>{r.nro_factura_pdf}</Tag>
+              </Tooltip>
+            );
+          }
+          return (
+            <Tooltip title="Facturada (fecha + PDF) pero sin número registrado, y el nombre del PDF no lo trae. Cargalo desde el botón de factura.">
+              <Tag color="green" style={{ margin: 0 }}>Facturada</Tag>
+            </Tooltip>
+          );
+        }
+        return (
+          <Tooltip title={r.falta_factura.length > 0 ? `Falta: ${r.falta_factura.join(" y ")}.` : undefined}>
+            <Tag color="default">Pendiente</Tag>
+          </Tooltip>
+        );
+      },
     },
     {
       key: "fecha_fact", title: "F. Facturación", width: 110,
@@ -409,14 +455,18 @@ export default function FacturacionOTPage() {
             <Button size="small" icon={<EyeOutlined />} onClick={() => router.push(`/ordenes-trabajo/${r.id}`)} />
           </Tooltip>
           {puedeFacturar && (
-            <Tooltip title={r.pdfs_ok ? "Abrir factura + PDFs" : `Faltan PDFs: ${r.faltantes.join(", ")}. Podés subirlos desde la ventana.`}>
+            <Tooltip title={r.facturada
+              ? "Ya facturada — abrir para revisar PDFs o cargar el N° de factura"
+              : r.pdfs_ok
+                ? "Abrir factura + PDFs"
+                : `Faltan PDFs: ${r.faltantes.join(", ")}. Podés subirlos desde la ventana.`}>
               <Button
                 size="small"
                 type="primary"
                 icon={<FileDoneOutlined />}
                 onClick={() => abrirModal(r)}
               >
-                {r.nro_factura ? "Editar factura" : (r.pdfs_ok ? "Facturar" : "Adjuntar y facturar")}
+                {r.facturada ? "Editar factura" : (r.pdfs_ok ? "Facturar" : "Adjuntar y facturar")}
               </Button>
             </Tooltip>
           )}
@@ -433,6 +483,17 @@ export default function FacturacionOTPage() {
           Facturación de OTs (mina)
         </Title>
         <Space wrap>
+          {/* El listado trae facturadas y pendientes juntas; este toggle
+              separa lo que se ve sin volver a pegarle al endpoint. */}
+          <Segmented
+            value={vista}
+            onChange={(v) => { setVista(v as typeof vista); setPage(1); }}
+            options={[
+              { value: "todas", label: `Todas (${data.length})` },
+              { value: "pendientes", label: `Pendientes (${pendientes.length})` },
+              { value: "facturadas", label: `Facturadas (${facturadas.length})` },
+            ]}
+          />
           {/* Filtros año / mes: multi-selección (no rango). Los años salen del
               propio endpoint con su conteo; el filtrado ocurre en el server. */}
           <Select
@@ -461,6 +522,9 @@ export default function FacturacionOTPage() {
           <ExportarExcelButton<OTLista>
             endpoint="/api/facturacion/ot"
             filename="Facturacion-OT"
+            // Exporta lo que se está viendo (respeta el toggle Todas /
+            // Pendientes / Facturadas, además de los filtros año/mes).
+            currentRows={dataVista}
             columns={[
               { key: "ot", label: "OT", value: (r) => r.ot ?? `#${r.id}` },
               { key: "cliente", label: "Cliente", value: (r) => r.cliente ?? "" },
@@ -475,7 +539,10 @@ export default function FacturacionOTPage() {
                 value: (r) => r.pdfs_ok ? "5/5 PDFs OK" : `Faltan: ${r.faltantes.join(", ")}`,
               },
               { key: "pdf_factura", label: "PDF factura", value: (r) => (r.pdfs?.facturacion?.length ? "Sí" : "No") },
-              { key: "fact", label: "N° Factura", value: (r) => r.nro_factura ?? "Pendiente" },
+              { key: "estado_fact", label: "Estado", value: (r) => (r.facturada ? "Facturada" : "Pendiente") },
+              { key: "fact", label: "N° Factura", value: (r) => r.nro_factura ?? "" },
+              { key: "fact_pdf", label: "N° Factura (del PDF)", value: (r) => r.nro_factura_pdf ?? "" },
+              { key: "falta_fact", label: "Falta para facturar", value: (r) => r.falta_factura.join(", ") },
               // Fecha como Date real y monto con formato — celdas tipadas.
               { key: "fecha_fact", label: "F. Facturación", value: (r) => dateOnlyLocal(r.fecha_facturacion) },
               { key: "monto", label: "Monto", value: (r) => r.monto_cotizacion != null ? Number(r.monto_cotizacion) : "", z: "#,##0.00" },
@@ -487,22 +554,49 @@ export default function FacturacionOTPage() {
       <Alert
         type="info" showIcon icon={<PaperClipOutlined />} style={{ marginBottom: 12 }}
         title="Requisitos para facturar"
-        description="Solo figuran las OTs ya despachadas (con guía emitida) que aún no se facturan. Cada OT necesita 5 PDFs subidos para habilitar la factura: Guía de llegada, Cotización, PO cliente, Informe y Guía de despacho. Una vez facturada, la OT desaparece de este listado."
+        description="Figuran todas las OTs ya despachadas, facturadas o no. Una OT cuenta como facturada cuando tiene la fecha de facturación cargada Y el PDF de la factura subido — el circuito histórico fue hacer ambas cosas desde el tab Adjuntos del detalle de la OT, sin pasar por esta pantalla. Si le falta una de las dos sigue como pendiente. Para facturar desde acá hacen falta además los 5 PDFs: Guía de llegada, Cotización, PO cliente, Informe y Guía de despacho."
       />
 
       <Row gutter={12} style={{ marginBottom: 12 }}>
-        <Col xs={12} md={8}><Card size="small"><Statistic title="Pendientes de facturar" value={data.length} styles={{ content: { color: brand.navy } }} /></Card></Col>
-        <Col xs={12} md={8}><Card size="small"><Statistic title="Listas (5 PDFs OK)" value={listas} styles={{ content: { color: "#52c41a" } }} /></Card></Col>
-        <Col xs={12} md={8}><Card size="small"><Statistic title="Faltan PDFs" value={faltanPdfs} styles={{ content: { color: faltanPdfs > 0 ? "#fa8c16" : "#bfbfbf" } }} /></Card></Col>
+        <Col xs={12} md={6}>
+          <Card size="small">
+            <Statistic title="Pendientes de facturar" value={pendientes.length} styles={{ content: { color: brand.navy } }} />
+          </Card>
+        </Col>
+        <Col xs={12} md={6}>
+          <Card size="small">
+            <Tooltip title="Con fecha de facturación cargada Y el PDF de la factura subido. Con una sola de las dos sigue contando como pendiente.">
+              <Statistic title="Facturadas" value={facturadas.length} styles={{ content: { color: "#52c41a" } }} />
+            </Tooltip>
+          </Card>
+        </Col>
+        <Col xs={12} md={6}>
+          <Card size="small">
+            <Tooltip title="De las pendientes: ya tienen los 5 PDFs requeridos, se pueden facturar ahora.">
+              <Statistic title="Listas para facturar" value={listas} styles={{ content: { color: listas > 0 ? "#52c41a" : "#bfbfbf" } }} />
+            </Tooltip>
+          </Card>
+        </Col>
+        <Col xs={12} md={6}>
+          <Card size="small">
+            <Tooltip title="De las pendientes: les falta al menos uno de los 5 PDFs requeridos.">
+              <Statistic title="Faltan PDFs" value={faltanPdfs} styles={{ content: { color: faltanPdfs > 0 ? "#fa8c16" : "#bfbfbf" } }} />
+            </Tooltip>
+          </Card>
+        </Col>
       </Row>
 
-      {data.length === 0 && !loading ? (
-        <Empty description="No hay OTs entregadas pendientes de facturación." />
+      {dataVista.length === 0 && !loading ? (
+        <Empty description={vista === "pendientes"
+          ? "No hay OTs despachadas pendientes de facturar en este período."
+          : vista === "facturadas"
+            ? "No hay OTs facturadas en este período."
+            : "No hay OTs despachadas en este período."} />
       ) : (
         <Card>
           <TablaFacturacionOT
             columns={columns}
-            data={data}
+            data={dataVista}
             loading={loading}
             page={page}
             pageSize={pageSize}
@@ -516,10 +610,10 @@ export default function FacturacionOTPage() {
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
         onOk={handleGuardar}
-        okText={otSel?.nro_factura ? "Actualizar factura" : "Registrar factura"}
+        okText={otSel?.facturada ? "Actualizar factura" : "Registrar factura"}
         cancelText="Cerrar"
         confirmLoading={saving}
-        okButtonProps={{ disabled: !!(otSel && !otSel.pdfs_ok) }}
+        okButtonProps={{ disabled: !!(otSel && !otSel.pdfs_ok && !otSel.facturada) }}
         width={modalWidth(screens, 860)}
         destroyOnHidden
       >
@@ -535,10 +629,17 @@ export default function FacturacionOTPage() {
             {!otSel.pdfs_ok && (
               <Alert
                 showIcon
-                type="warning"
+                // Si la OT ya está facturada, los PDFs faltantes son un aviso
+                // de expediente incompleto, no un bloqueo: el botón sigue
+                // habilitado para cargarle el N° de factura.
+                type={otSel.facturada ? "info" : "warning"}
                 style={{ marginBottom: 12 }}
-                title="Faltan PDFs requeridos para poder facturar"
-                description={`Faltantes: ${otSel.faltantes.join(", ")}. Subilos desde la sección "Subir archivo a esta OT" más abajo. Una vez completos, el botón "Registrar factura" se habilita.`}
+                title={otSel.facturada
+                  ? "Esta OT ya está facturada, pero su expediente está incompleto"
+                  : "Faltan PDFs requeridos para poder facturar"}
+                description={otSel.facturada
+                  ? `Faltantes: ${otSel.faltantes.join(", ")}. Podés subirlos desde "Subir archivo a esta OT" más abajo. No bloquean guardar el N° de factura.`
+                  : `Faltantes: ${otSel.faltantes.join(", ")}. Subilos desde la sección "Subir archivo a esta OT" más abajo. Una vez completos, el botón "Registrar factura" se habilita.`}
               />
             )}
 
