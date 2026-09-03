@@ -38,7 +38,6 @@ import {
   useRangoFechasPersistente,
   ColumnasToggleButton,
   visibleColumns,
-  filtroPorColumna,
   RangoFechasFiltro,
   useColumnasRedimensionables,
   useAbortableFetch,
@@ -454,7 +453,6 @@ export default function OrdenesTrabajoPage() {
       dataIndex: "ot",
       width: 150,
       sorter: (a, b) => Number(a.ot ?? 0) - Number(b.ot ?? 0),
-      ...filtroPorColumna(data, "ot"),
       // Prefijo según tipo: V (Bien) / S (Servicio) / sin prefijo (Reparación).
       // El número en BD sigue siendo entero; el prefijo es solo visual.
       render: (_v: unknown, r: OTRecord) => (
@@ -487,10 +485,6 @@ export default function OrdenesTrabajoPage() {
       width: 140,
       ellipsis: true,
       sorter: (a, b) => (a.codigo_reparacion?.codigo ?? "").localeCompare(b.codigo_reparacion?.codigo ?? ""),
-      filters: [...new Set(data.map((r) => r.codigo_reparacion?.codigo).filter(Boolean) as string[])]
-        .sort().map((v) => ({ text: v, value: v })),
-      filterSearch: true,
-      onFilter: (value, r) => r.codigo_reparacion?.codigo === value,
       render: (_: unknown, r: OTRecord) => r.codigo_reparacion?.codigo ?? "-",
     },
     {
@@ -499,7 +493,6 @@ export default function OrdenesTrabajoPage() {
       dataIndex: "equipo_codigo",
       width: 100,
       sorter: (a, b) => (a.equipo_codigo ?? "").localeCompare(b.equipo_codigo ?? ""),
-      ...filtroPorColumna(data, "equipo_codigo"),
     },
     {
       key: "cantidad",
@@ -524,7 +517,6 @@ export default function OrdenesTrabajoPage() {
       width: 200,
       ellipsis: true,
       sorter: (a, b) => (a.descripcion ?? "").localeCompare(b.descripcion ?? ""),
-      ...filtroPorColumna(data, "descripcion"),
     },
     {
       key: "fecha_recepcion",
@@ -566,10 +558,6 @@ export default function OrdenesTrabajoPage() {
       width: 90,
       align: "center",
       sorter: (a, b) => (a.prioridad_atencion?.codigo ?? "").localeCompare(b.prioridad_atencion?.codigo ?? ""),
-      filters: [...new Set(data.map((r) => r.prioridad_atencion?.nombre).filter(Boolean) as string[])]
-        .sort().map((v) => ({ text: v, value: v })),
-      filterSearch: true,
-      onFilter: (value, r) => r.prioridad_atencion?.nombre === value,
       render: (_: unknown, r: OTRecord) =>
         r.prioridad_atencion ? (
           <Tag color={prioridadColor[r.prioridad_atencion.codigo] ?? "default"}>
@@ -582,10 +570,6 @@ export default function OrdenesTrabajoPage() {
       title: "OT Status",
       width: 120,
       sorter: (a, b) => (a.ot_status?.nombre ?? "").localeCompare(b.ot_status?.nombre ?? ""),
-      filters: [...new Set(data.map((r) => r.ot_status?.nombre).filter(Boolean) as string[])]
-        .sort().map((v) => ({ text: v, value: v })),
-      filterSearch: true,
-      onFilter: (value, r) => r.ot_status?.nombre === value,
       render: (_: unknown, r: OTRecord) =>
         r.ot_status ? (
           <Tag color={otStatusColor[r.ot_status_codigo ?? ""] ?? "default"}>
@@ -601,14 +585,6 @@ export default function OrdenesTrabajoPage() {
       // Prisma no puede ordenar por un campo de la primera fila relacionada.
       // Antes había un sorter client-side cuya flecha no hacía nada (server-side
       // pagination). El FILTRO sí funciona (evaluacion_estado en el API).
-      filters: [
-        { text: "Sin evaluación", value: "__none__" },
-        ...Object.keys(EVAL_META).map((k) => ({ text: EVAL_META[k].label, value: k })),
-      ],
-      onFilter: (value, r) => {
-        const est = r.evaluaciones_tecnicas?.[0]?.estado ?? null;
-        return value === "__none__" ? est === null : est === value;
-      },
       render: (_: unknown, r: OTRecord) => {
         const est = r.evaluaciones_tecnicas?.[0]?.estado ?? null;
         const meta = evalEstadoMeta(est);
@@ -621,10 +597,6 @@ export default function OrdenesTrabajoPage() {
       width: 160,
       ellipsis: true,
       sorter: (a, b) => (a.recursos_status?.nombre ?? "").localeCompare(b.recursos_status?.nombre ?? ""),
-      filters: [...new Set(data.map((r) => r.recursos_status?.nombre).filter(Boolean) as string[])]
-        .sort().map((v) => ({ text: v, value: v })),
-      filterSearch: true,
-      onFilter: (value, r) => r.recursos_status?.nombre === value,
       render: (_: unknown, r: OTRecord) => r.recursos_status?.nombre ?? "-",
     },
     {
@@ -633,10 +605,6 @@ export default function OrdenesTrabajoPage() {
       width: 160,
       ellipsis: true,
       sorter: (a, b) => (a.taller_status?.nombre ?? "").localeCompare(b.taller_status?.nombre ?? ""),
-      filters: [...new Set(data.map((r) => r.taller_status?.nombre).filter(Boolean) as string[])]
-        .sort().map((v) => ({ text: v, value: v })),
-      filterSearch: true,
-      onFilter: (value, r) => r.taller_status?.nombre === value,
       // Estado Taller no aplica a Bien/Servicio → "No aplica" en vez de "-".
       render: (_: unknown, r: OTRecord) =>
         r.tipo_codigo === "BIE" || r.tipo_codigo === "SER"
@@ -650,7 +618,6 @@ export default function OrdenesTrabajoPage() {
       align: "center",
       // El filtro real (FIXED_FILTERS["estado_po"]) lo inyecta serverColumns —
       // acá ponemos un array vacío para que la columna sea filtrable.
-      filters: [],
       render: (_: unknown, r: OTRecord) => {
         const conPo = (r.adjuntos?.length ?? 0) > 0;
         return <Tag color={conPo ? "green" : "orange"}>{conPo ? "Con PO" : "Pdt de PO"}</Tag>;
@@ -697,70 +664,54 @@ export default function OrdenesTrabajoPage() {
     ] : []),
     {
       key: "tipo_ot", title: "Tipo OT", width: 100,
-      filters: [...new Set(data.map((r) => r.tipo_ot?.nombre).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
-      onFilter: (value, r) => r.tipo_ot?.nombre === value,
       render: (_: unknown, r: OTRecord) => r.tipo_ot?.nombre ?? r.tipo_codigo ?? "-",
     },
     {
       key: "tipo", title: "Tipo (Código Reparación)", dataIndex: "tipo", width: 180,
-      ...filtroPorColumna(data, "tipo"),
       render: (v: string | null) => v ?? "-",
     },
     {
       key: "np", title: "N/P", dataIndex: "np", width: 130,
-      ...filtroPorColumna(data, "np"),
       render: (v: string | null) => v ?? "-",
     },
     {
       key: "cod_rep_flota", title: "Flota", dataIndex: "cod_rep_flota", width: 110,
-      ...filtroPorColumna(data, "cod_rep_flota"),
       render: (v: string | null) => v ?? "-",
     },
     {
       key: "cod_rep_posicion", title: "Posición", dataIndex: "cod_rep_posicion", width: 100,
-      ...filtroPorColumna(data, "cod_rep_posicion"),
       render: (v: string | null) => v ?? "-",
     },
     {
       key: "fabricante", title: "Fabricante", width: 140, ellipsis: true,
-      filters: [...new Set(data.map((r) => r.fabricante?.nombre).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
-      filterSearch: true,
-      onFilter: (value, r) => r.fabricante?.nombre === value,
       render: (_: unknown, r: OTRecord) => r.fabricante?.nombre ?? "-",
     },
     {
       key: "plaqueteo", title: "Plaqueteo", dataIndex: "plaqueteo", width: 110,
-      ...filtroPorColumna(data, "plaqueteo"),
       render: (v: string | null) => v ?? "-",
     },
     {
       key: "wo_cliente", title: "WO Cliente", dataIndex: "wo_cliente", width: 120,
-      ...filtroPorColumna(data, "wo_cliente"),
       render: (v: string | null) => v ?? "-",
     },
     {
       key: "po_cliente", title: "PO Cliente", dataIndex: "po_cliente", width: 120,
-      ...filtroPorColumna(data, "po_cliente"),
       render: (v: string | null) => v ?? "-",
     },
     {
       key: "po_item", title: "PO Item", dataIndex: "po_item", width: 100,
-      ...filtroPorColumna(data, "po_item"),
       render: (v: string | null) => v ?? "-",
     },
     {
       key: "id_viajero", title: "ID Viajero", dataIndex: "id_viajero", width: 120,
-      ...filtroPorColumna(data, "id_viajero"),
       render: (v: string | null) => v ?? "-",
     },
     {
       key: "guia_remision", title: "Guía Remisión", dataIndex: "guia_remision", width: 140,
-      ...filtroPorColumna(data, "guia_remision"),
       render: (v: string | null) => v ?? "-",
     },
     {
       key: "empresa_entrega", title: "Empresa que entrega", dataIndex: "empresa_entrega", width: 180, ellipsis: true,
-      ...filtroPorColumna(data, "empresa_entrega"),
       render: (v: string | null) => v ?? "-",
     },
     {
@@ -797,7 +748,6 @@ export default function OrdenesTrabajoPage() {
     {
       // Persona que hizo la evaluación.
       key: "evaluador", title: "Evaluador", dataIndex: "evaluador", width: 160, ellipsis: true,
-      ...filtroPorColumna(data, "evaluador" as never),
       render: (v: string | null | undefined) => v ?? "-",
     },
     {
@@ -810,7 +760,6 @@ export default function OrdenesTrabajoPage() {
     {
       // Persona que aprobó internamente la evaluación técnica.
       key: "evaluacion_aprobado_por", title: "Evaluación Aprobado Por", dataIndex: "evaluacion_aprobado_por", width: 180, ellipsis: true,
-      ...filtroPorColumna(data, "evaluacion_aprobado_por" as never),
       render: (v: string | null | undefined) => v ?? "-",
     },
     {
@@ -823,13 +772,6 @@ export default function OrdenesTrabajoPage() {
       // Característica del cilindro — ESTANDAR / NO_ESTANDAR / "—" cuando
       // no hay dato. Independiente del Tipo de Reparación (catálogo).
       key: "caracteristica_cilindro", title: "Característica Cilindro", dataIndex: "caracteristica_cilindro", width: 170,
-      filters: [
-        { text: "ESTANDAR", value: "ESTANDAR" },
-        { text: "NO ESTANDAR", value: "NO_ESTANDAR" },
-        { text: "(vacío)", value: "__vacio__" },
-      ],
-      filterMultiple: true,
-      onFilter: (value, r) => value === "__vacio__" ? !r.caracteristica_cilindro : r.caracteristica_cilindro === value,
       render: (v: string | null | undefined) => {
         if (!v) return <span style={{ color: "#8c8c8c" }}>—</span>;
         const label = v === "NO_ESTANDAR" ? "NO ESTANDAR" : v;
@@ -839,9 +781,7 @@ export default function OrdenesTrabajoPage() {
     {
       // Flag: la reparación se hace en taller externo (no HP&K).
       key: "reparacion_externa", title: "Reparación Externa", width: 130, align: "center",
-      filters: [{ text: "Sí", value: "true" }, { text: "No", value: "false" }],
       filterMultiple: false,
-      onFilter: (value, r) => String(!!r.reparacion_externa) === String(value),
       sorter: (a, b) => Number(!!b.reparacion_externa) - Number(!!a.reparacion_externa),
       render: (_: unknown, r: OTRecord) =>
         r.reparacion_externa ? <Tag color="orange">Sí</Tag> : <span style={{ color: "#8c8c8c" }}>—</span>,
@@ -849,7 +789,6 @@ export default function OrdenesTrabajoPage() {
     {
       // Nombre del proveedor externo (cuando aplica).
       key: "vendor_externo", title: "Vendor Externo", dataIndex: "vendor_externo", width: 160, ellipsis: true,
-      ...filtroPorColumna(data, "vendor_externo" as never),
       render: (v: string | null | undefined) => v ?? "-",
     },
     {
@@ -879,45 +818,30 @@ export default function OrdenesTrabajoPage() {
     },
     {
       key: "usuario_crea", title: "Creada por", dataIndex: "usuario_crea", width: 130,
-      ...filtroPorColumna(data, "usuario_crea"),
       render: (v: string | null) => v ?? "-",
     },
     {
       key: "atencion_reparacion", title: "Atención Reparación", width: 170, ellipsis: true,
-      filters: [...new Set(data.map((r) => r.atencion_reparacion?.nombre).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
-      filterSearch: true,
-      onFilter: (value, r) => r.atencion_reparacion?.nombre === value,
       render: (_: unknown, r: OTRecord) => r.atencion_reparacion?.nombre ?? "-",
     },
     {
       key: "tipo_reparacion", title: "Tipo Reparación", width: 150,
-      filters: [...new Set(data.map((r) => r.tipo_reparacion?.nombre).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
-      filterSearch: true,
-      onFilter: (value, r) => r.tipo_reparacion?.nombre === value,
       render: (_: unknown, r: OTRecord) => r.tipo_reparacion?.nombre ?? "-",
     },
     {
       key: "garantia", title: "Garantía", width: 90, align: "center",
-      filters: [{ text: "Si", value: "Si" }, { text: "No", value: "No" }],
-      onFilter: (value, r) => r.garantia?.nombre === value,
       render: (_: unknown, r: OTRecord) => r.garantia?.nombre ?? "-",
     },
     {
       key: "tipo_garantia", title: "Tipo Garantía", width: 120,
-      filters: [...new Set(data.map((r) => r.tipo_garantia?.nombre).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
-      filterSearch: true,
-      onFilter: (value, r) => r.tipo_garantia?.nombre === value,
       render: (_: unknown, r: OTRecord) => r.tipo_garantia?.nombre ?? "-",
     },
     {
       key: "base_metalica", title: "Base metálica", width: 110, align: "center",
-      filters: [{ text: "Si", value: "Si" }, { text: "No", value: "No" }],
-      onFilter: (value, r) => r.base_metalica?.nombre === value,
       render: (_: unknown, r: OTRecord) => r.base_metalica?.nombre ?? "-",
     },
     {
       key: "comentarios", title: "Comentarios", dataIndex: "comentarios", width: 200, ellipsis: true,
-      ...filtroPorColumna(data, "comentarios"),
       render: (v: string | null) => v ?? "-",
     },
     // Portal de clientes: la publicación se gestiona desde el módulo

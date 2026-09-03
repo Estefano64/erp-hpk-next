@@ -146,21 +146,29 @@ export async function GET(req: NextRequest) {
       filtros.push(Prisma.sql`${CAMPO_FECHA} < ${fin}`);
     }
 
+    // Las OTs con GARANTÍA no se facturan (es reparación por garantía, sin
+    // cobro): quedan fuera de la cola de pendientes (2026-09-03). Si alguna
+    // llegara a tener factura, sí aparece entre las facturadas.
+    const SIN_GARANTIA_SQL = Prisma.sql`(garantia_codigo IS DISTINCT FROM 'Si')`;
+
     // Conteos del universo filtrado (SIN el filtro de estado) — alimentan las
     // pestañas Todas/Pendientes/Facturadas aunque solo se cargue un subconjunto.
-    const [conteo] = await prisma.$queryRaw<Array<{ total: number; fact: number }>>`
+    const [conteo] = await prisma.$queryRaw<Array<{ total: number; fact: number; pend: number }>>`
       SELECT COUNT(*)::int AS total,
-             COUNT(*) FILTER (WHERE ${ES_FACTURADA_SQL})::int AS fact
+             COUNT(*) FILTER (WHERE ${ES_FACTURADA_SQL})::int AS fact,
+             COUNT(*) FILTER (WHERE NOT ${ES_FACTURADA_SQL} AND ${SIN_GARANTIA_SQL})::int AS pend
       FROM orden_trabajo
       WHERE ${Prisma.join(filtros, " AND ")}`;
     const counts = {
       todas: conteo?.total ?? 0,
       facturadas: conteo?.fact ?? 0,
-      pendientes: (conteo?.total ?? 0) - (conteo?.fact ?? 0),
+      pendientes: conteo?.pend ?? 0,
     };
 
-    if (estado === "pendientes") filtros.push(Prisma.sql`NOT ${ES_FACTURADA_SQL}`);
-    else if (estado === "facturadas") filtros.push(ES_FACTURADA_SQL);
+    if (estado === "pendientes") {
+      filtros.push(Prisma.sql`NOT ${ES_FACTURADA_SQL}`);
+      filtros.push(SIN_GARANTIA_SQL);
+    } else if (estado === "facturadas") filtros.push(ES_FACTURADA_SQL);
 
     const filas = await prisma.$queryRaw<Array<{ id: number; f_desp: Date | null }>>`
       SELECT id, ${FECHA_DESPACHO_SQL} AS f_desp
