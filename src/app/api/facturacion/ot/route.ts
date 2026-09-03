@@ -57,11 +57,14 @@ const FECHA_DESPACHO_SQL = Prisma.sql`COALESCE(
     WHERE ad.orden_trabajo_id = orden_trabajo.id AND ad.etapa_codigo = 'despacho')
 )`;
 // "Facturada" en SQL — misma regla que el flag `facturada` del payload:
-// fecha de facturación cargada Y PDF de factura subido (etapa facturacion).
-// Permite filtrar pendientes/facturadas en el SERVER y no traer todo.
+// CUALQUIER señal cuenta — PDF de la factura subido, fecha cargada o número
+// registrado. Prioridad al adjunto (2026-09-03): el circuito real muchas
+// veces solo sube el comprobante escaneado; exigir además la fecha dejaba
+// esas OTs como "pendientes" eternas.
 const ES_FACTURADA_SQL = Prisma.sql`(
   fecha_facturacion IS NOT NULL
-  AND EXISTS (
+  OR nro_factura IS NOT NULL
+  OR EXISTS (
     SELECT 1 FROM ot_adjunto a
     WHERE a.orden_trabajo_id = orden_trabajo.id AND a.etapa_codigo = 'facturacion'
   )
@@ -106,8 +109,14 @@ export async function GET(req: NextRequest) {
     // por=facturacion → los filtros de fecha (años/meses/rango) y el orden
     // usan fecha_facturacion en vez de la fecha de despacho. Lo usa la página
     // /facturacion/facturas (consulta de lo ya facturado).
+    // Fecha de facturación efectiva: la registrada o, si falta, la de subida
+    // del PDF del comprobante (prioridad al adjunto).
     const CAMPO_FECHA = sp.get("por") === "facturacion"
-      ? Prisma.sql`fecha_facturacion`
+      ? Prisma.sql`COALESCE(
+          fecha_facturacion,
+          (SELECT MAX(ad.fecha_subida) FROM ot_adjunto ad
+            WHERE ad.orden_trabajo_id = orden_trabajo.id AND ad.etapa_codigo = 'facturacion')
+        )`
       : FECHA_DESPACHO_SQL;
 
     // Años disponibles (para poblar el filtro) — agregado barato, sin joins.
@@ -209,22 +218,17 @@ export async function GET(req: NextRequest) {
       const pdfs_ok = faltantes.length === 0;
 
       // ── ¿Está facturada? ────────────────────────────────────────────
-      // No alcanza con mirar `nro_factura`: en la práctica nadie usó nunca el
-      // "Registrar factura" de esta pantalla (0 OTs con nro_factura en prod
-      // al 2026-08-27). El circuito real de facturación fue subir el PDF de
-      // la factura a la etapa "facturacion" y cargar la fecha en el detalle
-      // de la OT.
-      //
-      // Regla (definida con el usuario): hacen falta LAS DOS señales —
-      // fecha de facturación Y PDF de la factura. Con una sola el expediente
-      // está a medias: o se cargó la fecha y falta subir el comprobante, o
-      // se subió el PDF y nadie registró cuándo se facturó. Esas quedan como
-      // pendientes a propósito, para que se completen.
+      // Regla (actualizada 2026-09-03, prioridad al adjunto): CUALQUIER
+      // señal cuenta — PDF del comprobante subido, fecha cargada o número
+      // registrado. Antes se exigían fecha Y PDF juntos y las OTs con solo
+      // el escaneo quedaban como "pendientes" eternas. Debe ser el ESPEJO
+      // exacto de ES_FACTURADA_SQL.
       const tieneFecha = o.fecha_facturacion != null;
       const tienePdf = pdfs.facturacion.length > 0;
-      const facturada = tieneFecha && tienePdf;
+      const facturada = tieneFecha || tienePdf || o.nro_factura != null;
 
-      // Qué falta para darla por facturada (vacío si ya lo está).
+      // Qué le falta al EXPEDIENTE de facturación (informativo: puede estar
+      // facturada por el PDF y aun así faltarle la fecha registrada).
       const falta_factura: string[] = [];
       if (!tieneFecha) falta_factura.push("fecha de facturación");
       if (!tienePdf) falta_factura.push("PDF de la factura");
@@ -251,7 +255,11 @@ export async function GET(req: NextRequest) {
         // Fecha de despacho efectiva (fecha_despacho o, si falta, la de
         // emisión de la guía) — también es el criterio de orden y de filtro.
         fecha_despacho: fechaDespachoPorId.get(o.id) ?? null,
-        fecha_facturacion: o.fecha_facturacion,
+        // Fecha efectiva: la registrada o, si falta, la de subida del PDF del
+        // comprobante — así las facturadas "solo por PDF" muestran una fecha
+        // en la página de Facturas en vez de un guion.
+        fecha_facturacion: o.fecha_facturacion
+          ?? (pdfs.facturacion[0]?.fecha_subida ?? null),
         guia_entrega_salida: o.guia_entrega_salida,
         nro_informe_entrega: o.nro_informe_entrega,
         nro_factura: o.nro_factura,
