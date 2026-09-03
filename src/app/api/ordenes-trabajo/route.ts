@@ -121,13 +121,28 @@ export async function GET(req: NextRequest) {
       else if (arr.length > 1) where.fabricante = { is: { nombre: { in: arr } } };
     }
 
-    // Si / No: presencia de garantía / base metálica.
+    // Si / No de garantía y base metálica: son CÓDIGOS del catálogo (las
+    // tablas garantia/base_metalica tienen literalmente codigo 'Si'/'No'),
+    // NO presencia/ausencia. El mapeo viejo ("Si" → not null / "No" → null)
+    // hacía que "Si" incluyera a los 'No' explícitos y que "No" devolviera
+    // solo las OTs sin dato — la tabla quedaba vacía (reporte 2026-09-03).
+    // "No" incluye también las sin dato (sin registro = sin garantía).
     const garantia = searchParams.get("garantia");
-    if (garantia === "Si") where.garantia_codigo = { not: null };
-    else if (garantia === "No") where.garantia_codigo = null;
+    if (garantia === "Si") where.garantia_codigo = "Si";
+    else if (garantia === "No") {
+      where.AND = [
+        ...((where.AND as unknown[]) ?? []),
+        { OR: [{ garantia_codigo: "No" }, { garantia_codigo: null }] },
+      ];
+    }
     const baseMet = searchParams.get("base_metalica");
-    if (baseMet === "Si") where.base_metalica_codigo = { not: null };
-    else if (baseMet === "No") where.base_metalica_codigo = null;
+    if (baseMet === "Si") where.base_metalica_codigo = "Si";
+    else if (baseMet === "No") {
+      where.AND = [
+        ...((where.AND as unknown[]) ?? []),
+        { OR: [{ base_metalica_codigo: "No" }, { base_metalica_codigo: null }] },
+      ];
+    }
 
     // Estado de la hoja de evaluación (__none__ = sin evaluación).
     const evalEstado = searchParams.get("evaluacion_estado");
