@@ -9,7 +9,7 @@ import {
   PlusOutlined, ReloadOutlined, CloseOutlined, SaveOutlined,
   EditOutlined, DeleteOutlined, FileSyncOutlined, SendOutlined,
   PaperClipOutlined, CalendarOutlined, ThunderboltOutlined,
-  EyeOutlined,
+  EyeOutlined, SortAscendingOutlined, SortDescendingOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
@@ -2156,6 +2156,23 @@ function RequerimientosAgrupados({
   const [selByGrupo, setSelByGrupo] = useState<Record<string, React.Key[]>>({});
   const setSelDelGrupo = (nro: string, keys: React.Key[]) =>
     setSelByGrupo((prev) => ({ ...prev, [nro]: keys }));
+  // Sentido del orden de los grupos (pedido 2026-09-03): asc = secuencia
+  // natural (-1, -2, …); desc = el requerimiento más nuevo arriba. Persistido
+  // por navegador para que la preferencia sobreviva a la recarga.
+  const [ordenDesc, setOrdenDesc] = useState(false);
+  useEffect(() => {
+    // Hidratación post-mount desde localStorage (patrón del repo: leerlo en
+    // el initializer causa hydration mismatch con SSR — ver tables.tsx).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    try { setOrdenDesc(localStorage.getItem("ot-reqs-orden-grupos-v1") === "desc"); } catch { /* ignore */ }
+  }, []);
+  const toggleOrden = () => {
+    setOrdenDesc((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("ot-reqs-orden-grupos-v1", next ? "desc" : "asc"); } catch { /* ignore */ }
+      return next;
+    });
+  };
   // Agrupar por nro_req (preservando orden por fecha desc del primer item de cada grupo)
   const groups = useMemo(() => {
     const m = new Map<string, RequerimientoRow[]>();
@@ -2182,14 +2199,18 @@ function RequerimientosAgrupados({
         return { nro, items: sorted };
       })
       .sort((a, b) => {
+        // "(sin nro)" siempre al final, sin importar el sentido del orden.
+        const sinA = a.nro === "(sin nro)";
+        const sinB = b.nro === "(sin nro)";
+        if (sinA !== sinB) return sinA ? 1 : -1;
         const na = suffijoNum(a.nro);
         const nb = suffijoNum(b.nro);
-        if (na !== nb) return na - nb;
+        if (na !== nb) return ordenDesc ? nb - na : na - nb;
         // Tiebreak: nro_req completo alfabetico (para distintos prefijos
         // en una misma OT — raro pero posible).
-        return a.nro.localeCompare(b.nro);
+        return ordenDesc ? b.nro.localeCompare(a.nro) : a.nro.localeCompare(b.nro);
       });
-  }, [rows]);
+  }, [rows, ordenDesc]);
 
   // Estado de colapso por grupo
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -2201,6 +2222,22 @@ function RequerimientosAgrupados({
 
   return (
     <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+      {/* Toggle del sentido de orden de los grupos (primero→último / último→primero) */}
+      {groups.length > 1 && (
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <Tooltip title={ordenDesc
+            ? "Mostrando el requerimiento más NUEVO primero — clic para ver la secuencia natural (-1, -2, …)"
+            : "Mostrando la secuencia natural (-1, -2, …) — clic para ver el más NUEVO primero"}>
+            <Button
+              size="small"
+              icon={ordenDesc ? <SortDescendingOutlined /> : <SortAscendingOutlined />}
+              onClick={toggleOrden}
+            >
+              {ordenDesc ? "Último primero" : "Primero → último"}
+            </Button>
+          </Tooltip>
+        </div>
+      )}
       {groups.map(({ nro, items }) => {
         const first = items[0];
         const status = first?.status_requerimiento?.nombre ?? first?.status_requerimiento_codigo ?? "BORRADOR";
