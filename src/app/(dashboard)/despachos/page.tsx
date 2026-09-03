@@ -129,10 +129,15 @@ export default function DespachosPage() {
   const [seleccionados, setSeleccionados] = useState<Record<number, number[]>>({}); // otId -> reqIds
   const [submitting, setSubmitting] = useState<number | null>(null);
   // Búsqueda libre — filtra por OT, cliente, código reparación, código material,
-  // N° de parte (np en descripción) o descripción del item.
-  // Persistida por usuario/navegador: F5 o navegar y volver no la resetea
-  // (pedido 2026-09-03).
-  const [filtro, setFiltro] = usePersistedState<string>("despachos-filtro", "");
+  // N° de parte (np en descripción) o descripción del item. NO persiste (una
+  // búsqueda vieja invisible confunde); los que persisten son los FILTROS de
+  // columna de abajo.
+  const [filtro, setFiltro] = useState("");
+  // Filtros de columna (embuditos: Flota, Estado, OT) persistidos por
+  // usuario/navegador — F5 o navegar y volver no los resetea (2026-09-03).
+  const [filtrosCols, setFiltrosCols] = usePersistedState<Record<string, (string | number | boolean)[] | null>>(
+    "despachos-filtros-cols", {},
+  );
   // Vista única (2026-08-18): tabla resumen con FILAS EXPANDIBLES — la fila
   // expandida muestra los items de esa OT con selección + despachar. Reemplaza
   // al viejo toggle General/Detalle (dos vistas + salto con filtro, fuente del
@@ -325,6 +330,7 @@ export default function DespachosPage() {
     {
       key: "ot", title: "OT", dataIndex: "ot", width: 130,
       sorter: (a, b) => (a.ot ?? "").localeCompare(b.ot ?? ""),
+      filteredValue: filtrosCols["ot"] ?? null,
       render: (v: string | null) => v ? <Tag color={brand.navy}>{v}</Tag> : <Text type="secondary">—</Text>,
     },
     {
@@ -344,6 +350,7 @@ export default function DespachosPage() {
       key: "flota", title: "Flota", width: 130, align: "center",
       filters: [...new Set(grupos.map((g) => g.flota).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
       filterSearch: true,
+      filteredValue: filtrosCols["flota"] ?? null,
       onFilter: (value, g) => g.flota === value,
       render: (_, g) => g.flota
         ? <Tag color="geekblue" style={{ margin: 0 }}>{g.flota}</Tag>
@@ -388,6 +395,7 @@ export default function DespachosPage() {
         { text: "INCOMPLETO", value: "incompleta" },
         { text: "ENTREGADO", value: "entregada" },
       ],
+      filteredValue: filtrosCols["estado_ot"] ?? null,
       onFilter: (value, g) => g.estado_ot === value,
       render: (_, g) => g.estado_ot === "entregada"
         ? <Tag icon={<CheckCircleOutlined />} color="blue">ENTREGADO</Tag>
@@ -540,6 +548,9 @@ export default function DespachosPage() {
           }}
           scroll={{ x: 1400 }}
           sticky={STICKY_HEADER}
+          // Persistir los filtros de columna (Flota/Estado/OT) al cambiar.
+          onChange={(_pag, filters) =>
+            setFiltrosCols(filters as Record<string, (string | number | boolean)[] | null>)}
           expandable={{
             expandedRowKeys: expandidas,
             onExpandedRowsChange: setExpandidas,
