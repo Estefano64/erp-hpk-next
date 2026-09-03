@@ -48,8 +48,14 @@ const ETAPAS_TRAIDAS = [...ETAPAS_EXPEDIENTE, "facturacion"] as const;
 type Etapa = (typeof ETAPAS_TRAIDAS)[number];
 
 // Fecha de despacho efectiva: la explícita si existe, sino la de emisión de
-// la guía (POST /api/despachos/mina/[id] sella `fecha_entrega`).
-const FECHA_DESPACHO_SQL = Prisma.sql`COALESCE(fecha_despacho, fecha_entrega)`;
+// la guía (POST /api/despachos/mina/[id] sella `fecha_entrega`), sino la de
+// SUBIDA del PDF de la guía (equipos que no usan el módulo de despacho: solo
+// adjuntan la guía escaneada — el PDF es la señal de despacho, 2026-09-03).
+const FECHA_DESPACHO_SQL = Prisma.sql`COALESCE(
+  fecha_despacho, fecha_entrega,
+  (SELECT MAX(ad.fecha_subida) FROM ot_adjunto ad
+    WHERE ad.orden_trabajo_id = orden_trabajo.id AND ad.etapa_codigo = 'despacho')
+)`;
 // "Facturada" en SQL — misma regla que el flag `facturada` del payload:
 // fecha de facturación cargada Y PDF de factura subido (etapa facturacion).
 // Permite filtrar pendientes/facturadas en el SERVER y no traer todo.
@@ -60,13 +66,19 @@ const ES_FACTURADA_SQL = Prisma.sql`(
     WHERE a.orden_trabajo_id = orden_trabajo.id AND a.etapa_codigo = 'facturacion'
   )
 )`;
-// Condición "ya despachada".
+// Condición "ya despachada". El PDF de la guía (adjunto etapa despacho)
+// también cuenta: el circuito real muchas veces solo sube el escaneo, sin
+// registrar el número (prioridad al adjunto — pedido 2026-09-03).
 const ES_DESPACHADA_SQL = Prisma.sql`
   activo = true
   AND (
     guia_entrega_salida IS NOT NULL
     OR fecha_despacho IS NOT NULL
     OR taller_status_codigo IN ('Entregado', 'Cobranza')
+    OR EXISTS (
+      SELECT 1 FROM ot_adjunto ad
+      WHERE ad.orden_trabajo_id = orden_trabajo.id AND ad.etapa_codigo = 'despacho'
+    )
   )`;
 
 // "2026,2025" → [2026, 2025]; descarta lo que no sea número en rango.

@@ -18,6 +18,11 @@ export async function GET(_req: NextRequest) {
         // Solo OTs pendientes de guía. Una vez emitida la guía, la OT
         // desaparece de este listado y pasa a /facturacion/ot.
         guia_entrega_salida: null,
+        // El PDF de la guía subido a Adjuntos también cuenta como despacho
+        // hecho (equipos que no usan este módulo: solo adjuntan el escaneo).
+        // Con el adjunto presente, la OT ya no está "pendiente de guía" —
+        // el número puede completarse después desde el tab Adjuntos.
+        adjuntos: { none: { etapa_codigo: "despacho" } },
       },
       select: {
         id: true,
