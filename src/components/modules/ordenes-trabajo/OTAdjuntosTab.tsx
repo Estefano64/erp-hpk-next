@@ -57,6 +57,9 @@ export interface OTAdjuntosMeta {
   po_cliente_ok: boolean | null;
   fecha_despacho: string | null;
   empresa_recibe: string | null;
+  // N° de guía de remisión del despacho — MISMO campo (guia_entrega_salida)
+  // que emite /despachos/mina; cargarlo acá lo saca de esa cola de pendientes.
+  guia_entrega_salida: string | null;
   fecha_facturacion: string | null;
   // N° de factura (serie-correlativo, ej. F001-00003181). Se carga acá mismo,
   // junto a la fecha: es donde facturación ya venía trabajando.
@@ -176,6 +179,7 @@ function EtapaMetaForm({
   const [fechaAprobacion, setFechaAprobacion] = useState<Dayjs | null>(toDayjs(meta.fecha_aprobacion));
   const [fechaDespacho, setFechaDespacho] = useState<Dayjs | null>(toDayjs(meta.fecha_despacho));
   const [empresaRecibe, setEmpresaRecibe] = useState<string>(meta.empresa_recibe ?? "");
+  const [guiaDespacho, setGuiaDespacho] = useState<string>(meta.guia_entrega_salida ?? "");
   const [fechaFacturacion, setFechaFacturacion] = useState<Dayjs | null>(toDayjs(meta.fecha_facturacion));
   const [nroFactura, setNroFactura] = useState<string>(meta.nro_factura ?? "");
 
@@ -186,9 +190,10 @@ function EtapaMetaForm({
     setFechaAprobacion(toDayjs(meta.fecha_aprobacion));
     setFechaDespacho(toDayjs(meta.fecha_despacho));
     setEmpresaRecibe(meta.empresa_recibe ?? "");
+    setGuiaDespacho(meta.guia_entrega_salida ?? "");
     setFechaFacturacion(toDayjs(meta.fecha_facturacion));
     setNroFactura(meta.nro_factura ?? "");
-  }, [meta.fecha_cotizacion, meta.fecha_generacion_po, meta.fecha_aprobacion, meta.fecha_despacho, meta.empresa_recibe, meta.fecha_facturacion, meta.nro_factura]);
+  }, [meta.fecha_cotizacion, meta.fecha_generacion_po, meta.fecha_aprobacion, meta.fecha_despacho, meta.empresa_recibe, meta.guia_entrega_salida, meta.fecha_facturacion, meta.nro_factura]);
 
   const fmt = (d: Dayjs | null) => (d ? d.format("YYYY-MM-DD") : null);
 
@@ -254,6 +259,9 @@ function EtapaMetaForm({
       </Space>
     );
   } else if (etapaKey === "despacho") {
+    // El N° de guía es el MISMO campo que emite /despachos/mina
+    // (guia_entrega_salida): registrado desde acá, esa cola ya no lo pide
+    // (la OT sale de "pendientes de guía" y sigue al circuito de facturación).
     contenido = (
       <Space wrap align="end" size={16}>
         <div>
@@ -261,10 +269,16 @@ function EtapaMetaForm({
           <DatePicker format="DD/MM/YYYY" value={fechaDespacho} onChange={setFechaDespacho} disabled={cerrada} style={{ width: 180 }} />
         </div>
         <div>
+          <div style={labelStyle}>N° guía de remisión</div>
+          <Tooltip title="Es el mismo número que pide Despacho a mina — si lo cargás acá, allá ya no queda pendiente.">
+            <Input value={guiaDespacho} onChange={(e) => setGuiaDespacho(e.target.value)} disabled={cerrada} placeholder="Ej. 001-0012345" style={{ width: 190 }} maxLength={100} />
+          </Tooltip>
+        </div>
+        <div>
           <div style={labelStyle}>Empresa que recibe</div>
           <Input value={empresaRecibe} onChange={(e) => setEmpresaRecibe(e.target.value)} disabled={cerrada} placeholder="Ej. Minera ..." style={{ width: 240 }} maxLength={200} />
         </div>
-        {guardarBtn({ fecha_despacho: fmt(fechaDespacho), empresa_recibe: empresaRecibe.trim() || null })}
+        {guardarBtn({ fecha_despacho: fmt(fechaDespacho), guia_entrega_salida: guiaDespacho.trim() || null, empresa_recibe: empresaRecibe.trim() || null })}
       </Space>
     );
   } else if (etapaKey === "facturacion") {

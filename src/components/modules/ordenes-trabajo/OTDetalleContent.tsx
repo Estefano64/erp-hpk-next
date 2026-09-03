@@ -183,6 +183,7 @@ interface OTDetalle {
   po_cliente_ok: boolean | null;
   fecha_despacho: string | null;
   empresa_recibe: string | null;
+  guia_entrega_salida?: string | null;
 }
 
 interface Props {
@@ -1647,6 +1648,7 @@ export default function OTDetalleContent({ otId, onUpdated, headerActions, round
           po_cliente_ok: ot.po_cliente_ok,
           fecha_despacho: ot.fecha_despacho,
           empresa_recibe: ot.empresa_recibe,
+          guia_entrega_salida: ot.guia_entrega_salida ?? null,
           fecha_facturacion: ot.fecha_facturacion,
           nro_factura: ot.nro_factura ?? null,
         }}
