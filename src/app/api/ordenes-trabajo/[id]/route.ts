@@ -225,6 +225,17 @@ export async function PUT(req: NextRequest, { params }: Params) {
       // Cualquier otro cambio queda bloqueado para preservar la trazabilidad
       // del cierre. Si el body intenta tocar otros campos junto con el cambio
       // de status, también bloqueamos (queremos que reabra primero, edite después).
+      //
+      // EXCEPCIÓN (2026-09-03): los campos del EXPEDIENTE comercial sí se
+      // pueden completar en una OT cerrada. El equipo cerraba OTs sin usar
+      // los módulos de despacho/facturación (solo subían los adjuntos) y
+      // después no había forma de registrar el N° de guía o de factura sin
+      // reabrir. Son datos documentales, no estado operativo.
+      const CAMPOS_EXPEDIENTE = new Set([
+        "fecha_cotizacion", "fecha_generacion_po", "fecha_aprobacion",
+        "po_cliente_ok", "fecha_despacho", "empresa_recibe",
+        "guia_entrega_salida", "fecha_facturacion", "nro_factura",
+      ]);
       const beforeRecord = before as { ot_status_codigo?: string | null };
       if (beforeRecord.ot_status_codigo === "Cerrada") {
         const cambiaStatusAOtraCosa =
@@ -232,7 +243,11 @@ export async function PUT(req: NextRequest, { params }: Params) {
         const otrasClavesQueEditan = Object.keys(body).filter(
           (k) => k !== "ot_status_codigo" && k !== "version",
         );
-        if (!cambiaStatusAOtraCosa || otrasClavesQueEditan.length > 0) {
+        const soloExpediente =
+          otrasClavesQueEditan.length > 0 &&
+          otrasClavesQueEditan.every((k) => CAMPOS_EXPEDIENTE.has(k)) &&
+          body.ot_status_codigo === undefined;
+        if (!soloExpediente && (!cambiaStatusAOtraCosa || otrasClavesQueEditan.length > 0)) {
           return { conflict: false, closed: true } as const;
         }
       }

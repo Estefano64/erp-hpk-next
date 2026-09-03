@@ -172,7 +172,12 @@ function EtapaMetaForm({
 }) {
   const [messageApi, contextHolder] = message.useMessage();
   const [saving, setSaving] = useState(false);
-  const cerrada = meta.ot_status_codigo === "Cerrada";
+  // Los campos del EXPEDIENTE comercial (fechas, guía, N° factura) se pueden
+  // completar aunque la OT esté cerrada — el equipo cerraba OTs sin usar los
+  // módulos de despacho/facturación y necesita regularizar estos datos sin
+  // reabrir (2026-09-03). El servidor whitelistea exactamente estos campos.
+  const cerrada = false;
+  const otCerrada = meta.ot_status_codigo === "Cerrada";
 
   const [fechaCotizacion, setFechaCotizacion] = useState<Dayjs | null>(toDayjs(meta.fecha_cotizacion));
   const [fechaGeneracionPo, setFechaGeneracionPo] = useState<Dayjs | null>(toDayjs(meta.fecha_generacion_po));
@@ -321,11 +326,11 @@ function EtapaMetaForm({
     <Card size="small" style={{ marginBottom: 16, background: "#F0F7FF", borderColor: brand.cyan }} styles={{ body: { padding: "12px 16px" } }}>
       {contextHolder}
       {contenido}
-      {cerrada && (
+      {otCerrada && (
         <div style={{ marginTop: 8 }}>
           <Text type="secondary" style={{ fontSize: 12 }}>
             <LockOutlined style={{ marginRight: 4 }} />
-            OT cerrada — reabrila (cambiar Estado OT) para editar estos datos.
+            OT cerrada — estos datos del expediente (fechas, guía, factura) sí se pueden completar; el resto de la OT queda bloqueado.
           </Text>
         </div>
       )}

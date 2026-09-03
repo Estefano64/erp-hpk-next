@@ -517,6 +517,14 @@ function SortableResizableTitle(props: SortableResizableTitleProps) {
         opacity: isPinned ? 1 : 0,
         transition: "opacity 0.15s",
         color: isPinned ? brand.cyan : "rgba(0,0,0,0.45)",
+        // position+zIndex: sin esto, el wrapper de sort de antd
+        // (.ant-table-column-sorters) queda ENCIMA del pin y se traga el
+        // clic — apretar el pin ordenaba la columna en vez de fijarla
+        // (reportado 2026-09-03 en la columna OT del listado de externas).
+        position: "relative",
+        zIndex: 4,
+        // Un poco más de superficie clickeable alrededor del ícono.
+        padding: "2px 3px",
       }}
     >
       {isPinned ? <PushpinFilled /> : <PushpinOutlined />}
