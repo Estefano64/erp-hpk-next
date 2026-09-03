@@ -17,7 +17,7 @@ import { useEscrituraApi } from "@/lib/use-escritura";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import {
   numeracionColumn, useColumnasOcultas, ColumnasToggleButton, visibleColumns,
-  filtroPorColumna, STICKY_HEADER, useColumnasRedimensionables,
+  filtroPorColumna, STICKY_HEADER, useColumnasRedimensionables, usePersistedState,
 } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import { formatOtCodigo } from "@/lib/ot-formato";
@@ -130,7 +130,9 @@ export default function DespachosPage() {
   const [submitting, setSubmitting] = useState<number | null>(null);
   // Búsqueda libre — filtra por OT, cliente, código reparación, código material,
   // N° de parte (np en descripción) o descripción del item.
-  const [filtro, setFiltro] = useState("");
+  // Persistida por usuario/navegador: F5 o navegar y volver no la resetea
+  // (pedido 2026-09-03).
+  const [filtro, setFiltro] = usePersistedState<string>("despachos-filtro", "");
   // Vista única (2026-08-18): tabla resumen con FILAS EXPANDIBLES — la fila
   // expandida muestra los items de esa OT con selección + despachar. Reemplaza
   // al viejo toggle General/Detalle (dos vistas + salto con filtro, fuente del

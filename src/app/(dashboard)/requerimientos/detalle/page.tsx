@@ -59,6 +59,7 @@ import {
   RangoFechasFiltro,
   dentroDeRango,
   paginacionEstandar,
+  usePersistedState,
 } from "@/lib/tables";
 import { Popover, InputNumber, Divider, Checkbox, Switch, Upload, Collapse } from "antd";
 import {
@@ -461,8 +462,10 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
   const { rango: rangoReq, setRango: setRangoReq } = useRangoFechas();
   const [search, setSearch] = useState("");
   const [filtroOt, setFiltroOt] = useState<string | undefined>(undefined);
-  const [filtroEstado, setFiltroEstado] = useState<string | undefined>(undefined);
-  const [filtroRapido, setFiltroRapido] = useState<string>("todos");
+  // Persistidos por usuario/navegador (pedido 2026-09-03): quien trabaja
+  // siempre con "Listos para OC" no tiene que reactivarlo en cada visita.
+  const [filtroEstado, setFiltroEstado] = usePersistedState<string | undefined>("reqs-filtro-estado", undefined);
+  const [filtroRapido, setFiltroRapido] = usePersistedState<string>("reqs-filtro-rapido", "todos");
   // Filtro por tipo de material/repuesto: MAC (material catálogo), CAD
   // (cargo directo / item libre sin catálogo), SER (servicio externo).
   const [filtroTipoMat, setFiltroTipoMat] = useState<"todos" | "MAC" | "CAD" | "SER">("todos");
