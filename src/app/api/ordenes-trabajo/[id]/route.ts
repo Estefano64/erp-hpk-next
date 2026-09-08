@@ -189,14 +189,20 @@ export async function PUT(req: NextRequest, { params }: Params) {
         const tipoEfectivo = (body.tipo_codigo as string | undefined)
           ?? (beforeRec.tipo_codigo as string | null | undefined);
         const esBienOServicio = tipoEfectivo === "BIE" || tipoEfectivo === "SER";
+        const esBien = tipoEfectivo === "BIE";
         const FECHAS_REQUERIDAS_CIERRE: Array<{ key: FechaKey; label: string }> = [
           ...(esBienOServicio ? [] : [
             { key: "fecha_recepcion", label: "Fecha Recepción" },
             { key: "fecha_evaluacion", label: "Fecha Evaluación" },
             { key: "fecha_aprobacion_evaluacion", label: "Fecha Aprobación Evaluación" },
           ] as Array<{ key: FechaKey; label: string }>),
-          { key: "fecha_cotizacion", label: "Fecha Cotización" },
-          { key: "fecha_aprobacion", label: "Fecha Aprobación (cliente)" },
+          // En BIEN, cotización y aprobación del cliente son OPCIONALES para
+          // cerrar (pedido 2026-09-08): muchas ventas van directo con PO, sin
+          // ciclo de cotización formal. REP y SER las siguen exigiendo.
+          ...(esBien ? [] : [
+            { key: "fecha_cotizacion", label: "Fecha Cotización" },
+            { key: "fecha_aprobacion", label: "Fecha Aprobación (cliente)" },
+          ] as Array<{ key: FechaKey; label: string }>),
           { key: "fecha_entrega", label: "Fecha Entrega" },
           { key: "fecha_facturacion", label: "Fecha Facturación" },
         ];
