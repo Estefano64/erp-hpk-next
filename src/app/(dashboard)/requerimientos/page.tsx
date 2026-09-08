@@ -104,7 +104,15 @@ interface RequerimientoRow {
     ot: number | string | null;
     descripcion: string | null;
   } | null;
-  material: { codigo: string; descripcion: string; unidad_medida_codigo: string | null; stock_actual: string | number | null; precio: string | number | null; moneda_codigo: string | null } | null;
+  material: {
+    codigo: string; descripcion: string; unidad_medida_codigo: string | null;
+    stock_actual: string | number | null; precio: string | number | null; moneda_codigo: string | null;
+    // Ubicación del material en el almacén de stock — texto libre del catálogo
+    // ("A5 - CAJA 1", "C4"). Es dónde vive el material, distinto de la
+    // zona/celda del requerimiento (que es dónde quedaron SUS unidades al
+    // recepcionar la OC).
+    ubicacion?: string | null;
+  } | null;
   // Unidades del material que están en almacén pero ya asignadas a una OT
   // (llegaron de una OC y esperan despacho). El stock realmente tomable es
   // stock_actual − _stock_reservado. Ver src/lib/stock-reservado.ts.
@@ -116,6 +124,34 @@ interface RequerimientoRow {
 
 interface CatalogOpt { codigo: string; nombre: string; orden?: number | null }
 interface ProveedorOpt { id: number; razon_social: string; ruc: string | null }
+
+// Dónde encontrar físicamente el item. Dos fuentes, distintas a propósito:
+//   - `req`: zona + celda asignadas a ESTE requerimiento al recepcionar su OC
+//     (esas unidades puntuales). Deja de aplicar si ya se entregó al técnico.
+//   - `catalogo`: la ubicación del material en el almacén de stock
+//     (Material.ubicacion, texto libre tipo "A5 - CAJA 1"). Es la que sirve
+//     cuando el item todavía no tiene OC pero hay stock para tomar.
+// Devuelve null si no hay ninguna de las dos.
+function ubicacionAlmacenDe(r: RequerimientoRow): { texto: string; detalle: string; origen: "req" | "catalogo" } | null {
+  const entregado = (r.status_oc?.codigo ?? r.status_oc_codigo) === "ENTREGADO";
+  if (!entregado && r.almacen_zona) {
+    const pos = r.almacen_posicion?.codigo;
+    return {
+      texto: `${r.almacen_zona.codigo}${pos ? `/${pos}` : ""}`,
+      detalle: `${r.almacen_zona.codigo} — ${r.almacen_zona.nombre}${pos ? ` · celda ${pos}` : ""}`,
+      origen: "req",
+    };
+  }
+  const ubic = (r.material?.ubicacion ?? "").trim();
+  if (ubic) {
+    return {
+      texto: ubic,
+      detalle: `Ubicación del material en el almacén de stock: ${ubic}`,
+      origen: "catalogo",
+    };
+  }
+  return null;
+}
 
 // Precio EFECTIVO del item: el de la OC si ya fue comprado, sino el del
 // requerimiento. Sin esto, un item comprado a 628.94 seguía figurando al
@@ -1027,6 +1063,27 @@ export default function RequerimientosPage() {
             </span>
           )}
         </Col>
+        <Col span={24}>
+          {/* Dónde ir a buscarlo. Si hay stock y no se muestra ubicación, es
+              que el material no la tiene cargada en el catálogo. */}
+          <span style={{ color: "#888" }}>Ubicación en almacén:</span>{" "}
+          {(() => {
+            const u = ubicacionAlmacenDe(r);
+            if (!u) {
+              return stockLibreDe(r) > 0
+                ? <Text type="secondary">sin ubicación registrada</Text>
+                : <Text type="secondary">-</Text>;
+            }
+            return (
+              <>
+                <b style={{ color: brand.navy }}>{u.texto}</b>{" "}
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  {u.origen === "req" ? "(zona/celda de este req)" : "(almacén de stock)"}
+                </Text>
+              </>
+            );
+          })()}
+        </Col>
         <Col span={12}>
           <span style={{ color: "#888" }}>P. Unit:</span>{" "}
           <b>{precioEfectivo(r) != null ? `${precioEfectivo(r)!.toFixed(2)} ${r.moneda ?? ""}` : "-"}</b>
@@ -1242,13 +1299,15 @@ export default function RequerimientosPage() {
             </Tooltip>
           );
         }
-        if (!r.almacen_zona) return <Text type="secondary">—</Text>;
-        const zona = r.almacen_zona.codigo;
-        const pos = r.almacen_posicion?.codigo;
+        // Sin zona/celda propia (típico de un req todavía sin OC), cae a la
+        // ubicación del material en el almacén de stock: es la que sirve para
+        // ir a buscarlo cuando hay stock disponible. Se distingue por color.
+        const u = ubicacionAlmacenDe(r);
+        if (!u) return <Text type="secondary">—</Text>;
         return (
-          <Tooltip title={`${r.almacen_zona.codigo} — ${r.almacen_zona.nombre}${pos ? ` · celda ${pos}` : ""}`}>
-            <Tag color="geekblue" style={{ margin: 0, fontSize: 10 }}>
-              {zona}{pos ? `/${pos}` : ""}
+          <Tooltip title={u.detalle}>
+            <Tag color={u.origen === "req" ? "geekblue" : "cyan"} style={{ margin: 0, fontSize: 10 }}>
+              {u.texto}
             </Tag>
           </Tooltip>
         );
@@ -1342,6 +1401,7 @@ export default function RequerimientosPage() {
               { label: "Tipo", value: (r) => r.tipo_codigo },
               { label: "Código", value: (r) => r.material?.codigo ?? r.material_codigo ?? "" },
               { label: "Material", value: (r) => r.material?.descripcion ?? r.descripcion ?? "" },
+              { label: "Ubicación almacén", value: (r) => ubicacionAlmacenDe(r)?.texto ?? "" },
               { label: "Cantidad", value: (r) => Number(r.cantidad) },
               { label: "UM", value: (r) => r.unidad_medida ?? r.material?.unidad_medida_codigo ?? "" },
               { label: "Stock físico", value: (r) => r.material ? Number(r.material.stock_actual ?? 0) : "" },
