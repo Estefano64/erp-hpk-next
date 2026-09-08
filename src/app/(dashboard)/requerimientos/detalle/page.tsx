@@ -245,6 +245,10 @@ interface Requerimiento {
   // Ubicación física del material en almacén — zona/posición o legacy libre.
   // Útil especialmente para las filas amarillas (items con stock disponible).
   ubicacion_almacen?: string | null;
+  // De dónde salió esa ubicación: "req" = zona/celda asignada a ESTAS unidades
+  // al recepcionar su OC; "catalogo" = dónde vive el material en el almacén de
+  // stock (Material.ubicacion). Se muestra en el popover para no confundirlas.
+  ubicacion_origen?: "req" | "catalogo" | null;
   adjuntos?: { id: number; nombre_archivo: string; r2_key: string; tamano: number }[];
   // Sugerencia de match del catálogo (solo cuando material_id es null y el
   // backend detectó un match probable por NP). Si hay varios, elegimos el
@@ -348,6 +352,11 @@ function normalize(r: RequerimientoApi): Requerimiento {
       : r.almacen_zona?.codigo
         ? `${r.almacen_zona.codigo}${r.almacen_posicion?.codigo ? ` · ${r.almacen_posicion.codigo}` : ""}`
         : (r.material?.ubicacion ?? null),
+    ubicacion_origen: (r.status_oc?.codigo ?? r.status_oc_codigo) === "ENTREGADO"
+      ? null
+      : r.almacen_zona?.codigo
+        ? "req"
+        : ((r.material?.ubicacion ?? null) ? "catalogo" : null),
     adjuntos: r.adjuntos,
     // Elegimos el mejor match: preferimos uno con stock LIBRE >= cantidad; si
     // nada alcanza, el que tenga más stock libre; si todos son 0, el primero.
@@ -1727,6 +1736,36 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
         <Col span={12}><Text type="secondary">Cant:</Text> <b>{r.cantidad} {r.unidad_medida || ""}</b></Col>
         <Col span={12}><Text type="secondary">Fabricante:</Text> <b>{r.fabricante_codigo || "-"}</b></Col>
         <Col span={12}><Text type="secondary">Moneda:</Text> <b>{r.moneda || "USD"}</b></Col>
+        {r.material_id != null && (
+          <Col span={12}>
+            {/* Stock LIBRE: el físico menos lo reservado a otras OTs. */}
+            <Text type="secondary">Stock libre:</Text>{" "}
+            <b style={{ color: (r.stock_libre ?? 0) > 0 ? "#52c41a" : "#ff4d4f" }}>
+              {r.stock_libre ?? 0}
+            </b>
+            {(r.stock_reservado ?? 0) > 0 && (
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                {" "}(de {r.stock_actual ?? 0}, {r.stock_reservado} reservados)
+              </Text>
+            )}
+          </Col>
+        )}
+        <Col span={r.material_id != null ? 12 : 24}>
+          {/* Dónde ir a buscarlo físicamente. */}
+          <Text type="secondary">Ubicación:</Text>{" "}
+          {r.ubicacion_almacen ? (
+            <>
+              <b style={{ color: brand.navy }}>{r.ubicacion_almacen}</b>{" "}
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                {r.ubicacion_origen === "req" ? "(zona/celda de este req)" : "(almacén de stock)"}
+              </Text>
+            </>
+          ) : (r.stock_libre ?? 0) > 0 ? (
+            <Text type="secondary">sin ubicación registrada</Text>
+          ) : (
+            <Text type="secondary">-</Text>
+          )}
+        </Col>
         <Col span={12}>
           <Text type="secondary">P. Unit:</Text>{" "}
           <b>{r.precio_efectivo != null ? r.precio_efectivo.toFixed(2) : "-"}</b>
