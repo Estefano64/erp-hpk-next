@@ -351,10 +351,15 @@ export default function RequerimientosPage() {
 
   // Filtros
   // Filtros persistidos por usuario.
-  const [search, setSearch] = usePersistedState<string>("req-list-search", "");
+  // La búsqueda NO se persiste (mismo criterio que /despachos): un texto viejo
+  // rehidratado esconde filas sin que el usuario recuerde por qué.
+  const [search, setSearch] = useState<string>("");
   const [filterOt, setFilterOt] = usePersistedState<string>("req-list-filter-ot", "");
   const [filterStatusReq, setFilterStatusReq] = usePersistedState<string | undefined>("req-list-status-req", undefined);
-  const [filterStatusCot, setFilterStatusCot] = usePersistedState<string | undefined>("req-list-status-cot", undefined);
+  // NOTA (2026-09-08): se eliminó filterStatusCot — su Select se retiró el
+  // 2026-08-27 (ver nota de catálogos) pero el estado persistido seguía
+  // mandándose al API: quien lo dejó activado veía la lista filtrada
+  // invisiblemente y sin forma de quitarlo desde la UI.
   const [filterStatusOc, setFilterStatusOc] = usePersistedState<string | undefined>("req-list-status-oc", undefined);
   const [filterTipo, setFilterTipo] = usePersistedState<string | undefined>("req-list-tipo", undefined);
   const [filterProveedor, setFilterProveedor] = usePersistedState<number | undefined>("req-list-proveedor", undefined);
@@ -428,16 +433,18 @@ export default function RequerimientosPage() {
       if (search) params.set("search", search);
       if (filterOt) params.set("ot", filterOt);
       if (filterStatusReq) params.set("status_req", filterStatusReq);
-      if (filterStatusCot) params.set("status_cot", filterStatusCot);
       if (filterStatusOc) params.set("status_oc", filterStatusOc);
       if (filterTipo) params.set("tipo", filterTipo);
       if (filterProveedor) params.set("proveedor_id", String(filterProveedor));
-      if (filterFechas?.[0]) params.set("fecha_desde", filterFechas[0].toISOString());
-      if (filterFechas?.[1]) params.set("fecha_hasta", filterFechas[1].toISOString());
-      if (rangoSol.desde) params.set("sol_desde", rangoSol.desde.toISOString());
-      if (rangoSol.hasta) params.set("sol_hasta", rangoSol.hasta.toISOString());
-      if (rangoReq.desde) params.set("req_desde", rangoReq.desde.toISOString());
-      if (rangoReq.hasta) params.set("req_hasta", rangoReq.hasta.toISOString());
+      // Mandar solo el día (YYYY-MM-DD): estas columnas son @db.Date
+      // (medianoche UTC). Con toISOString() la medianoche de Lima llega como
+      // T05:00Z y el gte excluía las filas del propio día "Desde".
+      if (filterFechas?.[0]) params.set("fecha_desde", filterFechas[0].format("YYYY-MM-DD"));
+      if (filterFechas?.[1]) params.set("fecha_hasta", filterFechas[1].format("YYYY-MM-DD"));
+      if (rangoSol.desde) params.set("sol_desde", rangoSol.desde.format("YYYY-MM-DD"));
+      if (rangoSol.hasta) params.set("sol_hasta", rangoSol.hasta.format("YYYY-MM-DD"));
+      if (rangoReq.desde) params.set("req_desde", rangoReq.desde.format("YYYY-MM-DD"));
+      if (rangoReq.hasta) params.set("req_hasta", rangoReq.hasta.format("YYYY-MM-DD"));
       if (soloAprobadosSinOC) params.set("solo_aprobados_sin_oc", "1");
 
       const res = await fetch(`/api/requerimientos?${params}`, { signal: controller.signal });
@@ -453,12 +460,12 @@ export default function RequerimientosPage() {
     } finally {
       if (abortable.isCurrent(controller)) setLoading(false);
     }
-  }, [search, filterOt, filterStatusReq, filterStatusCot, filterStatusOc, filterTipo, filterProveedor, filterFechas, rangoSol, rangoReq, soloAprobadosSinOC, abortable]);
+  }, [search, filterOt, filterStatusReq, filterStatusOc, filterTipo, filterProveedor, filterFechas, rangoSol, rangoReq, soloAprobadosSinOC, abortable]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   function clearFilters() {
-    setSearch(""); setFilterOt(""); setFilterStatusReq(undefined); setFilterStatusCot(undefined);
+    setSearch(""); setFilterOt(""); setFilterStatusReq(undefined);
     setFilterStatusOc(undefined); setFilterTipo(undefined); setFilterProveedor(undefined);
     setFilterFechas(null); setSoloAprobadosSinOC(false); setPage(1);
     setSemanaSel(null); setRangoSol({ desde: null, hasta: null }); setRangoReq({ desde: null, hasta: null });
@@ -1444,6 +1451,7 @@ export default function RequerimientosPage() {
             { value: "BORRADOR", label: "Borrador" },
             { value: "SIN_APROBACION", label: "Sin aprobación" },
             { value: "APROBADO", label: "Aprobados" },
+            { value: "OBSERVADO", label: "Observados" },
             { value: "DESAPROBADO", label: "Desaprobados" },
             { value: "ANULADO", label: "Anulados" },
           ]}

@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { Button, Checkbox, DatePicker, Divider, Input, Popover, Space, Typography } from "antd";
 import { CalendarOutlined, SettingOutlined, PushpinOutlined, PushpinFilled, SearchOutlined } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
+import { dateOnlyLocal } from "@/lib/dates";
 import type { ColumnsType, ColumnType, TablePaginationConfig } from "antd/es/table/interface";
 import dayjs, { Dayjs } from "dayjs";
 import { Resizable, type ResizeCallbackData } from "react-resizable";
@@ -386,7 +387,16 @@ export function dentroDeRango<T>(
   if (!rango.desde && !rango.hasta) return true;
   const raw = (row as Record<string, unknown>)[campo as string];
   if (!raw) return false;
-  const d = dayjs(raw as string | Date);
+  // Las columnas solo-día (@db.Date) llegan como medianoche UTC: dayjs() las
+  // corre al día anterior en Lima y el borde "desde" excluía su propio día.
+  // Para esos valores se compara con dateOnlyLocal; un timestamp real (con
+  // hora distinta de 00:00:00Z) sigue comparándose en hora local.
+  const esMedianocheUTC = raw instanceof Date
+    ? raw.getTime() % 86_400_000 === 0
+    : /^\d{4}-\d{2}-\d{2}(T00:00:00(\.0+)?(Z|\+00:?00))?$/.test(String(raw));
+  const d = esMedianocheUTC
+    ? dayjs(dateOnlyLocal(raw as string | Date))
+    : dayjs(raw as string | Date);
   if (!d.isValid()) return false;
   if (rango.desde && d.isBefore(rango.desde.startOf("day"))) return false;
   if (rango.hasta && d.isAfter(rango.hasta.endOf("day"))) return false;
