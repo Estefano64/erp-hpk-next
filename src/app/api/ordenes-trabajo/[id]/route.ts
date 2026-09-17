@@ -147,6 +147,8 @@ export async function PUT(req: NextRequest, { params }: Params) {
           fecha_aprobacion: true,
           fecha_entrega: true,
           fecha_facturacion: true,
+          // Para el espejo BIE fecha_entrega ↔ fecha_despacho (ver abajo).
+          fecha_despacho: true,
           // Necesaria para calcular los días de BIE/SER (fecha req − creación).
           fecha_creacion: true,
         },
@@ -256,6 +258,24 @@ export async function PUT(req: NextRequest, { params }: Params) {
         if (!soloExpediente && (!cambiaStatusAOtraCosa || otrasClavesQueEditan.length > 0)) {
           return { conflict: false, closed: true } as const;
         }
+      }
+
+      // Espejo BIE (2026-09-17, pedido del user): en OTs de Bien la fecha de
+      // despacho ES la fecha de entrega — llenar cualquiera de las dos
+      // autocompleta la otra. Solo se rellena la que está VACÍA (mezclando
+      // body + BD); un valor ya cargado nunca se pisa. Va DESPUÉS del gate de
+      // OT cerrada para no alterar el chequeo del whitelist de expediente.
+      const tipoParaEspejo = (body.tipo_codigo as string | undefined)
+        ?? (before as { tipo_codigo?: string | null }).tipo_codigo;
+      if (tipoParaEspejo === "BIE") {
+        const efEntrega = body.fecha_entrega !== undefined
+          ? body.fecha_entrega
+          : (before as { fecha_entrega?: Date | null }).fecha_entrega;
+        const efDespacho = body.fecha_despacho !== undefined
+          ? body.fecha_despacho
+          : (before as { fecha_despacho?: Date | null }).fecha_despacho;
+        if (efEntrega && !efDespacho) body.fecha_despacho = efEntrega;
+        else if (efDespacho && !efEntrega) body.fecha_entrega = efDespacho;
       }
 
       // Concurrencia: si cliente envió version, debe coincidir
