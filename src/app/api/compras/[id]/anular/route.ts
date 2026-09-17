@@ -57,8 +57,20 @@ export async function POST(req: NextRequest, { params }: Params) {
       // Reset de firmas de liberación parciales (A/B/C): anular las descarta.
       await resetLiberaciones(tx, { compraId });
 
-      // Anular la OC + sus items vinculados. Persistimos también descripción
-      // + detalle de aprobación (los 3 campos del modal de rechazo).
+      // Capturar OTs vinculadas ANTES de liberar los reqs (después po_id
+      // queda null y el distinct no encontraría nada) — mismo patrón que el
+      // DELETE de compras.
+      const reqsVinculados = await tx.oTRepuesto.findMany({
+        where: { po_id: compraId },
+        select: { ot_id: true, orden_trabajo_interna_id: true },
+      });
+      const otsExternas = [...new Set(reqsVinculados.map((r) => r.ot_id).filter((x): x is number => x != null))]
+        .map((ot_id) => ({ ot_id }));
+      const otsInternas = [...new Set(reqsVinculados.map((r) => r.orden_trabajo_interna_id).filter((x): x is number => x != null))]
+        .map((orden_trabajo_interna_id) => ({ orden_trabajo_interna_id }));
+
+      // Anular la OC. Persistimos también descripción + detalle de
+      // aprobación (los 3 campos del modal de rechazo).
       const actualizada = await tx.compra.update({
         where: { id: compraId },
         data: {
@@ -69,21 +81,29 @@ export async function POST(req: NextRequest, { params }: Params) {
           detalle_aprobacion: detalleAprob || null,
         },
       });
+      // Liberar los reqs vinculados — MISMA liberación que el DELETE de
+      // compras (2026-09-17): antes solo se marcaba status_oc=ANULADO y el
+      // po_id quedaba amarrado, así que los reqs nunca volvían a "Listos
+      // para OC" y no se les podía generar una OC nueva. Los items libres
+      // (solo_para_oc) se borran: no tienen lugar fuera de esta OC.
+      await tx.oTRepuesto.deleteMany({
+        where: { po_id: compraId, solo_para_oc: true },
+      });
       await tx.oTRepuesto.updateMany({
         where: { po_id: compraId },
-        data: { status_oc_codigo: "ANULADO" },
-      });
-
-      // Historial por cada OT afectada (externas + internas).
-      const otsExternas = await tx.oTRepuesto.findMany({
-        where: { po_id: compraId, ot_id: { not: null } },
-        select: { ot_id: true },
-        distinct: ["ot_id"],
-      });
-      const otsInternas = await tx.oTRepuesto.findMany({
-        where: { po_id: compraId, orden_trabajo_interna_id: { not: null } },
-        select: { orden_trabajo_interna_id: true },
-        distinct: ["orden_trabajo_interna_id"],
+        data: {
+          po_id: null,
+          nro_oc: null,
+          fecha_oc: null,
+          status_oc_codigo: null,
+          // Limpiar overrides — al volver a la pool, ya no son válidos.
+          oc_cantidad: null,
+          oc_precio_unitario: null,
+          oc_descripcion: null,
+          oc_unidad_medida: null,
+          oc_orden_item: null,
+          fecha_entrega_esperada: null,
+        },
       });
       const piezas = [
         descripcionAprob ? `Desc: ${descripcionAprob}` : null,
@@ -91,8 +111,8 @@ export async function POST(req: NextRequest, { params }: Params) {
         motivo || null,
       ].filter(Boolean);
       const descripcion = piezas.length > 0
-        ? `OC ${compra.numero_po} ANULADA por ${usuario} — ${piezas.join(" · ")}`
-        : `OC ${compra.numero_po} ANULADA por ${usuario}`;
+        ? `OC ${compra.numero_po} ANULADA por ${usuario} — ${piezas.join(" · ")} (requerimientos liberados)`
+        : `OC ${compra.numero_po} ANULADA por ${usuario} (requerimientos liberados)`;
       const datosAdicionales = JSON.stringify({
         po_id: compraId,
         numero_po: compra.numero_po,
