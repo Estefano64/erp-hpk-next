@@ -3,10 +3,16 @@ import { prisma } from "@/lib/prisma";
 import { formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
 
 // GET — listar OCs pendientes de recepción.
-// Sólo se incluyen OCs ya APROBADAS por el admin: estado PROCESO (aceptadas y
+// Se incluyen OCs ya APROBADAS por el admin: estado PROCESO (aceptadas y
 // aún por recibir) o INCOMPLETO (parcialmente recibidas). Las OCs en PEND_OC
-// (pendientes de aprobación) NO deben aparecer acá — primero deben ser
+// (pendientes de aprobación) normalmente NO aparecen acá — primero deben ser
 // aceptadas en /compras (botón "Aceptar OC").
+//
+// EXCEPCIÓN (2026-09-17, pedido del user): OCs en PEND_OC cuyos items
+// pendientes son TODOS servicios (SER) SÍ se listan — en servicios muchas
+// veces el trabajo se recibe antes de emitir/aprobar la OC (el servicio ya
+// se ejecutó), y el endpoint de recepción ya acepta PEND_OC. Los materiales
+// siguen gateados por la aprobación (entran a stock).
 //
 // 2026-06: ahora también se incluyen OCs cuyos items son SOLO "libres" (sin
 // material_id, ej. items CAD como "Barra Cromada D 40x450"). En ese caso los
@@ -23,7 +29,7 @@ import { formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
 export async function GET() {
   try {
     const compras = await prisma.compra.findMany({
-      where: { status_oc_codigo: { in: ["PROCESO", "INCOMPLETO"] } },
+      where: { status_oc_codigo: { in: ["PROCESO", "INCOMPLETO", "PEND_OC"] } },
       include: {
         proveedor: { select: { id: true, razon_social: true } },
         ubicacion: { select: { codigo: true, nombre: true } },
@@ -173,7 +179,11 @@ export async function GET() {
         };
       })
       // OCs sin items pendientes no aparecen (probablemente ya recibidas).
-      .filter((c) => c.items.length > 0);
+      .filter((c) => c.items.length > 0)
+      // PEND_OC solo entra si TODOS sus items pendientes son servicios (SER)
+      // — ver nota de la excepción arriba. Con algún item de material, la OC
+      // espera su aceptación como siempre.
+      .filter((c) => c.status_oc_codigo !== "PEND_OC" || c.items.every((it) => it.tipo_codigo === "SER"));
 
     return NextResponse.json({ data });
   } catch (error) {
