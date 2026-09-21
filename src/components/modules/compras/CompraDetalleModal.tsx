@@ -30,7 +30,7 @@ import { R2FileLink } from "@/components/R2FileLink";
 import { useResponsive } from "@/lib/responsive";
 import dayjs, { Dayjs } from "dayjs";
 import type { ColumnsType } from "antd/es/table";
-import { formatDateOnly } from "@/lib/dates";
+import { formatDateOnly, dateOnlyLocal } from "@/lib/dates";
 import {
   useColumnasOcultas,
   ColumnasToggleButton,
@@ -154,7 +154,7 @@ export default function CompraDetalleModal({ compraId, open, onClose, onUpdated 
       setCompra(json.data);
       setEstado(json.data.estado);
       setFechaEntrega(json.data.fecha_entrega_real ? dayjs(json.data.fecha_entrega_real) : null);
-      setFechaEntregaEsp(json.data.fecha_entrega_esperada ? dayjs(json.data.fecha_entrega_esperada) : null);
+      setFechaEntregaEsp(json.data.fecha_entrega_esperada ? dayjs(dateOnlyLocal(json.data.fecha_entrega_esperada)) : null);
       setNroFactura(json.data.nro_factura || "");
       setNroGuia(json.data.nro_guia || "");
       setObservaciones(json.data.observaciones || "");

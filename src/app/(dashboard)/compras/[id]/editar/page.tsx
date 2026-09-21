@@ -14,6 +14,7 @@ import {
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
+import { dateOnlyLocal } from "@/lib/dates";
 import { brand } from "@/lib/theme";
 import { mensajeErrorApi } from "@/lib/api-error";
 import { useEscrituraApi } from "@/lib/use-escritura";
@@ -561,10 +562,10 @@ export default function EditarOCPage() {
       render: (_v, r) => (
         <DatePicker
           size="small"
-          value={r.fecha_entrega_esperada ? dayjs(r.fecha_entrega_esperada) : null}
+          value={r.fecha_entrega_esperada ? dayjs(dateOnlyLocal(r.fecha_entrega_esperada)) : null}
           format="DD/MM/YY"
           style={{ width: "100%" }}
-          onChange={(d: Dayjs | null) => updateRow(r._localId, { fecha_entrega_esperada: d ? d.toISOString() : null })}
+          onChange={(d: Dayjs | null) => updateRow(r._localId, { fecha_entrega_esperada: d ? d.format("YYYY-MM-DD") : null })}
           allowClear
         />
       ),
