@@ -384,18 +384,16 @@ export async function POST(req: NextRequest) {
         "ANULADO",
       ];
       if (materialesFullRec.size > 0) {
-        await tx.oTRepuesto.updateMany({
-          where: {
-            po_id: d.po_id,
-            material_id: { in: Array.from(materialesFullRec) },
-            NOT: { status_oc_codigo: { in: ESTADOS_FINALES_PROTEGIDOS } },
-          },
-          data: dataConFecha,
-        });
         // Reflejar cantidad_recibida = cantidad para MAC items al 100% en la OC.
         // updateMany no puede referenciar la propia cantidad → SQL raw.
         // Solo aplica a reps que no estén en un estado final (protegemos los
         // consumos ya cerrados).
+        //
+        // BUG anterior (2026-07-24 → 2026-09-23): este UPDATE corría DESPUÉS
+        // del updateMany que ponía status COMPLETO, y su propio filtro excluye
+        // COMPLETO → nunca actualizaba nada. Los reps quedaban COMPLETO con
+        // cantidad_recibida = 0 (OC 260343: costos "ejecutados" en 0, stock
+        // reservado por OT en 0). Ahora corre ANTES de cambiar el status.
         const matIdsArr = Array.from(materialesFullRec);
         await tx.$executeRawUnsafe(
           `UPDATE ot_repuestos
@@ -406,6 +404,14 @@ export async function POST(req: NextRequest) {
           d.po_id,
           matIdsArr,
         );
+        await tx.oTRepuesto.updateMany({
+          where: {
+            po_id: d.po_id,
+            material_id: { in: Array.from(materialesFullRec) },
+            NOT: { status_oc_codigo: { in: ESTADOS_FINALES_PROTEGIDOS } },
+          },
+          data: dataConFecha,
+        });
       }
       if (freeFullIds.length > 0) {
         await tx.oTRepuesto.updateMany({
