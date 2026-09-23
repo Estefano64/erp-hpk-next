@@ -3076,7 +3076,10 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                 const nuevas: Record<number, Dayjs | null> = {};
                 for (const r of selectedRecords) nuevas[r.id] = fGlobal;
                 setFechasItemsModal(nuevas);
-                message.success(`Fecha aplicada a ${selectedRecords.length} item(s).`);
+                // También a los items libres (antes quedaban sin fecha y el
+                // botón parecía no hacer nada sobre ellos).
+                setItemsLibresModal((prev) => prev.map((x) => ({ ...x, fecha_entrega: fGlobal })));
+                message.success(`Fecha aplicada a ${selectedRecords.length + itemsLibresModal.length} item(s).`);
               }}
               style={{ marginLeft: "auto" }}
             >
@@ -3331,7 +3334,9 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                 unidad_medida: "UNIDAD",
                 cantidad: 1,
                 precio_unitario: 0,
-                fecha_entrega: null,
+                // Hereda la F. Entrega global del header al agregarse (igual
+                // que los items de req, que arrancan con su fecha_requerida).
+                fecha_entrega: (ocForm.getFieldValue("fecha_entrega_esperada") as Dayjs | null | undefined) ?? null,
               }])}
             >
               Agregar fila (item libre)
@@ -4007,7 +4012,8 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
               unidad_medida: "UNIDAD",
               cantidad: Number(det.cantidad ?? 0),
               precio_unitario: Number(det.precio_unitario ?? 0),
-              fecha_entrega: null,
+              // Hereda la F. Entrega global del header (ver "Agregar fila").
+              fecha_entrega: (ocForm.getFieldValue("fecha_entrega_esperada") as Dayjs | null | undefined) ?? null,
             }));
             if (nuevos.length === 0) {
               message.warning("Esa OC no tiene items para importar");
