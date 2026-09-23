@@ -53,6 +53,10 @@ export async function GET() {
             // recepción — los servicios no requieren zona de almacén y se
             // auto-marcan en bloque.
             tipo_codigo: true,
+            // Posición del item en la OC (editor / PDF). Se usa para
+            // emparejar cada CompraDetalle con su req cuando la OC repite
+            // el mismo material para varias OTs.
+            oc_orden_item: true,
             // OT externa (vía ot_id) o interna (vía orden_trabajo_interna_id)
             // — se usan para mostrar el código de OT en la tabla de Ingreso.
             ot_id: true,
@@ -102,11 +106,52 @@ export async function GET() {
           }
         }
 
+        // Emparejar cada CompraDetalle con SU OTRepuesto (2026-09-23, OC
+        // 260343). CompraDetalle no guarda repuesto_id: crear-oc genera un
+        // detalle por cada req, en el mismo orden. Cuando la OC lleva el
+        // MISMO material para DOS OTs (ej. 2 cojinetes para 409326 + 2 para
+        // 410426) los mapas por material_id colapsan y ambas filas mostraban
+        // la misma OT. Acá armamos una cola de reqs por material (ordenada
+        // como el PDF: oc_orden_item, luego id) y cada detalle (por id) toma
+        // el primer req de la cola, prefiriendo uno con la misma cantidad.
+        // Si la cola se agota (OC legacy / editada a mano) cae al mapa por
+        // material como antes.
+        const colaPorMaterial = new Map<number, R[]>();
+        const repsOrdenados = [...c.ot_repuestos].sort((a, b) => {
+          const oa = a.oc_orden_item ?? Number.MAX_SAFE_INTEGER;
+          const ob = b.oc_orden_item ?? Number.MAX_SAFE_INTEGER;
+          return oa !== ob ? oa - ob : a.id - b.id;
+        });
+        for (const r of repsOrdenados) {
+          if (r.material_id == null) continue;
+          const arr = colaPorMaterial.get(r.material_id) ?? [];
+          arr.push(r);
+          colaPorMaterial.set(r.material_id, arr);
+        }
+        const repParaDetalle = (d: D): R | null => {
+          if (d.material_id == null) return null;
+          const cola = colaPorMaterial.get(d.material_id);
+          if (!cola || cola.length === 0) return null;
+          const cant = Number(d.cantidad);
+          let idx = cola.findIndex((r) => Number(r.cantidad) === cant);
+          if (idx < 0) idx = 0;
+          return cola.splice(idx, 1)[0];
+        };
+        const otCodigoDeRep = (r: R): string | null =>
+          r.orden_trabajo?.ot != null
+            ? formatOtCodigo(r.orden_trabajo.ot, r.orden_trabajo.tipo_codigo ?? "")
+            : (r.orden_trabajo_interna?.ot != null
+                ? formatOtInternaCodigo(r.orden_trabajo_interna.ot)
+                : null);
+
         // Caso 1 (mayoritario): la OC tiene CompraDetalle → items vienen de ahí.
         // Cada item con `cantidad` = pendiente (cantidad − cantidad_recibida).
-        const itemsDetalles = c.detalles
+        const itemsDetalles = [...c.detalles]
+          .sort((a, b) => a.id - b.id)
           .map((d: D) => {
             const pendiente = Number(d.cantidad) - Number(d.cantidad_recibida ?? 0);
+            const rep = repParaDetalle(d);
+            const descRep = rep?.descripcion?.trim() ? rep.descripcion.trim() : null;
             return {
               id: d.id,
               repuesto_id: null as number | null,
@@ -116,10 +161,15 @@ export async function GET() {
               unidad_medida: d.material?.unidad_medida_codigo ?? "und",
               cantidad: pendiente,
               precio_unitario: d.precio_unitario != null ? Number(d.precio_unitario) : null,
-              tipo_codigo: (d.material_id != null ? tipoPorMaterialId.get(d.material_id) : null) ?? null,
-              // OT y descripción específica del OC, inferidas del OTRepuesto vinculado.
-              ot_codigo: (d.material_id != null ? otCodigoPorMaterialId.get(d.material_id) : null) ?? null,
-              descripcion_oc: (d.material_id != null ? descripcionPorMaterialId.get(d.material_id) : null) ?? null,
+              tipo_codigo: rep?.tipo_codigo ?? (d.material_id != null ? tipoPorMaterialId.get(d.material_id) : null) ?? null,
+              // OT y descripción específica del OC: del OTRepuesto emparejado;
+              // fallback al mapa por material (comportamiento anterior).
+              ot_codigo: (rep ? otCodigoDeRep(rep) : null)
+                ?? (d.material_id != null ? otCodigoPorMaterialId.get(d.material_id) : null)
+                ?? null,
+              descripcion_oc: descRep
+                ?? (d.material_id != null ? descripcionPorMaterialId.get(d.material_id) : null)
+                ?? null,
               compra_id: c.id,
             };
           })

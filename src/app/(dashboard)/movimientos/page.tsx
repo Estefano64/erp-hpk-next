@@ -167,6 +167,9 @@ interface POPendiente {
     // Para items CompraDetalle se infiere del OTRepuesto vinculado en backend.
     // Servicios (SER) no requieren zona de almacén — son cargos.
     tipo_codigo: string | null;
+    // OT del item, emparejada línea a línea en backend (no por material:
+    // una OC puede llevar el mismo material para dos OTs — OC 260343).
+    ot_codigo?: string | null;
   }>;
 }
 
@@ -1367,8 +1370,14 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                 { title: "Código", dataIndex: "codigo", width: 100 },
                 { title: "Descripción", dataIndex: "descripcion", ellipsis: true },
                 { title: "OT", width: 100, render: (_, r) => {
-                    const prev = previewItems.find((p) => p.material_id === r.material_id);
-                    return prev?.ot_codigo ? <Tag color={brand.navy}>{prev.ot_codigo}</Tag> : <Text type="secondary">—</Text>;
+                    // Primero la OT emparejada por línea (backend); el preview
+                    // por material solo como fallback — si la OC repite el
+                    // material para dos OTs, buscar por material colapsaba
+                    // ambas filas en la misma OT (OC 260343).
+                    const ot = r.ot_codigo
+                      ?? previewItems.find((p) => p.material_id === r.material_id)?.ot_codigo
+                      ?? null;
+                    return ot ? <Tag color={brand.navy}>{ot}</Tag> : <Text type="secondary">—</Text>;
                   },
                 },
                 { title: "Pedida", dataIndex: "cantidad", width: 75, align: "right" },
