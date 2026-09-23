@@ -745,11 +745,14 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
       message.warning("Ingresa al menos una cantidad");
       return;
     }
-    // Validar zona solo para items físicos. Los SERVICIOS (SER) no requieren
-    // ubicación porque no entran al stock — son cargos facturados.
-    const sinZona = items.filter((it) => it.tipo_codigo !== "SER" && !it.almacen_zona_id);
+    // Validar zona solo para items que ENTRAN a stock: material de catálogo
+    // (material_id) que no sea servicio. Los SERVICIOS (SER) y los CARGOS
+    // DIRECTOS / items libres (sin material_id) no generan stock ni
+    // movimiento — la zona solo se guarda como etiqueta en el req, así que
+    // es opcional (2026-09-23, OI005926: pedía zona a 10 items CAD).
+    const sinZona = items.filter((it) => it.material_id != null && it.tipo_codigo !== "SER" && !it.almacen_zona_id);
     if (sinZona.length > 0) {
-      message.warning(`Faltan zonas de almacén en ${sinZona.length} item(s) que estás recibiendo. Elegí la zona en cada fila. (Los servicios no requieren zona.)`);
+      message.warning(`Faltan zonas de almacén en ${sinZona.length} item(s) que estás recibiendo. Elegí la zona en cada fila. (Servicios y cargos directos no requieren zona.)`);
       return;
     }
 
@@ -1436,6 +1439,9 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                     if (r.tipo_codigo === "SER") {
                       return <Text type="secondary" style={{ fontSize: 11 }}>N/A (servicio)</Text>;
                     }
+                    // Cargos directos / items libres (sin material_id) no
+                    // entran a stock: la zona es opcional (solo etiqueta).
+                    const zonaOpcional = r.material_id == null;
                     // Para items free (material_id null), usamos el id del item
                     // como key — así cada item tiene su propio slot de zona.
                     const matKey = r.material_id ?? r.id;
@@ -1448,7 +1454,7 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                           ...ubicByMaterial,
                           [matKey]: { zona_id: v ?? null, posicion_id: null },
                         })}
-                        placeholder="Zona"
+                        placeholder={zonaOpcional ? "Opcional" : "Zona"}
                         size="small"
                         // allowClear para corregir si el usuario seleccionó por
                         // error. Al limpiar, la zona y la posición vuelven a null
@@ -1456,7 +1462,7 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
                         // recibir el item).
                         allowClear
                         style={{ width: "100%" }}
-                        status={!u?.zona_id ? "warning" : undefined}
+                        status={!u?.zona_id && !zonaOpcional ? "warning" : undefined}
                         options={zonasAlmacen.map((z) => ({ value: z.id, label: z.codigo }))}
                         suffixIcon={esSugerida ? <Tooltip title="Sugerida por otra ubicación de la misma OT"><Text type="success" style={{ fontSize: 10 }}>✓</Text></Tooltip> : undefined}
                       />
