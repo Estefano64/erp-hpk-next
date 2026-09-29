@@ -27,6 +27,7 @@ import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import { useCachedFetch } from "@/lib/useCachedFetch";
 
 import { formatDateOnly, formatDateOnlyShort, dateOnlyLocal } from "@/lib/dates";
+import { formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
 import { R2FileLink } from "@/components/R2FileLink";
 import CompraDetalleModal from "@/components/modules/compras/CompraDetalleModal";
 import {
@@ -102,7 +103,8 @@ interface OCItem {
   precio_unitario: number | string | null;
   comentario_aprobacion?: string | null;
   material: { codigo: string; descripcion: string } | null;
-  orden_trabajo: { id: number; ot: string | null } | null;
+  orden_trabajo: { id: number; ot: string | number | null; tipo_codigo?: string | null } | null;
+  orden_trabajo_interna?: { id: number; ot: string | number | null } | null;
   // Adjuntos cargados al crear el requerimiento — el aprobador de OC los
   // ve antes de aceptar para revisar cotizaciones/specs/fotos.
   adjuntos?: { id: number; nombre_archivo: string; r2_key: string; tamano: number }[];
@@ -127,7 +129,7 @@ interface OCPendiente {
   usuario_solicita: string;
   observaciones: string | null;
   proveedor: { id: number; razon_social: string; ruc: string | null } | null;
-  orden_trabajo: { id: number; ot: string | null } | null;
+  orden_trabajo: { id: number; ot: string | number | null; tipo_codigo?: string | null } | null;
   ubicacion: { codigo: string; nombre: string } | null;
   ot_repuestos: OCItem[];
   detalles: OCDetalle[];
@@ -150,7 +152,7 @@ interface ReqPendiente {
   fecha_requerida: string | null;
   usuario_solicita: string;
   orden_trabajo: {
-    id: number; ot: string | null;
+    id: number; ot: string | number | null; tipo_codigo?: string | null;
     descripcion: string | null;
     cod_rep_flota: string | null;
     cliente: { codigo: string; razon_social: string; nombre_comercial: string | null } | null;
@@ -158,6 +160,8 @@ interface ReqPendiente {
     // derivar la columna "Estado PO" (Con PO / Pdt de PO).
     adjuntos?: { id: number }[];
   } | null;
+  // Req de OT interna (mantenimiento): orden_trabajo viene null y la OT es esta.
+  orden_trabajo_interna?: { id: number; ot: string | number | null; descripcion: string | null; equipo_codigo: string | null } | null;
   observaciones: string | null;
   material: { codigo: string; descripcion: string; precio: number | string | null; moneda_codigo: string | null; stock_actual: number | string | null } | null;
   status_requerimiento: { codigo: string; nombre: string } | null;
@@ -179,9 +183,37 @@ interface HistorialItem {
   moneda: string | null;
   ot: string | null;
   ot_id: number | null;
+  ot_interna?: boolean;
   usuario: string | null;
   fecha: string | null;
   nuevo_estado: string;
+}
+
+// ── OT "de" una OC / un requerimiento ────────────────────────────────────
+// Las OCs no guardan ot_id en cabecera (Crear OC admite varias OTs por compra),
+// así que la OT se deriva de los items. Los reqs de OT interna no tienen
+// orden_trabajo: se usa orden_trabajo_interna con prefijo OI.
+interface OtRef { id: number; codigo: string; interna: boolean }
+const rutaOt = (o: OtRef) => (o.interna ? `/ordenes-trabajo-internas/${o.id}` : `/ordenes-trabajo/${o.id}`);
+function otsDeOC(o: OCPendiente): OtRef[] {
+  if (o.orden_trabajo?.ot != null) return [{ id: o.orden_trabajo.id, codigo: formatOtCodigo(o.orden_trabajo.ot, o.orden_trabajo.tipo_codigo), interna: false }];
+  const vistos = new Map<string, OtRef>();
+  for (const it of o.ot_repuestos ?? []) {
+    if (it.orden_trabajo?.ot != null) {
+      const k = `E${it.orden_trabajo.id}`;
+      if (!vistos.has(k)) vistos.set(k, { id: it.orden_trabajo.id, codigo: formatOtCodigo(it.orden_trabajo.ot, it.orden_trabajo.tipo_codigo), interna: false });
+    } else if (it.orden_trabajo_interna?.ot != null) {
+      const k = `I${it.orden_trabajo_interna.id}`;
+      if (!vistos.has(k)) vistos.set(k, { id: it.orden_trabajo_interna.id, codigo: formatOtInternaCodigo(it.orden_trabajo_interna.ot), interna: true });
+    }
+  }
+  return [...vistos.values()];
+}
+const otsDeOCTexto = (o: OCPendiente) => otsDeOC(o).map((x) => x.codigo).join(", ");
+function otDeReq(r: ReqPendiente): OtRef | null {
+  if (r.orden_trabajo?.ot != null) return { id: r.orden_trabajo.id, codigo: formatOtCodigo(r.orden_trabajo.ot, r.orden_trabajo.tipo_codigo), interna: false };
+  if (r.orden_trabajo_interna?.ot != null) return { id: r.orden_trabajo_interna.id, codigo: formatOtInternaCodigo(r.orden_trabajo_interna.ot), interna: true };
+  return null;
 }
 interface AceptacionesPayload {
   ocs_pendientes: OCPendiente[];
@@ -856,7 +888,7 @@ export default function AceptacionesPage() {
           {o.numero_po} — {o.proveedor?.razon_social ?? "Sin proveedor"}
         </div>
         <Row gutter={[8, 4]} style={{ marginBottom: 6 }}>
-          <Col span={12}><span style={{ color: "#888" }}>OT:</span> <b>{o.orden_trabajo?.ot ?? "—"}</b></Col>
+          <Col span={12}><span style={{ color: "#888" }}>OT:</span> <b>{otsDeOCTexto(o) || "—"}</b></Col>
           <Col span={12}><span style={{ color: "#888" }}>Almacén:</span> <b>{o.ubicacion?.nombre ?? "—"}</b></Col>
           <Col span={12}><span style={{ color: "#888" }}>F. Solicitud:</span> <b>{formatDateOnly(o.fecha_solicitud)}</b></Col>
           <Col span={12}><span style={{ color: "#888" }}>F. Entrega Esp:</span> <b>{o.fecha_entrega_esperada ? formatDateOnly(o.fecha_entrega_esperada) : "—"}</b></Col>
@@ -940,8 +972,8 @@ export default function AceptacionesPage() {
           {r.nro_req ?? "—"}/{r.item_req ?? "—"} — {r.material?.descripcion ?? r.descripcion ?? "—"}
         </div>
         <Row gutter={[8, 4]}>
-          <Col span={12}><span style={{ color: "#888" }}>OT:</span> <b>{r.orden_trabajo?.ot ?? "—"}</b></Col>
-          <Col span={12}><span style={{ color: "#888" }}>Cliente:</span> <b>{r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "—"}</b></Col>
+          <Col span={12}><span style={{ color: "#888" }}>OT:</span> <b>{otDeReq(r)?.codigo ?? "—"}</b></Col>
+          <Col span={12}><span style={{ color: "#888" }}>Cliente:</span> <b>{r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? (r.orden_trabajo_interna ? `Taller · ${r.orden_trabajo_interna.equipo_codigo ?? "OT interna"}` : "—")}</b></Col>
           <Col span={12}><span style={{ color: "#888" }}>Tipo:</span> <Tag color={TIPO_REQ_COLOR[r.tipo_codigo ?? ""] ?? "default"} style={{ margin: 0 }}>{r.tipo_codigo ?? "—"}</Tag></Col>
           <Col span={12}><span style={{ color: "#888" }}>Código:</span> <b>{r.material?.codigo ?? "—"}</b></Col>
           <Col span={12}><span style={{ color: "#888" }}>Cantidad:</span> <b>{Number(r.cantidad)} {r.unidad_medida ?? ""}</b></Col>
@@ -1054,12 +1086,14 @@ export default function AceptacionesPage() {
     },
     {
       key: "ot", title: "OT", width: 110,
-      filters: [...new Set(ocs.map((o) => o.orden_trabajo?.ot).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
+      filters: [...new Set(ocs.flatMap((o) => otsDeOC(o).map((x) => x.codigo)))].sort().map((v) => ({ text: v, value: v })),
       filterSearch: true,
-      onFilter: (value, o) => o.orden_trabajo?.ot === value,
-      render: (_, o) => o.orden_trabajo?.ot
-        ? <a onClick={() => router.push(`/ordenes-trabajo/${o.orden_trabajo!.id}`)}><Tag>{o.orden_trabajo.ot}</Tag></a>
-        : <Text type="secondary">—</Text>,
+      onFilter: (value, o) => otsDeOC(o).some((x) => x.codigo === value),
+      render: (_, o) => {
+        const ots = otsDeOC(o);
+        if (!ots.length) return <Text type="secondary">—</Text>;
+        return <Space size={2} wrap>{ots.map((x) => <a key={`${x.interna ? "I" : "E"}${x.id}`} onClick={() => router.push(rutaOt(x))}><Tag style={{ margin: 0 }}>{x.codigo}</Tag></a>)}</Space>;
+      },
     },
     {
       key: "items", title: "Items", width: 90, align: "center",
@@ -1171,12 +1205,13 @@ export default function AceptacionesPage() {
     },
     {
       key: "ot", title: "OT", width: 110,
-      filters: [...new Set(reqs.map((r) => r.orden_trabajo?.ot).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
+      filters: [...new Set(reqs.map((r) => otDeReq(r)?.codigo).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
       filterSearch: true,
-      onFilter: (value, r) => r.orden_trabajo?.ot === value,
-      render: (_, r) => r.orden_trabajo?.ot
-        ? <a onClick={() => router.push(`/ordenes-trabajo/${r.orden_trabajo!.id}`)}><Tag>{r.orden_trabajo.ot}</Tag></a>
-        : <Text type="secondary">—</Text>,
+      onFilter: (value, r) => otDeReq(r)?.codigo === value,
+      render: (_, r) => {
+        const x = otDeReq(r);
+        return x ? <a onClick={() => router.push(rutaOt(x))}><Tag>{x.codigo}</Tag></a> : <Text type="secondary">—</Text>;
+      },
     },
     {
       key: "cliente", title: "Mina / Cliente", width: 160, ellipsis: true,
@@ -1401,7 +1436,7 @@ export default function AceptacionesPage() {
     {
       key: "ot", title: "OT", width: 110,
       render: (_, h) => h.ot
-        ? <a onClick={() => h.ot_id && router.push(`/ordenes-trabajo/${h.ot_id}`)}><Tag>{h.ot}</Tag></a>
+        ? <a onClick={() => h.ot_id && router.push(h.ot_interna ? `/ordenes-trabajo-internas/${h.ot_id}` : `/ordenes-trabajo/${h.ot_id}`)}><Tag>{h.ot}</Tag></a>
         : <Text type="secondary">—</Text>,
     },
     {
@@ -1588,7 +1623,7 @@ export default function AceptacionesPage() {
                           columns={[
                             { key: "numero_po", label: "Nro OC", value: (o) => o.numero_po },
                             { key: "proveedor", label: "Proveedor", value: (o) => o.proveedor?.razon_social ?? "" },
-                            { key: "ot", label: "OT", value: (o) => o.orden_trabajo?.ot ?? "" },
+                            { key: "ot", label: "OT", value: (o) => otsDeOCTexto(o) },
                             { key: "items", label: "Items", value: (o) => o.ot_repuestos.length || o.detalles.length },
                             { key: "total", label: "Total", value: (o) => Number(o.total), z: "#,##0.00" },
                             { key: "moneda", label: "Moneda", value: (o) => o.moneda_codigo ?? "USD" },
@@ -1682,7 +1717,7 @@ export default function AceptacionesPage() {
                           columns={[
                             { key: "nro_req", label: "Nro Req / Item", value: (r) => `${r.nro_req ?? "—"}/${r.item_req ?? "—"}` },
                             { key: "tipo", label: "Tipo", value: (r) => r.tipo_codigo ?? "" },
-                            { key: "ot", label: "OT", value: (r) => r.orden_trabajo?.ot ?? "" },
+                            { key: "ot", label: "OT", value: (r) => otDeReq(r)?.codigo ?? "" },
                             { key: "cliente", label: "Mina / Cliente", value: (r) => r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "" },
                             { key: "flota", label: "Flota", value: (r) => r.orden_trabajo?.cod_rep_flota ?? "" },
                             { key: "estado_po", label: "Estado PO", value: (r) => ((r.orden_trabajo?.adjuntos?.length ?? 0) > 0 ? "Con PO" : "Pdt de PO") },
@@ -1843,10 +1878,10 @@ export default function AceptacionesPage() {
                   {aprobarModalReq.unidad_medida ?? ""}
                 </b>
               </div>
-              {aprobarModalReq.orden_trabajo?.ot && (
+              {otDeReq(aprobarModalReq) && (
                 <div style={{ marginTop: 4 }}>
-                  OT: <Tag>{aprobarModalReq.orden_trabajo.ot}</Tag>
-                  {aprobarModalReq.orden_trabajo.cod_rep_flota && (
+                  OT: <Tag>{otDeReq(aprobarModalReq)!.codigo}</Tag>
+                  {aprobarModalReq.orden_trabajo?.cod_rep_flota && (
                     <Tag color="geekblue">{aprobarModalReq.orden_trabajo.cod_rep_flota}</Tag>
                   )}
                 </div>

@@ -1,6 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { parseInt4Safe } from "@/lib/ot-formato";
+import { parseInt4Safe, formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
+
+// La OC no guarda ot_id en cabecera desde que Crear OC permite varias OTs por
+// compra: la OT "de la OC" se deriva de sus items (externa o interna). Devuelve
+// la primera OT distinta encontrada, ya formateada para mostrar.
+type OtItemRef = {
+  orden_trabajo?: { id: number; ot: number | null; tipo_codigo?: string | null } | null;
+  orden_trabajo_interna?: { id: number; ot: number | null } | null;
+};
+function otDeCompra(c: { orden_trabajo?: { id: number; ot: number | null; tipo_codigo?: string | null } | null; ot_repuestos?: OtItemRef[] }) {
+  if (c.orden_trabajo?.ot != null) return { ot: formatOtCodigo(c.orden_trabajo.ot, c.orden_trabajo.tipo_codigo), ot_id: c.orden_trabajo.id, ot_interna: false };
+  for (const it of c.ot_repuestos ?? []) {
+    if (it.orden_trabajo?.ot != null) return { ot: formatOtCodigo(it.orden_trabajo.ot, it.orden_trabajo.tipo_codigo), ot_id: it.orden_trabajo.id, ot_interna: false };
+    if (it.orden_trabajo_interna?.ot != null) return { ot: formatOtInternaCodigo(it.orden_trabajo_interna.ot), ot_id: it.orden_trabajo_interna.id, ot_interna: true };
+  }
+  return { ot: null as string | null, ot_id: null as number | null, ot_interna: false };
+}
+function otDeRepuesto(r: OtItemRef) {
+  if (r.orden_trabajo?.ot != null) return { ot: formatOtCodigo(r.orden_trabajo.ot, r.orden_trabajo.tipo_codigo), ot_id: r.orden_trabajo.id, ot_interna: false };
+  if (r.orden_trabajo_interna?.ot != null) return { ot: formatOtInternaCodigo(r.orden_trabajo_interna.ot), ot_id: r.orden_trabajo_interna.id, ot_interna: true };
+  return { ot: null as string | null, ot_id: null as number | null, ot_interna: false };
+}
 
 // GET /api/aprobaciones — devuelve, en una sola llamada:
 //   - ocs_pendientes:  Compras en estado PEND_OC
@@ -47,7 +68,12 @@ export async function GET(req: NextRequest) {
         // `ot` ahora es INTEGER. Si la búsqueda es un número, hacemos match
         // exacto; si no, no se filtra por OT.
         const otNum = parseInt4Safe(ot);
-        if (otNum != null) whereOC.orden_trabajo = { ot: otNum };
+        if (otNum != null) {
+          whereOC.OR = [
+            { orden_trabajo: { ot: otNum } },
+            { ot_repuestos: { some: { OR: [{ orden_trabajo: { ot: otNum } }, { orden_trabajo_interna: { ot: otNum } }] } } },
+          ];
+        }
       }
       ocs_pendientes = await prisma.compra.findMany({
         where: whereOC,
@@ -55,7 +81,7 @@ export async function GET(req: NextRequest) {
           // Firmas de liberación A/B/C ya estampadas (esquema multi-nivel).
           liberaciones: { select: { nivel: true, liberado_por: true, fecha_liberacion: true, comentario: true } },
           proveedor: { select: { id: true, razon_social: true, ruc: true } },
-          orden_trabajo: { select: { id: true, ot: true } },
+          orden_trabajo: { select: { id: true, ot: true, tipo_codigo: true } },
           ubicacion: { select: { codigo: true, nombre: true } },
           ot_repuestos: {
             select: {
@@ -63,7 +89,8 @@ export async function GET(req: NextRequest) {
               cantidad: true, precio_unitario: true,
               comentario_aprobacion: true,
               material: { select: { codigo: true, descripcion: true } },
-              orden_trabajo: { select: { id: true, ot: true } },
+              orden_trabajo: { select: { id: true, ot: true, tipo_codigo: true } },
+              orden_trabajo_interna: { select: { id: true, ot: true } },
               adjuntos: { select: { id: true, nombre_archivo: true, r2_key: true, tamano: true } },
             },
           },
@@ -89,7 +116,7 @@ export async function GET(req: NextRequest) {
       };
       if (ot) {
         const otNum = parseInt4Safe(ot);
-        if (otNum != null) whereRQ.orden_trabajo = { ot: otNum };
+        if (otNum != null) whereRQ.AND = [{ OR: [{ orden_trabajo: { ot: otNum } }, { orden_trabajo_interna: { ot: otNum } }] }];
       }
       reqs_pendientes = await prisma.oTRepuesto.findMany({
         where: whereRQ,
@@ -98,7 +125,7 @@ export async function GET(req: NextRequest) {
           liberaciones: { select: { nivel: true, liberado_por: true, fecha_liberacion: true, comentario: true } },
           orden_trabajo: {
             select: {
-              id: true, ot: true,
+              id: true, ot: true, tipo_codigo: true,
               descripcion: true,
               cod_rep_flota: true,
               cliente: { select: { codigo: true, razon_social: true, nombre_comercial: true } },
@@ -108,6 +135,8 @@ export async function GET(req: NextRequest) {
               adjuntos: { where: { etapa_codigo: "po_cliente" }, select: { id: true }, take: 1 },
             },
           },
+          // Reqs de OT interna (mantenimiento): no tienen orden_trabajo, la OT sale de acá.
+          orden_trabajo_interna: { select: { id: true, ot: true, descripcion: true, equipo_codigo: true } },
           material: { select: { codigo: true, descripcion: true, precio: true, moneda_codigo: true, stock_actual: true } },
           status_requerimiento: { select: { codigo: true, nombre: true } },
           adjuntos: { select: { id: true, nombre_archivo: true, r2_key: true, tamano: true } },
@@ -134,7 +163,8 @@ export async function GET(req: NextRequest) {
         id: true, numero_po: true, total: true, moneda_codigo: true,
         status_oc_codigo: true, usuario_aprueba: true, updatedAt: true, fecha_solicitud: true,
         proveedor: { select: { razon_social: true } },
-        orden_trabajo: { select: { id: true, ot: true } },
+        orden_trabajo: { select: { id: true, ot: true, tipo_codigo: true } },
+        ot_repuestos: { select: { orden_trabajo: { select: { id: true, ot: true, tipo_codigo: true } }, orden_trabajo_interna: { select: { id: true, ot: true } } } },
       },
       orderBy: { updatedAt: "desc" },
       take: histLimit,
@@ -151,7 +181,8 @@ export async function GET(req: NextRequest) {
       select: {
         id: true, nro_req: true, item_req: true, descripcion: true, cantidad: true,
         usuario_aprueba: true, fecha_aprobacion: true,
-        orden_trabajo: { select: { id: true, ot: true } },
+        orden_trabajo: { select: { id: true, ot: true, tipo_codigo: true } },
+        orden_trabajo_interna: { select: { id: true, ot: true } },
         material: { select: { codigo: true, descripcion: true } },
       },
       orderBy: { fecha_aprobacion: "desc" },
@@ -167,8 +198,7 @@ export async function GET(req: NextRequest) {
         descripcion: `Proveedor: ${c.proveedor?.razon_social ?? "—"}`,
         total: Number(c.total),
         moneda: c.moneda_codigo ?? "USD",
-        ot: c.orden_trabajo?.ot ?? null,
-        ot_id: c.orden_trabajo?.id ?? null,
+        ...otDeCompra(c),
         usuario: c.usuario_aprueba,
         fecha: c.updatedAt,
         nuevo_estado: c.status_oc_codigo,
@@ -180,8 +210,7 @@ export async function GET(req: NextRequest) {
         descripcion: r.material?.descripcion ?? r.descripcion ?? "—",
         total: null as number | null,
         moneda: null as string | null,
-        ot: r.orden_trabajo?.ot ?? null,
-        ot_id: r.orden_trabajo?.id ?? null,
+        ...otDeRepuesto(r),
         usuario: r.usuario_aprueba,
         fecha: r.fecha_aprobacion,
         nuevo_estado: "APROBADO",
