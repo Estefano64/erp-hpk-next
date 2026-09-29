@@ -42,6 +42,9 @@ export async function GET(_req: NextRequest) {
         descripcion: true,
         cantidad: true,
         cantidad_recibida: true,
+        // Fechas de llegada del item (fallback cuando la OC no las tiene).
+        fecha_entrega_real: true,
+        fecha_entrega_esperada: true,
         unidad_medida: true,
         material_id: true,
         po_id: true,
@@ -56,7 +59,8 @@ export async function GET(_req: NextRequest) {
         // es un texto libre legacy que rara vez se llena.
         almacen_zona: { select: { codigo: true, nombre: true } },
         almacen_posicion: { select: { id: true, codigo: true } },
-        compra: { select: { numero_po: true, status_oc_codigo: true } },
+        // F. entrega real / esperada de la OC → columna "F. llegada" por OT.
+        compra: { select: { numero_po: true, status_oc_codigo: true, fecha_entrega_real: true, fecha_entrega_esperada: true } },
         orden_trabajo: {
           select: {
             id: true, ot: true,
@@ -199,8 +203,14 @@ export async function GET(_req: NextRequest) {
         } else if (puedeDespachar) {
           motivoPendiente = "ok";
         }
+        // ¿Ya llegó todo lo pedido de este item? Define si la fecha que se
+        // muestra es la real (recepción de la OC) o la estimada (F. entrega
+        // esperada cargada en la OC).
+        const llegoTodo = yaConsumido || (cantTotal > 0 && cantLlegada >= cantTotal);
         return {
           ...it,
+          _fecha_llegada: llegoTodo ? (it.compra?.fecha_entrega_real ?? it.fecha_entrega_real ?? null) : null,
+          _fecha_llegada_estimada: !llegoTodo ? (it.compra?.fecha_entrega_esperada ?? it.fecha_entrega_esperada ?? null) : null,
           _es_free: esFree,
           _es_consumido_almacen: esConsumidoAlmacen,
           _es_consumido_oc_abierta: esConsumidoOCAbierta,
@@ -256,6 +266,11 @@ export async function GET(_req: NextRequest) {
       // entregada = TODOS los repuestos de la OT ya salieron (la OT sigue acá
       // porque le quedan servicios pendientes u otros items no-físicos).
       estado_ot: "completa" | "incompleta" | "entregada";
+      // F. llegada de la OT (pedido 2026-09-29): COMPLETO/ENTREGADO → fecha
+      // en que llegó el último repuesto; INCOMPLETO → estimada (la OC que
+      // llega más tarde entre lo que falta). null si no hay dato / sin OC.
+      fecha_llegada: Date | null;
+      fecha_llegada_estimada: Date | null;
       // Código crudo de la ubicación (catálogo Ubicacion) — la UI lo necesita
       // para el editor inline de ubicación.
       ubicacion_codigo: string | null;
@@ -266,6 +281,8 @@ export async function GET(_req: NextRequest) {
         codigo: string | null; descripcion: string | null;
         cantidad: number; unidad_medida: string | null;
         fecha: Date | null; persona: string | null;
+        // Llegada real al taller (F. entrega real de la OC) para la F. llegada de la OT.
+        fecha_llegada: Date | null;
         // true = solo se registró la LLEGADA a HPK (recepción de OC); la
         // entrega al técnico no quedó registrada — `fecha` es la llegada.
         solo_recibido: boolean;
@@ -300,6 +317,8 @@ export async function GET(_req: NextRequest) {
           items_oc_pendiente: 0,
           items_sin_stock: 0,
           estado_ot: "completa",
+          fecha_llegada: null,
+          fecha_llegada_estimada: null,
           entregados: [],
         });
       }
@@ -374,6 +393,7 @@ export async function GET(_req: NextRequest) {
           material_id: true,
           cantidad: true, unidad_medida: true, fecha_salida_almacen: true,
           fecha_entrega_real: true, persona_recibe: true, observaciones: true,
+          compra: { select: { fecha_entrega_real: true } },
           material: { select: { codigo: true, descripcion: true } },
         },
         orderBy: [{ fecha_salida_almacen: "desc" }, { nro_req: "asc" }, { item_req: "asc" }],
@@ -429,6 +449,7 @@ export async function GET(_req: NextRequest) {
           cantidad: Number(r.cantidad),
           unidad_medida: r.unidad_medida,
           fecha: r.fecha_salida_almacen ?? r.fecha_entrega_real,
+          fecha_llegada: r.compra?.fecha_entrega_real ?? r.fecha_entrega_real ?? null,
           solo_recibido: soloRecibido,
           persona,
         });
@@ -450,6 +471,16 @@ export async function GET(_req: NextRequest) {
       g.estado_ot = g.items.length === 0
         ? "entregada"
         : g.sin_stock === 0 && g.con_stock > 0 ? "completa" : "incompleta";
+      // F. llegada: INCOMPLETO → estimada = la OC que llega más tarde entre
+      // los items que aún faltan (null si alguno no tiene fecha/OC y ninguno
+      // la tiene); COMPLETO/ENTREGADO → última llegada real registrada.
+      const maxFecha = (fs: (Date | null | undefined)[]) =>
+        fs.reduce<Date | null>((m, f) => (f && (!m || f > m) ? f : m), null);
+      if (g.estado_ot === "incompleta") {
+        g.fecha_llegada_estimada = maxFecha(g.items.filter((i) => i._cant_pendiente > 0).map((i) => i._fecha_llegada_estimada));
+      } else {
+        g.fecha_llegada = maxFecha([...g.items.map((i) => i._fecha_llegada), ...g.entregados.map((e) => e.fecha_llegada)]);
+      }
     }
 
     return NextResponse.json({ data: Array.from(grupos.values()) });

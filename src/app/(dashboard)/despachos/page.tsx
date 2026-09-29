@@ -40,7 +40,7 @@ interface Item {
   material: { codigo: string; descripcion: string; stock_actual: number | string | null; ubicacion: string | null } | null;
   almacen_zona: { codigo: string; nombre: string } | null;
   almacen_posicion: { id: number; codigo: string } | null;
-  compra: { numero_po: string; status_oc_codigo: string | null } | null;
+  compra: { numero_po: string; status_oc_codigo: string | null; fecha_entrega_real?: string | null; fecha_entrega_esperada?: string | null } | null;
   orden_trabajo: {
     // `ot` es el entero crudo NNNNYY; `tipo_codigo` (REP/BIE/SER) permite
     // formatear el código visible con formatOtCodigo (V014326, S000126, …).
@@ -72,6 +72,9 @@ interface Item {
   //   oc_pendiente  → ya hay OC pero aún no se recepcionó.
   //   sin_stock     → OC recibida pero stock insuficiente.
   _motivo_pendiente?: "ok" | "sin_oc" | "oc_pendiente" | "sin_stock" | null;
+  // Llegada del item: real (ya llegó todo) o estimada (F. entrega de la OC).
+  _fecha_llegada?: string | null;
+  _fecha_llegada_estimada?: string | null;
 }
 
 interface Entregado {
@@ -112,7 +115,13 @@ interface GrupoOT {
   items_oc_pendiente: number;
   items_sin_stock: number;
   estado_ot: "completa" | "incompleta" | "entregada";
+  // F. llegada de la OT: real si COMPLETO/ENTREGADO, estimada si INCOMPLETO.
+  fecha_llegada: string | null;
+  fecha_llegada_estimada: string | null;
 }
+
+// Fecha que muestra la columna "F. llegada" según el estado de la OT.
+const fechaLlegadaDe = (g: GrupoOT) => (g.estado_ot === "incompleta" ? g.fecha_llegada_estimada : g.fecha_llegada);
 
 interface UbicacionOpt { codigo: string; nombre: string }
 // Zonas físicas del almacén HP&K con sus posiciones — para el editor inline
@@ -404,6 +413,23 @@ export default function DespachosPage() {
           : <Tag icon={<WarningOutlined />} color="warning">INCOMPLETO</Tag>,
     },
     {
+      // F. llegada (pedido 2026-09-29): COMPLETO/ENTREGADO → fecha en que
+      // llegó el último repuesto (F. entrega real de la OC); INCOMPLETO →
+      // fecha estimada (F. entrega esperada cargada en la OC más tardía).
+      key: "fecha_llegada", title: "F. llegada", width: 140, align: "center",
+      sorter: (a, b) => (fechaLlegadaDe(a) ? dayjs(fechaLlegadaDe(a)).valueOf() : 0) - (fechaLlegadaDe(b) ? dayjs(fechaLlegadaDe(b)).valueOf() : 0),
+      render: (_, g) => {
+        if (g.estado_ot === "incompleta") {
+          return g.fecha_llegada_estimada
+            ? <Tooltip title="Fecha estimada de llegada: F. entrega esperada de la OC que llega más tarde entre lo que falta"><Tag color="warning" style={{ margin: 0 }}>{formatDateOnly(g.fecha_llegada_estimada)} est.</Tag></Tooltip>
+            : <Tooltip title="Sin fecha estimada: lo que falta aún no tiene OC o la OC no tiene F. entrega"><Text type="secondary">—</Text></Tooltip>;
+        }
+        return g.fecha_llegada
+          ? <Tooltip title="Fecha en que llegó al taller (recepción de la OC)"><span>{formatDateOnly(g.fecha_llegada)}</span></Tooltip>
+          : <Text type="secondary">—</Text>;
+      },
+    },
+    {
       key: "acciones", title: "Acciones", width: 80, fixed: "right", align: "center",
       render: (_, g) => (
         <Tooltip title="Abrir la OT completa (detalle, requerimientos, adjuntos, etc.)">
@@ -479,6 +505,12 @@ export default function DespachosPage() {
                   : (r.material?.ubicacion ?? ""),
               },
               { key: "puede", label: "Puede despachar", value: (r) => r._puede_despachar ? "Sí" : "No" },
+              {
+                key: "fecha_llegada", label: "F. llegada",
+                value: (r) => r._fecha_llegada
+                  ? formatDateOnly(r._fecha_llegada)
+                  : r._fecha_llegada_estimada ? `${formatDateOnly(r._fecha_llegada_estimada)} (estimada)` : "",
+              },
             ]}
           />
         </Space>
