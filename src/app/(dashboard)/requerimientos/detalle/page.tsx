@@ -3632,6 +3632,10 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                     const nuevas: Record<number, Dayjs | null> = {};
                     for (const r of selectedRecords) nuevas[r.id] = d;
                     setFechasItemsModal(nuevas);
+                    // También a los items libres ya agregados: antes solo se
+                    // propagaba a los items de req y las filas libres
+                    // conservaban la fecha vieja (o ninguna).
+                    setItemsLibresModal((prev) => prev.map((x) => ({ ...x, fecha_entrega: d })));
                   }}
                 />
               </Form.Item>
