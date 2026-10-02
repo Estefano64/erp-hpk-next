@@ -6,7 +6,7 @@ import {
 } from "antd";
 import {
   PlusOutlined, UnorderedListOutlined, EditOutlined, DeleteOutlined, CloseOutlined,
-  PlayCircleOutlined, CheckCircleOutlined,
+  PlayCircleOutlined, CheckCircleOutlined, FileSearchOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
@@ -207,6 +207,29 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
 
   useEffect(() => { fetchRows(); }, [fetchRows]);
   const notifySync = useTabSync("planificacion", fetchRows);
+
+  // Tareas desde la hoja de evaluación (decisión 2026-10-02: las tareas nacen
+  // de las recomendaciones marcadas, no de la plantilla por CodRep).
+  const [generandoEval, setGenerandoEval] = useState(false);
+  const generarDesdeEvaluacion = async () => {
+    setGenerandoEval(true);
+    try {
+      const res = await fetch(`/api/ordenes-trabajo/${otId}/planificacion/desde-evaluacion`, { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        messageApi.error(json?.error ?? "No se pudieron generar las tareas");
+        return;
+      }
+      const estado = json.estado_evaluacion ? ` (hoja ${String(json.estado_evaluacion).replace(/_/g, " ").toLowerCase()})` : "";
+      if (json.marcadas === 0) messageApi.warning(`La hoja de evaluación no tiene recomendaciones marcadas${estado}.`);
+      else if (json.creadas === 0) messageApi.info(`Las ${json.marcadas} recomendaciones marcadas ya estaban como tareas${estado}.`);
+      else messageApi.success(`${json.creadas} tarea(s) creada(s) desde la hoja de evaluación${json.existentes ? `, ${json.existentes} ya existían` : ""}${estado}.`);
+      await fetchRows();
+      notifySync();
+    } finally {
+      setGenerandoEval(false);
+    }
+  };
 
   // Carga catálogos una vez al montar el tab (no al abrir el form)
   useEffect(() => {
@@ -715,6 +738,11 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
             obligatorias={["orden", "descripcion", "acc"]}
           />
           <Button onClick={resetAnchos}>Restablecer anchos</Button>
+          <Tooltip title="Crea una tarea por cada recomendación marcada en la hoja de evaluación de la OT. No duplica las que ya existen. Al aprobar la hoja se hace solo.">
+            <Button icon={<FileSearchOutlined />} loading={generandoEval} onClick={generarDesdeEvaluacion}>
+              Desde hoja de evaluación
+            </Button>
+          </Tooltip>
           <Button type="primary" icon={<PlusOutlined />} onClick={openForm}>
             Nueva Tarea
           </Button>

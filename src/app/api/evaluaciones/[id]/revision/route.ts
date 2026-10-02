@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
+import { generarTareasDesdeEvaluacion } from "@/lib/tareas-desde-evaluacion";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
@@ -122,7 +123,22 @@ export async function POST(req: NextRequest, { params }: Params) {
       return u;
     });
 
-    return NextResponse.json({ data: updated });
+    // Al APROBAR, las recomendaciones marcadas pasan a ser las tareas de la OT
+    // (decisión 2026-10-02: las tareas nacen de la hoja, no de la plantilla).
+    // Va fuera de la transacción de aprobación: si fallara, la hoja igual queda
+    // aprobada y el planner puede regenerar desde la pestaña Tareas.
+    let tareas: Awaited<ReturnType<typeof generarTareasDesdeEvaluacion>> | null = null;
+    let tareasError: string | null = null;
+    if (accion === "aprobar") {
+      try {
+        tareas = await prisma.$transaction((tx) => generarTareasDesdeEvaluacion(tx, updated.id, usuario));
+      } catch (e) {
+        console.error("Generar tareas desde evaluación falló:", e);
+        tareasError = e instanceof Error ? e.message : "Error al generar tareas";
+      }
+    }
+
+    return NextResponse.json({ data: updated, tareas, tareasError });
   } catch (error) {
     console.error("POST /api/evaluaciones/[id]/revision error:", error);
     const msg = error instanceof Error ? error.message : "Error";
