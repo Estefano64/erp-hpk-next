@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { TAREAS_DESDE_PLANTILLA_CODREP } from "@/lib/planificacion-config";
 import { getAuditUser } from "@/lib/audit";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
@@ -36,6 +37,14 @@ const BulkSchema = z.object({
 
 export async function POST(req: NextRequest, ctx: Ctx) {
   try {
+    // Desactivado desde 2026-10-02: las tareas nacen de la hoja de evaluación,
+    // no de la plantilla por CodRep. Ver src/lib/planificacion-config.ts.
+    if (!TAREAS_DESDE_PLANTILLA_CODREP) {
+      return NextResponse.json(
+        { error: "La generación de tareas desde plantilla CodRep está desactivada: las tareas se definen desde la hoja de evaluación." },
+        { status: 400 },
+      );
+    }
     const { id } = await ctx.params;
     const otId = parseInt4Safe(id) ?? 0;
     const body = await req.json().catch(() => ({}));

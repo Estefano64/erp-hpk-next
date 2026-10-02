@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
+import { TAREAS_DESDE_PLANTILLA_CODREP } from "@/lib/planificacion-config";
 import { getAuditUser } from "@/lib/audit";
 import { parseDateOnly } from "@/lib/dates";
 import { nextNumeroOTExterna } from "@/lib/ot-numero";
@@ -546,7 +547,9 @@ export async function POST(req: NextRequest) {
     if (body.id_cod_rep && created.codigo_reparacion) {
       const codRepCodigo = created.codigo_reparacion.codigo;
       // 1) Planificación desde operacion_cod_rep
-      try {
+      // Desactivado desde 2026-10-02 (TAREAS_DESDE_PLANTILLA_CODREP=false): las
+      // tareas nacen de la hoja de evaluación, no de la plantilla por CodRep.
+      if (TAREAS_DESDE_PLANTILLA_CODREP) try {
         const operaciones = await prisma.operacionCodRep.findMany({
           where: { cod_rep_codigo: codRepCodigo, activo: true },
           orderBy: { orden: "asc" },
