@@ -29,7 +29,9 @@ export type R2Resource =
   | "snc-cierre"
   | "sac-cierre"
   // Mantenimiento: foto de cierre del reporte correctivo (resourceId = id del reporte).
-  | "correctivo-cierre";
+  | "correctivo-cierre"
+  // Servicios externos: PDFs de un envío a proveedor (resourceId = id del adjunto).
+  | "servicio-envio-adjunto";
 
 const VALID_RESOURCES: ReadonlySet<R2Resource> = new Set([
   "ot-adjunto",
@@ -48,6 +50,7 @@ const VALID_RESOURCES: ReadonlySet<R2Resource> = new Set([
   "snc-cierre",
   "sac-cierre",
   "correctivo-cierre",
+  "servicio-envio-adjunto",
 ]);
 
 export function isValidResource(value: unknown): value is R2Resource {
@@ -184,6 +187,13 @@ export async function authorizeR2Access(params: {
     case "correctivo-cierre": {
       const row = await prisma.reporteCorrectivo.findFirst({
         where: { id: resourceId, cierre_foto_key: key },
+        select: { id: true },
+      });
+      return row ? { ok: true } : notFound();
+    }
+    case "servicio-envio-adjunto": {
+      const row = await prisma.servicioEnvioAdjunto.findFirst({
+        where: { id: resourceId, r2_key: key },
         select: { id: true },
       });
       return row ? { ok: true } : notFound();

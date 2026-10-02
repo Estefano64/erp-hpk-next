@@ -173,6 +173,9 @@ export const REGLAS_ESCRITURA_API: ReglaApi[] = [
   { prefijo: "/api/requerimientos", sufijo: "/desaprobar", roles: null },
   { prefijo: "/api/requerimientos", sufijo: "/anular", roles: null },
   { prefijo: "/api/requerimientos/aprobar-lote", roles: null },
+  // ── Servicios externos (seguimiento de SER: salida / cotización / llegada):
+  //    lo opera logística. Las lecturas (GET) no pasan por acá.
+  { prefijo: "/api/servicios-externos", roles: COMPRA },
   { prefijo: "/api/requerimientos/desaprobar-lote", roles: null },
   { prefijo: "/api/requerimientos", sufijo: "/enviar-a-aprobacion", roles: null },
   // ── Compras / OCs: escribe logística; guías/facturas también contabilidad;
