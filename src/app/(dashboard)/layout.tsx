@@ -201,6 +201,10 @@ function buildMenuItems(tecnicoRestringido: boolean): MenuProps["items"] {
             { key: "/requerimientos", label: linkLabel("/requerimientos", "Requerimientos") },
             { key: "/compras/historico", label: linkLabel("/compras/historico", "Cotizaciones (precios históricos)") },
             { key: "/compras", label: linkLabel("/compras", "Órdenes de compra") },
+            // Seguimiento de servicios tercerizados (SER): salida a proveedor,
+            // cotización, llegada y estado documental. Solo lectura; las
+            // acciones viven en Requerimientos.
+            { key: "/servicios-externos", label: linkLabel("/servicios-externos", "Servicios externos") },
             // "OCs Abiertas" se movió como tab dentro de /compras. La ruta
             // /compras/oc-abiertas sigue funcionando por URL directa.
           ],
