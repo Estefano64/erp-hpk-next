@@ -166,6 +166,26 @@ export async function POST(req: NextRequest, { params }: Params) {
         data: { status_oc_codigo: "PROCESO" },
       });
 
+      // Servicios externos (2026-10): si TODAS las líneas ya estaban recibidas
+      // al emitir la OC (servicio recibido por seguimiento antes de la OC),
+      // no queda nada por ingresar → la OC pasa directo a ENTREGADO, igual
+      // que lo haría la recepción. Mismo criterio que /api/movimientos/ingreso-po.
+      const [detallesOC, reqsOC] = await Promise.all([
+        tx.compraDetalle.findMany({ where: { compra_id: compraId }, select: { cantidad: true, cantidad_recibida: true } }),
+        tx.oTRepuesto.findMany({ where: { po_id: compraId }, select: { cantidad: true, cantidad_recibida: true } }),
+      ]);
+      const lineaCompleta = (x: { cantidad: unknown; cantidad_recibida: unknown }) =>
+        Number(x.cantidad_recibida ?? 0) >= Number(x.cantidad) - 0.0001;
+      const todoRecibido =
+        (detallesOC.length > 0 || reqsOC.length > 0) &&
+        detallesOC.every(lineaCompleta) && reqsOC.every(lineaCompleta);
+      if (todoRecibido) {
+        await tx.compra.update({
+          where: { id: compraId },
+          data: { status_oc_codigo: "ENTREGADO", fecha_entrega_real: hoyEnLima() },
+        });
+      }
+
       // Historial por cada OT vinculada. La OC puede haber agrupado items de
       // OT externas + OT internas; ambas dimensiones se loggean por separado.
       const otsExternasAfectadas = await tx.oTRepuesto.findMany({

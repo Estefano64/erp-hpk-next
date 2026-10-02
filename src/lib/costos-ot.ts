@@ -2,7 +2,8 @@
 //
 // EJECUTADO = costo real ya gastado:
 //   - Materiales: OTRepuesto con cantidad_recibida > 0 → recibido × precio
-//   - Servicios:  OTRepuesto SER con status_oc ENTREGADO/COMPLETO → cantidad × precio
+//   - Servicios:  OTRepuesto SER recibido (cantidad_recibida > 0; con o sin OC —
+//                 el seguimiento de servicios externos recibe antes de la OC) → recibido × precio
 //   - HH:         PlanificacionOTSesion con `fin != null` × costo_hora del Trabajador
 //                 (solo aplica a OT externa — internas no tienen PlanificacionOT)
 //   - OCs:        auditoría de las OCs vinculadas

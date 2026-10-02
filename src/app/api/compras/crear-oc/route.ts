@@ -198,6 +198,12 @@ export async function POST(req: NextRequest) {
       let subtotal = new Prisma.Decimal(0);
       const detallesData: Prisma.CompraDetalleCreateManyInput[] = [];
 
+      // Servicios externos recibidos por seguimiento ANTES de la OC (y sus
+      // ítems asociados, que llegan instalados en el componente): la línea
+      // nace ya recibida para que no aparezca en Ingreso de PO.
+      const yaRecibido = (r: { cantidad: Prisma.Decimal; cantidad_recibida: Prisma.Decimal | null }) =>
+        Number(r.cantidad) > 0 && Number(r.cantidad_recibida ?? 0) >= Number(r.cantidad) - 0.0001;
+
       for (const rep of repuestos) {
         const precio = new Prisma.Decimal(rep.precio_unitario ?? 0);
         const cantSrc = overrideCant[String(rep.id)] ?? rep.cantidad;
@@ -212,6 +218,7 @@ export async function POST(req: NextRequest) {
             compra_id: 0, // se setea tras crear la compra
             material_id: rep.material_id,
             cantidad: cant,
+            ...(yaRecibido(rep) ? { cantidad_recibida: cant } : {}),
             precio_unitario: precio,
             subtotal: itemSub,
             impuesto: itemImp,
@@ -396,6 +403,15 @@ export async function POST(req: NextRequest) {
           status_oc_codigo: "PROCESO",
         },
       });
+      // Líneas ya recibidas por el seguimiento de servicios externos → COMPLETO
+      // (no hay nada que ingresar por almacén para ellas).
+      const idsYaRecibidos = repuestos.filter(yaRecibido).map((r) => r.id);
+      if (idsYaRecibidos.length > 0) {
+        await tx.oTRepuesto.updateMany({
+          where: { id: { in: idsYaRecibidos } },
+          data: { status_oc_codigo: "COMPLETO" },
+        });
+      }
       // Persistir cantidades override (oc_cantidad) item por item. Solo
       // se actualizan los que el front mandó en el mapa — el resto queda
       // con cantidad = rep.cantidad original.

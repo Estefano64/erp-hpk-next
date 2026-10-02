@@ -46,6 +46,11 @@ interface RepLite {
   // Estado de la OC vinculada (para distinguir "En aprobación de PO" cuando la
   // Compra está en PEND_OC) — puede ser null si el req no tiene OC.
   compra: { status_oc_codigo: string | null } | null;
+  // Servicios externos (2026-10): un SER (o un ítem asociado a un servicio
+  // vía servicio_padre_id) recibido por seguimiento cuenta como etapa final,
+  // con o sin OC — no hay nada que despachar al técnico.
+  tipo_codigo?: string | null;
+  servicio_padre_id?: number | null;
 }
 
 // Estados del flujo indexados por etapa (0..6). Son los `codigo` del catálogo
@@ -73,6 +78,13 @@ function etapaRep(r: RepLite): number {
   // ENTREGADO = el técnico ya lo recibió (lo pone /despachos, con fecha de
   // salida y persona que recibe). Es el final del flujo.
   if (oc === "ENTREGADO") return 6;
+  // Servicio externo (SER) o ítem asociado a uno, 100% recibido → final.
+  // Cubre la recepción por seguimiento (sin OC) y la legacy por Ingreso de PO.
+  if (r.tipo_codigo === "SER" || r.servicio_padre_id != null) {
+    const cant = Number(r.cantidad);
+    const rec = Number(r.cantidad_recibida ?? 0);
+    if (cant > 0 && rec >= cant - 0.0001) return 6;
+  }
   // COMPLETO       = llegó de la OC y está en el estante.
   // CONSUMIDO_*    = ya salió del stock (o se reservó de la OC abierta) pero
   //                  TODAVÍA no se entregó al técnico — /despachos lo cierra
@@ -137,6 +149,8 @@ const SELECT_REP_LITE = {
   solo_para_oc: true,
   cantidad: true,
   cantidad_recibida: true,
+  tipo_codigo: true,
+  servicio_padre_id: true,
   compra: { select: { status_oc_codigo: true } },
 } as const;
 
