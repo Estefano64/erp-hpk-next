@@ -15,10 +15,11 @@
 import type { Prisma } from "@prisma/client";
 import { CATALOGOS_EVALUACION, recomKeyBase } from "@/lib/evaluacion-catalogos";
 
+/** Código de respaldo cuando la recomendación no tiene operación en el maestro. */
 export const OPERACION_HOJA_EVAL = "HOJA-EVAL";
 
 /** Componente del catálogo de la hoja → código de componente en planificación. */
-const COMPONENTE_PLAN: Record<string, string> = {
+export const COMPONENTE_PLAN: Record<string, string> = {
   cilindro: "CILINDRO",
   vastago: "VASTAGO",
   tapa: "TAPA",
@@ -43,10 +44,26 @@ export interface TareaDesdeEvaluacion {
   componente_nombre: string; // nombre del grupo en la hoja (Cilindro, Tapa Roscada…)
   tipo_reparacion: "Estandar" | "NoEstandar";
   descripcion: string;
+  /** Nombre con el que la recomendación figura en el maestro operacion_reparacion. */
+  nombre_maestro: string;
   key: string; // key completa en datos_formulario (trazabilidad)
 }
 
-const normalizar = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+export const normalizarTexto = (s: string) =>
+  s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+const normalizar = normalizarTexto;
+
+/**
+ * Nombre de la recomendación en el maestro de operaciones (operacion_reparacion).
+ * Las que terminan en "de" y tienen sub-opciones (ej. "Realizar cambio / instalación
+ * de" → Cojinete / Rotula) se completan con las opciones para que el nombre tenga
+ * sentido solo. Es la misma regla que usa scripts/_alinear-maestro-operaciones.ts.
+ */
+export function nombreMaestroDeRecomendacion(item: { texto: string; subOpciones?: string[] }): string {
+  const t = item.texto.trim();
+  if (item.subOpciones?.length && /\bde$/i.test(t)) return `${t} ${item.subOpciones.join(" / ")}`.slice(0, 200);
+  return t.slice(0, 200);
+}
 
 /** Etiqueta del sub-bloque de la hoja (solo etapas del telescópico lo necesitan). */
 function etiquetaPrefijo(prefix: string): string {
@@ -91,6 +108,7 @@ export function tareasDesdeEvaluacion(modelo: string, datos: Record<string, unkn
             componente_nombre: grupo.nombre,
             tipo_reparacion: bucket === "est" ? "Estandar" : "NoEstandar",
             descripcion: texto.slice(0, 200),
+            nombre_maestro: nombreMaestroDeRecomendacion(it),
             key: base,
           });
         }
@@ -135,11 +153,18 @@ export async function generarTareasDesdeEvaluacion(
 
   const nuevas = tareas.filter((t) => !ya.has(`${normalizar(t.componente)}|${normalizar(t.descripcion)}`));
   if (nuevas.length > 0) {
+    // Código de operación del maestro (alineado al catálogo de la hoja el
+    // 2026-10-02). Si una recomendación no está en el maestro, cae en HOJA-EVAL.
+    const ops = await tx.operacionReparacion.findMany({
+      where: { activo: true, componente_codigo: { in: Array.from(new Set(nuevas.map((t) => t.componente))) } },
+      select: { codigo: true, nombre: true, componente_codigo: true },
+    });
+    const codigoPor = new Map(ops.map((o) => [`${normalizar(o.componente_codigo ?? "")}|${normalizar(o.nombre)}`, o.codigo]));
     await tx.planificacionOT.createMany({
       data: nuevas.map((t) => ({
         ot_id: ev.ot_id,
         componente: t.componente,
-        operacion_codigo: OPERACION_HOJA_EVAL,
+        operacion_codigo: codigoPor.get(`${normalizar(t.componente)}|${normalizar(t.nombre_maestro)}`) ?? OPERACION_HOJA_EVAL,
         descripcion: t.descripcion,
         tipo_reparacion: t.tipo_reparacion,
         orden: ++orden,
