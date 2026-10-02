@@ -1,5 +1,5 @@
 import { MODELOS_EVALUACION } from "./EvaluacionFormulario";
-import { CATALOGOS_EVALUACION } from "@/lib/evaluacion-catalogos";
+import { CATALOGOS_EVALUACION, recomKeyBase } from "@/lib/evaluacion-catalogos";
 import { VAS, type CampoMedida } from "@/lib/evaluacion-campos";
 import { htmlADocx } from "@/lib/html-a-docx";
 
@@ -387,7 +387,9 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
       cantidad?: boolean;
       omitirSubOpEnInforme?: boolean;
     }): string | null => {
-      const base = `${p}_recom_${componente}_${subPrefix}_${item.key}`;
+      // recomKeyBase: si la recomendación cambió de grupo (est ↔ no) después
+      // de guardada la hoja, lee el valor bajo el grupo viejo.
+      const base = recomKeyBase(datos, `${p}_recom_${componente}_${subPrefix}`, item.key);
       if (!datos[base]) return null;
       let texto = item.texto;
       // Sub-opción (radio, ej. COJINETE / ROTULA)

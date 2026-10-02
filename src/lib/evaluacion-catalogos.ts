@@ -436,16 +436,20 @@ const HALLAZGOS_CANCAMO_CHT: HallazgoItem[] = [
 // CHVS - Cilindro
 const RECOM_CIL_CHVS_ESTANDAR: RecomendacionItem[] = [
   { key: "brunido", texto: "Realizar bruñido de cilindro", subOpciones: ["Mínimo", "Regular"], omitirSubOpEnInforme: true },
-  { key: "recup_diam_sold", texto: "Recuperar diámetro de alojamiento con soldadura" },
-  { key: "barrenado", texto: "Barrenado de alojamiento a medida nominal" },
-  { key: "rectif_caras", texto: "Rectificado de caras laterales de cáncamo" },
   { key: "cambio_inst", texto: "Realizar cambio / instalación de", subOpciones: ["Cojinete", "Rotula"] },
   { key: "seguros", texto: "Realizar cambio / instalación de seguros seager" },
   { key: "sellos_limp", texto: "Realizar cambio / instalación de sellos limpiadores" },
   { key: "pulido_brida", texto: "Realizar pulido de cara de brida" },
 ];
 
+// Reclasificación 2026-10-02 (decisión del equipo HP&K): recuperación con
+// soldadura, barrenado y rectificado de caras pasan a NO estándar. Las keys se
+// mantienen; la lectura de hojas viejas (guardadas bajo `_est_`) la resuelve
+// `recomKeyBase` en el form / informe.
 const RECOM_CIL_CHVS_NO_ESTANDAR: RecomendacionItem[] = [
+  { key: "recup_diam_sold", texto: "Recuperar diámetro de alojamiento con soldadura" },
+  { key: "barrenado", texto: "Barrenado de alojamiento a medida nominal" },
+  { key: "rectif_caras", texto: "Rectificado de caras laterales de cáncamo" },
   { key: "reconst_aloj", texto: "Reconstrucción de alojamiento" },
   { key: "cambio_tubo", texto: "Realizar cambio de tubo" },
   { key: "fabr_cancamo", texto: "Realizar fabricación de cáncamo" },
@@ -457,15 +461,15 @@ const RECOM_CIL_CHVS_NO_ESTANDAR: RecomendacionItem[] = [
 // CHVS - Vástago
 const RECOM_VAS_CHVS_ESTANDAR: RecomendacionItem[] = [
   { key: "rect_cromado", texto: "Realizar rectificado y cromado de vástago" },
-  { key: "recup_diam_sold", texto: "Recuperar diámetro de alojamiento con soldadura" },
-  { key: "barrenado", texto: "Barrenado de alojamiento a medida nominal" },
-  { key: "rectif_caras", texto: "Rectificado de caras laterales de cáncamo" },
   { key: "cambio_inst", texto: "Realizar cambio / instalación de", subOpciones: ["Cojinete", "Rotula"] },
   { key: "seguros", texto: "Realizar cambio / instalación de seguros seager" },
   { key: "sellos_limp", texto: "Realizar cambio / instalación de sellos limpiadores" },
 ];
 
 const RECOM_VAS_CHVS_NO_ESTANDAR: RecomendacionItem[] = [
+  { key: "recup_diam_sold", texto: "Recuperar diámetro de alojamiento con soldadura" },
+  { key: "barrenado", texto: "Barrenado de alojamiento a medida nominal" },
+  { key: "rectif_caras", texto: "Rectificado de caras laterales de cáncamo" },
   { key: "fabr_barra", texto: "Realizar fabricación de barra de vástago" },
   { key: "fabr_cancamo", texto: "Realizar fabricación de cáncamo" },
   { key: "rectif_rosc_espiga", texto: "Realizar rectificado de superficie roscada de espiga" },
@@ -510,13 +514,13 @@ const RECOM_EMBOLO_NO_ESTANDAR: RecomendacionItem[] = [
 // CHP - Cilindro (similar a CHVS pero con recups de pivotantes)
 const RECOM_CIL_CHP_ESTANDAR: RecomendacionItem[] = [
   { key: "brunido", texto: "Realizar bruñido de cilindro", subOpciones: ["Mínimo", "Regular"], omitirSubOpEnInforme: true },
-  { key: "recup_pivot_sold", texto: "Recuperar diámetro exterior de pivotantes con soldadura" },
-  { key: "barrenado_pivot", texto: "Barrenado de pivotantes a medida nominal" },
   { key: "cambio_cojinetes", texto: "Realizar cambio / instalación de cojinetes" },
   { key: "pulido_brida", texto: "Realizar pulido de cara de brida" },
 ];
 
 const RECOM_CIL_CHP_NO_ESTANDAR: RecomendacionItem[] = [
+  { key: "recup_pivot_sold", texto: "Recuperar diámetro exterior de pivotantes con soldadura" },
+  { key: "barrenado_pivot", texto: "Barrenado de pivotantes a medida nominal" },
   { key: "reconst_pivot", texto: "Reconstrucción de pivotantes" },
   { key: "cambio_tubo", texto: "Realizar cambio de tubo" },
   { key: "rectif_agujeros", texto: "Realizar rectificado de agujeros roscados" },
@@ -576,14 +580,14 @@ const RECOM_CIL_CHT_ESTANDAR: RecomendacionItem[] = [
   { key: "brunido", texto: "Realizar bruñido de cilindro", subOpciones: ["Mínimo", "Regular"], omitirSubOpEnInforme: true },
   { key: "pulido_brida", texto: "Realizar pulido de cara de brida" },
   { key: "pulido_aloj", texto: "Realizar pulido de alojamientos (si tiene tapa posterior)" },
-  { key: "recup_diam_sold", texto: "Recuperar diámetro de alojamiento con soldadura" },
-  { key: "barrenado", texto: "Barrenado de alojamiento a medida nominal" },
-  { key: "rectif_caras", texto: "Rectificado de caras laterales de cáncamo" },
   { key: "cambio_rotula", texto: "Realizar cambio / instalación de rotula" },
   { key: "seguros", texto: "Realizar cambio / instalación de seguros seager" },
 ];
 
 const RECOM_CIL_CHT_NO_ESTANDAR: RecomendacionItem[] = [
+  { key: "recup_diam_sold", texto: "Recuperar diámetro de alojamiento con soldadura" },
+  { key: "barrenado", texto: "Barrenado de alojamiento a medida nominal" },
+  { key: "rectif_caras", texto: "Rectificado de caras laterales de cáncamo" },
   { key: "reconst_aloj", texto: "Reconstrucción de alojamiento" },
   { key: "cambio_tubo", texto: "Realizar cambio de tubo" },
   { key: "fabr_cancamo", texto: "Realizar fabricación de cáncamo" },
@@ -593,14 +597,14 @@ const RECOM_CIL_CHT_NO_ESTANDAR: RecomendacionItem[] = [
 // CHT - Vástago
 const RECOM_VAS_CHT_ESTANDAR: RecomendacionItem[] = [
   { key: "rect_cromado", texto: "Realizar rectificado y cromado de vástago" },
-  { key: "recup_diam_sold", texto: "Recuperar diámetro de alojamiento con soldadura" },
-  { key: "barrenado", texto: "Barrenado de alojamiento a medida nominal" },
-  { key: "rectif_caras", texto: "Rectificado de caras laterales de cáncamo" },
   { key: "cambio_rotula", texto: "Realizar cambio / instalación de rotula" },
   { key: "seguros", texto: "Realizar cambio / instalación de seguros seager" },
 ];
 
 const RECOM_VAS_CHT_NO_ESTANDAR: RecomendacionItem[] = [
+  { key: "recup_diam_sold", texto: "Recuperar diámetro de alojamiento con soldadura" },
+  { key: "barrenado", texto: "Barrenado de alojamiento a medida nominal" },
+  { key: "rectif_caras", texto: "Rectificado de caras laterales de cáncamo" },
   { key: "cambio_vastago", texto: "Realizar cambio de vástago" },
   { key: "rectif_rosc", texto: "Realizar rectificado de superficie roscada" },
   { key: "reconst_aloj", texto: "Reconstrucción de alojamiento" },
@@ -621,15 +625,15 @@ const RECOM_CUERPO_INTERM_NO_ESTANDAR: RecomendacionItem[] = [
 
 // CHT - Tapa Posterior
 const RECOM_TAPA_POSTERIOR_ESTANDAR: RecomendacionItem[] = [
-  { key: "recup_diam_sold", texto: "Recuperar diámetro de alojamiento con soldadura" },
-  { key: "barrenado", texto: "Barrenado de alojamiento a medida nominal" },
-  { key: "rectif_caras", texto: "Rectificado de caras laterales de cáncamo" },
   { key: "cambio_rotula", texto: "Realizar cambio / instalación de rotula" },
   { key: "seguros", texto: "Realizar cambio / instalación de seguros seager" },
   { key: "pulido_sellos", texto: "Realizar pulido de alojamiento de sellos" },
 ];
 
 const RECOM_TAPA_POSTERIOR_NO_ESTANDAR: RecomendacionItem[] = [
+  { key: "recup_diam_sold", texto: "Recuperar diámetro de alojamiento con soldadura" },
+  { key: "barrenado", texto: "Barrenado de alojamiento a medida nominal" },
+  { key: "rectif_caras", texto: "Rectificado de caras laterales de cáncamo" },
   { key: "reparar_soldadura", texto: "Reparar soldadura de tubo de transferencia" },
   { key: "reconst_aloj", texto: "Reconstrucción de alojamiento" },
 ];
@@ -708,21 +712,23 @@ const HALLAZGOS_GENERAL_RUEDA: HallazgoItem[] = [
 
 // ─── RECOMENDACIONES - RUEDA DELANTERA ─────────────────────────────────────
 
+// Split estándar / no estándar definido por el equipo HP&K (Excel 2026-10-02).
 const RECOM_SPINDLE_ESTANDAR: RecomendacionItem[] = [
   { key: "pulido_asientos_rod", texto: "Pulido de asientos de rodamientos" },
-  { key: "metalizado_asientos_rod", texto: "Metalizado de asientos de rodamientos" },
   { key: "cambio_rodamientos", texto: "Cambio de rodamientos" },
-  { key: "rectif_aloj_rosc", texto: "Rectificado de alojamientos roscados" },
   { key: "realizar_ndt", texto: "Realizar NDT" },
   { key: "pulido_aloj_conico", texto: "Pulido de alojamiento cónico" },
-  { key: "rectif_aloj_rosc_bastidor", texto: "Rectificado de alojamientos roscados de sujeción de bastidor" },
   { key: "ndt_brazo_direccion", texto: "Realizar NDT en brazo de dirección" },
+];
+const RECOM_SPINDLE_NO_ESTANDAR: RecomendacionItem[] = [
+  { key: "metalizado_asientos_rod", texto: "Metalizado de asientos de rodamientos" },
+  { key: "rectif_aloj_rosc", texto: "Rectificado de alojamientos roscados" },
+  { key: "rectif_aloj_rosc_bastidor", texto: "Rectificado de alojamientos roscados de sujeción de bastidor" },
 ];
 
 const RECOM_HUB_ESTANDAR: RecomendacionItem[] = [
   { key: "cambio_pistas", texto: "Cambio de pistas cónicas de rodamientos" },
   { key: "pulido_aloj_pistas", texto: "Realizar pulido de alojamientos de pistas" },
-  { key: "metalizado_aloj_pistas", texto: "Realizar metalizado de alojamientos de pistas" },
   { key: "cambio_stud", texto: "Realizar cambio de Stud" },
   { key: "repasar_rosc_stud", texto: "Repasar superficie roscada de Stud" },
   { key: "cambio_lainas_sensor", texto: "Cambio de lainas de engranaje de sensor" },
@@ -735,18 +741,25 @@ const RECOM_HUB_ESTANDAR: RecomendacionItem[] = [
   { key: "repasar_aloj_pernos_eng", texto: "Repasar alojamientos roscados de pernos de sujeción de engranaje" },
   { key: "cambio_engranaje", texto: "Realizar cambio de engranaje" },
 ];
+const RECOM_HUB_NO_ESTANDAR: RecomendacionItem[] = [
+  { key: "metalizado_aloj_pistas", texto: "Realizar metalizado de alojamientos de pistas" },
+];
 
 const RECOM_CONJUNTO_FRENO_ESTANDAR: RecomendacionItem[] = [
   { key: "pulido_aloj_sellos", texto: "Realizar pulido de alojamientos de sellos" },
   { key: "cambio_sellos", texto: "Realizar cambio de sellos" },
   { key: "cambio_resortes", texto: "Realizar cambio de resortes" },
   { key: "cambio_pernos", texto: "Realizar cambio de pernos" },
+];
+const RECOM_CONJUNTO_FRENO_NO_ESTANDAR: RecomendacionItem[] = [
   { key: "metalizado_piston", texto: "Realizar metalizado de pistón" },
 ];
 
 const RECOM_CAJA_FRENO_ESTANDAR: RecomendacionItem[] = [
   { key: "pulido_asientos_sellos", texto: "Realizar pulido de asientos de sellos" },
   { key: "repasar_aloj_rosc", texto: "Repasar alojamientos roscados" },
+];
+const RECOM_CAJA_FRENO_NO_ESTANDAR: RecomendacionItem[] = [
   { key: "metalizado_asientos_sellos", texto: "Realizar metalizado de asientos de sellos" },
 ];
 
@@ -815,34 +828,45 @@ const HALLAZGOS_FRENO_PISTON_PARQUEO: HallazgoItem[] = [
   },
 ];
 
+// Split estándar / no estándar definido por el equipo HP&K (Excel 2026-10-02).
 const RECOM_FRENO_SPROCKET: RecomendacionItem[] = [
   { key: "pulido_sproc", texto: "Realizar pulido de sprocket" },
-  { key: "cambio_sproc", texto: "Realizar cambio de sprocket" },
   { key: "cambio_discos_friccion", texto: "Realizar cambio de discos de fricción" },
   { key: "cambio_damper", texto: "Realizar cambio de damper" },
 ];
+const RECOM_FRENO_SPROCKET_NO: RecomendacionItem[] = [
+  { key: "cambio_sproc", texto: "Realizar cambio de sprocket" },
+];
 
 const RECOM_FRENO_HOUSING: RecomendacionItem[] = [
-  { key: "metalizado_pista_sellos", texto: "Recuperar con metalizado superficie de pista de alojamiento de sellos" },
   { key: "pulido_general", texto: "Realizar pulido en general" },
   { key: "cambio_housing", texto: "Realizar cambio de housing" },
 ];
+const RECOM_FRENO_HOUSING_NO: RecomendacionItem[] = [
+  { key: "metalizado_pista_sellos", texto: "Recuperar con metalizado superficie de pista de alojamiento de sellos" },
+];
 
 const RECOM_FRENO_SPINDLE: RecomendacionItem[] = [
-  { key: "metalizado_pista_rod", texto: "Recuperar con metalizado pista de alojamiento de rodamiento" },
   { key: "cambio_rodamiento", texto: "Realizar cambio de rodamiento" },
   { key: "pulido_dentada", texto: "Realizar pulido de superficie dentada" },
   { key: "cambio_espaciadores", texto: "Realizar cambio de espaciadores" },
   { key: "pulido_matriz", texto: "Realizar pulido de matriz" },
 ];
+const RECOM_FRENO_SPINDLE_NO: RecomendacionItem[] = [
+  { key: "metalizado_pista_rod", texto: "Recuperar con metalizado pista de alojamiento de rodamiento" },
+];
 
 const RECOM_FRENO_PISTON_SERVICIO: RecomendacionItem[] = [
   { key: "pulido", texto: "Realizar pulido" },
+];
+const RECOM_FRENO_PISTON_SERVICIO_NO: RecomendacionItem[] = [
   { key: "cambio", texto: "Realizar cambio" },
 ];
 
 const RECOM_FRENO_PISTON_PARQUEO: RecomendacionItem[] = [
   { key: "pulido", texto: "Realizar pulido" },
+];
+const RECOM_FRENO_PISTON_PARQUEO_NO: RecomendacionItem[] = [
   { key: "cambio", texto: "Realizar cambio" },
 ];
 
@@ -957,7 +981,7 @@ export const CATALOGOS_EVALUACION: Record<string, CatalogoEvaluacion> = {
   },
   // Freno de Servicio & Parqueo — check-list por sub-componente provisto por
   // el usuario (Sprocket, Housing, Spindle, Pistón Servicio, Pistón Parqueo).
-  // Sin split estándar/no estándar — todas las recomendaciones van en `estandar`.
+  // Split estándar / no estándar definido por el equipo (2026-10-02).
   freno_servicio_parqueo: {
     hallazgos: {
       sprocket: { nombre: "Sprocket", items: HALLAZGOS_FRENO_SPROCKET },
@@ -967,15 +991,15 @@ export const CATALOGOS_EVALUACION: Record<string, CatalogoEvaluacion> = {
       piston_parqueo: { nombre: "Pistón Freno Parqueo", items: HALLAZGOS_FRENO_PISTON_PARQUEO },
     },
     recomendaciones: {
-      sprocket: { nombre: "Sprocket", estandar: RECOM_FRENO_SPROCKET, noEstandar: [] },
-      housing: { nombre: "Housing", estandar: RECOM_FRENO_HOUSING, noEstandar: [] },
-      spindle: { nombre: "Spindle", estandar: RECOM_FRENO_SPINDLE, noEstandar: [] },
-      piston_servicio: { nombre: "Pistón Freno Servicio", estandar: RECOM_FRENO_PISTON_SERVICIO, noEstandar: [] },
-      piston_parqueo: { nombre: "Pistón Freno Parqueo", estandar: RECOM_FRENO_PISTON_PARQUEO, noEstandar: [] },
+      sprocket: { nombre: "Sprocket", estandar: RECOM_FRENO_SPROCKET, noEstandar: RECOM_FRENO_SPROCKET_NO },
+      housing: { nombre: "Housing", estandar: RECOM_FRENO_HOUSING, noEstandar: RECOM_FRENO_HOUSING_NO },
+      spindle: { nombre: "Spindle", estandar: RECOM_FRENO_SPINDLE, noEstandar: RECOM_FRENO_SPINDLE_NO },
+      piston_servicio: { nombre: "Pistón Freno Servicio", estandar: RECOM_FRENO_PISTON_SERVICIO, noEstandar: RECOM_FRENO_PISTON_SERVICIO_NO },
+      piston_parqueo: { nombre: "Pistón Freno Parqueo", estandar: RECOM_FRENO_PISTON_PARQUEO, noEstandar: RECOM_FRENO_PISTON_PARQUEO_NO },
     },
   },
   // Rueda Delantera — único tipo con checklist propio en Excel 1 sheet 7. No
-  // tiene split Estándar/No Estándar en el origen — todo va a `estandar`.
+  // Split estándar / no estándar definido por el equipo (2026-10-02).
   rueda_delantera: {
     hallazgos: {
       spindle: { nombre: "Spindle", items: HALLAZGOS_SPINDLE },
@@ -985,10 +1009,10 @@ export const CATALOGOS_EVALUACION: Record<string, CatalogoEvaluacion> = {
       general: { nombre: "General", items: HALLAZGOS_GENERAL_RUEDA },
     },
     recomendaciones: {
-      spindle: { nombre: "Spindle", estandar: RECOM_SPINDLE_ESTANDAR, noEstandar: [] },
-      hub: { nombre: "Hub", estandar: RECOM_HUB_ESTANDAR, noEstandar: [] },
-      conjunto_freno: { nombre: "Conjunto de Freno", estandar: RECOM_CONJUNTO_FRENO_ESTANDAR, noEstandar: [] },
-      caja_freno: { nombre: "Caja de Freno", estandar: RECOM_CAJA_FRENO_ESTANDAR, noEstandar: [] },
+      spindle: { nombre: "Spindle", estandar: RECOM_SPINDLE_ESTANDAR, noEstandar: RECOM_SPINDLE_NO_ESTANDAR },
+      hub: { nombre: "Hub", estandar: RECOM_HUB_ESTANDAR, noEstandar: RECOM_HUB_NO_ESTANDAR },
+      conjunto_freno: { nombre: "Conjunto de Freno", estandar: RECOM_CONJUNTO_FRENO_ESTANDAR, noEstandar: RECOM_CONJUNTO_FRENO_NO_ESTANDAR },
+      caja_freno: { nombre: "Caja de Freno", estandar: RECOM_CAJA_FRENO_ESTANDAR, noEstandar: RECOM_CAJA_FRENO_NO_ESTANDAR },
       general: { nombre: "General", estandar: RECOM_GENERAL_RUEDA_ESTANDAR, noEstandar: [] },
     },
   },
@@ -1025,6 +1049,25 @@ export const CATALOGOS_EVALUACION: Record<string, CatalogoEvaluacion> = {
 //   " - <subOpcion>" si el técnico eligió una.
 // - Cuando el item tiene cantidad, anexa " (N: <cantidad>)".
 // - Cuando `omitirSubOpEnInforme` es true, solo emite el texto base (ej. bruñido).
+/**
+ * Key base bajo la que está guardada una recomendación en `datos_formulario`.
+ * El form guarda `${prefix}_recom_${componente}_${est|no}_${itemKey}`. Cuando
+ * una recomendación cambia de grupo (ej. estándar → no estándar, 2026-10-02),
+ * las hojas viejas siguen teniendo el valor bajo el grupo anterior: si la key
+ * nueva no tiene dato y la del otro grupo sí, se devuelve esa.
+ */
+export function recomKeyBase(
+  datos: Record<string, unknown>,
+  prefixGrupo: string, // `${prefix}_recom_${componente}_${est|no}`
+  itemKey: string,
+): string {
+  const actual = `${prefixGrupo}_${itemKey}`;
+  if (datos[actual] != null) return actual;
+  const otro = prefixGrupo.replace(/_(est|no)$/, (_m, b: string) => (b === "est" ? "_no" : "_est"));
+  const legacy = `${otro}_${itemKey}`;
+  return datos[legacy] != null ? legacy : actual;
+}
+
 export function serializarRecomendaciones(
   modelo: string,
   componente: string,
@@ -1039,7 +1082,7 @@ export function serializarRecomendaciones(
   const out: string[] = [];
   for (const [bucket, items] of [["est", grupo.estandar] as const, ["no", grupo.noEstandar] as const]) {
     for (const it of items) {
-      const baseKey = `${prefix}_recom_${componente}_${bucket}_${it.key}`;
+      const baseKey = recomKeyBase(datos, `${prefix}_recom_${componente}_${bucket}`, it.key);
       if (!datos[baseKey]) continue;
       let texto = it.texto;
       if (it.subOpciones && !it.omitirSubOpEnInforme) {

@@ -10,6 +10,7 @@ import {
   CATALOGOS_EVALUACION,
   type HallazgoItem,
   type RecomendacionItem,
+  recomKeyBase,
 } from "@/lib/evaluacion-catalogos";
 import { VAS, tituloPuntos, type CampoMedida } from "@/lib/evaluacion-campos";
 
@@ -1129,11 +1130,25 @@ function RecomItem({
   onChange: (d: Record<string, unknown>) => void;
 }) {
   const v = useValor(datos, onChange);
-  const baseKey = `${prefix}_${item.key}`;
+  // recomKeyBase: si esta recomendación cambió de grupo (estándar ↔ no estándar)
+  // después de guardada la hoja, el valor viejo vive bajo el otro prefijo. Se lee
+  // de ahí y, al tocar el check, se migra a la key actual (y se limpia la vieja).
+  const baseKey = recomKeyBase(datos, prefix, item.key);
+  const keyActual = `${prefix}_${item.key}`;
   const checked = !!v.get(baseKey);
+  const setChecked = (val: boolean) => {
+    if (baseKey === keyActual) { v.set(keyActual, val); return; }
+    const next: Record<string, unknown> = { ...datos, [keyActual]: val };
+    for (const suf of ["_sub", "_cant"]) {
+      if (datos[`${baseKey}${suf}`] != null) next[`${keyActual}${suf}`] = datos[`${baseKey}${suf}`];
+      delete next[`${baseKey}${suf}`];
+    }
+    delete next[baseKey];
+    onChange(next);
+  };
   return (
     <div style={{ marginBottom: 6 }}>
-      <Checkbox checked={checked} onChange={(e) => v.set(baseKey, e.target.checked)}>
+      <Checkbox checked={checked} onChange={(e) => setChecked(e.target.checked)}>
         <span style={{ fontSize: 12 }}>{item.texto}</span>
       </Checkbox>
       {checked && (
