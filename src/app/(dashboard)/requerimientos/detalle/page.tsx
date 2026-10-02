@@ -76,6 +76,9 @@ import { formatDateOnly } from "@/lib/dates";
 import { mensajeErrorApi } from "@/lib/api-error";
 import { formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
 import { R2FileLink } from "@/components/R2FileLink";
+import {
+  ServicioEstadoCell, ServicioSeguimientoDrawer, useServicioSeguimiento, type ServicioSer,
+} from "@/components/modules/servicios/ServicioSeguimiento";
 const { Title, Text } = Typography;
 const { TextArea } = Input;
 
@@ -661,6 +664,11 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
   // OC): misma matriz de escritura que aplica el servidor — a los roles de
   // solo-lectura (producción, contabilidad, etc.) ni se les muestran.
   const esLogistica = puedeEscribirApi(roles, "/api/requerimientos/0/precio", "PATCH");
+  // Seguimiento de servicios externos (SER): columna "Servicio" + drawer.
+  const svcSeg = useServicioSeguimiento({ todos: true });
+  const [svcDrawer, setSvcDrawer] = useState<number | null>(null);
+  const svcSel: ServicioSer | null = svcDrawer != null ? (svcSeg.porRepuesto.get(svcDrawer) ?? null) : null;
+  const puedeOperarSvc = isAdmin || esLogistica;
 
   useEffect(() => {
     fetch("/api/me")
@@ -2292,6 +2300,15 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
       render: (v: string | null) => (v ? formatDateOnly(v) : "-"),
     },
     {
+      key: "servicio",
+      title: "Servicio",
+      width: 150,
+      align: "center",
+      render: (_: unknown, r: Requerimiento) => r.tipo_codigo === "SER"
+        ? <ServicioEstadoCell ser={svcSeg.porRepuesto.get(r.id)} onOpen={() => setSvcDrawer(r.id)} />
+        : <Text type="secondary" style={{ fontSize: 11 }}>—</Text>,
+    },
+    {
       key: "acciones",
       title: "Acciones",
       width: 150,
@@ -2896,6 +2913,13 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
       />
 
       {/* Tabla */}
+      <ServicioSeguimientoDrawer
+        ser={svcSel}
+        open={svcDrawer != null}
+        onClose={() => setSvcDrawer(null)}
+        puedeOperar={puedeOperarSvc}
+        onChanged={async () => { await svcSeg.reload(); await fetchData(); }}
+      />
       <TableDragWrapper>
               <Table
           rowKey="id"
@@ -2910,7 +2934,7 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
             total: filteredData.length,
             onChange: (p, s) => { setPage(p); setPageSize(s); },
           })}
-          scroll={{ x: 2000 }}
+          scroll={{ x: 2150 }}
           sticky={{ offsetHeader: 56, offsetScroll: 0 }}
           size="small"
           rowClassName={(r) => {

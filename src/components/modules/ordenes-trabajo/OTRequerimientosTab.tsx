@@ -29,6 +29,9 @@ import {
 } from "@/lib/tables";
 import { uploadToR2 } from "@/lib/r2-client";
 import { R2FileLink } from "@/components/R2FileLink";
+import {
+  ServicioEstadoCell, ServicioSeguimientoDrawer, useServicioSeguimiento, type ServicioSer,
+} from "@/components/modules/servicios/ServicioSeguimiento";
 
 const { Text } = Typography;
 
@@ -277,6 +280,15 @@ export default function OTRequerimientosTab({
   const [aplicandoTpl, setAplicandoTpl] = useState(false);
   const [roles, setRoles] = useState<string[]>([]);
   const isAdmin = roles.includes("admin");
+  // Seguimiento de servicios externos (SER): ciclo salida → cotización →
+  // llegada + checklist documental. Columna "Servicio" + drawer.
+  const svcSeg = useServicioSeguimiento(kind === "interna" ? { otInternaId: otId } : { otId });
+  const [svcDrawer, setSvcDrawer] = useState<number | null>(null);
+  const svcSel: ServicioSer | null = svcDrawer != null ? (svcSeg.porRepuesto.get(svcDrawer) ?? null) : null;
+  const puedeOperarSvc = isAdmin || roles.includes("logistica");
+  // Al cambiar las filas (aprobar, anular, nuevo req) el estado del ciclo
+  // puede cambiar (NO_APLICA → pendiente de envío): refrescar el seguimiento.
+  useEffect(() => { void svcSeg.reload(); }, [rows, svcSeg.reload]);
   const [messageApi, contextHolder] = message.useMessage();
   const { screens } = useResponsive();
   const [modalApi, modalCtx] = Modal.useModal();
@@ -1316,6 +1328,12 @@ export default function OTRequerimientosTab({
       ),
     },
     {
+      title: "Servicio", key: "servicio", width: 150, align: "center",
+      render: (_, r) => r.tipo_codigo === "SER"
+        ? <ServicioEstadoCell ser={svcSeg.porRepuesto.get(r.id)} onOpen={() => setSvcDrawer(r.id)} />
+        : <Text type="secondary" style={{ fontSize: 11 }}>—</Text>,
+    },
+    {
       title: "", key: "actions", width: 130, fixed: "right",
       render: (_, r) => {
         const sr = r.status_requerimiento_codigo;
@@ -1360,6 +1378,13 @@ export default function OTRequerimientosTab({
     <div>
       {contextHolder}
       {modalCtx}
+      <ServicioSeguimientoDrawer
+        ser={svcSel}
+        open={svcDrawer != null}
+        onClose={() => setSvcDrawer(null)}
+        puedeOperar={puedeOperarSvc}
+        onChanged={async () => { await svcSeg.reload(); await fetchData(); onUpdated?.(); }}
+      />
       {/* Card de costos estimados/reales */}
       {rows.length > 0 && monedasActivas.length > 0 && (
         <Card
@@ -2387,7 +2412,7 @@ function RequerimientosAgrupados({
                   dataSource={items}
                   pagination={false}
                   size="small"
-                  scroll={{ x: 2160 }}
+                  scroll={{ x: 2310 }}
                   rowClassName={(r) => r.status_requerimiento_codigo === "ANULADO" ? "req-anulado" : ""}
                   rowSelection={onEliminarLote ? {
                     selectedRowKeys: (selByGrupo[nro] ?? []),

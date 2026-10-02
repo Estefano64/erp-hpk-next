@@ -22,7 +22,8 @@ type Ctx = { params: Promise<{ id: string }> };
 const Item = z.object({
   tipo_codigo: z.enum(["MAC", "CAD"]),
   material_codigo: z.string().trim().max(50).optional().nullable(),
-  descripcion: z.string().trim().min(1).max(2000),
+  // Para MAC puede omitirse: se toma la descripción del catálogo.
+  descripcion: z.string().trim().max(2000).optional().nullable(),
   cantidad: z.coerce.number().positive(),
   unidad_medida: z.string().trim().max(20).optional().nullable(),
   precio_unitario: z.coerce.number().min(0).optional().nullable(),
@@ -74,13 +75,15 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     // Resolver materiales catalogados (MAC).
     const codigosMAC = [...new Set(parsed.data.items.filter((i) => i.tipo_codigo === "MAC" && i.material_codigo).map((i) => i.material_codigo!))];
     const materiales = codigosMAC.length
-      ? await prisma.material.findMany({ where: { codigo: { in: codigosMAC } }, select: { material_id: true, codigo: true, unidad_medida: { select: { codigo: true } } } })
+      ? await prisma.material.findMany({ where: { codigo: { in: codigosMAC } }, select: { material_id: true, codigo: true, descripcion: true, unidad_medida: { select: { codigo: true } } } })
       : [];
     const matMap = new Map(materiales.map((m) => [m.codigo, m]));
     for (const it of parsed.data.items) {
       if (it.tipo_codigo === "MAC") {
         if (!it.material_codigo) return NextResponse.json({ error: "Tipo MAC requiere material_codigo." }, { status: 400 });
         if (!matMap.has(it.material_codigo)) return NextResponse.json({ error: `Material "${it.material_codigo}" no existe.` }, { status: 400 });
+      } else if (!it.descripcion) {
+        return NextResponse.json({ error: "Los ítems CAD requieren descripción." }, { status: 400 });
       }
     }
 
@@ -101,7 +104,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
             material_codigo: it.material_codigo ?? null,
             tipo_codigo: it.tipo_codigo,
             cantidad: cant,
-            descripcion: it.descripcion,
+            descripcion: it.descripcion || mat?.descripcion || it.material_codigo || "",
             unidad_medida: it.unidad_medida ?? mat?.unidad_medida?.codigo ?? "UNIDAD",
             fecha_requerida: ser.fecha_requerida,
             precio_unitario: it.precio_unitario != null ? new Prisma.Decimal(it.precio_unitario) : null,
