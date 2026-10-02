@@ -508,8 +508,7 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
         open={open}
         onClose={onClose}
         placement={screens.md ? "right" : "bottom"}
-        width={screens.md ? 720 : undefined}
-        height={screens.md ? undefined : "90vh"}
+        size={screens.md ? 720 : "90vh"}
         title={ser ? (
           <Space size={space.sm} wrap>
             <span>Servicio: {ser.descripcion ?? `Item ${ser.id}`}</span>

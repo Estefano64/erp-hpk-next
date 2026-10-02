@@ -237,7 +237,7 @@ export default function ServiciosExternosPage() {
           <Col key={e} xs={12} sm={8} md={4}>
             <Card size="small" hoverable onClick={() => setEstados((prev) => prev.length === 1 && prev[0] === e ? [] : [e])}
               style={{ borderColor: estados.length === 1 && estados[0] === e ? brand.cyan : undefined }}>
-              <Statistic title={<Text style={{ fontSize: 11 }}>{SERVICIO_ESTADO_LABELS[e]}</Text>} value={conteo[e] ?? 0} valueStyle={{ fontSize: 20 }} />
+              <Statistic title={<Text style={{ fontSize: 11 }}>{SERVICIO_ESTADO_LABELS[e]}</Text>} value={conteo[e] ?? 0} styles={{ content: { fontSize: 20 } }} />
             </Card>
           </Col>
         ))}
