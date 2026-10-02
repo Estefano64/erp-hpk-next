@@ -77,6 +77,10 @@ export const R2Keys = {
   otEvaluacion: (otCodigo: string) => `ordenes-trabajo/${sanitize(otCodigo)}/evaluaciones`,
   requerimientoAdjunto: (otCodigo: string, reqId: number) =>
     `ordenes-trabajo/${sanitize(otCodigo)}/requerimientos/${reqId}`,
+  // Envíos a proveedor de un requerimiento SER (seguimiento de servicios
+  // externos): guías, cotización, informe y factura por envío.
+  servicioEnvioAdjunto: (otCodigo: string, reqId: number, envioId: number) =>
+    `ordenes-trabajo/${sanitize(otCodigo)}/requerimientos/${reqId}/servicio/${envioId}`,
   // Adjuntos del técnico al pausar/finalizar una tarea de planificación.
   // Si la tarea pertenece a una OT cuelga de ella; si es de APOYO (sin OT),
   // va a un namespace paralelo.
@@ -120,6 +124,8 @@ export const R2Keys = {
   // Requerimientos de OT Interna (espejo de requerimientoAdjunto para externas).
   otInternaRequerimientoAdjunto: (otInternaCodigo: string, reqId: number) =>
     `ot-internas/${sanitize(otInternaCodigo)}/requerimientos/${reqId}`,
+  otInternaServicioEnvioAdjunto: (otInternaCodigo: string, reqId: number, envioId: number) =>
+    `ot-internas/${sanitize(otInternaCodigo)}/requerimientos/${reqId}/servicio/${envioId}`,
 } as const;
 
 // Sanitiza un segmento de path para evitar inyección (../, slashes, etc.).

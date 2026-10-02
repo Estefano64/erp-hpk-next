@@ -1258,6 +1258,7 @@ model Proveedor {
   compras           Compra[]
   ot_repuestos      OTRepuesto[]
   cotizaciones      CotizacionProveedor[]
+  servicio_envios   ServicioEnvio[]
 
   @@map("proveedores")
 }
@@ -1596,6 +1597,10 @@ model OTRepuesto {
   almacen_zona_id             Int?
   almacen_posicion_id         Int?
   observaciones               String?
+  // Seguimiento de servicios externos (2026-10): para items MAC/CAD que el
+  // proveedor agrega como parte de un servicio (ej. barra cromada dentro del
+  // cromado), apunta a la línea SER padre. NULL para items normales.
+  servicio_padre_id           Int?
   usuario_solicita            String               @db.VarChar(100)
   usuario_envia               String?              @db.VarChar(100)
   fecha_envio_aprobacion      DateTime?            @db.Date
@@ -1624,6 +1629,9 @@ model OTRepuesto {
   almacen_zona                AlmacenZona?         @relation(fields: [almacen_zona_id], references: [id])
   almacen_posicion            AlmacenPosicion?     @relation(fields: [almacen_posicion_id], references: [id])
   liberaciones                LiberacionCodigo[]
+  servicio_padre              OTRepuesto?          @relation("ServicioItems", fields: [servicio_padre_id], references: [id], onDelete: SetNull)
+  servicio_items              OTRepuesto[]         @relation("ServicioItems")
+  servicio_envios             ServicioEnvio[]
 
   @@index([ot_id])
   @@index([orden_trabajo_interna_id])
@@ -1634,6 +1642,7 @@ model OTRepuesto {
   @@index([nro_oc])
   @@index([almacen_zona_id])
   @@index([almacen_posicion_id])
+  @@index([servicio_padre_id])
   @@map("ot_repuestos")
 }
 
@@ -1651,6 +1660,73 @@ model OTRepuestoAdjunto {
 
   @@index([ot_repuesto_id])
   @@map("ot_repuesto_adjunto")
+}
+
+// ── Seguimiento de servicios externos (requerimientos tipo SER) ──────
+// Un SER aprobado sale físicamente del taller a un proveedor para cotizar
+// (cromado, NDT, rectificado...). Cada fila es UN intento con UN proveedor:
+//   salida (guía)  → cotización ACEPTADA → trabajo → llegada (guía) = recibido
+//                  → cotización RECHAZADA → devolución (guía) → nuevo intento
+// La llegada ES la recepción del servicio: puede ocurrir antes de que exista
+// la OC (la OC se genera después con proveedor/precio prellenados de acá).
+// Varias líneas SER pueden compartir número de guía (se registran en lote);
+// no hay cabecera de guía a propósito: solo número + PDF.
+// Estado derivado en src/lib/servicios-externos.ts (no se persiste).
+model ServicioEnvio {
+  id                   Int       @id @default(autoincrement())
+  ot_repuesto_id       Int
+  proveedor_id         Int?
+  // Salida del componente hacia el proveedor.
+  fecha_salida         DateTime  @db.Date
+  guia_salida          String?   @db.VarChar(100)
+  // Resultado de la cotización: ACEPTADA | RECHAZADA (NULL = pendiente).
+  cotizacion_resultado String?   @db.VarChar(20)
+  fecha_cotizacion     DateTime? @db.Date
+  nro_cotizacion       String?   @db.VarChar(100)
+  monto_cotizacion     Decimal?  @db.Decimal(15, 4)
+  moneda_cotizacion    String?   @db.VarChar(10)
+  // Devolución (solo si la cotización fue RECHAZADA).
+  fecha_devolucion     DateTime? @db.Date
+  guia_devolucion      String?   @db.VarChar(100)
+  // Llegada del componente con el servicio realizado (= recepción).
+  fecha_llegada        DateTime? @db.Date
+  guia_llegada         String?   @db.VarChar(100)
+  recibido_por         String?   @db.VarChar(150)
+  // Factura del proveedor (se registra cuando llega; la OC puede o no existir).
+  nro_factura          String?   @db.VarChar(100)
+  observaciones        String?
+  usuario_crea         String?   @db.VarChar(100)
+  usuario_actualiza    String?   @db.VarChar(100)
+  created_at           DateTime  @default(now())
+  updated_at           DateTime  @default(now()) @updatedAt
+  ot_repuesto          OTRepuesto @relation(fields: [ot_repuesto_id], references: [id], onDelete: Cascade)
+  proveedor            Proveedor? @relation(fields: [proveedor_id], references: [id])
+  adjuntos             ServicioEnvioAdjunto[]
+
+  @@index([ot_repuesto_id])
+  @@index([proveedor_id])
+  @@index([guia_salida])
+  @@map("servicio_envio")
+}
+
+// PDFs del envío, clasificados por tipo: GUIA_SALIDA | COTIZACION |
+// GUIA_DEVOLUCION | GUIA_LLEGADA | INFORME | FACTURA. Mismo patrón R2
+// (presigned) que OTRepuestoAdjunto.
+model ServicioEnvioAdjunto {
+  id                Int           @id @default(autoincrement())
+  servicio_envio_id Int
+  tipo              String        @db.VarChar(20)
+  nombre_archivo    String        @db.VarChar(255)
+  r2_key            String        @db.VarChar(500)
+  tipo_mime         String        @db.VarChar(100)
+  tamano            Int
+  usuario_sube      String?       @db.VarChar(100)
+  fecha_subida      DateTime      @default(now())
+  servicio_envio    ServicioEnvio @relation(fields: [servicio_envio_id], references: [id], onDelete: Cascade)
+
+  @@index([servicio_envio_id])
+  @@index([tipo])
+  @@map("servicio_envio_adjunto")
 }
 
 model PlanificacionOT {
