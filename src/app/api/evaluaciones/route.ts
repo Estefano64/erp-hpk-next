@@ -3,6 +3,8 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { parseDateOnly } from "@/lib/dates";
+import { getAuditUser } from "@/lib/audit";
+import { sincronizarObservacionesCromado } from "@/lib/medidas-cromado-server";
 
 // Flujo de la hoja de evaluación:
 //   BORRADOR ──[solicitar]──▶ PENDIENTE_APROBACION ──[aprobar/rechazar]──▶ APROBADA / RECHAZADA
@@ -125,6 +127,9 @@ export async function POST(req: NextRequest) {
       : await prisma.evaluacionTecnica.create({
           data: { ...dataComun, ot_id: d.ot_id, estado: d.estado ?? "BORRADOR" },
         });
+
+    // SER de cromado de la OT: copiar Ø vástago / longitud de cromo a observaciones.
+    await sincronizarObservacionesCromado(record.ot_id, await getAuditUser(req));
 
     return NextResponse.json({ data: record }, { status: existing ? 200 : 201 });
   } catch (error) {

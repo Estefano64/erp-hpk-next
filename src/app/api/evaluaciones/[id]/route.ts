@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parseDateOnly } from "@/lib/dates";
+import { getAuditUser } from "@/lib/audit";
+import { sincronizarObservacionesCromado } from "@/lib/medidas-cromado-server";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
@@ -74,6 +76,10 @@ export async function PUT(req: NextRequest, { params }: Params) {
       where: { id: (parseInt4Safe(id) ?? 0) },
       data,
     });
+    // SER de cromado de la OT: copiar Ø vástago / longitud de cromo a observaciones.
+    if (body.datos_formulario !== undefined || body.sistema_medicion !== undefined || body.modelo_evaluacion !== undefined) {
+      await sincronizarObservacionesCromado(record.ot_id, await getAuditUser(req));
+    }
     return NextResponse.json({ data: record });
   } catch (error) {
     console.error("PUT /api/evaluaciones/[id] error:", error);

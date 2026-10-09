@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
 import { nextNroReqExterna, nextItemReq } from "@/lib/requerimientos";
 import { parseDateOnly } from "@/lib/dates";
+import { sincronizarObservacionesCromado } from "@/lib/medidas-cromado-server";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
 type Ctx = { params: Promise<{ id: string }> };
@@ -151,6 +152,12 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       return row;
     });
 
+    // SER de cromado: copiar Ø vástago / longitud de cromo de la evaluación a observaciones.
+    if (d.tipo_codigo === "SER") {
+      await sincronizarObservacionesCromado(otId, usuario);
+      const conObs = await prisma.oTRepuesto.findUnique({ where: { id: created.id }, select: { observaciones: true } });
+      if (conObs) created.observaciones = conObs.observaciones;
+    }
     return NextResponse.json({ data: created }, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message === "NOT_FOUND_OT") {

@@ -5,6 +5,7 @@ import { getAuditUser } from "@/lib/audit";
 import { nextNroReqExterna, pickDescripcionFromTarea, pickCantidadFromTarea, type MaterialLookup } from "@/lib/requerimientos";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
+import { sincronizarObservacionesCromado } from "@/lib/medidas-cromado-server";
 type Ctx = { params: Promise<{ id: string }> };
 
 const Schema = z.object({
@@ -157,6 +158,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       return NextResponse.json({ error: msg }, { status });
     }
 
+    // SER de cromado: copiar Ø vástago / longitud de cromo de la evaluación a observaciones.
+    await sincronizarObservacionesCromado(otId, usuario);
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     console.error("POST aplicar-template error:", error);

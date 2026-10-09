@@ -50,6 +50,23 @@ export const VAS: Record<string, CampoMedida> = Object.fromEntries(
   VASTAGO_MEDIDAS.map((c) => [c.key, c]),
 );
 
+/**
+ * Prefijo de claves en `datos_formulario` según el modelo de evaluación.
+ * Mismo mapa que tienen inline `EvaluacionFormulario.tsx` y `generarWord.ts`
+ * (si se agrega un modelo, actualizar los tres). Default "t1".
+ */
+export const PREFIJO_MODELO_EVALUACION: Record<string, string> = {
+  cil_vastago_simple: "t1",
+  cil_pivotado: "t2",
+  cil_doble_vastago: "t3",
+  cil_telescopico: "t4",
+  acum_embolo: "t5",
+  acum_vejiga: "t6",
+  rueda_delantera: "t7",
+  suspension_delantera: "t8",
+  freno_servicio_parqueo: "t9",
+};
+
 /** Título de una tabla multipunto, ej. "Diametro Vástago (B1-B3)". */
 export function tituloPuntos(c: CampoMedida): string {
   return `${c.label} (${c.letra}1-${c.letra}${c.puntos})`;
