@@ -146,6 +146,12 @@ export default function ProveedoresPage() {
       telefono: record.telefono,
       email: record.email,
       direccion: record.direccion,
+      moneda_default: record.moneda_default,
+      tipo_pago_default: record.tipo_pago_default,
+      dias_credito_default: record.dias_credito_default,
+      tiempo_entrega_dias: record.tiempo_entrega_dias,
+      precios_incluyen_igv_default: record.precios_incluyen_igv_default,
+      aplica_igv_default: record.aplica_igv_default,
     });
     setModalOpen(true);
   }
