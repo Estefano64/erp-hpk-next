@@ -39,6 +39,15 @@ export const COMPONENTE_PLAN: Record<string, string> = {
   piston_parqueo: "FRENO",
 };
 
+/**
+ * Tareas de la plantilla vieja (por descripción normalizada) que son la misma
+ * operación que una recomendación de la hoja con otro código. Confirmado por
+ * HP&K 2026-10-10: "Rellenado" = "Recuperar diámetro de alojamiento con soldadura".
+ */
+const EQUIVALENTES_PLANTILLA: Record<string, string[]> = {
+  "recuperar diametro de alojamiento con soldadura": ["rellenado", "rellenado de alojamiento"],
+};
+
 export interface TareaDesdeEvaluacion {
   componente: string; // código para planificacion_ot.componente
   componente_nombre: string; // nombre del grupo en la hoja (Cilindro, Tapa Roscada…)
@@ -176,8 +185,10 @@ export async function generarTareasDesdeEvaluacion(
   const nuevas: TareaDesdeEvaluacion[] = [];
   for (const t of pendientes) {
     const codigo = codigoDe(t);
+    const equivalentes = EQUIVALENTES_PLANTILLA[normalizar(t.nombre_maestro)];
     const i = codigo === OPERACION_HOJA_EVAL ? -1 : plantillaLibre.findIndex(
-      (e) => e.operacion_codigo === codigo && normalizar(e.componente) === normalizar(t.componente),
+      (e) => normalizar(e.componente) === normalizar(t.componente) &&
+        (e.operacion_codigo === codigo || !!equivalentes?.includes(normalizar(e.descripcion))),
     );
     if (i >= 0) absorbidas.push({ id: plantillaLibre.splice(i, 1)[0].id, t });
     else nuevas.push(t);
@@ -186,7 +197,7 @@ export async function generarTareasDesdeEvaluacion(
   for (const { id, t } of absorbidas) {
     await tx.planificacionOT.update({
       where: { id },
-      data: { descripcion: t.descripcion, tipo_reparacion: t.tipo_reparacion },
+      data: { descripcion: t.descripcion, tipo_reparacion: t.tipo_reparacion, operacion_codigo: codigoDe(t) },
     });
   }
   if (nuevas.length > 0) {
