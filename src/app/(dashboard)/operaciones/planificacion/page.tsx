@@ -10,6 +10,7 @@ import PlanificacionPrintDoc, { PLAN_PRINT_COLS } from "@/components/modules/ope
 import { OperacionCombo } from "@/components/modules/ordenes-trabajo/OTTareasTab";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import type { ColumnsType } from "antd/es/table";
+import type { FilterValue } from "antd/es/table/interface";
 import {
   numeracionColumn,
   useColumnasOcultas,
@@ -242,6 +243,8 @@ export default function PlanificacionPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [total, setTotal] = useState(0);
+  // Filtros de columna vigentes (para que el conteo refleje lo filtrado).
+  const [filtrosTabla, setFiltrosTabla] = useState<Record<string, FilterValue | null>>({});
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   // Por defecto, la semana ISO actual (formato "YYYYWnn", igual que buildSemanasOptions).
@@ -1603,6 +1606,22 @@ export default function PlanificacionPage() {
   const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
     useColumnasRedimensionables<PlanRow>(columns, "planificacion-cols-widths-v1");
 
+  // Los filtros de columna (Cliente, OT, Estado…) los aplica antd en el
+  // cliente, pero la paginación recibe `total` explícito y antd lo respeta:
+  // sin esto el conteo seguía mostrando todas las tareas al filtrar.
+  const filasRango = rows.filter((r) =>
+    dentroDeRango(r, "fecha_inicio", rangoInicio) &&
+    dentroDeRango(r, "fecha_fin", rangoFin)
+  );
+  const filtrosActivos = Object.entries(filtrosTabla).filter(([, v]) => v && v.length > 0);
+  const filasFiltradas = filtrosActivos.length === 0 ? filasRango : filasRango.filter((r) =>
+    filtrosActivos.every(([key, vals]) => {
+      // Solo columnas visibles: al ocultar una columna antd deja de filtrar por ella.
+      const col = visibleColumns(columnsResizable, ocultas).find((c) => c.key === key);
+      return !col?.onFilter || vals!.some((v) => col.onFilter!(v as Key | boolean, r));
+    }),
+  );
+
   return (
     <div>
       {contextHolder}
@@ -1737,7 +1756,7 @@ export default function PlanificacionPage() {
             ]}
           />
           <span style={{ fontSize: 12, color: brand.textSecondary }}>
-            {total} tareas {savingId ? " · guardando…" : ""}
+            {filasFiltradas.length !== total ? `${filasFiltradas.length} de ${total}` : total} tareas {savingId ? " · guardando…" : ""}
           </span>
         </Space>
       </div>
@@ -1902,16 +1921,14 @@ export default function PlanificacionPage() {
           rowKey="id"
           columns={visibleColumns(columnsResizable, ocultas)}
           components={tableComponents}
-          dataSource={rows.filter((r) =>
-            dentroDeRango(r, "fecha_inicio", rangoInicio) &&
-            dentroDeRango(r, "fecha_fin", rangoFin)
-          )}
+          dataSource={filasRango}
+          onChange={(_p, filters) => setFiltrosTabla(filters)}
           loading={loading}
           size="small"
           pagination={paginacionEstandar({
             current: page,
             pageSize,
-            total: rows.filter((r) => dentroDeRango(r, "fecha_inicio", rangoInicio) && dentroDeRango(r, "fecha_fin", rangoFin)).length,
+            total: filasFiltradas.length,
             onChange: (p, s) => { setPage(p); setPageSize(s); },
             label: "tareas",
           })}
