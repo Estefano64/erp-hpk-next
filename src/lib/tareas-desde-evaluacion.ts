@@ -124,6 +124,8 @@ export interface ResultadoGeneracion {
   estado_evaluacion: string;
   marcadas: number;
   creadas: number;
+  /** Tareas de la plantilla vieja completadas con el texto/tipo de la hoja. */
+  actualizadas: number;
   existentes: number;
 }
 
@@ -146,36 +148,67 @@ export async function generarTareasDesdeEvaluacion(
 
   const existentes = await tx.planificacionOT.findMany({
     where: { ot_id: ev.ot_id },
-    select: { componente: true, descripcion: true, orden: true },
+    select: { id: true, componente: true, operacion_codigo: true, descripcion: true, tipo_reparacion: true, orden: true },
   });
   const ya = new Set(existentes.map((e) => `${normalizar(e.componente)}|${normalizar(e.descripcion)}`));
   let orden = existentes.reduce((m, e) => Math.max(m, e.orden), 0);
 
-  const nuevas = tareas.filter((t) => !ya.has(`${normalizar(t.componente)}|${normalizar(t.descripcion)}`));
-  if (nuevas.length > 0) {
-    // Código de operación del maestro (alineado al catálogo de la hoja el
-    // 2026-10-02). Si una recomendación no está en el maestro, cae en HOJA-EVAL.
-    const ops = await tx.operacionReparacion.findMany({
-      where: { activo: true, componente_codigo: { in: Array.from(new Set(nuevas.map((t) => t.componente))) } },
-      select: { codigo: true, nombre: true, componente_codigo: true },
+  const pendientes = tareas.filter((t) => !ya.has(`${normalizar(t.componente)}|${normalizar(t.descripcion)}`));
+  // Código de operación del maestro (alineado al catálogo de la hoja el
+  // 2026-10-02). Si una recomendación no está en el maestro, cae en HOJA-EVAL.
+  const ops = pendientes.length > 0
+    ? await tx.operacionReparacion.findMany({
+        where: { activo: true, componente_codigo: { in: Array.from(new Set(pendientes.map((t) => t.componente))) } },
+        select: { codigo: true, nombre: true, componente_codigo: true },
+      })
+    : [];
+  const codigoPor = new Map(ops.map((o) => [`${normalizar(o.componente_codigo ?? "")}|${normalizar(o.nombre)}`, o.codigo]));
+  const codigoDe = (t: TareaDesdeEvaluacion) =>
+    codigoPor.get(`${normalizar(t.componente)}|${normalizar(t.nombre_maestro)}`) ?? OPERACION_HOJA_EVAL;
+
+  // OTs creadas antes del 2026-10-02 traen tareas de la plantilla por CodRep
+  // (tipo_reparacion null, texto corto: "Bruñido", "Cromado"…). Si la hoja
+  // marca la misma operación (mismo código del maestro y componente), se
+  // completa esa tarea con el texto y tipo de la hoja en vez de duplicarla
+  // (caso OT 411626, 2026-10-10). Cada tarea de plantilla absorbe una sola.
+  const plantillaLibre = existentes.filter((e) => e.tipo_reparacion == null);
+  const absorbidas: { id: number; t: TareaDesdeEvaluacion }[] = [];
+  const nuevas: TareaDesdeEvaluacion[] = [];
+  for (const t of pendientes) {
+    const codigo = codigoDe(t);
+    const i = codigo === OPERACION_HOJA_EVAL ? -1 : plantillaLibre.findIndex(
+      (e) => e.operacion_codigo === codigo && normalizar(e.componente) === normalizar(t.componente),
+    );
+    if (i >= 0) absorbidas.push({ id: plantillaLibre.splice(i, 1)[0].id, t });
+    else nuevas.push(t);
+  }
+
+  for (const { id, t } of absorbidas) {
+    await tx.planificacionOT.update({
+      where: { id },
+      data: { descripcion: t.descripcion, tipo_reparacion: t.tipo_reparacion },
     });
-    const codigoPor = new Map(ops.map((o) => [`${normalizar(o.componente_codigo ?? "")}|${normalizar(o.nombre)}`, o.codigo]));
+  }
+  if (nuevas.length > 0) {
     await tx.planificacionOT.createMany({
       data: nuevas.map((t) => ({
         ot_id: ev.ot_id,
         componente: t.componente,
-        operacion_codigo: codigoPor.get(`${normalizar(t.componente)}|${normalizar(t.nombre_maestro)}`) ?? OPERACION_HOJA_EVAL,
+        operacion_codigo: codigoDe(t),
         descripcion: t.descripcion,
         tipo_reparacion: t.tipo_reparacion,
         orden: ++orden,
         estado: "abierto",
       })),
     });
+  }
+  const yaExistian = tareas.length - pendientes.length;
+  if (nuevas.length > 0 || absorbidas.length > 0) {
     await tx.oTHistorial.create({
       data: {
         ot_id: ev.ot_id,
         tipo_operacion: "TAREAS_GENERADAS",
-        descripcion: `Tareas generadas desde la hoja de evaluación (${ev.estado}): ${nuevas.length} nueva(s)${tareas.length - nuevas.length > 0 ? `, ${tareas.length - nuevas.length} ya existía(n)` : ""}.`,
+        descripcion: `Tareas generadas desde la hoja de evaluación (${ev.estado}): ${nuevas.length} nueva(s)${absorbidas.length > 0 ? `, ${absorbidas.length} completada(s) sobre tareas de la plantilla` : ""}${yaExistian > 0 ? `, ${yaExistian} ya existía(n)` : ""}.`,
         usuario,
       },
     });
@@ -186,6 +219,7 @@ export async function generarTareasDesdeEvaluacion(
     estado_evaluacion: ev.estado,
     marcadas: tareas.length,
     creadas: nuevas.length,
-    existentes: tareas.length - nuevas.length,
+    actualizadas: absorbidas.length,
+    existentes: yaExistian,
   };
 }

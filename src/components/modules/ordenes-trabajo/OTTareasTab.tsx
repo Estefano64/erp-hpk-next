@@ -222,8 +222,8 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
       }
       const estado = json.estado_evaluacion ? ` (hoja ${String(json.estado_evaluacion).replace(/_/g, " ").toLowerCase()})` : "";
       if (json.marcadas === 0) messageApi.warning(`La hoja de evaluación no tiene recomendaciones marcadas${estado}.`);
-      else if (json.creadas === 0) messageApi.info(`Las ${json.marcadas} recomendaciones marcadas ya estaban como tareas${estado}.`);
-      else messageApi.success(`${json.creadas} tarea(s) creada(s) desde la hoja de evaluación${json.existentes ? `, ${json.existentes} ya existían` : ""}${estado}.`);
+      else if (json.creadas === 0 && !json.actualizadas) messageApi.info(`Las ${json.marcadas} recomendaciones marcadas ya estaban como tareas${estado}.`);
+      else messageApi.success(`${json.creadas} tarea(s) creada(s) desde la hoja de evaluación${json.actualizadas ? `, ${json.actualizadas} completada(s) sobre tareas de la plantilla` : ""}${json.existentes ? `, ${json.existentes} ya existían` : ""}${estado}.`);
       await fetchRows();
       notifySync();
     } finally {
