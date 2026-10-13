@@ -435,16 +435,21 @@ export default function OTRequerimientosTab({
     setDraftSelected([]);
     setDraftBulkUM(undefined);
     setDraftBulkTipo(undefined);
+    setDraftBulkPrecio(undefined);
+    setDraftBulkMoneda(undefined);
   }
-  // Aplica U.M. y/o Tipo a los items del borrador seleccionados (edición masiva
-  // al momento de crear). Cambiar el tipo reusa la limpieza de actualizarDraftItem.
+  // Aplica U.M., Tipo, precio y/o moneda a los items del borrador
+  // seleccionados (edición masiva al momento de crear). Cambiar el tipo reusa
+  // la limpieza de actualizarDraftItem. El precio/moneda no pisa a un MAC con
+  // precio de catálogo en OT externa (ahí el precio es fijo, read-only).
   function aplicarBulkDraft() {
     if (draftSelected.length === 0) return;
-    if (!draftBulkUM && !draftBulkTipo) {
-      messageApi.info("Elegí U.M. y/o Tipo para aplicar.");
+    if (!draftBulkUM && !draftBulkTipo && draftBulkPrecio == null && !draftBulkMoneda) {
+      messageApi.info("Elegí U.M., Tipo, precio y/o moneda para aplicar.");
       return;
     }
     const sel = new Set(draftSelected);
+    let saltadosPrecio = 0;
     setDraftItems((prev) => prev.map((it) => {
       if (!sel.has(it.id)) return it;
       let next = { ...it };
@@ -462,12 +467,28 @@ export default function OTRequerimientosTab({
         };
       }
       if (draftBulkUM) next.unidad_medida = draftBulkUM;
+      if (draftBulkPrecio != null || draftBulkMoneda) {
+        const mat = next.tipo_codigo === "MAC" && next.material_codigo
+          ? materiales.find((m) => m.codigo === next.material_codigo)
+          : null;
+        if (kind !== "interna" && mat?.precio) {
+          saltadosPrecio++;
+        } else {
+          if (draftBulkPrecio != null) next.precio_unitario = draftBulkPrecio;
+          if (draftBulkMoneda) next.moneda = draftBulkMoneda;
+        }
+      }
       return next;
     }));
     messageApi.success(`Aplicado a ${draftSelected.length} item(s).`);
+    if (saltadosPrecio > 0) {
+      messageApi.info(`${saltadosPrecio} material(es) con precio de catálogo conservan su precio.`);
+    }
     setDraftSelected([]);
     setDraftBulkUM(undefined);
     setDraftBulkTipo(undefined);
+    setDraftBulkPrecio(undefined);
+    setDraftBulkMoneda(undefined);
   }
   function agregarItemDraft() {
     setDraftItems((prev) => [
@@ -698,6 +719,8 @@ export default function OTRequerimientosTab({
   const [draftSelected, setDraftSelected] = useState<string[]>([]);
   const [draftBulkUM, setDraftBulkUM] = useState<string | undefined>();
   const [draftBulkTipo, setDraftBulkTipo] = useState<"MAC" | "CAD" | "SER" | undefined>();
+  const [draftBulkPrecio, setDraftBulkPrecio] = useState<number | undefined>();
+  const [draftBulkMoneda, setDraftBulkMoneda] = useState<"USD" | "SOL" | undefined>();
 
   // Roles del usuario (para acciones admin/aprobador)
   useEffect(() => {
@@ -1542,7 +1565,7 @@ export default function OTRequerimientosTab({
             <Button size="small" type="text" icon={<CloseOutlined />} onClick={cerrarDraft} aria-label="Cerrar" />
           }
         >
-          {/* Edición masiva: marcá varios items y asignales U.M. y/o Tipo de una. */}
+          {/* Edición masiva: marcá varios items y asignales U.M., Tipo, precio y/o moneda de una. */}
           {draftSelected.length > 0 && (
             <div style={{ marginBottom: 12, padding: 8, borderRadius: 6, background: "#E6FFFB", border: `1px solid ${brand.cyan}` }}>
               <Row gutter={[8, 8]} align="middle">
@@ -1577,10 +1600,32 @@ export default function OTRequerimientosTab({
                     style={{ width: "100%" }}
                   />
                 </Col>
+                <Col flex="1 1 200px">
+                  <Space.Compact size="small" style={{ width: "100%" }}>
+                    <InputNumber
+                      size="small"
+                      placeholder="Precio ref."
+                      min={0}
+                      step={0.01}
+                      value={draftBulkPrecio}
+                      onChange={(v) => setDraftBulkPrecio(v == null ? undefined : Number(v))}
+                      style={{ width: "100%" }}
+                    />
+                    <Select
+                      size="small"
+                      placeholder="Moneda"
+                      value={draftBulkMoneda}
+                      onChange={(v) => setDraftBulkMoneda(v as "USD" | "SOL" | undefined)}
+                      options={[{ value: "USD", label: "USD" }, { value: "SOL", label: "SOL" }]}
+                      allowClear
+                      style={{ width: 90 }}
+                    />
+                  </Space.Compact>
+                </Col>
                 <Col flex="0 0 auto">
                   <Space size={6}>
                     <Button size="small" type="primary" onClick={aplicarBulkDraft}>Aplicar</Button>
-                    <Button size="small" onClick={() => { setDraftSelected([]); setDraftBulkUM(undefined); setDraftBulkTipo(undefined); }}>Cancelar</Button>
+                    <Button size="small" onClick={() => { setDraftSelected([]); setDraftBulkUM(undefined); setDraftBulkTipo(undefined); setDraftBulkPrecio(undefined); setDraftBulkMoneda(undefined); }}>Cancelar</Button>
                   </Space>
                 </Col>
               </Row>
@@ -2237,10 +2282,21 @@ function RequerimientosAgrupados({
       });
   }, [rows, ordenDesc]);
 
-  // Estado de colapso por grupo
+  // Estado de colapso por grupo. Por defecto (pedido 2026-10-13) solo quedan
+  // expandidos los requerimientos que necesitan algo (BORRADOR, OBSERVADO o
+  // SIN_APROBACION); los que ya avanzaron arrancan contraídos. Lo que el
+  // usuario abre/cierra a mano pisa ese default.
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  function toggle(nro: string) {
-    setCollapsed((prev) => ({ ...prev, [nro]: !prev[nro] }));
+  const ESTADOS_PENDIENTES = new Set(["BORRADOR", "OBSERVADO", "SIN_APROBACION"]);
+  const estaContraido = (nro: string, items: RequerimientoRow[]) =>
+    collapsed[nro] ?? !items.some((i) => ESTADOS_PENDIENTES.has(i.status_requerimiento_codigo ?? "BORRADOR"));
+  function toggle(nro: string, items: RequerimientoRow[]) {
+    const actual = estaContraido(nro, items);
+    setCollapsed((prev) => ({ ...prev, [nro]: !actual }));
+  }
+  const todoExpandido = groups.every(({ nro, items }) => !estaContraido(nro, items));
+  function expandirTodo(expandir: boolean) {
+    setCollapsed(Object.fromEntries(groups.map(({ nro }) => [nro, !expandir])));
   }
 
   // Paginación por requerimiento (nro_req). OTs internas largas (OI003126:
@@ -2281,6 +2337,9 @@ function RequerimientosAgrupados({
       {groups.length > 1 && (
         <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           {paginacion}
+          <Button size="small" onClick={() => expandirTodo(!todoExpandido)}>
+            {todoExpandido ? "Contraer todo" : "Expandir todo"}
+          </Button>
           <Tooltip title={ordenDesc
             ? "Mostrando el requerimiento más NUEVO primero — clic para ver la secuencia natural (-1, -2, …)"
             : "Mostrando la secuencia natural (-1, -2, …) — clic para ver el más NUEVO primero"}>
@@ -2298,7 +2357,7 @@ function RequerimientosAgrupados({
         const first = items[0];
         const status = first?.status_requerimiento?.nombre ?? first?.status_requerimiento_codigo ?? "BORRADOR";
         const statusColor = REQ_COLOR[first?.status_requerimiento_codigo ?? "BORRADOR"] ?? "default";
-        const isCollapsed = !!collapsed[nro];
+        const isCollapsed = estaContraido(nro, items);
         const hasBorrador = items.some((i) => i.status_requerimiento_codigo === "BORRADOR");
         const allEditable = items.every(
           (i) => i.status_requerimiento_codigo === "BORRADOR" || i.status_requerimiento_codigo === "SIN_APROBACION",
@@ -2363,7 +2422,7 @@ function RequerimientosAgrupados({
                 <Button
                   type="text" size="small"
                   icon={<span style={{ fontSize: 12 }}>{isCollapsed ? "▶" : "▼"}</span>}
-                  onClick={() => toggle(nro)}
+                  onClick={() => toggle(nro, items)}
                 />
                 <Text strong style={{ fontSize: 13 }}>{nro}</Text>
                 <Text type="secondary" style={{ fontSize: 12 }}>
