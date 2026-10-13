@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Table, Button, Tag, Space, Modal, Form, Input, InputNumber, Select, DatePicker, AutoComplete,
-  message, Popconfirm, Tooltip, Empty, Alert, Row, Col, Typography, Radio, Card, Popover,
+  message, Popconfirm, Tooltip, Empty, Alert, Row, Col, Typography, Radio, Card, Popover, Pagination,
 } from "antd";
 import {
   PlusOutlined, ReloadOutlined, CloseOutlined, SaveOutlined,
@@ -2243,27 +2243,58 @@ function RequerimientosAgrupados({
     setCollapsed((prev) => ({ ...prev, [nro]: !prev[nro] }));
   }
 
+  // Paginación por requerimiento (nro_req). OTs internas largas (OI003126:
+  // 80 reqs / 485 items, 2026-10-13) dibujaban todas las tablas a la vez y la
+  // pestaña se trababa al crear/editar. Se dibujan solo los grupos de la página.
+  const [pagina, setPagina] = useState(1);
+  const [porPagina, setPorPagina] = useState(10);
+  const totalPaginas = Math.max(1, Math.ceil(groups.length / porPagina));
+  const paginaActual = Math.min(pagina, totalPaginas);
+  const gruposPagina = groups.slice((paginaActual - 1) * porPagina, paginaActual * porPagina);
+  // Al aparecer un requerimiento nuevo, ir a la página donde queda (la última
+  // en orden natural, la primera en "último primero") para que se vea.
+  const [cantGrupos, setCantGrupos] = useState(groups.length);
+  if (groups.length !== cantGrupos) {
+    setCantGrupos(groups.length);
+    if (groups.length > cantGrupos && cantGrupos > 0) {
+      setPagina(ordenDesc ? 1 : Math.max(1, Math.ceil(groups.length / porPagina)));
+    }
+  }
+  const paginacion = groups.length > porPagina || porPagina !== 10 ? (
+    <Pagination
+      size="small"
+      current={paginaActual}
+      pageSize={porPagina}
+      total={groups.length}
+      pageSizeOptions={[5, 10, 20, 50]}
+      showSizeChanger
+      showTotal={(t) => `${t} requerimientos`}
+      onChange={(p, s) => { setPagina(p); setPorPagina(s); }}
+    />
+  ) : null;
+
   if (loading && rows.length === 0) return <div style={{ padding: 16 }}><Text type="secondary">Cargando…</Text></div>;
 
   return (
     <Space orientation="vertical" size={12} style={{ width: "100%" }}>
       {/* Toggle del sentido de orden de los grupos (primero→último / último→primero) */}
       {groups.length > 1 && (
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          {paginacion}
           <Tooltip title={ordenDesc
             ? "Mostrando el requerimiento más NUEVO primero — clic para ver la secuencia natural (-1, -2, …)"
             : "Mostrando la secuencia natural (-1, -2, …) — clic para ver el más NUEVO primero"}>
             <Button
               size="small"
               icon={ordenDesc ? <SortDescendingOutlined /> : <SortAscendingOutlined />}
-              onClick={toggleOrden}
+              onClick={() => { toggleOrden(); setPagina(1); }}
             >
               {ordenDesc ? "Último primero" : "Primero → último"}
             </Button>
           </Tooltip>
         </div>
       )}
-      {groups.map(({ nro, items }) => {
+      {gruposPagina.map(({ nro, items }) => {
         const first = items[0];
         const status = first?.status_requerimiento?.nombre ?? first?.status_requerimiento_codigo ?? "BORRADOR";
         const statusColor = REQ_COLOR[first?.status_requerimiento_codigo ?? "BORRADOR"] ?? "default";
@@ -2435,6 +2466,7 @@ function RequerimientosAgrupados({
           </Card>
         );
       })}
+      {paginacion && <div style={{ display: "flex", justifyContent: "flex-end" }}>{paginacion}</div>}
     </Space>
   );
 }
