@@ -132,7 +132,8 @@ const TODAS_AREAS = ["admin", "planner", "produccion", "logistica", "mantenimien
 const EVALUACION = ["admin", "planner", "produccion", "evaluador", "aprobador_evaluacion", "tecnico"] as const;
 const COMPRA = ["admin", "logistica"] as const;
 
-type ReglaApi = { prefijo: string; sufijo?: string; roles: readonly string[] | null };
+// `patron` (opcional): la regla aplica solo si el path completo matchea.
+type ReglaApi = { prefijo: string; sufijo?: string; patron?: RegExp; roles: readonly string[] | null };
 
 export const REGLAS_ESCRITURA_API: ReglaApi[] = [
   // ── RRHH: trabajadores solo admin (usuarios ya tiene requireAdmin propio)
@@ -158,6 +159,11 @@ export const REGLAS_ESCRITURA_API: ReglaApi[] = [
   { prefijo: "/api/planificacion", sufijo: "/adjuntos/upload-url", roles: null },
   // ── Requerimientos globales: solicitan/editan las áreas de OT…
   { prefijo: "/api/requerimientos", roles: AREA_OT },
+  //    …editar/borrar un item y sus adjuntos se valida in-route con
+  //    puedeEditarRequerimiento: las áreas de OT siempre; el resto de áreas
+  //    solo si el item es de una OT interna (mantenimiento crea reqs en sus OTs
+  //    internas y no podía corregirlos, 2026-10-13).
+  { prefijo: "/api/requerimientos", patron: /^\/api\/requerimientos\/\d+(\/adjuntos(\/upload-url)?)?$/, roles: null },
   //    …las operaciones de almacén/cotización son de logística…
   { prefijo: "/api/requerimientos", sufijo: "/consumir-de-almacen", roles: COMPRA },
   { prefijo: "/api/requerimientos", sufijo: "/consumir-caja-chica", roles: COMPRA },
@@ -249,10 +255,23 @@ export function puedeEscribirApi(
     const matchPrefijo = pathname === it.prefijo || pathname.startsWith(it.prefijo + "/");
     if (!matchPrefijo) continue;
     if (it.sufijo && !pathname.endsWith(it.sufijo)) continue;
-    const esp = it.prefijo.length + (it.sufijo?.length ?? 0);
+    if (it.patron && !it.patron.test(pathname)) continue;
+    const esp = it.prefijo.length + (it.sufijo?.length ?? 0) + (it.patron ? 1 : 0);
     if (esp > especificidad) { regla = it; especificidad = esp; }
   }
   if (!regla) return true;          // sin regla = default permitido
   if (regla.roles === null) return true; // exento: manda el chequeo in-route
   return regla.roles.some((rol) => r.includes(rol));
+}
+
+// ¿Puede editar/borrar este item de requerimiento (y sus adjuntos)? Las áreas
+// de OT siempre; las demás áreas solo en requerimientos de OT interna (que
+// todas las áreas crean). Complementa la regla con `patron` de arriba.
+export function puedeEditarRequerimiento(
+  roles: string[] | null | undefined,
+  item: { orden_trabajo_interna_id: number | null },
+): boolean {
+  const r = roles ?? [];
+  if (AREA_OT.some((rol) => r.includes(rol))) return true;
+  return item.orden_trabajo_interna_id != null && TODAS_AREAS.some((rol) => r.includes(rol));
 }

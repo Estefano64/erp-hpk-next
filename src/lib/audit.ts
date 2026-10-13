@@ -14,6 +14,12 @@ export async function isAdmin(req: NextRequest): Promise<boolean> {
   return roles.includes("admin");
 }
 
+// Roles de la sesión (vacío si no hay sesión).
+export async function rolesApi(req: NextRequest): Promise<string[]> {
+  const token = await getToken({ req });
+  return (token?.roles as string[] | undefined) ?? [];
+}
+
 // ¿La sesión tiene ALGUNO de estos roles? Para gatear in-route endpoints
 // exentos del middleware (ej. reportes correctivos de mantenimiento).
 export async function tieneRolApi(req: NextRequest, ...rolesPedidos: string[]): Promise<boolean> {

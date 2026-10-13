@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { isAdmin } from "@/lib/audit";
+import { isAdmin, rolesApi } from "@/lib/audit";
+import { puedeEditarRequerimiento } from "@/lib/acceso-rutas";
 import { ESTADOS_REQ_LOCKED_DELETE } from "@/lib/requerimientos";
 import { parseDateOnly } from "@/lib/dates";
 
@@ -42,9 +43,13 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       select: {
         id: true, status_requerimiento_codigo: true, status_oc_codigo: true,
         po_id: true, material_id: true, material_codigo: true, tipo_codigo: true,
+        orden_trabajo_interna_id: true,
       },
     });
     if (!current) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+    if (!puedeEditarRequerimiento(await rolesApi(req), current)) {
+      return NextResponse.json({ error: "Tu rol no tiene permiso para esta acción" }, { status: 403 });
+    }
 
     const tieneOC = current.po_id != null;
     const estadoActual = current.status_requerimiento_codigo ?? "BORRADOR";
@@ -116,9 +121,12 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     const { id } = await ctx.params;
     const current = await prisma.oTRepuesto.findUnique({
       where: { id: (parseInt4Safe(id) ?? 0) },
-      select: { status_requerimiento_codigo: true, po_id: true },
+      select: { status_requerimiento_codigo: true, po_id: true, orden_trabajo_interna_id: true },
     });
     if (!current) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+    if (!puedeEditarRequerimiento(await rolesApi(req), current)) {
+      return NextResponse.json({ error: "Tu rol no tiene permiso para esta acción" }, { status: 403 });
+    }
 
     if (current.po_id != null) {
       return NextResponse.json({

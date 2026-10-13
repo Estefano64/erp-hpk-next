@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { generateUploadUrl } from "@/lib/r2-helpers";
 import { R2Keys, otCodigoFor, otInternaCodigoFor } from "@/lib/r2";
 import { assertOTAccess, readJsonBody, validateUploadBody } from "@/lib/r2-server";
+import { puedeEditarRequerimiento } from "@/lib/acceso-rutas";
 
 import { parseInt4Safe } from "@/lib/ot-formato";
 type Params = { params: Promise<{ id: string }> };
@@ -33,6 +34,11 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (!item) {
     return NextResponse.json({ error: "Requerimiento no encontrado" }, { status: 404 });
   }
+  const token = await getToken({ req });
+  if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  if (!puedeEditarRequerimiento(token.roles as string[] | undefined, item)) {
+    return NextResponse.json({ error: "Tu rol no tiene permiso para esta acción" }, { status: 403 });
+  }
 
   // Resolver folderPrefix según el tipo de OT padre + validar acceso.
   let folderPrefix: string;
@@ -41,9 +47,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!access.ok) return access.response;
     folderPrefix = R2Keys.requerimientoAdjunto(otCodigoFor(access.ot), reqId);
   } else if (item.orden_trabajo_interna) {
-    // Sin assertOTAccess específico para OT interna todavía — solo validamos sesión.
-    const token = await getToken({ req });
-    if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    // Sin assertOTAccess específico para OT interna: la sesión y el rol ya se
+    // validaron arriba.
     folderPrefix = R2Keys.otInternaRequerimientoAdjunto(
       otInternaCodigoFor(item.orden_trabajo_interna),
       reqId,

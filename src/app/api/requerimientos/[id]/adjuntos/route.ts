@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
 import { getAuditUser } from "@/lib/audit";
+import { puedeEditarRequerimiento } from "@/lib/acceso-rutas";
 import { deleteObject } from "@/lib/r2-helpers";
 import { R2Keys, otCodigoFor, otInternaCodigoFor } from "@/lib/r2";
 
@@ -56,6 +57,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     });
     if (!item) {
       return NextResponse.json({ error: "Item no encontrado" }, { status: 404 });
+    }
+    if (!puedeEditarRequerimiento(token.roles as string[] | undefined, item)) {
+      return NextResponse.json({ error: "Tu rol no tiene permiso para esta acción" }, { status: 403 });
     }
 
     let body: unknown;
@@ -143,6 +147,10 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     const adj = await prisma.oTRepuestoAdjunto.findUnique({ where: { id: adjuntoId } });
     if (!adj || adj.ot_repuesto_id !== itemId) {
       return NextResponse.json({ error: "Adjunto no encontrado" }, { status: 404 });
+    }
+    const item = await prisma.oTRepuesto.findUnique({ where: { id: itemId }, select: { orden_trabajo_interna_id: true } });
+    if (!item || !puedeEditarRequerimiento(token.roles as string[] | undefined, item)) {
+      return NextResponse.json({ error: "Tu rol no tiene permiso para esta acción" }, { status: 403 });
     }
 
     try {
