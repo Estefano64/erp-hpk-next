@@ -17,7 +17,7 @@ import dayjs from "dayjs";
 import { formatDateOnly } from "@/lib/dates";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
-import { useCachedFetch, invalidateCachePrefix } from "@/lib/useCachedFetch";
+import { useCachedFetch } from "@/lib/useCachedFetch";
 import {
   useColumnasOcultas,
   ColumnasToggleButton,
@@ -685,38 +685,17 @@ export default function OTRequerimientosTab({
           }
         }
       }
-      // Registrar nuevos servicios en catálogo (idempotente): para items SER con
-      // descripción tipeada, guardamos el servicio para que pueda reutilizarse.
-      const serviciosNuevos = new Set<string>();
-      const descripcionesSer = draftItems
-        .filter((it) => it.tipo_codigo === "SER" && it.descripcion?.trim())
-        .map((it) => it.descripcion.trim());
-      for (const nombre of [...new Set(descripcionesSer)]) {
-        try {
-          const r = await fetch("/api/servicios-reparacion", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ nombre }),
-          });
-          if (r.ok) {
-            const sj = await r.json().catch(() => null);
-            if (sj && !sj.reused) serviciosNuevos.add(nombre);
-          }
-        } catch { /* falla silenciosa: no bloquear el flujo principal */ }
-      }
-      // Si se registró algún servicio nuevo, invalidar el cache compartido del
-      // catálogo (useCachedFetch no refresca solo) para que aparezca en el
-      // próximo montaje del form sin necesidad de recargar la página.
-      if (serviciosNuevos.size > 0) {
-        invalidateCachePrefix("/api/catalogos?tabla=servicioReparacion");
-      }
+      // Los SER tipeados YA NO se registran solos en el catálogo (2026-10-15):
+      // el catálogo se llenaba de descripciones de un solo uso con medidas
+      // ("SVC Cromado dia 69.92 x 730.00"). Ahora es una lista curada de
+      // servicios genéricos que se administra desde Catálogos; las medidas y
+      // el detalle de cada trabajo van en observaciones.
       messageApi.success(
         (draftAppendToNroReq
           ? `Agregados ${j.creados} item(s) a ${j.nro_req}.`
           : `Requerimiento ${j.nro_req} creado con ${j.creados} item(s).`) +
         (archivosSubidos > 0 ? ` ${archivosSubidos} archivo(s) subido(s).` : "") +
-        (archivosFallidos > 0 ? ` ${archivosFallidos} archivo(s) fallaron.` : "") +
-        (serviciosNuevos.size > 0 ? ` ${serviciosNuevos.size} servicio(s) nuevo(s) en catálogo.` : "")
+        (archivosFallidos > 0 ? ` ${archivosFallidos} archivo(s) fallaron.` : "")
       );
       cerrarDraft();
       fetchData();
