@@ -53,10 +53,15 @@ export async function medidasCromadoPorOt(otIds: number[]): Promise<Map<number, 
       }
     }
     const longitud = num(m[`${p}_${claveLong}`]);
-    if (diametros.length === 0 && longitud == null) continue;
+    // Descarta lecturas absurdas (typos de coma: 6968 en vez de 6.968) que se
+    // alejan más de ±20% de la mediana; si quedan todas fuera, no informa.
+    const ordenados = [...diametros].sort((a, b) => a - b);
+    const mediana = ordenados.length ? ordenados[Math.floor(ordenados.length / 2)] : 0;
+    const validos = diametros.filter((d) => d >= mediana * 0.8 && d <= mediana * 1.2);
+    if (validos.length === 0 && longitud == null) continue;
     out.set(r.ot_id, {
-      diametro_min: diametros.length ? Math.min(...diametros) : null,
-      diametro_max: diametros.length ? Math.max(...diametros) : null,
+      diametro_min: validos.length ? Math.min(...validos) : null,
+      diametro_max: validos.length ? Math.max(...validos) : null,
       longitud_cromo: longitud,
       unidad: r.sistema_medicion === "Imperial" ? "in" : "mm",
       evaluacion_id: r.id,
