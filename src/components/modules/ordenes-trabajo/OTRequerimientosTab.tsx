@@ -9,7 +9,7 @@ import {
   PlusOutlined, ReloadOutlined, CloseOutlined, SaveOutlined,
   EditOutlined, DeleteOutlined, FileSyncOutlined, SendOutlined,
   PaperClipOutlined, CalendarOutlined, ThunderboltOutlined,
-  EyeOutlined, SortAscendingOutlined, SortDescendingOutlined,
+  EyeOutlined, SortAscendingOutlined, SortDescendingOutlined, SearchOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
@@ -134,6 +134,19 @@ function equivalenteUM(um: string | null | undefined): { to: string; factor: num
 }
 
 // Formatea un número con hasta 4 decimales, sin ceros a la derecha.
+const sinTildes = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+/** ¿El item coincide con el texto buscado? Todas las palabras deben aparecer. */
+function coincideBusqueda(r: RequerimientoRow, busqueda: string): boolean {
+  const palabras = sinTildes(busqueda).split(/\s+/).filter(Boolean);
+  if (palabras.length === 0) return true;
+  const texto = sinTildes([
+    r.nro_req, r.material_codigo, r.material?.descripcion, r.descripcion, r.texto,
+    r.fabricante_codigo, r.observaciones, r.proveedor?.razon_social, r.compra?.numero_po,
+  ].filter(Boolean).join(" "));
+  return palabras.every((p) => texto.includes(p));
+}
+
 function fmtCant(n: number): string {
   return Number(n.toFixed(4)).toLocaleString("es-PE", { maximumFractionDigits: 4 });
 }
@@ -299,6 +312,10 @@ export default function OTRequerimientosTab({
   );
   const { rango: rangoSol, setRango: setRangoSol } = useRangoFechas();
   const { rango: rangoReq, setRango: setRangoReq } = useRangoFechas();
+  // Buscador de texto del tab (pedido 2026-10-15: "¿en qué requerimiento
+  // pidieron tal sello?"). Busca en descripción, material, nro_req,
+  // fabricante, observaciones, proveedor y OC; sin distinguir tildes.
+  const [busqueda, setBusqueda] = useState("");
 
   // Info de la OT interna (equipo + estrategia PM) — habilita "Aplicar Task List".
   // Equivalente al codRepCodigo de las OT externas. Solo se fetchea cuando kind=interna.
@@ -1920,6 +1937,15 @@ export default function OTRequerimientosTab({
       )}
 
       <Row gutter={[12, 8]} style={{ marginBottom: 12 }}>
+        <Col xs={24}>
+          <Input
+            allowClear
+            prefix={<SearchOutlined />}
+            placeholder="Buscar en los requerimientos: descripción, código de material, N° req, fabricante, proveedor, OC…"
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+          />
+        </Col>
         <Col xs={24} md={12}>
           <RangoFechasFiltro label="Fecha solicitud" value={rangoSol} onChange={setRangoSol} />
         </Col>
@@ -1934,8 +1960,11 @@ export default function OTRequerimientosTab({
         <RequerimientosAgrupados
           rows={rows.filter((r) =>
             dentroDeRango(r, "fecha_solicitud", rangoSol) &&
-            dentroDeRango(r, "fecha_requerida", rangoReq)
+            dentroDeRango(r, "fecha_requerida", rangoReq) &&
+            coincideBusqueda(r, busqueda)
           )}
+          busqueda={busqueda}
+          totalGruposOT={new Set(rows.map((r) => r.nro_req ?? "(sin nro)")).size}
           columns={visibleColumns(columnsResizable, ocultas, ["item_req", "desc"])}
           components={tableComponents}
           DragWrapper={TableDragWrapper}
@@ -2205,8 +2234,14 @@ function RequerimientosAgrupados({
   otFechaRecepcion,
   onEliminarLote,
   DragWrapper,
+  busqueda = "",
+  totalGruposOT,
 }: {
   rows: RequerimientoRow[];
+  // Texto del buscador: con búsqueda activa los grupos se muestran expandidos.
+  busqueda?: string;
+  // Cantidad de requerimientos de la OT SIN filtros (para detectar uno nuevo).
+  totalGruposOT?: number;
   columns: ColumnsType<RequerimientoRow>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   components?: any;
@@ -2309,12 +2344,21 @@ function RequerimientosAgrupados({
   const gruposPagina = groups.slice((paginaActual - 1) * porPagina, paginaActual * porPagina);
   // Al aparecer un requerimiento nuevo, ir a la página donde queda (la última
   // en orden natural, la primera en "último primero") para que se vea.
-  const [cantGrupos, setCantGrupos] = useState(groups.length);
-  if (groups.length !== cantGrupos) {
-    setCantGrupos(groups.length);
-    if (groups.length > cantGrupos && cantGrupos > 0) {
+  // Se compara contra el total SIN filtros: achicar/limpiar un filtro no es
+  // "un requerimiento nuevo".
+  const totalOT = totalGruposOT ?? groups.length;
+  const [cantGrupos, setCantGrupos] = useState(totalOT);
+  if (totalOT !== cantGrupos) {
+    setCantGrupos(totalOT);
+    if (totalOT > cantGrupos && cantGrupos > 0 && !busqueda) {
       setPagina(ordenDesc ? 1 : Math.max(1, Math.ceil(groups.length / porPagina)));
     }
+  }
+  // Al cambiar la búsqueda, volver a la primera página de resultados.
+  const [busquedaPrev, setBusquedaPrev] = useState(busqueda);
+  if (busqueda !== busquedaPrev) {
+    setBusquedaPrev(busqueda);
+    setPagina(1);
   }
   const paginacion = groups.length > porPagina || porPagina !== 10 ? (
     <Pagination
@@ -2357,7 +2401,7 @@ function RequerimientosAgrupados({
         const first = items[0];
         const status = first?.status_requerimiento?.nombre ?? first?.status_requerimiento_codigo ?? "BORRADOR";
         const statusColor = REQ_COLOR[first?.status_requerimiento_codigo ?? "BORRADOR"] ?? "default";
-        const isCollapsed = estaContraido(nro, items);
+        const isCollapsed = busqueda.trim() ? false : estaContraido(nro, items);
         const hasBorrador = items.some((i) => i.status_requerimiento_codigo === "BORRADOR");
         const allEditable = items.every(
           (i) => i.status_requerimiento_codigo === "BORRADOR" || i.status_requerimiento_codigo === "SIN_APROBACION",
