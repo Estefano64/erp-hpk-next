@@ -85,9 +85,14 @@ export function modeloForField(
   if (rest === "cil_ltot") return medida.cilindro.longTotal;
   if (/^cil_dojo_f_[xy]$/.test(rest)) return medida.cilindro.diamOjo;
   if (/^cil_dint_g_[xy]$/.test(rest)) return medida.cilindro.diamIntCojinete;
-  if (/^cil_ancho_ojo_[xy]$/.test(rest)) return medida.cilindro.anchoOjo;
+  // Ancho de ojo se guarda como valor único (sin _x/_y); se aceptan ambos.
+  if (/^cil_ancho_ojo(_[xy])?$/.test(rest)) return medida.cilindro.anchoOjo;
 
   // ── VÁSTAGO ──
+  // Diámetro del vástago: el formulario guarda 3 puntos B1-B3 en X/Y
+  // (vas_dext_b1_x … vas_dext_b3_y, ver VASTAGO_MEDIDAS). Sin esta regla el
+  // técnico no veía el nominal en esos 6 inputs (bug detectado 2026-10-15).
+  if (/^vas_dext_b[1-3]_[xy]$/.test(rest)) return medida.vastago.diamVastago;
   if (/^vas_dvas_[bcd]_[xy]$/.test(rest)) return medida.vastago.diamVastago;
   if (/^vas_dext_[xy]$/.test(rest)) return medida.vastago.diamVastago;
   if (/^vas_dsell_[xy]$/.test(rest)) return medida.vastago.diamVastago;
@@ -99,7 +104,7 @@ export function modeloForField(
   if (/^vas_dext_ojo_h_[xy]$/.test(rest)) return medida.vastago.diamExtOjo;
   if (/^vas_dint_ojo_i_[xy]$/.test(rest)) return medida.vastago.diamIntOjo;
   if (/^vas_dint_j_[xy]$/.test(rest)) return medida.vastago.diamIntCojinete;
-  if (/^vas_ancho_ojo_[xy]$/.test(rest)) return medida.vastago.anchoOjo;
+  if (/^vas_ancho_ojo(_[xy])?$/.test(rest)) return medida.vastago.anchoOjo;
 
   // ── TAPA ──
   if (rest === "tapa_dext") return medida.tapa.exterior;
