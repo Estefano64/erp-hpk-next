@@ -62,9 +62,10 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       return NextResponse.json({ error: "Requerimiento desaprobado, no editable." }, { status: 423 });
     }
 
-    // BORRADOR: cualquier usuario edita libre
+    // BORRADOR u OBSERVADO (devuelto a revisión por logística para que el
+    // solicitante lo corrija y reenvíe): cualquier usuario edita libre.
     // SIN_APROBACION o APROBADO: solo admin (y no si tiene OC para cantidad/material)
-    if (estadoActual !== "BORRADOR" && !admin) {
+    if (estadoActual !== "BORRADOR" && estadoActual !== "OBSERVADO" && !admin) {
       return NextResponse.json({
         error: "Este requerimiento ya fue enviado a aprobación. Solo un admin puede editarlo desde el módulo Requerimientos.",
       }, { status: 403 });

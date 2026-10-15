@@ -9,7 +9,8 @@ import {
   PlusOutlined, ReloadOutlined, CloseOutlined, SaveOutlined,
   EditOutlined, DeleteOutlined, FileSyncOutlined, SendOutlined,
   PaperClipOutlined, CalendarOutlined, ThunderboltOutlined,
-  EyeOutlined, SortAscendingOutlined, SortDescendingOutlined, SearchOutlined,
+  EyeOutlined, SortAscendingOutlined, SortDescendingOutlined, SearchOutlined, StopOutlined,
+  ExclamationCircleOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
@@ -145,6 +146,24 @@ function coincideBusqueda(r: RequerimientoRow, busqueda: string): boolean {
     r.fabricante_codigo, r.observaciones, r.proveedor?.razon_social, r.compra?.numero_po,
   ].filter(Boolean).join(" "));
   return palabras.every((p) => texto.includes(p));
+}
+
+/**
+ * Motivo por el que logística devolvió el item a revisión. El endpoint
+ * /observar lo anexa a `observaciones` como
+ * "DEVUELTO A REVISIÓN el <fecha> por <usuario> — <motivo>"; se toma el último.
+ */
+function motivoObservado(observaciones: string | null | undefined): { fecha: string; por: string; motivo: string } | null {
+  if (!observaciones) return null;
+  const re = /DEVUELTO A REVISI[OÓ]N el (\S+) por (.+?) — ([^\n]*)/g;
+  let ultimo: RegExpExecArray | null = null;
+  for (let m = re.exec(observaciones); m; m = re.exec(observaciones)) ultimo = m;
+  return ultimo ? { fecha: ultimo[1], por: ultimo[2], motivo: ultimo[3].trim() } : null;
+}
+
+function textoObservado(r: { observaciones: string | null }): string {
+  const o = motivoObservado(r.observaciones);
+  return o ? `Observado el ${o.fecha} por ${o.por}: ${o.motivo}` : "Observado por logística (sin motivo registrado)";
 }
 
 function fmtCant(n: number): string {
@@ -1015,7 +1034,48 @@ export default function OTRequerimientosTab({
     onUpdated?.();
   }
 
-  // (Las acciones aprobar/desaprobar/anular se gestionan desde el módulo /requerimientos por admin)
+  // (Aprobar/desaprobar se gestionan desde el módulo /requerimientos por admin.)
+  // Items OBSERVADO (logística los devolvió a revisión): desde acá el
+  // solicitante los corrige y reenvía, o los anula si ya no van (pedido
+  // 2026-10-15: nadie usaba el módulo de observados).
+  async function reenviar(r: RequerimientoRow) {
+    const res = await fetch(`/api/requerimientos/${r.id}/enviar-a-aprobacion`, { method: "POST" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      messageApi.error(err?.error ?? "Error al reenviar.");
+      return;
+    }
+    messageApi.success("Reenviado a aprobación.");
+    fetchData();
+    onUpdated?.();
+  }
+  const [anulando, setAnulando] = useState<RequerimientoRow | null>(null);
+  const [motivoAnular, setMotivoAnular] = useState("");
+  const [guardandoAnular, setGuardandoAnular] = useState(false);
+  async function confirmarAnular() {
+    if (!anulando || !motivoAnular.trim()) return;
+    setGuardandoAnular(true);
+    try {
+      const res = await fetch(`/api/requerimientos/${anulando.id}/anular`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ motivo: motivoAnular.trim() }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        messageApi.error(err?.error ?? "Error al anular.");
+        return;
+      }
+      messageApi.success("Item anulado.");
+      setAnulando(null);
+      setMotivoAnular("");
+      fetchData();
+      onUpdated?.();
+    } finally {
+      setGuardandoAnular(false);
+    }
+  }
+
   async function eliminar(r: RequerimientoRow) {
     const res = await fetch(`/api/requerimientos/${r.id}`, { method: "DELETE" });
     if (!res.ok) {
@@ -1379,11 +1439,35 @@ export default function OTRequerimientosTab({
         const sr = r.status_requerimiento_codigo;
         // En el tab OT solo permitimos editar/eliminar mientras está en BORRADOR.
         // El envío a aprobación es a nivel de requerimiento completo (botón en la cabecera del card).
+        // OBSERVADO (sin OC): editar, reenviar a aprobación o anular.
         const isBorrador = sr === "BORRADOR";
-        const canEdit = isBorrador;
+        const isObservado = sr === "OBSERVADO" && r.po_id == null;
+        const canEdit = isBorrador || isObservado;
         const canDelete = isBorrador;
         return (
           <Space size={0}>
+            {isObservado && (
+              <Tooltip title={textoObservado(r)}>
+                <ExclamationCircleOutlined style={{ color: brand.warning, margin: "0 6px" }} />
+              </Tooltip>
+            )}
+            {isObservado && (
+              <Popconfirm
+                title="Reenviar a aprobación"
+                description={<div style={{ maxWidth: 320 }}>{textoObservado(r)}<br />¿Ya está corregido? El item vuelve a la cola de aprobación.</div>}
+                onConfirm={() => reenviar(r)}
+                okText="Reenviar" cancelText="Cancelar"
+              >
+                <Tooltip title="Reenviar a aprobación">
+                  <Button type="text" size="small" icon={<SendOutlined />} />
+                </Tooltip>
+              </Popconfirm>
+            )}
+            {isObservado && (
+              <Tooltip title="Anular (ya no va)">
+                <Button type="text" size="small" danger icon={<StopOutlined />} onClick={() => { setAnulando(r); setMotivoAnular(""); }} />
+              </Tooltip>
+            )}
             {canEdit && (
               <Tooltip title="Editar">
                 <Button type="text" size="small" icon={<EditOutlined />} onClick={() => abrirEditar(r)} />
@@ -1396,7 +1480,7 @@ export default function OTRequerimientosTab({
                 </Tooltip>
               </Popconfirm>
             )}
-            {!isBorrador && (
+            {!isBorrador && !isObservado && (
               <Tooltip title="Gestión disponible solo desde Logística → Requerimientos">
                 <Text type="secondary" style={{ fontSize: 11 }}>—</Text>
               </Tooltip>
@@ -1417,6 +1501,32 @@ export default function OTRequerimientosTab({
   return (
     <div>
       {contextHolder}
+      <Modal
+        open={anulando != null}
+        title={`Anular ${anulando?.nro_req ?? "item"}`}
+        width={modalWidth(screens, 480)}
+        okText="Anular"
+        okButtonProps={{ danger: true, disabled: !motivoAnular.trim(), loading: guardandoAnular }}
+        cancelText="Cancelar"
+        onOk={confirmarAnular}
+        onCancel={() => setAnulando(null)}
+        destroyOnHidden
+      >
+        <Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
+          {anulando?.descripcion}
+        </Text>
+        {anulando && (
+          <Alert type="warning" showIcon style={{ marginBottom: 12 }} title={textoObservado(anulando)} />
+        )}
+        <Text style={{ display: "block", marginBottom: 4 }}>Motivo (obligatorio)</Text>
+        <Input.TextArea
+          rows={3}
+          autoFocus
+          placeholder="Ej. se optó por fabricación, ya no aplica"
+          value={motivoAnular}
+          onChange={(e) => setMotivoAnular(e.target.value)}
+        />
+      </Modal>
       {modalCtx}
       <ServicioSeguimientoDrawer
         ser={svcSel}
@@ -2533,6 +2643,17 @@ function RequerimientosAgrupados({
                     </Button>
                   </Popconfirm>
                 )}
+                {(() => {
+                  const obs = items.filter((i) => i.status_requerimiento_codigo === "OBSERVADO");
+                  if (obs.length === 0) return null;
+                  return (
+                    <Tooltip title={<div>{obs.map((i) => <div key={i.id}>• {i.descripcion ?? `Item ${i.item_req ?? i.id}`} — {motivoObservado(i.observaciones)?.motivo ?? "sin motivo registrado"}</div>)}</div>}>
+                      <Tag color="warning" icon={<ExclamationCircleOutlined />}>
+                        {obs.length} observado{obs.length === 1 ? "" : "s"}
+                      </Tag>
+                    </Tooltip>
+                  );
+                })()}
                 <Tag color={statusColor}>{status}</Tag>
               </Space>
             }
