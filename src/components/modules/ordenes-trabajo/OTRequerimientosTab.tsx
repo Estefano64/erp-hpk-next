@@ -18,6 +18,7 @@ import { formatDateOnly } from "@/lib/dates";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import { useCachedFetch } from "@/lib/useCachedFetch";
+import { esServicioCromado, observacionesConMedidas, type MedidasCromado } from "@/lib/medidas-cromado";
 import {
   useColumnasOcultas,
   ColumnasToggleButton,
@@ -449,6 +450,18 @@ export default function OTRequerimientosTab({
     moneda?: "USD" | "SOL";
   };
   const [draftOpen, setDraftOpen] = useState(false);
+  // Medidas de vástago de la evaluación (solo OT externa) para autollenar
+  // observaciones de los SER de cromado en el borrador. Se piden al abrirlo.
+  const [medidasCromado, setMedidasCromado] = useState<MedidasCromado | null>(null);
+  useEffect(() => {
+    if (!draftOpen || kind === "interna") return;
+    let vivo = true;
+    fetch(`/api/ordenes-trabajo/${otId}/medidas-cromado`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (vivo) setMedidasCromado(j?.data ?? null); })
+      .catch(() => { /* sin medidas: el servidor igual las escribe al guardar */ });
+    return () => { vivo = false; };
+  }, [draftOpen, kind, otId]);
   const [draftItems, setDraftItems] = useState<DraftItem[]>([]);
   const [savingDraft, setSavingDraft] = useState(false);
   // Si está seteado, los items del draft se agregan a este nro_req (en vez de crear uno nuevo).
@@ -572,6 +585,12 @@ export default function OTRequerimientosTab({
         if (s) {
           next.descripcion = s.nombre;
         }
+      }
+      // SER de cromado en OT externa: poner las medidas de vástago de la
+      // evaluación en observaciones apenas se elige el servicio (antes solo
+      // aparecían después de guardar). Reemplaza la línea, no duplica.
+      if (medidasCromado && esServicioCromado(next.tipo_codigo, next.descripcion)) {
+        next.observaciones = observacionesConMedidas(next.observaciones, medidasCromado) ?? undefined;
       }
       // Auto-rescale del precio cuando cambia UM en OTs internas (cil↔gl).
       // El material puede estar cotizado en cil pero elegimos gl para el req;

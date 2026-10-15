@@ -87,7 +87,10 @@ export async function sincronizarObservacionesCromado(otId: number, usuario?: st
         tipo_codigo: "SER",
         descripcion: { contains: "crom", mode: "insensitive" },
         po_id: null,
-        NOT: { status_requerimiento_codigo: "ANULADO" },
+        // Solo estados EDITABLES (2026-10-15): una vez enviado a aprobación
+        // nadie puede editarlo, así que el sistema tampoco le cambia el texto.
+        // OBSERVADO vuelve a ser editable (lo devolvió logística).
+        status_requerimiento_codigo: { in: ["BORRADOR", "OBSERVADO"] },
       },
       select: { id: true, tipo_codigo: true, descripcion: true, observaciones: true },
     });
