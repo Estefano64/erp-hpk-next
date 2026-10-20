@@ -31,6 +31,7 @@ import {
 } from "@/lib/tables";
 import { uploadToR2 } from "@/lib/r2-client";
 import { R2FileLink } from "@/components/R2FileLink";
+import FabricanteSelect from "@/components/FabricanteSelect";
 import {
   ServicioEstadoCell, ServicioSeguimientoDrawer, useServicioSeguimiento, type ServicioSer,
 } from "@/components/modules/servicios/ServicioSeguimiento";
@@ -742,8 +743,6 @@ export default function OTRequerimientosTab({
   type Wrapped<T> = { data: T[] } | null;
   const matsRes = useCachedFetch<Wrapped<MaterialOpt>>("/api/materiales?limit=10000");
   const materiales = matsRes?.data ?? [];
-  const fabsRes = useCachedFetch<Wrapped<{ codigo: string; nombre: string }>>("/api/catalogos?tabla=fabricante");
-  const fabricantes = fabsRes?.data ?? [];
   const sersRes = useCachedFetch<Wrapped<{ codigo: string; nombre: string; descripcion: string | null }>>("/api/catalogos?tabla=servicioReparacion");
   const servicios = sersRes?.data ?? [];
   const umsRes = useCachedFetch<Wrapped<{ codigo: string; nombre: string; abreviatura?: string }>>("/api/catalogos?tabla=unidadMedida");
@@ -1855,12 +1854,11 @@ export default function OTRequerimientosTab({
               {
                 title: "Marca", key: "marca", width: 140,
                 render: (_: unknown, r: DraftItem) => (
-                  <Select
-                    size="small" style={{ width: "100%" }}
-                    placeholder="Marca" allowClear showSearch optionFilterProp="label"
+                  <FabricanteSelect
+                    size="small" style={{ width: "100%" }} conCodigo={false}
+                    placeholder="Marca"
                     value={r.fabricante_codigo}
                     onChange={(v) => actualizarDraftItem(r.id, { fabricante_codigo: v })}
-                    options={fabricantes.map((f) => ({ value: f.codigo, label: f.nombre }))}
                   />
                 ),
               },
@@ -2206,12 +2204,7 @@ export default function OTRequerimientosTab({
             </Col>
             <Col span={8}>
               <Form.Item name="fabricante_codigo" label="Fabricante">
-                <Select
-                  showSearch allowClear
-                  optionFilterProp="label"
-                  placeholder="Elegir fabricante…"
-                  options={fabricantes.map((f) => ({ value: f.codigo, label: `${f.codigo} — ${f.nombre}` }))}
-                />
+                <FabricanteSelect placeholder="Elegir fabricante…" />
               </Form.Item>
             </Col>
           </Row>

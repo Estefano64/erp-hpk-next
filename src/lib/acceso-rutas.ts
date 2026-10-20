@@ -218,6 +218,10 @@ export const REGLAS_ESCRITURA_API: ReglaApi[] = [
   { prefijo: "/api/operaciones-cod-rep", roles: TODAS_AREAS },
   { prefijo: "/api/operaciones-reparacion", roles: TODAS_AREAS },
   { prefijo: "/api/servicios-reparacion", roles: TODAS_AREAS },
+  // ── Alta rápida de fabricantes desde los formularios de requerimiento
+  //    (mantenimiento no podía agregar una marca nueva, 2026-10-20). El resto
+  //    del catálogo sigue siendo solo admin vía /api/catalogos/fabricante.
+  { prefijo: "/api/fabricantes", roles: TODAS_AREAS },
   // ── Mantenimiento
   { prefijo: "/api/equipos", roles: ["admin", "mantenimiento"] },
   { prefijo: "/api/vehiculos", roles: ["admin", "mantenimiento"] },

@@ -25,6 +25,7 @@ import { useCachedFetch } from "@/lib/useCachedFetch";
 import { formatDateOnly, formatDateOnlyShort, dateOnlyLocal } from "@/lib/dates";
 import { formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
 import { R2FileLink } from "@/components/R2FileLink";
+import FabricanteSelect from "@/components/FabricanteSelect";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import { RequerimientosDetalleEmbebido } from "@/app/(dashboard)/requerimientos/detalle/page";
 import {
@@ -403,8 +404,6 @@ export default function RequerimientosPage() {
   const provRes = useCachedFetch<Wrapped<ProveedorOpt>>("/api/proveedores?limit=10000");
   const matsRes = useCachedFetch<Wrapped<{ codigo: string; descripcion: string; fabricante_codigo: string | null; unidad_medida_codigo: string | null }>>("/api/materiales?limit=10000");
   const materiales = matsRes?.data ?? [];
-  const fabsRes = useCachedFetch<Wrapped<{ codigo: string; nombre: string }>>("/api/catalogos?tabla=fabricante");
-  const fabricantes = fabsRes?.data ?? [];
 
   const statusReqOpts = (srRes?.data ?? []).map((s) => ({ value: s.codigo, label: s.nombre }));
   const statusOcOpts = (soRes?.data ?? []).map((s) => ({ value: s.codigo, label: s.nombre }));
@@ -1729,10 +1728,7 @@ export default function RequerimientosPage() {
             </Col>
             <Col xs={12} sm={8}>
               <Form.Item name="fabricante_codigo" label="Fabricante">
-                <Select
-                  showSearch allowClear optionFilterProp="label"
-                  options={fabricantes.map((f) => ({ value: f.codigo, label: `${f.codigo} — ${f.nombre}` }))}
-                />
+                <FabricanteSelect />
               </Form.Item>
             </Col>
           </Row>
