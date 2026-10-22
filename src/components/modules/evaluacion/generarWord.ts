@@ -472,20 +472,14 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
     const recomendaciones = v(`${prefix}_recomendaciones`);
     const hallazgosMarcados = hallazgosChecks.filter((h) => v(h.key));
 
-    // Si hay imagen Y medidas: layout lado a lado (imagen | tabla)
+    // Si hay imagen Y medidas: imagen centrada arriba, tabla debajo (A4 vertical)
     // Si solo hay imagen: imagen centrada
     // Si solo hay medidas: tabla a ancho completo
     let cabeceraHTML = "";
     if (imgSrc && medidasHTML) {
       cabeceraHTML = `
-        <table class="seccion-layout"><tr>
-          <td class="seccion-img-cell">
-            <div class="img-ref-wrap"><img src="${imgSrc}" /><div class="img-caption">Referencia: ${esc(imgLabel)}</div></div>
-          </td>
-          <td class="seccion-med-cell">
-            <table><thead><tr><th>Parametro</th><th>X</th><th>Y</th></tr></thead><tbody>${medidasHTML}</tbody></table>
-          </td>
-        </tr></table>
+        <div class="img-ref-wrap solo"><img src="${imgSrc}" /><div class="img-caption">Referencia: ${esc(imgLabel)}</div></div>
+        <table><thead><tr><th>Parametro</th><th>X</th><th>Y</th></tr></thead><tbody>${medidasHTML}</tbody></table>
       `;
     } else if (imgSrc) {
       cabeceraHTML = `<div class="img-ref-wrap solo"><img src="${imgSrc}" /><div class="img-caption">Referencia: ${esc(imgLabel)}</div></div>`;
@@ -1195,18 +1189,14 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
         medidasTapaHTML = medidasTapa;
       }
 
-      // Renderizar con layout estandar (imagen + medidas a la derecha)
+      // Renderizar con layout estandar (imagen arriba + medidas debajo)
       // Para doble vastago, medidasTapaHTML ya es una tabla completa (no formato fila X/Y),
       // por eso renderizamos manualmente cuando es esDobleVastago.
       if (esDobleVastago) {
         seccionesHTML += `
           <h2><span class="section-num">${numSec++}</span> Tapa</h2>
-          <table class="seccion-layout"><tr>
-            <td class="seccion-img-cell">
-              <div class="img-ref-wrap"><img src="${imgTapa}" /><div class="img-caption">Referencia: Tapa (A, B, C, D)</div></div>
-            </td>
-            <td class="seccion-med-cell">${medidasTapaHTML}</td>
-          </tr></table>
+          <div class="img-ref-wrap solo"><img src="${imgTapa}" /><div class="img-caption">Referencia: Tapa (A, B, C, D)</div></div>
+          ${medidasTapaHTML}
         `;
         seccionesHTML += renderImagenesSubidas(`${p}_tapa`);
         const resTapa = v(`${p}_tapa_resultado`);
@@ -1254,42 +1244,38 @@ export async function generarWordEvaluacion(args: GenerarWordArgs) {
   // ── HTML completo ──
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
 <style>
-@page { size: A4 landscape; margin: 1.5cm 1.2cm; }
-body { font-family: Calibri, Arial, sans-serif; font-size: 9pt; margin: 0; color: #222; line-height: 1.4; }
+@page { size: A4 portrait; margin: 2.5cm 3cm; }
+body { font-family: Calibri, Arial, sans-serif; font-size: 12pt; margin: 0; color: #222; line-height: 1.4; }
 
 .header-corp { width: 100%; border-bottom: 3pt solid ${AZUL}; margin-bottom: 12pt; padding-bottom: 8pt; }
 .header-corp td { border: none; padding: 0; vertical-align: middle; }
-.header-corp .logo-cell { width: 75pt; text-align: left; }
+.header-corp .logo-cell { width: 80pt; text-align: left; }
 .header-corp .logo-cell img { width: 65pt; height: auto; max-height: 30pt; }
 .header-corp .titulo-cell { text-align: center; padding: 0 10pt; }
-.header-corp .titulo-cell h1 { font-size: 14pt; color: ${AZUL}; margin: 0 0 3pt; letter-spacing: 1.5pt; font-weight: bold; text-transform: uppercase; }
-.header-corp .titulo-cell p { font-size: 9pt; color: #555; margin: 0; }
-.header-corp .info-cell { text-align: right; font-size: 8.5pt; color: #444; width: 150pt; line-height: 1.6; }
+.header-corp .titulo-cell h1 { font-size: 16pt; color: ${AZUL}; margin: 0 0 3pt; letter-spacing: 1.5pt; font-weight: bold; text-transform: uppercase; }
+.header-corp .titulo-cell p { font-size: 11pt; color: #555; margin: 0; }
+.header-corp .info-cell { text-align: right; font-size: 10pt; color: #444; width: 140pt; line-height: 1.6; }
 .header-corp .info-cell b { color: ${AZUL}; }
 
-h2 { font-size: 10.5pt; background: ${AZUL}; color: #fff; padding: 5pt 10pt; margin: 14pt 0 6pt; }
-.section-num { display: inline-block; background: #fff; color: ${AZUL}; border: 1.5pt solid #fff; border-radius: 50%; width: 16pt; height: 16pt; text-align: center; line-height: 16pt; font-weight: bold; font-size: 8pt; margin-right: 5pt; }
+h2 { font-size: 13pt; background: ${AZUL}; color: #fff; padding: 5pt 10pt; margin: 14pt 0 6pt; }
+.section-num { display: inline-block; background: #fff; color: ${AZUL}; border: 1.5pt solid #fff; border-radius: 50%; width: 18pt; height: 18pt; text-align: center; line-height: 18pt; font-weight: bold; font-size: 10pt; margin-right: 5pt; }
 
 table { border-collapse: collapse; width: 100%; margin: 4pt 0 8pt; }
-th, td { border: 0.5pt solid #bbb; padding: 3pt 6pt; font-size: 8.5pt; vertical-align: top; }
-th { background: ${AZUL}; color: #fff; font-weight: 600; text-align: center; font-size: 8pt; letter-spacing: 0.3pt; }
+th, td { border: 0.5pt solid #bbb; padding: 3pt 6pt; font-size: 12pt; vertical-align: top; }
+th { background: ${AZUL}; color: #fff; font-weight: 600; text-align: center; font-size: 12pt; letter-spacing: 0.3pt; }
 td.label { font-weight: 600; background: ${GRIS_FONDO}; color: #333; white-space: nowrap; width: 30%; }
 td.editable { color: ${AZUL_CLARO}; font-weight: 600; text-align: center; }
 
 .img-ref-wrap { text-align: center; margin: 0; padding: 8pt; border: 1pt solid #cfd8e3; background: #fafcff; border-radius: 3pt; }
 .img-ref-wrap img { width: auto; height: auto; max-width: 100%; max-height: 180pt; display: block; margin: 0 auto; }
-.img-ref-wrap .img-caption { font-size: 8.5pt; color: ${AZUL}; margin-top: 6pt; font-weight: 700; letter-spacing: 0.5pt; text-transform: uppercase; }
+.img-ref-wrap .img-caption { font-size: 10pt; color: ${AZUL}; margin-top: 6pt; font-weight: 700; letter-spacing: 0.5pt; text-transform: uppercase; }
 
-/* Layout 2 columnas: imagen | medidas (lado a lado en A4 horizontal) */
-.seccion-layout { width: 100%; border-collapse: separate; border-spacing: 0; margin: 6pt 0 8pt; }
-.seccion-layout > tbody > tr > td { border: none; padding: 0; vertical-align: top; }
-.seccion-layout td.seccion-img-cell { width: 35%; padding-right: 10pt; }
-.seccion-layout td.seccion-med-cell { width: 65%; }
-/* Cuando va sola la imagen (sin medidas), centrarla con ancho moderado */
+/* Imagen de referencia centrada con ancho moderado; en A4 vertical las
+   medidas van debajo a ancho completo (antes iban al lado, en horizontal). */
 .img-ref-wrap.solo { width: 55%; margin: 10pt auto; }
 
 .fotos-subidas { margin: 10pt 0 12pt; }
-.fotos-titulo { font-size: 9pt; color: ${AZUL}; font-weight: 700; padding: 5pt 8pt; background: ${GRIS_FONDO}; border-left: 4pt solid ${AZUL}; margin-bottom: 6pt; letter-spacing: 0.4pt; }
+.fotos-titulo { font-size: 12pt; color: ${AZUL}; font-weight: 700; padding: 5pt 8pt; background: ${GRIS_FONDO}; border-left: 4pt solid ${AZUL}; margin-bottom: 6pt; letter-spacing: 0.4pt; }
 /* Bloque por foto: SIN tabla, SIN caption, SIN borde — el user pidió que
    las imágenes vayan continuas. Margen vertical mínimo (2pt) para que se
    vean pegadas pero no superpuestas. */
@@ -1297,24 +1283,24 @@ td.editable { color: ${AZUL_CLARO}; font-weight: 600; text-align: center; }
 .foto-bloque img { width: 8cm; height: auto; display: block; margin: 0 auto; }
 
 .hallazgos { margin: 6pt 0; padding: 4pt 8pt; border-left: 3pt solid #c0392b; background: #fef5f5; }
-.hallazgos b { color: #c0392b; font-size: 9pt; }
+.hallazgos b { color: #c0392b; font-size: 12pt; }
 .hallazgos ul { margin: 3pt 0 3pt 14pt; padding: 0; }
-.hallazgos li { font-size: 8.5pt; margin-bottom: 2pt; color: #333; }
+.hallazgos li { font-size: 12pt; margin-bottom: 2pt; color: #333; }
 
 /* Recomendaciones del catálogo — bloque azul para diferenciarlas de los
    hallazgos (rojo). Se separan en Estándar / No estándar igual que el form. */
 .recom-grupo { margin: 4pt 0 4pt 6pt; padding: 3pt 8pt; border-left: 3pt solid ${AZUL_CLARO}; background: #f0f6ff; }
-.recom-grupo .recom-sub { font-size: 7.5pt; font-weight: 700; color: ${AZUL_CLARO}; text-transform: uppercase; letter-spacing: 0.5pt; margin-bottom: 2pt; }
+.recom-grupo .recom-sub { font-size: 10pt; font-weight: 700; color: ${AZUL_CLARO}; text-transform: uppercase; letter-spacing: 0.5pt; margin-bottom: 2pt; }
 .recom-grupo ul { margin: 2pt 0 2pt 14pt; padding: 0; }
-.recom-grupo li { font-size: 8.5pt; margin-bottom: 2pt; color: #333; }
+.recom-grupo li { font-size: 12pt; margin-bottom: 2pt; color: #333; }
 
 .campo-texto { margin: 5pt 0; }
-.campo-texto b { font-size: 8.5pt; color: ${AZUL}; display: block; margin-bottom: 2pt; }
-.textarea-box { border: 0.5pt solid #bbb; min-height: 30pt; padding: 5pt 8pt; background: #fafafa; font-size: 8.5pt; color: #333; }
+.campo-texto b { font-size: 12pt; color: ${AZUL}; display: block; margin-bottom: 2pt; }
+.textarea-box { border: 0.5pt solid #bbb; min-height: 30pt; padding: 5pt 8pt; background: #fafafa; font-size: 12pt; color: #333; }
 
 .footer { border-top: 2pt solid ${AZUL}; margin-top: 16pt; padding-top: 6pt; text-align: center; }
-.footer .empresa { font-size: 8pt; color: ${AZUL}; font-weight: 600; letter-spacing: 0.5pt; }
-.footer .detalle { font-size: 7pt; color: #999; margin-top: 2pt; }
+.footer .empresa { font-size: 10pt; color: ${AZUL}; font-weight: 600; letter-spacing: 0.5pt; }
+.footer .detalle { font-size: 9pt; color: #999; margin-top: 2pt; }
 </style></head><body>
 
 <table class="header-corp"><tr>
@@ -1363,8 +1349,8 @@ ${
   // en Word y guarda, las fotos quedan embebidas en el archivo en vez de irse
   // a una carpeta externa `_archivos/` que nunca se sube al ERP.
   const blob = await htmlADocx(html, {
-    orientation: "landscape",
-    margenesCm: { top: 1.5, right: 1.2, bottom: 1.5, left: 1.2 }, // = @page del CSS
+    orientation: "portrait",
+    margenesCm: { top: 2.5, right: 3, bottom: 2.5, left: 3 }, // = @page del CSS (márgenes "Normal" de Word)
   });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
