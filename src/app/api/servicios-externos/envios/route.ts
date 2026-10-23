@@ -1,15 +1,18 @@
 // POST /api/servicios-externos/envios
 // Registra la SALIDA de uno o varios requerimientos SER hacia un proveedor
 // (en lote: todos comparten proveedor, fecha y guía de salida). Crea un
-// ServicioEnvio por SER.
+// ServicioEnvio por SER. Si son 2 o más, comparten lote_id (envío conjunto):
+// la cotización, devolución, llegada y PDFs se registran después para todo el
+// lote (PATCH /envios/lote), con resultado propio por servicio.
 //
 // Reglas:
 //   - Solo SER en estado APROBADO.
-//   - No puede haber un envío en curso (en cotización / rechazado sin
-//     devolución / en trabajo / recibido). Solo PENDIENTE_ENVIO o DEVUELTO.
+//   - No puede haber un envío en curso (en cotización /
+//     en trabajo / recibido). Solo PENDIENTE_ENVIO o DEVUELTO (cotización rechazada).
 //
 // Body: { repuesto_ids: number[], proveedor_id, fecha_salida: "YYYY-MM-DD",
 //         guia_salida?, observaciones? }
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getAuditUser } from "@/lib/audit";
@@ -48,6 +51,7 @@ export async function POST(req: NextRequest) {
     if (!proveedor) return NextResponse.json({ error: "Proveedor no encontrado" }, { status: 404 });
 
     const ids = [...new Set(d.repuesto_ids)];
+    const loteId = ids.length > 1 ? randomUUID() : null;
     const result = await prisma.$transaction(async (tx) => {
       const creados = [];
       for (const repId of ids) {
@@ -65,6 +69,7 @@ export async function POST(req: NextRequest) {
           data: {
             ot_repuesto_id: ser.id,
             proveedor_id: proveedor.id,
+            lote_id: loteId,
             fecha_salida: fechaSalida,
             guia_salida: d.guia_salida || null,
             observaciones: d.observaciones || null,
@@ -76,7 +81,8 @@ export async function POST(req: NextRequest) {
         await historialServicio(
           tx, ser,
           `Servicio "${ser.descripcion ?? ser.id}" enviado a cotizar a ${proveedor.razon_social}` +
-            (d.guia_salida ? ` (guía ${d.guia_salida})` : ""),
+            (d.guia_salida ? ` (guía ${d.guia_salida})` : "") +
+            (loteId ? ` — envío conjunto de ${ids.length} servicios` : ""),
           usuario,
         );
         creados.push(serializarEnvio(envio));

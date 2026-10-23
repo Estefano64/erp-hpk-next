@@ -9,12 +9,15 @@
 //   proveedor_id=N     → filtra por proveedor del último envío
 //   solo_aprobados=1   → omite SER que aún no están APROBADOS (default en la
 //                        vista global de Logística; la pestaña de OT los pide todos)
+//   con_seguimiento=1  → solo SER con al menos un envío (la vista de Logística:
+//                        un servicio aparece ahí cuando se le generó el
+//                        seguimiento o la OC desde Requerimientos, 2026-10-23)
 //   q=texto            → busca en descripción / nro_req / guías
 //   anio=YYYY          → año de la OT externa (vista global)
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import type { Prisma } from "@prisma/client";
-import { prisma, SELECT_SER, serializarSer } from "@/lib/servicios-externos-server";
+import { prisma, SELECT_SER, cargarDocsOC, cargarLotes, serializarSer } from "@/lib/servicios-externos-server";
 import { SERVICIO_ESTADOS, type ServicioEstado } from "@/lib/servicios-externos";
 
 export async function GET(req: NextRequest) {
@@ -38,6 +41,7 @@ export async function GET(req: NextRequest) {
     if (otId != null && Number.isFinite(otId)) where.ot_id = otId;
     if (otInternaId != null && Number.isFinite(otInternaId)) where.orden_trabajo_interna_id = otInternaId;
     if (soloAprobados) where.status_requerimiento_codigo = "APROBADO";
+    if (sp.get("con_seguimiento") === "1") where.servicio_envios = { some: {} };
     if (anio != null && Number.isFinite(anio)) {
       where.orden_trabajo = { anio: anio % 100 };
     }
@@ -61,7 +65,9 @@ export async function GET(req: NextRequest) {
       take: 2000,
     });
 
-    let data = rows.map(serializarSer);
+    const lotes = await cargarLotes(prisma, rows.flatMap((r) => r.servicio_envios.map((e) => e.lote_id)));
+    const ocs = await cargarDocsOC(prisma, rows.map((r) => r.po_id));
+    let data = rows.map((r) => serializarSer(r, lotes, ocs));
     if (estados.length > 0) data = data.filter((r) => estados.includes(r.estado));
     if (proveedorId != null && Number.isFinite(proveedorId)) {
       data = data.filter((r) => {

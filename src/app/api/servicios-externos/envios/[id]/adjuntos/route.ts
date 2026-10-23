@@ -2,8 +2,18 @@
 // GET    — lista PDFs del envío.
 // POST   — registra un archivo ya subido a R2.
 //          Body: { key, nombre_archivo, tipo_mime, tamano, tipo }
-//          tipo ∈ GUIA_SALIDA | COTIZACION | GUIA_DEVOLUCION | GUIA_LLEGADA | INFORME | FACTURA
+//          tipo ∈ GUIA_SALIDA | COTIZACION | GUIA_DEVOLUCION | INFORME
+//          (GUIA_LLEGADA y FACTURA se rechazan: van en la OC, en Compras;
+//          quedan en ADJUNTO_TIPOS solo por los registros que ya existan)
 // DELETE — quita un adjunto. Body: { adjunto_id }
+//
+// Envío conjunto (lote_id): un PDF del lote es UN documento para varios
+// servicios, así que se registra una fila por cada envío del lote al que
+// aplica (misma r2_key) y al borrarlo se quitan todas las copias.
+//   - guía de salida / cotización → todos los envíos del lote
+//   - guía de devolución          → los rechazados devueltos en la misma fecha
+//   - guía de llegada / informe / factura → los aceptados que llegaron en la
+//     misma fecha (si la llegada es parcial, cada tanda lleva su guía)
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
@@ -19,17 +29,44 @@ type Ctx = { params: Promise<{ id: string }> };
 async function cargarEnvio(envioId: number) {
   return prisma.servicioEnvio.findUnique({
     where: { id: envioId },
-    select: {
-      id: true,
-      ot_repuesto: {
-        select: {
-          id: true, ot_id: true, orden_trabajo_interna_id: true, descripcion: true,
-          orden_trabajo: { select: { id: true, ot: true } },
-          orden_trabajo_interna: { select: { id: true, ot: true } },
-        },
-      },
-    },
+    select: SELECT_ENVIO_ADJ,
   });
+}
+
+const SELECT_ENVIO_ADJ = {
+  id: true,
+  lote_id: true,
+  cotizacion_resultado: true,
+  fecha_devolucion: true,
+  fecha_llegada: true,
+  ot_repuesto: {
+    select: {
+      id: true, ot_id: true, orden_trabajo_interna_id: true, descripcion: true,
+      orden_trabajo: { select: { id: true, ot: true } },
+      orden_trabajo_interna: { select: { id: true, ot: true } },
+    },
+  },
+} as const;
+
+type EnvioAdj = NonNullable<Awaited<ReturnType<typeof cargarEnvio>>>;
+
+const mismaFecha = (a: Date | null, b: Date | null) => (a?.getTime() ?? null) === (b?.getTime() ?? null);
+
+/** Envíos del lote (incluido el propio) a los que aplica un PDF de este tipo. */
+async function destinosDelLote(envio: EnvioAdj, tipo: AdjuntoTipo): Promise<EnvioAdj[]> {
+  if (!envio.lote_id) return [envio];
+  const lote = await prisma.servicioEnvio.findMany({
+    where: { lote_id: envio.lote_id }, select: SELECT_ENVIO_ADJ, orderBy: { id: "asc" },
+  });
+  const aplica = (e: EnvioAdj) => {
+    if (e.id === envio.id) return true;
+    if (tipo === "GUIA_SALIDA" || tipo === "COTIZACION") return true;
+    if (tipo === "GUIA_DEVOLUCION") {
+      return e.cotizacion_resultado === "RECHAZADA" && mismaFecha(e.fecha_devolucion, envio.fecha_devolucion);
+    }
+    return e.cotizacion_resultado === "ACEPTADA" && mismaFecha(e.fecha_llegada, envio.fecha_llegada);
+  };
+  return lote.filter(aplica);
 }
 
 export async function GET(req: NextRequest, ctx: Ctx) {
@@ -90,27 +127,38 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     if (typeof tipo !== "string" || !(ADJUNTO_TIPOS as readonly string[]).includes(tipo)) {
       return NextResponse.json({ error: `tipo debe ser uno de: ${ADJUNTO_TIPOS.join(", ")}` }, { status: 400 });
     }
+    // Guía de llegada y factura se cargan en la OC (Compras), no acá.
+    if (tipo === "GUIA_LLEGADA" || tipo === "FACTURA") {
+      return NextResponse.json({ error: "La guía de llegada y la factura se suben en la OC (Compras)." }, { status: 400 });
+    }
 
+    const destinos = await destinosDelLote(envio, tipo as AdjuntoTipo);
     const created = await prisma.$transaction(async (tx) => {
-      const row = await tx.servicioEnvioAdjunto.create({
-        data: {
-          servicio_envio_id: envioId,
-          tipo,
-          nombre_archivo,
-          r2_key: key,
-          tipo_mime,
-          tamano,
-          usuario_sube: usuario,
-        },
-      });
-      await historialServicio(
-        tx, rep,
-        `${ADJUNTO_LABELS[tipo as AdjuntoTipo]} adjuntada al servicio "${rep.descripcion ?? rep.id}": ${nombre_archivo}`,
-        usuario,
-      );
-      return row;
+      let propio = null;
+      for (const dest of destinos) {
+        const row = await tx.servicioEnvioAdjunto.create({
+          data: {
+            servicio_envio_id: dest.id,
+            tipo,
+            nombre_archivo,
+            r2_key: key,
+            tipo_mime,
+            tamano,
+            usuario_sube: usuario,
+          },
+        });
+        if (dest.id === envioId) propio = row;
+        const r = dest.ot_repuesto;
+        await historialServicio(
+          tx, r,
+          `${ADJUNTO_LABELS[tipo as AdjuntoTipo]} adjuntada al servicio "${r.descripcion ?? r.id}": ${nombre_archivo}` +
+            (destinos.length > 1 ? ` (envío conjunto de ${destinos.length} servicios)` : ""),
+          usuario,
+        );
+      }
+      return propio;
     });
-    return NextResponse.json({ data: created }, { status: 201 });
+    return NextResponse.json({ data: created, compartido_con: destinos.length - 1 }, { status: 201 });
   } catch (error) {
     console.error("POST adjunto servicio-envio error:", error);
     return NextResponse.json({ error: "Error al registrar adjunto" }, { status: 500 });
@@ -135,10 +183,17 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     });
     if (!adj) return NextResponse.json({ error: "Adjunto no encontrado" }, { status: 404 });
 
+    // Copias del mismo PDF en los otros envíos del lote (envío conjunto).
+    const copias = await prisma.servicioEnvioAdjunto.findMany({
+      where: { r2_key: adj.r2_key },
+      select: { id: true, servicio_envio: { select: { ot_repuesto: { select: { id: true, ot_id: true, orden_trabajo_interna_id: true, descripcion: true } } } } },
+    });
     await prisma.$transaction(async (tx) => {
-      await tx.servicioEnvioAdjunto.delete({ where: { id: adj.id } });
-      const rep = adj.servicio_envio.ot_repuesto;
-      await historialServicio(tx, rep, `Adjunto eliminado del servicio "${rep.descripcion ?? rep.id}": ${adj.nombre_archivo}`, usuario);
+      await tx.servicioEnvioAdjunto.deleteMany({ where: { id: { in: copias.map((c) => c.id) } } });
+      for (const c of copias) {
+        const rep = c.servicio_envio.ot_repuesto;
+        await historialServicio(tx, rep, `Adjunto eliminado del servicio "${rep.descripcion ?? rep.id}": ${adj.nombre_archivo}`, usuario);
+      }
     });
     try { await deleteObject(adj.r2_key); } catch (e) { console.warn("R2 delete falló:", adj.r2_key, e); }
     return NextResponse.json({ ok: true });
