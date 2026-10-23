@@ -8,7 +8,8 @@
 //
 // Ciclo (por envío):
 //   salida (guía)  → cotización ACEPTADA → trabajo → llegada (guía) = RECIBIDO
-//                  → cotización RECHAZADA → devolución (guía) → nuevo envío
+//                  → cotización RECHAZADA = DEVUELTO → nuevo envío
+//                    (la guía de devolución se registra aparte, opcional)
 //
 // Regla acordada (2026-10): la llegada ES la recepción del servicio y puede
 // ocurrir antes de que exista la OC. La OC se genera después con proveedor y
@@ -37,12 +38,18 @@ export const ADJUNTO_LABELS: Record<AdjuntoTipo, string> = {
 };
 
 // Estado del ciclo de un SER, derivado de su último envío.
+// Ciclo acordado con el equipo (2026-10-15), 5 estados visibles:
+//   Pendiente de envío → En cotización → Devuelto (no pasó la cotización)
+//                                      → Incompleto (pasó: se está trabajando)
+//                                      → Completo (llegó con el servicio hecho)
+// La guía de devolución es un documento opcional: una cotización rechazada ya
+// cuenta como Devuelto y el servicio queda libre para otro proveedor.
 export const SERVICIO_ESTADOS = [
   "NO_APLICA",        // el requerimiento no está aprobado todavía (o está anulado)
-  "PENDIENTE_ENVIO",  // aprobado, sin envíos (o el último terminó devuelto)
+  "PENDIENTE_ENVIO",  // aprobado, sin envíos
   "EN_COTIZACION",    // salió, sin resultado de cotización
-  "RECHAZADO",        // cotización rechazada, esperando la devolución
-  "DEVUELTO",         // volvió con guía de devolución → habilita nuevo envío
+  "RECHAZADO",        // (en desuso: una cotización rechazada ya es DEVUELTO)
+  "DEVUELTO",         // cotización rechazada → habilita nuevo envío
   "EN_TRABAJO",       // cotización aceptada, el proveedor está trabajando
   "RECIBIDO",         // volvió con el servicio hecho (= recepción)
 ] as const;
@@ -52,10 +59,10 @@ export const SERVICIO_ESTADO_LABELS: Record<ServicioEstado, string> = {
   NO_APLICA: "—",
   PENDIENTE_ENVIO: "Pendiente de envío",
   EN_COTIZACION: "En cotización",
-  RECHAZADO: "Cotización rechazada",
+  RECHAZADO: "Devuelto",
   DEVUELTO: "Devuelto",
-  EN_TRABAJO: "En trabajo",
-  RECIBIDO: "Recibido",
+  EN_TRABAJO: "Incompleto",
+  RECIBIDO: "Completo",
 };
 
 // Color de Tag antd por estado (semántico, no hex).
@@ -82,6 +89,7 @@ export interface EnvioLite {
   fecha_devolucion?: Date | string | null;
   fecha_llegada?: Date | string | null;
   nro_factura?: string | null;
+  nro_cotizacion?: string | null;
   guia_salida?: string | null;
   guia_devolucion?: string | null;
   guia_llegada?: string | null;
@@ -103,25 +111,63 @@ export function envioAceptado<T extends EnvioLite>(envios: T[]): T | null {
 export function estadoDeEnvio(e: EnvioLite): ServicioEstado {
   if (e.fecha_llegada) return "RECIBIDO";
   if (e.cotizacion_resultado === "ACEPTADA") return "EN_TRABAJO";
-  if (e.cotizacion_resultado === "RECHAZADA") return e.fecha_devolucion ? "DEVUELTO" : "RECHAZADO";
+  if (e.cotizacion_resultado === "RECHAZADA") return "DEVUELTO";
   return "EN_COTIZACION";
+}
+
+// Los SER aprobados antes de esta fecha y sin envíos son anteriores al
+// seguimiento (se recibían por almacén): no se muestran como pendientes
+// (acordado 2026-10-20: en producción solo cuentan las últimas semanas).
+export const SEGUIMIENTO_DESDE = "2026-10-01";
+
+/** Datos del requerimiento SER que afinan el estado cuando no hay envíos. */
+export interface SerEstadoInput {
+  cantidad?: number | string | null;
+  cantidad_recibida?: number | string | null;
+  fecha_aprobacion?: Date | string | null;
+}
+
+function anteriorAlSeguimiento(fecha: Date | string | null | undefined): boolean {
+  if (!fecha) return true;
+  const iso = fecha instanceof Date ? fecha.toISOString() : String(fecha);
+  return iso.slice(0, 10) < SEGUIMIENTO_DESDE;
 }
 
 /**
  * Estado del ciclo de un SER.
  * - Si el requerimiento no está APROBADO (o está anulado) → NO_APLICA.
- * - Sin envíos → PENDIENTE_ENVIO.
- * - Con envíos → estado del último. Un último envío DEVUELTO se muestra como
- *   tal (no como pendiente) para que logística vea que hay que re-enviar.
+ * - Sin envíos: anterior al seguimiento → NO_APLICA; ya recibido (por
+ *   almacén, antes de que la llegada fuera el único camino) → RECIBIDO;
+ *   si no → PENDIENTE_ENVIO. Sin `ser` se asume PENDIENTE_ENVIO.
+ * - Con envíos → estado del último. Un último envío DEVUELTO (cotización
+ *   rechazada) se muestra como tal para que logística vea que hay que
+ *   re-enviarlo a otro proveedor.
  */
 export function estadoServicio(
   statusRequerimiento: string | null | undefined,
   envios: EnvioLite[],
+  ser?: SerEstadoInput,
 ): ServicioEstado {
   if (statusRequerimiento !== "APROBADO") return "NO_APLICA";
   const u = ultimoEnvio(envios);
-  if (!u) return "PENDIENTE_ENVIO";
+  if (!u) {
+    if (!ser) return "PENDIENTE_ENVIO";
+    if (anteriorAlSeguimiento(ser.fecha_aprobacion)) return "NO_APLICA";
+    const cant = Number(ser.cantidad ?? 0);
+    if (cant > 0 && Number(ser.cantidad_recibida ?? 0) >= cant - 0.0001) return "RECIBIDO";
+    return "PENDIENTE_ENVIO";
+  }
   return estadoDeEnvio(u);
+}
+
+/**
+ * ¿Se puede registrar la llegada directa? SER con OC que nunca salió por el
+ * seguimiento (o cuya última cotización fue rechazada y se compró igual con
+ * OC): si hay OC, la cotización ya fue aceptada → la llegada crea el envío
+ * (proveedor de la OC, cotización aceptada) y lo recibe de una vez.
+ */
+export function puedeLlegadaDirecta(estado: ServicioEstado, poId: number | null | undefined): boolean {
+  return (estado === "PENDIENTE_ENVIO" || estado === "DEVUELTO") && poId != null;
 }
 
 /** ¿El servicio ya fue recibido (volvió con el trabajo hecho)? */
@@ -150,6 +196,9 @@ export interface ChecklistInput {
   envios: EnvioLite[];
   // po_id del OTRepuesto: la OC existe cuando no es null.
   po_id: number | null | undefined;
+  // Documentos que ya están cargados en la OC (Compras): no se piden de
+  // nuevo en el seguimiento.
+  oc?: { factura: boolean; guia_llegada: boolean } | null;
 }
 
 function tieneAdjunto(e: EnvioLite | null, tipo: AdjuntoTipo): boolean {
@@ -180,11 +229,13 @@ export function checklistDocumental(input: ChecklistInput): DocItem[] {
   const okOr = (cond: boolean): DocEstado => (cond ? "ok" : "falta");
   return [
     { key: "guia_salida", label: "Guía salida", estado: okOr(!!base.guia_salida || tieneAdjunto(base, "GUIA_SALIDA")) },
-    { key: "cotizacion", label: "Cotización", estado: okOr(!!base.cotizacion_resultado && (base.monto_cotizacion != null || tieneAdjunto(base, "COTIZACION"))) },
-    { key: "guia_llegada", label: "Guía llegada", estado: aceptada ? okOr(!!base.guia_llegada || tieneAdjunto(base, "GUIA_LLEGADA")) : na() },
+    // Sin monto desde 2026-10-15: logística solo marca aceptada/rechazada; el
+    // monto va en la OC. Cuenta con el N° de cotización o el PDF.
+    { key: "cotizacion", label: "Cotización", estado: okOr(!!base.cotizacion_resultado && (!!base.nro_cotizacion || base.monto_cotizacion != null || tieneAdjunto(base, "COTIZACION"))) },
+    { key: "guia_llegada", label: "Guía llegada", estado: aceptada ? okOr(!!base.guia_llegada || tieneAdjunto(base, "GUIA_LLEGADA") || !!input.oc?.guia_llegada) : na() },
     { key: "informe", label: "Informe", estado: aceptada && llego ? (tieneAdjunto(base, "INFORME") ? "ok" : "opcional") : na() },
     { key: "oc", label: "OC", estado: aceptada ? okOr(input.po_id != null) : na() },
-    { key: "factura", label: "Factura", estado: aceptada && llego ? okOr(!!base.nro_factura || tieneAdjunto(base, "FACTURA")) : na() },
+    { key: "factura", label: "Factura", estado: aceptada && llego ? okOr(!!base.nro_factura || tieneAdjunto(base, "FACTURA") || !!input.oc?.factura) : na() },
   ];
 }
 

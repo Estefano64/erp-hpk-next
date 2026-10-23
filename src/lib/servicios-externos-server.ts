@@ -9,6 +9,7 @@ import {
   checklistDocumental,
   documentacionCompleta,
   envioAceptado,
+  estadoDeEnvio,
   estadoServicio,
   type EnvioLite,
   type ServicioEstado,
@@ -20,6 +21,7 @@ export const SELECT_ENVIO = {
   id: true,
   ot_repuesto_id: true,
   proveedor_id: true,
+  lote_id: true,
   proveedor: { select: { id: true, razon_social: true, nombre_comercial: true } },
   fecha_salida: true,
   guia_salida: true,
@@ -70,6 +72,7 @@ export const SELECT_SER = {
   fecha_requerida: true,
   fecha_entrega_real: true,
   fecha_aprobacion: true,
+  fecha_solicitud: true,
   orden_trabajo: {
     select: {
       id: true, ot: true, tipo_codigo: true, descripcion: true,
@@ -98,15 +101,176 @@ export function serializarEnvio(e: SerRow["servicio_envios"][number]) {
   return { ...e, monto_cotizacion: dec(e.monto_cotizacion) };
 }
 
+// ── Envío conjunto (lote) ────────────────────────────────────────────
+// Resumen de cada envío de un lote, para que la UI muestre con qué otros
+// servicios salió y arme los formularios por línea (cotización/llegada).
+export interface LoteMiembro {
+  envio_id: number;
+  ot_repuesto_id: number;
+  ot_codigo: string | null;
+  nro_req: string | null;
+  item_req: number | null;
+  descripcion: string | null;
+  cantidad: number | null;
+  unidad_medida: string | null;
+  moneda: string | null;
+  estado: ServicioEstado;
+  cotizacion_resultado: string | null;
+  monto_cotizacion: number | null;
+  moneda_cotizacion: string | null;
+  fecha_devolucion: Date | null;
+  fecha_llegada: Date | null;
+  nro_factura: string | null;
+}
+
+/** Miembros de los lotes indicados, agrupados por lote_id (orden por envío). */
+export async function cargarLotes(tx: TxClient, loteIds: (string | null | undefined)[]): Promise<Map<string, LoteMiembro[]>> {
+  const ids = [...new Set(loteIds.filter((x): x is string => !!x))];
+  const map = new Map<string, LoteMiembro[]>();
+  if (!ids.length) return map;
+  const rows = await tx.servicioEnvio.findMany({
+    where: { lote_id: { in: ids } },
+    orderBy: { id: "asc" },
+    select: {
+      id: true, lote_id: true, fecha_salida: true, cotizacion_resultado: true, monto_cotizacion: true,
+      moneda_cotizacion: true, fecha_devolucion: true, fecha_llegada: true, nro_factura: true,
+      ot_repuesto: {
+        select: {
+          id: true, nro_req: true, item_req: true, descripcion: true, cantidad: true, unidad_medida: true, moneda: true,
+          orden_trabajo: { select: { id: true, ot: true, tipo_codigo: true } },
+          orden_trabajo_interna: { select: { id: true, ot: true } },
+        },
+      },
+    },
+  });
+  for (const e of rows) {
+    const rep = e.ot_repuesto;
+    const m: LoteMiembro = {
+      envio_id: e.id,
+      ot_repuesto_id: rep.id,
+      ot_codigo: rep.orden_trabajo
+        ? formatOtCodigo(rep.orden_trabajo.ot, rep.orden_trabajo.tipo_codigo, `OT-${rep.orden_trabajo.id}`)
+        : rep.orden_trabajo_interna
+          ? formatOtInternaCodigo(rep.orden_trabajo_interna.ot, `OTI-${rep.orden_trabajo_interna.id}`)
+          : null,
+      nro_req: rep.nro_req,
+      item_req: rep.item_req,
+      descripcion: rep.descripcion,
+      cantidad: dec(rep.cantidad),
+      unidad_medida: rep.unidad_medida,
+      moneda: rep.moneda,
+      estado: estadoDeEnvio({
+        id: e.id, fecha_salida: e.fecha_salida, cotizacion_resultado: e.cotizacion_resultado,
+        fecha_devolucion: e.fecha_devolucion, fecha_llegada: e.fecha_llegada,
+      }),
+      cotizacion_resultado: e.cotizacion_resultado,
+      monto_cotizacion: dec(e.monto_cotizacion),
+      moneda_cotizacion: e.moneda_cotizacion,
+      fecha_devolucion: e.fecha_devolucion,
+      fecha_llegada: e.fecha_llegada,
+      nro_factura: e.nro_factura,
+    };
+    const k = e.lote_id!;
+    map.set(k, [...(map.get(k) ?? []), m]);
+  }
+  return map;
+}
+
+// ── Documentos que ya se suben en la OC (Compras) ────────────────────
+// Guía, factura, comprobante de pago y guía de llegada se cargan en la OC
+// (/compras). El seguimiento los muestra y los cuenta en el checklist para
+// que logística no los suba dos veces.
+export type OcDocTipo = "guia" | "factura" | "pago" | "guia_llegada";
+export interface OcDocs {
+  compra_id: number;
+  numero_po: string;
+  nro_factura: string | null;
+  nro_guia: string | null;
+  adjuntos: { tipo: OcDocTipo; nombre_archivo: string; r2_key: string }[];
+  // Otras líneas de la OC que vienen de un requerimiento (no SER, no ítem
+  // libre) y siguen pendientes: en la llegada se puede marcar que llegaron
+  // con el servicio o que las usó el proveedor (ver reflejarRecepcionEnOC).
+  lineas_pendientes: OcLineaPendiente[];
+}
+export interface OcLineaPendiente {
+  id: number;
+  tipo_codigo: string | null;
+  material_codigo: string | null;
+  descripcion: string | null;
+  cantidad: number;
+  unidad_medida: string | null;
+}
+
+export async function cargarDocsOC(tx: TxClient, poIds: (number | null | undefined)[]): Promise<Map<number, OcDocs>> {
+  const ids = [...new Set(poIds.filter((x): x is number => x != null))];
+  const map = new Map<number, OcDocs>();
+  if (!ids.length) return map;
+  const compras = await tx.compra.findMany({
+    where: { id: { in: ids } },
+    select: {
+      id: true, numero_po: true, nro_factura: true, nro_guia: true,
+      guia_key: true, guia_nombre: true, factura_key: true, factura_nombre: true, pago_key: true, pago_nombre: true,
+      adjuntos: { select: { tipo: true, nombre_archivo: true, r2_key: true }, orderBy: { id: "asc" } },
+      ot_repuestos: {
+        where: {
+          OR: [{ tipo_codigo: null }, { tipo_codigo: { not: "SER" } }],
+          AND: [{ OR: [{ solo_para_oc: false }, { solo_para_oc: null }] }],
+          // Los ítems colgados de un SER ya se reciben con su llegada.
+          servicio_padre_id: null,
+          NOT: { status_oc_codigo: { in: ["ANULADO", "COMPLETO", "ENTREGADO", "CONSUMIDO_ALMACEN", "CONSUMIDO_OC_ABIERTA"] } },
+        },
+        select: { id: true, tipo_codigo: true, material_codigo: true, descripcion: true, oc_descripcion: true, cantidad: true, cantidad_recibida: true, unidad_medida: true },
+        orderBy: { id: "asc" },
+      },
+    },
+  });
+  for (const c of compras) {
+    const adjuntos: OcDocs["adjuntos"] = c.adjuntos
+      .filter((a) => ["guia", "factura", "pago", "guia_llegada"].includes(a.tipo))
+      .map((a) => ({ tipo: a.tipo as OcDocTipo, nombre_archivo: a.nombre_archivo, r2_key: a.r2_key }));
+    // Campos legacy (un solo archivo por tipo), si no están ya como fila.
+    const legacy: [OcDocTipo, string | null, string | null][] = [
+      ["guia", c.guia_key, c.guia_nombre], ["factura", c.factura_key, c.factura_nombre], ["pago", c.pago_key, c.pago_nombre],
+    ];
+    for (const [tipo, key, nombre] of legacy) {
+      if (key && !adjuntos.some((a) => a.r2_key === key)) adjuntos.push({ tipo, nombre_archivo: nombre ?? tipo, r2_key: key });
+    }
+    const lineas_pendientes: OcLineaPendiente[] = c.ot_repuestos
+      .filter((r) => Number(r.cantidad_recibida ?? 0) < Number(r.cantidad) - 0.0001)
+      .map((r) => ({
+        id: r.id, tipo_codigo: r.tipo_codigo, material_codigo: r.material_codigo,
+        descripcion: r.oc_descripcion ?? r.descripcion, cantidad: Number(r.cantidad), unidad_medida: r.unidad_medida,
+      }));
+    map.set(c.id, { compra_id: c.id, numero_po: c.numero_po, nro_factura: c.nro_factura, nro_guia: c.nro_guia, adjuntos, lineas_pendientes });
+  }
+  return map;
+}
+
 /**
  * Serializa un SER con todo lo que la UI necesita: envíos, ítems asociados,
- * estado derivado, checklist documental y código de OT legible.
+ * estado derivado, checklist documental y código de OT legible. Con `lotes`
+ * (ver cargarLotes), cada envío de un envío conjunto trae sus miembros; con
+ * `ocs` (ver cargarDocsOC), los documentos ya cargados en su OC.
  */
-export function serializarSer(r: SerRow) {
-  const envios = r.servicio_envios.map(serializarEnvio);
+export function serializarSer(r: SerRow, lotes?: Map<string, LoteMiembro[]>, ocs?: Map<number, OcDocs>) {
+  const oc = r.po_id != null ? (ocs?.get(r.po_id) ?? null) : null;
+  const envios = r.servicio_envios.map((e) => ({
+    ...serializarEnvio(e),
+    lote: e.lote_id ? (lotes?.get(e.lote_id) ?? []) : [],
+  }));
   const enviosLite: EnvioLite[] = envios;
-  const estado: ServicioEstado = estadoServicio(r.status_requerimiento_codigo, enviosLite);
-  const docs = checklistDocumental({ envios: enviosLite, po_id: r.po_id });
+  const estado: ServicioEstado = estadoServicio(r.status_requerimiento_codigo, enviosLite, {
+    cantidad: dec(r.cantidad), cantidad_recibida: dec(r.cantidad_recibida),
+    fecha_aprobacion: r.fecha_aprobacion ?? r.fecha_solicitud,
+  });
+  const docs = checklistDocumental({
+    envios: enviosLite,
+    po_id: r.po_id,
+    oc: oc ? {
+      factura: !!oc.nro_factura || oc.adjuntos.some((a) => a.tipo === "factura"),
+      guia_llegada: !!oc.nro_guia || oc.adjuntos.some((a) => a.tipo === "guia_llegada"),
+    } : null,
+  });
   const aceptado = envioAceptado(envios);
   const otCodigo = r.orden_trabajo
     ? formatOtCodigo(r.orden_trabajo.ot, r.orden_trabajo.tipo_codigo, `OT-${r.orden_trabajo.id}`)
@@ -140,6 +304,7 @@ export function serializarSer(r: SerRow) {
     estado,
     docs,
     docs_completa: documentacionCompleta(docs),
+    oc_docs: oc,
     envio_aceptado_id: aceptado?.id ?? null,
     envios,
     items: r.servicio_items.map((it) => ({
