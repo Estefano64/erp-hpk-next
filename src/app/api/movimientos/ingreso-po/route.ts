@@ -121,6 +121,29 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // Los servicios (SER) NO se reciben acá (2026-10-20): su recepción es la
+      // LLEGADA del seguimiento en /servicios-externos, que además actualiza
+      // esta OC. Un solo camino para que envío, req y OC no se desalineen.
+      // En una OC de servicio, los ítems libres (solo_para_oc) son parte del
+      // servicio y llegan con él: tampoco se reciben acá.
+      const repIdsLinea = d.items.map((it) => it.repuesto_id).filter((x): x is number => x != null);
+      if (repIdsLinea.length > 0) {
+        const ocDeServicio = (await tx.oTRepuesto.count({ where: { po_id: d.po_id, tipo_codigo: "SER" } })) > 0;
+        const ser = await tx.oTRepuesto.findFirst({
+          where: {
+            id: { in: repIdsLinea },
+            OR: [{ tipo_codigo: "SER" }, ...(ocDeServicio ? [{ solo_para_oc: true }] : [])],
+          },
+          select: { descripcion: true },
+        });
+        if (ser) {
+          throw Object.assign(
+            new Error(`${ser.descripcion ?? "Servicio"}: los servicios (y lo que el proveedor usó en ellos) se reciben en Servicios externos (Registrar llegada), no por almacén.`),
+            { code: "BAD_LINE" },
+          );
+        }
+      }
+
       const movimientosCreados: { material_id: number | null; cantidad: number }[] = [];
 
       for (const item of d.items) {

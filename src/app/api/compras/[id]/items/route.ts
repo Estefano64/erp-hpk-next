@@ -72,7 +72,14 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     const result = await prisma.$transaction(async (tx) => {
       const compra = await tx.compra.findUnique({
         where: { id: compraId },
-        include: { ot_repuestos: { select: { id: true, ot_id: true, orden_trabajo_interna_id: true } } },
+        include: {
+          ot_repuestos: {
+            select: {
+              id: true, ot_id: true, orden_trabajo_interna_id: true,
+              tipo_codigo: true, cantidad: true, cantidad_recibida: true, fecha_entrega_real: true,
+            },
+          },
+        },
       });
       if (!compra) throw Object.assign(new Error("Compra no encontrada"), { code: "NOT_FOUND" });
       if (compra.status_oc_codigo === "ANULADO") {
@@ -89,6 +96,13 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
       const otIdDefault = compra.ot_repuestos.find((r) => r.ot_id != null)?.ot_id ?? compra.ot_id ?? null;
       const otInternaIdDefault = compra.ot_repuestos.find((r) => r.orden_trabajo_interna_id != null)?.orden_trabajo_interna_id ?? null;
       const itemsIds = new Set(compra.ot_repuestos.map((r) => r.id));
+      // OC de servicio (SER) cuyos servicios ya llegaron por el seguimiento:
+      // un ítem libre que se agregue ahora es parte del servicio y llegó con
+      // él → nace recibido (no pasa por Ingreso de PO).
+      const sersOC = compra.ot_repuestos.filter((r) => r.tipo_codigo === "SER");
+      const libresYaRecibidos = sersOC.length > 0 &&
+        sersOC.every((r) => Number(r.cantidad) > 0 && Number(r.cantidad_recibida ?? 0) >= Number(r.cantidad) - 0.0001);
+      const llegadaSer = sersOC.map((r) => r.fecha_entrega_real).find((x) => x != null) ?? hoyEnLima();
 
       // 1) Eliminar de la OC.
       //
@@ -195,7 +209,10 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
               po_id: compraId,
               nro_oc: compra.numero_po,
               fecha_oc: new Date(),
-              status_oc_codigo: compra.status_oc_codigo ?? "PEND_OC",
+              status_oc_codigo: libresYaRecibidos ? "COMPLETO" : (compra.status_oc_codigo ?? "PEND_OC"),
+              ...(libresYaRecibidos
+                ? { cantidad_recibida: new Prisma.Decimal(it.cantidad), fecha_entrega_real: llegadaSer }
+                : {}),
               status_requerimiento_codigo: "APROBADO",
               material_id: it.material_id ?? null,
               material_codigo: it.material_codigo ?? null,

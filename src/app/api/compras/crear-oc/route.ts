@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { parseDateOnly, hoyEnLima } from "@/lib/dates";
 import { getAuditUser } from "@/lib/audit";
 import { recalcularRecursosStatusOT, recalcularRecursosStatusOTInterna } from "@/lib/recursos-ot";
+import { alinearSeguimientoConOC } from "@/lib/servicios-externos-acciones";
 
 const Schema = z.object({
   repuesto_ids: z.array(z.coerce.number().int().positive()).min(1),
@@ -412,6 +413,19 @@ export async function POST(req: NextRequest) {
           data: { status_oc_codigo: "COMPLETO" },
         });
       }
+      // Servicios externos (SER): si hay OC, la cotización ya fue aceptada
+      // (acordado 2026-10-23). Un SER sin seguimiento (o devuelto) recibe su
+      // envío con cotización ACEPTADA y queda Incompleto a la espera de la
+      // llegada; uno en cotización pasa a aceptada. Así la llegada se registra
+      // siempre desde Servicios externos / Requerimientos sin pasos extra.
+      let seguimientosCreados = 0;
+      let cotizacionesAceptadas = 0;
+      for (const rep of repuestos) {
+        if (rep.tipo_codigo !== "SER" || yaRecibido(rep)) continue;
+        const r = await alinearSeguimientoConOC(tx, rep.id, { id: compra.id, numero_po: compra.numero_po }, usuario);
+        if (r === "creado") seguimientosCreados++;
+        else if (r === "aceptado") cotizacionesAceptadas++;
+      }
       // Persistir cantidades override (oc_cantidad) item por item. Solo
       // se actualizan los que el front mandó en el mapa — el resto queda
       // con cantidad = rep.cantidad original.
@@ -469,6 +483,12 @@ export async function POST(req: NextRequest) {
         // "OT" del PDF salía vacía (caso OC 260255/260281/260282, 2026-08-28).
         const otIdLibres = repuestos.find((r) => r.ot_id != null)?.ot_id ?? null;
         const otInternaIdLibres = repuestos.find((r) => r.orden_trabajo_interna_id != null)?.orden_trabajo_interna_id ?? null;
+        // OC de servicio (SER) cuyos servicios ya llegaron por el seguimiento:
+        // los ítems libres son lo que el proveedor usó en el servicio y
+        // llegaron con él → nacen recibidos (no pasan por Ingreso de PO).
+        const sersOC = repuestos.filter((r) => r.tipo_codigo === "SER");
+        const libresYaRecibidos = sersOC.length > 0 && sersOC.every(yaRecibido);
+        const llegadaSer = sersOC.map((r) => r.fecha_entrega_real).find((x) => x != null) ?? hoyEnLima();
         for (const il of itemsLibres) {
           await tx.oTRepuesto.create({
             data: {
@@ -477,7 +497,10 @@ export async function POST(req: NextRequest) {
               po_id: compra.id,
               nro_oc: compra.numero_po,
               fecha_oc: new Date(),
-              status_oc_codigo: "PROCESO",
+              status_oc_codigo: libresYaRecibidos ? "COMPLETO" : "PROCESO",
+              ...(libresYaRecibidos
+                ? { cantidad_recibida: new Prisma.Decimal(il.cantidad), fecha_entrega_real: llegadaSer }
+                : {}),
               status_requerimiento_codigo: "APROBADO",
               tipo_codigo: "CAD",
               material_codigo: il.codigo ?? null,
@@ -535,7 +558,7 @@ export async function POST(req: NextRequest) {
       for (const oid of otsExt) await recalcularRecursosStatusOT(tx, oid);
       for (const oid of otsInt) await recalcularRecursosStatusOTInterna(tx, oid);
 
-      return { compra, items: repuestos.length };
+      return { compra, items: repuestos.length, seguimientosCreados, cotizacionesAceptadas };
     }, {
       // Subimos el timeout del default (5s) a 30s para alojar tx grandes
       // (muchos items + autolearn proveedor + recalcular OTs). maxWait sube
@@ -544,10 +567,16 @@ export async function POST(req: NextRequest) {
       maxWait: 10_000,
     });
 
+    const extraSer = [
+      result.seguimientosCreados > 0 ? `seguimiento creado para ${result.seguimientosCreados} servicio(s) con cotización aceptada` : null,
+      result.cotizacionesAceptadas > 0 ? `cotización aceptada en ${result.cotizacionesAceptadas} servicio(s)` : null,
+    ].filter(Boolean).join("; ");
     return NextResponse.json(
       {
-        message: `OC ${result.compra.numero_po} creada con ${result.items} item(s)`,
+        message: `OC ${result.compra.numero_po} creada con ${result.items} item(s)` + (extraSer ? ` · ${extraSer}` : ""),
         compra: result.compra,
+        seguimientos_creados: result.seguimientosCreados,
+        cotizaciones_aceptadas: result.cotizacionesAceptadas,
       },
       { status: 201 },
     );

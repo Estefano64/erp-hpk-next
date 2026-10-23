@@ -8,11 +8,10 @@ import { formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
 // (pendientes de aprobación) normalmente NO aparecen acá — primero deben ser
 // aceptadas en /compras (botón "Aceptar OC").
 //
-// EXCEPCIÓN (2026-09-17, pedido del user): OCs en PEND_OC cuyos items
-// pendientes son TODOS servicios (SER) SÍ se listan — en servicios muchas
-// veces el trabajo se recibe antes de emitir/aprobar la OC (el servicio ya
-// se ejecutó), y el endpoint de recepción ya acepta PEND_OC. Los materiales
-// siguen gateados por la aprobación (entran a stock).
+// SERVICIOS (SER), 2026-10-20: ya NO se listan. Se reciben con la llegada del
+// seguimiento en /servicios-externos (que también actualiza la OC), así hay
+// un solo camino de recepción. Con eso desaparece la excepción de 2026-09-17
+// que listaba OCs en PEND_OC de puros servicios.
 //
 // 2026-06: ahora también se incluyen OCs cuyos items son SOLO "libres" (sin
 // material_id, ej. items CAD como "Barra Cromada D 40x450"). En ese caso los
@@ -29,7 +28,7 @@ import { formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
 export async function GET() {
   try {
     const compras = await prisma.compra.findMany({
-      where: { status_oc_codigo: { in: ["PROCESO", "INCOMPLETO", "PEND_OC"] } },
+      where: { status_oc_codigo: { in: ["PROCESO", "INCOMPLETO"] } },
       include: {
         proveedor: { select: { id: true, razon_social: true } },
         ubicacion: { select: { codigo: true, nombre: true } },
@@ -53,6 +52,8 @@ export async function GET() {
             // recepción — los servicios no requieren zona de almacén y se
             // auto-marcan en bloque.
             tipo_codigo: true,
+            // Ítem libre de la OC: en una OC de servicio es parte del servicio.
+            solo_para_oc: true,
             // Posición del item en la OC (editor / PDF). Se usa para
             // emparejar cada CompraDetalle con su req cuando la OC repite
             // el mismo material para varias OTs.
@@ -173,15 +174,19 @@ export async function GET() {
               compra_id: c.id,
             };
           })
-          .filter((it) => it.cantidad > 0);
+          .filter((it) => it.cantidad > 0 && it.tipo_codigo !== "SER");
 
         // Caso 2: items FREE (material_id IS NULL en OTRepuesto). Estos no
         // generan CompraDetalle al crear la OC, así que se cargan de
         // ot_repuestos. Cada uno se identifica por `repuesto_id` para que la
         // API de recepción lo matchee directamente. SE INCLUYEN SIEMPRE
         // (estén o no presentes los CompraDetalle).
+        // En una OC de servicio, los ítems libres (solo_para_oc) son lo que
+        // el proveedor usó en el servicio: llegan con él (llegada del
+        // seguimiento), no se reciben acá.
+        const ocDeServicio = c.ot_repuestos.some((r: R) => r.tipo_codigo === "SER");
         const itemsRepuestosFree = c.ot_repuestos
-          .filter((r: R) => r.material_id == null)
+          .filter((r: R) => r.material_id == null && r.tipo_codigo !== "SER" && !(ocDeServicio && r.solo_para_oc))
           .map((r: R) => {
             const pendiente = Number(r.cantidad) - Number(r.cantidad_recibida ?? 0);
             return {
@@ -229,11 +234,7 @@ export async function GET() {
         };
       })
       // OCs sin items pendientes no aparecen (probablemente ya recibidas).
-      .filter((c) => c.items.length > 0)
-      // PEND_OC solo entra si TODOS sus items pendientes son servicios (SER)
-      // — ver nota de la excepción arriba. Con algún item de material, la OC
-      // espera su aceptación como siempre.
-      .filter((c) => c.status_oc_codigo !== "PEND_OC" || c.items.every((it) => it.tipo_codigo === "SER"));
+      .filter((c) => c.items.length > 0);
 
     return NextResponse.json({ data });
   } catch (error) {
