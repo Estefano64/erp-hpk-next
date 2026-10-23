@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect, useCallback, useMemo } from "react";
+import { Suspense, useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Typography,
@@ -77,8 +77,9 @@ import { mensajeErrorApi } from "@/lib/api-error";
 import { formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
 import { R2FileLink } from "@/components/R2FileLink";
 import {
-  ServicioEstadoCell, ServicioSeguimientoDrawer, useServicioSeguimiento, type ServicioSer,
+  ServicioEstadoCell, ServicioLlegadaModal, ServicioSalidaModal, ServicioSeguimientoDrawer, useServicioSeguimiento, type ServicioSer,
 } from "@/components/modules/servicios/ServicioSeguimiento";
+import { puedeLlegadaDirecta } from "@/lib/servicios-externos";
 const { Title, Text } = Typography;
 const { TextArea } = Input;
 
@@ -222,6 +223,9 @@ interface Requerimiento {
   oc_usuario_aprueba: string | null;
   oc_comentario_aprobacion: string | null;
   proveedor_nombre: string | null;
+  // Proveedor del req (en un SER, el de la cotización aceptada del
+  // seguimiento): prellena el proveedor al crear la OC.
+  proveedor_id: number | null;
   // Precio con el que se PIDIÓ el item. Es el que se edita al crear la OC.
   precio_unitario: number | null;
   // Precio con el que se COMPRÓ (override de la OC), null si aún no hay OC.
@@ -322,6 +326,7 @@ function normalize(r: RequerimientoApi): Requerimiento {
     oc_usuario_aprueba: r.compra?.usuario_aprueba ?? null,
     oc_comentario_aprobacion: r.compra?.comentario_aprobacion ?? null,
     proveedor_nombre: r.proveedor?.razon_social ?? null,
+    proveedor_id: r.proveedor?.id ?? null,
     precio_unitario: r.precio_unitario != null ? Number(r.precio_unitario) : null,
     precio_oc: r.oc_precio_unitario != null ? Number(r.oc_precio_unitario) : null,
     // Mismo criterio que el PDF de la OC, el editor de items y el detalle de
@@ -669,6 +674,10 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
   const [svcDrawer, setSvcDrawer] = useState<number | null>(null);
   const svcSel: ServicioSer | null = svcDrawer != null ? (svcSeg.porRepuesto.get(svcDrawer) ?? null) : null;
   const puedeOperarSvc = isAdmin || esLogistica;
+  // "Generar seguimiento (N)": SER seleccionados que salen juntos al proveedor.
+  const [salidaSers, setSalidaSers] = useState<ServicioSer[] | null>(null);
+  // "Registrar llegada (N)": SER Incompletos seleccionados que volvieron.
+  const [llegadaSers, setLlegadaSers] = useState<ServicioSer[] | null>(null);
 
   useEffect(() => {
     fetch("/api/me")
@@ -905,6 +914,19 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
     [allData, selectedRows],
   );
 
+  // El seguimiento de servicios se carga aparte: recargarlo cada vez que se
+  // recarga la tabla. Si no, un SER nuevo (o que cambió de estado en otra
+  // pantalla) aparecía sin estado ("—") y "Generar seguimiento" / "Registrar
+  // llegada" lo descontaban en silencio (salía solo el resto de la selección).
+  // (Las 2 primeras pasadas —tabla vacía y primera carga— las cubre la carga
+  // inicial del propio hook.)
+  const { reload: reloadSvc } = svcSeg;
+  const pasadasSvc = useRef(0);
+  useEffect(() => {
+    if (pasadasSvc.current < 2) { pasadasSvc.current++; return; }
+    void reloadSvc();
+  }, [allData, reloadSvc]);
+
   // Totales seleccion
   const totalSub = selectedRecords.reduce(
     (s, r) => s + (parseFloat(String(r.precio_unitario || 0)) * parseFloat(String(r.cantidad || 0))),
@@ -924,6 +946,59 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
     getCheckboxProps: (r) => ({
       disabled: r.po_id != null || r.status_req === "ANULADO" || r.status_req === "DESAPROBADO",
     }),
+  };
+
+  // Al elegir proveedor (a mano o prellenado al abrir el modal): fetch a
+  // /api/proveedores/[id]/defaults-oc y pre-rellenar moneda, tipo_pago,
+  // dias_credito, fecha_entrega y observaciones. El user puede editar después.
+  // `alAbrir`: el modal recién se reseteó → los defaults del proveedor ganan
+  // sobre los valores iniciales (el estado de React todavía no se actualizó).
+  const aplicarProveedorOC = async (provId: number | null, alAbrir = false) => {
+    setProveedorSeleccionadoId(provId);
+    // Al cambiar de proveedor limpiamos los overrides — no
+    // tiene sentido conservarlos si ya no es generico.
+    setProveedorNombreOverride("");
+    setProveedorRucOverride("");
+    if (!provId) return;
+    try {
+      const res = await fetch(`/api/proveedores/${provId}/defaults-oc`);
+      if (!res.ok) return;
+      const j = await res.json();
+      const d = j.defaults ?? {};
+      // Solo pisar si el campo está vacío — no destruir lo que
+      // el user ya editó manualmente.
+      const cur = ocForm.getFieldsValue();
+      const patch: Record<string, unknown> = {};
+      if (d.moneda && (alAbrir || !cur.moneda)) patch.moneda = d.moneda === "SOL" || d.moneda === "PEN" ? "SOL" : "USD";
+      if (d.tipo_pago && (alAbrir || tipoPagoModal == null)) setTipoPagoModal(d.tipo_pago);
+      if (d.dias_credito != null && (alAbrir || diasCreditoModal == null)) setDiasCreditoModal(d.dias_credito);
+      if (d.tiempo_entrega_dias != null && !cur.fecha_entrega_esperada) {
+        patch.fecha_entrega_esperada = dayjs().add(d.tiempo_entrega_dias, "day");
+      }
+      // Observaciones sugeridas ("RUC: ... | Prov: ..."): se
+      // pisan si el campo está vacío O si todavía contiene la
+      // sugerencia AUTOGENERADA de un proveedor elegido antes
+      // (bug OC 260261, 2026-08-25: al cambiar de proveedor
+      // quedaba el RUC del anterior porque solo se llenaba con
+      // el campo vacío). Texto escrito a mano no se toca.
+      const esSugerenciaAuto = /^RUC: .* \| Prov: .*$/.test((cur.observaciones ?? "").trim());
+      if (d.observaciones_sugeridas && (!cur.observaciones || esSugerenciaAuto)) {
+        patch.observaciones = d.observaciones_sugeridas;
+      }
+      // Aplica IGV: el default de provider gana solo si el user
+      // no lo cambió ya. aplicaIgvModal arranca true; lo
+      // sobrescribimos solo si el provider dice explícitamente
+      // false (proveedores exonerados de IGV).
+      if (d.aplica_igv === false) setAplicaIgvModal(false);
+      // Precios incluyen IGV — algunos proveedores cotizan con
+      // IGV adentro. preciosConIgvModal arranca false; lo
+      // ponemos true solo si el provider dice explícitamente
+      // true.
+      if (d.precios_incluyen_igv === true) setPreciosConIgvModal(true);
+      if (Object.keys(patch).length > 0) ocForm.setFieldsValue(patch);
+    } catch {
+      // silencioso — el form sigue funcionando sin defaults
+    }
   };
 
   const abrirModalOC = () => {
@@ -976,10 +1051,18 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
     const fechaInicial = selectedRecords[0]?.fecha_requerida
       ? dayjs(selectedRecords[0].fecha_requerida)
       : dayjs().add(15, "day");
+    // Proveedor prellenado si toda la selección ya lo tiene y es el mismo
+    // (en un SER: el de la cotización aceptada en el seguimiento, no hace
+    // falta volver a elegirlo). Con proveedores distintos o sin proveedor
+    // queda vacío como antes.
+    const provsSel = new Set(selectedRecords.map((r) => r.proveedor_id));
+    const provPrellenado = provsSel.size === 1 ? [...provsSel][0] : null;
     ocForm.setFieldsValue({
       moneda: "USD",
       fecha_entrega_esperada: fechaInicial,
+      proveedor_id: provPrellenado ?? undefined,
     });
+    if (provPrellenado != null) void aplicarProveedorOC(provPrellenado, true);
     setModalOpen(true);
   };
 
@@ -1136,6 +1219,18 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
         }
       } else {
         message.success(`OC ${json.compra?.numero_po} creada con éxito`);
+      }
+      // Servicios externos: la OC es la cotización aceptada → el seguimiento
+      // se creó/aceptó solo; queda registrar la llegada cuando vuelva.
+      const segCreados = Number(json.seguimientos_creados ?? 0);
+      const cotAceptadas = Number(json.cotizaciones_aceptadas ?? 0);
+      if (segCreados > 0 || cotAceptadas > 0) {
+        message.info(
+          `${segCreados > 0 ? `Seguimiento creado para ${segCreados} servicio(s) con cotización aceptada. ` : ""}` +
+          `${cotAceptadas > 0 ? `Cotización aceptada en ${cotAceptadas} servicio(s). ` : ""}` +
+          "Quedan Incompletos hasta registrar la llegada.",
+          6,
+        );
       }
 
       setModalOpen(false);
@@ -2618,6 +2713,54 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
           </Popover>
           {esLogistica && selectedRows.length > 0 && (
             <>
+              {(() => {
+                // Generar seguimiento: salida conjunta de los SER seleccionados
+                // al mismo proveedor (como "Crear OC", pero para el envío
+                // físico). Solo cuentan los SER aprobados pendientes de envío
+                // o devueltos; el resto de la selección se ignora.
+                const sers = selectedRecords.filter((r) => r.tipo_codigo === "SER");
+                if (sers.length === 0) return null;
+                const elegibles = sers
+                  .map((r) => svcSeg.porRepuesto.get(r.id))
+                  .filter((s): s is ServicioSer => !!s && (s.estado === "PENDIENTE_ENVIO" || s.estado === "DEVUELTO"));
+                const ignorados = selectedRecords.length - elegibles.length;
+                const sinEstado = sers.filter((r) => !svcSeg.porRepuesto.has(r.id)).length;
+                const tooltip = (elegibles.length === 0
+                  ? "Ninguno de los seleccionados es un servicio (SER) aprobado pendiente de envío o devuelto."
+                  : `Registra la salida de ${elegibles.length} servicio(s) al mismo proveedor con una sola guía; el seguimiento (cotización, llegada, PDFs) queda en conjunto.${ignorados > 0 ? ` Se ignoran ${ignorados} seleccionado(s) que no aplican.` : ""}`)
+                  + (sinEstado > 0 ? ` Ojo: ${sinEstado} servicio(s) todavía sin estado cargado; esperá un momento o recargá la página.` : "");
+                return (
+                  <Tooltip title={tooltip}>
+                    <Button
+                      size="large"
+                      icon={<SendOutlined />}
+                      disabled={elegibles.length === 0}
+                      onClick={() => setSalidaSers(elegibles)}
+                    >
+                      Generar seguimiento ({elegibles.length})
+                    </Button>
+                  </Tooltip>
+                );
+              })()}
+              {(() => {
+                // Registrar llegada: SER seleccionados que están Incompletos
+                // (cotización aceptada, en trabajo) → quedan Completos. También
+                // los que tienen OC y nunca salieron por el seguimiento
+                // (llegada directa: si hay OC, la cotización ya fue aceptada).
+                const enTrabajo = selectedRecords
+                  .filter((r) => r.tipo_codigo === "SER")
+                  .map((r) => svcSeg.porRepuesto.get(r.id))
+                  .filter((s): s is ServicioSer => !!s && (s.estado === "EN_TRABAJO" || puedeLlegadaDirecta(s.estado, s.po_id)));
+                if (enTrabajo.length === 0) return null;
+                const ignorados = selectedRecords.length - enTrabajo.length;
+                return (
+                  <Tooltip title={`Registra la llegada (recepción) de ${enTrabajo.length} servicio(s) Incompleto(s) con la misma guía; quedan Completos.${ignorados > 0 ? ` Se ignoran ${ignorados} seleccionado(s) que no están Incompletos.` : ""}`}>
+                    <Button size="large" icon={<InboxOutlined />} onClick={() => setLlegadaSers(enTrabajo)}>
+                      Registrar llegada ({enTrabajo.length})
+                    </Button>
+                  </Tooltip>
+                );
+              })()}
               <Tooltip title="Descuenta los items seleccionados del stock de una OC marcada como 'almacén abierto' (ej. BC Bering PO 4504281587). No genera OC nueva.">
                 <Button
                   size="large"
@@ -2919,6 +3062,18 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
         onClose={() => setSvcDrawer(null)}
         puedeOperar={puedeOperarSvc}
         onChanged={async () => { await svcSeg.reload(); await fetchData(); }}
+      />
+      <ServicioSalidaModal
+        open={salidaSers != null}
+        sers={salidaSers ?? []}
+        onClose={() => setSalidaSers(null)}
+        onDone={async () => { setSalidaSers(null); setSelectedRows([]); await svcSeg.reload(); await fetchData(); }}
+      />
+      <ServicioLlegadaModal
+        open={llegadaSers != null}
+        sers={llegadaSers ?? []}
+        onClose={() => setLlegadaSers(null)}
+        onDone={async () => { setLlegadaSers(null); setSelectedRows([]); await svcSeg.reload(); await fetchData(); }}
       />
       <TableDragWrapper>
               <Table
@@ -3537,56 +3692,7 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                       ...resto.map((p) => ({ value: p.id, label: p.razon_social })),
                     ];
                   })()}
-                  onChange={async (provId) => {
-                    // Al elegir proveedor: fetch a /api/proveedores/[id]/defaults-oc
-                    // y pre-rellenar moneda, tipo_pago, dias_credito, fecha_entrega
-                    // y observaciones. El user puede editar después.
-                    setProveedorSeleccionadoId(provId ?? null);
-                    // Al cambiar de proveedor limpiamos los overrides — no
-                    // tiene sentido conservarlos si ya no es generico.
-                    setProveedorNombreOverride("");
-                    setProveedorRucOverride("");
-                    if (!provId) return;
-                    try {
-                      const res = await fetch(`/api/proveedores/${provId}/defaults-oc`);
-                      if (!res.ok) return;
-                      const j = await res.json();
-                      const d = j.defaults ?? {};
-                      // Solo pisar si el campo está vacío — no destruir lo que
-                      // el user ya editó manualmente.
-                      const cur = ocForm.getFieldsValue();
-                      const patch: Record<string, unknown> = {};
-                      if (d.moneda && !cur.moneda) patch.moneda = d.moneda === "SOL" || d.moneda === "PEN" ? "SOL" : "USD";
-                      if (d.tipo_pago && tipoPagoModal == null) setTipoPagoModal(d.tipo_pago);
-                      if (d.dias_credito != null && diasCreditoModal == null) setDiasCreditoModal(d.dias_credito);
-                      if (d.tiempo_entrega_dias != null && !cur.fecha_entrega_esperada) {
-                        patch.fecha_entrega_esperada = dayjs().add(d.tiempo_entrega_dias, "day");
-                      }
-                      // Observaciones sugeridas ("RUC: ... | Prov: ..."): se
-                      // pisan si el campo está vacío O si todavía contiene la
-                      // sugerencia AUTOGENERADA de un proveedor elegido antes
-                      // (bug OC 260261, 2026-08-25: al cambiar de proveedor
-                      // quedaba el RUC del anterior porque solo se llenaba con
-                      // el campo vacío). Texto escrito a mano no se toca.
-                      const esSugerenciaAuto = /^RUC: .* \| Prov: .*$/.test((cur.observaciones ?? "").trim());
-                      if (d.observaciones_sugeridas && (!cur.observaciones || esSugerenciaAuto)) {
-                        patch.observaciones = d.observaciones_sugeridas;
-                      }
-                      // Aplica IGV: el default de provider gana solo si el user
-                      // no lo cambió ya. aplicaIgvModal arranca true; lo
-                      // sobrescribimos solo si el provider dice explícitamente
-                      // false (proveedores exonerados de IGV).
-                      if (d.aplica_igv === false) setAplicaIgvModal(false);
-                      // Precios incluyen IGV — algunos proveedores cotizan con
-                      // IGV adentro. preciosConIgvModal arranca false; lo
-                      // ponemos true solo si el provider dice explícitamente
-                      // true.
-                      if (d.precios_incluyen_igv === true) setPreciosConIgvModal(true);
-                      if (Object.keys(patch).length > 0) ocForm.setFieldsValue(patch);
-                    } catch {
-                      // silencioso — el form sigue funcionando sin defaults
-                    }
-                  }}
+                  onChange={(provId) => { void aplicarProveedorOC(provId ?? null); }}
                 />
               </Form.Item>
               {/* Inputs de override — solo visibles cuando el proveedor
