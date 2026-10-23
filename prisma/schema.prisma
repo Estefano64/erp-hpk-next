@@ -1676,6 +1676,11 @@ model ServicioEnvio {
   id                   Int       @id @default(autoincrement())
   ot_repuesto_id       Int
   proveedor_id         Int?
+  // Envío conjunto: varios SER que salen juntos al mismo proveedor comparten
+  // lote_id (UUID). Cotización/devolución/llegada y PDFs se registran para el
+  // lote, pero cada SER conserva su propio resultado (el proveedor puede
+  // aceptar uno y rechazar otro). NULL = envío individual.
+  lote_id              String?   @db.VarChar(36)
   // Salida del componente hacia el proveedor.
   fecha_salida         DateTime  @db.Date
   guia_salida          String?   @db.VarChar(100)
@@ -1706,6 +1711,7 @@ model ServicioEnvio {
   @@index([ot_repuesto_id])
   @@index([proveedor_id])
   @@index([guia_salida])
+  @@index([lote_id])
   @@map("servicio_envio")
 }
 
