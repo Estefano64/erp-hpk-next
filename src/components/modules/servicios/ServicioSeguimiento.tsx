@@ -9,14 +9,19 @@
 //   - ServicioSeguimientoDrawer: drawer con la línea de tiempo de envíos y las
 //     acciones del ciclo (salida → cotización → devolución | llegada), los PDFs
 //     por tipo, la factura y los ítems que agrega el proveedor.
+//   - ServicioSalidaModal: "Generar seguimiento" para varios SER seleccionados
+//     en /requerimientos (envío conjunto al mismo proveedor).
+//   - ServicioLlegadaModal: "Registrar llegada" para varios SER Incompletos
+//     seleccionados en /requerimientos.
 //   - useServicioSeguimiento: carga /api/servicios-externos para un conjunto
 //     de SER (por OT o por ids) y expone un mapa por repuesto_id.
 //
 // Las acciones solo se muestran si `puedeOperar` (logística/admin). El resto
 // ve el seguimiento en modo lectura.
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
-  Alert, Button, DatePicker, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Select, Space,
+  Alert, Button, Checkbox, DatePicker, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Select, Space,
   Table, Tag, Timeline, Tooltip, Typography, Upload, message,
 } from "antd";
 import {
@@ -31,8 +36,8 @@ import { formatDateOnly, dateOnlyLocal } from "@/lib/dates";
 import { uploadToR2 } from "@/lib/r2-client";
 import { R2FileLink } from "@/components/R2FileLink";
 import {
-  ADJUNTO_LABELS, SERVICIO_ESTADO_COLORS, SERVICIO_ESTADO_LABELS,
-  estadoDeEnvio, type AdjuntoTipo, type DocItem, type ServicioEstado,
+  ADJUNTO_LABELS, SEGUIMIENTO_DESDE, SERVICIO_ESTADO_COLORS, SERVICIO_ESTADO_LABELS,
+  estadoDeEnvio, puedeLlegadaDirecta, type AdjuntoTipo, type DocItem, type ServicioEstado,
 } from "@/lib/servicios-externos";
 
 const { Text } = Typography;
@@ -42,10 +47,33 @@ export interface EnvioAdjunto {
   id: number; tipo: string; nombre_archivo: string; r2_key: string; tipo_mime: string; tamano: number;
   usuario_sube: string | null; fecha_subida: string;
 }
+// Otro servicio del mismo envío conjunto (ver cargarLotes en el server).
+export interface LoteMiembro {
+  envio_id: number;
+  ot_repuesto_id: number;
+  ot_codigo: string | null;
+  nro_req: string | null;
+  item_req: number | null;
+  descripcion: string | null;
+  cantidad: number | null;
+  unidad_medida: string | null;
+  moneda: string | null;
+  estado: ServicioEstado;
+  cotizacion_resultado: string | null;
+  monto_cotizacion: number | null;
+  moneda_cotizacion: string | null;
+  fecha_devolucion: string | null;
+  fecha_llegada: string | null;
+  nro_factura: string | null;
+}
 export interface Envio {
   id: number;
   ot_repuesto_id: number;
   proveedor_id: number | null;
+  // Envío conjunto: varios servicios que salieron juntos al mismo proveedor.
+  // `lote` trae a todos (incluido este); vacío o de 1 = envío individual.
+  lote_id: string | null;
+  lote: LoteMiembro[];
   proveedor: { id: number; razon_social: string; nombre_comercial: string | null } | null;
   fecha_salida: string;
   guia_salida: string | null;
@@ -64,6 +92,23 @@ export interface Envio {
   usuario_crea: string | null;
   adjuntos: EnvioAdjunto[];
 }
+type OcDocTipo = "guia" | "factura" | "pago" | "guia_llegada";
+export interface OcDocs {
+  compra_id: number;
+  numero_po: string;
+  nro_factura: string | null;
+  nro_guia: string | null;
+  adjuntos: { tipo: OcDocTipo; nombre_archivo: string; r2_key: string }[];
+  // Otras líneas pendientes de la OC (requerimientos de material).
+  lineas_pendientes: {
+    id: number; tipo_codigo: string | null; material_codigo: string | null; descripcion: string | null;
+    cantidad: number; unidad_medida: string | null;
+  }[];
+}
+const OC_DOC_LABEL: Record<OcDocTipo, string> = { guia: "Guía", factura: "Factura", pago: "Comprobante de pago", guia_llegada: "Guía de llegada" };
+const OC_DOC_RESOURCE = {
+  guia: "compra-guia", factura: "compra-factura", pago: "compra-pago", guia_llegada: "compra-guia-llegada",
+} as const;
 export interface ServicioItemAsociado {
   id: number; item_req: number | null; tipo_codigo: string | null; descripcion: string | null;
   cantidad: number | null; cantidad_recibida: number | null; unidad_medida: string | null;
@@ -98,6 +143,8 @@ export interface ServicioSer {
   docs: DocItem[];
   docs_completa: boolean;
   envio_aceptado_id: number | null;
+  // Documentos ya cargados en la OC (Compras): guía, factura, pago, guía de llegada.
+  oc_docs: OcDocs | null;
   envios: Envio[];
   items: ServicioItemAsociado[];
 }
@@ -152,6 +199,10 @@ export function DocsSemaforo({ docs, compact }: { docs: DocItem[]; compact?: boo
   );
 }
 
+function etiquetaMiembro(m: Pick<LoteMiembro, "ot_codigo" | "nro_req" | "item_req" | "descripcion">): string {
+  return `${m.ot_codigo ?? "—"} · ${m.nro_req ?? "—"}/${m.item_req ?? "—"} · ${m.descripcion ?? "—"}`;
+}
+
 // ── Celda compacta para las tablas de requerimientos ─────────────────
 export function ServicioEstadoCell({ ser, onOpen }: { ser: ServicioSer | undefined; onOpen: () => void }) {
   if (!ser) return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
@@ -167,6 +218,11 @@ export function ServicioEstadoCell({ ser, onOpen }: { ser: ServicioSer | undefin
       </Tag>
       {ultimo?.proveedor && ser.estado !== "NO_APLICA" && (
         <Text type="secondary" style={{ fontSize: 10 }} ellipsis>{ultimo.proveedor.razon_social}</Text>
+      )}
+      {ultimo && ultimo.lote.length > 1 && ser.estado !== "NO_APLICA" && (
+        <Tooltip title={<div>{ultimo.lote.map((m) => <div key={m.envio_id}>{etiquetaMiembro(m)}</div>)}</div>}>
+          <Tag style={{ margin: 0, fontSize: 10 }}>Envío conjunto ({ultimo.lote.length})</Tag>
+        </Tooltip>
       )}
       {ser.estado !== "NO_APLICA" && <DocsSemaforo docs={ser.docs} compact />}
       <Button type="link" size="small" style={{ padding: 0, height: 18, fontSize: 11 }} onClick={onOpen}>
@@ -185,7 +241,25 @@ interface DrawerProps {
   puedeOperar: boolean;
 }
 
-type Accion = "salida" | "cotizacion" | "devolucion" | "llegada" | "factura" | "items" | null;
+// *_lote = la misma etapa para todo un envío conjunto (PATCH /envios/lote).
+type Accion =
+  | "salida" | "cotizacion" | "devolucion" | "llegada" | "llegada_directa" | "factura" | "items"
+  | "cotizacion_lote" | "devolucion_lote" | "llegada_lote" | "factura_lote"
+  | null;
+
+const esConjunto = (e: Envio | null | undefined) => !!e && e.lote.length > 1;
+
+// Miembros del lote a los que aplica cada etapa conjunta.
+function miembrosPara(a: Accion, e: Envio | null): LoteMiembro[] {
+  if (!e) return [];
+  switch (a) {
+    case "cotizacion_lote": return e.lote.filter((m) => m.estado === "EN_COTIZACION");
+    case "devolucion_lote": return e.lote.filter((m) => m.cotizacion_resultado === "RECHAZADA" && !m.fecha_devolucion);
+    case "llegada_lote": return e.lote.filter((m) => m.estado === "EN_TRABAJO");
+    case "factura_lote": return e.lote.filter((m) => m.estado === "RECIBIDO");
+    default: return [];
+  }
+}
 
 export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puedeOperar }: DrawerProps) {
   const { screens } = useResponsive();
@@ -194,6 +268,8 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
   const [envioSel, setEnvioSel] = useState<Envio | null>(null);
   const [saving, setSaving] = useState(false);
   const [proveedores, setProveedores] = useState<ProveedorOpt[]>([]);
+  // Otros SER pendientes de envío que pueden salir junto con este.
+  const [candidatos, setCandidatos] = useState<ServicioSer[]>([]);
   const [form] = Form.useForm();
 
   useEffect(() => {
@@ -212,15 +288,52 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
     setEnvioSel(envio);
     form.resetFields();
     if (a === "cotizacion" && ser) {
-      form.setFieldsValue({ moneda_cotizacion: ser.moneda ?? "USD", fecha_cotizacion: dayjs() });
+      form.setFieldsValue({ fecha_cotizacion: dayjs() });
     }
-    if (a === "salida") form.setFieldsValue({ fecha_salida: dayjs() });
-    if (a === "devolucion") form.setFieldsValue({ fecha_devolucion: dayjs() });
-    if (a === "llegada") form.setFieldsValue({ fecha_llegada: dayjs() });
+    if (a === "salida") {
+      form.setFieldsValue({ fecha_salida: dayjs(), junto_con: [] });
+      void cargarCandidatos();
+    }
+    if (a === "devolucion" || a === "devolucion_lote") form.setFieldsValue({ fecha_devolucion: dayjs() });
+    if (a === "llegada_lote") form.setFieldsValue({ fecha_llegada: dayjs() });
+    // Otras líneas de la OC: marcadas por defecto (casi siempre las usó el
+    // proveedor en el servicio y nunca llegan al taller).
+    if (a === "llegada" || a === "llegada_directa") {
+      form.setFieldsValue({ fecha_llegada: dayjs(), lineas_oc: (ser?.oc_docs?.lineas_pendientes ?? []).map((l) => l.id) });
+    }
     if (a === "factura" && envio) form.setFieldsValue({ nro_factura: envio.nro_factura ?? "" });
+    if (a === "cotizacion_lote" && envio && ser) {
+      form.setFieldsValue({
+        fecha_cotizacion: dayjs(),
+        lineas: miembrosPara(a, envio).map((m) => ({ envio_id: m.envio_id, resultado: "ACEPTADA" })),
+      });
+    }
+    if ((a === "devolucion_lote" || a === "llegada_lote" || a === "factura_lote") && envio) {
+      const ms = miembrosPara(a, envio);
+      // Factura: por defecto, los que llegaron en la misma tanda que este.
+      const def = a === "factura_lote" ? ms.filter((m) => m.fecha_llegada === envio.fecha_llegada) : ms;
+      form.setFieldsValue({
+        envio_ids: def.map((m) => m.envio_id),
+        ...(a === "factura_lote" ? { nro_factura: envio.nro_factura ?? "" } : {}),
+      });
+    }
     if (a === "items" && ser) form.setFieldsValue({ items: [{ tipo_codigo: "CAD", cantidad: 1, moneda: envio?.moneda_cotizacion ?? ser.moneda ?? "USD" }] });
   }
   function cerrarAccion() { setAccion(null); setEnvioSel(null); }
+
+  async function cargarCandidatos() {
+    if (!ser) return;
+    try {
+      const r = await fetch("/api/servicios-externos?solo_aprobados=1&estado=PENDIENTE_ENVIO,DEVUELTO");
+      if (!r.ok) return;
+      const lista = (((await r.json()).data ?? []) as ServicioSer[]).filter((s) => s.id !== ser.id);
+      // Primero los de la misma OT.
+      const misma = (s: ServicioSer) =>
+        (ser.ot_id != null && s.ot_id === ser.ot_id) || (ser.orden_trabajo_interna_id != null && s.orden_trabajo_interna_id === ser.orden_trabajo_interna_id);
+      lista.sort((a, b) => Number(misma(b)) - Number(misma(a)) || b.id - a.id);
+      setCandidatos(lista);
+    } catch { /* sin candidatos: el envío sale individual */ }
+  }
 
   async function enviar() {
     if (!ser) return;
@@ -234,11 +347,34 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
         res = await fetch("/api/servicios-externos/envios", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            repuesto_ids: [ser.id],
+            repuesto_ids: [ser.id, ...((values.junto_con as number[] | undefined) ?? [])],
             proveedor_id: values.proveedor_id,
             fecha_salida: fmt(values.fecha_salida),
             guia_salida: values.guia_salida ?? null,
             observaciones: values.observaciones ?? null,
+          }),
+        });
+      } else if (accion?.endsWith("_lote") && envioSel?.lote_id) {
+        const { lineas, envio_ids, ...comunes } = values as {
+          lineas?: { envio_id: number; resultado: string }[];
+          envio_ids?: number[];
+        } & Record<string, unknown>;
+        const body: Record<string, unknown> = { lote_id: envioSel.lote_id, accion: accion.replace("_lote", "") };
+        for (const [k, v] of Object.entries(comunes)) body[k] = fmt(v);
+        body.lineas = lineas ?? (envio_ids ?? []).map((id) => ({ envio_id: id }));
+        res = await fetch("/api/servicios-externos/envios/lote", {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      } else if (accion === "llegada_directa") {
+        res = await fetch("/api/servicios-externos/llegada", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            repuesto_ids: [ser.id],
+            fecha_llegada: fmt(values.fecha_llegada),
+            guia_llegada: values.guia_llegada || null,
+            recibido_por: values.recibido_por || null,
+            lineas_oc: values.lineas_oc ?? [],
           }),
         });
       } else if (accion === "items" && envioSel) {
@@ -281,7 +417,9 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
         messageApi.error(j?.error ?? "No se pudo registrar el adjunto.");
         return;
       }
-      messageApi.success(`${ADJUNTO_LABELS[tipo]} subida.`);
+      const j = await r.json().catch(() => null);
+      const n = Number(j?.compartido_con ?? 0);
+      messageApi.success(`${ADJUNTO_LABELS[tipo]} subida${n > 0 ? ` (compartida con ${n} servicio${n > 1 ? "s" : ""} del envío conjunto)` : ""}.`);
       await onChanged();
     } catch (e) {
       messageApi.error((e as Error).message || "Error al subir.");
@@ -312,10 +450,9 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
   function tiposAdjuntoPara(e: Envio): AdjuntoTipo[] {
     const t: AdjuntoTipo[] = ["GUIA_SALIDA", "COTIZACION"];
     if (e.cotizacion_resultado === "RECHAZADA") t.push("GUIA_DEVOLUCION");
-    if (e.cotizacion_resultado === "ACEPTADA") {
-      t.push("GUIA_LLEGADA");
-      if (e.fecha_llegada) t.push("INFORME", "FACTURA");
-    }
+    // Guía de llegada y factura NO se suben acá: se cargan en la OC (Compras)
+    // y el seguimiento solo las muestra (decisión del usuario 2026-10-15).
+    if (e.cotizacion_resultado === "ACEPTADA" && e.fecha_llegada) t.push("INFORME");
     return t;
   }
 
@@ -378,11 +515,44 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
             <Text>{e.proveedor?.razon_social ?? "Proveedor —"}</Text>
           </Space>
           {puedeOperar && !e.fecha_llegada && esUltimo && (
-            <Popconfirm title="¿Eliminar este envío y sus PDFs?" onConfirm={() => borrarEnvio(e)} okText="Sí" cancelText="No">
+            <Popconfirm title={esConjunto(e) ? "¿Sacar este servicio del envío conjunto? Se elimina solo su envío; los demás servicios y los PDFs compartidos se conservan." : "¿Eliminar este envío y sus PDFs?"} onConfirm={() => borrarEnvio(e)} okText="Sí" cancelText="No">
               <Button size="small" danger type="text" icon={<DeleteOutlined />}>Eliminar</Button>
             </Popconfirm>
           )}
         </div>
+
+        {esConjunto(e) && (
+          <div style={{ marginTop: space.sm, padding: space.sm, borderRadius: 6, background: `color-mix(in srgb, ${brand.cyan} 6%, var(--erp-surface))` }}>
+            <Text type="secondary" style={{ fontSize: 11, display: "block", marginBottom: space.xs }}>
+              Envío conjunto: {e.lote.length} servicios con la misma guía de salida. Cotización, devolución, llegada y PDFs se registran
+              para todos; cada servicio guarda su propio resultado.
+            </Text>
+            {e.lote.map((m) => (
+              <div key={m.envio_id} style={{ display: "flex", alignItems: "center", gap: space.sm, flexWrap: "wrap", fontSize: 12 }}>
+                <Tag color={SERVICIO_ESTADO_COLORS[m.estado]} style={{ margin: 0, fontSize: 10 }}>{SERVICIO_ESTADO_LABELS[m.estado]}</Tag>
+                <Text strong={m.envio_id === e.id} style={{ fontSize: 12 }}>{etiquetaMiembro(m)}</Text>
+                {m.monto_cotizacion != null && (
+                  <Text type="secondary" style={{ fontSize: 11 }}>{m.moneda_cotizacion ?? ""} {m.monto_cotizacion.toFixed(2)}</Text>
+                )}
+              </div>
+            ))}
+            {/* Acciones de todo el envío conjunto, sin importar desde qué
+                servicio se abrió el seguimiento. */}
+            {puedeOperar && (() => {
+              const nCot = miembrosPara("cotizacion_lote", e).length;
+              const nLle = miembrosPara("llegada_lote", e).length;
+              const nDev = miembrosPara("devolucion_lote", e).length;
+              if (!nCot && !nLle && !nDev) return null;
+              return (
+                <Space size={space.xs} wrap style={{ marginTop: space.sm }}>
+                  {nCot > 0 && <Button size="small" type="primary" onClick={() => abrir("cotizacion_lote", e)}>Registrar cotización ({nCot})</Button>}
+                  {nLle > 0 && <Button size="small" type="primary" onClick={() => abrir("llegada_lote", e)}>Registrar llegada ({nLle})</Button>}
+                  {nDev > 0 && <Button size="small" onClick={() => abrir("devolucion_lote", e)}>Guía de devolución ({nDev})</Button>}
+                </Space>
+              );
+            })()}
+          </div>
+        )}
 
         <Timeline
           style={{ marginTop: space.md }}
@@ -416,7 +586,7 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
                     <Space size={space.sm}>
                       <Text type="secondary" style={{ fontSize: 12 }}>pendiente</Text>
                       {puedeOperar && esUltimo && (
-                        <Button size="small" type="primary" onClick={() => abrir("cotizacion", e)}>Registrar resultado</Button>
+                        <Button size="small" type="primary" onClick={() => abrir(esConjunto(e) ? "cotizacion_lote" : "cotizacion", e)}>Registrar resultado</Button>
                       )}
                     </Space>
                   )}
@@ -433,8 +603,8 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
                     <Text style={{ fontSize: 12 }}>{formatDateOnly(e.fecha_devolucion)}{e.guia_devolucion ? ` · guía ${e.guia_devolucion}` : ""}</Text>
                   ) : (
                     <Space size={space.sm}>
-                      <Text type="secondary" style={{ fontSize: 12 }}>pendiente</Text>
-                      {puedeOperar && <Button size="small" type="primary" onClick={() => abrir("devolucion", e)}>Registrar devolución</Button>}
+                      <Text type="secondary" style={{ fontSize: 12 }}>sin guía (opcional)</Text>
+                      {puedeOperar && <Button size="small" onClick={() => abrir(esConjunto(e) ? "devolucion_lote" : "devolucion", e)}>Registrar guía de devolución</Button>}
                     </Space>
                   )}
                 </div>
@@ -454,20 +624,15 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
                     </Text>
                   ) : (
                     <Space size={space.sm}>
-                      <Text type="secondary" style={{ fontSize: 12 }}>en trabajo</Text>
-                      {puedeOperar && <Button size="small" type="primary" onClick={() => abrir("llegada", e)}>Registrar llegada</Button>}
+                      <Text type="secondary" style={{ fontSize: 12 }}>incompleto (en trabajo)</Text>
+                      {puedeOperar && <Button size="small" type="primary" onClick={() => abrir(esConjunto(e) ? "llegada_lote" : "llegada", e)}>Registrar llegada</Button>}
                     </Space>
                   )}
                   {e.fecha_llegada && (
                     <div style={{ marginTop: 2 }}>
                       <Text type="secondary" style={{ fontSize: 11 }}>
-                        Factura: {e.nro_factura ?? "—"}
+                        Guía de llegada (PDF) y factura: se cargan en la OC, en Compras.
                       </Text>
-                      {puedeOperar && (
-                        <Button type="link" size="small" style={{ fontSize: 11, padding: "0 4px", height: 18 }} onClick={() => abrir("factura", e)}>
-                          {e.nro_factura ? "editar" : "registrar N°"}
-                        </Button>
-                      )}
                     </div>
                   )}
                 </div>
@@ -480,14 +645,6 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
           <Text type="secondary" style={{ fontSize: 11, display: "block", marginBottom: space.xs }}>Documentos</Text>
           <AdjuntosEnvio envio={e} />
         </div>
-
-        {e.cotizacion_resultado === "ACEPTADA" && puedeOperar && (
-          <div style={{ marginTop: space.md }}>
-            <Button size="small" icon={<PlusOutlined />} onClick={() => abrir("items", e)}>
-              Agregar ítems del proveedor
-            </Button>
-          </div>
-        )}
       </div>
     );
   }
@@ -495,11 +652,18 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
   const tituloAccion: Record<Exclude<Accion, null>, string> = {
     salida: "Registrar salida a proveedor",
     cotizacion: "Resultado de la cotización",
-    devolucion: "Registrar devolución del componente",
+    devolucion: "Guía de devolución del componente",
     llegada: "Registrar llegada del servicio (recepción)",
+    llegada_directa: "Registrar llegada del servicio (ya tiene OC)",
     factura: "Factura del proveedor",
     items: "Ítems agregados por el proveedor",
+    cotizacion_lote: "Cotización del envío conjunto",
+    devolucion_lote: "Guía de devolución del envío conjunto",
+    llegada_lote: "Llegada del envío conjunto (recepción)",
+    factura_lote: "Factura del envío conjunto",
   };
+  const miembrosAccion = miembrosPara(accion, envioSel);
+  const miembroPorEnvio = new Map(miembrosAccion.map((m) => [m.envio_id, m]));
 
   return (
     <>
@@ -520,10 +684,10 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
         {ser && (
           <div style={{ display: "flex", flexDirection: "column", gap: space.lg }}>
             <div style={{ display: "grid", gridTemplateColumns: screens.md ? "1fr 1fr" : "1fr", gap: space.xs, fontSize: 12 }}>
-              <div><Text type="secondary">OT:</Text> <Text strong>{ser.ot_codigo ?? "—"}</Text> {ser.cliente && <Text type="secondary">· {ser.cliente}</Text>}</div>
+              <div><Text type="secondary">OT:</Text> {ser.ot_id != null || ser.orden_trabajo_interna_id != null ? <Link href={ser.ot_id != null ? `/ordenes-trabajo/${ser.ot_id}` : `/ordenes-trabajo-internas/${ser.orden_trabajo_interna_id}`} style={{ fontWeight: 600 }}>{ser.ot_codigo ?? "—"}</Link> : <Text strong>{ser.ot_codigo ?? "—"}</Text>} {ser.cliente && <Text type="secondary">· {ser.cliente}</Text>}</div>
               <div><Text type="secondary">Req:</Text> {ser.nro_req ?? "—"} · ítem {ser.item_req ?? "—"}</div>
               <div><Text type="secondary">Estado req:</Text> {ser.status_requerimiento_codigo ?? "—"}</div>
-              <div><Text type="secondary">OC:</Text> {ser.nro_oc ?? <Text type="secondary">sin OC</Text>}</div>
+              <div><Text type="secondary">OC:</Text> {ser.po_id != null ? <Link href={`/compras/${ser.po_id}`}>{ser.nro_oc ?? ser.oc_docs?.numero_po ?? ser.po_id}</Link> : <Text type="secondary">sin OC</Text>}</div>
               <div><Text type="secondary">Cantidad:</Text> {ser.cantidad ?? 1} {ser.unidad_medida ?? ""} · recibido {ser.cantidad_recibida ?? 0}</div>
               <div><Text type="secondary">Precio ref.:</Text> {ser.precio_unitario != null ? `${ser.moneda ?? "USD"} ${ser.precio_unitario.toFixed(2)}` : "—"}</div>
             </div>
@@ -533,6 +697,27 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
               <DocsSemaforo docs={ser.docs} />
             </div>
 
+            {ser.oc_docs && (
+              <div>
+                <Text type="secondary" style={{ fontSize: 11, display: "block", marginBottom: space.xs }}>
+                  Documentos de la OC {ser.oc_docs.numero_po} (se suben en Compras)
+                </Text>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 12 }}>
+                  {ser.oc_docs.nro_guia && <Text style={{ fontSize: 12 }}>N° guía: {ser.oc_docs.nro_guia}</Text>}
+                  {ser.oc_docs.nro_factura && <Text style={{ fontSize: 12 }}>N° factura: {ser.oc_docs.nro_factura}</Text>}
+                  {ser.oc_docs.adjuntos.map((a) => (
+                    <div key={a.r2_key} style={{ display: "flex", gap: space.sm, alignItems: "center" }}>
+                      <Text type="secondary" style={{ fontSize: 11, minWidth: 130 }}>{OC_DOC_LABEL[a.tipo]}:</Text>
+                      <R2FileLink resource={OC_DOC_RESOURCE[a.tipo]} resourceId={ser.oc_docs!.compra_id} r2Key={a.r2_key} fileName={a.nombre_archivo} style={{ fontSize: 11 }} />
+                    </div>
+                  ))}
+                  {!ser.oc_docs.adjuntos.length && !ser.oc_docs.nro_guia && !ser.oc_docs.nro_factura && (
+                    <Text type="secondary" style={{ fontSize: 11 }}>Todavía no se cargaron documentos en la OC.</Text>
+                  )}
+                </div>
+              </div>
+            )}
+
             {ser.status_requerimiento_codigo !== "APROBADO" && (
               <Alert type="info" showIcon style={{ fontSize: 12 }}
                 message="El seguimiento arranca cuando el requerimiento está aprobado." />
@@ -541,6 +726,20 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
             {ser.estado === "RECIBIDO" && ser.po_id == null && (
               <Alert type="warning" showIcon style={{ fontSize: 12 }}
                 message="Servicio recibido sin OC. Generá la OC desde Requerimientos aprobados: proveedor y precio ya vienen prellenados." />
+            )}
+
+            {ser.estado === "NO_APLICA" && ser.status_requerimiento_codigo === "APROBADO" && (
+              <Alert type="info" showIcon style={{ fontSize: 12 }}
+                message={`Servicio anterior al seguimiento (aprobado antes del ${formatDateOnly(SEGUIMIENTO_DESDE)}): se gestionaba por almacén y no figura como pendiente.`} />
+            )}
+
+            {puedeOperar && puedeLlegadaDirecta(ser.estado, ser.po_id) && (
+              <Alert type="warning" showIcon style={{ fontSize: 12 }}
+                message={ser.estado === "DEVUELTO"
+                  ? `Tiene OC ${ser.nro_oc ?? ser.oc_docs?.numero_po ?? ""} aunque la última cotización fue rechazada.`
+                  : `Tiene OC ${ser.nro_oc ?? ser.oc_docs?.numero_po ?? ""} pero nunca salió por el seguimiento.`}
+                description="Si ya volvió con el trabajo hecho, registrá la llegada directa: se crea el envío con el proveedor de la OC y la cotización aceptada."
+                action={<Button size="small" type="primary" icon={<InboxOutlined />} onClick={() => abrir("llegada_directa", null)}>Registrar llegada</Button>} />
             )}
 
             {puedeOperar && puedeSalida && (
@@ -578,7 +777,7 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
         confirmLoading={saving}
         okText="Guardar"
         cancelText="Cancelar"
-        width={modalWidth(screens, accion === "items" ? 820 : 520)}
+        width={modalWidth(screens, accion === "items" ? 820 : accion === "cotizacion_lote" ? 720 : 520)}
         destroyOnHidden
       >
         <Form form={form} layout="vertical" size="small">
@@ -592,6 +791,17 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
                 <DatePicker format="DD/MM/YYYY" style={{ width: "100%" }} />
               </Form.Item>
               <Form.Item name="guia_salida" label="N° guía de salida"><Input placeholder="Ej. 001-000441" /></Form.Item>
+              <Form.Item
+                name="junto_con"
+                label="Enviar junto con (misma guía y proveedor)"
+                extra="Otros servicios aprobados pendientes de envío. La cotización, la llegada y los PDFs se registran después para todos juntos."
+              >
+                <Select
+                  mode="multiple" allowClear showSearch optionFilterProp="label"
+                  placeholder={candidatos.length ? "Opcional: sumar otros servicios" : "No hay otros servicios pendientes de envío"}
+                  options={candidatos.map((c) => ({ value: c.id, label: etiquetaMiembro(c) }))}
+                />
+              </Form.Item>
               <Form.Item name="observaciones" label="Observaciones"><Input.TextArea rows={2} /></Form.Item>
               <Text type="secondary" style={{ fontSize: 11 }}>El PDF de la guía se sube después, en el envío.</Text>
             </>
@@ -603,16 +813,8 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
               </Form.Item>
               <Form.Item name="fecha_cotizacion" label="Fecha"><DatePicker format="DD/MM/YYYY" style={{ width: "100%" }} /></Form.Item>
               <Form.Item name="nro_cotizacion" label="N° cotización"><Input /></Form.Item>
-              <Space size={space.sm} style={{ display: "flex" }}>
-                <Form.Item name="monto_cotizacion" label="Monto total cotizado" style={{ flex: 1 }}>
-                  <InputNumber min={0} precision={2} style={{ width: "100%" }} />
-                </Form.Item>
-                <Form.Item name="moneda_cotizacion" label="Moneda">
-                  <Select style={{ width: 90 }} options={[{ value: "USD", label: "USD" }, { value: "SOL", label: "SOL" }]} />
-                </Form.Item>
-              </Space>
               <Text type="secondary" style={{ fontSize: 11 }}>
-                Si es aceptada, proveedor y precio quedan prellenados para la OC.
+                Si es aceptada, el proveedor queda prellenado para la OC. Los montos se ponen al generar la OC en Requerimientos.
               </Text>
             </>
           )}
@@ -624,20 +826,102 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
               <Form.Item name="guia_devolucion" label="N° guía de devolución"><Input /></Form.Item>
             </>
           )}
-          {accion === "llegada" && (
+          {(accion === "llegada" || accion === "llegada_directa") && (
             <>
               <Form.Item name="fecha_llegada" label="Fecha de llegada" rules={[{ required: true }]}>
                 <DatePicker format="DD/MM/YYYY" style={{ width: "100%" }} />
               </Form.Item>
               <Form.Item name="guia_llegada" label="N° guía de llegada"><Input /></Form.Item>
               <Form.Item name="recibido_por" label="Recibido por"><Input /></Form.Item>
-              <Form.Item name="nro_factura" label="N° factura (si ya llegó)"><Input /></Form.Item>
+              {(ser?.oc_docs?.lineas_pendientes.length ?? 0) > 0 && (
+                <Form.Item
+                  name="lineas_oc"
+                  label={`Otros ítems de la OC ${ser?.oc_docs?.numero_po ?? ""}`}
+                  extra="Marcados: los usó el proveedor en el servicio (o llegaron con él) y quedan recibidos sin entrar al almacén. Desmarcá los que sí llegan al taller: esos se reciben por Movimientos."
+                >
+                  <Checkbox.Group
+                    style={{ display: "flex", flexDirection: "column", gap: space.xs }}
+                    options={(ser?.oc_docs?.lineas_pendientes ?? []).map((l) => ({
+                      value: l.id,
+                      label: (
+                        <span style={{ fontSize: 12 }}>
+                          {l.tipo_codigo && <Tag style={{ margin: 0, marginRight: space.xs, fontSize: 10 }}>{l.tipo_codigo}</Tag>}
+                          {l.material_codigo ? `${l.material_codigo} · ` : ""}{l.descripcion ?? "—"} — {l.cantidad} {l.unidad_medida ?? ""}
+                        </span>
+                      ),
+                    }))}
+                  />
+                </Form.Item>
+              )}
               <Alert type="info" showIcon style={{ fontSize: 11 }}
-                message="Esto marca el servicio y sus ítems asociados como recibidos, aunque todavía no exista la OC." />
+                message={ser?.po_id != null
+                  ? "Esto marca el servicio, sus ítems asociados y los ítems detallados en la PO como recibidos, y actualiza la OC."
+                  : "Esto marca el servicio y sus ítems asociados como recibidos, aunque todavía no exista la OC."} />
             </>
           )}
-          {accion === "factura" && (
-            <Form.Item name="nro_factura" label="N° factura del proveedor"><Input /></Form.Item>
+          {accion === "cotizacion_lote" && (
+            <>
+              <Space size={space.sm} style={{ display: "flex" }} wrap>
+                <Form.Item name="fecha_cotizacion" label="Fecha"><DatePicker format="DD/MM/YYYY" /></Form.Item>
+                <Form.Item name="nro_cotizacion" label="N° cotización"><Input style={{ width: 160 }} /></Form.Item>
+              </Space>
+              <Text type="secondary" style={{ fontSize: 11, display: "block", marginBottom: space.xs }}>
+                Resultado por servicio: si el proveedor solo hace algunos, marcá los demás como rechazados: quedan Devueltos y
+                libres para enviarse a otro proveedor (la guía de devolución se registra aparte, es opcional).
+              </Text>
+              <Form.List name="lineas">
+                {(fields) => (
+                  <div style={{ display: "flex", flexDirection: "column", gap: space.xs }}>
+                    {fields.map((f) => {
+                      const m = miembroPorEnvio.get(form.getFieldValue(["lineas", f.name, "envio_id"]));
+                      return (
+                        <div key={f.key} style={{ display: "grid", gridTemplateColumns: screens.md ? "1fr 210px" : "1fr", gap: space.xs, alignItems: "end", borderBottom: `1px solid ${brand.border}`, paddingBottom: space.xs }}>
+                          <Form.Item name={[f.name, "envio_id"]} hidden><Input /></Form.Item>
+                          <Text style={{ fontSize: 12 }}>{m ? etiquetaMiembro(m) : "—"}</Text>
+                          <Form.Item name={[f.name, "resultado"]} label="Resultado" rules={[{ required: true }]} style={{ marginBottom: 0 }}>
+                            <Select options={[{ value: "ACEPTADA", label: "Aceptada (lo hace)" }, { value: "RECHAZADA", label: "Rechazada (lo devuelve)" }]} />
+                          </Form.Item>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </Form.List>
+              <Text type="secondary" style={{ fontSize: 11, display: "block", marginTop: space.sm }}>
+                En los aceptados, el proveedor queda prellenado para la OC. Los montos se ponen al generar la OC en Requerimientos.
+              </Text>
+            </>
+          )}
+          {(accion === "devolucion_lote" || accion === "llegada_lote" || accion === "factura_lote") && (
+            <>
+              <Form.Item
+                name="envio_ids"
+                label={accion === "devolucion_lote" ? "Servicios que vuelven sin hacer" : accion === "llegada_lote" ? "Servicios que llegaron" : "Servicios de esta factura"}
+                rules={[{ required: true, type: "array", min: 1, message: "Elegí al menos un servicio" }]}
+              >
+                <Checkbox.Group style={{ display: "flex", flexDirection: "column", gap: space.xs }}
+                  options={miembrosAccion.map((m) => ({ value: m.envio_id, label: <span style={{ fontSize: 12 }}>{etiquetaMiembro(m)}</span> }))} />
+              </Form.Item>
+              {accion === "devolucion_lote" && (
+                <>
+                  <Form.Item name="fecha_devolucion" label="Fecha de devolución" rules={[{ required: true }]}>
+                    <DatePicker format="DD/MM/YYYY" style={{ width: "100%" }} />
+                  </Form.Item>
+                  <Form.Item name="guia_devolucion" label="N° guía de devolución"><Input /></Form.Item>
+                </>
+              )}
+              {accion === "llegada_lote" && (
+                <>
+                  <Form.Item name="fecha_llegada" label="Fecha de llegada" rules={[{ required: true }]}>
+                    <DatePicker format="DD/MM/YYYY" style={{ width: "100%" }} />
+                  </Form.Item>
+                  <Form.Item name="guia_llegada" label="N° guía de llegada"><Input /></Form.Item>
+                  <Form.Item name="recibido_por" label="Recibido por"><Input /></Form.Item>
+                  <Alert type="info" showIcon style={{ fontSize: 11 }}
+                    message="Los servicios marcados (y sus ítems asociados) quedan recibidos, aunque todavía no exista la OC. Los que no marques siguen en trabajo." />
+                </>
+              )}
+            </>
           )}
           {accion === "items" && (
             <Form.List name="items">
@@ -690,6 +974,229 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
               )}
             </Form.List>
           )}
+        </Form>
+      </Modal>
+    </>
+  );
+}
+
+// ── Generar seguimiento desde una selección ──────────────────────────
+// En /requerimientos (vista por ítem) logística selecciona varios SER —igual
+// que para crear la OC— y registra la salida de todos juntos al mismo
+// proveedor: un envío conjunto (lote) con la misma guía.
+export function ServicioSalidaModal({ open, sers, onClose, onDone }: {
+  open: boolean;
+  sers: ServicioSer[];
+  onClose: () => void;
+  onDone: () => void | Promise<void>;
+}) {
+  const { screens } = useResponsive();
+  const [messageApi, ctx] = message.useMessage();
+  const [form] = Form.useForm();
+  const [saving, setSaving] = useState(false);
+  const [proveedores, setProveedores] = useState<ProveedorOpt[]>([]);
+
+  useEffect(() => {
+    if (!open) return;
+    form.setFieldsValue({ fecha_salida: dayjs(), proveedor_id: undefined, guia_salida: "", observaciones: "" });
+    if (proveedores.length) return;
+    fetch("/api/proveedores?limit=10000")
+      .then(async (r) => { if (r.ok) setProveedores(((await r.json()).data ?? []) as ProveedorOpt[]); })
+      .catch(() => {});
+  }, [open, form, proveedores.length]);
+
+  async function guardar() {
+    let v: Record<string, unknown>;
+    try { v = await form.validateFields(); } catch { return; }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/servicios-externos/envios", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          repuesto_ids: sers.map((s) => s.id),
+          proveedor_id: v.proveedor_id,
+          fecha_salida: dayjs.isDayjs(v.fecha_salida) ? v.fecha_salida.format("YYYY-MM-DD") : v.fecha_salida,
+          guia_salida: v.guia_salida || null,
+          observaciones: v.observaciones || null,
+        }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => null);
+        messageApi.error(j?.error ?? "No se pudo registrar la salida.");
+        return;
+      }
+      messageApi.success(sers.length > 1 ? `Envío conjunto de ${sers.length} servicios registrado.` : "Salida registrada.");
+      await onDone();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      {ctx}
+      <Modal
+        open={open}
+        title={sers.length > 1 ? `Generar seguimiento — envío conjunto (${sers.length} servicios)` : "Generar seguimiento — salida a proveedor"}
+        onCancel={onClose}
+        onOk={guardar}
+        confirmLoading={saving}
+        okText="Registrar salida"
+        cancelText="Cancelar"
+        width={modalWidth(screens, 620)}
+        destroyOnHidden
+      >
+        <div style={{ marginBottom: space.md, padding: space.sm, borderRadius: 6, background: `color-mix(in srgb, ${brand.cyan} 6%, var(--erp-surface))` }}>
+          {sers.map((s) => (
+            <div key={s.id} style={{ fontSize: 12 }}>
+              <Tag color={SERVICIO_ESTADO_COLORS[s.estado]} style={{ margin: 0, marginRight: space.xs, fontSize: 10 }}>{SERVICIO_ESTADO_LABELS[s.estado]}</Tag>
+              {etiquetaMiembro(s)}
+            </div>
+          ))}
+        </div>
+        <Form form={form} layout="vertical" size="small">
+          <Form.Item name="proveedor_id" label="Proveedor" rules={[{ required: true, message: "Elegí el proveedor" }]}>
+            <Select showSearch optionFilterProp="label" placeholder="Proveedor que cotiza"
+              options={proveedores.map((p) => ({ value: p.id, label: p.razon_social }))} />
+          </Form.Item>
+          <Form.Item name="fecha_salida" label="Fecha de salida" rules={[{ required: true }]}>
+            <DatePicker format="DD/MM/YYYY" style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item name="guia_salida" label="N° guía de salida"><Input placeholder="Ej. 001-000441" /></Form.Item>
+          <Form.Item name="observaciones" label="Observaciones"><Input.TextArea rows={2} /></Form.Item>
+          {sers.length > 1 && (
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              Después, en el seguimiento de cualquiera de ellos, la cotización, la llegada y los PDFs se registran para todos;
+              cada servicio guarda su propio resultado (el proveedor puede hacer solo algunos).
+            </Text>
+          )}
+        </Form>
+      </Modal>
+    </>
+  );
+}
+
+// ── Registrar llegada desde una selección ────────────────────────────
+// En /requerimientos y en Servicios externos (vista por servicio) logística
+// selecciona los SER Incompletos que volvieron —aunque sean de guías
+// distintas— y registra la llegada (= recepción) de todos con la misma guía.
+// Si sus OCs tienen otras líneas pendientes (material que el proveedor usó
+// en el servicio), se pueden dar por recibidas acá mismo.
+export function ServicioLlegadaModal({ open, sers, onClose, onDone }: {
+  open: boolean;
+  sers: ServicioSer[];
+  onClose: () => void;
+  onDone: () => void | Promise<void>;
+}) {
+  const { screens } = useResponsive();
+  const [messageApi, ctx] = message.useMessage();
+  const [form] = Form.useForm();
+  const [saving, setSaving] = useState(false);
+
+  // Otras líneas pendientes de las OCs de los servicios seleccionados (una
+  // vez por OC, aunque varios SER compartan la misma).
+  const ocsConLineas = useMemo(() => {
+    const m = new Map<number, { numero_po: string; lineas: OcDocs["lineas_pendientes"] }>();
+    for (const s of sers) {
+      const oc = s.oc_docs;
+      if (!oc || !oc.lineas_pendientes.length || m.has(oc.compra_id)) continue;
+      m.set(oc.compra_id, { numero_po: oc.numero_po, lineas: oc.lineas_pendientes });
+    }
+    return [...m.values()];
+  }, [sers]);
+
+  useEffect(() => {
+    if (open) {
+      form.setFieldsValue({
+        fecha_llegada: dayjs(), guia_llegada: "", recibido_por: "",
+        lineas_oc: ocsConLineas.flatMap((oc) => oc.lineas.map((l) => l.id)),
+      });
+    }
+  }, [open, form, ocsConLineas]);
+
+  async function guardar() {
+    let v: Record<string, unknown>;
+    try { v = await form.validateFields(); } catch { return; }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/servicios-externos/llegada", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          repuesto_ids: sers.map((s) => s.id),
+          fecha_llegada: dayjs.isDayjs(v.fecha_llegada) ? v.fecha_llegada.format("YYYY-MM-DD") : v.fecha_llegada,
+          guia_llegada: v.guia_llegada || null,
+          recibido_por: v.recibido_por || null,
+          lineas_oc: Array.isArray(v.lineas_oc) ? v.lineas_oc : [],
+        }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => null);
+        messageApi.error(j?.error ?? "No se pudo registrar la llegada.");
+        return;
+      }
+      messageApi.success(`Llegada registrada: ${sers.length} servicio(s) completo(s).`);
+      await onDone();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      {ctx}
+      <Modal
+        open={open}
+        title={`Registrar llegada (${sers.length} servicio${sers.length > 1 ? "s" : ""})`}
+        onCancel={onClose}
+        onOk={guardar}
+        confirmLoading={saving}
+        okText="Registrar llegada"
+        cancelText="Cancelar"
+        width={modalWidth(screens, 620)}
+        destroyOnHidden
+      >
+        <div style={{ marginBottom: space.md, padding: space.sm, borderRadius: 6, background: `color-mix(in srgb, ${brand.cyan} 6%, var(--erp-surface))` }}>
+          {sers.map((s) => {
+            const u = s.envios.length ? s.envios[s.envios.length - 1] : null;
+            return (
+              <div key={s.id} style={{ fontSize: 12 }}>
+                {etiquetaMiembro(s)}
+                {u?.proveedor && <Text type="secondary" style={{ fontSize: 11 }}> · {u.proveedor.razon_social}{u.guia_salida ? ` (guía salida ${u.guia_salida})` : ""}</Text>}
+              </div>
+            );
+          })}
+        </div>
+        <Form form={form} layout="vertical" size="small">
+          <Form.Item name="fecha_llegada" label="Fecha de llegada" rules={[{ required: true }]}>
+            <DatePicker format="DD/MM/YYYY" style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item name="guia_llegada" label="N° guía de llegada"><Input /></Form.Item>
+          <Form.Item name="recibido_por" label="Recibido por"><Input /></Form.Item>
+          {ocsConLineas.length > 0 && (
+            <Form.Item
+              name="lineas_oc"
+              label={`Otros ítems de la${ocsConLineas.length > 1 ? "s" : ""} OC ${ocsConLineas.map((oc) => oc.numero_po).join(", ")}`}
+              extra="Marcados: los usó el proveedor en el servicio (o llegaron con él) y quedan recibidos sin entrar al almacén. Desmarcá los que sí llegan al taller: esos se reciben por Movimientos."
+            >
+              <Checkbox.Group
+                style={{ display: "flex", flexDirection: "column", gap: space.xs }}
+                options={ocsConLineas.flatMap((oc) => oc.lineas.map((l) => ({
+                  value: l.id,
+                  label: (
+                    <span style={{ fontSize: 12 }}>
+                      {ocsConLineas.length > 1 && <Text type="secondary" style={{ fontSize: 10, marginRight: space.xs }}>OC {oc.numero_po}</Text>}
+                      {l.tipo_codigo && <Tag style={{ margin: 0, marginRight: space.xs, fontSize: 10 }}>{l.tipo_codigo}</Tag>}
+                      {l.material_codigo ? `${l.material_codigo} · ` : ""}{l.descripcion ?? "—"} — {l.cantidad} {l.unidad_medida ?? ""}
+                    </span>
+                  ),
+                })))}
+              />
+            </Form.Item>
+          )}
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            Los servicios (y sus ítems asociados) quedan Completos y recibidos, aunque todavía no exista la OC; si la OC existe, se actualiza.
+            El PDF de la guía de llegada y la factura se cargan en la OC (Compras).
+          </Text>
         </Form>
       </Modal>
     </>
