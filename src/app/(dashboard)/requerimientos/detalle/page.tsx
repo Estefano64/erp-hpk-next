@@ -417,6 +417,15 @@ const reqColor: Record<string, string> = {
 const ESTADOS_OC_CERRADOS = new Set([
   "CONSUMIDO_ALMACEN", "CONSUMIDO_OC_ABIERTA", "ENTREGADO", "COMPLETO", "ANULADO", "DEVOLUCION",
 ]);
+// Caja chica: aplica si NO tiene OC, no está anulado/desaprobado y no está
+// cerrado (consumido / entregado / completo / devolución). Lo usa la acción
+// masiva; el botón por fila mantiene su propio criterio.
+function elegibleCajaChica(r: Requerimiento): boolean {
+  return r.po_id == null && !r.nro_oc
+    && r.status_req !== "ANULADO" && r.status_req !== "DESAPROBADO"
+    && !ESTADOS_OC_CERRADOS.has(r.status_oc ?? "");
+}
+
 function diasAprobadoSinOC(r: Requerimiento): number | null {
   if (r.status_req !== "APROBADO") return null;
   if (r.po_id != null || r.nro_oc) return null;
@@ -643,6 +652,10 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
   const [cajaProveedor, setCajaProveedor] = useState<string>("");
   const [cajaComprobante, setCajaComprobante] = useState<string>("");
   const [cajaObs, setCajaObs] = useState<string>("");
+  // Caja chica MASIVA: mismos datos de comprobante para todo el lote, monto
+  // unitario por item (cada uno costó distinto).
+  const [cajaLote, setCajaLote] = useState<Requerimiento[] | null>(null);
+  const [cajaMontos, setCajaMontos] = useState<Record<number, number | null>>({});
   const [pagandoCaja, setPagandoCaja] = useState(false);
   interface AlmacenZonaOpt {
     id: number;
@@ -1562,6 +1575,56 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
       await fetchData();
     } catch (err: unknown) {
       message.error(err instanceof Error ? err.message : "Error al pagar con caja chica");
+    } finally {
+      setPagandoCaja(false);
+    }
+  };
+
+  const abrirCajaChicaLote = (items: Requerimiento[]) => {
+    setCajaLote(items);
+    setCajaMontos(Object.fromEntries(items.map((r) => [
+      r.id,
+      r.precio_unitario != null && Number(r.precio_unitario) > 0 ? Number(r.precio_unitario) : null,
+    ])));
+    setCajaMoneda(items[0]?.moneda || "SOL");
+    setCajaProveedor("");
+    setCajaComprobante("");
+    setCajaObs("");
+  };
+  const cajaLoteCompleto = !!cajaLote && cajaLote.every((r) => (cajaMontos[r.id] ?? 0) > 0);
+  const confirmarCajaChicaLote = async () => {
+    if (!cajaLote) return;
+    if (!cajaLoteCompleto) {
+      message.error("Todos los items necesitan monto unitario mayor a 0.");
+      return;
+    }
+    setPagandoCaja(true);
+    let ok = 0;
+    const errores: string[] = [];
+    try {
+      for (const r of cajaLote) {
+        const res = await fetch(`/api/requerimientos/${r.id}/consumir-caja-chica`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            monto_unitario: cajaMontos[r.id],
+            moneda: cajaMoneda || undefined,
+            proveedor: cajaProveedor.trim() || undefined,
+            comprobante: cajaComprobante.trim() || undefined,
+            observacion: cajaObs.trim() || undefined,
+          }),
+        });
+        if (res.ok) ok++;
+        else {
+          const json = await res.json().catch(() => null);
+          errores.push(`${r.nro_req ?? "?"}/${r.item_req ?? "?"}: ${json?.error ?? "error"}`);
+        }
+      }
+      if (ok > 0) message.success(`${ok} requerimiento(s) pagado(s) con caja chica.`);
+      if (errores.length > 0) message.warning(`${errores.length} con error — ${errores.slice(0, 3).join(" · ")}${errores.length > 3 ? "…" : ""}`);
+      setCajaLote(null);
+      setSelectedRows([]);
+      await fetchData();
     } finally {
       setPagandoCaja(false);
     }
@@ -2816,6 +2879,27 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                       onClick={observarSeleccionados}
                     >
                       Devolver a revisión ({elegibles.length})
+                    </Button>
+                  </Tooltip>
+                );
+              })()}
+              {(() => {
+                // Caja chica en lote: subconjunto elegible de la selección
+                // (sin OC, no anulado ni cerrado) — el resto se ignora.
+                const elegibles = selectedRecords.filter(elegibleCajaChica);
+                const ignorados = selectedRecords.length - elegibles.length;
+                const tooltip = elegibles.length === 0
+                  ? "Ninguno de los seleccionados se puede pagar con caja chica (tienen OC, están anulados o ya cerrados)."
+                  : `Paga con caja chica los ${elegibles.length} item(s) elegibles con un mismo comprobante; cada uno con su monto. Quedan ENTREGADOS.${ignorados > 0 ? ` Se ignoran ${ignorados} seleccionado(s) que no aplican.` : ""}`;
+                return (
+                  <Tooltip title={tooltip}>
+                    <Button
+                      size="large"
+                      icon={<DollarOutlined />}
+                      disabled={elegibles.length === 0}
+                      onClick={() => abrirCajaChicaLote(elegibles)}
+                    >
+                      Caja chica ({elegibles.length})
                     </Button>
                   </Tooltip>
                 );
@@ -4436,6 +4520,112 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
               type="success"
               showIcon
               title="Se marcará como ENTREGADO inmediatamente. No pasa por OC ni por despacho — el técnico ya recibió el material."
+            />
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Modal Caja Chica MASIVA ── */}
+      <Modal
+        title={
+          <Space>
+            <DollarOutlined style={{ color: brand.success }} />
+            <span>Pagar con Caja Chica — {cajaLote?.length ?? 0} item(s)</span>
+          </Space>
+        }
+        open={!!cajaLote}
+        onCancel={() => setCajaLote(null)}
+        onOk={confirmarCajaChicaLote}
+        confirmLoading={pagandoCaja}
+        okText={`Marcar ${cajaLote?.length ?? 0} como pagados`}
+        okButtonProps={{ type: "primary", disabled: !cajaLoteCompleto }}
+        cancelText="Cancelar"
+        destroyOnHidden
+        width={modalWidth(screens, 760)}
+      >
+        {cajaLote && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <Table<Requerimiento>
+              rowKey="id"
+              size="small"
+              pagination={false}
+              dataSource={cajaLote}
+              scroll={{ x: 640, y: 300 }}
+              columns={[
+                { title: "Req / Item", key: "req", width: 110, render: (_, r) => `${r.nro_req ?? "—"}/${r.item_req ?? "—"}` },
+                {
+                  title: "Descripción", key: "desc", ellipsis: true,
+                  render: (_, r) => <><b>{r.material_codigo ?? ""}</b> {r.material_nombre ?? r.descripcion ?? ""}</>,
+                },
+                { title: "Cant.", key: "cant", width: 80, render: (_, r) => `${r.cantidad} ${r.unidad_medida ?? ""}` },
+                {
+                  title: <>Monto unit. <span style={{ color: brand.error }}>*</span></>, key: "monto", width: 140,
+                  render: (_, r) => (
+                    <InputNumber
+                      size="small"
+                      value={cajaMontos[r.id] ?? null}
+                      onChange={(v) => setCajaMontos((m) => ({ ...m, [r.id]: v == null ? null : Number(v) }))}
+                      min={0.01}
+                      step={0.01}
+                      precision={2}
+                      style={{ width: "100%" }}
+                      placeholder="0.00"
+                      status={(cajaMontos[r.id] ?? 0) > 0 ? undefined : "error"}
+                    />
+                  ),
+                },
+              ]}
+            />
+
+            <Row gutter={8}>
+              <Col xs={24} sm={8}>
+                <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 2 }}>Moneda</div>
+                <Select
+                  value={cajaMoneda}
+                  onChange={setCajaMoneda}
+                  style={{ width: "100%" }}
+                  options={[
+                    { value: "SOL", label: "SOL (S/)" },
+                    { value: "USD", label: "USD (US$)" },
+                  ]}
+                />
+              </Col>
+              <Col xs={24} sm={16}>
+                <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 2 }}>Proveedor (opcional)</div>
+                <Input
+                  value={cajaProveedor}
+                  onChange={(e) => setCajaProveedor(e.target.value)}
+                  placeholder="Ej. Ferretería La Esquina"
+                  maxLength={200}
+                />
+              </Col>
+            </Row>
+
+            <div>
+              <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 2 }}>N° comprobante / boleta (opcional)</div>
+              <Input
+                value={cajaComprobante}
+                onChange={(e) => setCajaComprobante(e.target.value)}
+                placeholder="Ej. B001-12345"
+                maxLength={100}
+              />
+            </div>
+
+            <div>
+              <div style={{ fontSize: 12, color: brand.textSecondary, marginBottom: 2 }}>Observación (opcional)</div>
+              <Input.TextArea
+                value={cajaObs}
+                onChange={(e) => setCajaObs(e.target.value)}
+                rows={2}
+                maxLength={500}
+                showCount
+              />
+            </div>
+
+            <Alert
+              type="success"
+              showIcon
+              title="Todos quedan ENTREGADOS inmediatamente, con el mismo comprobante. No pasan por OC ni por despacho."
             />
           </div>
         )}
