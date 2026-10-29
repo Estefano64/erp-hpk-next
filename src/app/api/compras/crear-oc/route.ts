@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -418,13 +419,20 @@ export async function POST(req: NextRequest) {
       // envío con cotización ACEPTADA y queda Incompleto a la espera de la
       // llegada; uno en cotización pasa a aceptada. Así la llegada se registra
       // siempre desde Servicios externos / Requerimientos sin pasos extra.
+      // Los envíos que se crean acá salen juntos con la OC: comparten lote
+      // (UN seguimiento conjunto, no uno por servicio). Si al final solo se
+      // creó uno, queda individual (lote_id NULL, misma regla que /envios).
       let seguimientosCreados = 0;
       let cotizacionesAceptadas = 0;
+      const loteOC = randomUUID();
       for (const rep of repuestos) {
         if (rep.tipo_codigo !== "SER" || yaRecibido(rep)) continue;
-        const r = await alinearSeguimientoConOC(tx, rep.id, { id: compra.id, numero_po: compra.numero_po }, usuario);
+        const r = await alinearSeguimientoConOC(tx, rep.id, { id: compra.id, numero_po: compra.numero_po }, usuario, loteOC);
         if (r === "creado") seguimientosCreados++;
         else if (r === "aceptado") cotizacionesAceptadas++;
+      }
+      if (seguimientosCreados === 1) {
+        await tx.servicioEnvio.updateMany({ where: { lote_id: loteOC }, data: { lote_id: null } });
       }
       // Persistir cantidades override (oc_cantidad) item por item. Solo
       // se actualizan los que el front mandó en el mapa — el resto queda

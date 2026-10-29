@@ -199,11 +199,13 @@ async function crearEnvioAceptadoPorOC(
   fecha: Date,
   observaciones: string,
   usuario: string,
+  loteId: string | null = null,
 ): Promise<number> {
   const envio = await tx.servicioEnvio.create({
     data: {
       ot_repuesto_id: ser.id,
       proveedor_id: compra?.proveedor_id ?? ser.proveedor_id ?? null,
+      lote_id: loteId,
       fecha_salida: compra?.fecha_aprobacion ?? compra?.fecha_solicitud ?? fecha,
       cotizacion_resultado: "ACEPTADA",
       fecha_cotizacion: compra?.fecha_aprobacion ?? compra?.fecha_solicitud ?? fecha,
@@ -225,6 +227,8 @@ async function crearEnvioAceptadoPorOC(
  *    crea el envío con el proveedor de la OC y la cotización ACEPTADA;
  *  - último envío todavía en cotización → lo marca ACEPTADA.
  * Sin OC, exige lo de siempre: un envío con cotización aceptada.
+ * `loteId`: los SER de la misma OC que se reciben juntos comparten envío
+ * conjunto (ver /api/servicios-externos/llegada).
  * Desde 2026-10-23 crear-oc ya alinea el seguimiento (ver
  * alinearSeguimientoConOC); esto queda para OCs anteriores a ese cambio.
  */
@@ -233,6 +237,7 @@ export async function prepararEnvioParaLlegada(
   ser: SerRow,
   fechaLlegada: string,
   usuario: string,
+  loteId: string | null = null,
 ): Promise<number> {
   const desc = ser.descripcion ?? `Item ${ser.id}`;
   const ultimo = ser.servicio_envios.length ? ser.servicio_envios.reduce((a, b) => (b.id > a.id ? b : a)) : null;
@@ -248,7 +253,7 @@ export async function prepararEnvioParaLlegada(
     const f = parseDateOnly(fechaLlegada) ?? new Date();
     return crearEnvioAceptadoPorOC(tx, ser, compra, f, ultimo
       ? `Creado al registrar la llegada: la cotización anterior fue rechazada y el servicio se compró con la OC ${compra?.numero_po ?? ""}.`
-      : `Creado al registrar la llegada: el servicio ya tenía OC ${compra?.numero_po ?? ""} sin seguimiento previo.`, usuario);
+      : `Creado al registrar la llegada: el servicio ya tenía OC ${compra?.numero_po ?? ""} sin seguimiento previo.`, usuario, loteId);
   }
   if (ultimo.cotizacion_resultado == null && !ultimo.fecha_devolucion && !ultimo.fecha_llegada) {
     await aplicarAccionEnvio(tx, ultimo.id, { accion: "cotizacion", resultado: "ACEPTADA", fecha_cotizacion: fechaLlegada }, usuario);
@@ -264,6 +269,8 @@ export async function prepararEnvioParaLlegada(
  *    crea el envío con el proveedor de la OC y cotización ACEPTADA;
  *  - último envío todavía en cotización → lo marca ACEPTADA;
  *  - ya aceptado o recibido → no hace nada.
+ * `loteId`: los envíos creados para los SER de una misma OC comparten lote
+ * (un solo seguimiento conjunto, no uno por servicio — fix 2026-10-29).
  * Devuelve qué hizo (para el mensaje al usuario). Deja historial en la OT.
  * NO recalcula recursos_status (lo hace crear-oc por OT).
  */
@@ -272,6 +279,7 @@ export async function alinearSeguimientoConOC(
   serId: number,
   compra: { id: number; numero_po: string },
   usuario: string,
+  loteId: string | null = null,
 ): Promise<"creado" | "aceptado" | null> {
   const ser = await cargarSer(tx, serId);
   if (!ser || ser.po_id !== compra.id) return null;
@@ -290,7 +298,7 @@ export async function alinearSeguimientoConOC(
   if (!ultimo || ultimo.cotizacion_resultado === "RECHAZADA") {
     await crearEnvioAceptadoPorOC(tx, ser, datosCompra, hoyEnLima(), ultimo
       ? `Creado al generar la OC ${compra.numero_po}: la cotización anterior fue rechazada y el servicio se compró con esta OC.`
-      : `Creado al generar la OC ${compra.numero_po}: el servicio no tenía seguimiento (si hay OC, la cotización ya fue aceptada).`, usuario);
+      : `Creado al generar la OC ${compra.numero_po}: el servicio no tenía seguimiento (si hay OC, la cotización ya fue aceptada).`, usuario, loteId);
     await historialServicio(tx, ser, `Seguimiento de "${desc}" creado al generar la OC ${compra.numero_po}: cotización ACEPTADA (${prov})`, usuario);
     return "creado";
   }

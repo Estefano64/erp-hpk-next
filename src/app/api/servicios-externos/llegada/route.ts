@@ -9,6 +9,7 @@
 //
 // Body: { repuesto_ids: number[], fecha_llegada: "YYYY-MM-DD", guia_llegada?,
 //         recibido_por?, nro_factura?, lineas_oc?: number[] }
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getAuditUser } from "@/lib/audit";
@@ -43,16 +44,30 @@ export async function POST(req: NextRequest) {
     const result = await prisma.$transaction(async (tx) => {
       const out = [];
       const ots = new Map<string, { ot_id: number | null; orden_trabajo_interna_id: number | null }>();
+      // Llegada directa de varios SER de la misma OC: los envíos que se creen
+      // comparten lote (un seguimiento conjunto por OC, no uno por servicio).
+      const lotePorOC = new Map<number, string>();
       for (const repId of [...new Set(d.repuesto_ids)]) {
         const ser = await cargarSer(tx, repId);
         if (!ser) throw errorAccion("BAD_REQ", `Requerimiento ${repId} no es un servicio (SER)`);
-        const envioId = await prepararEnvioParaLlegada(tx, ser, d.fecha_llegada, usuario);
+        let loteId: string | null = null;
+        if (ser.po_id != null) {
+          loteId = lotePorOC.get(ser.po_id) ?? randomUUID();
+          lotePorOC.set(ser.po_id, loteId);
+        }
+        const envioId = await prepararEnvioParaLlegada(tx, ser, d.fecha_llegada, usuario, loteId);
         const { envio } = await aplicarAccionEnvio(tx, envioId, {
           accion: "llegada", fecha_llegada: d.fecha_llegada, guia_llegada: d.guia_llegada,
           recibido_por: d.recibido_por, nro_factura: d.nro_factura, lineas_oc: d.lineas_oc,
         }, usuario);
         ots.set(`${ser.ot_id}|${ser.orden_trabajo_interna_id}`, { ot_id: ser.ot_id, orden_trabajo_interna_id: ser.orden_trabajo_interna_id });
         out.push(envio);
+      }
+      // Lote con un solo envío → individual (lote_id NULL, misma regla que /envios).
+      for (const loteId of lotePorOC.values()) {
+        if (await tx.servicioEnvio.count({ where: { lote_id: loteId } }) === 1) {
+          await tx.servicioEnvio.updateMany({ where: { lote_id: loteId }, data: { lote_id: null } });
+        }
       }
       for (const ot of ots.values()) await recalcularRecursosStatusDesdeRep(tx, ot);
       return out;
