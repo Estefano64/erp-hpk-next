@@ -464,6 +464,7 @@ export default function OTRequerimientosTab({
     return () => { vivo = false; };
   }, [draftOpen, kind, otId]);
   const [draftItems, setDraftItems] = useState<DraftItem[]>([]);
+  const [draftFilasNuevas, setDraftFilasNuevas] = useState<number>(1);
   const [savingDraft, setSavingDraft] = useState(false);
   // Si está seteado, los items del draft se agregan a este nro_req (en vez de crear uno nuevo).
   const [draftAppendToNroReq, setDraftAppendToNroReq] = useState<string | null>(null);
@@ -481,6 +482,7 @@ export default function OTRequerimientosTab({
   function cerrarDraft() {
     setDraftOpen(false);
     setDraftItems([]);
+    setDraftFilasNuevas(1);
     setDraftAppendToNroReq(null);
     setDraftSelected([]);
     setDraftBulkUM(undefined);
@@ -540,15 +542,17 @@ export default function OTRequerimientosTab({
     setDraftBulkPrecio(undefined);
     setDraftBulkMoneda(undefined);
   }
-  function agregarItemDraft() {
+  // Agrega N filas vacías de una vez (para reqs largos, no ir de a una).
+  function agregarItemDraft(n: number = 1) {
+    const total = Math.max(1, Math.min(100, Math.floor(n) || 1));
     setDraftItems((prev) => [
       ...prev,
-      {
+      ...Array.from({ length: total }, (): DraftItem => ({
         id: crypto.randomUUID(),
         tipo_codigo: "MAC",
         descripcion: "",
         cantidad: 1,
-      },
+      })),
     ]);
   }
   function quitarItemDraft(id: string) {
@@ -2026,9 +2030,21 @@ export default function OTRequerimientosTab({
           />
           <Row justify="space-between" align="middle" style={{ marginTop: 12 }}>
             <Col>
-              <Button icon={<PlusOutlined />} onClick={agregarItemDraft}>
-                Agregar otro ítem
-              </Button>
+              <Space.Compact>
+                <InputNumber
+                  min={1}
+                  max={100}
+                  precision={0}
+                  value={draftFilasNuevas}
+                  onChange={(v) => setDraftFilasNuevas(typeof v === "number" ? v : 1)}
+                  onPressEnter={() => agregarItemDraft(draftFilasNuevas)}
+                  style={{ width: 72 }}
+                  aria-label="Cantidad de filas a agregar"
+                />
+                <Button icon={<PlusOutlined />} onClick={() => agregarItemDraft(draftFilasNuevas)}>
+                  {draftFilasNuevas > 1 ? `Agregar ${draftFilasNuevas} ítems` : "Agregar otro ítem"}
+                </Button>
+              </Space.Compact>
             </Col>
             <Col>
               <Space>
