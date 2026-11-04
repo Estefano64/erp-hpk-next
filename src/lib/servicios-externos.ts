@@ -125,7 +125,12 @@ export interface SerEstadoInput {
   cantidad?: number | string | null;
   cantidad_recibida?: number | string | null;
   fecha_aprobacion?: Date | string | null;
+  po_id?: number | null;
+  status_oc_codigo?: string | null;
 }
+
+// Estados del ítem que indican que su OC sigue abierta esperando recepción.
+const OC_POR_RECIBIR = ["PROCESO", "INCOMPLETO"];
 
 function anteriorAlSeguimiento(fecha: Date | string | null | undefined): boolean {
   if (!fecha) return true;
@@ -152,9 +157,16 @@ export function estadoServicio(
   const u = ultimoEnvio(envios);
   if (!u) {
     if (!ser) return "PENDIENTE_ENVIO";
-    if (anteriorAlSeguimiento(ser.fecha_aprobacion)) return "NO_APLICA";
     const cant = Number(ser.cantidad ?? 0);
-    if (cant > 0 && Number(ser.cantidad_recibida ?? 0) >= cant - 0.0001) return "RECIBIDO";
+    const recibido = cant > 0 && Number(ser.cantidad_recibida ?? 0) >= cant - 0.0001;
+    if (anteriorAlSeguimiento(ser.fecha_aprobacion)) {
+      // Fix 2026-11-04 (OC 260386): un SER viejo con OC todavía abierta y sin
+      // recibir quedaba sin camino de recepción (Ingreso de POs ya no toma
+      // SER desde 2026-10-23). Se trata como pendiente → llegada directa.
+      const ocAbierta = ser.po_id != null && OC_POR_RECIBIR.includes(ser.status_oc_codigo ?? "");
+      if (!(ocAbierta && !recibido)) return "NO_APLICA";
+    }
+    if (recibido) return "RECIBIDO";
     return "PENDIENTE_ENVIO";
   }
   return estadoDeEnvio(u);

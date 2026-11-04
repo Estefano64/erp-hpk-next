@@ -262,6 +262,7 @@ export function serializarSer(r: SerRow, lotes?: Map<string, LoteMiembro[]>, ocs
   const estado: ServicioEstado = estadoServicio(r.status_requerimiento_codigo, enviosLite, {
     cantidad: dec(r.cantidad), cantidad_recibida: dec(r.cantidad_recibida),
     fecha_aprobacion: r.fecha_aprobacion ?? r.fecha_solicitud,
+    po_id: r.po_id, status_oc_codigo: r.status_oc_codigo,
   });
   const docs = checklistDocumental({
     envios: enviosLite,
