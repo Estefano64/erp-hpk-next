@@ -26,7 +26,7 @@ import {
 } from "antd";
 import {
   CheckCircleOutlined, CloseCircleOutlined, DeleteOutlined, ExclamationCircleOutlined, FileTextOutlined,
-  MinusCircleOutlined, PlusOutlined, SendOutlined, UploadOutlined, InboxOutlined, RollbackOutlined,
+  EditOutlined, MinusCircleOutlined, PlusOutlined, SendOutlined, UploadOutlined, InboxOutlined, RollbackOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
@@ -243,7 +243,7 @@ interface DrawerProps {
 
 // *_lote = la misma etapa para todo un envío conjunto (PATCH /envios/lote).
 type Accion =
-  | "salida" | "cotizacion" | "devolucion" | "llegada" | "llegada_directa" | "factura" | "items"
+  | "salida" | "cotizacion" | "devolucion" | "llegada" | "llegada_directa" | "factura" | "items" | "editar"
   | "cotizacion_lote" | "devolucion_lote" | "llegada_lote" | "factura_lote"
   | null;
 
@@ -302,6 +302,19 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
       form.setFieldsValue({ fecha_llegada: dayjs(), lineas_oc: (ser?.oc_docs?.lineas_pendientes ?? []).map((l) => l.id) });
     }
     if (a === "factura" && envio) form.setFieldsValue({ nro_factura: envio.nro_factura ?? "" });
+    // Corregir/cargar después los datos del envío (guías, N° cotización...):
+    // la OC crea el seguimiento sola y la guía de salida queda vacía.
+    if (a === "editar" && envio) {
+      const fs = dateOnlyLocal(envio.fecha_salida);
+      form.setFieldsValue({
+        fecha_salida: fs ? dayjs(fs) : null,
+        guia_salida: envio.guia_salida ?? "",
+        nro_cotizacion: envio.nro_cotizacion ?? "",
+        ...(envio.cotizacion_resultado === "RECHAZADA" ? { guia_devolucion: envio.guia_devolucion ?? "" } : {}),
+        ...(envio.fecha_llegada ? { guia_llegada: envio.guia_llegada ?? "", recibido_por: envio.recibido_por ?? "" } : {}),
+        observaciones: envio.observaciones ?? "",
+      });
+    }
     if (a === "cotizacion_lote" && envio && ser) {
       form.setFieldsValue({
         fecha_cotizacion: dayjs(),
@@ -514,11 +527,16 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
             <Tag color={SERVICIO_ESTADO_COLORS[est]} style={{ margin: 0 }}>{SERVICIO_ESTADO_LABELS[est]}</Tag>
             <Text>{e.proveedor?.razon_social ?? "Proveedor —"}</Text>
           </Space>
+          <Space size={0}>
+          {puedeOperar && (
+            <Button size="small" type="text" icon={<EditOutlined />} onClick={() => abrir("editar", e)}>Editar datos</Button>
+          )}
           {puedeOperar && !e.fecha_llegada && esUltimo && (
             <Popconfirm title={esConjunto(e) ? "¿Sacar este servicio del envío conjunto? Se elimina solo su envío; los demás servicios y los PDFs compartidos se conservan." : "¿Eliminar este envío y sus PDFs?"} onConfirm={() => borrarEnvio(e)} okText="Sí" cancelText="No">
               <Button size="small" danger type="text" icon={<DeleteOutlined />}>Eliminar</Button>
             </Popconfirm>
           )}
+          </Space>
         </div>
 
         {esConjunto(e) && (
@@ -657,6 +675,7 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
     llegada_directa: "Registrar llegada del servicio (ya tiene OC)",
     factura: "Factura del proveedor",
     items: "Ítems agregados por el proveedor",
+    editar: "Editar datos del envío",
     cotizacion_lote: "Cotización del envío conjunto",
     devolucion_lote: "Guía de devolución del envío conjunto",
     llegada_lote: "Llegada del envío conjunto (recepción)",
@@ -816,6 +835,29 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
               <Text type="secondary" style={{ fontSize: 11 }}>
                 Si es aceptada, el proveedor queda prellenado para la OC. Los montos se ponen al generar la OC en Requerimientos.
               </Text>
+            </>
+          )}
+          {accion === "editar" && envioSel && (
+            <>
+              <Form.Item name="fecha_salida" label="Fecha de salida" rules={[{ required: true, message: "Poné la fecha de salida" }]}>
+                <DatePicker format="DD/MM/YYYY" style={{ width: "100%" }} />
+              </Form.Item>
+              <Form.Item name="guia_salida" label="N° guía de salida"><Input placeholder="Ej. 001-000441" /></Form.Item>
+              <Form.Item name="nro_cotizacion" label="N° cotización"><Input /></Form.Item>
+              {envioSel.cotizacion_resultado === "RECHAZADA" && (
+                <Form.Item name="guia_devolucion" label="N° guía de devolución"><Input /></Form.Item>
+              )}
+              {envioSel.fecha_llegada && (
+                <>
+                  <Form.Item name="guia_llegada" label="N° guía de llegada"><Input /></Form.Item>
+                  <Form.Item name="recibido_por" label="Recibido por"><Input /></Form.Item>
+                </>
+              )}
+              <Form.Item name="observaciones" label="Observaciones"><Input.TextArea rows={2} /></Form.Item>
+              {esConjunto(envioSel) && (
+                <Alert type="info" showIcon style={{ fontSize: 11 }}
+                  message={`Envío conjunto: la guía y la fecha de salida se corrigen en los ${envioSel.lote.length} servicios. La guía de llegada, en los que llegaron con la misma guía.`} />
+              )}
             </>
           )}
           {accion === "devolucion" && (

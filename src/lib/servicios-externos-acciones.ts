@@ -4,7 +4,7 @@
 // lote, en una sola transacción).
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
-import { parseDateOnly, hoyEnLima } from "./dates";
+import { parseDateOnly, hoyEnLima, formatDateOnly } from "./dates";
 import { cargarSer, historialServicio, serializarEnvio, SELECT_ENVIO, type SerRow, type TxClient } from "./servicios-externos-server";
 
 export const AccionCotizacion = z.object({
@@ -426,6 +426,66 @@ export async function aplicarAccionEnvio(
     }
     case "editar": {
       const f = d.fecha_salida ? parseDateOnly(d.fecha_salida) : null;
+      const cambios: string[] = [];
+      const anota = (label: string, antes: string | null, despues: string | null | undefined) => {
+        if (despues === undefined) return;
+        const a = antes || null;
+        const b = despues || null;
+        if (a !== b) cambios.push(`${label}: ${a ?? "—"} → ${b ?? "—"}`);
+      };
+      anota("guía de salida", envio.guia_salida, d.guia_salida);
+      anota("guía de devolución", envio.guia_devolucion, d.guia_devolucion);
+      anota("guía de llegada", envio.guia_llegada, d.guia_llegada);
+      anota("N° cotización", envio.nro_cotizacion, d.nro_cotizacion);
+      anota("recibido por", envio.recibido_por, d.recibido_por);
+      const ymd = (x: Date) => x.toISOString().slice(0, 10);
+      if (f && envio.fecha_salida && ymd(f) !== ymd(envio.fecha_salida)) {
+        cambios.push(`fecha de salida: ${formatDateOnly(envio.fecha_salida)} → ${formatDateOnly(f)}`);
+      }
+      // Envío conjunto: la salida es UNA sola (misma guía y fecha para todo
+      // el lote) → se corrige en todos los servicios del envío.
+      if (envio.lote_id && (d.guia_salida !== undefined || f)) {
+        await tx.servicioEnvio.updateMany({
+          where: { lote_id: envio.lote_id, id: { not: envio.id } },
+          data: {
+            ...(d.guia_salida !== undefined ? { guia_salida: d.guia_salida || null } : {}),
+            ...(f ? { fecha_salida: f } : {}),
+            usuario_actualiza: usuario,
+          },
+        });
+      }
+      // Guía de llegada (2026-11-05: la OC crea el seguimiento sola y la guía
+      // se cargaba después o mal): también en los del lote que llegaron con
+      // la misma guía y fecha, y en las líneas de la OC (la llegada la copia
+      // a ot_repuestos.nro_guia).
+      const guiaLlegadaNueva = d.guia_llegada !== undefined ? (d.guia_llegada || null) : undefined;
+      if (guiaLlegadaNueva !== undefined && envio.fecha_llegada && guiaLlegadaNueva !== (envio.guia_llegada || null)) {
+        const hermanos = envio.lote_id
+          ? await tx.servicioEnvio.findMany({
+              where: { lote_id: envio.lote_id, id: { not: envio.id }, fecha_llegada: envio.fecha_llegada, guia_llegada: envio.guia_llegada },
+              select: { id: true, ot_repuesto_id: true },
+            })
+          : [];
+        if (hermanos.length) {
+          await tx.servicioEnvio.updateMany({
+            where: { id: { in: hermanos.map((h) => h.id) } },
+            data: { guia_llegada: guiaLlegadaNueva, usuario_actualiza: usuario },
+          });
+        }
+        const repIds = [envio.ot_repuesto_id, ...hermanos.map((h) => h.ot_repuesto_id)];
+        await tx.oTRepuesto.updateMany({
+          where: {
+            AND: [
+              { OR: [{ id: { in: repIds } }, { servicio_padre_id: { in: repIds } }] },
+              // Solo las líneas que tenían la guía vieja (o ninguna): no pisar
+              // una guía distinta cargada a mano.
+              envio.guia_llegada ? { OR: [{ nro_guia: envio.guia_llegada }, { nro_guia: null }] } : { nro_guia: null },
+            ],
+          },
+          data: { nro_guia: guiaLlegadaNueva },
+        });
+      }
+      if (cambios.length) hist = `Seguimiento de "${desc}" corregido — ${cambios.join("; ")}`;
       data = {
         ...data,
         ...(f ? { fecha_salida: f } : {}),
