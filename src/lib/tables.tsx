@@ -8,8 +8,6 @@ import { brand } from "@/lib/theme";
 import { dateOnlyLocal } from "@/lib/dates";
 import type { ColumnsType, ColumnType, TablePaginationConfig } from "antd/es/table/interface";
 import dayjs, { Dayjs } from "dayjs";
-import { Resizable, type ResizeCallbackData } from "react-resizable";
-import "react-resizable/css/styles.css";
 import {
   DndContext,
   PointerSensor,
@@ -416,13 +414,13 @@ export function useRangoFechas(initial: RangoFechas = { desde: null, hasta: null
 // ───────────────────────────────────────────────────────────────────────────
 
 // Componente custom para el <th> del header de la tabla AntD:
-//  - Envuelve con Resizable (arrastrar borde derecho = cambiar ancho).
+//  - Handle en el borde derecho: arrastrar = cambiar ancho, con vista previa en vivo.
 //  - Sortable via dnd-kit (arrastrar el header completo = reordenar columna).
 // Mantenemos el handle de resize con stopPropagation para no chocar con el drag.
 type SortableResizableTitleProps = React.HTMLAttributes<HTMLTableCellElement> & {
   width?: number;
-  onResize?: (e: React.SyntheticEvent<Element>, data: ResizeCallbackData) => void;
-  onResizeStop?: (e: React.SyntheticEvent<Element>, data: ResizeCallbackData) => void;
+  // Ancho final (px) al soltar el borde.
+  onResizeStop?: (ancho: number) => void;
   // Doble clic en el borde de resize → restablece el ancho por defecto de la
   // columna (estilo auto-ajuste de Excel).
   onResizeReset?: () => void;
@@ -435,10 +433,7 @@ type SortableResizableTitleProps = React.HTMLAttributes<HTMLTableCellElement> & 
 };
 
 function SortableResizableTitle(props: SortableResizableTitleProps) {
-  const { onResize, onResizeStop, onResizeReset, width, columnKey, sortable, isPinned, onTogglePin, style: styleProp, children, ...restProps } = props;
-  // Ancho local durante drag para feedback visual sin re-render del Table.
-  const [liveWidth, setLiveWidth] = useState<number | null>(null);
-  const effectiveWidth = liveWidth ?? width;
+  const { onResizeStop, onResizeReset, width, columnKey, sortable, isPinned, onTogglePin, style: styleProp, children, ...restProps } = props;
 
   const sort = useSortable({ id: columnKey ?? "__none__", disabled: !sortable || !columnKey });
   const isInteractive = sortable && columnKey;
@@ -452,11 +447,15 @@ function SortableResizableTitle(props: SortableResizableTitleProps) {
 
   // position:relative solo cuando hay resize (para el handle absolutely positioned).
   // Las columnas fixed conservan su position:sticky de antd intacto.
-  const needsRelative = !!(width && onResize) || !!isInteractive;
+  const needsRelative = !!(width && onResizeStop) || !!isInteractive;
   const cellStyle: React.CSSProperties = {
     ...styleProp,
     ...dragStyle,
     ...(needsRelative ? { position: "relative" } : {}),
+    // El borde de resize sobresale 7px del <th>. En columnas con `ellipsis` antd
+    // pone overflow:hidden en la celda y recortaba esa mitad (el título ya se
+    // recorta solo, en .ant-table-column-title).
+    ...(width && onResizeStop ? { overflow: "visible" } : {}),
   };
 
   // ref del nodo va sobre el <th> para que dnd-kit calcule posición.
@@ -549,47 +548,122 @@ function SortableResizableTitle(props: SortableResizableTitleProps) {
     </>
   );
 
-  if (!effectiveWidth || !onResizeStop) {
+  if (!width || !onResizeStop) {
     return <th {...restProps} {...thRefProps} style={cellStyle}>{innerContent}</th>;
   }
 
-  return (
-    <Resizable
-      width={effectiveWidth}
-      height={0}
-      handle={
-        <span
-          className="react-resizable-handle"
-          style={{
-            position: "absolute",
-            right: -5,
-            bottom: 0,
-            top: 0,
-            zIndex: 3,
-            width: 10,
-            cursor: "col-resize",
-            userSelect: "none",
-          }}
-          onClick={(e) => e.stopPropagation()}
-          onPointerDown={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-          onDoubleClick={(e) => {
-            e.stopPropagation();
-            onResizeReset?.();
-          }}
-          title="Arrastrar para cambiar ancho · doble clic para restablecer"
-        />
+  // Arrastre del borde derecho con vista previa EN VIVO (2026-11-06). Antes
+  // (react-resizable) la columna no se movía mientras se arrastraba: el ancho
+  // recién se aplicaba al soltar, con un re-render de toda la tabla. Ahora,
+  // durante el arrastre, se escribe el ancho directo en los <col> de la tabla
+  // (cabecera y cuerpo) sin pasar por React — la columna sigue al cursor — y
+  // al soltar se guarda el ancho final una sola vez.
+  function iniciarResize(e: React.PointerEvent<HTMLSpanElement>) {
+    e.stopPropagation();
+    if (e.button !== 0) return;
+    const handleEl = e.currentTarget;
+    const th = handleEl.closest("th");
+    if (!th) return;
+    const startX = e.clientX;
+    const startW = th.getBoundingClientRect().width;
+    const cols = colsDeCabecera(th);
+    const previos = cols.map((c) => c.style.width);
+    let ancho = startW;
+    let raf = 0;
+    const aplicar = () => { raf = 0; for (const c of cols) c.style.width = `${ancho}px`; };
+    const bodyCursor = document.body.style.cursor;
+    const bodySelect = document.body.style.userSelect;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    handleEl.style.background = brand.cyan;
+    handleEl.style.opacity = "0.55";
+    try { handleEl.setPointerCapture(e.pointerId); } catch { /* sin captura: igual sirve mientras el cursor siga sobre el handle */ }
+
+    const medir = (ev: PointerEvent) => { ancho = Math.max(ANCHO_MIN_COLUMNA, Math.round(startW + ev.clientX - startX)); };
+    const mover = (ev: PointerEvent) => {
+      medir(ev);
+      if (!raf) raf = requestAnimationFrame(aplicar);
+    };
+    const soltar = (ev: PointerEvent) => {
+      // El punto donde se suelta también cuenta (un arrastre muy rápido puede no dejar ningún "move").
+      if (ev.type === "pointerup") medir(ev);
+      handleEl.removeEventListener("pointermove", mover);
+      handleEl.removeEventListener("pointerup", soltar);
+      handleEl.removeEventListener("pointercancel", soltar);
+      if (raf) cancelAnimationFrame(raf);
+      document.body.style.cursor = bodyCursor;
+      document.body.style.userSelect = bodySelect;
+      handleEl.style.background = "";
+      handleEl.style.opacity = "";
+      if (Math.abs(ancho - startW) < 2) {
+        // Fue un clic (o doble clic) sin arrastre: se deja todo como estaba.
+        cols.forEach((c, i) => { c.style.width = previos[i]; });
+        return;
       }
-      onResize={(_e, data) => setLiveWidth(Math.max(40, Math.round(data.size.width)))}
-      onResizeStop={(e, data) => {
-        setLiveWidth(null);
-        onResizeStop(e, data);
-      }}
-      draggableOpts={{ enableUserSelectHack: true }}
-    >
-      <th {...restProps} {...thRefProps} style={cellStyle}>{innerContent}</th>
-    </Resizable>
+      aplicar();
+      onResizeStop?.(ancho);
+    };
+    handleEl.addEventListener("pointermove", mover);
+    handleEl.addEventListener("pointerup", soltar);
+    handleEl.addEventListener("pointercancel", soltar);
+  }
+
+  return (
+    <th {...restProps} {...thRefProps} style={cellStyle}>
+      {innerContent}
+      <span
+        className="react-resizable-handle"
+        style={{
+          position: "absolute",
+          // 14px de zona de agarre centrada en el borde (antes 10): más fácil de atrapar.
+          right: -7,
+          bottom: 0,
+          top: 0,
+          // Por ENCIMA del agarre de reordenar (z 3) y del pin (z 4) de la columna
+          // vecina: antes ese agarre tapaba la mitad derecha del borde, solo quedaban
+          // ~5 px útiles y arrastrar un poco a la derecha movía la columna de lugar.
+          zIndex: 5,
+          width: 14,
+          cursor: "col-resize",
+          userSelect: "none",
+          touchAction: "none",
+        }}
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        onPointerDown={iniciarResize}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          onResizeReset?.();
+        }}
+        title="Arrastrar para cambiar ancho · doble clic para restablecer"
+      />
+    </th>
   );
+}
+
+const ANCHO_MIN_COLUMNA = 40;
+
+// <col> que gobiernan el ancho de la columna de este <th>, en todas las tablas
+// internas de antd (con cabecera fija hay una tabla para el header y otra para
+// el cuerpo, cada una con su <colgroup>). Con cabeceras agrupadas (más de una
+// fila) no hay correspondencia simple th→col: devuelve [] y el ancho se aplica
+// recién al soltar.
+function colsDeCabecera(th: HTMLTableCellElement): HTMLTableColElement[] {
+  const tr = th.parentElement;
+  const thead = tr?.parentElement;
+  if (!tr || !thead || thead.children.length !== 1) return [];
+  let idx = 0;
+  for (const c of Array.from(tr.children)) {
+    if (c === th) break;
+    idx += (c as HTMLTableCellElement).colSpan || 1;
+  }
+  const raiz = th.closest(".ant-table");
+  if (!raiz) return [];
+  return Array.from(raiz.querySelectorAll("colgroup"))
+    // Solo los colgroup de ESTA tabla (no los de tablas anidadas en filas expandidas).
+    .filter((cg) => cg.closest(".ant-table") === raiz)
+    .map((cg) => cg.children[idx])
+    .filter((el): el is HTMLTableColElement => el instanceof HTMLTableColElement);
 }
 
 // Hook que convierte las columnas en redimensionables y devuelve también el
@@ -918,8 +992,8 @@ export function useColumnasRedimensionables<T>(
           ...pinProps,
           // Commit del ancho solo al soltar (onResizeStop) — evita re-renders en cada pixel
           // que interrumpen el drag.
-          onResizeStop: (_e: React.SyntheticEvent, data: ResizeCallbackData) => {
-            setAnchos((prev) => ({ ...prev, [k]: Math.max(40, Math.round(data.size.width)) }));
+          onResizeStop: (ancho: number) => {
+            setAnchos((prev) => ({ ...prev, [k]: Math.max(40, Math.round(ancho)) }));
           },
           // Doble clic en el borde → volver al ancho por defecto de la columna.
           onResizeReset: () => {
