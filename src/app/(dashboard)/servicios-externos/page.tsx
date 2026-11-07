@@ -19,7 +19,7 @@ import { InboxOutlined, ReloadOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand, space } from "@/lib/theme";
 import { useResponsive } from "@/lib/responsive";
-import { paginacionEstandar } from "@/lib/tables";
+import { paginacionEstandar, useColumnasRedimensionables } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import { formatDateOnly, dateOnlyLocal, hoyEnLima } from "@/lib/dates";
 import {
@@ -35,6 +35,8 @@ const { Title, Text } = Typography;
 // Solo servicios con seguimiento: un SER aparece acá cuando se le generó el
 // seguimiento (salida) o la OC desde Requerimientos (pedido 2026-10-23). Los
 // aprobados que todavía no salieron se gestionan en Requerimientos.
+// Excepción (2026-11-04): los SER con OC abierta sin seguimiento (OCs viejas)
+// también vienen, para registrarles la llegada desde la vista "Por servicio".
 const ENDPOINT = "/api/servicios-externos?solo_aprobados=1&con_seguimiento=1";
 
 // RECHAZADO quedó en desuso (una cotización rechazada ya es DEVUELTO);
@@ -162,8 +164,9 @@ export default function ServiciosExternosPage() {
       if (proveedorId != null && ultimoEnvio(r)?.proveedor_id !== proveedorId) return false;
       if (soloDocsIncompleta && r.docs_completa) return false;
       if (t) {
-        const u = ultimoEnvio(r);
-        const hay = [r.ot_codigo, r.cliente, r.nro_req, r.descripcion, r.nro_oc, u?.guia_salida, u?.guia_llegada, u?.guia_devolucion, u?.nro_cotizacion, u?.nro_factura, u?.proveedor?.razon_social]
+        // Guías/cotización/factura de TODOS los envíos (no solo el último).
+        const hay = [r.ot_codigo, r.cliente, r.nro_req, r.descripcion, r.nro_oc, r.oc_docs?.numero_po, r.oc_docs?.nro_factura,
+          ...r.envios.flatMap((e) => [e.guia_salida, e.guia_llegada, e.guia_devolucion, e.nro_cotizacion, e.nro_factura, e.proveedor?.razon_social])]
           .some((v) => (v ?? "").toString().toLowerCase().includes(t));
         if (!hay) return false;
       }
@@ -192,7 +195,8 @@ export default function ServiciosExternosPage() {
       if (estados.length && !g.miembros.some((m) => estados.includes(m.estado))) return false;
       if (t) {
         const hay = [g.guia_salida, g.proveedor, ...g.miembros.flatMap((m) => [
-          m.ser.ot_codigo, m.ser.cliente, m.ser.nro_req, m.ser.descripcion, m.envio.guia_llegada, m.envio.guia_devolucion, m.envio.nro_cotizacion,
+          m.ser.ot_codigo, m.ser.cliente, m.ser.nro_req, m.ser.descripcion, m.ser.nro_oc, m.ser.oc_docs?.numero_po,
+          m.envio.guia_salida, m.envio.guia_llegada, m.envio.guia_devolucion, m.envio.nro_cotizacion, m.envio.nro_factura,
         ])].some((v) => (v ?? "").toString().toLowerCase().includes(t));
         if (!hay) return false;
       }
@@ -200,7 +204,7 @@ export default function ServiciosExternosPage() {
     });
   }, [rows, q, proveedorId, estados, soloAbiertas]);
 
-  const columnsGuias: ColumnsType<Guia> = [
+  const columnsGuiasBase: ColumnsType<Guia> = [
     {
       title: "Guía de salida", key: "guia", width: 150,
       render: (_, g) => (
@@ -265,7 +269,7 @@ export default function ServiciosExternosPage() {
     },
   ];
 
-  const columns: ColumnsType<ServicioSer> = [
+  const columnsBase: ColumnsType<ServicioSer> = [
     {
       title: "OT", key: "ot", width: 110, fixed: screens.md ? "left" : undefined,
       render: (_, r) => (
@@ -362,6 +366,12 @@ export default function ServiciosExternosPage() {
     },
   ];
 
+  // Anchos ajustables arrastrando el borde de la cabecera (doble clic = restablecer).
+  const { columnas: columnsGuias, components: componentsGuias } =
+    useColumnasRedimensionables<Guia>(columnsGuiasBase, "servicios-externos-guias-cols-v1");
+  const { columnas: columns, components: componentsServ } =
+    useColumnasRedimensionables<ServicioSer>(columnsBase, "servicios-externos-servicios-cols-v1");
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: space.lg }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: space.sm }}>
@@ -416,7 +426,7 @@ export default function ServiciosExternosPage() {
       </Row>
 
       <Space wrap>
-        <Input.Search allowClear placeholder="OT, cliente, servicio, guía, cotización, OC…" style={{ width: screens.md ? 320 : "100%" }} value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
+        <Input.Search allowClear placeholder="OC, OT, guía de salida/llegada, descripción, cliente, cotización…" style={{ width: screens.md ? 420 : "100%" }} value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
         <Select mode="multiple" allowClear placeholder="Estado" style={{ minWidth: 200 }} value={estados} onChange={(v) => { setEstados(v); setPage(1); }}
           options={ESTADOS_VISIBLES.map((e) => ({ value: e, label: SERVICIO_ESTADO_LABELS[e] }))} />
         <Select allowClear showSearch optionFilterProp="label" placeholder="Proveedor" style={{ minWidth: 220 }} value={proveedorId ?? undefined} onChange={(v) => { setProveedorId(v ?? null); setPage(1); }} options={proveedores} />
@@ -457,6 +467,7 @@ export default function ServiciosExternosPage() {
           loading={loading}
           dataSource={guias}
           columns={columnsGuias}
+          components={componentsGuias}
           scroll={{ x: 1000 }}
           pagination={paginacionEstandar({ current: page, pageSize, total: guias.length, onChange: (p, s) => { setPage(p); setPageSize(s); }, label: "guías" })}
         />
@@ -467,6 +478,7 @@ export default function ServiciosExternosPage() {
           loading={loading}
           dataSource={filtradas}
           columns={columns}
+          components={componentsServ}
           rowSelection={puedeOperar ? {
             selectedRowKeys: selIds,
             onChange: (keys) => setSelIds(keys.map(Number)),
