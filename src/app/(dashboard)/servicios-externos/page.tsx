@@ -19,7 +19,7 @@ import { InboxOutlined, ReloadOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand, space } from "@/lib/theme";
 import { useResponsive } from "@/lib/responsive";
-import { paginacionEstandar, useColumnasRedimensionables } from "@/lib/tables";
+import { paginacionEstandar, useColumnasRedimensionables, useColumnasOcultas, ColumnasToggleButton, visibleColumns } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import { formatDateOnly, dateOnlyLocal, hoyEnLima } from "@/lib/dates";
 import {
@@ -57,6 +57,20 @@ function CreadoCell({ fecha, usuario }: { fecha: string | Date | null | undefine
       <div><Text type="secondary" style={{ fontSize: 10 }}>{usuario ?? "—"}</Text></div>
     </div>
   );
+}
+
+// Filtro tipo Excel para una columna calculada: valores únicos de `get` sobre
+// las filas ("(vacío)" incluido). Se pega con spread en la definición.
+function filtroDe<T>(rows: T[], get: (r: T) => string | null | undefined) {
+  const set = new Set<string>();
+  let vacios = false;
+  for (const r of rows) { const v = get(r); if (v == null || v === "") vacios = true; else set.add(v); }
+  const filters = [...set].sort((a, b) => a.localeCompare(b, "es", { numeric: true, sensitivity: "base" })).map((v) => ({ text: v, value: v }));
+  if (vacios) filters.push({ text: "(vacío)", value: "__vacio__" });
+  return {
+    filters, filterSearch: true, filterMultiple: true,
+    onFilter: (value: boolean | React.Key, r: T) => { const v = get(r) ?? ""; return value === "__vacio__" ? v === "" : v === value; },
+  };
 }
 
 function ultimoEnvio(s: ServicioSer): Envio | null {
@@ -232,7 +246,7 @@ export default function ServiciosExternosPage() {
 
   const columnsGuiasBase: ColumnsType<Guia> = [
     {
-      title: "Guía de salida", key: "guia", width: 150,
+      title: "Guía de salida", key: "guia", width: 150, ...filtroDe(guias, (g) => g.guia_salida),
       render: (_, g) => (
         <div style={{ lineHeight: 1.3 }}>
           <Text strong style={{ fontSize: 12 }}>{g.guia_salida ?? "Sin N° de guía"}</Text>
@@ -241,7 +255,7 @@ export default function ServiciosExternosPage() {
         </div>
       ),
     },
-    { title: "Proveedor", key: "prov", width: 180, ellipsis: true, render: (_, g) => g.proveedor ?? <Text type="secondary">—</Text> },
+    { title: "Proveedor", key: "prov", width: 180, ellipsis: true, ...filtroDe(guias, (g) => g.proveedor), render: (_, g) => g.proveedor ?? <Text type="secondary">—</Text> },
     {
       title: "Servicios (estado · OT · servicio · OC)", key: "servicios",
       render: (_, g) => (
@@ -261,7 +275,7 @@ export default function ServiciosExternosPage() {
       ),
     },
     {
-      title: "Creado", key: "creado", width: 130,
+      title: "Creado", key: "creado", width: 130, ...filtroDe(guias, (g) => g.miembros[0]?.envio.usuario_crea),
       sorter: (a, b) => (a.miembros[0]?.envio.created_at ?? "").localeCompare(b.miembros[0]?.envio.created_at ?? ""),
       render: (_, g) => <CreadoCell fecha={g.miembros[0]?.envio.created_at} usuario={g.miembros[0]?.envio.usuario_crea} />,
     },
@@ -302,7 +316,7 @@ export default function ServiciosExternosPage() {
 
   const columnsBase: ColumnsType<ServicioSer> = [
     {
-      title: "OT", key: "ot", width: 110, fixed: screens.md ? "left" : undefined,
+      title: "OT", key: "ot", width: 110, fixed: screens.md ? "left" : undefined, ...filtroDe(filtradas, (r) => r.ot_codigo),
       render: (_, r) => (
         <div style={{ lineHeight: 1.2 }}>
           <OtLink ser={r} />
@@ -310,9 +324,9 @@ export default function ServiciosExternosPage() {
         </div>
       ),
     },
-    { title: "Req", key: "req", width: 110, render: (_, r) => <Text style={{ fontSize: 11 }}>{r.nro_req ?? "—"}/{r.item_req ?? "—"}</Text> },
+    { title: "Req", key: "req", width: 110, ...filtroDe(filtradas, (r) => r.nro_req), render: (_, r) => <Text style={{ fontSize: 11 }}>{r.nro_req ?? "—"}/{r.item_req ?? "—"}</Text> },
     {
-      title: "Servicio", key: "desc", width: 240, ellipsis: true,
+      title: "Servicio", key: "desc", width: 240, ellipsis: true, ...filtroDe(filtradas, (r) => r.descripcion),
       render: (_, r) => (
         <div style={{ lineHeight: 1.2 }}>
           <div style={{ fontSize: 12 }}>{r.descripcion ?? "—"}</div>
@@ -335,11 +349,11 @@ export default function ServiciosExternosPage() {
       },
     },
     {
-      title: "Proveedor", key: "prov", width: 160, ellipsis: true,
+      title: "Proveedor", key: "prov", width: 160, ellipsis: true, ...filtroDe(filtradas, (r) => ultimoEnvio(r)?.proveedor?.razon_social),
       render: (_, r) => ultimoEnvio(r)?.proveedor?.razon_social ?? <Text type="secondary">—</Text>,
     },
     {
-      title: "Salida", key: "salida", width: 130,
+      title: "Salida", key: "salida", width: 130, ...filtroDe(filtradas, (r) => formatDateOnly(ultimoEnvio(r)?.fecha_salida)),
       sorter: (a, b) => (ultimoEnvio(a)?.fecha_salida ?? "").localeCompare(ultimoEnvio(b)?.fecha_salida ?? ""),
       render: (_, r) => {
         const u = ultimoEnvio(r);
@@ -348,11 +362,11 @@ export default function ServiciosExternosPage() {
       },
     },
     {
-      title: "Guía de ingreso", key: "guia_ing", width: 130,
+      title: "Guía de ingreso", key: "guia_ing", width: 130, ...filtroDe(filtradas, guiaLlegadaDe),
       render: (_, r) => { const g = guiaLlegadaDe(r); return g ? <Text style={{ fontSize: 11 }}>{g}</Text> : <Text type="secondary">—</Text>; },
     },
     {
-      title: "Cotización", key: "cot", width: 150,
+      title: "Cotización", key: "cot", width: 150, ...filtroDe(filtradas, (r) => ultimoEnvio(r)?.cotizacion_resultado),
       render: (_, r) => {
         const u = ultimoEnvio(r);
         if (!u || !u.cotizacion_resultado) return <Text type="secondary">—</Text>;
@@ -388,16 +402,16 @@ export default function ServiciosExternosPage() {
       ),
     },
     {
-      title: "Creado", key: "creado", width: 130,
+      title: "Creado", key: "creado", width: 130, ...filtroDe(filtradas, (r) => creadoDe(r).usuario),
       sorter: (a, b) => creadoDe(a).fecha.localeCompare(creadoDe(b).fecha),
       render: (_, r) => { const c = creadoDe(r); return <CreadoCell fecha={c.fecha} usuario={c.usuario} />; },
     },
     {
-      title: "OC", key: "oc", width: 110,
+      title: "OC", key: "oc", width: 110, ...filtroDe(filtradas, (r) => r.nro_oc ?? r.oc_docs?.numero_po),
       render: (_, r) => <OcLink ser={r} />,
     },
     {
-      title: "Factura", key: "fac", width: 110,
+      title: "Factura", key: "fac", width: 110, ...filtroDe(filtradas, (r) => r.oc_docs?.nro_factura ?? envioAceptado(r)?.nro_factura),
       render: (_, r) => r.oc_docs?.nro_factura ?? envioAceptado(r)?.nro_factura ?? <Text type="secondary">—</Text>,
     },
     {
@@ -407,10 +421,13 @@ export default function ServiciosExternosPage() {
   ];
 
   // Anchos ajustables arrastrando el borde de la cabecera (doble clic = restablecer).
-  const { columnas: columnsGuias, components: componentsGuias } =
+  const { columnas: columnsGuias, components: componentsGuias, resetAnchos: resetAnchosGuias, TableDragWrapper: GuiasDragWrapper } =
     useColumnasRedimensionables<Guia>(columnsGuiasBase, "servicios-externos-guias-cols-v1");
-  const { columnas: columns, components: componentsServ } =
+  const { columnas: columns, components: componentsServ, resetAnchos: resetAnchosServ, TableDragWrapper: ServDragWrapper } =
     useColumnasRedimensionables<ServicioSer>(columnsBase, "servicios-externos-servicios-cols-v1");
+  // Columnas visibles (cada vista guarda las suyas).
+  const { ocultas: ocultasGuias, setOcultas: setOcultasGuias } = useColumnasOcultas("servicios-externos-guias-ocultas-v1");
+  const { ocultas: ocultasServ, setOcultas: setOcultasServ } = useColumnasOcultas("servicios-externos-servicios-ocultas-v1");
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: space.lg }}>
@@ -423,6 +440,12 @@ export default function ServiciosExternosPage() {
           </Text>
         </div>
         <Space wrap>
+          {vista === "guias" ? (
+            <ColumnasToggleButton<Guia> columns={columnsGuiasBase} ocultas={ocultasGuias} setOcultas={setOcultasGuias} obligatorias={["guia", "acc"]} />
+          ) : (
+            <ColumnasToggleButton<ServicioSer> columns={columnsBase} ocultas={ocultasServ} setOcultas={setOcultasServ} obligatorias={["ot", "ver"]} />
+          )}
+          <Button onClick={vista === "guias" ? resetAnchosGuias : resetAnchosServ}>Restablecer columnas</Button>
           <Tooltip title="Actualizar"><Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading} /></Tooltip>
           <ExportarExcelButton<ServicioSer>
             endpoint={ENDPOINT}
@@ -503,33 +526,38 @@ export default function ServiciosExternosPage() {
       </div>
 
       {vista === "guias" ? (
+        <GuiasDragWrapper>
         <Table<Guia>
           rowKey="key"
           size="small"
           loading={loading}
           dataSource={guias}
-          columns={columnsGuias}
+          columns={visibleColumns(columnsGuias, ocultasGuias, ["guia", "acc"])}
           components={componentsGuias}
           scroll={{ x: 1130 }}
           pagination={paginacionEstandar({ current: page, pageSize, total: guias.length, onChange: (p, s) => { setPage(p); setPageSize(s); }, label: "guías" })}
         />
+        </GuiasDragWrapper>
       ) : (
+        <ServDragWrapper>
         <Table<ServicioSer>
           rowKey="id"
           size="small"
           loading={loading}
           dataSource={filtradas}
-          columns={columns}
+          columns={visibleColumns(columns, ocultasServ, ["ot", "ver"])}
           components={componentsServ}
           rowSelection={puedeOperar ? {
             selectedRowKeys: selIds,
             onChange: (keys) => setSelIds(keys.map(Number)),
             preserveSelectedRowKeys: true,
+            fixed: true,
             getCheckboxProps: (r) => ({ disabled: !admiteLlegada(r) }),
           } : undefined}
           scroll={{ x: 1960 }}
           pagination={paginacionEstandar({ current: page, pageSize, total: filtradas.length, onChange: (p, s) => { setPage(p); setPageSize(s); }, label: "servicios" })}
         />
+        </ServDragWrapper>
       )}
 
       <ServicioSeguimientoDrawer
