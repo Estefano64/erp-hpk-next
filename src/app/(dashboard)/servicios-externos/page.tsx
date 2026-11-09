@@ -70,6 +70,11 @@ function creadoDe(s: ServicioSer): { fecha: string; usuario: string | null } {
   const e = s.envios[0];
   return e ? { fecha: e.created_at, usuario: e.usuario_crea } : { fecha: s.creado_en, usuario: s.creado_por };
 }
+// Guía de ingreso (llegada): la del envío, o la cargada en la OC en Compras.
+function guiaLlegadaDe(s: ServicioSer): string | null {
+  const e = [...s.envios].reverse().find((x) => x.guia_llegada);
+  return e?.guia_llegada ?? s.oc_docs?.nro_guia ?? null;
+}
 function diasAfuera(s: ServicioSer, hoy: Date): number | null {
   const u = ultimoEnvio(s);
   if (!u || u.fecha_llegada || u.fecha_devolucion) return null;
@@ -343,6 +348,10 @@ export default function ServiciosExternosPage() {
       },
     },
     {
+      title: "Guía de ingreso", key: "guia_ing", width: 130,
+      render: (_, r) => { const g = guiaLlegadaDe(r); return g ? <Text style={{ fontSize: 11 }}>{g}</Text> : <Text type="secondary">—</Text>; },
+    },
+    {
       title: "Cotización", key: "cot", width: 150,
       render: (_, r) => {
         const u = ultimoEnvio(r);
@@ -434,7 +443,7 @@ export default function ServiciosExternosPage() {
               { key: "fecha_devolucion", label: "F. Devolución", value: (r) => dateOnlyLocal(ultimoEnvio(r)?.fecha_devolucion) ?? null },
               { key: "guia_devolucion", label: "Guía devolución", value: (r) => ultimoEnvio(r)?.guia_devolucion ?? "" },
               { key: "fecha_llegada", label: "F. Llegada", value: (r) => dateOnlyLocal(ultimoEnvio(r)?.fecha_llegada) ?? null },
-              { key: "guia_llegada", label: "Guía llegada", value: (r) => ultimoEnvio(r)?.guia_llegada ?? "" },
+              { key: "guia_llegada", label: "Guía llegada", value: (r) => guiaLlegadaDe(r) ?? "" },
               { key: "oc", label: "OC", value: (r) => r.nro_oc ?? "" },
               { key: "factura", label: "Factura", value: (r) => r.oc_docs?.nro_factura ?? envioAceptado(r)?.nro_factura ?? "" },
               { key: "docs", label: "Documentación", value: (r) => (r.docs_completa ? "Completa" : "Incompleta") },
@@ -518,7 +527,7 @@ export default function ServiciosExternosPage() {
             preserveSelectedRowKeys: true,
             getCheckboxProps: (r) => ({ disabled: !admiteLlegada(r) }),
           } : undefined}
-          scroll={{ x: 1830 }}
+          scroll={{ x: 1960 }}
           pagination={paginacionEstandar({ current: page, pageSize, total: filtradas.length, onChange: (p, s) => { setPage(p); setPageSize(s); }, label: "servicios" })}
         />
       )}
