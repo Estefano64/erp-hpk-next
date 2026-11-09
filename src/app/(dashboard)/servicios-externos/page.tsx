@@ -118,6 +118,8 @@ interface Guia {
   fecha_salida: string;
   proveedor: string | null;
   proveedor_id: number | null;
+  // Servicios con OC que nunca salieron por el seguimiento: se agrupan por OC.
+  sinSeguimiento?: boolean;
   miembros: GuiaMiembro[];
 }
 const ORDEN_ESTADO: ServicioEstado[] = ["EN_COTIZACION", "EN_TRABAJO", "RECIBIDO", "DEVUELTO"];
@@ -135,6 +137,25 @@ function armarGuias(rows: ServicioSer[]): Guia[] {
         };
         map.set(key, g);
       }
+      g.miembros.push({ ser, envio, estado: estadoDeEnvio(envio) });
+    }
+    // Con OC y sin envíos (OCs generadas fuera del seguimiento): la OC es la
+    // cotización aceptada, así que se listan como Incompleto agrupados por OC
+    // para poder registrarles la llegada (caso OC 260458, 2026-11-09).
+    if (ser.envios.length === 0 && ser.po_id != null) {
+      const key = `oc${ser.po_id}`;
+      let g = map.get(key);
+      if (!g) {
+        g = { key, guia_salida: null, fecha_salida: ser.fecha_aprobacion ?? ser.creado_en, proveedor: ser.proveedor_nombre, proveedor_id: ser.proveedor_id, sinSeguimiento: true, miembros: [] };
+        map.set(key, g);
+      }
+      const envio = {
+        id: -ser.id, ot_repuesto_id: ser.id, proveedor_id: ser.proveedor_id, lote_id: null, lote: [], proveedor: null,
+        fecha_salida: g.fecha_salida, guia_salida: null, cotizacion_resultado: "ACEPTADA", fecha_cotizacion: null,
+        nro_cotizacion: null, monto_cotizacion: null, moneda_cotizacion: null, fecha_devolucion: null, guia_devolucion: null,
+        fecha_llegada: null, guia_llegada: null, recibido_por: null, nro_factura: null, observaciones: null,
+        usuario_crea: ser.creado_por, created_at: ser.creado_en, adjuntos: [],
+      } as Envio;
       g.miembros.push({ ser, envio, estado: estadoDeEnvio(envio) });
     }
   }
@@ -259,7 +280,7 @@ export default function ServiciosExternosPage() {
       title: "Guía de salida", key: "guia", width: 150, ...filtroDe(guias, (g) => g.guia_salida),
       render: (_, g) => (
         <div style={{ lineHeight: 1.3 }}>
-          <Text strong style={{ fontSize: 12 }}>{g.guia_salida ?? "Sin N° de guía"}</Text>
+          <Text strong style={{ fontSize: 12 }}>{g.sinSeguimiento ? "Sin seguimiento (OC)" : g.guia_salida ?? "Sin N° de guía"}</Text>
           <div><Text type="secondary" style={{ fontSize: 11 }}>{formatDateOnly(g.fecha_salida)}</Text></div>
           {g.miembros.length > 1 && <Tag style={{ margin: 0, fontSize: 10 }}>Conjunto ({g.miembros.length})</Tag>}
         </div>
