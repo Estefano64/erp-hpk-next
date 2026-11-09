@@ -90,6 +90,15 @@ function guiaLlegadaDe(s: ServicioSer): string | null {
   return e?.guia_llegada ?? s.nro_guia ?? s.oc_docs?.nro_guia
     ?? (s.oc_docs?.adjuntos.some((a) => a.tipo === "guia_llegada" || a.tipo === "guia") ? "PDF cargado en OC" : null);
 }
+// Guías de ingreso distintas de una guía (envío conjunto: pueden ser varias).
+function guiasIngresoDe(g: Guia): string[] {
+  const set = new Set<string>();
+  for (const m of g.miembros) {
+    const v = m.envio.guia_llegada ?? m.ser.nro_guia ?? m.ser.oc_docs?.nro_guia;
+    if (v) set.add(v);
+  }
+  return [...set];
+}
 function diasAfuera(s: ServicioSer, hoy: Date): number | null {
   const u = ultimoEnvio(s);
   if (!u || u.fecha_llegada || u.fecha_devolucion) return null;
@@ -274,6 +283,13 @@ export default function ServiciosExternosPage() {
           ))}
         </div>
       ),
+    },
+    {
+      title: "Guía de ingreso", key: "guia_ing", width: 140,
+      render: (_, g) => {
+        const gs = guiasIngresoDe(g);
+        return gs.length ? <div style={{ lineHeight: 1.3, fontSize: 11 }}>{gs.map((x) => <div key={x}>{x}</div>)}</div> : <Text type="secondary">—</Text>;
+      },
     },
     {
       title: "Creado", key: "creado", width: 130, ...filtroDe(guias, (g) => g.miembros[0]?.envio.usuario_crea),
@@ -535,7 +551,7 @@ export default function ServiciosExternosPage() {
           dataSource={guias}
           columns={visibleColumns(columnsGuias, ocultasGuias, ["guia", "acc"])}
           components={componentsGuias}
-          scroll={{ x: 1130 }}
+          scroll={{ x: 1270 }}
           pagination={paginacionEstandar({ current: page, pageSize, total: guias.length, onChange: (p, s) => { setPage(p); setPageSize(s); }, label: "guías" })}
         />
         </GuiasDragWrapper>
