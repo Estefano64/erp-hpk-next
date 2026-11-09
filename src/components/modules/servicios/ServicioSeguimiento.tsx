@@ -127,6 +127,7 @@ export interface ServicioSer {
   item_req: number | null;
   descripcion: string | null;
   descripcion_req: string | null;
+  nro_guia: string | null;
   creado_en: string;
   creado_por: string | null;
   cantidad: number | null;

@@ -87,7 +87,8 @@ function creadoDe(s: ServicioSer): { fecha: string; usuario: string | null } {
 // Guía de ingreso (llegada): la del envío, o la cargada en la OC en Compras.
 function guiaLlegadaDe(s: ServicioSer): string | null {
   const e = [...s.envios].reverse().find((x) => x.guia_llegada);
-  return e?.guia_llegada ?? s.oc_docs?.nro_guia ?? null;
+  return e?.guia_llegada ?? s.nro_guia ?? s.oc_docs?.nro_guia
+    ?? (s.oc_docs?.adjuntos.some((a) => a.tipo === "guia_llegada" || a.tipo === "guia") ? "PDF cargado en OC" : null);
 }
 function diasAfuera(s: ServicioSer, hoy: Date): number | null {
   const u = ultimoEnvio(s);

@@ -59,6 +59,7 @@ export const SELECT_SER = {
   tipo_codigo: true,
   descripcion: true,
   oc_descripcion: true,
+  nro_guia: true,
   usuario_solicita: true,
   createdAt: true,
   cantidad: true,
@@ -293,6 +294,7 @@ export function serializarSer(r: SerRow, lotes?: Map<string, LoteMiembro[]>, ocs
     // Con OC, manda la descripción de la OC (pedido 2026-11-09); la del req queda aparte.
     descripcion: r.po_id != null && r.oc_descripcion ? r.oc_descripcion : r.descripcion,
     descripcion_req: r.descripcion,
+    nro_guia: r.nro_guia,
     creado_en: r.createdAt,
     creado_por: r.usuario_solicita,
     cantidad: dec(r.cantidad),
