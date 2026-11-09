@@ -43,11 +43,32 @@ const ENDPOINT = "/api/servicios-externos?solo_aprobados=1&con_seguimiento=1";
 // PENDIENTE_ENVIO no aplica acá (sin seguimiento no se lista).
 const ESTADOS_VISIBLES: ServicioEstado[] = SERVICIO_ESTADOS.filter((e) => e !== "NO_APLICA" && e !== "RECHAZADO" && e !== "PENDIENTE_ENVIO");
 
+// Marca de tiempo (created_at) en hora de Lima: "09/11/2026 14:30".
+function fechaHoraLima(v: string | Date | null | undefined): string {
+  if (!v) return "—";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("es-PE", { timeZone: "America/Lima", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+}
+function CreadoCell({ fecha, usuario }: { fecha: string | Date | null | undefined; usuario: string | null | undefined }) {
+  return (
+    <div style={{ lineHeight: 1.2, fontSize: 11 }}>
+      {fechaHoraLima(fecha)}
+      <div><Text type="secondary" style={{ fontSize: 10 }}>{usuario ?? "—"}</Text></div>
+    </div>
+  );
+}
+
 function ultimoEnvio(s: ServicioSer): Envio | null {
   return s.envios.length ? s.envios[s.envios.length - 1] : null;
 }
 function envioAceptado(s: ServicioSer): Envio | null {
   return s.envios.find((e) => e.id === s.envio_aceptado_id) ?? null;
+}
+// Quién y cuándo: el seguimiento (primer envío) si existe; si no, el requerimiento.
+function creadoDe(s: ServicioSer): { fecha: string; usuario: string | null } {
+  const e = s.envios[0];
+  return e ? { fecha: e.created_at, usuario: e.usuario_crea } : { fecha: s.creado_en, usuario: s.creado_por };
 }
 function diasAfuera(s: ServicioSer, hoy: Date): number | null {
   const u = ultimoEnvio(s);
@@ -101,7 +122,7 @@ function OtLink({ ser }: { ser: ServicioSer }) {
 }
 function OcLink({ ser }: { ser: ServicioSer }) {
   if (ser.po_id == null) return <Text type="secondary" style={{ fontSize: 11 }}>sin OC</Text>;
-  return <Link href={`/compras/${ser.po_id}`} style={{ fontSize: 12 }}>OC {ser.nro_oc ?? ser.oc_docs?.numero_po ?? ser.po_id}</Link>;
+  return <Link href={`/compras/${ser.po_id}/editar`} style={{ fontSize: 12 }}>OC {ser.nro_oc ?? ser.oc_docs?.numero_po ?? ser.po_id}</Link>;
 }
 
 /** Guía abierta = algún servicio sigue en cotización o en trabajo. */
@@ -235,6 +256,11 @@ export default function ServiciosExternosPage() {
       ),
     },
     {
+      title: "Creado", key: "creado", width: 130,
+      sorter: (a, b) => (a.miembros[0]?.envio.created_at ?? "").localeCompare(b.miembros[0]?.envio.created_at ?? ""),
+      render: (_, g) => <CreadoCell fecha={g.miembros[0]?.envio.created_at} usuario={g.miembros[0]?.envio.usuario_crea} />,
+    },
+    {
       title: "Resumen", key: "resumen", width: 170,
       render: (_, g) => {
         const c = new Map<ServicioEstado, number>();
@@ -353,6 +379,11 @@ export default function ServiciosExternosPage() {
       ),
     },
     {
+      title: "Creado", key: "creado", width: 130,
+      sorter: (a, b) => creadoDe(a).fecha.localeCompare(creadoDe(b).fecha),
+      render: (_, r) => { const c = creadoDe(r); return <CreadoCell fecha={c.fecha} usuario={c.usuario} />; },
+    },
+    {
       title: "OC", key: "oc", width: 110,
       render: (_, r) => <OcLink ser={r} />,
     },
@@ -408,6 +439,8 @@ export default function ServiciosExternosPage() {
               { key: "factura", label: "Factura", value: (r) => r.oc_docs?.nro_factura ?? envioAceptado(r)?.nro_factura ?? "" },
               { key: "docs", label: "Documentación", value: (r) => (r.docs_completa ? "Completa" : "Incompleta") },
               { key: "docs_faltan", label: "Docs faltantes", value: (r) => r.docs.filter((d) => d.estado === "falta").map((d) => d.label).join(", ") },
+              { key: "creado_en", label: "Creado", value: (r) => fechaHoraLima(creadoDe(r).fecha) },
+              { key: "creado_por", label: "Creado por", value: (r) => creadoDe(r).usuario ?? "" },
               { key: "dias", label: "Días afuera", value: (r) => diasAfuera(r, hoy) },
             ]}
           />
@@ -468,7 +501,7 @@ export default function ServiciosExternosPage() {
           dataSource={guias}
           columns={columnsGuias}
           components={componentsGuias}
-          scroll={{ x: 1000 }}
+          scroll={{ x: 1130 }}
           pagination={paginacionEstandar({ current: page, pageSize, total: guias.length, onChange: (p, s) => { setPage(p); setPageSize(s); }, label: "guías" })}
         />
       ) : (
@@ -485,7 +518,7 @@ export default function ServiciosExternosPage() {
             preserveSelectedRowKeys: true,
             getCheckboxProps: (r) => ({ disabled: !admiteLlegada(r) }),
           } : undefined}
-          scroll={{ x: 1700 }}
+          scroll={{ x: 1830 }}
           pagination={paginacionEstandar({ current: page, pageSize, total: filtradas.length, onChange: (p, s) => { setPage(p); setPageSize(s); }, label: "servicios" })}
         />
       )}

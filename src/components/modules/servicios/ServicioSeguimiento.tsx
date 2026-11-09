@@ -90,6 +90,7 @@ export interface Envio {
   nro_factura: string | null;
   observaciones: string | null;
   usuario_crea: string | null;
+  created_at: string;
   adjuntos: EnvioAdjunto[];
 }
 type OcDocTipo = "guia" | "factura" | "pago" | "guia_llegada";
@@ -125,6 +126,9 @@ export interface ServicioSer {
   nro_req: string | null;
   item_req: number | null;
   descripcion: string | null;
+  descripcion_req: string | null;
+  creado_en: string;
+  creado_por: string | null;
   cantidad: number | null;
   cantidad_recibida: number | null;
   unidad_medida: string | null;
@@ -288,7 +292,11 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
     setEnvioSel(envio);
     form.resetFields();
     if (a === "cotizacion" && ser) {
-      form.setFieldsValue({ fecha_cotizacion: dayjs() });
+      // Servicio ya aceptado (con OC) que no se realizó: se propone RECHAZADA.
+      form.setFieldsValue({
+        fecha_cotizacion: dayjs(),
+        ...(envio?.cotizacion_resultado === "ACEPTADA" ? { resultado: "RECHAZADA", nro_cotizacion: envio.nro_cotizacion ?? "" } : {}),
+      });
     }
     if (a === "salida") {
       form.setFieldsValue({ fecha_salida: dayjs(), junto_con: [] });
@@ -644,6 +652,9 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
                     <Space size={space.sm}>
                       <Text type="secondary" style={{ fontSize: 12 }}>incompleto (en trabajo)</Text>
                       {puedeOperar && <Button size="small" type="primary" onClick={() => abrir(esConjunto(e) ? "llegada_lote" : "llegada", e)}>Registrar llegada</Button>}
+                      {puedeOperar && esUltimo && (
+                        <Button size="small" danger onClick={() => abrir("cotizacion", e)}>No se realizó (devolver)</Button>
+                      )}
                     </Space>
                   )}
                   {e.fecha_llegada && (
@@ -706,7 +717,7 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
               <div><Text type="secondary">OT:</Text> {ser.ot_id != null || ser.orden_trabajo_interna_id != null ? <Link href={ser.ot_id != null ? `/ordenes-trabajo/${ser.ot_id}` : `/ordenes-trabajo-internas/${ser.orden_trabajo_interna_id}`} style={{ fontWeight: 600 }}>{ser.ot_codigo ?? "—"}</Link> : <Text strong>{ser.ot_codigo ?? "—"}</Text>} {ser.cliente && <Text type="secondary">· {ser.cliente}</Text>}</div>
               <div><Text type="secondary">Req:</Text> {ser.nro_req ?? "—"} · ítem {ser.item_req ?? "—"}</div>
               <div><Text type="secondary">Estado req:</Text> {ser.status_requerimiento_codigo ?? "—"}</div>
-              <div><Text type="secondary">OC:</Text> {ser.po_id != null ? <Link href={`/compras/${ser.po_id}`}>{ser.nro_oc ?? ser.oc_docs?.numero_po ?? ser.po_id}</Link> : <Text type="secondary">sin OC</Text>}</div>
+              <div><Text type="secondary">OC:</Text> {ser.po_id != null ? <Link href={`/compras/${ser.po_id}/editar`}>{ser.nro_oc ?? ser.oc_docs?.numero_po ?? ser.po_id}</Link> : <Text type="secondary">sin OC</Text>}</div>
               <div><Text type="secondary">Cantidad:</Text> {ser.cantidad ?? 1} {ser.unidad_medida ?? ""} · recibido {ser.cantidad_recibida ?? 0}</div>
               <div><Text type="secondary">Precio ref.:</Text> {ser.precio_unitario != null ? `${ser.moneda ?? "USD"} ${ser.precio_unitario.toFixed(2)}` : "—"}</div>
             </div>
@@ -835,6 +846,10 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
               <Text type="secondary" style={{ fontSize: 11 }}>
                 Si es aceptada, el proveedor queda prellenado para la OC. Los montos se ponen al generar la OC en Requerimientos.
               </Text>
+              {envioSel?.cotizacion_resultado === "ACEPTADA" && (
+                <Alert type="warning" showIcon style={{ fontSize: 12, marginTop: space.sm }}
+                  message="Este servicio ya estaba aceptado (con OC). Si el proveedor no lo realizó, dejalo como Rechazada: pasa a Devuelto. La OC no se anula sola; ajustala en Compras si corresponde." />
+              )}
             </>
           )}
           {accion === "editar" && envioSel && (
