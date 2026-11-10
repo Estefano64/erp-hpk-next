@@ -14,7 +14,6 @@ import {
   EditOutlined, EyeOutlined, DeleteOutlined, LockOutlined,
   MinusCircleOutlined,
 } from "@ant-design/icons";
-import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { useRouter } from "next/navigation";
 import { useResponsive, modalWidth } from "@/lib/responsive";
@@ -30,8 +29,10 @@ import {
   usePersistedState,
   useTablaFiltrada,
   useAbortableFetch,
+  columnasParaExcel,
+  type ColumnasConExcel,
 } from "@/lib/tables";
-import { ExportarExcelButton } from "@/components/ExportarExcelButton";
+import { ExportarExcelButton, type ExportColumn } from "@/components/ExportarExcelButton";
 import { dateOnlyLocal, formatDateOnly } from "@/lib/dates";
 import {
   SAC_ESTADOS, SAC_TIPOS_DESVIACION, SAC_FUENTES, SAC_SISTEMAS, labelDe,
@@ -96,6 +97,20 @@ interface SacRow {
   acciones: AccionRow[];
   salida_no_conforme: SncResumen | null;
 }
+
+// Datos del SAC sin columna en la tabla (el listado no los muestra a propósito
+// por ancho); salen solo en el Excel, al final y sin depender de "Columnas".
+const EXTRAS_EXCEL_SAC: ExportColumn<SacRow>[] = [
+  { key: "norma", label: "Norma / Requisito", value: (r) => r.norma_requisito ?? "" },
+  { key: "documento", label: "Doc. referencia", value: (r) => r.documento_referencia ?? "" },
+  { key: "correccion", label: "Corrección inmediata", value: (r) => r.correccion_inmediata ?? "" },
+  { key: "causa_raiz", label: "Análisis causa raíz", value: (r) => r.analisis_causa_raiz ?? "" },
+  { key: "responsable_cierre", label: "Responsable", value: (r) => r.responsable_cierre ?? "" },
+  { key: "verificacion", label: "Verificación de eficacia", value: (r) => r.verificacion_eficacia ?? "" },
+  { key: "verificado_por", label: "Verificado por", value: (r) => r.verificado_por ?? "" },
+  { key: "fecha_verificacion", label: "F. verificación", value: (r) => dateOnlyLocal(r.fecha_verificacion) },
+  { key: "genera_riesgo", label: "¿Genera riesgo?", value: (r) => (r.genera_riesgo == null ? "" : r.genera_riesgo ? "Sí" : "No") },
+];
 
 function dayjsDesdeFechaOnly(v: string | null): dayjs.Dayjs | null {
   return v ? dayjs(formatDateOnly(v), "DD/MM/YYYY") : null;
@@ -320,7 +335,7 @@ export default function SacsPage() {
   }
 
   // ── Tabla ────────────────────────────────────────────────
-  const allColumns: ColumnsType<SacRow> = useMemo(
+  const allColumns: ColumnasConExcel<SacRow> = useMemo(
     () => [
       numeracionColumn<SacRow>(),
       {
@@ -329,6 +344,7 @@ export default function SacsPage() {
         dataIndex: "numero",
         width: 120,
         fixed: "left",
+        excel: { label: "SAC N°", value: (r) => formatSacCodigo(r.numero, r.anio) },
         render: (_: unknown, r) => <Text strong>{formatSacCodigo(r.numero, r.anio)}</Text>,
       },
       {
@@ -336,6 +352,7 @@ export default function SacsPage() {
         title: "Estado",
         dataIndex: "estado",
         width: 105,
+        excel: { label: "Estado", value: (r) => SAC_ESTADOS[r.estado]?.label ?? r.estado },
         ...filtroPorColumna<SacRow>(rows, "estado"),
         render: (e: string) => {
           const m = SAC_ESTADOS[e];
@@ -347,6 +364,7 @@ export default function SacsPage() {
         title: "Tipo de desviación",
         dataIndex: "tipo_desviacion",
         width: 180,
+        excel: { label: "Tipo de desviación", value: (r) => labelDe(SAC_TIPOS_DESVIACION, r.tipo_desviacion, "") },
         ...filtroPorColumna<SacRow>(rows, "tipo_desviacion"),
         render: (v: string | null) => (v ? labelDe(SAC_TIPOS_DESVIACION, v) : "—"),
       },
@@ -355,6 +373,10 @@ export default function SacsPage() {
         title: "Fuente",
         dataIndex: "fuente",
         width: 170,
+        excel: {
+          label: "Fuente",
+          value: (r) => (r.fuente === "OTROS" && r.fuente_otros ? `Otros: ${r.fuente_otros}` : labelDe(SAC_FUENTES, r.fuente, "")),
+        },
         ...filtroPorColumna<SacRow>(rows, "fuente"),
         render: (v: string | null, r) =>
           v ? (v === "OTROS" && r.fuente_otros ? `Otros: ${r.fuente_otros}` : labelDe(SAC_FUENTES, v)) : "—",
@@ -364,6 +386,7 @@ export default function SacsPage() {
         title: "Sistema involucrado",
         dataIndex: "sistemas",
         width: 200,
+        excel: { label: "Sistema involucrado", value: (r) => (r.sistemas ?? []).map((s) => labelDe(SAC_SISTEMAS, s)).join(", ") },
         render: (v: string[]) =>
           v?.length ? (
             <Space size={4} wrap>
@@ -376,6 +399,7 @@ export default function SacsPage() {
         title: "Descripción",
         dataIndex: "descripcion",
         width: 300,
+        excel: { label: "Descripción", value: (r) => r.descripcion ?? "" },
         render: (v: string | null) =>
           v ? (
             <Tooltip title={v} styles={{ root: { maxWidth: 420 } }}>
@@ -389,6 +413,10 @@ export default function SacsPage() {
         key: "snc",
         title: "Salida No Conforme",
         width: 150,
+        excel: {
+          label: "Salida No Conforme",
+          value: (r) => (r.salida_no_conforme ? formatSalidaNoConformeCodigo(r.salida_no_conforme.numero, r.salida_no_conforme.anio) : ""),
+        },
         render: (_: unknown, r) =>
           r.salida_no_conforme ? (
             <a
@@ -410,6 +438,7 @@ export default function SacsPage() {
         title: "Proceso / Responsable",
         dataIndex: "proceso_responsable",
         width: 180,
+        excel: { label: "Proceso / Responsable", value: (r) => r.proceso_responsable ?? "" },
         render: (v: string | null) => v || "—",
       },
       {
@@ -417,6 +446,7 @@ export default function SacsPage() {
         title: "Identificado por",
         dataIndex: "identificado_por",
         width: 160,
+        excel: { label: "Identificado por", value: (r) => r.identificado_por ?? "" },
         render: (v: string | null) => v || "—",
       },
       {
@@ -424,12 +454,15 @@ export default function SacsPage() {
         title: "F. identificación",
         dataIndex: "fecha_identificacion",
         width: 125,
+        excel: { label: "F. identificación", value: (r) => dateOnlyLocal(r.fecha_identificacion) },
         render: (v: string | null) => (v ? formatDateOnly(v) : "—"),
       },
       {
         key: "acciones_count",
         title: "Acciones",
         width: 100,
+        // La tabla muestra solo el conteo; el Excel trae el detalle de cada acción.
+        excel: { label: "Acciones a tomar", value: (r) => r.acciones.map((a) => `${a.orden}) ${a.descripcion}`).join(" | ") },
         render: (_: unknown, r) =>
           r.acciones.length > 0 ? `${r.acciones.length} acción(es)` : <Text type="secondary">—</Text>,
       },
@@ -438,6 +471,7 @@ export default function SacsPage() {
         title: "Cierre programado",
         dataIndex: "fecha_cierre_programada",
         width: 130,
+        excel: { label: "Cierre programado", value: (r) => dateOnlyLocal(r.fecha_cierre_programada) },
         render: (v: string | null) => (v ? formatDateOnly(v) : "—"),
       },
       {
@@ -445,6 +479,7 @@ export default function SacsPage() {
         title: "Cierre",
         dataIndex: "fecha_cierre",
         width: 105,
+        excel: { label: "Fecha cierre", value: (r) => dateOnlyLocal(r.fecha_cierre) },
         render: (v: string | null) => (v ? new Date(v).toLocaleDateString("es-PE") : "—"),
       },
       {
@@ -452,6 +487,7 @@ export default function SacsPage() {
         title: "Acciones",
         width: 190,
         fixed: "right",
+        excel: false,
         render: (_: unknown, r) => (
           <Space size={4} wrap>
             <Tooltip title="Ver detalle">
@@ -546,39 +582,8 @@ export default function SacsPage() {
                 filename="SACs"
                 currentRows={filtradas}
                 tablaLayout={{ ocultas }}
-                columns={[
-                  { key: "codigo", label: "SAC N°", value: (r) => formatSacCodigo(r.numero, r.anio) },
-                  { key: "estado", label: "Estado", value: (r) => SAC_ESTADOS[r.estado]?.label ?? r.estado },
-                  { key: "tipo_desviacion", label: "Tipo de desviación", value: (r) => labelDe(SAC_TIPOS_DESVIACION, r.tipo_desviacion, "") },
-                  {
-                    key: "fuente", label: "Fuente",
-                    value: (r) => (r.fuente === "OTROS" && r.fuente_otros ? `Otros: ${r.fuente_otros}` : labelDe(SAC_FUENTES, r.fuente, "")),
-                  },
-                  { key: "sistemas", label: "Sistema involucrado", value: (r) => (r.sistemas ?? []).map((s) => labelDe(SAC_SISTEMAS, s)).join(", ") },
-                  { key: "descripcion", label: "Descripción", value: (r) => r.descripcion ?? "" },
-                  {
-                    key: "snc", label: "Salida No Conforme",
-                    value: (r) => (r.salida_no_conforme ? formatSalidaNoConformeCodigo(r.salida_no_conforme.numero, r.salida_no_conforme.anio) : ""),
-                  },
-                  { key: "norma", label: "Norma / Requisito", value: (r) => r.norma_requisito ?? "" },
-                  { key: "documento", label: "Doc. referencia", value: (r) => r.documento_referencia ?? "" },
-                  { key: "proceso", label: "Proceso / Responsable", value: (r) => r.proceso_responsable ?? "" },
-                  { key: "identificado_por", label: "Identificado por", value: (r) => r.identificado_por ?? "" },
-                  { key: "fecha_identificacion", label: "F. identificación", value: (r) => dateOnlyLocal(r.fecha_identificacion) },
-                  { key: "correccion", label: "Corrección inmediata", value: (r) => r.correccion_inmediata ?? "" },
-                  { key: "causa_raiz", label: "Análisis causa raíz", value: (r) => r.analisis_causa_raiz ?? "" },
-                  {
-                    key: "acciones", label: "Acciones a tomar",
-                    value: (r) => r.acciones.map((a) => `${a.orden}) ${a.descripcion}`).join(" | "),
-                  },
-                  { key: "responsable_cierre", label: "Responsable", value: (r) => r.responsable_cierre ?? "" },
-                  { key: "fecha_cierre_prog", label: "Cierre programado", value: (r) => dateOnlyLocal(r.fecha_cierre_programada) },
-                  { key: "verificacion", label: "Verificación de eficacia", value: (r) => r.verificacion_eficacia ?? "" },
-                  { key: "verificado_por", label: "Verificado por", value: (r) => r.verificado_por ?? "" },
-                  { key: "fecha_verificacion", label: "F. verificación", value: (r) => dateOnlyLocal(r.fecha_verificacion) },
-                  { key: "genera_riesgo", label: "¿Genera riesgo?", value: (r) => (r.genera_riesgo == null ? "" : r.genera_riesgo ? "Sí" : "No") },
-                  { key: "fecha_cierre", label: "Fecha cierre", value: (r) => dateOnlyLocal(r.fecha_cierre) },
-                ]}
+                storageKey="excel-export-SACs-v2"
+                columns={columnasParaExcel(columnas, EXTRAS_EXCEL_SAC)}
               />
             </Space>
           </Col>
