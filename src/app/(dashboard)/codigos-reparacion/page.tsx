@@ -31,11 +31,12 @@ import {
   ToolOutlined,
   InboxOutlined,
 } from "@ant-design/icons";
-import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import {
   numeracionColumn,
+  columnasParaExcel,
+  type ColumnasConExcel,
   paginacionEstandar,
   PAGINATION_PAGE_SIZE,
   useColumnasOcultas,
@@ -233,8 +234,8 @@ export default function CodigosReparacionPage() {
     messageApi.error(body?.detail ?? body?.error ?? "Error al eliminar");
   }
 
-  const columns: ColumnsType<CodRep> = [
-    numeracionColumn<CodRep>({ current: page, pageSize }),
+  const columns: ColumnasConExcel<CodRep> = [
+    { ...numeracionColumn<CodRep>({ current: page, pageSize }), excel: false },
     {
       key: "codigo",
       title: "Código",
@@ -243,8 +244,9 @@ export default function CodigosReparacionPage() {
       sorter: (a, b) => a.codigo.localeCompare(b.codigo),
       ...filtroPorColumna(data, "codigo"),
       render: (v: string) => <Tag color={brand.navy}>{v}</Tag>,
+      excel: { label: "Código", value: (r) => r.codigo },
     },
-    { key: "descripcion", title: "Descripción", dataIndex: "descripcion", ellipsis: true, sorter: (a: CodRep, b: CodRep) => a.descripcion.localeCompare(b.descripcion), ...filtroPorColumna(data, "descripcion") },
+    { key: "descripcion", title: "Descripción", dataIndex: "descripcion", ellipsis: true, sorter: (a: CodRep, b: CodRep) => a.descripcion.localeCompare(b.descripcion), ...filtroPorColumna(data, "descripcion"), excel: { label: "Descripción", value: (r) => r.descripcion } },
     {
       key: "tipo_codigo",
       title: "Tipo",
@@ -256,6 +258,7 @@ export default function CodigosReparacionPage() {
       filterSearch: true,
       onFilter: (value, r) => (r.tipo?.nombre ?? r.tipo_codigo) === value,
       render: (_: string, r: CodRep) => r.tipo?.nombre ?? r.tipo_codigo,
+      excel: { label: "Tipo", value: (r) => r.tipo?.nombre ?? r.tipo_codigo },
     },
     {
       key: "categoria_codigo",
@@ -265,6 +268,7 @@ export default function CodigosReparacionPage() {
       sorter: (a, b) => (a.categoria_codigo ?? "").localeCompare(b.categoria_codigo ?? ""),
       ...filtroPorColumna(data, "categoria_codigo"),
       render: (_: string, r: CodRep) => r.categoria_codigo,
+      excel: { label: "Categoría", value: (r) => r.categoria?.nombre ?? r.categoria_codigo },
     },
     {
       key: "flota_codigo",
@@ -277,6 +281,7 @@ export default function CodigosReparacionPage() {
       filterSearch: true,
       onFilter: (value, r) => (r.flota?.nombre ?? r.flota_codigo) === value,
       render: (_: string, r: CodRep) => r.flota?.nombre ?? r.flota_codigo,
+      excel: { label: "Flota", value: (r) => r.flota?.nombre ?? r.flota_codigo },
     },
     {
       key: "fabricante_codigo",
@@ -289,8 +294,9 @@ export default function CodigosReparacionPage() {
       filterSearch: true,
       onFilter: (value, r) => (r.fabricante?.nombre ?? r.fabricante_codigo) === value,
       render: (_: string, r: CodRep) => r.fabricante?.nombre ?? r.fabricante_codigo ?? "-",
+      excel: { label: "Fabricante", value: (r) => r.fabricante?.nombre ?? r.fabricante_codigo ?? "" },
     },
-    { key: "np", title: "NP", dataIndex: "np", width: 140, ellipsis: true, sorter: (a: CodRep, b: CodRep) => (a.np ?? "").localeCompare(b.np ?? ""), ...filtroPorColumna(data, "np") },
+    { key: "np", title: "NP", dataIndex: "np", width: 140, ellipsis: true, sorter: (a: CodRep, b: CodRep) => (a.np ?? "").localeCompare(b.np ?? ""), ...filtroPorColumna(data, "np"), excel: { label: "NP", value: (r) => r.np ?? "" } },
     {
       key: "posicion_codigo",
       title: "Posición",
@@ -299,6 +305,7 @@ export default function CodigosReparacionPage() {
       sorter: (a, b) => (a.posicion_codigo ?? "").localeCompare(b.posicion_codigo ?? ""),
       ...filtroPorColumna(data, "posicion_codigo"),
       render: (_: string, r: CodRep) => r.posicion_codigo ?? "-",
+      excel: { label: "Posición", value: (r) => r.posicion?.nombre ?? r.posicion_codigo ?? "" },
     },
     {
       key: "precio",
@@ -316,12 +323,17 @@ export default function CodigosReparacionPage() {
         const sym = r.moneda?.simbolo ?? "$";
         return `${sym} ${Number(v).toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
       },
+      excel: [
+        { label: "Precio", value: (r) => r.precio != null ? Number(r.precio) : "", z: "#,##0.00" },
+        { label: "Moneda", value: (r) => r.moneda_codigo ?? "" },
+      ],
     },
     {
       key: "acciones",
       title: "Acciones",
       width: 130,
       align: "center",
+      excel: false,
       render: (_: unknown, record: CodRep) => (
         <Space size="small">
           <Button
@@ -414,18 +426,8 @@ export default function CodigosReparacionPage() {
                 predicate: (r, sel) => sel.includes(r.fabricante_codigo ?? ""),
               },
             ]}
-            columns={[
-              { label: "Código", value: (r) => r.codigo },
-              { label: "Descripción", value: (r) => r.descripcion },
-              { label: "Tipo", value: (r) => r.tipo?.nombre ?? r.tipo_codigo },
-              { label: "Categoría", value: (r) => r.categoria?.nombre ?? r.categoria_codigo },
-              { label: "Flota", value: (r) => r.flota?.nombre ?? r.flota_codigo },
-              { label: "Fabricante", value: (r) => r.fabricante?.nombre ?? r.fabricante_codigo ?? "" },
-              { label: "Nº Parte", value: (r) => r.np ?? "" },
-              { label: "Posición", value: (r) => r.posicion?.nombre ?? r.posicion_codigo ?? "" },
-              { label: "Precio", value: (r) => r.precio != null ? Number(r.precio) : "", z: "#,##0.00" },
-              { label: "Moneda", value: (r) => r.moneda_codigo ?? "" },
-            ]}
+            columns={columnasParaExcel(columnsResizable)}
+            tablaLayout={{ ocultas }}
           >
             Descargar Códigos
           </ExportarExcelButton>
