@@ -21,18 +21,24 @@ const ProduccionDashboard = dynamic(
   { loading: () => <Spin /> },
 );
 
+const PendientesDashboard = dynamic(
+  () => import("@/components/modules/dashboard/PendientesDashboard"),
+  { loading: () => <Spin /> },
+);
+
 const { Title, Text } = Typography;
 
 // Decisión 2026-07-08 (rediseño de roles): TODOS los usuarios de oficina ven
 // los tres dashboards y alternan con el Segmented. Solo el técnico restringido
 // queda afuera (tiene su panel propio).
-type DashKey = "logistica" | "planner" | "produccion";
+type DashKey = "pendientes" | "logistica" | "planner" | "produccion";
 const DASH_LABELS: Record<DashKey, string> = {
+  pendientes: "Pendientes",
   logistica: "Logística",
   planner: "Planeamiento",
   produccion: "Producción",
 };
-const DASH_ORDEN: DashKey[] = ["logistica", "planner", "produccion"];
+const DASH_ORDEN: DashKey[] = ["pendientes", "logistica", "planner", "produccion"];
 const STORAGE_KEY = "dash-preferido-v1";
 
 export default function DashboardPage() {
@@ -53,7 +59,7 @@ export default function DashboardPage() {
     if (typeof window === "undefined") return null;
     try {
       const s = localStorage.getItem(STORAGE_KEY);
-      return s === "logistica" || s === "planner" || s === "produccion" ? s : null;
+      return s === "pendientes" || s === "logistica" || s === "planner" || s === "produccion" ? s : null;
     } catch { return null; }
   });
   const activo: DashKey | null =
@@ -93,6 +99,7 @@ export default function DashboardPage() {
           style={{ marginBottom: 8 }}
         />
       )}
+      {activo === "pendientes" && <PendientesDashboard />}
       {activo === "logistica" && <LogisticaDashboard />}
       {activo === "planner" && <PlannerProgramaDashboard />}
       {activo === "produccion" && <ProduccionDashboard />}
