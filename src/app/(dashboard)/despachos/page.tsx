@@ -478,10 +478,14 @@ export default function DespachosPage() {
             endpoint="/api/despachos/ot"
             filename="Despachos-pendientes"
             currentRows={itemsFiltrados}
+            // Solo las columnas de nivel OT (ot, cliente, desc_ot, flota, fecha_llegada)
+            // comparten key con la tabla principal; las de ítem viven en el hook
+            // de ocultas de cada sub-tabla y no se reflejan acá.
+            tablaLayout={{ ocultas: ocultasOTs }}
             columns={[
               { key: "ot", label: "OT", value: (r) => formatOtCodigo(r.orden_trabajo?.ot, r.orden_trabajo?.tipo_codigo, `#${r.ot_id}`) },
               { key: "cliente", label: "Cliente", value: (r) => r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "" },
-              { key: "desc_ot", label: "Descripción OT", value: (r) => r.orden_trabajo?.descripcion ?? "" },
+              { key: "desc_ot", grupo: "descripcion_ot", label: "Descripción OT", value: (r) => r.orden_trabajo?.descripcion ?? "" },
               { key: "flota", label: "Flota", value: (r) => r.orden_trabajo?.cod_rep_flota ?? "" },
               { key: "codrep", label: "Código reparación", value: (r) => r.orden_trabajo?.codigo_reparacion?.codigo ?? "" },
               { key: "nro_req", label: "Req / Item", value: (r) => `${r.nro_req ?? "—"}/${r.item_req ?? "—"}` },
