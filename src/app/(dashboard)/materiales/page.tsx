@@ -34,11 +34,12 @@ import {
   EyeOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
-import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import {
   numeracionColumn,
+  columnasParaExcel,
+  type ColumnasConExcel,
   paginacionEstandar,
   PAGINATION_PAGE_SIZE,
   useColumnasOcultas,
@@ -316,8 +317,8 @@ export default function MaterialesPage() {
     fetchData();
   }
 
-  const columns: ColumnsType<MaterialRecord> = [
-    numeracionColumn<MaterialRecord>({ current: page, pageSize }),
+  const columns: ColumnasConExcel<MaterialRecord> = [
+    { ...numeracionColumn<MaterialRecord>({ current: page, pageSize }), excel: false },
     {
       key: "codigo",
       title: "Código",
@@ -326,6 +327,7 @@ export default function MaterialesPage() {
       sorter: (a, b) => a.codigo.localeCompare(b.codigo),
       ...filtroPorColumna(data, "codigo"),
       render: (v: string) => <Tag color={brand.navy}>{v}</Tag>,
+      excel: { label: "Código", value: (r) => r.codigo },
     },
     {
       key: "descripcion",
@@ -335,6 +337,7 @@ export default function MaterialesPage() {
       ellipsis: true,
       sorter: (a: MaterialRecord, b: MaterialRecord) => a.descripcion.localeCompare(b.descripcion),
       ...filtroPorColumna(data, "descripcion"),
+      excel: { label: "Descripción", value: (r) => r.descripcion },
     },
     {
       key: "planta_codigo",
@@ -346,6 +349,7 @@ export default function MaterialesPage() {
       render: (v: string, r: MaterialRecord) => (
         <span title={r.planta?.nombre ?? ""}>{v ?? "-"}</span>
       ),
+      excel: { label: "Planta", value: (r) => r.planta_codigo },
     },
     {
       key: "area_codigo",
@@ -355,6 +359,7 @@ export default function MaterialesPage() {
       sorter: (a, b) => (a.area?.nombre ?? "").localeCompare(b.area?.nombre ?? ""),
       ...filtroPorColumna(data, "area_codigo"),
       render: (_: string, r: MaterialRecord) => r.area?.nombre ?? r.area_codigo,
+      excel: { label: "Área", value: (r) => r.area_codigo },
     },
     {
       key: "categoria_codigo",
@@ -364,6 +369,7 @@ export default function MaterialesPage() {
       sorter: (a, b) => (a.categoria?.nombre ?? "").localeCompare(b.categoria?.nombre ?? ""),
       ...filtroPorColumna(data, "categoria_codigo"),
       render: (_: string, r: MaterialRecord) => r.categoria?.nombre ?? r.categoria_codigo,
+      excel: { label: "Categoría", value: (r) => r.categoria_codigo },
     },
     {
       key: "clasificacion_codigo",
@@ -373,6 +379,7 @@ export default function MaterialesPage() {
       sorter: (a, b) => (a.clasificacion?.nombre ?? "").localeCompare(b.clasificacion?.nombre ?? ""),
       ...filtroPorColumna(data, "clasificacion_codigo"),
       render: (_: string, r: MaterialRecord) => r.clasificacion?.nombre ?? r.clasificacion_codigo,
+      excel: { label: "Clasificación", value: (r) => r.clasificacion_codigo },
     },
     {
       key: "unidad_medida_codigo",
@@ -382,6 +389,7 @@ export default function MaterialesPage() {
       ...filtroPorColumna(data, "unidad_medida_codigo"),
       render: (_: string, r: MaterialRecord) =>
         r.unidad_medida?.abreviatura ?? r.unidad_medida?.nombre ?? r.unidad_medida_codigo,
+      excel: { label: "Und. Med.", value: (r) => r.unidad_medida_codigo },
     },
     {
       key: "fabricante_codigo",
@@ -398,6 +406,7 @@ export default function MaterialesPage() {
           disabled={!isAdminUser}
         />
       ),
+      excel: { label: "Fabricante", value: (r) => r.fabricante_codigo ?? "" },
     },
     {
       key: "np",
@@ -414,6 +423,7 @@ export default function MaterialesPage() {
           disabled={!isAdminUser}
         />
       ),
+      excel: { label: "NP", value: (r) => r.np ?? "" },
     },
     {
       key: "precio",
@@ -436,48 +446,57 @@ export default function MaterialesPage() {
           />
         );
       },
+      excel: { label: "Precio", value: (r) => r.precio != null ? Number(r.precio) : "", z: "#,##0.00" },
     },
     // ── Columnas opcionales (ocultas por default) ──
     {
       key: "stock_actual", title: "Stock", dataIndex: "stock_actual", width: 90, align: "right",
       sorter: (a, b) => (a.stock_actual ?? 0) - (b.stock_actual ?? 0),
       render: (v: number | null) => v != null ? Number(v).toLocaleString() : "-",
+      excel: { label: "Stock actual", value: (r) => r.stock_actual != null ? Number(r.stock_actual) : "" },
     },
     {
       key: "stock_maximo", title: "Stock máx.", dataIndex: "stock_maximo", width: 100, align: "right",
       sorter: (a, b) => (a.stock_maximo ?? 0) - (b.stock_maximo ?? 0),
       render: (v: number | null) => v != null ? Number(v).toLocaleString() : "-",
+      excel: { label: "Stock máx.", value: (r) => r.stock_maximo != null ? Number(r.stock_maximo) : "" },
     },
     {
       key: "punto_reposicion", title: "Punto reposición", dataIndex: "punto_reposicion", width: 130, align: "right",
       sorter: (a, b) => (a.punto_reposicion ?? 0) - (b.punto_reposicion ?? 0),
       render: (v: number | null) => v != null ? Number(v).toLocaleString() : "-",
+      excel: { label: "Punto reposición", value: (r) => r.punto_reposicion != null ? Number(r.punto_reposicion) : "" },
     },
     {
       key: "ubicacion", title: "Ubicación", dataIndex: "ubicacion", width: 120,
       ...filtroPorColumna(data, "ubicacion"),
       render: (v: string | null) => v ?? "-",
+      excel: { label: "Ubicación", value: (r) => r.ubicacion ?? "" },
     },
     {
       key: "caja", title: "Caja", dataIndex: "caja", width: 100,
       ...filtroPorColumna(data, "caja"),
       render: (v: string | null) => v ?? "-",
+      excel: { label: "Caja", value: (r) => r.caja ?? "" },
     },
     {
       key: "modelo", title: "Modelo", dataIndex: "modelo", width: 120,
       ...filtroPorColumna(data, "modelo"),
       render: (v: string | null) => v ?? "-",
+      excel: { label: "Modelo", value: (r) => r.modelo ?? "" },
     },
     {
       key: "plazo_entrega", title: "Plazo entrega (días)", dataIndex: "plazo_entrega", width: 130, align: "right",
       sorter: (a, b) => (a.plazo_entrega ?? 0) - (b.plazo_entrega ?? 0),
       render: (v: number | null) => v != null ? `${v} d` : "-",
+      excel: { label: "Plazo entrega (días)", value: (r) => r.plazo_entrega ?? "" },
     },
     {
       key: "acciones",
       title: "Acciones",
       width: 130,
       align: "center",
+      excel: false,
       render: (_: unknown, record: MaterialRecord) => (
         <Space size="small">
           <Button type="text" icon={<EyeOutlined />} title="Ver detalle" onClick={() => openDetalle(record)} />
@@ -570,25 +589,8 @@ export default function MaterialesPage() {
                 predicate: (r, sel) => sel.includes(r.area_codigo ?? ""),
               },
             ]}
-            columns={[
-              { label: "Código", value: (r) => r.codigo },
-              { label: "Descripción", value: (r) => r.descripcion },
-              { label: "Planta", value: (r) => r.planta_codigo },
-              { label: "Área", value: (r) => r.area_codigo },
-              { label: "Categoría", value: (r) => r.categoria_codigo },
-              { label: "Clasificación", value: (r) => r.clasificacion_codigo },
-              { label: "Unidad medida", value: (r) => r.unidad_medida_codigo },
-              { label: "Precio", value: (r) => r.precio != null ? Number(r.precio) : "", z: "#,##0.00" },
-              { label: "Moneda", value: (r) => r.moneda_codigo ?? "" },
-              { label: "Fabricante", value: (r) => r.fabricante_codigo ?? "" },
-              { label: "Nº Parte", value: (r) => r.np ?? "" },
-              { label: "Modelo", value: (r) => r.modelo ?? "" },
-              { label: "Punto reposición", value: (r) => r.punto_reposicion != null ? Number(r.punto_reposicion) : "" },
-              { label: "Stock máximo", value: (r) => r.stock_maximo != null ? Number(r.stock_maximo) : "" },
-              { label: "Stock actual", value: (r) => r.stock_actual != null ? Number(r.stock_actual) : "" },
-              { label: "Plazo entrega (días)", value: (r) => r.plazo_entrega ?? "" },
-              { label: "Ubicación", value: (r) => r.ubicacion ?? "" },
-            ]}
+            columns={columnasParaExcel(columnsResizable)}
+            tablaLayout={{ ocultas }}
           />
           {isAdminUser && (
             <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>
