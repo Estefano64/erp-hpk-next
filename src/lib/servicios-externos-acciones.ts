@@ -345,11 +345,22 @@ async function retirarDeOC(tx: TxClient, serId: number, poId: number, desc: stri
   });
   const restantes = await tx.oTRepuesto.findMany({
     where: { po_id: poId },
-    select: { cantidad: true, precio_unitario: true, oc_cantidad: true, oc_precio_unitario: true },
+    select: {
+      id: true, cantidad: true, cantidad_recibida: true, precio_unitario: true,
+      oc_cantidad: true, oc_precio_unitario: true, solo_para_oc: true, tipo_codigo: true,
+    },
   });
   const ptx = tx as Prisma.TransactionClient;
-  if (restantes.length === 0 && (compra.status_oc_codigo === "PEND_OC" || compra.status_oc_codigo === "PROCESO")) {
+  // Líneas "reales" = las que vienen de un requerimiento (o servicios). Los
+  // ítems libres (solo_para_oc, ej. la barra del cromado) no existen fuera de
+  // la OC: si no queda ninguna línea real, la OC no tiene objeto.
+  const reales = restantes.filter((r) => r.solo_para_oc !== true || r.tipo_codigo === "SER");
+  const hayRecibido = restantes.some((r) => Number(r.cantidad_recibida ?? 0) > 0);
+  if (reales.length === 0 && !hayRecibido) {
+    // Misma liberación que POST /compras/[id]/anular: los ítems libres se
+    // borran y cualquier otro vínculo se suelta.
     await resetLiberaciones(ptx, { compraId: poId });
+    await tx.oTRepuesto.deleteMany({ where: { po_id: poId, solo_para_oc: true } });
     await tx.compra.update({
       where: { id: poId },
       data: {
@@ -369,8 +380,22 @@ async function retirarDeOC(tx: TxClient, serId: number, poId: number, desc: stri
   if (compra.status_oc_codigo === "PEND_OC" && !total.equals(new Prisma.Decimal(compra.total))) {
     await resetLiberaciones(ptx, { compraId: poId });
   }
-  await tx.compra.update({ where: { id: poId }, data: { subtotal, impuesto, total } });
-  return `línea retirada de la OC ${compra.numero_po} (total ${total.toFixed(2)})`;
+  // Si lo que queda en la OC ya está todo recibido, no hay nada más que esperar:
+  // la OC pasa a ENTREGADO (misma regla que la recepción, reflejarRecepcionEnOC).
+  let estado = "";
+  let cierra = false;
+  if (compra.status_oc_codigo === "PROCESO" || compra.status_oc_codigo === "INCOMPLETO") {
+    const completa = (x: { cantidad: unknown; cantidad_recibida: unknown }) =>
+      Number(x.cantidad_recibida ?? 0) >= Number(x.cantidad) - 0.0001;
+    const detalles = await tx.compraDetalle.findMany({ where: { compra_id: poId }, select: { cantidad: true, cantidad_recibida: true } });
+    cierra = hayRecibido && detalles.every(completa) && restantes.every(completa);
+    if (cierra) estado = " y quedó ENTREGADA (todo lo restante ya estaba recibido)";
+  }
+  await tx.compra.update({
+    where: { id: poId },
+    data: { subtotal, impuesto, total, ...(cierra ? { status_oc_codigo: "ENTREGADO", fecha_entrega_real: new Date() } : {}) },
+  });
+  return `línea retirada de la OC ${compra.numero_po} (total ${total.toFixed(2)})${estado}`;
 }
 
 /**
