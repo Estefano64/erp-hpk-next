@@ -21,7 +21,7 @@ import { useResponsive, modalWidth } from "@/lib/responsive";
 import {
   numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE,
   useColumnasOcultas, ColumnasToggleButton, visibleColumns, filtroPorColumna,
-  useColumnasRedimensionables, useTablaFiltrada,
+  useColumnasRedimensionables, useTablaFiltrada, columnasParaExcel, type ColumnasConExcel,
 } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import { useCachedFetch } from "@/lib/useCachedFetch";
@@ -82,6 +82,15 @@ function LiberacionChips({ tipo, montoUSD, firmas }: {
       })}
     </Space>
   );
+}
+
+// Texto legible de la liberación para el Excel (equivale a los chips de la tabla).
+function liberacionTexto(tipo: TipoDocLiberacion, montoUSD: number, firmas: FirmaLiberacion[]): string {
+  const est = estadoLiberacion(tipo, montoUSD, firmas.map((f) => f.nivel));
+  if (est.requeridos.length === 0) return "Auto";
+  return est.requeridos
+    .map((nivel) => (firmas.some((f) => f.nivel === nivel) ? `${nivel} ✓` : `${nivel} pendiente`))
+    .join(", ");
 }
 
 // Monto USD de un req (mismo criterio que el server: precio del req con
@@ -1069,16 +1078,18 @@ export default function AceptacionesPage() {
   const { filtradas: ocsFiltradas, onChange: onChangeTablaOC } = useTablaFiltrada(ocs);
   const { filtradas: reqsFiltradas, onChange: onChangeTablaRQ } = useTablaFiltrada(reqs);
 
-  const ocColumns: ColumnsType<OCPendiente> = [
-    numeracionColumn<OCPendiente>({ current: pageOC, pageSize }),
+  const ocColumns: ColumnasConExcel<OCPendiente> = [
+    { ...numeracionColumn<OCPendiente>({ current: pageOC, pageSize }), excel: false },
     {
       key: "numero_po", title: "Nro OC", width: 130,
+      excel: { label: "Nro OC", value: (o) => o.numero_po },
       ...filtroPorColumna(ocs, "numero_po"),
       sorter: (a, b) => a.numero_po.localeCompare(b.numero_po),
       render: (_, o) => <Tag color={brand.navy}>{o.numero_po}</Tag>,
     },
     {
       key: "proveedor", title: "Proveedor", width: 200, ellipsis: true,
+      excel: { label: "Proveedor", value: (o) => o.proveedor?.razon_social ?? "" },
       filters: [...new Set(ocs.map((o) => o.proveedor?.razon_social).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
       filterSearch: true,
       onFilter: (value, o) => o.proveedor?.razon_social === value,
@@ -1086,6 +1097,7 @@ export default function AceptacionesPage() {
     },
     {
       key: "ot", title: "OT", width: 110,
+      excel: { label: "OT", value: (o) => otsDeOCTexto(o) },
       filters: [...new Set(ocs.flatMap((o) => otsDeOC(o).map((x) => x.codigo)))].sort().map((v) => ({ text: v, value: v })),
       filterSearch: true,
       onFilter: (value, o) => otsDeOC(o).some((x) => x.codigo === value),
@@ -1097,6 +1109,7 @@ export default function AceptacionesPage() {
     },
     {
       key: "items", title: "Items", width: 90, align: "center",
+      excel: { label: "Items", value: (o) => o.ot_repuestos.length || o.detalles.length },
       sorter: (a, b) => a.ot_repuestos.length - b.ot_repuestos.length,
       render: (_, o) => {
         const adjCount = o.ot_repuestos.reduce(
@@ -1117,11 +1130,16 @@ export default function AceptacionesPage() {
     },
     {
       key: "total", title: "Total", width: 130, align: "right",
+      excel: [
+        { label: "Total", key: "total", value: (o) => Number(o.total), z: "#,##0.00" },
+        { label: "Moneda", key: "moneda", value: (o) => o.moneda_codigo ?? "USD" },
+      ],
       sorter: (a, b) => Number(a.total) - Number(b.total),
       render: (_, o) => <span style={{ fontWeight: 600, color: brand.navy }}>{o.moneda_codigo ?? "USD"} {Number(o.total).toFixed(2)}</span>,
     },
     {
       key: "liberacion", title: "Liberación", width: 130, align: "center",
+      excel: { label: "Liberación", value: (o) => liberacionTexto("OC", montoEnUSD(Number(o.total ?? 0), o.moneda_codigo), o.liberaciones ?? []) },
       render: (_, o) => (
         <LiberacionChips
           tipo="OC"
@@ -1132,20 +1150,25 @@ export default function AceptacionesPage() {
     },
     {
       key: "fecha_solicitud", title: "F. Solicitud", width: 100,
+      // Fechas como Date real (celda fecha en Excel); dateOnlyLocal evita el corrimiento de día en Lima.
+      excel: { label: "F. Solicitud", value: (o) => dateOnlyLocal(o.fecha_solicitud) },
       sorter: (a, b) => a.fecha_solicitud.localeCompare(b.fecha_solicitud),
       render: (_, o) => <Text style={{ fontSize: 11 }}>{formatDateOnlyShort(o.fecha_solicitud)}</Text>,
     },
     {
       key: "fecha_entrega", title: "F. Entrega Esp.", width: 110,
+      excel: { label: "F. Entrega Esp.", value: (o) => dateOnlyLocal(o.fecha_entrega_esperada) },
       render: (_, o) => o.fecha_entrega_esperada ? <Text style={{ fontSize: 11 }}>{formatDateOnlyShort(o.fecha_entrega_esperada)}</Text> : <Text type="secondary">—</Text>,
     },
     {
       key: "usuario", title: "Solicita", width: 130, ellipsis: true,
+      excel: { label: "Solicita", value: (o) => o.usuario_solicita },
       ...filtroPorColumna(ocs, "usuario_solicita"),
       render: (_, o) => o.usuario_solicita,
     },
     {
       key: "acciones", title: "Acciones", width: 220, fixed: "right", align: "center",
+      excel: false,
       render: (_, o) => {
         const turno = turnoOC(o);
         return (
@@ -1188,10 +1211,11 @@ export default function AceptacionesPage() {
   ];
 
   // ── Columnas: RQs pendientes ────────────────────────────────────────
-  const rqColumns: ColumnsType<ReqPendiente> = [
-    numeracionColumn<ReqPendiente>({ current: pageRQ, pageSize }),
+  const rqColumns: ColumnasConExcel<ReqPendiente> = [
+    { ...numeracionColumn<ReqPendiente>({ current: pageRQ, pageSize }), excel: false },
     {
       key: "nro_req", title: "Nro Req / Item", width: 140,
+      excel: { label: "Nro Req / Item", value: (r) => `${r.nro_req ?? "—"}/${r.item_req ?? "—"}` },
       ...filtroPorColumna(reqs, "nro_req"),
       render: (_, r) => (
         <Text strong style={{ fontSize: 12 }}>{r.nro_req ?? "—"}/{r.item_req ?? "—"}</Text>
@@ -1199,12 +1223,14 @@ export default function AceptacionesPage() {
     },
     {
       key: "tipo", title: "Tipo", width: 70, align: "center",
+      excel: { label: "Tipo", value: (r) => r.tipo_codigo ?? "" },
       filters: [...new Set(reqs.map((r) => r.tipo_codigo).filter(Boolean) as string[])].map((v) => ({ text: v, value: v })),
       onFilter: (value, r) => r.tipo_codigo === value,
       render: (_, r) => <Tag color={TIPO_REQ_COLOR[r.tipo_codigo ?? ""] ?? "default"} style={{ margin: 0 }}>{r.tipo_codigo ?? "—"}</Tag>,
     },
     {
       key: "ot", title: "OT", width: 110,
+      excel: { label: "OT", value: (r) => otDeReq(r)?.codigo ?? "" },
       filters: [...new Set(reqs.map((r) => otDeReq(r)?.codigo).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
       filterSearch: true,
       onFilter: (value, r) => otDeReq(r)?.codigo === value,
@@ -1215,6 +1241,7 @@ export default function AceptacionesPage() {
     },
     {
       key: "cliente", title: "Mina / Cliente", width: 160, ellipsis: true,
+      excel: { label: "Mina / Cliente", value: (r) => r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "" },
       filters: [...new Set(reqs.map((r) =>
         r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social,
       ).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
@@ -1235,6 +1262,7 @@ export default function AceptacionesPage() {
     },
     {
       key: "flota", title: "Flota", width: 130, ellipsis: true,
+      excel: { label: "Flota", value: (r) => r.orden_trabajo?.cod_rep_flota ?? "" },
       filters: [...new Set(reqs.map((r) => r.orden_trabajo?.cod_rep_flota).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
       filterSearch: true,
       onFilter: (value, r) => r.orden_trabajo?.cod_rep_flota === value,
@@ -1247,6 +1275,7 @@ export default function AceptacionesPage() {
       // 'po_cliente' (mismo criterio que la columna "Estado PO" del listado de
       // OTs externas). Reemplazó a la antigua columna "OC" (compra a proveedor).
       key: "estado_po", title: "Estado PO", width: 120, align: "center",
+      excel: { label: "Estado PO", value: (r) => ((r.orden_trabajo?.adjuntos?.length ?? 0) > 0 ? "Con PO" : "Pdt de PO") },
       filters: [
         { text: "Con PO", value: "con" },
         { text: "Pdt de PO", value: "sin" },
@@ -1263,12 +1292,18 @@ export default function AceptacionesPage() {
     },
     {
       key: "descripcion_ot", title: "Descripción OT", width: 220, ellipsis: true,
+      excel: { label: "Descripción OT", value: (r) => r.orden_trabajo?.descripcion ?? "" },
       render: (_, r) => r.orden_trabajo?.descripcion
         ? <Tooltip title={r.orden_trabajo.descripcion}><span style={{ fontSize: 12 }}>{r.orden_trabajo.descripcion}</span></Tooltip>
         : <Text type="secondary">—</Text>,
     },
     {
       key: "descripcion", title: "Material / Descripción", ellipsis: true,
+      excel: [
+        { label: "Código material", key: "cod_material", value: (r) => r.material?.codigo ?? "" },
+        { label: "Material / Descripción", key: "descripcion", value: (r) => r.material?.descripcion ?? r.descripcion ?? "" },
+        { label: "Observaciones", key: "observaciones", value: (r) => r.observaciones ?? "" },
+      ],
       render: (_, r) => (
         <div style={{ lineHeight: 1.2 }}>
           {r.material?.codigo && <Tag style={{ fontSize: 10, marginRight: 4 }}>{r.material.codigo}</Tag>}
@@ -1298,11 +1333,16 @@ export default function AceptacionesPage() {
     },
     {
       key: "cantidad", title: "Cant.", width: 90, align: "right",
+      excel: [
+        { label: "Cant.", key: "cantidad", value: (r) => Number(r.cantidad) },
+        { label: "UM", key: "um", value: (r) => r.unidad_medida ?? "" },
+      ],
       sorter: (a, b) => Number(a.cantidad) - Number(b.cantidad),
       render: (_, r) => `${Number(r.cantidad).toLocaleString()} ${r.unidad_medida ?? ""}`,
     },
     {
       key: "stock", title: "Stock", width: 80, align: "right",
+      excel: { label: "Stock", value: (r) => r.material?.stock_actual != null ? Number(r.material.stock_actual) : "" },
       render: (_, r) => {
         if (r.material?.stock_actual == null) return <Text type="secondary">—</Text>;
         const st = Number(r.material.stock_actual);
@@ -1311,6 +1351,7 @@ export default function AceptacionesPage() {
     },
     {
       key: "precio_unit_req", title: "P. Unit. Req", width: 110, align: "right",
+      excel: { label: "P. Unit. Req", value: (r) => r.precio_unitario != null ? Number(r.precio_unitario) : "", z: "#,##0.00" },
       // Precio de compra/costo unitario que carga el solicitante al crear el req
       // (OTRepuesto.precio_unitario). Se muestra en la moneda del req, con
       // fallback a "USD" si viene null.
@@ -1322,6 +1363,7 @@ export default function AceptacionesPage() {
     },
     {
       key: "precio_venta_req", title: "P. Venta Req", width: 110, align: "right",
+      excel: { label: "P. Venta Req", value: (r) => r.precio_venta != null ? Number(r.precio_venta) : "", z: "#,##0.00" },
       // Precio de venta al cliente que carga el solicitante (OTRepuesto.precio_venta).
       // Puede estar vacío si el flujo del req todavía no cotizó venta.
       sorter: (a, b) => Number(a.precio_venta ?? 0) - Number(b.precio_venta ?? 0),
@@ -1332,6 +1374,7 @@ export default function AceptacionesPage() {
     },
     {
       key: "precio_cat", title: "P. catálogo", width: 110, align: "right",
+      excel: { label: "P. catálogo", value: (r) => r.material?.precio != null ? Number(r.material.precio) : "", z: "#,##0.00" },
       render: (_, r) => {
         if (r.material?.precio == null) return <Text type="secondary">—</Text>;
         return <span>{r.material.moneda_codigo ?? "USD"} {Number(r.material.precio).toFixed(2)}</span>;
@@ -1339,6 +1382,13 @@ export default function AceptacionesPage() {
     },
     {
       key: "total_estimado", title: "P. Estimado Total", width: 140, align: "right",
+      excel: [
+        { label: "P. Estimado Total", key: "total", z: "#,##0.00", value: (r: ReqPendiente) => {
+          const unit = r.precio_unitario != null ? Number(r.precio_unitario) : (r.material?.precio != null ? Number(r.material.precio) : null);
+          return unit != null ? unit * Number(r.cantidad) : "";
+        } },
+        { label: "Moneda", key: "moneda", value: (r: ReqPendiente) => (r.precio_unitario != null ? (r.moneda ?? "USD") : (r.material?.moneda_codigo ?? "USD")) },
+      ],
       // Total = cantidad × precio del req; si el solicitante no cargó precio,
       // cae al precio de catálogo (mismo criterio que los KPIs del listado).
       // Antes solo usaba catálogo y los servicios / no catalogados quedaban "—".
@@ -1361,22 +1411,29 @@ export default function AceptacionesPage() {
     },
     {
       key: "liberacion", title: "Liberación", width: 110, align: "center",
+      excel: { label: "Liberación", value: (r) => liberacionTexto("REQ", montoUsdReq(r), r.liberaciones ?? []) },
       render: (_, r) => (
         <LiberacionChips tipo="REQ" montoUSD={montoUsdReq(r)} firmas={r.liberaciones ?? []} />
       ),
     },
     {
       key: "fecha_solicitud", title: "F. Solicitud", width: 100,
+      excel: [
+        { label: "F. Solicitud", key: "solicitud", value: (r: ReqPendiente) => dateOnlyLocal(r.fecha_solicitud) },
+        { label: "F. Requerida", key: "requerida", value: (r: ReqPendiente) => dateOnlyLocal(r.fecha_requerida) },
+      ],
       sorter: (a, b) => a.fecha_solicitud.localeCompare(b.fecha_solicitud),
       render: (_, r) => <Text style={{ fontSize: 11 }}>{formatDateOnlyShort(r.fecha_solicitud)}</Text>,
     },
     {
       key: "usuario", title: "Solicita", width: 130, ellipsis: true,
+      excel: { label: "Solicita", value: (r) => r.usuario_solicita },
       ...filtroPorColumna(reqs, "usuario_solicita"),
       render: (_, r) => r.usuario_solicita,
     },
     {
       key: "acciones", title: "Acciones", width: 220, fixed: "right", align: "center",
+      excel: false,
       render: (_, r) => {
         const turno = turnoRQ(r);
         return (
@@ -1620,19 +1677,7 @@ export default function AceptacionesPage() {
                           filename="OCs-pendientes"
                           currentRows={ocsFiltradas}
                           tablaLayout={{ ocultas: ocultasOC }}
-                          columns={[
-                            { key: "numero_po", label: "Nro OC", value: (o) => o.numero_po },
-                            { key: "proveedor", label: "Proveedor", value: (o) => o.proveedor?.razon_social ?? "" },
-                            { key: "ot", label: "OT", value: (o) => otsDeOCTexto(o) },
-                            { key: "items", label: "Items", value: (o) => o.ot_repuestos.length || o.detalles.length },
-                            { key: "total", label: "Total", value: (o) => Number(o.total), z: "#,##0.00" },
-                            { key: "moneda", label: "Moneda", value: (o) => o.moneda_codigo ?? "USD" },
-                            // Fechas como Date real (celda fecha en Excel). dateOnlyLocal
-                            // evita el corrimiento de día en Lima con medianoche UTC.
-                            { key: "fecha_solicitud", label: "F. Solicitud", value: (o) => dateOnlyLocal(o.fecha_solicitud) },
-                            { key: "fecha_entrega", label: "F. Entrega Esp.", value: (o) => dateOnlyLocal(o.fecha_entrega_esperada) },
-                            { key: "usuario", label: "Solicita", value: (o) => o.usuario_solicita },
-                          ]}
+                          columns={columnasParaExcel(ocColumnsRz)}
                         />
                         <Button onClick={resetOcAnchos}>Restablecer anchos</Button>
                       </Space>
@@ -1714,35 +1759,7 @@ export default function AceptacionesPage() {
                           filename="Requerimientos-pendientes"
                           currentRows={reqsFiltradas}
                           tablaLayout={{ ocultas: ocultasRQ }}
-                          columns={[
-                            { key: "nro_req", label: "Nro Req / Item", value: (r) => `${r.nro_req ?? "—"}/${r.item_req ?? "—"}` },
-                            { key: "tipo", label: "Tipo", value: (r) => r.tipo_codigo ?? "" },
-                            { key: "ot", label: "OT", value: (r) => otDeReq(r)?.codigo ?? "" },
-                            { key: "cliente", label: "Mina / Cliente", value: (r) => r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "" },
-                            { key: "flota", label: "Flota", value: (r) => r.orden_trabajo?.cod_rep_flota ?? "" },
-                            { key: "estado_po", label: "Estado PO", value: (r) => ((r.orden_trabajo?.adjuntos?.length ?? 0) > 0 ? "Con PO" : "Pdt de PO") },
-                            { key: "descripcion_ot", label: "Descripción OT", value: (r) => r.orden_trabajo?.descripcion ?? "" },
-                            { key: "cod_material", label: "Código material", value: (r) => r.material?.codigo ?? "" },
-                            { key: "descripcion", label: "Material / Descripción", value: (r) => r.material?.descripcion ?? r.descripcion ?? "" },
-                            { key: "cantidad", label: "Cant.", value: (r) => Number(r.cantidad) },
-                            { key: "um", label: "UM", value: (r) => r.unidad_medida ?? "" },
-                            { key: "stock", label: "Stock", value: (r) => r.material?.stock_actual != null ? Number(r.material.stock_actual) : "" },
-                            { key: "precio_unit_req", label: "P. Unit. Req", value: (r) => r.precio_unitario != null ? Number(r.precio_unitario) : "", z: "#,##0.00" },
-                            { key: "precio_cat", label: "P. catálogo", value: (r) => r.material?.precio != null ? Number(r.material.precio) : "", z: "#,##0.00" },
-                            // Total con el mismo criterio de la columna: precio del req,
-                            // fallback catálogo (antes solo catálogo → servicios en blanco).
-                            { key: "total_estimado", label: "P. Estimado Total", value: (r) => {
-                              const unit = r.precio_unitario != null ? Number(r.precio_unitario) : (r.material?.precio != null ? Number(r.material.precio) : null);
-                              return unit != null ? unit * Number(r.cantidad) : "";
-                            }, z: "#,##0.00" },
-                            { key: "moneda", label: "Moneda", value: (r) => (r.precio_unitario != null ? (r.moneda ?? "USD") : (r.material?.moneda_codigo ?? "USD")) },
-                            // Fechas como Date real (celda fecha en Excel). dateOnlyLocal
-                            // evita el corrimiento de día en Lima con medianoche UTC.
-                            { key: "fecha_solicitud", label: "F. Solicitud", value: (r) => dateOnlyLocal(r.fecha_solicitud) },
-                            { key: "fecha_requerida", label: "F. Requerida", value: (r) => dateOnlyLocal(r.fecha_requerida) },
-                            { key: "usuario", label: "Solicita", value: (r) => r.usuario_solicita },
-                            { key: "observaciones", label: "Observaciones", value: (r) => r.observaciones ?? "" },
-                          ]}
+                          columns={columnasParaExcel(rqColumnsRz)}
                         />
                         <Button onClick={resetRqAnchos}>Restablecer anchos</Button>
                       </Space>
