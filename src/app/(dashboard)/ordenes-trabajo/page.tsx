@@ -28,7 +28,6 @@ import {
   StopOutlined,
   UndoOutlined,
 } from "@ant-design/icons";
-import type { ColumnsType } from "antd/es/table";
 import { useSession } from "next-auth/react";
 import {
   numeracionColumn,
@@ -976,7 +975,7 @@ export default function OrdenesTrabajoPage() {
   // auto-filtros del hook se arman con la página visible (50 filas), generando
   // dropdowns cuyos valores el server ignora ("el filtro no aplica"). Todos
   // los filtros reales se inyectan arriba en serverColumns.
-  const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper, orden: ordenColumnas } =
+  const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
     useColumnasRedimensionables<OTRecord>(serverColumns, "ot-list-cols-widths-v1");
 
   return (
