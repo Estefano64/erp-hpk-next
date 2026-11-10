@@ -19,7 +19,12 @@ export async function GET(_req: NextRequest) {
         status_requerimiento_codigo: "APROBADO",
         // Excluir items "libres" agregados desde el editor de OC — esos
         // solo van al PDF de OC, no al despacho del técnico.
-        AND: [{ OR: [{ solo_para_oc: false }, { solo_para_oc: null }] }],
+        AND: [
+          { OR: [{ solo_para_oc: false }, { solo_para_oc: null }] },
+          // OT Cerrada / No Ejecutada: ya no hay nada pendiente de entregar
+          // (pedido 2026-11-10); sus ítems se dan por entregados.
+          { OR: [{ ot_id: null }, { orden_trabajo: { OR: [{ ot_status_codigo: null }, { ot_status_codigo: { notIn: ["Cerrada", "No Ejecutada"] } }] } }] },
+        ],
         // Removido `material_id: { not: null }` — los items free (CAD) tienen
         // material_id NULL pero igual deben aparecer para despacho a la OT.
         //

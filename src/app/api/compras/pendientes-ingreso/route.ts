@@ -28,7 +28,11 @@ import { formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
 export async function GET() {
   try {
     const compras = await prisma.compra.findMany({
-      where: { status_oc_codigo: { in: ["PROCESO", "INCOMPLETO"] } },
+      // Las OCs de ALMACÉN ABIERTO (ej. M260033, BC Bearing) NO se reciben acá:
+      // son stock marco que se consume con los requerimientos (consumir-almacen-
+      // abierto). Listarlas llenaba Ingreso de PO de líneas "pendientes" que no
+      // se van a recibir (pedido 2026-11-10; mismo criterio del dashboard Pendientes).
+      where: { status_oc_codigo: { in: ["PROCESO", "INCOMPLETO"] }, es_almacen_abierto: false },
       include: {
         proveedor: { select: { id: true, razon_social: true } },
         ubicacion: { select: { codigo: true, nombre: true } },
@@ -217,6 +221,9 @@ export async function GET() {
           proveedor_nombre: c.proveedor?.razon_social ?? null,
           ubicacion_nombre: c.ubicacion?.nombre ?? null,
           fecha_solicitud: c.fecha_solicitud,
+          // Creación de la PO (fecha+hora) y quién la creó (pedido 2026-11-10).
+          creado_en: c.createdAt,
+          creado_por: c.usuario_solicita ?? null,
           fecha_entrega_esperada: c.fecha_entrega_esperada,
           status_oc_codigo: c.status_oc_codigo,
           total: c.total,

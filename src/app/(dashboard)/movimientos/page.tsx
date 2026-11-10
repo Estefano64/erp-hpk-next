@@ -134,6 +134,9 @@ interface POPendiente {
   proveedor_nombre: string | null;
   almacen_nombre: string | null;
   fecha_solicitud: string;
+  // Creación de la PO (fecha+hora ISO) y quién la creó.
+  creado_en?: string | null;
+  creado_por?: string | null;
   fecha_entrega_esperada: string | null;
   estado: string;
   total: number;
@@ -501,6 +504,8 @@ interface ItemFila {
   proveedor_nombre: string | null;
   almacen_nombre: string | null;
   fecha_entrega_esperada: string | null;
+  creado_en: string | null;
+  creado_por: string | null;
   estado: string;
   observaciones_compra: string | null;
   // material_id puede ser null para items "free" (CAD sin catálogo).
@@ -636,6 +641,8 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
         proveedor_nombre: po.proveedor_nombre,
         almacen_nombre: po.almacen_nombre,
         fecha_entrega_esperada: po.fecha_entrega_esperada,
+        creado_en: po.creado_en ?? null,
+        creado_por: po.creado_por ?? null,
         estado: po.estado,
         observaciones_compra: (po as POPendiente & { observaciones?: string | null }).observaciones ?? null,
         material_id: i.material_id,
@@ -823,6 +830,17 @@ export function TabIngresoPO({ onRefresh }: { onRefresh: () => void }) {
       onFilter: (value, r) => r.proveedor_nombre === value,
       render: (v: string | null) => v || "-",
     },
+    {
+      key: "creado_en",
+      title: "Creación PO",
+      dataIndex: "creado_en",
+      width: 130,
+      sorter: (a, b) => (a.creado_en ?? "").localeCompare(b.creado_en ?? ""),
+      render: (v: string | null) => v
+        ? new Date(v).toLocaleString("es-PE", { timeZone: "America/Lima", day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })
+        : "-",
+    },
+    { key: "creado_por", title: "Creada por", dataIndex: "creado_por", width: 130, ellipsis: true, ...filtroPorColumna(filasAplanadas, "creado_por"), render: (v: string | null) => v || "-" },
     {
       key: "ot_codigo",
       title: "OT",
