@@ -29,13 +29,14 @@ import {
   ReloadOutlined,
   FilePdfOutlined,
 } from "@ant-design/icons";
-import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import dayjs from "dayjs";
 import { formatDateOnly, dateOnlyLocal } from "@/lib/dates";
 import {
   numeracionColumn,
+  columnasParaExcel,
+  type ColumnasConExcel,
   paginacionEstandar,
   PAGINATION_PAGE_SIZE,
   useColumnasOcultas,
@@ -300,8 +301,8 @@ export default function EquiposPage() {
     messageApi.error(body?.detail ?? body?.error ?? "Error al eliminar");
   }
 
-  const columns: ColumnsType<EquipoRecord> = [
-    numeracionColumn<EquipoRecord>({ current: page, pageSize }),
+  const columns: ColumnasConExcel<EquipoRecord> = [
+    { ...numeracionColumn<EquipoRecord>({ current: page, pageSize }), excel: false },
     {
       key: "codigo",
       title: "Código",
@@ -310,8 +311,9 @@ export default function EquiposPage() {
       sorter: (a, b) => a.codigo.localeCompare(b.codigo),
       ...filtroPorColumna(data, "codigo"),
       render: (v: string) => <Tag color={brand.navy}>{v}</Tag>,
+      excel: { label: "Código", value: (r) => r.codigo },
     },
-    { key: "descripcion", title: "Descripción", dataIndex: "descripcion", width: 220, ellipsis: true, sorter: (a: EquipoRecord, b: EquipoRecord) => a.descripcion.localeCompare(b.descripcion), ...filtroPorColumna(data, "descripcion") },
+    { key: "descripcion", title: "Descripción", dataIndex: "descripcion", width: 220, ellipsis: true, sorter: (a: EquipoRecord, b: EquipoRecord) => a.descripcion.localeCompare(b.descripcion), ...filtroPorColumna(data, "descripcion"), excel: { label: "Descripción", value: (r) => r.descripcion } },
     {
       key: "status_codigo",
       title: "Estado",
@@ -325,6 +327,7 @@ export default function EquiposPage() {
       render: (v: string, r: EquipoRecord) => (
         <Tag color={statusColors[v] ?? "default"}>{r.status?.nombre ?? v}</Tag>
       ),
+      excel: { label: "Estado", value: (r) => r.status?.nombre ?? r.status_codigo },
     },
     {
       key: "tipo_codigo",
@@ -337,6 +340,7 @@ export default function EquiposPage() {
       filterSearch: true,
       onFilter: (value, r) => (r.tipo?.nombre ?? r.tipo_codigo) === value,
       render: (_: string, r: EquipoRecord) => r.tipo?.nombre ?? r.tipo_codigo,
+      excel: { label: "Tipo", value: (r) => r.tipo?.nombre ?? r.tipo_codigo },
     },
     {
       key: "area_codigo",
@@ -349,6 +353,7 @@ export default function EquiposPage() {
       filterSearch: true,
       onFilter: (value, r) => (r.area?.nombre ?? r.area_codigo) === value,
       render: (_: string, r: EquipoRecord) => r.area?.nombre ?? r.area_codigo,
+      excel: { label: "Área", value: (r) => r.area?.nombre ?? r.area_codigo },
     },
     {
       key: "sub_area_codigo",
@@ -361,6 +366,7 @@ export default function EquiposPage() {
       filterSearch: true,
       onFilter: (value, r) => (r.sub_area?.nombre ?? r.sub_area_codigo) === value,
       render: (_: string, r: EquipoRecord) => r.sub_area?.nombre ?? r.sub_area_codigo ?? "-",
+      excel: { label: "Sub Área", value: (r) => r.sub_area?.nombre ?? r.sub_area_codigo ?? "" },
     },
     {
       key: "fabricante_codigo",
@@ -374,9 +380,10 @@ export default function EquiposPage() {
       filterSearch: true,
       onFilter: (value, r) => (r.fabricante?.nombre ?? r.fabricante_codigo) === value,
       render: (_: string, r: EquipoRecord) => r.fabricante?.nombre ?? r.fabricante_codigo ?? "-",
+      excel: { label: "Fabricante", value: (r) => r.fabricante?.nombre ?? r.fabricante_codigo ?? "" },
     },
-    { key: "modelo", title: "Modelo", dataIndex: "modelo", width: 120, ellipsis: true, sorter: (a: EquipoRecord, b: EquipoRecord) => (a.modelo ?? "").localeCompare(b.modelo ?? ""), ...filtroPorColumna(data, "modelo"), render: (v: string | null) => v ?? "-" },
-    { key: "numero_serie", title: "N/S", dataIndex: "numero_serie", width: 130, ellipsis: true, ...filtroPorColumna(data, "numero_serie"), render: (v: string | null) => v ?? "-" },
+    { key: "modelo", title: "Modelo", dataIndex: "modelo", width: 120, ellipsis: true, sorter: (a: EquipoRecord, b: EquipoRecord) => (a.modelo ?? "").localeCompare(b.modelo ?? ""), ...filtroPorColumna(data, "modelo"), render: (v: string | null) => v ?? "-", excel: { label: "Modelo", value: (r) => r.modelo ?? "" } },
+    { key: "numero_serie", title: "N/S", dataIndex: "numero_serie", width: 130, ellipsis: true, ...filtroPorColumna(data, "numero_serie"), render: (v: string | null) => v ?? "-", excel: { label: "N/S", value: (r) => r.numero_serie ?? "" } },
     {
       key: "capacidad",
       title: "Capacidad",
@@ -390,6 +397,10 @@ export default function EquiposPage() {
         const und = r.unidad_medida?.abreviatura ?? r.unidad_medida_codigo ?? "";
         return `${r.capacidad} ${und}`;
       },
+      excel: [
+        { label: "Capacidad", value: (r) => r.capacidad ?? "" },
+        { label: "UM Capacidad", value: (r) => r.unidad_medida?.abreviatura ?? r.unidad_medida_codigo ?? "" },
+      ],
     },
     {
       key: "criticidad_codigo",
@@ -406,6 +417,7 @@ export default function EquiposPage() {
         if (!v) return "-";
         return <Tag color={criticidadColors[v] ?? "default"}>{r.criticidad?.nombre ?? v}</Tag>;
       },
+      excel: { label: "Criticidad", value: (r) => r.criticidad?.nombre ?? r.criticidad_codigo ?? "" },
     },
     {
       key: "precio",
@@ -423,6 +435,10 @@ export default function EquiposPage() {
         const sym = r.moneda?.simbolo ?? "$";
         return `${sym} ${Number(v).toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
       },
+      excel: [
+        { label: "Precio", value: (r) => r.precio != null ? Number(r.precio) : "", z: "#,##0.00" },
+        { label: "Moneda", value: (r) => r.moneda_codigo ?? "" },
+      ],
     },
     {
       key: "cantidad", title: "Cant.", dataIndex: "cantidad", width: 60, align: "center",
@@ -431,6 +447,7 @@ export default function EquiposPage() {
         .map((v) => ({ text: String(v), value: String(v) })),
       filterSearch: true,
       onFilter: (value, r) => String(r.cantidad) === value,
+      excel: { label: "Cantidad", value: (r) => r.cantidad },
     },
     {
       key: "planta_codigo",
@@ -443,49 +460,59 @@ export default function EquiposPage() {
       filterSearch: true,
       onFilter: (value, r) => (r.planta?.nombre ?? r.planta_codigo) === value,
       render: (_: string, r: EquipoRecord) => r.planta?.nombre ?? r.planta_codigo,
+      excel: { label: "Planta", value: (r) => r.planta?.nombre ?? r.planta_codigo },
     },
     // ── Columnas opcionales (ocultas por default) ──
     {
       key: "descripcion", title: "Descripción", dataIndex: "descripcion", width: 220, ellipsis: true,
       ...filtroPorColumna(data, "descripcion"),
       render: (v: string) => v ?? "-",
+      excel: false, // duplicada de la columna "descripcion" principal; ya se exporta arriba
     },
     {
       key: "modelo", title: "Modelo", dataIndex: "modelo", width: 140,
       ...filtroPorColumna(data, "modelo"),
       render: (v: string | null) => v ?? "-",
+      excel: false, // duplicada de la columna "modelo" principal
     },
     {
       key: "numero_serie", title: "N° Serie", dataIndex: "numero_serie", width: 140,
       ...filtroPorColumna(data, "numero_serie"),
       render: (v: string | null) => v ?? "-",
+      excel: false, // duplicada de la columna "numero_serie" principal
     },
     {
       key: "numero_parte", title: "N° Parte", dataIndex: "numero_parte", width: 140,
       ...filtroPorColumna(data, "numero_parte"),
       render: (v: string | null) => v ?? "-",
+      excel: { label: "N° Parte", value: (r) => r.numero_parte ?? "" },
     },
     {
       key: "ubicacion_codigo", title: "Ubicación", dataIndex: "ubicacion_codigo", width: 120,
       ...filtroPorColumna(data, "ubicacion_codigo"),
       render: (v: string | null) => v ?? "-",
+      excel: { label: "Ubicación", value: (r) => r.ubicacion?.nombre ?? r.ubicacion_codigo ?? "" },
     },
     {
       key: "fecha_inicio", title: "Inicio operación", dataIndex: "fecha_inicio", width: 130,
       render: (v: string | null) => formatDateOnly(v),
+      excel: { label: "Fecha inicio", value: (r) => dateOnlyLocal(r.fecha_inicio) },
     },
     {
       key: "fecha_fabricacion", title: "Fabricación", dataIndex: "fecha_fabricacion", width: 130,
       render: (v: string | null) => formatDateOnly(v),
+      excel: { label: "Fecha fabricación", value: (r) => dateOnlyLocal(r.fecha_fabricacion) },
     },
     {
       key: "observaciones", title: "Observaciones", dataIndex: "observaciones", width: 220, ellipsis: true,
       render: (v: string | null) => v ?? "-",
+      excel: { label: "Observaciones", value: (r) => r.observaciones ?? "" },
     },
     {
       key: "usuario_responsable", title: "Responsable", dataIndex: "usuario_responsable", width: 150,
       ...filtroPorColumna(data, "usuario_responsable"),
       render: (v: string | null) => v ?? "-",
+      excel: { label: "Responsable", value: (r) => r.usuario_responsable ?? "" },
     },
     {
       key: "acciones",
@@ -493,6 +520,7 @@ export default function EquiposPage() {
       width: 140,
       align: "center",
       fixed: "right",
+      excel: false,
       render: (_: unknown, record: EquipoRecord) => {
         // Ficha técnica solo aplica a Máquinas (MAQ) y Herramientas (HER).
         const aplicaFichaTecnica = record.tipo_codigo === "MAQ" || record.tipo_codigo === "HER";
@@ -593,31 +621,8 @@ export default function EquiposPage() {
                 predicate: (r, sel) => sel.includes(r.area_codigo ?? ""),
               },
             ]}
-            columns={[
-              { label: "Código", value: (r) => r.codigo },
-              { label: "Descripción", value: (r) => r.descripcion },
-              { label: "Status", value: (r) => r.status?.nombre ?? r.status_codigo },
-              { label: "Tipo", value: (r) => r.tipo?.nombre ?? r.tipo_codigo },
-              { label: "Planta", value: (r) => r.planta?.nombre ?? r.planta_codigo },
-              { label: "Área", value: (r) => r.area?.nombre ?? r.area_codigo },
-              { label: "Sub-área", value: (r) => r.sub_area?.nombre ?? r.sub_area_codigo ?? "" },
-              { label: "Fabricante", value: (r) => r.fabricante?.nombre ?? r.fabricante_codigo ?? "" },
-              { label: "Modelo", value: (r) => r.modelo ?? "" },
-              { label: "Nº Serie", value: (r) => r.numero_serie ?? "" },
-              { label: "Nº Parte", value: (r) => r.numero_parte ?? "" },
-              { label: "Capacidad", value: (r) => r.capacidad ?? "" },
-              { label: "UM Capacidad", value: (r) => r.unidad_medida?.abreviatura ?? r.unidad_medida_codigo ?? "" },
-              { label: "Criticidad", value: (r) => r.criticidad?.nombre ?? r.criticidad_codigo ?? "" },
-              { label: "Cantidad", value: (r) => r.cantidad },
-              { label: "Precio", value: (r) => r.precio != null ? Number(r.precio) : "", z: "#,##0.00" },
-              { label: "Moneda", value: (r) => r.moneda_codigo ?? "" },
-              { label: "Ubicación", value: (r) => r.ubicacion?.nombre ?? r.ubicacion_codigo ?? "" },
-              { label: "Responsable", value: (r) => r.usuario_responsable ?? "" },
-              // Fechas como Date real (celda fecha en Excel); dateOnlyLocal evita el corrimiento de día en Lima.
-              { label: "Fecha inicio", value: (r) => dateOnlyLocal(r.fecha_inicio) },
-              { label: "Fecha fabricación", value: (r) => dateOnlyLocal(r.fecha_fabricacion) },
-              { label: "Observaciones", value: (r) => r.observaciones ?? "" },
-            ]}
+            columns={columnasParaExcel(columnsResizable)}
+            tablaLayout={{ ocultas }}
           />
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
             Nuevo Equipo
