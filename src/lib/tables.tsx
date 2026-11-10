@@ -933,7 +933,7 @@ export function useColumnasRedimensionables<T>(
   // si no hay dataIndex o si la columna ya tiene filtros/filterDropdown.
   function autoFiltros(col: ColumnType<T>): Partial<ColumnType<T>> {
     if (!dataParaFiltros || dataParaFiltros.length === 0) return {};
-    if (col.filters || col.filterDropdown) return {};
+    if (col.filterDropdown) return {};
     const di = (col as { dataIndex?: React.Key | React.Key[] }).dataIndex;
     if (di === undefined) return {};
     const path = Array.isArray(di) ? di : [di];
@@ -945,6 +945,21 @@ export function useColumnasRedimensionables<T>(
       }
       return v;
     };
+    // Columna con `filters` propios (lista fija o armada a mano): se respetan
+    // tal cual, pero si hay filas vacías en el dataSource se les agrega la
+    // opción "(vacío)" (pedido 2026-11-10: poder filtrar los en blanco en
+    // TODAS las columnas con filtro, no solo en las automáticas).
+    if (col.filters) {
+      const propios = col.filters;
+      const yaTieneVacio = propios.some((f) => f.value === FILTRO_VACIO_VALUE);
+      const onOrig = col.onFilter;
+      if (yaTieneVacio || !onOrig || !dataParaFiltros.some((r) => esVacio(read(r)))) return {};
+      return {
+        filters: [...propios, { text: FILTRO_VACIO_LABEL, value: FILTRO_VACIO_VALUE }],
+        onFilter: (value: boolean | React.Key, record: T) =>
+          value === FILTRO_VACIO_VALUE ? esVacio(read(record)) : onOrig(value, record),
+      };
+    }
     const set = new Set<string>();
     let hayVacios = false;
     for (const r of dataParaFiltros) {
