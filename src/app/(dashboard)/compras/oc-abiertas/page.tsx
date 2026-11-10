@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Typography, Card, Table, Tag, Space, Button, Input, Empty, Row, Col, Statistic, App,
+  Typography, Card, Table, Tag, Space, Button, Input, Empty, Row, Col, Statistic, App, Segmented, Checkbox,
 } from "antd";
 import {
   ReloadOutlined, SearchOutlined, FolderOpenOutlined, EditOutlined,
@@ -19,7 +19,7 @@ import dayjs from "dayjs";
 import { brand } from "@/lib/theme";
 import {
   numeracionColumn, paginacionEstandar, PAGINATION_PAGE_SIZE, STICKY_HEADER,
-  useColumnasRedimensionables,
+  useColumnasRedimensionables, filtroPorColumna,
 } from "@/lib/tables";
 
 const { Title, Text } = Typography;
@@ -49,6 +49,26 @@ interface OCAbierta {
   }>;
 }
 
+// Una línea (ítem) de una OC abierta, aplanada para la vista "Por ítem".
+interface ItemFila {
+  key: string;
+  oc_id: number;
+  numero_po: string;
+  fuente: string;
+  moneda: string;
+  fecha_expiracion: string | null;
+  detalle_id: number;
+  codigo: string | null;
+  np: string | null;
+  descripcion: string | null;
+  um: string | null;
+  total: number;
+  consumida: number;
+  disponible: number;
+  precio: number;
+  valor_disponible: number;
+}
+
 // Exportado con nombre para que /compras pueda embeber esta vista como tab
 // "OCs Abiertas (almacén abierto)" sin navegar. Mismo patrón que
 // TabIngresoPO (commit fce79d6) y RequerimientosDetalleEmbebido (a79d348).
@@ -61,6 +81,10 @@ export default function OCAbiertasListPage() {
   const [rows, setRows] = useState<OCAbierta[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  // "Por OC" = una fila por OC; "Por ítem" = una fila por línea con su stock
+  // disponible (pedido 2026-11-10).
+  const [vista, setVista] = useState<"oc" | "items">("items");
+  const [soloConStock, setSoloConStock] = useState(true);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
 
@@ -206,6 +230,84 @@ export default function OCAbiertasListPage() {
   const { columnas: columnsResizable, components: tableComponents, TableDragWrapper } =
     useColumnasRedimensionables<OCAbierta>(columns, "oc-abiertas-cols-widths-v1");
 
+  // ── Vista "Por ítem": una fila por línea de cada OC abierta ──
+  const itemsPlanos = useMemo<ItemFila[]>(() => {
+    const limpiar = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    const q = limpiar(search.trim());
+    return rows.flatMap((oc) =>
+      oc.items.map((i): ItemFila => ({
+        key: `${oc.id}-${i.detalle_id}`,
+        oc_id: oc.id,
+        numero_po: oc.numero_po,
+        fuente: oc.fuente_display,
+        moneda: oc.moneda,
+        fecha_expiracion: oc.fecha_expiracion,
+        detalle_id: i.detalle_id,
+        codigo: i.material_codigo,
+        np: i.np,
+        descripcion: i.descripcion,
+        um: i.um,
+        total: i.cantidad_total,
+        consumida: i.cantidad_consumida,
+        disponible: i.stock_disponible,
+        precio: i.precio_unitario,
+        valor_disponible: Number((i.stock_disponible * i.precio_unitario).toFixed(2)),
+      })),
+    ).filter((f) => {
+      if (soloConStock && f.disponible <= 0) return false;
+      if (!q) return true;
+      return [f.numero_po, f.fuente, f.codigo, f.np, f.descripcion].some((t) => limpiar(t ?? "").includes(q));
+    });
+  }, [rows, search, soloConStock]);
+
+  const columnsItems: ColumnsType<ItemFila> = [
+    numeracionColumn<ItemFila>({ current: page, pageSize }),
+    {
+      key: "numero_po", title: "Nro OC", dataIndex: "numero_po", width: 110,
+      ...filtroPorColumna(itemsPlanos, "numero_po"),
+      render: (v: string) => <Tag color={brand.navy}>{v}</Tag>,
+    },
+    { key: "codigo", title: "Código", dataIndex: "codigo", width: 140, ...filtroPorColumna(itemsPlanos, "codigo"), render: (v: string | null) => v ?? "—" },
+    { key: "np", title: "NP", dataIndex: "np", width: 130, ...filtroPorColumna(itemsPlanos, "np"), render: (v: string | null) => v ?? "—" },
+    { key: "descripcion", title: "Descripción", dataIndex: "descripcion", width: 280, ellipsis: true, ...filtroPorColumna(itemsPlanos, "descripcion"), render: (v: string | null) => v ?? "—" },
+    { key: "total", title: "Total OC", dataIndex: "total", width: 90, align: "right", sorter: (a, b) => a.total - b.total },
+    { key: "consumida", title: "Consumido", dataIndex: "consumida", width: 100, align: "right", sorter: (a, b) => a.consumida - b.consumida },
+    {
+      key: "disponible", title: "Disponible", dataIndex: "disponible", width: 110, align: "right",
+      sorter: (a, b) => a.disponible - b.disponible,
+      render: (v: number, r) => (
+        <Space size={4}>
+          <Text strong type={v <= 0 ? "danger" : undefined}>{v.toLocaleString("es-PE")}</Text>
+          <Text type="secondary" style={{ fontSize: 11 }}>{r.um ?? ""}</Text>
+        </Space>
+      ),
+    },
+    {
+      key: "precio", title: "P. Unit.", dataIndex: "precio", width: 100, align: "right",
+      sorter: (a, b) => a.precio - b.precio,
+      render: (v: number, r) => `${r.moneda} ${v.toFixed(2)}`,
+    },
+    {
+      key: "valor_disponible", title: "Valor disponible", dataIndex: "valor_disponible", width: 130, align: "right",
+      sorter: (a, b) => a.valor_disponible - b.valor_disponible,
+      render: (v: number, r) => <Text strong style={{ color: brand.navy }}>{r.moneda} {v.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>,
+    },
+    {
+      key: "fecha_expiracion", title: "F. expira", dataIndex: "fecha_expiracion", width: 110, align: "center",
+      render: (v: string | null) => (v ? dayjs(v).format("DD/MM/YY") : <Text type="secondary">Sin expiración</Text>),
+    },
+    {
+      key: "acciones", title: "Acciones", width: 100, align: "center", fixed: "right",
+      render: (_v, r) => (
+        <Button size="small" icon={<EditOutlined />} onClick={() => router.push(`/compras/oc-abiertas/${r.oc_id}`)}>
+          Ver OC
+        </Button>
+      ),
+    },
+  ];
+  const { columnas: columnsItemsResizable, components: itemsComponents, TableDragWrapper: ItemsDragWrapper } =
+    useColumnasRedimensionables<ItemFila>(columnsItems, "oc-abiertas-items-cols-widths-v1");
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
@@ -233,9 +335,42 @@ export default function OCAbiertasListPage() {
           onChange={(e) => setSearch(e.target.value)}
           style={{ width: 380 }}
         />
+        <Segmented
+          style={{ marginLeft: 12 }}
+          value={vista}
+          onChange={(v) => { setVista(v as "oc" | "items"); setPage(1); }}
+          options={[{ value: "items", label: "Por ítem" }, { value: "oc", label: "Por OC" }]}
+        />
+        {vista === "items" && (
+          <Checkbox style={{ marginLeft: 12 }} checked={soloConStock} onChange={(e) => { setSoloConStock(e.target.checked); setPage(1); }}>
+            Solo con stock disponible
+          </Checkbox>
+        )}
       </Card>
 
-      {filtradas.length === 0 && !loading ? (
+      {vista === "items" ? (
+        itemsPlanos.length === 0 && !loading ? (
+          <Empty description="No hay ítems que coincidan." />
+        ) : (
+          <ItemsDragWrapper>
+            <Table<ItemFila>
+              rowKey="key"
+              size="small"
+              columns={columnsItemsResizable}
+              components={itemsComponents}
+              dataSource={itemsPlanos}
+              loading={loading}
+              sticky={STICKY_HEADER}
+              scroll={{ x: "max-content" }}
+              pagination={paginacionEstandar({
+                current: page, pageSize, total: itemsPlanos.length,
+                onChange: (p, s) => { setPage(p); setPageSize(s); },
+                label: "ítems",
+              })}
+            />
+          </ItemsDragWrapper>
+        )
+      ) : filtradas.length === 0 && !loading ? (
         <Empty description="No hay OCs abiertas activas." />
       ) : (
         <TableDragWrapper>
