@@ -34,7 +34,7 @@ export async function GET() {
 
     const otsRaw = await prisma.ordenTrabajo.findMany({
       where: {
-        ot_status_codigo: { notIn: ["Cerrada", "Anulada", "Entregada"] },
+        ot_status_codigo: { notIn: ["Cerrada", "Anulada", "Entregada", "No Ejecutada"] },
       },
       orderBy: { fecha_recepcion: "desc" },
       select: {

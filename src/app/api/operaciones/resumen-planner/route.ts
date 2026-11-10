@@ -94,7 +94,7 @@ export async function GET(req: NextRequest) {
         prisma.ordenTrabajo.findMany({
           where: {
             activo: true,
-            ot_status_codigo: { not: "Cerrada" },
+            ot_status_codigo: { notIn: ["Cerrada", "No Ejecutada"] },
             OR: [
               { fecha_reprogramada: { lte: en7dias } },
               { fecha_reprogramada: null, fecha_requerimiento_cliente: { lte: en7dias } },

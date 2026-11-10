@@ -17,7 +17,8 @@ import { hoyEnLima } from "@/lib/dates";
 import { formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
 import { SEGUIMIENTO_DESDE, estadoServicio, type EnvioLite } from "@/lib/servicios-externos";
 
-const OT_CERRADA = ["Cerrada", "Anulada", "Entregada"];
+// "No Ejecutada" también es final (2026-11-10): no cuenta como pendiente.
+const OT_CERRADA = ["Cerrada", "Anulada", "Entregada", "No Ejecutada"];
 const TRAMOS = [3, 7, 15] as const; // 0-3, 4-7, 8-15, 16+
 
 type Tope = { id: number; titulo: string; detalle: string | null; dias: number; href: string };

@@ -22,7 +22,7 @@ import { prisma, SELECT_SER, cargarDocsOC, cargarLotes, serializarSer } from "@/
 import { SERVICIO_ESTADOS, type ServicioEstado } from "@/lib/servicios-externos";
 
 // Estados de OT que ya no admiten registrar llegada (mismo criterio que programacion-dashboard).
-const OT_CERRADA = ["Cerrada", "Anulada", "Entregada"];
+const OT_CERRADA = ["Cerrada", "Anulada", "Entregada", "No Ejecutada"];
 
 export async function GET(req: NextRequest) {
   const token = await getToken({ req });
