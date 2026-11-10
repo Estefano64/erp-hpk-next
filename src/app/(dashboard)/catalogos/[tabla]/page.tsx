@@ -10,7 +10,6 @@ import {
   PlusOutlined, ArrowLeftOutlined, EditOutlined, DeleteOutlined,
   EyeInvisibleOutlined, SearchOutlined, ReloadOutlined,
 } from "@ant-design/icons";
-import type { ColumnsType } from "antd/es/table";
 import {
   numeracionColumn,
   useColumnasOcultas,
@@ -18,6 +17,8 @@ import {
   visibleColumns,
   filtroPorColumna,
   useColumnasRedimensionables,
+  columnasParaExcel,
+  type ColumnasConExcel,
   paginacionEstandar,
 } from "@/lib/tables";
 import { brand } from "@/lib/theme";
@@ -190,8 +191,18 @@ export default function CatalogoCrudPage() {
   // Columnas dinámicas — todas con filtro tipo Excel basado en los datos cargados.
   // Se construyen aunque falte cfg para no romper el orden de hooks (el hook de
   // redimensionado va más abajo y debe llamarse siempre). El early-return va después.
-  const columns: ColumnsType<CatalogRow> = (cfg?.fields ?? []).map<ColumnsType<CatalogRow>[number]>((f) => {
+  const columns: ColumnasConExcel<CatalogRow> = (cfg?.fields ?? []).map<ColumnasConExcel<CatalogRow>[number]>((f) => {
     const base = {
+      excel: {
+        label: f.label,
+        value: (r: CatalogRow) => {
+          const v = r[f.key];
+          if (v === null || v === undefined) return "";
+          if (f.type === "boolean") return v ? "Sí" : "No";
+          if (typeof v === "object") return JSON.stringify(v);
+          return v as string | number;
+        },
+      },
       title: f.label,
       key: f.key,
       dataIndex: f.key,
@@ -260,6 +271,7 @@ export default function CatalogoCrudPage() {
   if (cfg) columns.push({
     title: "",
     key: "actions",
+    excel: false,
     width: 120,
     fixed: "right",
     render: (_, r) => {
@@ -299,7 +311,7 @@ export default function CatalogoCrudPage() {
     },
   });
 
-  const allColumns = [numeracionColumn<CatalogRow>(), ...columns];
+  const allColumns: ColumnasConExcel<CatalogRow> = [{ ...numeracionColumn<CatalogRow>(), excel: false }, ...columns];
   const { columnas: columnsResizable, components: tableComponents, resetAnchos, TableDragWrapper } =
     useColumnasRedimensionables<CatalogRow>(allColumns, `catalogos-${cfg?.id ?? tabla}-cols-widths-v1`, { data: filtered });
 
@@ -347,16 +359,8 @@ export default function CatalogoCrudPage() {
             // Filtrado client-side: pasamos directamente las filas ya filtradas
             // por búsqueda + showInactivos para respetar lo que el usuario ve.
             currentRows={filtered}
-            columns={cfg.fields.map((f) => ({
-              label: f.label,
-              value: (r) => {
-                const v = r[f.key];
-                if (v === null || v === undefined) return "";
-                if (f.type === "boolean") return v ? "Sí" : "No";
-                if (typeof v === "object") return JSON.stringify(v);
-                return v as string | number;
-              },
-            }))}
+            columns={columnasParaExcel(columnsResizable)}
+            tablaLayout={{ ocultas }}
           />
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nuevo</Button>
         </Space>
