@@ -167,7 +167,9 @@ export interface ExcelSpec<T> {
 }
 export type ColumnasConExcel<T> = (ColumnType<T> & { excel?: false | ExcelSpec<T> | ExcelSpec<T>[] })[];
 
-export function columnasParaExcel<T>(cols: ColumnsType<T>): ExportColumn<T>[] {
+// `extras`: columnas que solo existen en el Excel (datos que el listado no
+// trae a propósito); se agregan al final y no dependen de la visibilidad.
+export function columnasParaExcel<T>(cols: ColumnsType<T>, extras: ExportColumn<T>[] = []): ExportColumn<T>[] {
   const out: ExportColumn<T>[] = [];
   for (const c of cols) {
     const key = (c as { key?: React.Key }).key;
@@ -191,7 +193,7 @@ export function columnasParaExcel<T>(cols: ColumnsType<T>): ExportColumn<T>[] {
       });
     });
   }
-  return out;
+  return [...out, ...extras];
 }
 
 // Filtra las columnas según las claves ocultas. Las columnas sin `key` siempre se conservan.

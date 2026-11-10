@@ -41,6 +41,8 @@ import {
   RangoFechasFiltro,
   useColumnasRedimensionables,
   useAbortableFetch,
+  columnasParaExcel,
+  type ColumnasConExcel,
 } from "@/lib/tables";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
@@ -50,7 +52,7 @@ import { formatDateOnly, dateOnlyLocal } from "@/lib/dates";
 import { diasEnTaller } from "@/lib/dias-taller";
 import { puedeVerCostosOT } from "@/lib/acceso-rutas";
 import OTDetalleModal from "@/components/modules/ordenes-trabajo/OTDetalleModal";
-import { ExportarExcelButton } from "@/components/ExportarExcelButton";
+import { ExportarExcelButton, type ExportColumn } from "@/components/ExportarExcelButton";
 import { formatOtCodigo } from "@/lib/ot-formato";
 
 const { Title } = Typography;
@@ -127,6 +129,14 @@ interface OTRecord {
   // importado del Excel "Data_data". Independiente de tipo_reparacion.
   caracteristica_cilindro?: string | null;
   dias_en_taller?: number | null;
+  // Solo vienen con ?export=1 (el listado los omite para aligerar el payload);
+  // salen únicamente en el Excel (ver EXCEL_EXTRAS).
+  nro_informe_evaluacion?: string | null;
+  nro_cotizacion?: string | null;
+  fecha_entrega?: string | null;
+  cumplimiento?: string | null;
+  dias_proceso?: number | null;
+  nro_factura?: string | null;
   // Portal de clientes: si la OT está publicada para el cliente (opt-in).
   visible_portal?: boolean;
   // Estado de la hoja de evaluación técnica (último registro). null = sin
@@ -146,19 +156,19 @@ interface OTRecord {
   };
 }
 
-// Campos extra que la API devuelve y van al Excel pero no se renderizan en la
-// tabla. Los que ya tienen columna propia (fecha_evaluacion, evaluador,
-// fecha_cotizacion, fecha_aprobacion, fecha_facturacion, dias_en_taller,
-// reparacion_externa, vendor_externo) ya están en OTRecord; acá quedan solo
-// los export-only puros.
-interface OTRecordExport extends OTRecord {
-  nro_informe_evaluacion?: string | null;
-  nro_cotizacion?: string | null;
-  fecha_entrega?: string | null;
-  cumplimiento?: string | null;
-  dias_proceso?: number | null;
-  nro_factura?: string | null;
-}
+type OTRecordExport = OTRecord;
+
+// Columnas que SOLO existen en el Excel (el listado las omite para aligerar el
+// payload; ver omitExportOnly en /api/ordenes-trabajo). Todo lo demás sale de
+// las columnas de la tabla (`excel` en cada una) vía columnasParaExcel.
+const EXCEL_EXTRAS: ExportColumn<OTRecord>[] = [
+  { key: "nro_informe_evaluacion", label: "Nro Informe Evaluación", value: (r) => r.nro_informe_evaluacion ?? "" },
+  { key: "nro_cotizacion", label: "Nro Cotización", value: (r) => r.nro_cotizacion ?? "" },
+  { key: "fecha_entrega", label: "Fecha Entrega", value: (r) => dateOnlyLocal(r.fecha_entrega ?? null) },
+  { key: "cumplimiento", label: "Cumplimiento", value: (r) => r.cumplimiento ?? "" },
+  { key: "dias_proceso", label: "Días Proceso", value: (r) => r.dias_proceso ?? "" },
+  { key: "nro_factura", label: "Nro Factura", value: (r) => r.nro_factura ?? "" },
+];
 
 const otStatusColor: Record<string, string> = {
   Abierta: "blue",
@@ -290,8 +300,9 @@ export default function OrdenesTrabajoPage() {
   // v4: "po_cliente" pasa a VISIBLE por default (pedido del equipo —
   // necesitan ver el N° de OC del cliente sin tener que activarla).
   // El bump v3→v4 resetea una vez la preferencia de columnas guardada.
-  const { ocultas, setOcultas } = useColumnasOcultas("ordenes-trabajo-list-cols-v4", [
-    "tipo", "np", "cod_rep_flota", "fabricante",
+  // v5 (2026-11-10): columna NS nueva (oculta por default) al unificar tabla y Excel.
+  const { ocultas, setOcultas } = useColumnasOcultas("ordenes-trabajo-list-cols-v5", [
+    "ns", "tipo", "np", "cod_rep_flota", "fabricante",
     "plaqueteo", "wo_cliente", "po_item", "id_viajero", "guia_remision", "empresa_entrega",
     "usuario_crea", "fecha_creacion",
     "pcr", "horas", "contrato_dias",
@@ -445,10 +456,11 @@ export default function OrdenesTrabajoPage() {
     setPage(1);
   }
 
-  const columns: ColumnsType<OTRecord> = [
-    numeracionColumn<OTRecord>({ current: page, pageSize }),
+  // Definición única: cada columna trae `excel` (lo que sale en el .xlsx).
+  const columns: ColumnasConExcel<OTRecord> = [
+    { ...numeracionColumn<OTRecord>({ current: page, pageSize }), excel: false },
     {
-      key: "ot",
+      key: "ot", excel: { label: "OT", value: (r) => formatOtCodigo(r.ot, r.tipo_ot?.codigo ?? r.tipo_codigo, "") },
       title: "OT",
       dataIndex: "ot",
       width: 150,
@@ -471,7 +483,7 @@ export default function OrdenesTrabajoPage() {
       ),
     },
     {
-      key: "cliente",
+      key: "cliente", excel: { label: "Cliente", value: (r) => r.cliente?.nombre_comercial ?? r.cliente?.razon_social ?? "" },
       title: "Cliente",
       dataIndex: "cliente",
       width: 150,
@@ -480,7 +492,7 @@ export default function OrdenesTrabajoPage() {
       render: (_: unknown, r: OTRecord) => r.cliente?.nombre_comercial ?? r.cliente?.razon_social ?? "-",
     },
     {
-      key: "codigo_reparacion",
+      key: "codigo_reparacion", excel: [{ key: "cod", label: "Código Reparación", value: (r) => r.codigo_reparacion?.codigo ?? "" }, { key: "desc", label: "Cod. Rep - Descripción", value: (r) => r.codigo_reparacion?.descripcion ?? "" }],
       title: "Código Reparación",
       width: 140,
       ellipsis: true,
@@ -488,14 +500,18 @@ export default function OrdenesTrabajoPage() {
       render: (_: unknown, r: OTRecord) => r.codigo_reparacion?.codigo ?? "-",
     },
     {
-      key: "equipo_codigo",
+      key: "equipo_codigo", excel: { label: "Equipo", value: (r) => r.equipo_codigo ?? "" },
       title: "Equipo",
       dataIndex: "equipo_codigo",
       width: 100,
       sorter: (a, b) => (a.equipo_codigo ?? "").localeCompare(b.equipo_codigo ?? ""),
     },
     {
-      key: "cantidad",
+      key: "ns", title: "NS", width: 120, excel: { label: "NS", value: (r) => r.ns ?? "" },
+      render: (_: unknown, r: OTRecord) => r.ns ?? "-",
+    },
+    {
+      key: "cantidad", excel: { label: "Cantidad", value: (r) => r.cantidad ?? 1 },
       title: "Cantidad",
       dataIndex: "cantidad",
       width: 90,
@@ -511,7 +527,7 @@ export default function OrdenesTrabajoPage() {
       },
     },
     {
-      key: "descripcion",
+      key: "descripcion", excel: { label: "Descripción", value: (r) => r.descripcion ?? "" },
       title: "Descripción",
       dataIndex: "descripcion",
       width: 200,
@@ -519,7 +535,7 @@ export default function OrdenesTrabajoPage() {
       sorter: (a, b) => (a.descripcion ?? "").localeCompare(b.descripcion ?? ""),
     },
     {
-      key: "fecha_recepcion",
+      key: "fecha_recepcion", excel: { label: "Fecha Recepción", value: (r) => dateOnlyLocal(r.fecha_recepcion ?? null) },
       title: "Fecha Recepción",
       dataIndex: "fecha_recepcion",
       width: 130,
@@ -530,7 +546,7 @@ export default function OrdenesTrabajoPage() {
       // Cuántos días lleva (o estuvo) la OT en el taller. En curso = desde la
       // recepción hasta hoy; entregada = recepción → salida (despacho/entrega/
       // facturación). Ver @/lib/dias-taller.
-      key: "dias_taller",
+      key: "dias_taller", excel: { label: "Días en taller", value: (r) => diasEnTaller(r)?.dias ?? "" },
       title: "Días en taller",
       width: 120,
       align: "center",
@@ -544,7 +560,7 @@ export default function OrdenesTrabajoPage() {
       },
     },
     {
-      key: "porcentaje_pcr",
+      key: "porcentaje_pcr", excel: { label: "% PCR", value: (r) => r.porcentaje_pcr ?? "" },
       title: "% PCR",
       dataIndex: "porcentaje_pcr",
       width: 80,
@@ -553,7 +569,7 @@ export default function OrdenesTrabajoPage() {
       render: (v: number | null) => v != null ? `${v}%` : "-",
     },
     {
-      key: "prioridad_atencion",
+      key: "prioridad_atencion", excel: { label: "Prioridad", value: (r) => r.prioridad_atencion?.nombre ?? "" },
       title: "Prioridad",
       width: 90,
       align: "center",
@@ -566,7 +582,7 @@ export default function OrdenesTrabajoPage() {
         ) : "-",
     },
     {
-      key: "ot_status",
+      key: "ot_status", excel: { label: "OT Status", value: (r) => r.ot_status?.nombre ?? r.ot_status_codigo ?? "" },
       title: "OT Status",
       width: 120,
       sorter: (a, b) => (a.ot_status?.nombre ?? "").localeCompare(b.ot_status?.nombre ?? ""),
@@ -578,7 +594,7 @@ export default function OrdenesTrabajoPage() {
         ) : "-",
     },
     {
-      key: "evaluacion_estado",
+      key: "evaluacion_estado", excel: { label: "Evaluación", value: (r) => evalEstadoMeta(r.evaluaciones_tecnicas?.[0]?.estado ?? null).label },
       title: "Evaluación",
       width: 140,
       // Sin sorter: el estado vive en la relación evaluaciones_tecnicas[0] y
@@ -592,7 +608,7 @@ export default function OrdenesTrabajoPage() {
       },
     },
     {
-      key: "recursos_status",
+      key: "recursos_status", excel: { label: "Recursos", value: (r) => r.recursos_status?.nombre ?? r.recursos_status_codigo ?? "" },
       title: "Recursos",
       width: 160,
       ellipsis: true,
@@ -600,7 +616,7 @@ export default function OrdenesTrabajoPage() {
       render: (_: unknown, r: OTRecord) => r.recursos_status?.nombre ?? "-",
     },
     {
-      key: "taller_status",
+      key: "taller_status", excel: { label: "Taller", value: (r) => (r.tipo_codigo === "BIE" || r.tipo_codigo === "SER" ? "No aplica" : (r.taller_status?.nombre ?? r.taller_status_codigo ?? "")) },
       title: "Taller",
       width: 160,
       ellipsis: true,
@@ -612,7 +628,7 @@ export default function OrdenesTrabajoPage() {
           : (r.taller_status?.nombre ?? "-"),
     },
     {
-      key: "estado_po",
+      key: "estado_po", excel: { label: "Estado PO", value: (r) => ((r.adjuntos?.length ?? 0) > 0 ? "Con PO" : "Pdt de PO") },
       title: "Estado PO",
       width: 110,
       align: "center",
@@ -624,7 +640,7 @@ export default function OrdenesTrabajoPage() {
       },
     },
     {
-      key: "monto_cotizado",
+      key: "monto_cotizado", excel: [{ key: "monto", label: "Monto Cotizado", value: (r) => (r.monto_cotizacion != null && r.monto_cotizacion !== "" ? Number(r.monto_cotizacion) : ""), z: "#,##0.00" }, { key: "moneda", label: "Moneda cotización", value: (r) => r.moneda_cotizacion_codigo ?? "" }],
       title: "Monto Cotizado",
       dataIndex: "monto_cotizacion",
       width: 140,
@@ -646,132 +662,132 @@ export default function OrdenesTrabajoPage() {
     // Solo para quien puede ver costos (admin sin sin_costos).
     ...(verCostos ? [
       {
-        key: "costo_estrategia", title: "Costo Estrategia", width: 150, align: "right" as const,
+        key: "costo_estrategia", excel: { label: "Costo Estrategia", value: (r: OTRecord) => monedaTotStr(r.costos_resumen?.estrategia), defaultSelected: false }, title: "Costo Estrategia", width: 150, align: "right" as const,
         render: (_: unknown, r: OTRecord) => fmtMonedaTot(r.costos_resumen?.estrategia),
       },
       {
-        key: "costo_estimado", title: "Costo Estimado", width: 150, align: "right" as const,
+        key: "costo_estimado", excel: { label: "Costo Estimado", value: (r: OTRecord) => monedaTotStr(r.costos_resumen?.estimado), defaultSelected: false }, title: "Costo Estimado", width: 150, align: "right" as const,
         render: (_: unknown, r: OTRecord) => fmtMonedaTot(r.costos_resumen?.estimado),
       },
       {
-        key: "costo_real", title: "Costo Real", width: 150, align: "right" as const,
+        key: "costo_real", excel: { label: "Costo Real", value: (r: OTRecord) => monedaTotStr(r.costos_resumen?.real), defaultSelected: false }, title: "Costo Real", width: 150, align: "right" as const,
         render: (_: unknown, r: OTRecord) => fmtMonedaTot(r.costos_resumen?.real),
       },
       {
-        key: "costo_hh", title: "Costo HH", width: 130, align: "right" as const,
+        key: "costo_hh", excel: { label: "Costo HH", value: (r: OTRecord) => monedaTotStr(r.costos_resumen?.hh), defaultSelected: false }, title: "Costo HH", width: 130, align: "right" as const,
         render: (_: unknown, r: OTRecord) => fmtMonedaTot(r.costos_resumen?.hh),
       },
     ] : []),
     {
-      key: "tipo_ot", title: "Tipo OT", width: 100,
+      key: "tipo_ot", excel: { label: "Tipo OT", value: (r) => r.tipo_ot?.nombre ?? r.tipo_codigo ?? "" }, title: "Tipo OT", width: 100,
       render: (_: unknown, r: OTRecord) => r.tipo_ot?.nombre ?? r.tipo_codigo ?? "-",
     },
     {
-      key: "tipo", title: "Tipo (Código Reparación)", dataIndex: "tipo", width: 180,
+      key: "tipo", excel: { label: "Tipo (Código Reparación)", value: (r) => r.tipo ?? "" }, title: "Tipo (Código Reparación)", dataIndex: "tipo", width: 180,
       render: (v: string | null) => v ?? "-",
     },
     {
-      key: "np", title: "N/P", dataIndex: "np", width: 130,
+      key: "np", excel: { label: "N/P", value: (r) => r.np ?? "" }, title: "N/P", dataIndex: "np", width: 130,
       render: (v: string | null) => v ?? "-",
     },
     {
-      key: "cod_rep_flota", title: "Flota", dataIndex: "cod_rep_flota", width: 110,
+      key: "cod_rep_flota", excel: { label: "Flota", value: (r) => r.cod_rep_flota ?? "" }, title: "Flota", dataIndex: "cod_rep_flota", width: 110,
       render: (v: string | null) => v ?? "-",
     },
     {
-      key: "cod_rep_posicion", title: "Posición", dataIndex: "cod_rep_posicion", width: 100,
+      key: "cod_rep_posicion", excel: { label: "Posición", value: (r) => r.cod_rep_posicion ?? "" }, title: "Posición", dataIndex: "cod_rep_posicion", width: 100,
       render: (v: string | null) => v ?? "-",
     },
     {
-      key: "fabricante", title: "Fabricante", width: 140, ellipsis: true,
+      key: "fabricante", excel: { label: "Fabricante", value: (r) => r.fabricante?.nombre ?? "" }, title: "Fabricante", width: 140, ellipsis: true,
       render: (_: unknown, r: OTRecord) => r.fabricante?.nombre ?? "-",
     },
     {
-      key: "plaqueteo", title: "Plaqueteo", dataIndex: "plaqueteo", width: 110,
+      key: "plaqueteo", excel: { label: "Plaqueteo", value: (r) => r.plaqueteo ?? "" }, title: "Plaqueteo", dataIndex: "plaqueteo", width: 110,
       render: (v: string | null) => v ?? "-",
     },
     {
-      key: "wo_cliente", title: "WO Cliente", dataIndex: "wo_cliente", width: 120,
+      key: "wo_cliente", excel: { label: "WO Cliente", value: (r) => r.wo_cliente ?? "" }, title: "WO Cliente", dataIndex: "wo_cliente", width: 120,
       render: (v: string | null) => v ?? "-",
     },
     {
-      key: "po_cliente", title: "PO Cliente", dataIndex: "po_cliente", width: 120,
+      key: "po_cliente", excel: { label: "PO Cliente", value: (r) => r.po_cliente ?? "" }, title: "PO Cliente", dataIndex: "po_cliente", width: 120,
       render: (v: string | null) => v ?? "-",
     },
     {
-      key: "po_item", title: "PO Item", dataIndex: "po_item", width: 100,
+      key: "po_item", excel: { label: "PO Item", value: (r) => r.po_item ?? "" }, title: "PO Item", dataIndex: "po_item", width: 100,
       render: (v: string | null) => v ?? "-",
     },
     {
-      key: "id_viajero", title: "ID Viajero", dataIndex: "id_viajero", width: 120,
+      key: "id_viajero", excel: { label: "ID Viajero", value: (r) => r.id_viajero ?? "" }, title: "ID Viajero", dataIndex: "id_viajero", width: 120,
       render: (v: string | null) => v ?? "-",
     },
     {
-      key: "guia_remision", title: "Guía Remisión", dataIndex: "guia_remision", width: 140,
+      key: "guia_remision", excel: { label: "Guía Remisión", value: (r) => r.guia_remision ?? "" }, title: "Guía Remisión", dataIndex: "guia_remision", width: 140,
       render: (v: string | null) => v ?? "-",
     },
     {
-      key: "empresa_entrega", title: "Empresa que entrega", dataIndex: "empresa_entrega", width: 180, ellipsis: true,
+      key: "empresa_entrega", excel: { label: "Empresa que entrega", value: (r) => r.empresa_entrega ?? "" }, title: "Empresa que entrega", dataIndex: "empresa_entrega", width: 180, ellipsis: true,
       render: (v: string | null) => v ?? "-",
     },
     {
-      key: "pcr", title: "PCR", dataIndex: "pcr", width: 90, align: "right",
+      key: "pcr", excel: { label: "PCR", value: (r) => (r.pcr != null ? Number(r.pcr) : "") }, title: "PCR", dataIndex: "pcr", width: 90, align: "right",
       sorter: (a, b) => (a.pcr ?? 0) - (b.pcr ?? 0),
       render: (v: number | null) => v != null ? Number(v).toLocaleString() : "-",
     },
     {
-      key: "horas", title: "Horas", dataIndex: "horas", width: 90, align: "right",
+      key: "horas", excel: { label: "Horas", value: (r) => (r.horas != null ? Number(r.horas) : "") }, title: "Horas", dataIndex: "horas", width: 90, align: "right",
       sorter: (a, b) => (a.horas ?? 0) - (b.horas ?? 0),
       render: (v: number | null) => v != null ? Number(v).toLocaleString() : "-",
     },
     {
-      key: "contrato_dias", title: "Días contrato", dataIndex: "contrato_dias", width: 110, align: "right",
+      key: "contrato_dias", excel: { label: "Días contrato", value: (r) => r.contrato_dias ?? "" }, title: "Días contrato", dataIndex: "contrato_dias", width: 110, align: "right",
       sorter: (a, b) => (a.contrato_dias ?? 0) - (b.contrato_dias ?? 0),
       render: (v: number | null) => v != null ? `${v} d` : "-",
     },
     {
-      key: "fecha_requerimiento_cliente", title: "Fecha Requerimiento Cliente", dataIndex: "fecha_requerimiento_cliente", width: 180,
+      key: "fecha_requerimiento_cliente", excel: { label: "Fecha Requerimiento Cliente", value: (r) => dateOnlyLocal(r.fecha_requerimiento_cliente ?? null) }, title: "Fecha Requerimiento Cliente", dataIndex: "fecha_requerimiento_cliente", width: 180,
       sorter: (a, b) => (a.fecha_requerimiento_cliente ?? "").localeCompare(b.fecha_requerimiento_cliente ?? ""),
       render: (v: string | null) => formatDateOnly(v),
     },
     {
-      key: "fecha_reprogramada", title: "Fecha Reprogramada", dataIndex: "fecha_reprogramada", width: 150,
+      key: "fecha_reprogramada", excel: { label: "Fecha Reprogramada", value: (r) => dateOnlyLocal(r.fecha_reprogramada ?? null) }, title: "Fecha Reprogramada", dataIndex: "fecha_reprogramada", width: 150,
       sorter: (a, b) => (a.fecha_reprogramada ?? "").localeCompare(b.fecha_reprogramada ?? ""),
       render: (v: string | null) => formatDateOnly(v),
     },
     {
       // Fecha en que se completó la evaluación técnica.
-      key: "fecha_evaluacion", title: "Fecha Evaluación", dataIndex: "fecha_evaluacion", width: 140,
+      key: "fecha_evaluacion", excel: { label: "Fecha Evaluación", value: (r) => dateOnlyLocal(r.fecha_evaluacion ?? null) }, title: "Fecha Evaluación", dataIndex: "fecha_evaluacion", width: 140,
       sorter: (a, b) => (a.fecha_evaluacion ?? "").localeCompare(b.fecha_evaluacion ?? ""),
       render: (v: string | null | undefined) => formatDateOnly(v ?? null),
     },
     {
       // Persona que hizo la evaluación.
-      key: "evaluador", title: "Evaluador", dataIndex: "evaluador", width: 160, ellipsis: true,
+      key: "evaluador", excel: { label: "Evaluador", value: (r) => r.evaluador ?? "" }, title: "Evaluador", dataIndex: "evaluador", width: 160, ellipsis: true,
       render: (v: string | null | undefined) => v ?? "-",
     },
     {
       // Fecha en que se APROBÓ INTERNAMENTE la evaluación (firma del supervisor).
       // Distinto de fecha_aprobacion, que es la aprobación del CLIENTE sobre cotización.
-      key: "fecha_aprobacion_evaluacion", title: "Fecha Aprobación Evaluación", dataIndex: "fecha_aprobacion_evaluacion", width: 200,
+      key: "fecha_aprobacion_evaluacion", excel: { label: "Fecha Aprobación Evaluación", value: (r) => dateOnlyLocal(r.fecha_aprobacion_evaluacion ?? null) }, title: "Fecha Aprobación Evaluación", dataIndex: "fecha_aprobacion_evaluacion", width: 200,
       sorter: (a, b) => (a.fecha_aprobacion_evaluacion ?? "").localeCompare(b.fecha_aprobacion_evaluacion ?? ""),
       render: (v: string | null | undefined) => formatDateOnly(v ?? null),
     },
     {
       // Persona que aprobó internamente la evaluación técnica.
-      key: "evaluacion_aprobado_por", title: "Evaluación Aprobado Por", dataIndex: "evaluacion_aprobado_por", width: 180, ellipsis: true,
+      key: "evaluacion_aprobado_por", excel: { label: "Evaluación Aprobado Por", value: (r) => r.evaluacion_aprobado_por ?? "" }, title: "Evaluación Aprobado Por", dataIndex: "evaluacion_aprobado_por", width: 180, ellipsis: true,
       render: (v: string | null | undefined) => v ?? "-",
     },
     {
       // Fecha de cotización (cuando se cotizó al cliente).
-      key: "fecha_cotizacion", title: "Fecha Cotización", dataIndex: "fecha_cotizacion", width: 140,
+      key: "fecha_cotizacion", excel: { label: "Fecha Cotización", value: (r) => dateOnlyLocal(r.fecha_cotizacion ?? null) }, title: "Fecha Cotización", dataIndex: "fecha_cotizacion", width: 140,
       sorter: (a, b) => (a.fecha_cotizacion ?? "").localeCompare(b.fecha_cotizacion ?? ""),
       render: (v: string | null | undefined) => formatDateOnly(v ?? null),
     },
     {
       // Característica del cilindro — ESTANDAR / NO_ESTANDAR / "—" cuando
       // no hay dato. Independiente del Tipo de Reparación (catálogo).
-      key: "caracteristica_cilindro", title: "Característica Cilindro", dataIndex: "caracteristica_cilindro", width: 170,
+      key: "caracteristica_cilindro", excel: { label: "Característica Cilindro", value: (r) => r.caracteristica_cilindro ?? "" }, title: "Característica Cilindro", dataIndex: "caracteristica_cilindro", width: 170,
       render: (v: string | null | undefined) => {
         if (!v) return <span style={{ color: "#8c8c8c" }}>—</span>;
         const label = v === "NO_ESTANDAR" ? "NO ESTANDAR" : v;
@@ -780,7 +796,7 @@ export default function OrdenesTrabajoPage() {
     },
     {
       // Flag: la reparación se hace en taller externo (no HP&K).
-      key: "reparacion_externa", title: "Reparación Externa", width: 130, align: "center",
+      key: "reparacion_externa", excel: { label: "Reparación Externa", value: (r) => (r.reparacion_externa ? "Sí" : "No") }, title: "Reparación Externa", width: 130, align: "center",
       filterMultiple: false,
       sorter: (a, b) => Number(!!b.reparacion_externa) - Number(!!a.reparacion_externa),
       render: (_: unknown, r: OTRecord) =>
@@ -788,66 +804,66 @@ export default function OrdenesTrabajoPage() {
     },
     {
       // Nombre del proveedor externo (cuando aplica).
-      key: "vendor_externo", title: "Vendor Externo", dataIndex: "vendor_externo", width: 160, ellipsis: true,
+      key: "vendor_externo", excel: { label: "Vendor Externo", value: (r) => r.vendor_externo ?? "" }, title: "Vendor Externo", dataIndex: "vendor_externo", width: 160, ellipsis: true,
       render: (v: string | null | undefined) => v ?? "-",
     },
     {
       // Fecha en que el CLIENTE aprobó la cotización (distinta de
       // fecha_aprobacion_evaluacion que es la aprobación interna).
-      key: "fecha_aprobacion", title: "Fecha Aprobación", dataIndex: "fecha_aprobacion", width: 150,
+      key: "fecha_aprobacion", excel: { label: "Fecha Aprobación", value: (r) => dateOnlyLocal(r.fecha_aprobacion ?? null) }, title: "Fecha Aprobación", dataIndex: "fecha_aprobacion", width: 150,
       sorter: (a, b) => (a.fecha_aprobacion ?? "").localeCompare(b.fecha_aprobacion ?? ""),
       render: (v: string | null | undefined) => formatDateOnly(v ?? null),
     },
     {
       // Fecha de facturación al cliente.
-      key: "fecha_facturacion", title: "Fecha Facturación", dataIndex: "fecha_facturacion", width: 150,
+      key: "fecha_facturacion", excel: { label: "Fecha Facturación", value: (r) => dateOnlyLocal(r.fecha_facturacion ?? null) }, title: "Fecha Facturación", dataIndex: "fecha_facturacion", width: 150,
       sorter: (a, b) => (a.fecha_facturacion ?? "").localeCompare(b.fecha_facturacion ?? ""),
       render: (v: string | null | undefined) => formatDateOnly(v ?? null),
     },
     {
       // Días totales que el componente lleva en taller (se calcula al cerrar la OT).
       // Igual que arriba: viene del campo histórico de la BD.
-      key: "dias_en_taller", title: "Días en taller", dataIndex: "dias_en_taller", width: 120, align: "right",
+      key: "dias_en_taller", excel: { label: "Días en taller (histórico)", value: (r) => r.dias_en_taller ?? "" }, title: "Días en taller", dataIndex: "dias_en_taller", width: 120, align: "right",
       sorter: (a, b) => (a.dias_en_taller ?? 0) - (b.dias_en_taller ?? 0),
       render: (v: number | null | undefined) => v != null ? `${v} d` : "-",
     },
     {
-      key: "fecha_creacion", title: "Fecha Creación", dataIndex: "fecha_creacion", width: 160,
+      key: "fecha_creacion", excel: { label: "Fecha Creación", value: (r) => (r.fecha_creacion ? new Date(r.fecha_creacion) : null), z: "dd/mm/yyyy hh:mm" }, title: "Fecha Creación", dataIndex: "fecha_creacion", width: 160,
       sorter: (a, b) => (a.fecha_creacion ?? "").localeCompare(b.fecha_creacion ?? ""),
       render: (v: string | null) => v ? dayjs(v).format("DD/MM/YY HH:mm") : "-",
     },
     {
-      key: "usuario_crea", title: "Creada por", dataIndex: "usuario_crea", width: 130,
+      key: "usuario_crea", excel: { label: "Creada por", value: (r) => r.usuario_crea ?? "" }, title: "Creada por", dataIndex: "usuario_crea", width: 130,
       render: (v: string | null) => v ?? "-",
     },
     {
-      key: "atencion_reparacion", title: "Atención Reparación", width: 170, ellipsis: true,
+      key: "atencion_reparacion", excel: { label: "Atención Reparación", value: (r) => r.atencion_reparacion?.nombre ?? "" }, title: "Atención Reparación", width: 170, ellipsis: true,
       render: (_: unknown, r: OTRecord) => r.atencion_reparacion?.nombre ?? "-",
     },
     {
-      key: "tipo_reparacion", title: "Tipo Reparación", width: 150,
+      key: "tipo_reparacion", excel: { label: "Tipo Reparación", value: (r) => r.tipo_reparacion?.nombre ?? "" }, title: "Tipo Reparación", width: 150,
       render: (_: unknown, r: OTRecord) => r.tipo_reparacion?.nombre ?? "-",
     },
     {
-      key: "garantia", title: "Garantía", width: 90, align: "center",
+      key: "garantia", excel: { label: "Garantía", value: (r) => r.garantia?.nombre ?? "" }, title: "Garantía", width: 90, align: "center",
       render: (_: unknown, r: OTRecord) => r.garantia?.nombre ?? "-",
     },
     {
-      key: "tipo_garantia", title: "Tipo Garantía", width: 120,
+      key: "tipo_garantia", excel: { label: "Tipo Garantía", value: (r) => r.tipo_garantia?.nombre ?? "" }, title: "Tipo Garantía", width: 120,
       render: (_: unknown, r: OTRecord) => r.tipo_garantia?.nombre ?? "-",
     },
     {
-      key: "base_metalica", title: "Base metálica", width: 110, align: "center",
+      key: "base_metalica", excel: { label: "Base metálica", value: (r) => r.base_metalica?.nombre ?? "" }, title: "Base metálica", width: 110, align: "center",
       render: (_: unknown, r: OTRecord) => r.base_metalica?.nombre ?? "-",
     },
     {
-      key: "comentarios", title: "Comentarios", dataIndex: "comentarios", width: 200, ellipsis: true,
+      key: "comentarios", excel: { label: "Comentarios", value: (r) => r.comentarios ?? "" }, title: "Comentarios", dataIndex: "comentarios", width: 200, ellipsis: true,
       render: (v: string | null) => v ?? "-",
     },
     // Portal de clientes: la publicación se gestiona desde el módulo
     // Clientes (botón Portal por cliente) — no desde este listado.
     {
-      key: "acciones",
+      key: "acciones", excel: false,
       title: "",
       width: esAdmin ? 180 : 90,
       align: "center",
@@ -996,7 +1012,7 @@ export default function OrdenesTrabajoPage() {
             // a columnas del export cuya `key` coincide con la `key` de la
             // tabla — el resto (datos históricos como evaluación/cotización)
             // queda al final cuando "respetar layout" está activo.
-            tablaLayout={{ orden: ordenColumnas ?? undefined, ocultas }}
+            tablaLayout={{ ocultas }}
             dateFilter={{
               label: "Fecha de recepción",
               paramNameDesde: "fecha_recepcion_desde",
@@ -1014,81 +1030,7 @@ export default function OrdenesTrabajoPage() {
                 ],
               },
             ]}
-            columns={[
-              // Keys que matchean con las de la tabla → respetan layout cuando el
-              // usuario activa el checkbox. Las columnas "histórico" sin match
-              // (Evaluación, Cotización, etc.) van al final con su orden original.
-              // Prefijo V/S según tipo (Bien/Servicio). Reparación queda como número puro.
-              { key: "ot", label: "OT", value: (r) => formatOtCodigo(r.ot, r.tipo_ot?.codigo ?? r.tipo_codigo, "") },
-              { key: "cliente", label: "Cliente", value: (r) => r.cliente?.nombre_comercial ?? r.cliente?.razon_social ?? "" },
-              { key: "codigo_reparacion", label: "Cod. Rep", value: (r) => r.codigo_reparacion?.codigo ?? "" },
-              { key: "codigo_reparacion_desc", label: "Cod. Rep - Descripción", value: (r) => r.codigo_reparacion?.descripcion ?? "" },
-              { key: "equipo_codigo", label: "Equipo", value: (r) => r.equipo_codigo ?? "" },
-              { key: "cantidad", label: "Cantidad", value: (r) => r.cantidad ?? 1 },
-              { key: "fabricante", label: "Fabricante", value: (r) => r.fabricante?.nombre ?? "" },
-              { key: "tipo", label: "Tipo (Cod. Rep)", value: (r) => r.tipo ?? "" },
-              { key: "tipo_ot", label: "Tipo OT", value: (r) => r.tipo_ot?.nombre ?? r.tipo_codigo ?? "" },
-              { key: "np", label: "N/P", value: (r) => r.np ?? "" },
-              { key: "ns", label: "NS", value: (r) => r.ns ?? "" },
-              { key: "cod_rep_flota", label: "Flota", value: (r) => r.cod_rep_flota ?? "" },
-              { key: "cod_rep_posicion", label: "Posición", value: (r) => r.cod_rep_posicion ?? "" },
-              { key: "plaqueteo", label: "Plaqueteo", value: (r) => r.plaqueteo ?? "" },
-              { key: "descripcion", label: "Descripción", value: (r) => r.descripcion ?? "" },
-              { key: "wo_cliente", label: "WO Cliente", value: (r) => r.wo_cliente ?? "" },
-              { key: "po_cliente", label: "PO Cliente", value: (r) => r.po_cliente ?? "" },
-              { key: "po_item", label: "PO Item", value: (r) => r.po_item ?? "" },
-              { key: "id_viajero", label: "ID Viajero", value: (r) => r.id_viajero ?? "" },
-              { key: "guia_remision", label: "Guía Remisión", value: (r) => r.guia_remision ?? "" },
-              { key: "empresa_entrega", label: "Empresa entrega", value: (r) => r.empresa_entrega ?? "" },
-              // Fechas: se exportan como Date real (celda fecha en Excel,
-              // ordenable/filtrable). dateOnlyLocal evita el corrimiento de
-              // día en Lima con los ISO de medianoche UTC.
-              { key: "fecha_recepcion", label: "Fecha Recepción", value: (r) => dateOnlyLocal(r.fecha_recepcion) },
-              { key: "fecha_requerimiento_cliente", label: "F. Req. Cliente", value: (r) => dateOnlyLocal(r.fecha_requerimiento_cliente) },
-              { key: "fecha_reprogramada", label: "F. Reprogramada", value: (r) => dateOnlyLocal(r.fecha_reprogramada) },
-              // Decimales de Prisma: por JSON llegan como string → Number()
-              // para que Excel los trate como número (sumables).
-              { key: "pcr", label: "PCR", value: (r) => (r.pcr != null ? Number(r.pcr) : "") },
-              { key: "horas", label: "Horas", value: (r) => (r.horas != null ? Number(r.horas) : "") },
-              { key: "porcentaje_pcr", label: "% PCR", value: (r) => r.porcentaje_pcr ?? "" },
-              { key: "contrato_dias", label: "Días contrato", value: (r) => r.contrato_dias ?? "" },
-              { key: "prioridad_atencion", label: "Prioridad", value: (r) => r.prioridad_atencion?.nombre ?? "" },
-              { key: "atencion_reparacion", label: "Atención Rep.", value: (r) => r.atencion_reparacion?.nombre ?? "" },
-              { key: "tipo_reparacion", label: "Tipo Rep.", value: (r) => r.tipo_reparacion?.nombre ?? "" },
-              { key: "ot_status", label: "OT Status", value: (r) => r.ot_status?.nombre ?? r.ot_status_codigo ?? "" },
-              { key: "recursos_status", label: "Recursos Status", value: (r) => r.recursos_status?.nombre ?? r.recursos_status_codigo ?? "" },
-              { key: "taller_status", label: "Taller Status", value: (r) => r.taller_status?.nombre ?? r.taller_status_codigo ?? "" },
-              { key: "garantia", label: "Garantía", value: (r) => r.garantia?.nombre ?? "" },
-              { key: "tipo_garantia", label: "Tipo Garantía", value: (r) => r.tipo_garantia?.nombre ?? "" },
-              { key: "base_metalica", label: "Base metálica", value: (r) => r.base_metalica?.nombre ?? "" },
-              { key: "comentarios", label: "Comentarios", value: (r) => r.comentarios ?? "" },
-              // Costos (solo se calculan si alguna columna de costos está visible
-              // en la tabla, que activa ?costos=1 también en el export). Solo
-              // se ofrecen a quien puede ver costos.
-              ...(verCostos ? [
-                { key: "costo_estrategia", label: "Costo Estrategia", value: (r: OTRecord) => monedaTotStr(r.costos_resumen?.estrategia), defaultSelected: false },
-                { key: "costo_estimado", label: "Costo Estimado", value: (r: OTRecord) => monedaTotStr(r.costos_resumen?.estimado), defaultSelected: false },
-                { key: "costo_real", label: "Costo Real", value: (r: OTRecord) => monedaTotStr(r.costos_resumen?.real), defaultSelected: false },
-                { key: "costo_hh", label: "Costo HH", value: (r: OTRecord) => monedaTotStr(r.costos_resumen?.hh), defaultSelected: false },
-              ] : []),
-              // Histórico (importado del Excel)
-              { label: "Fecha Evaluación", value: (r) => dateOnlyLocal(r.fecha_evaluacion ?? null) },
-              { label: "Evaluador", value: (r) => r.evaluador ?? "" },
-              { label: "Nro Informe Evaluación", value: (r) => r.nro_informe_evaluacion ?? "" },
-              { label: "Fecha Cotización", value: (r) => dateOnlyLocal(r.fecha_cotizacion ?? null) },
-              { label: "Nro Cotización", value: (r) => r.nro_cotizacion ?? "" },
-              { label: "Monto Cotización", value: (r) => (r.monto_cotizacion != null && r.monto_cotizacion !== "" ? Number(r.monto_cotizacion) : ""), z: "#,##0.00" },
-              { label: "Fecha Aprobación", value: (r) => dateOnlyLocal(r.fecha_aprobacion ?? null) },
-              { label: "Fecha Entrega", value: (r) => dateOnlyLocal(r.fecha_entrega ?? null) },
-              { label: "Cumplimiento", value: (r) => r.cumplimiento ?? "" },
-              { label: "Días Proceso", value: (r) => r.dias_proceso ?? "" },
-              { label: "Días en Taller", value: (r) => r.dias_en_taller ?? "" },
-              { label: "Nro Factura", value: (r) => r.nro_factura ?? "" },
-              { label: "Fecha Facturación", value: (r) => dateOnlyLocal(r.fecha_facturacion ?? null) },
-              { label: "Usuario Crea", value: (r) => r.usuario_crea ?? "" },
-              // Fecha+hora real de creación (no solo el día).
-              { label: "Fecha Creación", value: (r) => (r.fecha_creacion ? new Date(r.fecha_creacion) : null), z: "dd/mm/yyyy hh:mm" },
-            ]}
+            columns={columnasParaExcel(columnsResizable, EXCEL_EXTRAS)}
           />
           <Button type="primary" icon={<PlusOutlined />} onClick={() => router.push("/ordenes-trabajo/nueva")}>
             Nueva OT
