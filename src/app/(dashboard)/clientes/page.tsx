@@ -37,7 +37,6 @@ import { Tooltip } from "antd";
 import { puedeEscribirApi } from "@/lib/acceso-rutas";
 import { formatOtCodigo } from "@/lib/ot-formato";
 import { formatDateOnly } from "@/lib/dates";
-import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import {
@@ -50,6 +49,8 @@ import {
   filtroPorColumna,
   useColumnasRedimensionables,
   useAbortableFetch,
+  columnasParaExcel,
+  type ColumnasConExcel,
 } from "@/lib/tables";
 import { ImportarExcelModal } from "@/components/ImportarExcelModal";
 import { EmptyState } from "@/components/EmptyState";
@@ -316,10 +317,10 @@ export default function ClientesPage() {
     messageApi.error(body?.detail ?? body?.error ?? "Error al eliminar");
   }
 
-  const columns: ColumnsType<ClienteRecord> = [
-    numeracionColumn<ClienteRecord>({ current: page, pageSize }),
+  const columns: ColumnasConExcel<ClienteRecord> = [
+    { ...numeracionColumn<ClienteRecord>({ current: page, pageSize }), excel: false },
     {
-      key: "codigo",
+      key: "codigo", excel: { label: "Código", value: (r: ClienteRecord) => r.codigo },
       title: "Código",
       dataIndex: "codigo",
       width: 110,
@@ -328,7 +329,7 @@ export default function ClientesPage() {
       render: (v: string) => <Tag color={brand.navy}>{v}</Tag>,
     },
     {
-      key: "razon_social",
+      key: "razon_social", excel: { label: "Razón social", value: (r: ClienteRecord) => r.razon_social },
       title: "Razón Social",
       dataIndex: "razon_social",
       ellipsis: true,
@@ -336,7 +337,7 @@ export default function ClientesPage() {
       ...filtroPorColumna(data, "razon_social"),
     },
     {
-      key: "nombre_comercial",
+      key: "nombre_comercial", excel: { label: "Nombre comercial", value: (r: ClienteRecord) => r.nombre_comercial ?? "" },
       title: "Nombre Comercial",
       dataIndex: "nombre_comercial",
       ellipsis: true,
@@ -345,7 +346,7 @@ export default function ClientesPage() {
       render: (v: string | null) => v ?? "-",
     },
     {
-      key: "ruc",
+      key: "ruc", excel: { label: "RUC", value: (r: ClienteRecord) => r.ruc ?? "" },
       title: "RUC",
       dataIndex: "ruc",
       width: 130,
@@ -354,7 +355,7 @@ export default function ClientesPage() {
       render: (v: string | null) => v ?? "-",
     },
     {
-      key: "contacto_principal",
+      key: "contacto_principal", excel: { label: "Contacto", value: (r: ClienteRecord) => r.contacto_principal ?? "" },
       title: "Contacto",
       dataIndex: "contacto_principal",
       width: 180,
@@ -363,7 +364,7 @@ export default function ClientesPage() {
       render: (v: string | null) => v ?? "-",
     },
     {
-      key: "telefono",
+      key: "telefono", excel: { label: "Teléfono", value: (r: ClienteRecord) => r.telefono ?? "" },
       title: "Teléfono",
       dataIndex: "telefono",
       width: 130,
@@ -371,7 +372,7 @@ export default function ClientesPage() {
       render: (v: string | null) => v ?? "-",
     },
     {
-      key: "nota",
+      key: "nota", excel: { label: "Nota", value: (r: ClienteRecord) => r.nota ?? "" },
       title: "Nota",
       dataIndex: "nota",
       width: 200,
@@ -380,17 +381,18 @@ export default function ClientesPage() {
       render: (v: string | null) => v ?? "-",
     },
     {
-      key: "direccion", title: "Dirección", dataIndex: "direccion", width: 220, ellipsis: true,
+      key: "direccion", excel: { label: "Dirección", value: (r: ClienteRecord) => r.direccion ?? "" }, title: "Dirección", dataIndex: "direccion", width: 220, ellipsis: true,
       ...filtroPorColumna(data, "direccion"),
       render: (v: string | null) => v ?? "-",
     },
     {
-      key: "email", title: "Email", dataIndex: "email", width: 200, ellipsis: true,
+      key: "email", excel: { label: "Email", value: (r: ClienteRecord) => r.email ?? "" }, title: "Email", dataIndex: "email", width: 200, ellipsis: true,
       ...filtroPorColumna(data, "email"),
       render: (v: string | null) => v ?? "-",
     },
     {
       key: "acciones",
+      excel: false,
       title: "Acciones",
       width: 100,
       align: "center",
@@ -446,17 +448,8 @@ export default function ClientesPage() {
             filename="Clientes"
             // Respeta el filtro de búsqueda activo en la tabla.
             endpointParams={{ search }}
-            columns={[
-              { label: "Código", value: (r) => r.codigo },
-              { label: "Razón social", value: (r) => r.razon_social },
-              { label: "Nombre comercial", value: (r) => r.nombre_comercial ?? "" },
-              { label: "RUC", value: (r) => r.ruc ?? "" },
-              { label: "Dirección", value: (r) => r.direccion ?? "" },
-              { label: "Teléfono", value: (r) => r.telefono ?? "" },
-              { label: "Email", value: (r) => r.email ?? "" },
-              { label: "Contacto", value: (r) => r.contacto_principal ?? "" },
-              { label: "Nota", value: (r) => r.nota ?? "" },
-            ]}
+            columns={columnasParaExcel(columnsResizable)}
+            tablaLayout={{ ocultas }}
           />
           {isAdminUser && (
             <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>
