@@ -6,6 +6,7 @@ import { Button, Checkbox, DatePicker, Divider, Input, Popover, Space, Typograph
 import { CalendarOutlined, SettingOutlined, PushpinOutlined, PushpinFilled, SearchOutlined } from "@ant-design/icons";
 import { brand } from "@/lib/theme";
 import { dateOnlyLocal } from "@/lib/dates";
+import type { ExportColumn } from "@/components/ExportarExcelButton";
 import type { ColumnsType, ColumnType, TablePaginationConfig } from "antd/es/table/interface";
 import dayjs, { Dayjs } from "dayjs";
 import {
@@ -142,6 +143,55 @@ export function useColumnasOcultas(storageKey: string, defaultOcultas: string[] 
   }, [ocultas, hidratado, storageKey]);
 
   return { ocultas, setOcultas, hidratado };
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Definición ÚNICA de columnas tabla + Excel (pedido 2026-11-10)
+// ───────────────────────────────────────────────────────────────────────────
+// Cada columna de la tabla declara además `excel`: cómo sale en el .xlsx.
+//   - `excel: { label, value, z? }`      → una columna de Excel.
+//   - `excel: [ {...}, {...} ]`          → varias (ej. "Salida" → fecha + guía).
+//   - `excel: false`                     → no se exporta (botones de acción).
+// De esa misma lista salen la tabla, el selector "Columnas" y el Excel, así
+// que no se pueden desfasar. Uso:
+//   const cols: ColumnasConExcel<Fila> = [{ key, title, render, excel: {...} }, ...]
+//   <ExportarExcelButton columns={columnasParaExcel(columns)} tablaLayout={{ ocultas }} />
+// (`columns` = el array ya ordenado que devuelve useColumnasRedimensionables).
+export interface ExcelSpec<T> {
+  label: string;
+  value: ExportColumn<T>["value"];
+  z?: string;
+  defaultSelected?: boolean;
+  /** Sufijo de key si la columna aporta varias al Excel (default: índice). */
+  key?: string;
+}
+export type ColumnasConExcel<T> = (ColumnType<T> & { excel?: false | ExcelSpec<T> | ExcelSpec<T>[] })[];
+
+export function columnasParaExcel<T>(cols: ColumnsType<T>): ExportColumn<T>[] {
+  const out: ExportColumn<T>[] = [];
+  for (const c of cols) {
+    const key = (c as { key?: React.Key }).key;
+    const excel = (c as { excel?: false | ExcelSpec<T> | ExcelSpec<T>[] }).excel;
+    if (key === undefined || excel === false) continue;
+    if (excel === undefined) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn(`[columnasParaExcel] la columna "${String(key)}" no declara \`excel\` (usar excel:false si no se exporta)`);
+      }
+      continue;
+    }
+    const specs = Array.isArray(excel) ? excel : [excel];
+    specs.forEach((s, i) => {
+      out.push({
+        key: specs.length === 1 ? String(key) : `${String(key)}.${s.key ?? i}`,
+        label: s.label,
+        value: s.value,
+        z: s.z,
+        defaultSelected: s.defaultSelected,
+        grupo: String(key),
+      });
+    });
+  }
+  return out;
 }
 
 // Filtra las columnas según las claves ocultas. Las columnas sin `key` siempre se conservan.

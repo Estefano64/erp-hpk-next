@@ -37,6 +37,12 @@ export interface ExportColumn<T> {
   z?: string;
   /** Si false, arranca DESMARCADA en el selector. Default: true. */
   defaultSelected?: boolean;
+  /**
+   * Key de la columna de la TABLA de la que sale esta columna de Excel (una
+   * columna de la tabla puede aportar varias al Excel). Con `tablaLayout`, la
+   * columna se oculta/ordena según la de la tabla. Ver `columnasParaExcel`.
+   */
+  grupo?: string;
 }
 
 /** Filtro multi-select de categoría (ej. tipo de OT, estado, etc.). */
@@ -369,15 +375,15 @@ export function ExportarExcelButton<T>({
         ordenArr.forEach((k, i) => ordenIdx.set(k, i));
         const filtradas = columns.filter((c) => {
           const k = colKey(c);
-          if (ocultasSet.has(k)) return false;
+          if (ocultasSet.has(k) || (c.grupo != null && ocultasSet.has(c.grupo))) return false;
           if (!selectedCols.includes(k)) return false;
           return true;
         });
         // Sort: las que están en `orden` van primero en ese orden; las que no
         // están van al final manteniendo su orden original (estable).
         filtradas.sort((a, b) => {
-          const ka = colKey(a);
-          const kb = colKey(b);
+          const ka = a.grupo ?? colKey(a);
+          const kb = b.grupo ?? colKey(b);
           const ia = ordenIdx.has(ka) ? ordenIdx.get(ka)! : Number.MAX_SAFE_INTEGER;
           const ib = ordenIdx.has(kb) ? ordenIdx.get(kb)! : Number.MAX_SAFE_INTEGER;
           return ia - ib;

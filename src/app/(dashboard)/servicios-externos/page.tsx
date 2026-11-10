@@ -19,7 +19,7 @@ import { InboxOutlined, ReloadOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { brand, space } from "@/lib/theme";
 import { useResponsive } from "@/lib/responsive";
-import { paginacionEstandar, useColumnasRedimensionables, useColumnasOcultas, ColumnasToggleButton, visibleColumns } from "@/lib/tables";
+import { paginacionEstandar, useColumnasRedimensionables, useColumnasOcultas, ColumnasToggleButton, visibleColumns, columnasParaExcel, type ColumnasConExcel } from "@/lib/tables";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import { formatDateOnly, dateOnlyLocal, hoyEnLima } from "@/lib/dates";
 import {
@@ -352,9 +352,14 @@ export default function ServiciosExternosPage() {
     },
   ];
 
-  const columnsBase: ColumnsType<ServicioSer> = [
+  // Definición única: cada columna trae `excel` (lo que sale en el .xlsx).
+  const columnsBase: ColumnasConExcel<ServicioSer> = [
     {
       title: "OT", key: "ot", width: 110, fixed: screens.md ? "left" : undefined, ...filtroDe(filtradas, (r) => r.ot_codigo),
+      excel: [
+        { key: "ot", label: "OT", value: (r) => r.ot_codigo ?? "" },
+        { key: "cliente", label: "Cliente", value: (r) => r.cliente ?? "" },
+      ],
       render: (_, r) => (
         <div style={{ lineHeight: 1.2 }}>
           <OtLink ser={r} />
@@ -362,9 +367,11 @@ export default function ServiciosExternosPage() {
         </div>
       ),
     },
-    { title: "Req", key: "req", width: 110, ...filtroDe(filtradas, (r) => r.nro_req), render: (_, r) => <Text style={{ fontSize: 11 }}>{r.nro_req ?? "—"}/{r.item_req ?? "—"}</Text> },
+    { title: "Req", key: "req", width: 110, ...filtroDe(filtradas, (r) => r.nro_req),
+      excel: { label: "Req / Item", value: (r) => `${r.nro_req ?? "—"}/${r.item_req ?? "—"}` }, render: (_, r) => <Text style={{ fontSize: 11 }}>{r.nro_req ?? "—"}/{r.item_req ?? "—"}</Text> },
     {
       title: "Servicio", key: "desc", width: 240, ellipsis: true, ...filtroDe(filtradas, (r) => r.descripcion),
+      excel: { label: "Servicio", value: (r) => r.descripcion ?? "" },
       render: (_, r) => (
         <div style={{ lineHeight: 1.2 }}>
           <div style={{ fontSize: 12 }}>{r.descripcion ?? "—"}</div>
@@ -376,6 +383,10 @@ export default function ServiciosExternosPage() {
       title: "Estado", key: "estado", width: 150, align: "center",
       filters: ESTADOS_VISIBLES.map((e) => ({ text: SERVICIO_ESTADO_LABELS[e], value: e })),
       onFilter: (v, r) => r.estado === v,
+      excel: [
+        { key: "estado", label: "Estado", value: (r) => SERVICIO_ESTADO_LABELS[r.estado] },
+        { key: "dias", label: "Días afuera", value: (r) => diasAfuera(r, hoy) },
+      ],
       render: (_, r) => {
         const d = diasAfuera(r, hoy);
         return (
@@ -388,11 +399,16 @@ export default function ServiciosExternosPage() {
     },
     {
       title: "Proveedor", key: "prov", width: 160, ellipsis: true, ...filtroDe(filtradas, (r) => ultimoEnvio(r)?.proveedor?.razon_social),
+      excel: { label: "Proveedor", value: (r) => ultimoEnvio(r)?.proveedor?.razon_social ?? "" },
       render: (_, r) => ultimoEnvio(r)?.proveedor?.razon_social ?? <Text type="secondary">—</Text>,
     },
     {
       title: "Salida", key: "salida", width: 130, ...filtroDe(filtradas, (r) => formatDateOnly(ultimoEnvio(r)?.fecha_salida)),
       sorter: (a, b) => (ultimoEnvio(a)?.fecha_salida ?? "").localeCompare(ultimoEnvio(b)?.fecha_salida ?? ""),
+      excel: [
+        { key: "fecha", label: "F. Salida", value: (r) => dateOnlyLocal(ultimoEnvio(r)?.fecha_salida) ?? null },
+        { key: "guia", label: "Guía salida", value: (r) => ultimoEnvio(r)?.guia_salida ?? "" },
+      ],
       render: (_, r) => {
         const u = ultimoEnvio(r);
         if (!u) return <Text type="secondary">—</Text>;
@@ -401,10 +417,17 @@ export default function ServiciosExternosPage() {
     },
     {
       title: "Guía de ingreso", key: "guia_ing", width: 130, ...filtroDe(filtradas, guiaLlegadaDe),
+      excel: { label: "Guía de ingreso", value: (r) => guiaLlegadaDe(r) ?? "" },
       render: (_, r) => { const g = guiaLlegadaDe(r); return g ? <Text style={{ fontSize: 11 }}>{g}</Text> : <Text type="secondary">—</Text>; },
     },
     {
       title: "Cotización", key: "cot", width: 150, ...filtroDe(filtradas, (r) => ultimoEnvio(r)?.cotizacion_resultado),
+      excel: [
+        { key: "resultado", label: "Cotización", value: (r) => ultimoEnvio(r)?.cotizacion_resultado ?? "" },
+        { key: "monto", label: "Monto cotizado", value: (r) => ultimoEnvio(r)?.monto_cotizacion ?? null, z: "#,##0.00" },
+        { key: "moneda", label: "Moneda", value: (r) => ultimoEnvio(r)?.moneda_cotizacion ?? "" },
+        { key: "nro", label: "N° cotización", value: (r) => ultimoEnvio(r)?.nro_cotizacion ?? "" },
+      ],
       render: (_, r) => {
         const u = ultimoEnvio(r);
         if (!u || !u.cotizacion_resultado) return <Text type="secondary">—</Text>;
@@ -420,6 +443,11 @@ export default function ServiciosExternosPage() {
     },
     {
       title: "Llegada / Devolución", key: "llegada", width: 140,
+      excel: [
+        { key: "fecha_llegada", label: "F. Llegada", value: (r) => dateOnlyLocal(ultimoEnvio(r)?.fecha_llegada) ?? null },
+        { key: "fecha_dev", label: "F. Devolución", value: (r) => dateOnlyLocal(ultimoEnvio(r)?.fecha_devolucion) ?? null },
+        { key: "guia_dev", label: "Guía devolución", value: (r) => ultimoEnvio(r)?.guia_devolucion ?? "" },
+      ],
       render: (_, r) => {
         const u = ultimoEnvio(r);
         if (!u) return <Text type="secondary">—</Text>;
@@ -432,6 +460,10 @@ export default function ServiciosExternosPage() {
       title: "Documentación", key: "docs", width: 170, align: "center",
       filters: [{ text: "Completa", value: "ok" }, { text: "Incompleta", value: "falta" }],
       onFilter: (v, r) => (v === "ok" ? r.docs_completa : !r.docs_completa),
+      excel: [
+        { key: "estado", label: "Documentación", value: (r) => (r.docs_completa ? "Completa" : "Incompleta") },
+        { key: "faltan", label: "Docs faltantes", value: (r) => r.docs.filter((d) => d.estado === "falta").map((d) => d.label).join(", ") },
+      ],
       render: (_, r) => r.estado === "NO_APLICA" ? <Text type="secondary">—</Text> : (
         <Space orientation="vertical" size={2}>
           <DocsSemaforo docs={r.docs} compact />
@@ -442,18 +474,24 @@ export default function ServiciosExternosPage() {
     {
       title: "Creado", key: "creado", width: 130, ...filtroDe(filtradas, (r) => creadoDe(r).usuario),
       sorter: (a, b) => creadoDe(a).fecha.localeCompare(creadoDe(b).fecha),
+      excel: [
+        { key: "fecha", label: "Creado", value: (r) => fechaHoraLima(creadoDe(r).fecha) },
+        { key: "por", label: "Creado por", value: (r) => creadoDe(r).usuario ?? "" },
+      ],
       render: (_, r) => { const c = creadoDe(r); return <CreadoCell fecha={c.fecha} usuario={c.usuario} />; },
     },
     {
       title: "OC", key: "oc", width: 110, ...filtroDe(filtradas, (r) => r.nro_oc ?? r.oc_docs?.numero_po),
+      excel: { label: "OC", value: (r) => r.nro_oc ?? r.oc_docs?.numero_po ?? "" },
       render: (_, r) => <OcLink ser={r} />,
     },
     {
       title: "Factura", key: "fac", width: 110, ...filtroDe(filtradas, (r) => r.oc_docs?.nro_factura ?? envioAceptado(r)?.nro_factura),
+      excel: { label: "Factura", value: (r) => r.oc_docs?.nro_factura ?? envioAceptado(r)?.nro_factura ?? "" },
       render: (_, r) => r.oc_docs?.nro_factura ?? envioAceptado(r)?.nro_factura ?? <Text type="secondary">—</Text>,
     },
     {
-      title: "", key: "ver", width: 90, fixed: "right",
+      title: "", key: "ver", width: 90, fixed: "right", excel: false,
       render: (_, r) => <Button type="link" size="small" style={{ padding: 0 }} onClick={() => setSelId(r.id)}>{puedeOperar ? "Gestionar" : "Ver"}</Button>,
     },
   ];
@@ -489,30 +527,8 @@ export default function ServiciosExternosPage() {
             endpoint={ENDPOINT}
             filename="Servicios-externos"
             currentRows={filtradas}
-            columns={[
-              { key: "ot", label: "OT", value: (r) => r.ot_codigo ?? "" },
-              { key: "cliente", label: "Cliente", value: (r) => r.cliente ?? "" },
-              { key: "req", label: "Req / Item", value: (r) => `${r.nro_req ?? "—"}/${r.item_req ?? "—"}` },
-              { key: "servicio", label: "Servicio", value: (r) => r.descripcion ?? "" },
-              { key: "estado", label: "Estado", value: (r) => SERVICIO_ESTADO_LABELS[r.estado] },
-              { key: "proveedor", label: "Proveedor", value: (r) => ultimoEnvio(r)?.proveedor?.razon_social ?? "" },
-              { key: "fecha_salida", label: "F. Salida", value: (r) => dateOnlyLocal(ultimoEnvio(r)?.fecha_salida) ?? null },
-              { key: "guia_salida", label: "Guía salida", value: (r) => ultimoEnvio(r)?.guia_salida ?? "" },
-              { key: "cot_resultado", label: "Cotización", value: (r) => ultimoEnvio(r)?.cotizacion_resultado ?? "" },
-              { key: "cot_monto", label: "Monto cotizado", value: (r) => ultimoEnvio(r)?.monto_cotizacion ?? null, z: "#,##0.00" },
-              { key: "cot_moneda", label: "Moneda", value: (r) => ultimoEnvio(r)?.moneda_cotizacion ?? "" },
-              { key: "fecha_devolucion", label: "F. Devolución", value: (r) => dateOnlyLocal(ultimoEnvio(r)?.fecha_devolucion) ?? null },
-              { key: "guia_devolucion", label: "Guía devolución", value: (r) => ultimoEnvio(r)?.guia_devolucion ?? "" },
-              { key: "fecha_llegada", label: "F. Llegada", value: (r) => dateOnlyLocal(ultimoEnvio(r)?.fecha_llegada) ?? null },
-              { key: "guia_llegada", label: "Guía llegada", value: (r) => guiaLlegadaDe(r) ?? "" },
-              { key: "oc", label: "OC", value: (r) => r.nro_oc ?? "" },
-              { key: "factura", label: "Factura", value: (r) => r.oc_docs?.nro_factura ?? envioAceptado(r)?.nro_factura ?? "" },
-              { key: "docs", label: "Documentación", value: (r) => (r.docs_completa ? "Completa" : "Incompleta") },
-              { key: "docs_faltan", label: "Docs faltantes", value: (r) => r.docs.filter((d) => d.estado === "falta").map((d) => d.label).join(", ") },
-              { key: "creado_en", label: "Creado", value: (r) => fechaHoraLima(creadoDe(r).fecha) },
-              { key: "creado_por", label: "Creado por", value: (r) => creadoDe(r).usuario ?? "" },
-              { key: "dias", label: "Días afuera", value: (r) => diasAfuera(r, hoy) },
-            ]}
+            columns={columnasParaExcel(columns)}
+            tablaLayout={{ ocultas: ocultasServ }}
           />
         </Space>
       </div>
