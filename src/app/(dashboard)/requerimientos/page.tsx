@@ -1396,16 +1396,19 @@ export default function RequerimientosPage() {
             filename="Requerimientos"
             sheetName="Requerimientos"
             currentRows={itemsVisibles}
+            // v2: las keys de columna pasaron de label a key de la tabla.
+            storageKey="excel-export-Requerimientos-v2"
+            tablaLayout={{ ocultas }}
             columns={[
               {
-                label: "OT",
+                key: "ot", label: "OT",
                 value: (r) => r.orden_trabajo?.ot != null
                   ? formatOtCodigo(r.orden_trabajo.ot, r.orden_trabajo.tipo_codigo, "")
                   : formatOtInternaCodigo(r.orden_trabajo_interna?.ot, ""),
               },
-              { label: "Estado REQ", value: (r) => r.status_requerimiento?.nombre ?? r.status_requerimiento_codigo ?? "" },
-              { label: "Estado OC", value: (r) => r.status_oc?.nombre ?? r.status_oc_codigo ?? "" },
-              { label: "Nro REQ", value: (r) => r.nro_req ?? "" },
+              { key: "req", label: "Estado REQ", value: (r) => r.status_requerimiento?.nombre ?? r.status_requerimiento_codigo ?? "" },
+              { key: "oc", label: "Estado OC", value: (r) => r.status_oc?.nombre ?? r.status_oc_codigo ?? "" },
+              { key: "nro", label: "Nro REQ", value: (r) => r.nro_req ?? "" },
               { label: "Item", value: (r) => r.item_req ?? "" },
               { label: "Tipo", value: (r) => r.tipo_codigo },
               { label: "Código", value: (r) => r.material?.codigo ?? r.material_codigo ?? "" },
@@ -1416,18 +1419,20 @@ export default function RequerimientosPage() {
               { label: "Stock físico", value: (r) => r.material ? Number(r.material.stock_actual ?? 0) : "" },
               { label: "Reservado a OTs", value: (r) => r.material ? Number(r._stock_reservado ?? 0) : "" },
               { label: "Stock libre", value: (r) => r.material ? stockLibreDe(r) : "" },
-              { label: "Cliente", value: (r) => r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "" },
+              { key: "cliente", label: "Cliente", value: (r) => r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "" },
               { label: "P. Unit", value: (r) => precioEfectivo(r) ?? "", z: "#,##0.00" },
               { label: "P. Unit pedido", value: (r) => r.precio_unitario != null ? Number(r.precio_unitario) : "", z: "#,##0.00" },
               { label: "Moneda", value: (r) => r.moneda ?? "" },
               { label: "Subtotal", value: (r) => { const pe = precioEfectivo(r); return pe != null ? pe * cantidadEfectiva(r) : ""; }, z: "#,##0.00" },
-              { label: "Nro OC", value: (r) => r.compra?.numero_po ?? "" },
-              { label: "Proveedor", value: (r) => r.proveedor?.razon_social ?? "" },
+              { key: "oc.nro", grupo: "oc", label: "Nro OC", value: (r) => r.compra?.numero_po ?? "" },
+              { key: "prov", label: "Proveedor", value: (r) => r.proveedor?.razon_social ?? "" },
               // Fechas como Date real (celda fecha en Excel); dateOnlyLocal
               // toma la parte de fecha UTC — mismo día que muestra la tabla.
-              { label: "F. Solicitud", value: (r) => dateOnlyLocal(r.fecha_solicitud) },
-              { label: "F. Requerida", value: (r) => dateOnlyLocal(r.fecha_requerida) },
-              { label: "F. Entrega", value: (r) => dateOnlyLocal(r.fecha_entrega_esperada) },
+              { key: "fsol", label: "F. Solicitud", value: (r) => dateOnlyLocal(r.fecha_solicitud) },
+              { key: "faprob", label: "F. Aprobación", value: (r) => dateOnlyLocal(r.fecha_aprobacion) },
+              { key: "freq", label: "F. Requerida", value: (r) => dateOnlyLocal(r.fecha_requerida) },
+              { key: "fent", label: "F. Entrega", value: (r) => dateOnlyLocal(r.fecha_entrega_esperada) },
+              { key: "comentario_aprobacion", label: "Comentario aprob.", value: (r) => r.comentario_aprobacion ?? "" },
             ]}
           />
           <ColumnasToggleButton<GrupoReq>
