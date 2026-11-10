@@ -46,7 +46,6 @@ import {
   UploadOutlined,
   FileTextOutlined,
 } from "@ant-design/icons";
-import type { ColumnsType } from "antd/es/table";
 import {
   numeracionColumn,
   paginacionEstandar,
@@ -61,6 +60,8 @@ import {
   usePersistedState,
   useRangoFechasPersistente,
   useAbortableFetch,
+  columnasParaExcel,
+  type ColumnasConExcel,
 } from "@/lib/tables";
 import { Popover, Divider } from "antd";
 import { brand } from "@/lib/theme";
@@ -110,6 +111,18 @@ interface Compra {
   pago_key: string | null;
   pago_nombre: string | null;
   adjuntos: { id: number; tipo: string; r2_key: string; nombre_archivo: string; tipo_mime: string | null; tamano: number | null; fecha_subida: string }[];
+}
+
+// Nombres de archivos de un tipo (legacy + multi) para el Excel, "; "-separados.
+function nombresArchivos(r: Compra, tipo: string): string {
+  const legacy = tipo === "guia" ? [r.guia_key, r.guia_nombre]
+    : tipo === "factura" ? [r.factura_key, r.factura_nombre]
+    : tipo === "pago" ? [r.pago_key, r.pago_nombre]
+    : [null, null];
+  const nombres: string[] = [];
+  if (legacy[0]) nombres.push(legacy[1] || "(sin nombre)");
+  for (const a of r.adjuntos ?? []) if (a.tipo === tipo) nombres.push(a.nombre_archivo || "(sin nombre)");
+  return nombres.join("; ");
 }
 
 const estadoColor: Record<string, string> = {
@@ -590,10 +603,11 @@ export default function ComprasPage() {
     );
   };
 
-  const columns: ColumnsType<Compra> = [
-    numeracionColumn<Compra>({ current: page, pageSize }),
+  const columns: ColumnasConExcel<Compra> = [
+    { ...numeracionColumn<Compra>({ current: page, pageSize }), excel: false },
     {
       key: "numero_po",
+      excel: { label: "Nro OC", value: (r: Compra) => r.numero_po },
       title: "Nro OC",
       dataIndex: "numero_po",
       width: 130,
@@ -612,6 +626,7 @@ export default function ComprasPage() {
     },
     {
       key: "nombre",
+      excel: { label: "Nombre OC", value: (r: Compra) => r.nombre ?? "" },
       title: "Nombre OC",
       dataIndex: "nombre",
       width: 240,
@@ -624,6 +639,7 @@ export default function ComprasPage() {
     },
     {
       key: "estado",
+      excel: { label: "Estado", value: (r: Compra) => r.estado },
       title: "Estado",
       dataIndex: "estado",
       width: 110,
@@ -639,6 +655,7 @@ export default function ComprasPage() {
     },
     {
       key: "proveedor_nombre",
+      excel: { label: "Proveedor", value: (r: Compra) => r.proveedor_nombre ?? "" },
       title: "Proveedor",
       dataIndex: "proveedor_nombre",
       width: 200,
@@ -650,6 +667,7 @@ export default function ComprasPage() {
     },
     {
       key: "almacen_nombre",
+      excel: { label: "Almacén", value: (r: Compra) => r.almacen_nombre ?? "" },
       title: "Almacén",
       dataIndex: "almacen_nombre",
       width: 140,
@@ -660,6 +678,7 @@ export default function ComprasPage() {
     },
     {
       key: "fecha_solicitud",
+      excel: { label: "F. Solicitud", value: (r: Compra) => dateOnlyLocal(r.fecha_solicitud) },
       title: "F. Solicitud",
       dataIndex: "fecha_solicitud",
       width: 110,
@@ -668,6 +687,7 @@ export default function ComprasPage() {
     },
     {
       key: "fecha_req_creacion",
+      excel: { label: "Creación REQ", value: (r: Compra) => dateOnlyLocal(r.fecha_req_creacion) },
       title: "Creación REQ",
       dataIndex: "fecha_req_creacion",
       width: 120,
@@ -677,6 +697,7 @@ export default function ComprasPage() {
     },
     {
       key: "fecha_oc_creacion",
+      excel: { label: "Creación OC", value: (r: Compra) => (r.fecha_oc_creacion ? new Date(r.fecha_oc_creacion) : null), z: "dd/mm/yyyy hh:mm" },
       title: "Creación OC",
       dataIndex: "fecha_oc_creacion",
       width: 130,
@@ -686,6 +707,7 @@ export default function ComprasPage() {
     },
     {
       key: "fecha_entrega_esperada",
+      excel: { label: "F. Entrega Esp.", value: (r: Compra) => dateOnlyLocal(r.fecha_entrega_esperada) },
       title: "F. Entrega Esp.",
       dataIndex: "fecha_entrega_esperada",
       width: 120,
@@ -698,6 +720,7 @@ export default function ComprasPage() {
     },
     {
       key: "cantidad_items",
+      excel: { label: "Items", value: (r: Compra) => r.cantidad_items },
       title: "Items",
       dataIndex: "cantidad_items",
       width: 70,
@@ -713,6 +736,7 @@ export default function ComprasPage() {
       // Para OCs de un único item equivale al precio unitario exacto; para OCs
       // multi-item es el promedio. Útil como referencia.
       key: "pu_sin_igv",
+      excel: { label: "PU (sin IGV)", value: (r: Compra) => (r.cantidad_items > 0 ? Number((Number(r.subtotal) / r.cantidad_items).toFixed(2)) : 0), z: "#,##0.00" },
       title: "PU (sin IGV)",
       width: 110,
       align: "right",
@@ -731,6 +755,7 @@ export default function ComprasPage() {
       // Antes acá se mostraba `total` que SÍ incluye IGV; el usuario pidió ver
       // el total sin IGV en este listado.
       key: "total_sin_igv",
+      excel: { label: "Total (sin IGV)", value: (r: Compra) => Number(r.subtotal), z: "#,##0.00" },
       title: "Total (sin IGV)",
       dataIndex: "subtotal",
       width: 130,
@@ -744,6 +769,7 @@ export default function ComprasPage() {
     },
     {
       key: "nro_guia",
+      excel: { label: "Nro Guía", value: (r: Compra) => r.nro_guia ?? "" },
       title: "Nro Guía",
       dataIndex: "nro_guia",
       width: 150,
@@ -752,12 +778,14 @@ export default function ComprasPage() {
     },
     {
       key: "archivos_guia",
+      excel: { label: "Archivos Guía", value: (r: Compra) => nombresArchivos(r, "guia") },
       title: "Archivos Guía",
       width: 230,
       render: (_v, r) => archivoCell(r, "guia", "compra-guia"),
     },
     {
       key: "nro_factura",
+      excel: { label: "Nro Factura", value: (r: Compra) => r.nro_factura ?? "" },
       title: "Nro Factura",
       dataIndex: "nro_factura",
       width: 150,
@@ -766,18 +794,27 @@ export default function ComprasPage() {
     },
     {
       key: "archivos_factura",
+      excel: { label: "Archivos Factura", value: (r: Compra) => nombresArchivos(r, "factura") },
       title: "Archivos Factura",
       width: 230,
       render: (_v, r) => archivoCell(r, "factura", "compra-factura"),
     },
     {
       key: "archivos_guia_llegada",
+      excel: { label: "Guía de llegada", value: (r: Compra) => nombresArchivos(r, "guia_llegada") },
       title: "Guía de llegada",
       width: 230,
       render: (_v, r) => archivoCell(r, "guia_llegada", "compra-guia-llegada"),
     },
     {
       key: "comprobante_pago",
+      excel: {
+        label: "Comprobante Pago",
+        value: (r: Compra) => {
+          if (r.tipo_pago !== "CONTADO" && r.tipo_pago !== "TRANSFERENCIA") return r.tipo_pago === "CREDITO" ? "N/A (crédito)" : "";
+          return nombresArchivos(r, "pago");
+        },
+      },
       title: "Comprobante Pago",
       width: 230,
       render: (_v, r) => {
@@ -796,6 +833,7 @@ export default function ComprasPage() {
     },
     {
       key: "observaciones",
+      excel: { label: "Comentarios", value: (r: Compra) => r.observaciones ?? "" },
       title: "Comentarios",
       dataIndex: "observaciones",
       width: 220,
@@ -814,6 +852,7 @@ export default function ComprasPage() {
     },
     {
       key: "usuario_solicita",
+      excel: { label: "Usuario", value: (r: Compra) => r.usuario_solicita ?? "" },
       title: "Usuario",
       dataIndex: "usuario_solicita",
       width: 120,
@@ -821,26 +860,31 @@ export default function ComprasPage() {
     },
     // ── Columnas opcionales (ocultas por default) ──
     {
+      excel: { label: "Nro Req.", value: (r: Compra) => r.numero_req ?? "" },
       key: "numero_req", title: "Nro Req.", dataIndex: "numero_req", width: 120,
       ...filtroPorColumna(data, "numero_req"),
       render: (v: string | null) => v ?? "-",
     },
     {
+      excel: { label: "OT", value: (r: Compra) => r.ot_numero ?? "" },
       key: "ot_numero", title: "OT", dataIndex: "ot_numero", width: 120,
       ...filtroPorColumna(data, "ot_numero"),
       render: (v: string | null) => v ?? "-",
     },
     {
+      excel: { label: "F. Entrega real", value: (r: Compra) => dateOnlyLocal(r.fecha_entrega_real) },
       key: "fecha_entrega_real", title: "F. Entrega real", dataIndex: "fecha_entrega_real", width: 130,
       sorter: (a, b) => (a.fecha_entrega_real ?? "").localeCompare(b.fecha_entrega_real ?? ""),
       render: (v: string | null) => formatDateOnly(v),
     },
     {
+      excel: { label: "Impuesto", value: (r: Compra) => (r.impuesto != null ? Number(r.impuesto) : ""), z: "#,##0.00" },
       key: "impuesto", title: "Impuesto", dataIndex: "impuesto", width: 100, align: "right",
       sorter: (a, b) => (a.impuesto ?? 0) - (b.impuesto ?? 0),
       render: (v: number | null) => v != null ? Number(v).toLocaleString() : "-",
     },
     {
+      excel: { label: "Moneda", value: (r: Compra) => r.moneda ?? "" },
       key: "moneda", title: "Moneda", dataIndex: "moneda", width: 80, align: "center",
       filters: [...new Set(data.map((r) => r.moneda).filter(Boolean) as string[])].sort().map((v) => ({ text: v, value: v })),
       onFilter: (value, r) => r.moneda === value,
@@ -848,6 +892,7 @@ export default function ComprasPage() {
     },
     {
       key: "acciones",
+      excel: false,
       title: "Acciones",
       width: 130,
       align: "center",
@@ -1027,33 +1072,10 @@ export default function ComprasPage() {
             // columna (capturados en vistaActual por el Table.onChange).
             currentRows={vistaActual ?? filasMostradas}
             tablaLayout={{ ocultas }}
-            columns={[
-              { key: "numero_po", label: "Nro OC", value: (r) => r.numero_po },
-              { key: "nombre", label: "Nombre OC", value: (r) => r.nombre ?? "" },
-              { key: "estado", label: "Estado", value: (r) => r.estado },
-              { key: "proveedor_nombre", label: "Proveedor", value: (r) => r.proveedor_nombre ?? "" },
-              { key: "almacen_nombre", label: "Almacén", value: (r) => r.almacen_nombre ?? "" },
-              // Fechas como Date real (celda fecha en Excel). dateOnlyLocal
-              // evita el corrimiento de día en Lima con medianoche UTC.
-              { key: "fecha_solicitud", label: "F. Solicitud", value: (r) => dateOnlyLocal(r.fecha_solicitud) },
-              { key: "fecha_req_creacion", label: "Creación REQ", value: (r) => dateOnlyLocal(r.fecha_req_creacion) },
-              { key: "fecha_oc_creacion", label: "Creación OC", value: (r) => (r.fecha_oc_creacion ? new Date(r.fecha_oc_creacion) : null), z: "dd/mm/yyyy hh:mm" },
-              { key: "fecha_entrega_esperada", label: "F. Entrega Esp.", value: (r) => dateOnlyLocal(r.fecha_entrega_esperada) },
-              { key: "cantidad_items", label: "Items", value: (r) => r.cantidad_items },
-              { key: "pu_sin_igv", label: "PU (sin IGV)", value: (r) => r.cantidad_items > 0 ? Number((Number(r.subtotal) / r.cantidad_items).toFixed(2)) : 0, z: "#,##0.00" },
-              { key: "total_sin_igv", label: "Total (sin IGV)", value: (r) => Number(r.subtotal), z: "#,##0.00" },
-              { key: "nro_guia", label: "Guía", value: (r) => r.nro_guia ?? "" },
-              { key: "nro_factura", label: "Factura", value: (r) => r.nro_factura ?? "" },
-              { key: "observaciones", label: "Comentarios", value: (r) => r.observaciones ?? "" },
-              { key: "usuario_solicita", label: "Usuario", value: (r) => r.usuario_solicita ?? "" },
-              { key: "numero_req", label: "Nro Req.", value: (r) => r.numero_req ?? "" },
-              { key: "ot_numero", label: "OT", value: (r) => r.ot_numero ?? "" },
-              { key: "fecha_entrega_real", label: "F. Entrega real", value: (r) => dateOnlyLocal(r.fecha_entrega_real) },
-              { key: "impuesto", label: "Impuesto", value: (r) => r.impuesto != null ? Number(r.impuesto) : "", z: "#,##0.00" },
-              { key: "moneda", label: "Moneda", value: (r) => r.moneda ?? "" },
+            columns={columnasParaExcel(columnsResizable, [
               // No es columna de la tabla, pero el export anterior la incluía.
-              { key: "total_con_igv", label: "Total (con IGV)", value: (r) => Number(r.total), defaultSelected: false, z: "#,##0.00" },
-            ]}
+              { key: "total_con_igv", label: "Total (con IGV)", value: (r: Compra) => Number(r.total), defaultSelected: false, z: "#,##0.00" },
+            ])}
           />
           <Button
             icon={<UnorderedListOutlined />}
