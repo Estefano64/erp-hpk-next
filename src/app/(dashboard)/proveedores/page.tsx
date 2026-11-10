@@ -29,7 +29,6 @@ import {
   ReloadOutlined,
   ImportOutlined,
 } from "@ant-design/icons";
-import type { ColumnsType } from "antd/es/table";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import {
@@ -41,6 +40,8 @@ import {
   visibleColumns,
   filtroPorColumna,
   useColumnasRedimensionables,
+  columnasParaExcel,
+  type ColumnasConExcel,
   useAbortableFetch,
 } from "@/lib/tables";
 import { ImportarExcelModal } from "@/components/ImportarExcelModal";
@@ -204,10 +205,10 @@ export default function ProveedoresPage() {
     messageApi.error(body?.detail ?? body?.error ?? "Error al eliminar");
   }
 
-  const columns: ColumnsType<ProveedorRecord> = [
-    numeracionColumn<ProveedorRecord>({ current: page, pageSize }),
+  const columns: ColumnasConExcel<ProveedorRecord> = [
+    { ...numeracionColumn<ProveedorRecord>({ current: page, pageSize }), excel: false },
     {
-      key: "ruc",
+      key: "ruc", excel: { label: "RUC", value: (r: ProveedorRecord) => r.ruc },
       title: "RUC",
       dataIndex: "ruc",
       width: 130,
@@ -216,7 +217,7 @@ export default function ProveedoresPage() {
       render: (v: string) => <Tag color={brand.navy}>{v}</Tag>,
     },
     {
-      key: "razon_social",
+      key: "razon_social", excel: { label: "Razón social", value: (r: ProveedorRecord) => r.razon_social },
       title: "Razón Social",
       dataIndex: "razon_social",
       ellipsis: true,
@@ -224,7 +225,7 @@ export default function ProveedoresPage() {
       ...filtroPorColumna(data, "razon_social"),
     },
     {
-      key: "nombre_comercial",
+      key: "nombre_comercial", excel: { label: "Nombre comercial", value: (r: ProveedorRecord) => r.nombre_comercial ?? "" },
       title: "Nombre Comercial",
       dataIndex: "nombre_comercial",
       ellipsis: true,
@@ -232,7 +233,7 @@ export default function ProveedoresPage() {
       render: (v: string | null) => v ?? "-",
     },
     {
-      key: "contacto",
+      key: "contacto", excel: { label: "Contacto", value: (r: ProveedorRecord) => r.contacto ?? "" },
       title: "Contacto",
       dataIndex: "contacto",
       width: 180,
@@ -241,7 +242,7 @@ export default function ProveedoresPage() {
       render: (v: string | null) => v ?? "-",
     },
     {
-      key: "telefono",
+      key: "telefono", excel: { label: "Teléfono", value: (r: ProveedorRecord) => r.telefono ?? "" },
       title: "Teléfono",
       dataIndex: "telefono",
       width: 130,
@@ -249,7 +250,7 @@ export default function ProveedoresPage() {
       render: (v: string | null) => v ?? "-",
     },
     {
-      key: "email",
+      key: "email", excel: { label: "Email", value: (r: ProveedorRecord) => r.email ?? "" },
       title: "Email",
       dataIndex: "email",
       width: 200,
@@ -258,40 +259,40 @@ export default function ProveedoresPage() {
       render: (v: string | null) => v ?? "-",
     },
     {
-      key: "direccion", title: "Dirección", dataIndex: "direccion", width: 220, ellipsis: true,
+      key: "direccion", excel: { label: "Dirección", value: (r: ProveedorRecord) => r.direccion ?? "" }, title: "Dirección", dataIndex: "direccion", width: 220, ellipsis: true,
       ...filtroPorColumna(data, "direccion"),
       render: (v: string | null) => v ?? "-",
     },
     // ── Defaults de OC (autolearn de la primera OC del proveedor) ──
     // Ocultas por default; el user las activa desde el botón "Columnas".
     {
-      key: "moneda_default", title: "Moneda", dataIndex: "moneda_default", width: 90, align: "center",
+      key: "moneda_default", excel: { label: "Moneda default", value: (r: ProveedorRecord) => r.moneda_default ?? "" }, title: "Moneda", dataIndex: "moneda_default", width: 90, align: "center",
       ...filtroPorColumna(data, "moneda_default"),
       render: (v: string | null) => v
         ? <Tag color={brand.cyan} style={{ margin: 0 }}>{v}</Tag>
         : <span style={{ color: "#bbb" }}>—</span>,
     },
     {
-      key: "tipo_pago_default", title: "Tipo pago", dataIndex: "tipo_pago_default", width: 130, align: "center",
+      key: "tipo_pago_default", excel: { label: "Tipo pago default", value: (r: ProveedorRecord) => r.tipo_pago_default ?? "" }, title: "Tipo pago", dataIndex: "tipo_pago_default", width: 130, align: "center",
       ...filtroPorColumna(data, "tipo_pago_default"),
       render: (v: string | null) => v ?? <span style={{ color: "#bbb" }}>—</span>,
     },
     {
-      key: "dias_credito_default", title: "Días crédito", dataIndex: "dias_credito_default", width: 110, align: "right",
+      key: "dias_credito_default", excel: { label: "Días crédito default", value: (r: ProveedorRecord) => r.dias_credito_default ?? "" }, title: "Días crédito", dataIndex: "dias_credito_default", width: 110, align: "right",
       sorter: (a, b) => (a.dias_credito_default ?? -1) - (b.dias_credito_default ?? -1),
       render: (v: number | null) => v != null
         ? <span style={{ fontWeight: 500 }}>{v}</span>
         : <span style={{ color: "#bbb" }}>—</span>,
     },
     {
-      key: "tiempo_entrega_dias", title: "T. entrega (días)", dataIndex: "tiempo_entrega_dias", width: 130, align: "right",
+      key: "tiempo_entrega_dias", excel: { label: "T. entrega (días)", value: (r: ProveedorRecord) => r.tiempo_entrega_dias ?? "" }, title: "T. entrega (días)", dataIndex: "tiempo_entrega_dias", width: 130, align: "right",
       sorter: (a, b) => (a.tiempo_entrega_dias ?? -1) - (b.tiempo_entrega_dias ?? -1),
       render: (v: number | null) => v != null
         ? <span style={{ fontWeight: 500 }}>{v}</span>
         : <span style={{ color: "#bbb" }}>—</span>,
     },
     {
-      key: "precios_incluyen_igv_default", title: "Precios c/IGV", dataIndex: "precios_incluyen_igv_default", width: 120, align: "center",
+      key: "precios_incluyen_igv_default", excel: { label: "Precios incluyen IGV", value: (r: ProveedorRecord) => r.precios_incluyen_igv_default == null ? "" : r.precios_incluyen_igv_default ? "Sí" : "No" }, title: "Precios c/IGV", dataIndex: "precios_incluyen_igv_default", width: 120, align: "center",
       render: (v: boolean | null) => v == null
         ? <span style={{ color: "#bbb" }}>—</span>
         : v
@@ -299,7 +300,7 @@ export default function ProveedoresPage() {
           : <Tag style={{ margin: 0 }}>No</Tag>,
     },
     {
-      key: "aplica_igv_default", title: "Aplica IGV", dataIndex: "aplica_igv_default", width: 110, align: "center",
+      key: "aplica_igv_default", excel: { label: "Aplica IGV", value: (r: ProveedorRecord) => r.aplica_igv_default == null ? "" : r.aplica_igv_default ? "Sí" : "No" }, title: "Aplica IGV", dataIndex: "aplica_igv_default", width: 110, align: "center",
       render: (v: boolean | null) => v == null
         ? <span style={{ color: "#bbb" }}>—</span>
         : v
@@ -308,6 +309,7 @@ export default function ProveedoresPage() {
     },
     {
       key: "acciones",
+      excel: false,
       title: "Acciones",
       width: 120,
       align: "center",
@@ -358,21 +360,8 @@ export default function ProveedoresPage() {
             filename="Proveedores"
             // Respeta el filtro de búsqueda activo en la tabla.
             endpointParams={{ search }}
-            columns={[
-              { label: "RUC", value: (r) => r.ruc },
-              { label: "Razón social", value: (r) => r.razon_social },
-              { label: "Nombre comercial", value: (r) => r.nombre_comercial ?? "" },
-              { label: "Contacto", value: (r) => r.contacto ?? "" },
-              { label: "Teléfono", value: (r) => r.telefono ?? "" },
-              { label: "Email", value: (r) => r.email ?? "" },
-              { label: "Dirección", value: (r) => r.direccion ?? "" },
-              { label: "Moneda default", value: (r) => r.moneda_default ?? "" },
-              { label: "Tipo pago default", value: (r) => r.tipo_pago_default ?? "" },
-              { label: "Días crédito default", value: (r) => r.dias_credito_default ?? "" },
-              { label: "T. entrega (días)", value: (r) => r.tiempo_entrega_dias ?? "" },
-              { label: "Precios incluyen IGV", value: (r) => r.precios_incluyen_igv_default == null ? "" : r.precios_incluyen_igv_default ? "Sí" : "No" },
-              { label: "Aplica IGV", value: (r) => r.aplica_igv_default == null ? "" : r.aplica_igv_default ? "Sí" : "No" },
-            ]}
+            columns={columnasParaExcel(columnsResizable)}
+            tablaLayout={{ ocultas }}
           />
           {isAdminUser && (
             <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>
