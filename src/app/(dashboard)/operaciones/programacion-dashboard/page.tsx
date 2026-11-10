@@ -59,9 +59,19 @@ import {
   filtroPorColumna,
   useColumnasRedimensionables,
   paginacionEstandar,
+  columnasParaExcel,
+  type ColumnasConExcel,
 } from "@/lib/tables";
+import { construirLibroExcel, type ValorCelda } from "@/lib/excel-export";
 
 const { Title, Text } = Typography;
+
+// Celda del plan de una OT para (componente, operación). Compartida por la
+// tabla y el Excel para que ambos lean exactamente la misma clave. El backend
+// normaliza las claves de planMap (trim + uppercase).
+function celdaPlanOp(o: OTRow, compCodigo: string, opCodigo: string) {
+  return o.plan[`${compCodigo.trim().toUpperCase()}__${opCodigo.trim().toUpperCase()}`];
+}
 
 interface ComponenteCat { componente_id: number; codigo: string; nombre: string; color: string | null }
 
@@ -892,10 +902,13 @@ export default function ProgramacionDashboardPage() {
   };
 
   // Columnas info de OT (fijas a la izquierda)
-  const infoColumns: ColumnsType<OTRow> = [
+  // Cada columna declara `excel` (definición única tabla + Excel): el título
+  // del Excel es el de la tabla y las columnas ocultas por el usuario no salen.
+  const infoColumns: ColumnasConExcel<OTRow> = [
     {
       key: "ot",
       title: "HP&K",
+      excel: { label: "HP&K", value: (o) => o.ot ?? `#${o.id}` },
       dataIndex: "ot",
       width: 90,
       align: "left",
@@ -911,6 +924,7 @@ export default function ProgramacionDashboardPage() {
     {
       key: "cliente_nombre",
       title: "Mina/Cliente",
+      excel: { label: "Mina/Cliente", value: (o) => o.cliente_nombre ?? o.cliente_codigo ?? "" },
       dataIndex: "cliente_nombre",
       width: 130,
       align: "left",
@@ -921,6 +935,7 @@ export default function ProgramacionDashboardPage() {
     {
       key: "descripcion",
       title: "Descripción",
+      excel: { label: "Descripción", value: (o) => o.descripcion ?? "" },
       dataIndex: "descripcion",
       width: 220,
       ellipsis: true,
@@ -932,6 +947,7 @@ export default function ProgramacionDashboardPage() {
     {
       key: "modelo",
       title: "Flota",
+      excel: { label: "Flota", value: (o) => o.modelo ?? "" },
       dataIndex: "modelo",
       width: 110,
       align: "center",
@@ -946,6 +962,7 @@ export default function ProgramacionDashboardPage() {
     {
       key: "np",
       title: "N/P",
+      excel: { label: "N/P", value: (o) => o.np ?? "" },
       dataIndex: "np",
       width: 130,
       align: "left",
@@ -957,6 +974,7 @@ export default function ProgramacionDashboardPage() {
     {
       key: "prioridad",
       title: "Prioridad",
+      excel: { label: "Prioridad", value: (o) => o.prioridad_codigo ?? "" },
       dataIndex: "prioridad_codigo",
       width: 100,
       align: "center",
@@ -969,6 +987,7 @@ export default function ProgramacionDashboardPage() {
     {
       key: "fecha_recepcion",
       title: "F. Ingreso OT",
+      excel: { label: "F. Ingreso OT", value: (o) => dateOnlyLocal(o.fecha_recepcion) },
       width: 110,
       align: "center",
       sorter: (a, b) => (a.fecha_recepcion ?? "").localeCompare(b.fecha_recepcion ?? ""),
@@ -977,6 +996,7 @@ export default function ProgramacionDashboardPage() {
     {
       key: "fecha_entrega",
       title: "Fecha entrega est.",
+      excel: { label: "Fecha entrega est.", value: (o) => dateOnlyLocal(o.fecha_entrega) },
       width: 110,
       align: "center",
       sorter: (a, b) => (a.fecha_entrega ?? "").localeCompare(b.fecha_entrega ?? ""),
@@ -985,6 +1005,7 @@ export default function ProgramacionDashboardPage() {
     {
       key: "ot_status",
       title: "Status OT",
+      excel: { label: "Status OT", value: (o) => o.ot_status ?? "" },
       dataIndex: "ot_status",
       width: 110,
       align: "center",
@@ -995,6 +1016,7 @@ export default function ProgramacionDashboardPage() {
     {
       key: "progreso",
       title: "Progreso",
+      excel: { label: "Progreso", value: (o) => (o.progreso.total > 0 ? `${o.progreso.realizadas}/${o.progreso.total}` : "") },
       width: 110,
       align: "center",
       sorter: (a, b) => {
@@ -1095,10 +1117,7 @@ export default function ProgramacionDashboardPage() {
           onHeaderCell: () => ({ style: { background: tinte } }),
           onCell: () => ({ style: { background: tinte, padding: "2px 3px" } }),
           render: (_: unknown, r: OTRow) => {
-            // El backend normaliza las claves de planMap (trim + uppercase) para
-            // que coincidan aunque la planificación tenga casing distinto.
-            const key = `${comp.codigo.trim().toUpperCase()}__${op.codigo.trim().toUpperCase()}`;
-            const cell = r.plan[key];
+            const cell = celdaPlanOp(r, comp.codigo, op.codigo);
             return renderCelda(cell?.estado ?? null, cell?.externo ?? null, cell?.comentario ?? null);
           },
         };
@@ -1183,37 +1202,40 @@ export default function ProgramacionDashboardPage() {
 
   // Export client-side de la matriz a .xlsx (una columna por operación visible).
   // xlsx se importa dinámico para no cargarlo con la página (~400 KB).
-  const exportarMatriz = useCallback(async () => {
-    const XLSX = await import("xlsx");
+  const exportarMatriz = async () => {
+    // Columnas de info: salen de la MISMA definición que la tabla (infoColumns)
+    // y respetan las que el usuario ocultó (`ocultas`, clave = key de columna).
+    const infoExcel = columnasParaExcel(infoColumns).filter((c) => !ocultas.includes(c.grupo ?? c.key ?? ""));
+    // Columnas por operación: DECISIÓN — el Excel incluye TODAS las operaciones
+    // visibles según el filtro de vista (componente/clasificación/ops ocultas
+    // de "Configurar vista"), aunque el grupo esté colapsado en pantalla: el
+    // colapso es solo una ayuda visual y un Excel completo es lo esperado.
+    // Los valores salen de celdaPlanOp (igual que la celda de la tabla) y el
+    // encabezado lleva "Componente · Operación" porque en el Excel no hay
+    // cabecera agrupada.
+    const opsExcel: { label: string; compCodigo: string; opCodigo: string }[] = [];
+    for (const comp of componentesOrdenados) {
+      for (const op of operacionesPorComponente.get(comp.codigo) ?? []) {
+        opsExcel.push({ label: `${comp.nombre} · ${op.nombre}`, compCodigo: comp.codigo, opCodigo: op.codigo });
+      }
+    }
     const rows = otsVisibles.map((o) => {
-      const r: Record<string, string | number> = {
-        "OT HP&K": o.ot ?? `#${o.id}`,
-        "Cliente": o.cliente_nombre ?? o.cliente_codigo ?? "",
-        "Descripción": o.descripcion ?? "",
-        "Flota": o.modelo ?? "",
-        "N/P": o.np ?? "",
-        "Prioridad": o.prioridad_codigo ?? "",
-        "F. Ingreso": o.fecha_recepcion ? dayjs(o.fecha_recepcion).format("DD/MM/YYYY") : "",
-        "Fecha entrega": o.fecha_entrega ? dayjs(o.fecha_entrega).format("DD/MM/YYYY") : "",
-        "Status OT": o.ot_status ?? "",
-        "Avance": o.progreso.total > 0 ? `${o.progreso.realizadas}/${o.progreso.total}` : "",
-      };
-      for (const comp of componentesOrdenados) {
-        for (const op of operacionesPorComponente.get(comp.codigo) ?? []) {
-          const key = `${comp.codigo.trim().toUpperCase()}__${op.codigo.trim().toUpperCase()}`;
-          const cell = o.plan[key];
-          r[`${comp.nombre} · ${op.nombre}`] = cell?.estado
-            ? `${estadoMap.get(cell.estado)?.nombre ?? cell.estado}${cell.externo ? " (tercero)" : ""}`
-            : "";
-        }
+      const r: Record<string, ValorCelda> = {};
+      for (const c of infoExcel) r[c.label] = c.value(o) as ValorCelda;
+      for (const x of opsExcel) {
+        const cell = celdaPlanOp(o, x.compCodigo, x.opCodigo);
+        r[x.label] = cell?.estado
+          ? `${estadoMap.get(cell.estado)?.nombre ?? cell.estado}${cell.externo ? " (tercero)" : ""}`
+          : "";
       }
       return r;
     });
-    const ws = XLSX.utils.json_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Planificación");
+    const formatos: Record<string, string> = {};
+    for (const c of infoExcel) if (c.z) formatos[c.label] = c.z;
+    const XLSX = await import("xlsx");
+    const wb = await construirLibroExcel(rows, "Planificación", formatos);
     XLSX.writeFile(wb, `Planificacion-${dayjs().format("YYYYMMDD-HHmm")}.xlsx`);
-  }, [otsVisibles, componentesOrdenados, operacionesPorComponente, estadoMap]);
+  };
 
   return (
     <div>
