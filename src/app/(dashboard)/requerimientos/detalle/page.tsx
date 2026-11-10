@@ -727,7 +727,10 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
       const res = await fetch("/api/requerimientos?limit=10000&slim=1");
       const json = await res.json();
       const raw = (json.data ?? []) as RequerimientoApi[];
-      setAllData(raw.map(normalize));
+      // En la lista de Requerimientos (embebida) los borradores no salen: son
+      // del solicitante y todavía no se enviaron a aprobación (2026-11-10).
+      // El detalle por requerimiento/OT los sigue mostrando.
+      setAllData(raw.map(normalize).filter((r) => !(embebido && r.status_req === "BORRADOR")));
     } catch {
       message.error("Error al cargar requerimientos");
     } finally {
@@ -1786,6 +1789,55 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
     });
   };
 
+  // Anulación MASIVA (logística/admin, 2026-11-10): APROBADOS/en trámite sin OC.
+  const anularSeleccionados = () => {
+    const items = selectedRecords.filter(
+      (r) => r.status_req !== "ANULADO" && r.status_req !== "DESAPROBADO" && r.po_id == null && !r.nro_oc,
+    );
+    if (items.length === 0) return;
+    let motivo = "";
+    Modal.confirm({
+      title: `Anular ${items.length} requerimiento(s)`,
+      content: (
+        <div style={{ marginTop: 8 }}>
+          <Text style={{ fontSize: 12 }}>Motivo (obligatorio, queda en el historial de cada OT). La anulación no se deshace.</Text>
+          <Input.TextArea
+            rows={3}
+            placeholder="Ej. ya no aplica / pedido duplicado"
+            onChange={(e) => { motivo = e.target.value; }}
+            style={{ marginTop: 8 }}
+            maxLength={500}
+            showCount
+          />
+        </div>
+      ),
+      okText: `Anular ${items.length}`,
+      okButtonProps: { danger: true },
+      cancelText: "Cancelar",
+      width: modalWidth(screens, 480),
+      onOk: async () => {
+        const txt = motivo.trim();
+        if (txt.length < 5) {
+          message.warning("El motivo es obligatorio (mínimo 5 caracteres).");
+          throw new Error("motivo requerido");
+        }
+        let ok = 0, errs = 0;
+        for (const it of items) {
+          const res = await fetch(`/api/requerimientos/${it.id}/anular`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ motivo: txt }),
+          });
+          if (res.ok) ok++; else errs++;
+        }
+        if (ok > 0) message.success(`${ok} requerimiento(s) anulado(s).`);
+        if (errs > 0) message.warning(`${errs} con error.`);
+        setSelectedRows([]);
+        await fetchData();
+      },
+    });
+  };
+
   const desaprobarItem = (r: Requerimiento) => pedirMotivoYEjecutar({
     titulo: `Desaprobar ${r.nro_req ?? "requerimiento"}`,
     okText: "Desaprobar",
@@ -2488,7 +2540,8 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
         const puedeEnviar = (sr === "BORRADOR" || sr === "OBSERVADO") && sinOC;
         const puedeAprobar = isAdmin && sr === "SIN_APROBACION" && sinOC;
         const puedeDesaprobar = isAdmin && sr === "SIN_APROBACION" && sinOC;
-        const puedeAnular = isAdmin && noAnulado && sinOC;
+        // Logística también anula (antes solo podía devolver a revisión; 2026-11-10).
+        const puedeAnular = (isAdmin || esLogistica) && noAnulado && sinOC;
         // Eliminar: el backend permite DELETE cuando no hay OC y estado NO es
         // APROBADO/ANULADO (BORRADOR, SIN_APROBACION, DESAPROBADO). Sin gate
         // de admin — el creador puede limpiar sus propios reqs con error.
@@ -2884,6 +2937,20 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
                 );
               })()}
               {(() => {
+                const elegibles = selectedRecords.filter(
+                  (r) => r.status_req !== "ANULADO" && r.status_req !== "DESAPROBADO" && r.po_id == null && !r.nro_oc,
+                );
+                return (
+                  <Tooltip title={elegibles.length === 0
+                    ? "Ninguno de los seleccionados se puede anular (ya están anulados o tienen OC)."
+                    : `Anula ${elegibles.length} requerimiento(s) sin OC con un mismo motivo. Los que tienen OC se gestionan desde la OC.`}>
+                    <Button danger size="large" icon={<StopOutlined />} disabled={elegibles.length === 0} onClick={anularSeleccionados}>
+                      Anular ({elegibles.length})
+                    </Button>
+                  </Tooltip>
+                );
+              })()}
+              {(() => {
                 // Caja chica en lote: subconjunto elegible de la selección
                 // (sin OC, no anulado ni cerrado) — el resto se ignora.
                 const elegibles = selectedRecords.filter(elegibleCajaChica);
@@ -2971,6 +3038,8 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
               options={otOptions}
             />
           </Col>
+          {/* En modo embebido el estado ya se elige en las pestañas de arriba. */}
+          {!embebido && (
           <Col xs={12} sm={6} md={4}>
             <Select showSearch optionFilterProp="label"
               placeholder="Estado REQ"
@@ -2987,6 +3056,7 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
               ]}
             />
           </Col>
+          )}
           <Col xs={12} sm={6} md={4}>
             <Button
               icon={<ReloadOutlined />}

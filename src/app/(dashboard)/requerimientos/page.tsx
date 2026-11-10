@@ -28,6 +28,7 @@ import { R2FileLink } from "@/components/R2FileLink";
 import FabricanteSelect from "@/components/FabricanteSelect";
 import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import { RequerimientosDetalleEmbebido } from "@/app/(dashboard)/requerimientos/detalle/page";
+import { puedeEscribirApi } from "@/lib/acceso-rutas";
 import {
   numeracionColumn,
   paginacionEstandar,
@@ -373,6 +374,8 @@ export default function RequerimientosPage() {
   // Roles
   const [roles, setRoles] = useState<string[]>([]);
   const isAdmin = roles.includes("admin");
+  // Logística también puede anular (antes solo devolvía a revisión; 2026-11-10).
+  const puedeAnular = isAdmin || puedeEscribirApi(roles, "/api/requerimientos/0/precio", "PATCH");
 
   const [messageApi, contextHolder] = message.useMessage();
   const { screens } = useResponsive();
@@ -450,7 +453,8 @@ export default function RequerimientosPage() {
       if (controller.signal.aborted) return;
       if (res.ok) {
         const j = await res.json();
-        setRows(j.data ?? []);
+        // Los borradores no salen en esta lista (son del solicitante y aún no se enviaron).
+        setRows(((j.data ?? []) as RequerimientoRow[]).filter((r) => r.status_requerimiento_codigo !== "BORRADOR"));
         setTotal(j.total ?? 0);
       }
     } catch (e) {
@@ -878,7 +882,6 @@ export default function RequerimientosPage() {
         { text: "Aprobado", value: "APROBADO" },
         { text: "Desaprobado", value: "DESAPROBADO" },
         { text: "Anulado", value: "ANULADO" },
-        { text: "Borrador", value: "BORRADOR" },
       ],
       onFilter: (value, g) => g.estados_req.includes(String(value)),
       render: (_, g) => renderStatusResumen(g.estados_req, REQ_COLOR, reqLabel),
@@ -1018,7 +1021,7 @@ export default function RequerimientosPage() {
                 </Popconfirm>
               </Tooltip>
             )}
-            {isAdmin && anulables.length > 0 && (
+            {puedeAnular && anulables.length > 0 && (
               <Tooltip title={`Anular ${anulables.length} item(s) del grupo`}>
                 <Popconfirm
                   title={`Anular ${anulables.length} item(s) del requerimiento ${g.nro_req}?`}
@@ -1344,7 +1347,7 @@ export default function RequerimientosPage() {
         const tieneOC = r.po_id != null;
         const canEdit = isAdmin && sr !== "ANULADO" && sr !== "DESAPROBADO" && !tieneOC;
         const canApprove = isAdmin && sr === "SIN_APROBACION";
-        const canAnular = isAdmin && !tieneOC && sr !== "ANULADO";
+        const canAnular = puedeAnular && !tieneOC && sr !== "ANULADO";
         return (
           <Space size={0}>
             {canApprove && (
@@ -1447,7 +1450,6 @@ export default function RequerimientosPage() {
           }}
           options={[
             { value: "__all", label: "Todos" },
-            { value: "BORRADOR", label: "Borrador" },
             { value: "SIN_APROBACION", label: "Sin aprobación" },
             { value: "APROBADO", label: "Aprobados" },
             { value: "OBSERVADO", label: "Observados" },
@@ -1477,15 +1479,6 @@ export default function RequerimientosPage() {
               value={filterOt}
               onChange={(e) => { setFilterOt(e.target.value); setPage(1); }}
               allowClear
-            />
-          </Col>
-          <Col xs={12} md={4}>
-            <Select showSearch optionFilterProp="label"
-              placeholder="Estado REQ"
-              value={filterStatusReq}
-              onChange={(v) => { setFilterStatusReq(v); setPage(1); }}
-              options={statusReqOpts}
-              allowClear style={{ width: "100%" }}
             />
           </Col>
           <Col xs={12} md={3}>
@@ -1518,15 +1511,6 @@ export default function RequerimientosPage() {
               options={proveedoresOpts}
               allowClear showSearch
               optionFilterProp="label"
-              style={{ width: "100%" }}
-            />
-          </Col>
-          <Col xs={24} md={6}>
-            <DatePicker.RangePicker
-              value={filterFechas as [dayjs.Dayjs, dayjs.Dayjs] | null}
-              onChange={(v) => { setFilterFechas(v as [dayjs.Dayjs | null, dayjs.Dayjs | null] | null); setPage(1); }}
-              placeholder={["Desde", "Hasta"]}
-              format="DD/MM/YYYY"
               style={{ width: "100%" }}
             />
           </Col>
@@ -1587,7 +1571,9 @@ export default function RequerimientosPage() {
         <Alert
           type="info" showIcon style={{ marginBottom: 12 }}
           title="Modo lectura para aprobar"
-          description="Solo administradores pueden aprobar/desaprobar/anular requerimientos. Vos podés ver y filtrar."
+          description={puedeAnular
+            ? "Solo administradores pueden aprobar/desaprobar requerimientos. Logística puede anular los que no tienen OC."
+            : "Solo administradores pueden aprobar/desaprobar/anular requerimientos. Vos podés ver y filtrar."}
         />
       )}
 
