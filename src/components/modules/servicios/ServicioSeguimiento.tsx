@@ -849,7 +849,7 @@ export function ServicioSeguimientoDrawer({ ser, open, onClose, onChanged, puede
               </Text>
               {envioSel?.cotizacion_resultado === "ACEPTADA" && (
                 <Alert type="warning" showIcon style={{ fontSize: 12, marginTop: space.sm }}
-                  message="Este servicio ya estaba aceptado (con OC). Si el proveedor no lo realizó, dejalo como Rechazada: pasa a Devuelto. La OC no se anula sola; ajustala en Compras si corresponde." />
+                  message="Este servicio ya estaba aceptado (con OC). Si el proveedor no lo realizó, dejalo como Rechazada: pasa a Devuelto, su línea sale de la OC (que se recalcula; si era la única, la OC se anula) y el requerimiento vuelve a Requerimientos para generar otra OC." />
               )}
             </>
           )}

@@ -5,6 +5,8 @@
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { parseDateOnly, hoyEnLima, formatDateOnly } from "./dates";
+import { resetLiberaciones } from "./liberacion";
+import { recalcularRecursosStatusDesdeRep } from "./recursos-ot";
 import { cargarSer, historialServicio, serializarEnvio, SELECT_ENVIO, type SerRow, type TxClient } from "./servicios-externos-server";
 
 export const AccionCotizacion = z.object({
@@ -313,6 +315,64 @@ export async function alinearSeguimientoConOC(
   return "aceptado";
 }
 
+const IGV_PCT = new Prisma.Decimal("0.18");
+
+/**
+ * "No se realizó" un servicio que YA tenía OC (decisión del usuario
+ * 2026-11-10): la línea sale de la OC y el requerimiento vuelve a "Listos para
+ * OC" (po_id = null, mismo desvinculado que el editor de OC). La OC se
+ * recalcula (subtotal/IGV/total; se descartan las firmas de liberación si
+ * seguía pendiente y el total cambió). Si era su única línea y la OC no se
+ * había recibido, la OC queda ANULADA. Devuelve el texto para el historial.
+ */
+async function retirarDeOC(tx: TxClient, serId: number, poId: number, desc: string): Promise<string> {
+  const compra = await tx.compra.findUnique({
+    where: { id: poId },
+    select: { id: true, numero_po: true, status_oc_codigo: true, descuento: true, otros: true, aplica_igv: true, total: true },
+  });
+  if (!compra || compra.status_oc_codigo === "ANULADO") return "";
+  const rep = await tx.oTRepuesto.findUnique({ where: { id: serId }, select: { cantidad_recibida: true } });
+  if (Number(rep?.cantidad_recibida ?? 0) > 0) {
+    throw errorAccion("BAD_STATE", `${desc}: ya tiene recepción registrada en la OC ${compra.numero_po}; no se puede marcar como no realizado.`);
+  }
+  await tx.oTRepuesto.update({
+    where: { id: serId },
+    data: {
+      po_id: null, nro_oc: null, fecha_oc: null, status_oc_codigo: "PEND_OC",
+      oc_cantidad: null, oc_precio_unitario: null, oc_descripcion: null, oc_unidad_medida: null,
+      oc_orden_item: null, fecha_entrega_esperada: null,
+    },
+  });
+  const restantes = await tx.oTRepuesto.findMany({
+    where: { po_id: poId },
+    select: { cantidad: true, precio_unitario: true, oc_cantidad: true, oc_precio_unitario: true },
+  });
+  const ptx = tx as Prisma.TransactionClient;
+  if (restantes.length === 0 && (compra.status_oc_codigo === "PEND_OC" || compra.status_oc_codigo === "PROCESO")) {
+    await resetLiberaciones(ptx, { compraId: poId });
+    await tx.compra.update({
+      where: { id: poId },
+      data: {
+        status_oc_codigo: "ANULADO",
+        comentario_aprobacion: `Anulada automáticamente: el servicio "${desc}" no se realizó y era su única línea.`,
+      },
+    });
+    return `OC ${compra.numero_po} ANULADA (era la única línea)`;
+  }
+  let subtotal = new Prisma.Decimal(0);
+  for (const r of restantes) {
+    subtotal = subtotal.plus(new Prisma.Decimal(r.oc_precio_unitario ?? r.precio_unitario ?? 0).mul(new Prisma.Decimal(r.oc_cantidad ?? r.cantidad ?? 0)));
+  }
+  const base = subtotal.minus(compra.descuento);
+  const impuesto = compra.aplica_igv && base.gt(0) ? base.mul(IGV_PCT) : new Prisma.Decimal(0);
+  const total = base.plus(impuesto).plus(compra.otros);
+  if (compra.status_oc_codigo === "PEND_OC" && !total.equals(new Prisma.Decimal(compra.total))) {
+    await resetLiberaciones(ptx, { compraId: poId });
+  }
+  await tx.compra.update({ where: { id: poId }, data: { subtotal, impuesto, total } });
+  return `línea retirada de la OC ${compra.numero_po} (total ${total.toFixed(2)})`;
+}
+
 /**
  * Aplica una acción a un envío. Valida la etapa, actualiza el envío (y el SER
  * cuando corresponde: prellenado de OC al aceptar, recepción al llegar) y
@@ -364,10 +424,18 @@ export async function aplicarAccionEnvio(
           },
         });
       }
+      // Rechazo de un servicio que ya tenía OC: la línea sale de la OC y el
+      // requerimiento vuelve a Requerimientos (ver retirarDeOC).
+      let notaOC = "";
+      if (d.resultado === "RECHAZADA" && ser.po_id != null) {
+        notaOC = await retirarDeOC(tx, ser.id, ser.po_id, desc);
+        await recalcularRecursosStatusDesdeRep(tx, ser);
+      }
       hist = d.resultado === "ACEPTADA"
         ? `Cotización ACEPTADA para "${desc}" (${envio.proveedor?.razon_social ?? "proveedor"}` +
           (monto != null ? `, ${d.moneda_cotizacion || ser.moneda || "USD"} ${monto}` : "") + ")"
-        : `Cotización RECHAZADA para "${desc}" (${envio.proveedor?.razon_social ?? "proveedor"})`;
+        : `Cotización RECHAZADA para "${desc}" (${envio.proveedor?.razon_social ?? "proveedor"})` +
+          (notaOC ? ` — ${notaOC}; vuelve a requerimientos` : "");
       break;
     }
     case "devolucion": {
