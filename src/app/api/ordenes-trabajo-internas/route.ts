@@ -35,7 +35,24 @@ export async function GET(req: NextRequest) {
     // ocultan. El admin puede pedirlas con ?incluirInactivas=1 (para reactivar).
     if (searchParams.get("incluirInactivas") !== "1") where.activo = true;
 
-    const [data, total] = await Promise.all([
+    // Filtro "Creado por" (2026-11-12): server-side, multi (?usuario_crea=A&usuario_crea=B).
+    // Antes era un filtro de columna en memoria que solo veía la página
+    // cargada (20 filas), por eso "no funcionaba". "__vacio__" = sin creador.
+    const creadoresSel = searchParams.getAll("usuario_crea").filter(Boolean);
+    const whereSinCreador = { ...where };
+    if (creadoresSel.length) {
+      const conVacio = creadoresSel.includes("__vacio__");
+      const nombres = creadoresSel.filter((c) => c !== "__vacio__");
+      where.AND = [
+        ...(where.AND ?? []),
+        { OR: [
+          ...(nombres.length ? [{ usuario_crea: { in: nombres } }] : []),
+          ...(conVacio ? [{ usuario_crea: null }, { usuario_crea: "" }] : []),
+        ] },
+      ];
+    }
+
+    const [data, total, creadoresAgg] = await Promise.all([
       prisma.ordenTrabajoInterna.findMany({
         where,
         include: {
@@ -60,7 +77,17 @@ export async function GET(req: NextRequest) {
         take: limit,
       }),
       prisma.ordenTrabajoInterna.count({ where }),
+      // Opciones del filtro "Creado por": todos los creadores con los demás
+      // filtros aplicados (no solo los de la página visible).
+      prisma.ordenTrabajoInterna.groupBy({
+        by: ["usuario_crea"],
+        where: whereSinCreador,
+        _count: { _all: true },
+      }),
     ]);
+    const creadores = creadoresAgg
+      .map((c) => ({ valor: c.usuario_crea ?? "", n: c._count._all }))
+      .sort((a, b) => a.valor.localeCompare(b.valor, "es"));
 
     // ── Agregaciones por OT (página actual) ──────────────────────────────
     // Una sola query con los repuestos NO anulados de las OTs visibles para:
@@ -142,7 +169,7 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({ data: enriched, total, page });
+    return NextResponse.json({ data: enriched, total, page, creadores });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Error" },

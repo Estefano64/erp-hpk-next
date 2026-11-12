@@ -194,6 +194,10 @@ export default function OrdenesTrabajoInternasPage() {
   const [search, setSearch] = usePersistedState<string>("oti-list-search", "");
   const [filterTipo, setFilterTipo] = usePersistedState<string | undefined>("oti-list-tipo", undefined);
   const [filterEquipo, setFilterEquipo] = usePersistedState<string | undefined>("oti-list-equipo", undefined);
+  // Filtro "Creado por" — se aplica en el servidor (sobre TODAS las OTs, no
+  // solo la página visible). Opciones = creadores que devuelve el API.
+  const [filterCreador, setFilterCreador] = usePersistedState<string[] | null>("oti-list-creador", null);
+  const [creadores, setCreadores] = useState<{ valor: string; n: number }[]>([]);
   // Filtro de OT Status — default "Abierta" (el usuario casi siempre entra a
   // trabajar con OTs activas). Su selección se persiste, así que si lo cambia
   // a otra cosa, en la próxima entrada se respeta lo que dejó.
@@ -320,12 +324,14 @@ export default function OrdenesTrabajoInternasPage() {
       if (filterTipo) params.set("tipo", filterTipo);
       if (filterEquipo) params.set("equipo", filterEquipo);
       if (verInactivas) params.set("incluirInactivas", "1");
+      for (const c of filterCreador ?? []) params.append("usuario_crea", c);
       const res = await fetch(`/api/ordenes-trabajo-internas?${params}`, { signal: controller.signal });
       if (controller.signal.aborted) return;
       if (res.ok) {
         const json = await res.json();
         setRows(json.data ?? []);
         setTotal(json.total ?? 0);
+        setCreadores(json.creadores ?? []);
       }
     } catch (e) {
       if (abortable.isAbort(e)) return;
@@ -333,7 +339,7 @@ export default function OrdenesTrabajoInternasPage() {
     } finally {
       if (abortable.isCurrent(controller)) setLoading(false);
     }
-  }, [page, pageSize, search, filterTipo, filterEquipo, verInactivas, abortable]);
+  }, [page, pageSize, search, filterTipo, filterEquipo, filterCreador, verInactivas, abortable]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -634,7 +640,16 @@ export default function OrdenesTrabajoInternasPage() {
     },
     {
       key: "usuario_crea", title: "Creado por", dataIndex: "usuario_crea", width: 150, ellipsis: true,
-      ...filtroPorColumna<OTInternaRow>(rows, "usuario_crea"),
+      // Server-side: las opciones vienen del API y el filtrado lo hace el
+      // servidor (onChange de la tabla → filterCreador → refetch).
+      filters: creadores.map((c) => ({
+        text: `${c.valor || "(vacío)"} (${c.n})`,
+        value: c.valor || "__vacio__",
+      })),
+      filterSearch: true,
+      filterMultiple: true,
+      defaultFilteredValue: filterCreador ?? undefined,
+      onFilter: () => true,
       render: (v: string | null) => v ?? <Text type="secondary">—</Text>,
     },
     {
@@ -996,6 +1011,11 @@ export default function OrdenesTrabajoInternasPage() {
           onChange={(_p, filters) => {
             const next = filters?.ot_status ?? null;
             setOtStatusFilter(next as string[] | null);
+            const cre = (filters?.usuario_crea as string[] | null) ?? null;
+            if (JSON.stringify(cre ?? []) !== JSON.stringify(filterCreador ?? [])) {
+              setFilterCreador(cre && cre.length ? cre : null);
+              setPage(1);
+            }
           }}
           pagination={paginacionEstandar({
             current: page,
