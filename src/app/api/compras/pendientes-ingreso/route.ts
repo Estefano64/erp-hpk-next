@@ -220,6 +220,10 @@ export async function GET() {
           numero_po: c.numero_po,
           proveedor_nombre: c.proveedor?.razon_social ?? null,
           ubicacion_nombre: c.ubicacion?.nombre ?? null,
+          // Alias con los nombres que lee la pestaña Ingreso de PO (las
+          // columnas Estado y Almacén salían vacías).
+          almacen_nombre: c.ubicacion?.nombre ?? null,
+          estado: c.status_oc_codigo,
           fecha_solicitud: c.fecha_solicitud,
           // Creación de la PO (fecha+hora) y quién la creó (pedido 2026-11-10).
           creado_en: c.createdAt,
