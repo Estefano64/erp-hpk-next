@@ -8,6 +8,8 @@
 //   - Servicios externos (SER): pendientes de envío, en cotización,
 //     incompletos (en trabajo).
 //   - OTs sin cerrar (externas), por estado y antigüedad.
+//   - OTs internas sin cerrar, agrupadas por quién las creó (2026-11-12):
+//     "qué usuarios faltan que cierren sus OTs internas".
 // Cada bloque trae `edad` = cantidades por tramo [0-3, 4-7, 8-15, 16+ días] y
 // `top` = los más antiguos. Solo lectura, sin columnas pesadas.
 import { NextRequest, NextResponse } from "next/server";
@@ -55,7 +57,7 @@ export async function GET(req: NextRequest) {
       orden_trabajo_interna: { select: { id: true, ot: true } },
     } as const;
 
-    const [sinAprobar, observados, listosOC, ocsAprob, ocsProceso, sers, ots] = await Promise.all([
+    const [sinAprobar, observados, listosOC, ocsAprob, ocsProceso, sers, ots, otis] = await Promise.all([
       prisma.oTRepuesto.findMany({ where: { ...baseReq, status_requerimiento_codigo: "SIN_APROBACION", po_id: null }, select: selReq }),
       prisma.oTRepuesto.findMany({ where: { ...baseReq, status_requerimiento_codigo: "OBSERVADO", po_id: null }, select: selReq }),
       prisma.oTRepuesto.findMany({
@@ -103,6 +105,13 @@ export async function GET(req: NextRequest) {
         select: {
           id: true, ot: true, tipo_codigo: true, ot_status_codigo: true, descripcion: true,
           fecha_creacion: true, fecha_recepcion: true, cliente: { select: { razon_social: true } },
+        },
+      }),
+      prisma.ordenTrabajoInterna.findMany({
+        where: { activo: true, fecha_cierre: null, OR: [{ ot_status_codigo: null }, { ot_status_codigo: { notIn: OT_CERRADA } }] },
+        select: {
+          id: true, ot: true, ot_status_codigo: true, descripcion: true, usuario_crea: true,
+          asignado_a: true, fecha_creacion: true,
         },
       }),
     ]);
@@ -170,6 +179,28 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => b.dias - a.dias)
       .slice(0, 10);
 
+    // OTs internas sin cerrar, por creador (el responsable de cerrarla).
+    const otiDias = otis.map((o) => diasDesde(o.fecha_creacion, hoy));
+    const porCreador = new Map<string, { n: number; dias: number[]; maxDias: number }>();
+    otis.forEach((o, i) => {
+      const k = o.usuario_crea?.trim() || "(sin creador)";
+      const e = porCreador.get(k) ?? { n: 0, dias: [], maxDias: 0 };
+      e.n++;
+      e.dias.push(otiDias[i]);
+      e.maxDias = Math.max(e.maxDias, otiDias[i]);
+      porCreador.set(k, e);
+    });
+    const otiTop: Tope[] = otis
+      .map((o, i) => ({
+        id: o.id,
+        titulo: `${formatOtInternaCodigo(o.ot, `OTI-${o.id}`)} · ${o.usuario_crea ?? "—"}`,
+        detalle: o.descripcion,
+        dias: otiDias[i],
+        href: `/ordenes-trabajo-internas/${o.id}`,
+      }))
+      .sort((a, b) => b.dias - a.dias)
+      .slice(0, 10);
+
     return NextResponse.json({
       generado: new Date().toISOString(),
       requerimientos: {
@@ -187,6 +218,14 @@ export async function GET(req: NextRequest) {
         porEstado: [...porEstado.entries()].map(([estado, n]) => ({ estado, n })).sort((a, b) => b.n - a.n),
         top: otTop,
         href: "/ordenes-trabajo",
+      },
+      otsInternas: {
+        ...bloque(otiDias),
+        porUsuario: [...porCreador.entries()]
+          .map(([usuario, e]) => ({ usuario, n: e.n, edad: bloque(e.dias).edad, maxDias: e.maxDias }))
+          .sort((a, b) => b.n - a.n || b.maxDias - a.maxDias),
+        top: otiTop,
+        href: "/ordenes-trabajo-internas",
       },
     });
   } catch (error) {

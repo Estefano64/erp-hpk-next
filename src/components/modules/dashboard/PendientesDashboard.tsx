@@ -19,6 +19,10 @@ interface Datos {
   ocs: { porAprobar: Bloque; sinRecibir: Bloque };
   servicios: { PENDIENTE_ENVIO: number; EN_COTIZACION: number; EN_TRABAJO: number; incompletosEdad: number[]; top: Tope[]; href: string };
   ots: { total: number; edad: number[]; porEstado: { estado: string; n: number }[]; top: Tope[]; href: string };
+  otsInternas?: {
+    total: number; edad: number[]; top: Tope[]; href: string;
+    porUsuario: { usuario: string; n: number; edad: number[]; maxDias: number }[];
+  };
 }
 
 const TRAMOS = ["0-3 d", "4-7 d", "8-15 d", "+15 d"];
@@ -123,7 +127,7 @@ export default function PendientesDashboard() {
 
   if (!d) return loading ? <Spin /> : <Empty description={error ?? "Sin datos"} />;
 
-  const { requerimientos: rq, ocs, servicios: sv, ots } = d;
+  const { requerimientos: rq, ocs, servicios: sv, ots, otsInternas: oti } = d;
   const serTotal = sv.PENDIENTE_ENVIO + sv.EN_COTIZACION + sv.EN_TRABAJO;
 
   return (
@@ -203,6 +207,40 @@ export default function PendientesDashboard() {
           <Col xs={24}><ListaTop titulo="OTs abiertas más antiguas" filas={ots.top} /></Col>
         </Row>
       </Seccion>
+
+      {oti && (
+        <Seccion titulo="OTs internas sin cerrar">
+          <Row gutter={[space.md, space.md]}>
+            <Col xs={24} md={8}>
+              <Kpi titulo="OTs internas abiertas" valor={oti.total} href={oti.href} edad={oti.edad}
+                nota="Antigüedad desde la creación. Cada usuario cierra las que creó." />
+            </Col>
+            <Col xs={24} md={16}>
+              <Card size="small" title={<Text strong style={{ fontSize: 13 }}>Por usuario que la creó</Text>} style={{ height: "100%" }}>
+                <Table
+                  rowKey="usuario"
+                  size="small"
+                  pagination={false}
+                  dataSource={oti.porUsuario}
+                  scroll={{ x: 520 }}
+                  locale={{ emptyText: "Nadie tiene OTs internas pendientes" }}
+                  columns={[
+                    { key: "u", title: "Usuario", dataIndex: "usuario", render: (v: string) => <Text style={{ fontSize: 12 }}>{v}</Text> },
+                    { key: "n", title: "Sin cerrar", dataIndex: "n", width: 90, align: "right",
+                      render: (v: number) => <Text strong>{v}</Text> },
+                    { key: "e", title: "Antigüedad", width: 300, render: (_: unknown, r: { edad: number[] }) => <Edad edad={r.edad} /> },
+                    { key: "m", title: "Más antigua", dataIndex: "maxDias", width: 100, align: "right",
+                      render: (v: number) => (
+                        <Tag color={v > 15 ? "red" : v > 7 ? "orange" : v > 3 ? "gold" : "default"} style={{ margin: 0 }}>{v} d</Tag>
+                      ) },
+                  ]}
+                />
+              </Card>
+            </Col>
+            <Col xs={24}><ListaTop titulo="OTs internas abiertas más antiguas" filas={oti.top} /></Col>
+          </Row>
+        </Seccion>
+      )}
 
       <Text type="secondary" style={{ fontSize: 11 }}>
         Actualizado {new Date(d.generado).toLocaleString("es-PE", { timeZone: "America/Lima" })}. Los requerimientos en borrador no se cuentan.
