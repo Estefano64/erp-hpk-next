@@ -131,10 +131,6 @@ export async function GET(req: NextRequest) {
     // primero). Se resuelve en SQL porque el orden es sobre un COALESCE, que
     // Prisma no expresa en orderBy.
     const filtros: Prisma.Sql[] = [ES_DESPACHADA_SQL];
-    // solo_sistema=1 → solo OTs numeradas desde 2026 (las que nacieron en este
-    // sistema). Las de 2020-2025 son histórico migrado: ~1,660 figuran sin
-    // factura cargada porque se facturaron fuera del sistema (2026-11-12).
-    if (sp.get("solo_sistema") === "1") filtros.push(Prisma.sql`anio >= 26`);
     if (anios.length > 0) {
       filtros.push(Prisma.sql`EXTRACT(YEAR FROM ${CAMPO_FECHA})::int IN (${Prisma.join(anios)})`);
     }
@@ -156,7 +152,10 @@ export async function GET(req: NextRequest) {
     // Ajuste 2026-11-12: si la OT con garantía tiene monto de cotización > 0
     // se considera cobrable y SÍ entra a pendientes (con la etiqueta
     // "Garantía" en la pantalla) para que logística la revise.
-    const SIN_GARANTIA_SQL = Prisma.sql`(garantia_codigo IS DISTINCT FROM 'Si' OR monto_cotizacion > 0)`;
+    // Las OTs anteriores a 2026 (histórico migrado) NO son facturables desde
+    // este sistema: se facturaron fuera (decisión 2026-11-12). Si alguna tuviera
+    // factura cargada, sí aparece entre las facturadas.
+    const SIN_GARANTIA_SQL = Prisma.sql`((garantia_codigo IS DISTINCT FROM 'Si' OR monto_cotizacion > 0) AND (anio IS NULL OR anio >= 26))`;
 
     // Conteos del universo filtrado (SIN el filtro de estado) — alimentan las
     // pestañas Todas/Pendientes/Facturadas aunque solo se cargue un subconjunto.
