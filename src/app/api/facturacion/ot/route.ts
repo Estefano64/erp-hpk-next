@@ -149,7 +149,10 @@ export async function GET(req: NextRequest) {
     // Las OTs con GARANTÍA no se facturan (es reparación por garantía, sin
     // cobro): quedan fuera de la cola de pendientes (2026-09-03). Si alguna
     // llegara a tener factura, sí aparece entre las facturadas.
-    const SIN_GARANTIA_SQL = Prisma.sql`(garantia_codigo IS DISTINCT FROM 'Si')`;
+    // Ajuste 2026-11-12: si la OT con garantía tiene monto de cotización > 0
+    // se considera cobrable y SÍ entra a pendientes (con la etiqueta
+    // "Garantía" en la pantalla) para que logística la revise.
+    const SIN_GARANTIA_SQL = Prisma.sql`(garantia_codigo IS DISTINCT FROM 'Si' OR monto_cotizacion > 0)`;
 
     // Conteos del universo filtrado (SIN el filtro de estado) — alimentan las
     // pestañas Todas/Pendientes/Facturadas aunque solo se cargue un subconjunto.
@@ -192,7 +195,7 @@ export async function GET(req: NextRequest) {
         wo_cliente: true, po_cliente: true, ns: true,
         fecha_entrega: true, fecha_facturacion: true,
         guia_entrega_salida: true, nro_informe_entrega: true,
-        nro_factura: true, monto_cotizacion: true,
+        nro_factura: true, monto_cotizacion: true, garantia_codigo: true,
         cliente: { select: { codigo: true, razon_social: true, nombre_comercial: true } },
         codigo_reparacion: { select: { codigo: true, descripcion: true } },
         ot_status: true, taller_status: true,
@@ -272,6 +275,7 @@ export async function GET(req: NextRequest) {
         nro_informe_entrega: o.nro_informe_entrega,
         nro_factura: o.nro_factura,
         monto_cotizacion: o.monto_cotizacion,
+        garantia: o.garantia_codigo === "Si",
         taller_status: o.taller_status?.nombre ?? null,
         // PDFs requeridos agrupados por etapa — el frontend renderiza 5 chips.
         tipo_codigo: o.tipo_codigo,

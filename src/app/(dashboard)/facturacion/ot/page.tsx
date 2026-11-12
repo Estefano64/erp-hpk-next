@@ -70,6 +70,8 @@ interface OTLista {
   nro_informe_entrega: string | null;
   nro_factura: string | null;
   monto_cotizacion: number | string | null;
+  // OT marcada con garantía (aparece en pendientes solo si tiene monto > 0).
+  garantia?: boolean;
   taller_status: string | null;
   tipo_codigo: string | null;
   pdfs: PdfsPorEtapa;
@@ -183,12 +185,10 @@ export default function FacturacionOTPage() {
       if (json.counts) setCounts(json.counts);
       const anios = (json.anios_disponibles ?? []) as Array<{ anio: number; n: number }>;
       setAniosDisponibles(anios);
-      // Primera carga: preseleccionar el año más reciente para no traer todo
-      // el histórico de una. El usuario puede sumar años desde el filtro.
-      if (!aniosHidratado) {
-        setAniosHidratado(true);
-        if (anios.length > 0) setFiltroAnios([anios[0].anio]);
-      }
+      // Desde 2026-11-12 se muestran TODOS los años desde que se usa el
+      // sistema (sin preselección) para que logística revise cuáles faltan
+      // facturar; el filtro de año sigue disponible para acotar.
+      if (!aniosHidratado) setAniosHidratado(true);
     } catch {
       msg.error("Error al cargar facturación de OTs");
     } finally {
@@ -313,6 +313,16 @@ export default function FacturacionOTPage() {
           {r.ot ?? `#${r.id}`}
         </Tag>
       ),
+    },
+    {
+      key: "garantia", title: "Garantía", width: 100, align: "center",
+      render: (_v, r) => r.garantia
+        ? (
+          <Tooltip title="Marcada con garantía pero con monto de cotización: revisar si se factura.">
+            <Tag color="orange" style={{ margin: 0 }}>Garantía</Tag>
+          </Tooltip>
+        )
+        : null,
     },
     {
       key: "cliente", title: "Cliente", width: 180, ellipsis: true,
