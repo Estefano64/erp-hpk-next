@@ -19,6 +19,7 @@ interface Datos {
   ocs: { porAprobar: Bloque; sinRecibir: Bloque };
   servicios: { PENDIENTE_ENVIO: number; EN_COTIZACION: number; EN_TRABAJO: number; incompletosEdad: number[]; top: Tope[]; href: string };
   ots: { total: number; edad: number[]; porEstado: { estado: string; n: number }[]; top: Tope[]; href: string };
+  porFacturar?: Bloque;
   otsInternas?: {
     total: number; edad: number[]; top: Tope[]; href: string;
     porUsuario: { usuario: string; n: number; edad: number[]; maxDias: number }[];
@@ -127,7 +128,7 @@ export default function PendientesDashboard() {
 
   if (!d) return loading ? <Spin /> : <Empty description={error ?? "Sin datos"} />;
 
-  const { requerimientos: rq, ocs, servicios: sv, ots, otsInternas: oti } = d;
+  const { requerimientos: rq, ocs, servicios: sv, ots, otsInternas: oti, porFacturar: fact } = d;
   const serTotal = sv.PENDIENTE_ENVIO + sv.EN_COTIZACION + sv.EN_TRABAJO;
 
   return (
@@ -207,6 +208,18 @@ export default function PendientesDashboard() {
           <Col xs={24}><ListaTop titulo="OTs abiertas más antiguas" filas={ots.top} /></Col>
         </Row>
       </Seccion>
+
+      {fact && (
+        <Seccion titulo="OTs por facturar">
+          <Row gutter={[space.md, space.md]}>
+            <Col xs={24} md={8}>
+              <Kpi titulo="OTs despachadas sin factura" valor={fact.total} href={fact.href} edad={fact.edad} alerta
+                nota="Solo OTs 2026 en adelante. Antigüedad desde el despacho. Garantía cuenta solo si tiene monto." />
+            </Col>
+            <Col xs={24} md={16}><ListaTop titulo="OTs por facturar más antiguas" filas={fact.top} /></Col>
+          </Row>
+        </Seccion>
+      )}
 
       {oti && (
         <Seccion titulo="OTs internas sin cerrar">

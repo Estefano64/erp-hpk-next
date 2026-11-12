@@ -59,7 +59,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const ot = await prisma.ordenTrabajo.findUnique({
       where: { id: otId },
       select: {
-        id: true, ot: true, taller_status_codigo: true,
+        id: true, ot: true, taller_status_codigo: true, garantia_codigo: true,
         guia_entrega_salida: true,
         adjuntos: {
           where: { etapa_codigo: { in: [...ETAPAS_REQUERIDAS] } },
@@ -99,6 +99,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           fecha_facturacion: parseDateOnly(d.fecha_facturacion) ?? new Date(),
           monto_cotizacion: d.monto ?? undefined,
           taller_status_codigo: ESTADO_COBRANZA,
+          // Si se le carga factura, no fue garantía (regla del equipo 2026-11-12).
+          ...(ot.garantia_codigo === "Si" ? { garantia_codigo: "No" } : {}),
           usuario_actualiza: usuario,
           fecha_actualizacion: new Date(),
         },
@@ -114,6 +116,16 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           datos_adicionales: d.observaciones ?? null,
         },
       });
+      if (ot.garantia_codigo === "Si") {
+        await tx.oTHistorial.create({
+          data: {
+            ot_id: otId,
+            tipo_operacion: "EDICION",
+            descripcion: `Garantía: Si → No (se cargó la factura ${d.nro_factura}, por lo tanto no fue garantía)`,
+            usuario,
+          },
+        });
+      }
       return u;
     });
 

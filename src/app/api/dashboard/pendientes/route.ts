@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
       orden_trabajo_interna: { select: { id: true, ot: true } },
     } as const;
 
-    const [sinAprobar, observados, listosOC, ocsAprob, ocsProceso, sers, ots, otis] = await Promise.all([
+    const [sinAprobar, observados, listosOC, ocsAprob, ocsProceso, sers, ots, otis, porFacturar] = await Promise.all([
       prisma.oTRepuesto.findMany({ where: { ...baseReq, status_requerimiento_codigo: "SIN_APROBACION", po_id: null }, select: selReq }),
       prisma.oTRepuesto.findMany({ where: { ...baseReq, status_requerimiento_codigo: "OBSERVADO", po_id: null }, select: selReq }),
       prisma.oTRepuesto.findMany({
@@ -112,6 +112,31 @@ export async function GET(req: NextRequest) {
         select: {
           id: true, ot: true, ot_status_codigo: true, descripcion: true, usuario_crea: true,
           asignado_a: true, fecha_creacion: true,
+        },
+      }),
+      // OTs por facturar: MISMA regla que /api/facturacion/ot (pendientes) —
+      // despachadas, sin factura (nro, fecha ni PDF), de 2026 en adelante
+      // (las anteriores no son facturables) y con la excepción de garantía
+      // (la garantía solo cuenta si tiene monto > 0).
+      prisma.ordenTrabajo.findMany({
+        where: {
+          activo: true,
+          OR: [{ anio: null }, { anio: { gte: 26 } }],
+          AND: [
+            { OR: [
+              { guia_entrega_salida: { not: null } }, { fecha_despacho: { not: null } },
+              { taller_status_codigo: { in: ["Entregado", "Cobranza"] } },
+              { adjuntos: { some: { etapa_codigo: "despacho" } } },
+            ] },
+            { OR: [{ garantia_codigo: null }, { garantia_codigo: { not: "Si" } }, { monto_cotizacion: { gt: 0 } }] },
+          ],
+          nro_factura: null, fecha_facturacion: null,
+          adjuntos: { none: { etapa_codigo: "facturacion" } },
+        },
+        select: {
+          id: true, ot: true, tipo_codigo: true, garantia_codigo: true, fecha_despacho: true, fecha_entrega: true,
+          cliente: { select: { razon_social: true } },
+          adjuntos: { where: { etapa_codigo: "despacho" }, select: { fecha_subida: true }, orderBy: { fecha_subida: "desc" }, take: 1 },
         },
       }),
     ]);
@@ -201,6 +226,19 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => b.dias - a.dias)
       .slice(0, 10);
 
+    // OTs por facturar: antigüedad desde el despacho efectivo.
+    const factDias = porFacturar.map((o) => diasDesde(o.fecha_despacho ?? o.fecha_entrega ?? o.adjuntos[0]?.fecha_subida, hoy));
+    const factTop: Tope[] = porFacturar
+      .map((o, i) => ({
+        id: o.id,
+        titulo: `${formatOtCodigo(o.ot, o.tipo_codigo, `OT-${o.id}`)}${o.garantia_codigo === "Si" ? " · Garantía" : ""}`,
+        detalle: o.cliente?.razon_social ?? null,
+        dias: factDias[i],
+        href: "/facturacion/ot",
+      }))
+      .sort((a, b) => b.dias - a.dias)
+      .slice(0, 10);
+
     return NextResponse.json({
       generado: new Date().toISOString(),
       requerimientos: {
@@ -219,6 +257,7 @@ export async function GET(req: NextRequest) {
         top: otTop,
         href: "/ordenes-trabajo",
       },
+      porFacturar: { ...bloque(factDias), top: factTop, href: "/facturacion/ot" },
       otsInternas: {
         ...bloque(otiDias),
         porUsuario: [...porCreador.entries()]
