@@ -131,6 +131,10 @@ export async function GET(req: NextRequest) {
     // primero). Se resuelve en SQL porque el orden es sobre un COALESCE, que
     // Prisma no expresa en orderBy.
     const filtros: Prisma.Sql[] = [ES_DESPACHADA_SQL];
+    // solo_sistema=1 → solo OTs numeradas desde 2026 (las que nacieron en este
+    // sistema). Las de 2020-2025 son histórico migrado: ~1,660 figuran sin
+    // factura cargada porque se facturaron fuera del sistema (2026-11-12).
+    if (sp.get("solo_sistema") === "1") filtros.push(Prisma.sql`anio >= 26`);
     if (anios.length > 0) {
       filtros.push(Prisma.sql`EXTRACT(YEAR FROM ${CAMPO_FECHA})::int IN (${Prisma.join(anios)})`);
     }

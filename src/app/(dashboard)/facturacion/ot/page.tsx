@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Typography, Card, Table, Tag, Space, Button, Row, Col, Statistic, Empty,
-  Modal, Form, Input, DatePicker, InputNumber, App, Tooltip, Alert, Upload,
+  Modal, Form, Input, DatePicker, InputNumber, App, Tooltip, Alert, Upload, Switch,
   Divider, Spin, List, Select,
 } from "antd";
 import {
@@ -168,6 +168,9 @@ export default function FacturacionOTPage() {
   // Conteos del universo filtrado (sin el estado) — para las pestañas.
   const [counts, setCounts] = useState<{ todas: number; pendientes: number; facturadas: number }>({ todas: 0, pendientes: 0, facturadas: 0 });
   const [aniosHidratado, setAniosHidratado] = useState(false);
+  // Por defecto solo las OTs nacidas en este sistema (2026+); el histórico
+  // migrado (2020-2025) se ve apagando el switch.
+  const [soloSistema, setSoloSistema] = useState(true);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -175,6 +178,7 @@ export default function FacturacionOTPage() {
       const params = new URLSearchParams();
       // Filtro de estado SERVER-side: siempre pendientes.
       params.set("estado", "pendientes");
+      if (soloSistema) params.set("solo_sistema", "1");
       if (filtroAnios.length > 0) params.set("anios", filtroAnios.join(","));
       if (filtroMeses.length > 0) params.set("meses", filtroMeses.join(","));
       if (filtroRango?.[0]) params.set("desde", filtroRango[0].format("YYYY-MM-DD"));
@@ -194,7 +198,7 @@ export default function FacturacionOTPage() {
     } finally {
       setLoading(false);
     }
-  }, [msg, filtroAnios, filtroMeses, filtroRango, aniosHidratado]);
+  }, [msg, filtroAnios, filtroMeses, filtroRango, aniosHidratado, soloSistema]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -521,6 +525,9 @@ export default function FacturacionOTPage() {
               propio endpoint con su conteo; el filtrado ocurre en el server.
               optionFilterProp="label": sin esto, tipear en el select no
               filtraba (el match por defecto es contra el value numérico). */}
+          <Tooltip title="Activado: solo OTs creadas en este sistema (2026). Apagado: incluye el histórico migrado 2020-2025, que en su mayoría se facturó fuera del sistema.">
+            <Switch checked={soloSistema} onChange={setSoloSistema} checkedChildren="OTs 2026" unCheckedChildren="Todo el histórico" />
+          </Tooltip>
           <Select
             mode="multiple"
             allowClear
