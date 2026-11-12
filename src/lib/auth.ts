@@ -3,6 +3,24 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "./prisma";
 
+// Nombre vigente del usuario según la BD, con caché corta (60 s) para no
+// consultar en cada request. null si no existe o falla la consulta.
+const cacheNombre = new Map<string, { nombre: string | null; vence: number }>();
+export async function nombreUsuarioActual(sub: string | undefined | null): Promise<string | null> {
+  const id = Number(sub);
+  if (!sub || !Number.isInteger(id)) return null;
+  const hit = cacheNombre.get(sub);
+  if (hit && hit.vence > Date.now()) return hit.nombre;
+  try {
+    const u = await prisma.usuario.findUnique({ where: { id }, select: { nombre: true } });
+    const nombre = u?.nombre ?? null;
+    cacheNombre.set(sub, { nombre, vence: Date.now() + 60_000 });
+    return nombre;
+  } catch {
+    return null;
+  }
+}
+
 export const authOptions: AuthOptions = {
   session: {
     strategy: "jwt",
@@ -57,6 +75,13 @@ export const authOptions: AuthOptions = {
       if (user) {
         token.roles = (user as unknown as { roles: string[] }).roles;
         token.clienteId = (user as unknown as { clienteId: number | null }).clienteId ?? null;
+      } else if (token.sub) {
+        // Refresca el NOMBRE desde la BD (2026-11-12): si el admin renombra a
+        // un usuario, sin esto la sesión seguía firmando operaciones con el
+        // nombre viejo hasta re-loguearse (hasta 8 h). Los roles NO se tocan
+        // acá a propósito (siguen aplicando al re-loguear).
+        const actual = await nombreUsuarioActual(token.sub);
+        if (actual) token.name = actual;
       }
       return token;
     },

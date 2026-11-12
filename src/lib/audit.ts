@@ -1,11 +1,15 @@
 import { getToken } from "next-auth/jwt";
 import type { NextRequest } from "next/server";
 import type { Prisma, PrismaClient } from "@prisma/client";
+import { nombreUsuarioActual } from "@/lib/auth";
 
 export async function getAuditUser(req: NextRequest): Promise<string | null> {
   const token = await getToken({ req });
   if (!token) return null;
-  return (token.name as string) ?? (token.email as string) ?? null;
+  // Nombre vigente de la BD (por si lo renombraron con la sesión abierta);
+  // respaldo: el que quedó en el JWT al loguearse.
+  const actual = await nombreUsuarioActual(token.sub);
+  return actual ?? (token.name as string) ?? (token.email as string) ?? null;
 }
 
 export async function isAdmin(req: NextRequest): Promise<boolean> {
