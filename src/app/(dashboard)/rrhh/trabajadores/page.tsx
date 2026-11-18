@@ -26,6 +26,7 @@ import { ExportarExcelButton } from "@/components/ExportarExcelButton";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import { useSession } from "next-auth/react";
 import { rolesDesdeUser } from "@/lib/permisos";
+import { mensajeErrorApi } from "@/lib/api-error";
 
 dayjs.extend(isoWeek);
 
@@ -55,6 +56,13 @@ interface Usuario {
   roles: string[];
   activo: boolean;
   trabajadorId: number | null;
+}
+
+// Código de login de una cuenta nueva: DNI si tiene (no vacío), sino USR-T<id>.
+// Recortado a 20 (tope del campo en la API).
+function codigoLoginDe(t: { dni?: string | null; trabajador_id: number }): string {
+  const dni = t.dni?.trim();
+  return (dni || `USR-T${t.trabajador_id}`).slice(0, 20);
 }
 
 // Roles disponibles para asignar. Los "bien definidos" tienen comportamiento
@@ -226,6 +234,7 @@ export default function TrabajadoresPage() {
   // ID de cuenta seleccionada en el modo "vincular".
   const [cuentaAVincular, setCuentaAVincular] = useState<number | undefined>();
   const [cuentaForm] = Form.useForm<{
+    nombre?: string;
     email?: string;
     roles: string[];
     password?: string;
@@ -429,6 +438,7 @@ export default function TrabajadoresPage() {
     cuentaForm.resetFields();
     if (u) {
       cuentaForm.setFieldsValue({
+        nombre: u.nombre,
         email: u.email ?? undefined,
         roles: u.roles ?? [],
         password: undefined,
@@ -468,11 +478,13 @@ export default function TrabajadoresPage() {
       const res = await fetch(`/api/usuarios/${usuarioId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ trabajadorId: cuentaTrabajador.trabajador_id }),
+        // Al vincular, la cuenta toma el nombre del trabajador (ej. una cuenta
+        // genérica "Admin Sistemas" pasa a mostrarse como la persona).
+        body: JSON.stringify({ trabajadorId: cuentaTrabajador.trabajador_id, nombre: cuentaTrabajador.nombre }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => null);
-        throw new Error(err?.error ?? "Error");
+        throw new Error(mensajeErrorApi(err));
       }
       message.success("Cuenta vinculada");
       setCuentaModalOpen(false);
@@ -502,7 +514,7 @@ export default function TrabajadoresPage() {
           });
           if (!res.ok) {
             const err = await res.json().catch(() => null);
-            throw new Error(err?.error ?? "Error");
+            throw new Error(mensajeErrorApi(err));
           }
           message.success("Cuenta desvinculada");
           setCuentaModalOpen(false);
@@ -532,7 +544,8 @@ export default function TrabajadoresPage() {
       let res: Response;
       if (cuentaUsuario) {
         // Update existente
-        const body: Record<string, unknown> = { roles: v.roles, activo: v.activo, email: v.email ?? null };
+        const body: Record<string, unknown> = { roles: v.roles, activo: v.activo, email: v.email?.trim() || null };
+        if (v.nombre?.trim()) body.nombre = v.nombre.trim();
         if (v.password) body.password = v.password;
         res = await fetch(`/api/usuarios/${cuentaUsuario.id}`, {
           method: "PUT",
@@ -541,15 +554,17 @@ export default function TrabajadoresPage() {
         });
       } else {
         // Crear nueva — codigoEmpleado = DNI si lo tiene, sino USR-<trabajador_id>
-        const codigoEmpleado = cuentaTrabajador.dni ?? `USR-T${cuentaTrabajador.trabajador_id}`;
+        // OJO: dni puede venir "" (no null) → `??` no lo cubría y mandaba
+        // codigoEmpleado vacío → "Validación".
+        const codigoEmpleado = codigoLoginDe(cuentaTrabajador);
         if (!v.password) { message.error("La contraseña es obligatoria al crear una cuenta nueva"); setCuentaSaving(false); return; }
         res = await fetch("/api/usuarios", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             codigoEmpleado,
-            email: v.email ?? null,
-            dni: cuentaTrabajador.dni ?? null,
+            email: v.email?.trim() || null,
+            dni: cuentaTrabajador.dni?.trim() || null,
             nombre: cuentaTrabajador.nombre,
             roles: v.roles,
             password: v.password,
@@ -560,7 +575,7 @@ export default function TrabajadoresPage() {
       }
       if (!res.ok) {
         const err = await res.json().catch(() => null);
-        throw new Error(err?.error ?? "Error");
+        throw new Error(mensajeErrorApi(err));
       }
       message.success(cuentaUsuario ? "Cuenta actualizada" : "Cuenta creada");
       setCuentaModalOpen(false);
@@ -606,7 +621,7 @@ export default function TrabajadoresPage() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => null);
-        throw new Error(err?.error ?? "Error");
+        throw new Error(mensajeErrorApi(err));
       }
       message.success(editing ? "Trabajador actualizado" : "Trabajador creado");
       setModalOpen(false);
@@ -1012,12 +1027,29 @@ export default function TrabajadoresPage() {
             {!cuentaUsuario && cuentaModo === "crear" && (
               <div style={{ marginBottom: 12, fontSize: 11, color: brand.textSecondary }}>
                 El código de login será:{" "}
-                <strong>{cuentaTrabajador.dni ?? `USR-T${cuentaTrabajador.trabajador_id}`}</strong>
+                <strong>{codigoLoginDe(cuentaTrabajador)}</strong>
               </div>
             )}
 
             {(cuentaUsuario || cuentaModo === "crear") && (
               <Form form={cuentaForm} layout="vertical">
+                {cuentaUsuario && (
+                  <Form.Item
+                    label="Nombre de la cuenta (lo que se ve en el sistema)"
+                    extra={cuentaUsuario.nombre !== cuentaTrabajador.nombre
+                      ? <Text type="warning" style={{ fontSize: 12 }}>No coincide con el trabajador ({cuentaTrabajador.nombre}).</Text>
+                      : undefined}
+                  >
+                    <Space.Compact style={{ width: "100%" }}>
+                      <Form.Item name="nombre" noStyle rules={[{ required: true, max: 100, message: "Nombre obligatorio (máx. 100)" }]}>
+                        <Input />
+                      </Form.Item>
+                      <Button onClick={() => cuentaForm.setFieldsValue({ nombre: cuentaTrabajador.nombre })}>
+                        Usar nombre del trabajador
+                      </Button>
+                    </Space.Compact>
+                  </Form.Item>
+                )}
                 <Form.Item name="email" label="Email (opcional, para login por correo)">
                   <Input type="email" placeholder="usuario@hpkinv.com" />
                 </Form.Item>
