@@ -85,10 +85,14 @@ const ROLES = [
   "cliente",
 ] as const;
 
+// Inputs de antd mandan "" cuando el admin borra el campo: tratarlo como null
+// (si no, email "" falla .email() y la UI solo mostraba "Validación").
+const vacioANull = (v: unknown) => (typeof v === "string" && v.trim() === "" ? null : v);
+
 const CreateSchema = z.object({
   codigoEmpleado: z.string().trim().min(1).max(20),
-  email: z.string().trim().email().optional().nullable(),
-  dni: z.string().trim().optional().nullable(),
+  email: z.preprocess(vacioANull, z.string().trim().email("Email inválido").optional().nullable()),
+  dni: z.preprocess(vacioANull, z.string().trim().optional().nullable()),
   nombre: z.string().trim().min(1).max(100),
   // Multi-rol: array de códigos válidos, sin duplicados, no vacío
   // (mínimo "viewer" si el admin no asignó otra cosa).

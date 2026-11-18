@@ -21,10 +21,13 @@ const ROLES = [
   "ssoma", "responsable_ssoma", "sin_costos", "cliente",
 ] as const;
 
+// Inputs de antd mandan "" cuando el admin borra el campo: tratarlo como null.
+const vacioANull = (v: unknown) => (typeof v === "string" && v.trim() === "" ? null : v);
+
 const UpdateSchema = z.object({
   codigoEmpleado: z.string().trim().min(1).max(20).optional(),
-  email: z.string().trim().email().optional().nullable(),
-  dni: z.string().trim().optional().nullable(),
+  email: z.preprocess(vacioANull, z.string().trim().email("Email inválido").optional().nullable()),
+  dni: z.preprocess(vacioANull, z.string().trim().optional().nullable()),
   nombre: z.string().trim().min(1).max(100).optional(),
   // Multi-rol: array de roles válidos sin duplicados.
   roles: z.array(z.enum(ROLES)).optional(),
