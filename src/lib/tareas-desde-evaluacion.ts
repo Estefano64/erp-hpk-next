@@ -157,9 +157,13 @@ export async function generarTareasDesdeEvaluacion(
 
   const existentes = await tx.planificacionOT.findMany({
     where: { ot_id: ev.ot_id },
-    select: { id: true, componente: true, operacion_codigo: true, descripcion: true, tipo_reparacion: true, orden: true },
+    select: { id: true, componente: true, operacion_codigo: true, descripcion: true, tipo_reparacion: true, orden: true, estado: true },
   });
-  const ya = new Set(existentes.map((e) => `${normalizar(e.componente)}|${normalizar(e.descripcion)}`));
+  // Las CANCELADAS no cuentan como "ya existe": si se cancelaron (ej. limpieza
+  // de tareas viejas 2026-11-20), volver a generar debe poder recrearlas.
+  // El `orden` sí se calcula sobre todas para no repetir números.
+  const vivas = existentes.filter((e) => e.estado !== "cancelado");
+  const ya = new Set(vivas.map((e) => `${normalizar(e.componente)}|${normalizar(e.descripcion)}`));
   let orden = existentes.reduce((m, e) => Math.max(m, e.orden), 0);
 
   const pendientes = tareas.filter((t) => !ya.has(`${normalizar(t.componente)}|${normalizar(t.descripcion)}`));
@@ -180,7 +184,7 @@ export async function generarTareasDesdeEvaluacion(
   // marca la misma operación (mismo código del maestro y componente), se
   // completa esa tarea con el texto y tipo de la hoja en vez de duplicarla
   // (caso OT 411626, 2026-10-10). Cada tarea de plantilla absorbe una sola.
-  const plantillaLibre = existentes.filter((e) => e.tipo_reparacion == null);
+  const plantillaLibre = vivas.filter((e) => e.tipo_reparacion == null);
   const absorbidas: { id: number; t: TareaDesdeEvaluacion }[] = [];
   const nuevas: TareaDesdeEvaluacion[] = [];
   for (const t of pendientes) {
