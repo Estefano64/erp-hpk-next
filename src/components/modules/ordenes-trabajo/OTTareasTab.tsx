@@ -2,14 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  Button, Card, Col, Drawer, Empty, Input, InputNumber, Popconfirm, Progress, Row, Select, Space, Table, Tag, Tooltip, Typography, message,
+  Button, Card, Col, DatePicker, Drawer, Empty, Input, InputNumber, Popconfirm, Progress, Row, Select, Space, Table, Tag, Tooltip, Typography, message,
 } from "antd";
 import {
   PlusOutlined, UnorderedListOutlined, EditOutlined, DeleteOutlined, CloseOutlined,
   PlayCircleOutlined, CheckCircleOutlined, FileSearchOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import dayjs from "dayjs";
+import dayjs, { type Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import { useTabSync } from "@/lib/useTabSync";
@@ -24,6 +24,9 @@ import {
   dentroDeRango,
   useColumnasRedimensionables,
 } from "@/lib/tables";
+
+// Inicio/Fin estimado son timestamps con hora (no fechas solo-día).
+const fechaHora = (v: string) => dayjs(v).format("DD/MM/YY HH:mm");
 
 interface Props {
   otId: number;
@@ -91,6 +94,7 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
     equipo: string | null;
     horas_estimadas: number | null;
     comentario: string | null;
+    fecha_inicio: string | null; // ISO; inicio estimado (fecha + hora)
   };
   const [edit, setEdit] = useState<EditState | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
@@ -115,6 +119,9 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
     equipo: string | null;
     horas_estimadas: number | null; // duración estimada (opcional)
     comentario: string | null; // comentario del planner para el técnico
+    // Inicio estimado (ISO). Opcional: si viene, la tarea se ubica en esa fecha/hora
+    // vía PUT (misma lógica que Planificación: jornada hábil, fin, semana, anti-solape).
+    fecha_inicio: string | null;
   };
   const newDraft = (): DraftTarea => ({
     id: crypto.randomUUID(),
@@ -128,6 +135,7 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
     equipo: null,
     horas_estimadas: null,
     comentario: null,
+    fecha_inicio: null,
   });
   const [draftRows, setDraftRows] = useState<DraftTarea[]>([]);
   function updateDraft(id: string, patch: Partial<DraftTarea>) {
@@ -296,6 +304,8 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
     let ok = 0;
     let fail = 0;
     let nuevasOps = 0;
+    // Tareas creadas pero sin poder ubicarlas en la fecha pedida (ej. choque de operario/máquina).
+    const sinFecha: string[] = [];
     try {
       for (const d of draftRows) {
         let operacionCodigo = d.operacion_codigo;
@@ -342,14 +352,39 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
-        if (res.ok) ok++; else fail++;
+        if (!res.ok) { fail++; continue; }
+        ok++;
+        // Inicio estimado: se aplica con PUT para reusar la lógica del servidor
+        // (normaliza a jornada, calcula fin y semana, valida choques de recurso).
+        if (d.fecha_inicio) {
+          const creada = await res.json().catch(() => null);
+          const idCreada = creada?.data?.id;
+          if (idCreada) {
+            const resF = await fetch(`/api/planificacion/${idCreada}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ fecha_inicio: d.fecha_inicio }),
+            });
+            if (!resF.ok) {
+              const err = await resF.json().catch(() => null);
+              sinFecha.push(err?.error ?? "no se pudo asignar la fecha");
+            }
+          }
+        }
       }
       if (ok > 0) {
         const detalleOps = nuevasOps > 0 ? ` (${nuevasOps} operación(es) nueva(s) creada(s) en catálogo)` : "";
         messageApi.success(`${ok} tarea(s) agregadas${detalleOps}`);
       }
       if (fail > 0) messageApi.warning(`${fail} tarea(s) fallaron`);
+      if (sinFecha.length > 0) {
+        messageApi.warning({
+          content: `${sinFecha.length} tarea(s) se crearon sin inicio estimado: ${sinFecha[0]}`,
+          duration: 8,
+        });
+      }
       if (ok > 0) {
+        notifySync();
         cerrarForm();
         fetchRows();
       }
@@ -449,6 +484,7 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
       equipo: r.maquina,
       horas_estimadas: r.horas_estimadas != null ? Number(r.horas_estimadas) : null,
       comentario: r.comentario,
+      fecha_inicio: r.fecha_inicio,
     });
   }
   function updateEdit(patch: Partial<EditState>) {
@@ -503,6 +539,11 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
         horas_estimadas: edit.horas_estimadas,
         comentario: edit.comentario?.trim() || null,
       };
+      // Solo mandar el inicio si cambió: moverlo dispara validaciones (tarea ya
+      // iniciada, choques) que no deben frenar un cambio de otro campo.
+      const iniAntes = r.fecha_inicio ? dayjs(r.fecha_inicio).valueOf() : null;
+      const iniAhora = edit.fecha_inicio ? dayjs(edit.fecha_inicio).valueOf() : null;
+      if (iniAntes !== iniAhora) body.fecha_inicio = edit.fecha_inicio;
       if (libre) body.trabajo = edit.trabajo_manual;
       else body.operacion_reparacion_codigo = operacionCodigo;
       const ok = await putTarea(r, body);
@@ -611,19 +652,19 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
     },
     {
       key: "fecha_inicio",
-      title: "Inicio Est.", dataIndex: "fecha_inicio", width: 100,
+      title: "Inicio Est.", dataIndex: "fecha_inicio", width: 120,
       sorter: (a, b) => (a.fecha_inicio || "").localeCompare(b.fecha_inicio || ""),
       filters: fechasInicioUnicas, filterSearch: true,
       onFilter: (value, r) => r.fecha_inicio === value,
-      render: (v: string | null) => v ? formatDateOnlyShort(v) : <span style={{ color: brand.textSecondary }}>—</span>,
+      render: (v: string | null) => v ? fechaHora(v) : <span style={{ color: brand.textSecondary }}>—</span>,
     },
     {
       key: "fecha_fin",
-      title: "Fin Est.", dataIndex: "fecha_fin", width: 100,
+      title: "Fin Est.", dataIndex: "fecha_fin", width: 120,
       sorter: (a, b) => (a.fecha_fin || "").localeCompare(b.fecha_fin || ""),
       filters: fechasFinUnicas, filterSearch: true,
       onFilter: (value, r) => r.fecha_fin === value,
-      render: (v: string | null) => v ? formatDateOnlyShort(v) : <span style={{ color: brand.textSecondary }}>—</span>,
+      render: (v: string | null) => v ? fechaHora(v) : <span style={{ color: brand.textSecondary }}>—</span>,
     },
     {
       key: "maquina",
@@ -866,7 +907,19 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
                     style={{ width: "100%" }}
                   />
                 </Col>
-                <Col xs={24} md={18}>
+                <Col xs={24} sm={12} md={6}>
+                  <div style={{ fontSize: 11, color: "#888", marginBottom: 2 }}>Inicio estimado</div>
+                  <DatePicker
+                    size="small"
+                    showTime={{ format: "HH:mm", minuteStep: 15, defaultValue: dayjs("08:00", "HH:mm") }}
+                    format="DD/MM/YY HH:mm"
+                    value={d.fecha_inicio ? dayjs(d.fecha_inicio) : null}
+                    onChange={(v: Dayjs | null) => updateDraft(d.id, { fecha_inicio: v ? v.toISOString() : null })}
+                    placeholder="Opcional"
+                    style={{ width: "100%" }}
+                  />
+                </Col>
+                <Col xs={24} md={12}>
                   <div style={{ fontSize: 11, color: "#888", marginBottom: 2 }}>Comentario para el técnico</div>
                   <Input.TextArea
                     size="small"
@@ -1039,6 +1092,20 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
                   style={{ width: "100%" }}
                   placeholder="—"
                 />
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>Inicio estimado</div>
+                <DatePicker
+                  showTime={{ format: "HH:mm", minuteStep: 15, defaultValue: dayjs("08:00", "HH:mm") }}
+                  format="DD/MM/YY HH:mm"
+                  value={edit.fecha_inicio ? dayjs(edit.fecha_inicio) : null}
+                  onChange={(v: Dayjs | null) => updateEdit({ fecha_inicio: v ? v.toISOString() : null })}
+                  placeholder="Sin programar"
+                  style={{ width: "100%" }}
+                />
+                <div style={{ fontSize: 11, color: brand.textSecondary, marginTop: 2 }}>
+                  El fin se calcula solo con la duración (jornada 8–18, descuenta almuerzo).
+                </div>
               </div>
               <div>
                 <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>Comentario para el técnico</div>
