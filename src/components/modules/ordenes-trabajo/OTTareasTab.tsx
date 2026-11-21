@@ -807,10 +807,10 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
 
       <Row gutter={[12, 8]} style={{ marginBottom: 12 }}>
         <Col xs={24} md={12}>
-          <RangoFechasFiltro label="Inicio estimado" value={rangoInicio} onChange={setRangoInicio} />
+          <RangoFechasFiltro label="Filtrar por inicio" value={rangoInicio} onChange={setRangoInicio} />
         </Col>
         <Col xs={24} md={12}>
-          <RangoFechasFiltro label="Fin estimado" value={rangoFin} onChange={setRangoFin} />
+          <RangoFechasFiltro label="Filtrar por fin" value={rangoFin} onChange={setRangoFin} />
         </Col>
       </Row>
 
