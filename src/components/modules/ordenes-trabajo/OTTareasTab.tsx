@@ -13,7 +13,6 @@ import dayjs, { type Dayjs } from "dayjs";
 import { brand } from "@/lib/theme";
 import { useResponsive, modalWidth } from "@/lib/responsive";
 import { useTabSync } from "@/lib/useTabSync";
-import { formatDateOnlyShort } from "@/lib/dates";
 import {
   useColumnasOcultas,
   ColumnasToggleButton,
@@ -295,6 +294,9 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
       const tieneNueva = !!d.nueva_operacion_nombre?.trim();
       if (libre && !d.trabajo_manual?.trim()) errs.push(`${label}: falta descripción (texto libre)`);
       if (!libre && !d.operacion_codigo && !tieneNueva) errs.push(`${label}: falta seleccionar tarea`);
+      // Con inicio pero sin duración no se puede calcular el fin (la tarea no
+      // ocuparía lugar en el cronograma ni validaría choques).
+      if (d.fecha_inicio && !(Number(d.horas_estimadas) > 0)) errs.push(`${label}: para poner Inicio estimado falta la Duración (hrs)`);
     }
     if (errs.length > 0) {
       messageApi.error(errs[0]);
@@ -413,8 +415,10 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
       body: JSON.stringify({ ...patch, version: r.version }),
     });
     if (res.status === 409) {
-      messageApi.warning("Otro usuario actualizó esta tarea. Refresco para sincronizar.");
-      fetchRows();
+      // 409 = choque de operario/máquina al ubicar la tarea (el versionado
+      // optimista ya no existe en el servidor): mostramos el motivo real.
+      const err = await res.json().catch(() => null);
+      messageApi.error({ content: err?.error ?? "No se pudo ubicar la tarea en ese horario.", duration: 8 });
       return false;
     }
     if (res.status === 423) {
@@ -543,7 +547,13 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
       // iniciada, choques) que no deben frenar un cambio de otro campo.
       const iniAntes = r.fecha_inicio ? dayjs(r.fecha_inicio).valueOf() : null;
       const iniAhora = edit.fecha_inicio ? dayjs(edit.fecha_inicio).valueOf() : null;
-      if (iniAntes !== iniAhora) body.fecha_inicio = edit.fecha_inicio;
+      if (iniAntes !== iniAhora) {
+        if (edit.fecha_inicio && !(Number(edit.horas_estimadas) > 0)) {
+          messageApi.error("Para poner Inicio estimado falta la Duración (hrs)");
+          return;
+        }
+        body.fecha_inicio = edit.fecha_inicio;
+      }
       if (libre) body.trabajo = edit.trabajo_manual;
       else body.operacion_reparacion_codigo = operacionCodigo;
       const ok = await putTarea(r, body);
@@ -572,9 +582,9 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
   const horasUnicas = [...new Set(rows.map((r) => r.horas_estimadas).filter(Boolean) as string[])]
     .sort().map((v) => ({ text: Number(v).toFixed(2), value: v }));
   const fechasInicioUnicas = [...new Set(rows.map((r) => r.fecha_inicio).filter(Boolean) as string[])]
-    .sort().map((v) => ({ text: formatDateOnlyShort(v), value: v }));
+    .sort().map((v) => ({ text: fechaHora(v), value: v }));
   const fechasFinUnicas = [...new Set(rows.map((r) => r.fecha_fin).filter(Boolean) as string[])]
-    .sort().map((v) => ({ text: formatDateOnlyShort(v), value: v }));
+    .sort().map((v) => ({ text: fechaHora(v), value: v }));
   const fechasInicioRealUnicas = [...new Set(rows.map((r) => r.fecha_inicio_real).filter(Boolean) as string[])]
     .sort().map((v) => ({ text: dayjs(v).format("DD/MM HH:mm"), value: v }));
   const fechasFinRealUnicas = [...new Set(rows.map((r) => r.fecha_fin_real).filter(Boolean) as string[])]
