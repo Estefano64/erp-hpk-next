@@ -44,6 +44,12 @@ interface ItemRow {
   // de la OT default de la OC (la primera existente). El user lo veía vacío
   // antes y lo llenaba a mano en "Código" — ahora aparece automático.
   _ot_codigo: string | null;
+  // Clave de la OT ("E<id>" externa / "I<id>" interna). Para ítems libres se
+  // puede elegir cuando la OC mezcla varias OTs (si no, el costo caía en la
+  // primera OT de la OC).
+  _ot_key: string | null;
+  // Ítem libre agregado en este editor (no viene de un requerimiento).
+  _libre: boolean;
   _deleted?: boolean;
 }
 
@@ -86,6 +92,7 @@ interface CompraData {
     fecha_entrega_esperada?: string | null;
     orden_trabajo?: { id: number; ot: number | string | null; tipo_codigo: string | null } | null;
     orden_trabajo_interna?: { id: number; ot: number | string | null } | null;
+    solo_para_oc?: boolean | null;
   }>;
 }
 
@@ -177,6 +184,10 @@ export default function EditarOCPage() {
           : it.orden_trabajo_interna?.ot != null
           ? formatOtInternaCodigo(it.orden_trabajo_interna.ot as number | string | null, "")
           : null,
+        _ot_key: it.orden_trabajo?.id != null ? `E${it.orden_trabajo.id}`
+          : it.orden_trabajo_interna?.id != null ? `I${it.orden_trabajo_interna.id}`
+          : null,
+        _libre: it.solo_para_oc === true,
       }));
       setRows(mapped);
       setOriginalRowsHash(JSON.stringify(mapped));
@@ -222,11 +233,36 @@ export default function EditarOCPage() {
     setRows((prev) => prev.map((r) => r._localId === localId ? { ...r, ...patch } : r));
   };
 
+  // OTs de los ítems que vienen de requerimientos. Si hay más de una, cada
+  // ítem libre tiene que decir a qué OT va (se elige en la columna OT).
+  const otsDeLaOC = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of rows) {
+      if (r._deleted || r._libre || r.id == null || !r._ot_key) continue;
+      m.set(r._ot_key, r._ot_codigo ?? r._ot_key);
+    }
+    return [...m.entries()].map(([value, label]) => ({ value, label }));
+  }, [rows]);
+  const ocMultiOT = otsDeLaOC.length > 1;
+  const esLibre = (r: ItemRow) => r.id == null || r._libre;
+  // Asignación masiva: una misma OT para todos los ítems libres de la OC.
+  const [otMasiva, setOtMasiva] = useState<string | undefined>(undefined);
+  const asignarOtATodosLosLibres = () => {
+    if (!otMasiva) return;
+    const label = otsDeLaOC.find((o) => o.value === otMasiva)?.label ?? null;
+    const n = rows.filter((r) => !r._deleted && (r.id == null || r._libre)).length;
+    setRows((prev) => prev.map((r) => {
+      if (r._deleted || !(r.id == null || r._libre)) return r;
+      return { ...r, _ot_key: otMasiva, _ot_codigo: label };
+    }));
+    messageApi.success(`OT ${label ?? ""} asignada a ${n} ítem(s) libre(s). Guardá para aplicar.`);
+  };
+
   const addRow = () => {
-    // Items libres heredan la OT del primer item existente que tenga código.
-    // Replica el comportamiento del backend (que asigna ot_id = primer ot_id
-    // de la OC al crear un OTRepuesto nuevo desde acá).
-    const otHeredada = rows.find((r) => r._ot_codigo)?._ot_codigo ?? null;
+    // OC de una sola OT: el ítem libre hereda esa OT. Con varias OTs no se
+    // asume ninguna: hay que elegirla en la columna OT.
+    const unica = otsDeLaOC.length === 1 ? otsDeLaOC[0] : null;
+    const otHeredada = ocMultiOT ? null : (unica?.label ?? rows.find((r) => r._ot_codigo)?._ot_codigo ?? null);
     setRows((prev) => [
       ...prev,
       {
@@ -243,6 +279,8 @@ export default function EditarOCPage() {
         fabricante_codigo: null,
         fecha_entrega_esperada: null,
         _ot_codigo: otHeredada,
+        _ot_key: ocMultiOT ? null : (unica?.value ?? null),
+        _libre: true,
       },
     ]);
   };
@@ -339,10 +377,16 @@ export default function EditarOCPage() {
   const confirmarImport = () => {
     const aImportar = ocSelectedItems.filter((it) => importSelectedKeys.includes(it.id));
     if (aImportar.length === 0) { message.warning("Seleccioná al menos un item"); return; }
-    const otHeredada = rows.find((r) => r._ot_codigo)?._ot_codigo ?? null;
+    // Mismo criterio que "Agregar fila": con varias OTs en la OC no se asume
+    // ninguna; cada ítem importado pide su OT en la columna OT.
+    const unica = otsDeLaOC.length === 1 ? otsDeLaOC[0] : null;
+    const otHeredada = ocMultiOT ? null : (unica?.label ?? rows.find((r) => r._ot_codigo)?._ot_codigo ?? null);
+    const otKeyHeredada = ocMultiOT ? null : (unica?.value ?? null);
     setRows((prev) => [
       ...prev,
-      ...aImportar.map((it) => ({
+      ...aImportar.map((it): ItemRow => ({
+        _ot_key: otKeyHeredada,
+        _libre: true,
         _localId: genLocalId(),
         id: null,
         material_id: it.material_id,
@@ -423,6 +467,14 @@ export default function EditarOCPage() {
 
   const handleGuardar = async () => {
     if (!compra) return;
+    // OC con ítems de varias OTs: cada ítem libre debe tener su OT elegida.
+    if (ocMultiOT) {
+      const sinOt = visibleRows.filter((r) => esLibre(r) && !r._ot_key);
+      if (sinOt.length > 0) {
+        messageApi.error(`Esta OC tiene ítems de ${otsDeLaOC.length} OTs: elegí la OT de ${sinOt.length} ítem(s) libre(s) en la columna OT.`);
+        return;
+      }
+    }
     setSaving(true);
     try {
       // Si el toggle "Precios incluyen IGV" está ON, dividimos cada precio
@@ -444,6 +496,12 @@ export default function EditarOCPage() {
           moneda: r.moneda,
           fabricante_codigo: r.fabricante_codigo,
           fecha_entrega_esperada: r.fecha_entrega_esperada,
+          // OT del ítem libre (la elegida en la columna OT).
+          ...(esLibre(r) && r._ot_key
+            ? r._ot_key.startsWith("E")
+              ? { ot_id: Number(r._ot_key.slice(1)) }
+              : { orden_trabajo_interna_id: Number(r._ot_key.slice(1)) }
+            : {}),
         })),
         deleteIds: rows.filter((r) => r._deleted && r.id != null).map((r) => r.id),
         descuento,
@@ -483,10 +541,29 @@ export default function EditarOCPage() {
       // Columna NUEVA (read-only): muestra automáticamente la OT a la que
       // pertenece cada item. Antes el user tenía que tipearla en "Código"
       // a mano — ahora se deriva del ot_id del repuesto.
-      title: "OT", key: "ot_auto", width: 90, align: "center",
-      render: (_v, r) => r._ot_codigo
-        ? <Tag color={brand.navy}>{r._ot_codigo}</Tag>
-        : <Text type="secondary" style={{ fontSize: 11 }}>—</Text>,
+      title: "OT", key: "ot_auto", width: 130, align: "center",
+      render: (_v, r) => {
+        // Ítem libre en una OC de varias OTs: se elige a qué OT se imputa.
+        if (ocMultiOT && esLibre(r)) {
+          return (
+            <Select
+              size="small"
+              style={{ width: "100%" }}
+              placeholder="Elegir OT"
+              status={r._ot_key ? undefined : "error"}
+              value={r._ot_key ?? undefined}
+              options={otsDeLaOC}
+              onChange={(v: string) => updateRow(r._localId, {
+                _ot_key: v,
+                _ot_codigo: otsDeLaOC.find((o) => o.value === v)?.label ?? null,
+              })}
+            />
+          );
+        }
+        return r._ot_codigo
+          ? <Tag color={brand.navy}>{r._ot_codigo}</Tag>
+          : <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
+      },
     },
     {
       title: "Código", key: "codigo", dataIndex: "material_codigo", width: 130, align: "left",
@@ -854,6 +931,33 @@ export default function EditarOCPage() {
           </Col>
         </Row>
       </Card>
+
+      {/* OC con ítems de varias OTs: cada ítem libre necesita su OT. Atajo para
+          asignar la misma a todos de una vez (después se puede ajustar fila por fila). */}
+      {ocMultiOT && visibleRows.some(esLibre) && (
+        <Alert
+          type={visibleRows.some((r) => esLibre(r) && !r._ot_key) ? "warning" : "info"}
+          showIcon
+          style={{ marginBottom: 12 }}
+          title={`Esta OC tiene ítems de ${otsDeLaOC.length} OTs (${otsDeLaOC.map((o) => o.label).join(", ")}): cada ítem libre debe indicar a qué OT va su costo.`}
+          description={
+            <Space wrap>
+              <Text style={{ fontSize: 12 }}>Asignar a todos los ítems libres:</Text>
+              <Select
+                size="small"
+                style={{ minWidth: 160 }}
+                placeholder="Elegir OT"
+                value={otMasiva}
+                onChange={setOtMasiva}
+                options={otsDeLaOC}
+              />
+              <Button size="small" type="primary" disabled={!otMasiva} onClick={asignarOtATodosLosLibres}>
+                Aplicar a todos
+              </Button>
+            </Space>
+          }
+        />
+      )}
 
       <TablaItems columns={columns} rows={visibleRows} onAdd={addRow} onImport={abrirImport} />
 

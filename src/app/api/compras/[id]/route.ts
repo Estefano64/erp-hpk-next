@@ -143,6 +143,9 @@ export async function GET(_req: NextRequest, { params }: Params) {
         oc_precio_unitario: rep.oc_precio_unitario,
         oc_unidad_medida: rep.oc_unidad_medida,
         oc_orden_item: rep.oc_orden_item,
+        // Ítem libre agregado en el editor de OC (no viene de un req). El
+        // editor deja elegir su OT cuando la OC mezcla varias OTs.
+        solo_para_oc: rep.solo_para_oc ?? false,
         estado: rep.status_oc_codigo
           ? codeToLabel[rep.status_oc_codigo] ?? rep.status_oc_codigo
           : "Pendiente",

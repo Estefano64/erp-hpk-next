@@ -20,6 +20,11 @@ const ItemSchema = z.object({
   moneda: z.string().trim().max(10).optional().nullable(),
   fabricante_codigo: z.string().trim().max(50).optional().nullable(),
   fecha_entrega_esperada: z.string().optional().nullable(),
+  // OT a la que se imputa un ítem LIBRE (solo_para_oc). Obligatoria cuando la
+  // OC tiene ítems de varias OTs: antes se asumía la primera y el costo podía
+  // caer en la OT equivocada. Externa (ot_id) o interna (orden_trabajo_interna_id).
+  ot_id: z.coerce.number().int().positive().optional().nullable(),
+  orden_trabajo_interna_id: z.coerce.number().int().positive().optional().nullable(),
 });
 
 const Schema = z.object({
@@ -75,7 +80,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
         include: {
           ot_repuestos: {
             select: {
-              id: true, ot_id: true, orden_trabajo_interna_id: true,
+              id: true, ot_id: true, orden_trabajo_interna_id: true, solo_para_oc: true,
               tipo_codigo: true, cantidad: true, cantidad_recibida: true, fecha_entrega_real: true,
             },
           },
@@ -96,6 +101,32 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
       const otIdDefault = compra.ot_repuestos.find((r) => r.ot_id != null)?.ot_id ?? compra.ot_id ?? null;
       const otInternaIdDefault = compra.ot_repuestos.find((r) => r.orden_trabajo_interna_id != null)?.orden_trabajo_interna_id ?? null;
       const itemsIds = new Set(compra.ot_repuestos.map((r) => r.id));
+      // OTs de los ítems REALES de la OC (los que vienen de requerimientos).
+      // Un ítem libre solo puede imputarse a una de ellas; si hay más de una,
+      // el usuario tiene que elegir (no se adivina).
+      const otsDeLaOC = new Map<string, { ot_id: number | null; orden_trabajo_interna_id: number | null }>();
+      for (const r of compra.ot_repuestos) {
+        if (r.solo_para_oc === true) continue;
+        if (r.ot_id != null) otsDeLaOC.set(`E${r.ot_id}`, { ot_id: r.ot_id, orden_trabajo_interna_id: null });
+        else if (r.orden_trabajo_interna_id != null) otsDeLaOC.set(`I${r.orden_trabajo_interna_id}`, { ot_id: null, orden_trabajo_interna_id: r.orden_trabajo_interna_id });
+      }
+      const libresPorId = new Map(compra.ot_repuestos.filter((r) => r.solo_para_oc === true).map((r) => [r.id, r]));
+      // Resuelve la OT de un ítem libre: la elegida (validada) o, si la OC es
+      // de una sola OT, esa. Con varias OTs y sin elección → error claro.
+      const otParaLibre = (it: { ot_id?: number | null; orden_trabajo_interna_id?: number | null; descripcion?: string | null }) => {
+        const elegida = it.ot_id != null ? `E${it.ot_id}` : it.orden_trabajo_interna_id != null ? `I${it.orden_trabajo_interna_id}` : null;
+        if (elegida) {
+          const ot = otsDeLaOC.get(elegida);
+          if (!ot && otsDeLaOC.size > 0) {
+            throw Object.assign(new Error(`La OT elegida para "${it.descripcion ?? "ítem libre"}" no pertenece a esta OC`), { code: "OT_INVALIDA" });
+          }
+          return ot ?? { ot_id: it.ot_id ?? null, orden_trabajo_interna_id: it.ot_id != null ? null : (it.orden_trabajo_interna_id ?? null) };
+        }
+        if (otsDeLaOC.size > 1) {
+          throw Object.assign(new Error(`La OC tiene ítems de ${otsDeLaOC.size} OTs: elegí la OT del ítem libre "${it.descripcion ?? ""}"`), { code: "OT_REQUERIDA" });
+        }
+        return null;
+      };
       // OC de servicio (SER) cuyos servicios ya llegaron por el seguimiento:
       // un ítem libre que se agregue ahora es parte del servicio y llegó con
       // él → nace recibido (no pasa por Ingreso de PO).
@@ -172,10 +203,16 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
         const ordenItem = i + 1;
         const fecha = parseDateOnly(it.fecha_entrega_esperada);
         if (it.id && itemsIds.has(it.id)) {
+          // Ítem libre existente: si se eligió (o cambió) su OT, se reimputa.
+          const libreExistente = libresPorId.get(it.id);
+          const otLibre = libreExistente && (it.ot_id != null || it.orden_trabajo_interna_id != null)
+            ? otParaLibre(it)
+            : null;
           // Update existente — solo override (no toca cantidad/precio/desc/UM del req).
           await tx.oTRepuesto.update({
             where: { id: it.id },
             data: {
+              ...(otLibre ? { ot_id: otLibre.ot_id, orden_trabajo_interna_id: otLibre.orden_trabajo_interna_id } : {}),
               material_id: it.material_id ?? null,
               material_codigo: it.material_codigo ?? null,
               moneda: it.moneda ?? compra.moneda_codigo ?? "USD",
@@ -201,11 +238,13 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
           // el PDF y editor de OC — NO aparecen en /requerimientos, /detalle,
           // /despachos, aprobaciones ni tabs de OT. El flag solo_para_oc=true
           // hace que todas las vistas de req los filtren fuera.
+          // OT elegida por el usuario; si la OC es de una sola OT, esa.
+          const otLibre = otParaLibre(it);
           await tx.oTRepuesto.create({
             data: {
               // Externa gana si existe; sino el item cuelga de la OT interna.
-              ot_id: otIdDefault,
-              orden_trabajo_interna_id: otIdDefault ? null : otInternaIdDefault,
+              ot_id: otLibre ? otLibre.ot_id : otIdDefault,
+              orden_trabajo_interna_id: otLibre ? otLibre.orden_trabajo_interna_id : (otIdDefault ? null : otInternaIdDefault),
               po_id: compraId,
               nro_oc: compra.numero_po,
               fecha_oc: new Date(),
