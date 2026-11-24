@@ -61,6 +61,10 @@ const Schema = z.object({
     cantidad: z.coerce.number().positive(),
     precio_unitario: z.coerce.number().min(0),
     fecha_entrega: z.string().nullable().optional(),
+    // OT a la que va el costo del ítem libre. Obligatoria si los requerimientos
+    // de la OC son de varias OTs (antes se asumía la primera).
+    ot_id: z.coerce.number().int().positive().optional().nullable(),
+    orden_trabajo_interna_id: z.coerce.number().int().positive().optional().nullable(),
   })).optional(),
 });
 
@@ -491,6 +495,25 @@ export async function POST(req: NextRequest) {
         // "OT" del PDF salía vacía (caso OC 260255/260281/260282, 2026-08-28).
         const otIdLibres = repuestos.find((r) => r.ot_id != null)?.ot_id ?? null;
         const otInternaIdLibres = repuestos.find((r) => r.orden_trabajo_interna_id != null)?.orden_trabajo_interna_id ?? null;
+        // OTs de los requerimientos de esta OC. Con más de una, cada ítem libre
+        // tiene que decir a cuál va (mismo control que el editor de OC).
+        const otsOC = new Map<string, { ot_id: number | null; orden_trabajo_interna_id: number | null }>();
+        for (const r of repuestos) {
+          if (r.ot_id != null) otsOC.set(`E${r.ot_id}`, { ot_id: r.ot_id, orden_trabajo_interna_id: null });
+          else if (r.orden_trabajo_interna_id != null) otsOC.set(`I${r.orden_trabajo_interna_id}`, { ot_id: null, orden_trabajo_interna_id: r.orden_trabajo_interna_id });
+        }
+        const otDeLibre = (il: { ot_id?: number | null; orden_trabajo_interna_id?: number | null; descripcion: string }) => {
+          const k = il.ot_id != null ? `E${il.ot_id}` : il.orden_trabajo_interna_id != null ? `I${il.orden_trabajo_interna_id}` : null;
+          if (k) {
+            const ot = otsOC.get(k);
+            if (!ot) throw Object.assign(new Error(`La OT elegida para "${il.descripcion}" no es de ningún requerimiento de esta OC`), { code: "OT_INVALIDA" });
+            return ot;
+          }
+          if (otsOC.size > 1) {
+            throw Object.assign(new Error(`Los requerimientos de esta OC son de ${otsOC.size} OTs: elegí la OT del ítem libre "${il.descripcion}"`), { code: "OT_REQUERIDA" });
+          }
+          return { ot_id: otIdLibres, orden_trabajo_interna_id: otIdLibres ? null : otInternaIdLibres };
+        };
         // OC de servicio (SER) cuyos servicios ya llegaron por el seguimiento:
         // los ítems libres son lo que el proveedor usó en el servicio y
         // llegaron con él → nacen recibidos (no pasan por Ingreso de PO).
@@ -498,10 +521,11 @@ export async function POST(req: NextRequest) {
         const libresYaRecibidos = sersOC.length > 0 && sersOC.every(yaRecibido);
         const llegadaSer = sersOC.map((r) => r.fecha_entrega_real).find((x) => x != null) ?? hoyEnLima();
         for (const il of itemsLibres) {
+          const otLibre = otDeLibre(il);
           await tx.oTRepuesto.create({
             data: {
-              ot_id: otIdLibres,
-              orden_trabajo_interna_id: otIdLibres ? null : otInternaIdLibres,
+              ot_id: otLibre.ot_id,
+              orden_trabajo_interna_id: otLibre.orden_trabajo_interna_id,
               po_id: compra.id,
               nro_oc: compra.numero_po,
               fecha_oc: new Date(),
@@ -592,6 +616,9 @@ export async function POST(req: NextRequest) {
     const err = error as { code?: string; message?: string; sin_precio_ids?: number[]; no_aprobados_ids?: number[] };
     if (err?.code === "NO_DISPONIBLES" || err?.code === "PARCIAL" || err?.code === "RACE") {
       return NextResponse.json({ error: err.message }, { status: 409 });
+    }
+    if (err?.code === "OT_REQUERIDA" || err?.code === "OT_INVALIDA") {
+      return NextResponse.json({ error: err.message }, { status: 400 });
     }
     if (err?.code === "SIN_PRECIO") {
       return NextResponse.json(

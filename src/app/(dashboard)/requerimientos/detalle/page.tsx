@@ -561,8 +561,12 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride, onFilasV
     cantidad: number;
     precio_unitario: number;
     fecha_entrega?: Dayjs | null;
+    // OT a la que va su costo ("E<id>" externa / "I<id>" interna). Se elige
+    // solo cuando los requerimientos de la OC son de varias OTs.
+    ot_key?: string | null;
   }
   const [itemsLibresModal, setItemsLibresModal] = useState<ItemLibreModal[]>([]);
+  const [otMasivaLibres, setOtMasivaLibres] = useState<string | undefined>(undefined);
   const genIdLibre = () => `lib-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   // Sub-modal "Importar desde otra OC".
   const [modalImportarOC, setModalImportarOC] = useState(false);
@@ -957,6 +961,16 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride, onFilasV
     },
     [allData, selectedRows],
   );
+  // OTs de los requerimientos elegidos para la OC. Con más de una, cada ítem
+  // libre del formulario "Generar OC" tiene que elegir su OT.
+  const otsDeLaOCModal = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of selectedRecords) {
+      const k = r.ot_id != null ? `E${r.ot_id}` : r.orden_trabajo_interna_id != null ? `I${r.orden_trabajo_interna_id}` : null;
+      if (k) m.set(k, r.numero_ot ?? k);
+    }
+    return [...m.entries()].map(([value, label]) => ({ value, label }));
+  }, [selectedRecords]);
 
   // El seguimiento de servicios se carga aparte: recargarlo cada vez que se
   // recarga la tabla. Si no, un SER nuevo (o que cambió de estado en otra
@@ -1124,6 +1138,14 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride, onFilasV
         message.error(`Falta precio en ${sinPrecio.length} item(s): ${labels}`);
         return;
       }
+      // Requerimientos de varias OTs: cada ítem libre necesita su OT.
+      if (otsDeLaOCModal.length > 1) {
+        const sinOt = itemsLibresModal.filter((i) => i.descripcion.trim() && i.cantidad > 0 && !i.ot_key);
+        if (sinOt.length > 0) {
+          message.error(`Esta OC junta requerimientos de ${otsDeLaOCModal.length} OTs: elegí la OT de ${sinOt.length} ítem(s) libre(s).`);
+          return;
+        }
+      }
 
       setCreatingOC(true);
 
@@ -1230,6 +1252,11 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride, onFilasV
               cantidad: i.cantidad,
               precio_unitario: normalizarPrecio(i.precio_unitario),
               fecha_entrega: i.fecha_entrega ? i.fecha_entrega.format("YYYY-MM-DD") : null,
+              ...(otsDeLaOCModal.length > 1 && i.ot_key
+                ? i.ot_key.startsWith("E")
+                  ? { ot_id: Number(i.ot_key.slice(1)) }
+                  : { orden_trabajo_interna_id: Number(i.ot_key.slice(1)) }
+                : {}),
             })),
         }),
       });
@@ -3586,6 +3613,37 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride, onFilasV
           {itemsLibresModal.length > 0 && (
             <div style={{ marginTop: 8 }}>
               <Text strong style={{ fontSize: 12 }}>Items libres (agregados en el editor)</Text>
+              {/* Requerimientos de varias OTs: cada ítem libre dice a qué OT
+                  va su costo. Atajo para asignar la misma a todos. */}
+              {otsDeLaOCModal.length > 1 && (
+                <Alert
+                  type={itemsLibresModal.some((i) => !i.ot_key) ? "warning" : "info"}
+                  showIcon
+                  style={{ marginTop: 4 }}
+                  title={`Esta OC junta requerimientos de ${otsDeLaOCModal.length} OTs (${otsDeLaOCModal.map((o) => o.label).join(", ")}): elegí a qué OT va cada ítem libre.`}
+                  description={
+                    <Space wrap>
+                      <Text style={{ fontSize: 12 }}>Asignar a todos:</Text>
+                      <Select
+                        size="small"
+                        style={{ minWidth: 160 }}
+                        placeholder="Elegir OT"
+                        value={otMasivaLibres}
+                        onChange={setOtMasivaLibres}
+                        options={otsDeLaOCModal}
+                      />
+                      <Button
+                        size="small"
+                        type="primary"
+                        disabled={!otMasivaLibres}
+                        onClick={() => setItemsLibresModal((prev) => prev.map((x) => ({ ...x, ot_key: otMasivaLibres })))}
+                      >
+                        Aplicar a todos
+                      </Button>
+                    </Space>
+                  }
+                />
+              )}
               <Table<ItemLibreModal>
                 size="small"
                 rowKey="id"
@@ -3593,6 +3651,20 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride, onFilasV
                 pagination={false}
                 style={{ marginTop: 4 }}
                 columns={[
+                  ...(otsDeLaOCModal.length > 1 ? [{
+                    title: "OT *", key: "ot", width: 130,
+                    render: (_: unknown, r: ItemLibreModal) => (
+                      <Select
+                        size="small"
+                        style={{ width: "100%" }}
+                        placeholder="Elegir OT"
+                        status={r.ot_key ? undefined : "error"}
+                        value={r.ot_key ?? undefined}
+                        options={otsDeLaOCModal}
+                        onChange={(v: string) => setItemsLibresModal((prev) => prev.map((x) => x.id === r.id ? { ...x, ot_key: v } : x))}
+                      />
+                    ),
+                  }] : []),
                   {
                     title: "Código", key: "codigo", width: 120,
                     render: (_, r) => (
