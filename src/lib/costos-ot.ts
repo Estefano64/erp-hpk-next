@@ -311,12 +311,37 @@ export async function calcularCostosOT(
       orderBy: { id: "desc" },
     });
   }
+  // OCs sin líneas CompraDetalle (sus ítems se cargan directo desde los
+  // requerimientos, po_id en OTRepuesto): el total salía 0.00 (OI 3126-26:
+  // ~120 OCs en cero). Para esas, total/recibido salen de sus ítems con la
+  // cantidad y precio de la OC (mismo criterio que ejecutado/proyectado).
+  const ocsSinDetalle = ocs.filter((c) => c.detalles.length === 0).map((c) => c.id);
+  const itemsPorOC = new Map<number, { total: number; recibido: number }>();
+  if (ocsSinDetalle.length > 0) {
+    const its = await prisma.oTRepuesto.findMany({
+      where: {
+        po_id: { in: ocsSinDetalle },
+        status_requerimiento_codigo: { notIn: ["ANULADO", "DESAPROBADO"] },
+      },
+      select: { po_id: true, cantidad: true, oc_cantidad: true, cantidad_recibida: true, precio_unitario: true, oc_precio_unitario: true },
+    });
+    for (const it of its) {
+      if (it.po_id == null) continue;
+      const precioOC = it.oc_precio_unitario != null ? dec(it.oc_precio_unitario) : dec(it.precio_unitario);
+      const cantOC = it.oc_cantidad != null ? dec(it.oc_cantidad) : dec(it.cantidad);
+      const acc = itemsPorOC.get(it.po_id) ?? { total: 0, recibido: 0 };
+      acc.total += cantOC * precioOC;
+      acc.recibido += dec(it.cantidad_recibida) * precioOC;
+      itemsPorOC.set(it.po_id, acc);
+    }
+  }
   for (const c of ocs) {
-    const total = c.detalles.reduce(
+    const porItems = itemsPorOC.get(c.id);
+    const total = porItems ? porItems.total : c.detalles.reduce(
       (s, d) => s + dec(d.cantidad) * dec(d.precio_unitario),
       0,
     );
-    const recibido = c.detalles.reduce(
+    const recibido = porItems ? porItems.recibido : c.detalles.reduce(
       (s, d) => s + dec(d.cantidad_recibida) * dec(d.precio_unitario),
       0,
     );
