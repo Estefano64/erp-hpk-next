@@ -159,6 +159,8 @@ export async function GET(req: NextRequest) {
           id: true, numero_po: true, status_oc_codigo: true,
           // Moneda de la OC: el precio efectivo (oc_precio_unitario) va en ella.
           moneda_codigo: true,
+          // Proveedor al que se emitió la OC: columna "Proveedor OC" del Excel.
+          proveedor: { select: { razon_social: true, nombre_comercial: true } },
           // Datos de la aceptación de la OC — visibles en /requerimientos/detalle
           // como tooltip/columna separada del comentario de aprobación del req.
           usuario_aprueba: true,

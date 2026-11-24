@@ -86,7 +86,7 @@ interface RequerimientoRow {
   almacen_zona?: { codigo: string; nombre: string } | null;
   almacen_posicion?: { codigo: string } | null;
   proveedor: { id: number; razon_social: string } | null;
-  compra: { id: number; numero_po: string; moneda_codigo?: string | null } | null;
+  compra: { id: number; numero_po: string; moneda_codigo?: string | null; proveedor?: { razon_social: string; nombre_comercial: string | null } | null } | null;
   po_id: number | null;
   es_adicional: boolean | null;
   // Ítem libre agregado en el editor de OC (no es un requerimiento). Solo
@@ -989,6 +989,8 @@ export default function RequerimientosPage() {
       excel: [
         { key: "estado", label: "Estado OC", value: (r) => r.status_oc?.nombre ?? r.status_oc_codigo ?? "" },
         { key: "nro", label: "Nro OC", value: (r) => r.compra?.numero_po ?? "" },
+        // Proveedor al que se emitió la OC (puede no ser el sugerido en el requerimiento).
+        { key: "prov_oc", label: "Proveedor OC", value: (r) => r.compra?.proveedor?.nombre_comercial || r.compra?.proveedor?.razon_social || "" },
       ],
       filters: [
         { text: "Pendiente OC", value: "PEND_OC" },
@@ -1550,7 +1552,8 @@ export default function RequerimientosPage() {
             // y ocultas) + el detalle de cada item al final.
             // v4: Subtotal se reemplazó por Costo pedido / Costo OC en USD y SOL
             // (con la selección guardada de v3 las columnas nuevas no salían).
-            storageKey="excel-export-Requerimientos-v4"
+            // v5: se agregó "Proveedor OC".
+            storageKey="excel-export-Requerimientos-v5"
             tablaLayout={{ ocultas }}
             columns={columnasParaExcel<RequerimientoRow>(
               groupColumnsResizable as unknown as ColumnsType<RequerimientoRow>,
