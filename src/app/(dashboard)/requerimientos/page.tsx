@@ -317,7 +317,7 @@ function KpiPrecioGlobal({
 export default function RequerimientosPage() {
   const router = useRouter();
   const [rows, setRows] = useState<RequerimientoRow[]>([]);
-  const [total, setTotal] = useState(0);
+  const [, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGINATION_PAGE_SIZE);
@@ -482,6 +482,24 @@ export default function RequerimientosPage() {
     setFilterFechas(null); setSoloAprobadosSinOC(false); setPage(1);
     setSemanaSel(null); setRangoSol({ desde: null, hasta: null }); setRangoReq({ desde: null, hasta: null });
   }
+
+  // Filtros activos, incluidos los que se RECUERDAN entre sesiones (pestaña de
+  // estado, OT, estado OC, tipo, proveedor, rangos de fecha). Se muestran sobre
+  // la tabla: sin esto el usuario buscaba una OT, veía menos filas de las que
+  // esperaba y el Excel bajaba "solo 121" sin saber por qué (OI003126, 2026-11-24).
+  const fmtRango = (r: { desde: dayjs.Dayjs | null; hasta: dayjs.Dayjs | null }) =>
+    `${r.desde ? r.desde.format("DD/MM/YY") : "…"} – ${r.hasta ? r.hasta.format("DD/MM/YY") : "…"}`;
+  const filtrosActivos: string[] = [
+    ...(search ? [`Búsqueda: "${search}"`] : []),
+    ...(filterStatusReq ? [`Estado REQ: ${filterStatusReq}`] : []),
+    ...(filterOt ? [`OT: ${filterOt}`] : []),
+    ...(filterStatusOc ? [`Estado OC: ${filterStatusOc}`] : []),
+    ...(filterTipo ? [`Tipo: ${filterTipo}`] : []),
+    ...(filterProveedor ? ["Proveedor"] : []),
+    ...(soloAprobadosSinOC ? ["Listos para OC"] : []),
+    ...(rangoSol.desde || rangoSol.hasta ? [`F. Solicitud: ${fmtRango(rangoSol)}`] : []),
+    ...(rangoReq.desde || rangoReq.hasta ? [`F. Requerida: ${fmtRango(rangoReq)}`] : []),
+  ];
 
   // Selección candidata para acciones bulk
   const selectedRows = useMemo(() => rows.filter((r) => selectedKeys.includes(r.id)), [rows, selectedKeys]);
@@ -759,6 +777,10 @@ export default function RequerimientosPage() {
     const base: readonly { items: RequerimientoRow[] }[] = vistaActual ?? gruposFiltrados;
     return base.flatMap((g) => g.items);
   }, [vistaActual, gruposFiltrados]);
+
+  // La tabla tiene filtros de columna (embudo) aplicados: muestra menos
+  // grupos de los que trae la carga.
+  const hayFiltroColumna = vistaActual != null && vistaActual.length !== gruposFiltrados.length;
 
   // Conteo de RQ + items visibles. El KPI "Total" lo usa para reflejar lo que
   // realmente se está viendo en la tabla — los stats del backend solo conocen
@@ -1571,6 +1593,36 @@ export default function RequerimientosPage() {
       </Card>
       )}
 
+      {/* Qué se está viendo: conteo real + filtros activos (algunos se
+          recuerdan entre sesiones y pasaban desapercibidos). */}
+      {vistaModo !== "items" && (filtrosActivos.length > 0 || hayFiltroColumna) && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          title={
+            <span>
+              Mostrando <b>{visiblesCount.rqs}</b> requerimiento(s) · <b>{visiblesCount.items}</b> ítem(s)
+              {" "}(el Excel baja estas filas)
+            </span>
+          }
+          description={
+            <Space size={[4, 4]} wrap>
+              <Text type="secondary" style={{ fontSize: 12 }}>Filtros activos:</Text>
+              {filtrosActivos.map((f) => <Tag key={f} style={{ margin: 0 }}>{f}</Tag>)}
+              {hayFiltroColumna && (
+                <Tooltip title="Hay filtros puestos desde el embudo de alguna columna. Se quitan desde esa misma columna.">
+                  <Tag color="warning" style={{ margin: 0 }}>Filtros de columna</Tag>
+                </Tooltip>
+              )}
+              {filtrosActivos.length > 0 && (
+                <Button size="small" type="link" onClick={clearFilters}>Limpiar filtros</Button>
+              )}
+            </Space>
+          }
+        />
+      )}
+
       {/* Bulk toolbar */}
       {selectedKeys.length > 0 && (
         <Card
@@ -1703,9 +1755,13 @@ export default function RequerimientosPage() {
             pagination={paginacionEstandar({
               current: page,
               pageSize,
-              total,
+              // Total = requerimientos VISIBLES (las filas de la tabla son
+              // grupos). Antes se pasaba el total de ítems del servidor: el
+              // contador no coincidía con lo visible ni con el Excel y el
+              // paginador ofrecía páginas vacías.
+              total: visiblesCount.rqs,
               onChange: (p, s) => { setPage(p); setPageSize(s); },
-              label: `items (${grupos.length} requerimiento(s))`,
+              label: `requerimiento(s) · ${visiblesCount.items} ítem(s)`,
               placement: ["topEnd", "bottomEnd"],
             })}
             scroll={{ x: 1500 }}
