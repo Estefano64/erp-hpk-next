@@ -168,6 +168,23 @@ function precioEfectivo(r: RequerimientoRow): number | null {
 function cantidadEfectiva(r: RequerimientoRow): number {
   return Number(r.oc_cantidad ?? r.cantidad ?? 0);
 }
+// PEN es el código legacy de soles: se agrupa con SOL.
+const monedaNorm = (m: string | null | undefined) => {
+  const u = (m ?? "USD").toUpperCase();
+  return u === "PEN" ? "SOL" : u;
+};
+// Costo de lo PEDIDO (requerimiento), solo en la columna de su moneda.
+function costoPedido(r: RequerimientoRow, moneda: "USD" | "SOL"): number | "" {
+  if (r.precio_unitario == null || monedaNorm(r.moneda) !== moneda) return "";
+  return Number(r.cantidad ?? 0) * Number(r.precio_unitario);
+}
+// Costo según la OC (cantidad/precio/moneda de la OC). Vacío si no tiene OC.
+function costoOC(r: RequerimientoRow, moneda: "USD" | "SOL"): number | "" {
+  if (r.po_id == null) return "";
+  const pe = precioEfectivo(r);
+  if (pe == null || monedaNorm(monedaEfectiva(r)) !== moneda) return "";
+  return pe * cantidadEfectiva(r);
+}
 // Moneda del precio efectivo: si el precio viene de la OC, va en la moneda de
 // la OC (un item pedido en USD puede comprarse en SOL). Mismo criterio que la
 // pestaña Costos de la OT (src/lib/costos-ot.ts).
@@ -1457,7 +1474,14 @@ export default function RequerimientosPage() {
     { key: "det.um", label: "UM", value: (r) => r.unidad_medida ?? r.material?.unidad_medida_codigo ?? "" },
     { key: "det.punit", label: "P. Unit", value: (r) => precioEfectivo(r) ?? "", z: "#,##0.00" },
     { key: "det.moneda", label: "Moneda", value: (r) => monedaEfectiva(r) },
-    { key: "det.subtotal", label: "Subtotal", value: (r) => { const pe = precioEfectivo(r); return pe != null ? pe * cantidadEfectiva(r) : ""; }, z: "#,##0.00" },
+    // Montos separados por moneda: cada columna se puede sumar directo (antes
+    // "Subtotal" mezclaba USD y SOL y la suma no significaba nada).
+    //   Costo pedido = lo del requerimiento (cantidad × precio pedidos, su moneda).
+    //   Costo OC     = lo de la OC (cantidad/precio/moneda de la OC); vacío sin OC.
+    { key: "det.costo_req_usd", label: "Costo pedido USD", z: "#,##0.00", value: (r) => costoPedido(r, "USD") },
+    { key: "det.costo_req_sol", label: "Costo pedido SOL", z: "#,##0.00", value: (r) => costoPedido(r, "SOL") },
+    { key: "det.costo_oc_usd", label: "Costo OC USD", z: "#,##0.00", value: (r) => costoOC(r, "USD") },
+    { key: "det.costo_oc_sol", label: "Costo OC SOL", z: "#,##0.00", value: (r) => costoOC(r, "SOL") },
     { key: "det.cant_req", label: "Cantidad pedida (req)", value: (r) => Number(r.cantidad), defaultSelected: false },
     { key: "det.punit_req", label: "P. Unit pedido (req)", value: (r) => r.precio_unitario != null ? Number(r.precio_unitario) : "", z: "#,##0.00", defaultSelected: false },
     { key: "det.moneda_req", label: "Moneda pedido (req)", value: (r) => r.moneda ?? "", defaultSelected: false },
@@ -1479,13 +1503,17 @@ export default function RequerimientosPage() {
               así que `itemsVisibles` ya respeta búsqueda, rangos y filtros de
               columna; el export aplana los items de los grupos visibles. */}
           <ExportarExcelButton<RequerimientoRow>
-            endpoint="/api/requerimientos"
+            // sin_borradores: la descarga completa (sin "filtros actuales") trae
+            // lo mismo que la tabla — los borradores aún no se enviaron.
+            endpoint="/api/requerimientos?sin_borradores=1"
             filename="Requerimientos"
             sheetName="Requerimientos"
             currentRows={itemsVisibles}
             // v3: el Excel sale de las columnas de la tabla (misma lista, orden
             // y ocultas) + el detalle de cada item al final.
-            storageKey="excel-export-Requerimientos-v3"
+            // v4: Subtotal se reemplazó por Costo pedido / Costo OC en USD y SOL
+            // (con la selección guardada de v3 las columnas nuevas no salían).
+            storageKey="excel-export-Requerimientos-v4"
             tablaLayout={{ ocultas }}
             columns={columnasParaExcel<RequerimientoRow>(
               groupColumnsResizable as unknown as ColumnsType<RequerimientoRow>,

@@ -87,6 +87,13 @@ export async function GET(req: NextRequest) {
       where.po_id = null;
     }
 
+    // sin_borradores=1: excluye borradores (aún no enviados a aprobación). Lo usa
+    // la descarga completa del Excel de /requerimientos, cuya tabla nunca los muestra.
+    if (sp.get("sin_borradores") === "1") {
+      // OR con null: un NOT simple también dejaría fuera los ítems sin estado.
+      (where.AND as unknown[]).push({ OR: [{ status_requerimiento_codigo: null }, { status_requerimiento_codigo: { not: "BORRADOR" } }] });
+    }
+
     const search = sp.get("search")?.trim();
     if (search) {
       // Si el texto parece un número/código de OT ("390126" / "V000126" /
