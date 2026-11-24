@@ -165,7 +165,7 @@ export async function POST(req: NextRequest) {
           }
           const reqFree = await tx.oTRepuesto.findUnique({
             where: { id: item.repuesto_id },
-            select: { id: true, po_id: true, cantidad: true, cantidad_recibida: true, descripcion: true },
+            select: { id: true, po_id: true, cantidad: true, oc_cantidad: true, cantidad_recibida: true, descripcion: true },
           });
           if (!reqFree || reqFree.po_id !== d.po_id) {
             throw Object.assign(
@@ -173,7 +173,8 @@ export async function POST(req: NextRequest) {
               { code: "BAD_LINE" },
             );
           }
-          const pendienteFree = Number(reqFree.cantidad) - Number(reqFree.cantidad_recibida ?? 0);
+          // Pendiente sobre lo COMPRADO (cantidad de la OC si se modificó).
+          const pendienteFree = Number(reqFree.oc_cantidad ?? reqFree.cantidad) - Number(reqFree.cantidad_recibida ?? 0);
           if (item.cantidad > pendienteFree + 0.0001) {
             throw Object.assign(
               new Error(`${reqFree.descripcion ?? "Item"}: cantidad ${item.cantidad} excede lo pendiente (${pendienteFree})`),
@@ -321,10 +322,10 @@ export async function POST(req: NextRequest) {
       } else {
         const reqsActualizados = await tx.oTRepuesto.findMany({
           where: { po_id: d.po_id },
-          select: { cantidad: true, cantidad_recibida: true },
+          select: { cantidad: true, oc_cantidad: true, cantidad_recibida: true },
         });
         todasCompletas = reqsActualizados.every(
-          (x) => Number(x.cantidad_recibida ?? 0) >= Number(x.cantidad) - 0.0001,
+          (x) => Number(x.cantidad_recibida ?? 0) >= Number(x.oc_cantidad ?? x.cantidad) - 0.0001,
         );
       }
       const nuevoEstado = todasCompletas ? "ENTREGADO" : "INCOMPLETO";
@@ -376,10 +377,10 @@ export async function POST(req: NextRequest) {
       // 2. Free items: cada OTRepuesto trae su propia cantidad_recibida.
       const reqsFreeOC = await tx.oTRepuesto.findMany({
         where: { po_id: d.po_id, material_id: null },
-        select: { id: true, cantidad: true, cantidad_recibida: true },
+        select: { id: true, cantidad: true, oc_cantidad: true, cantidad_recibida: true },
       });
       const freeFullIds = reqsFreeOC
-        .filter((r) => Number(r.cantidad_recibida ?? 0) >= Number(r.cantidad) - 0.0001)
+        .filter((r) => Number(r.cantidad_recibida ?? 0) >= Number(r.oc_cantidad ?? r.cantidad) - 0.0001)
         .map((r) => r.id);
 
       // 3. Items 100% recibidos → set fecha_entrega_real + status COMPLETO +
@@ -407,7 +408,8 @@ export async function POST(req: NextRequest) {
         "ANULADO",
       ];
       if (materialesFullRec.size > 0) {
-        // Reflejar cantidad_recibida = cantidad para MAC items al 100% en la OC.
+        // Reflejar cantidad_recibida = lo comprado (oc_cantidad si la OC la
+        // modificó, si no cantidad) para MAC items al 100% en la OC.
         // updateMany no puede referenciar la propia cantidad → SQL raw.
         // Solo aplica a reps que no estén en un estado final (protegemos los
         // consumos ya cerrados).
@@ -420,7 +422,7 @@ export async function POST(req: NextRequest) {
         const matIdsArr = Array.from(materialesFullRec);
         await tx.$executeRawUnsafe(
           `UPDATE ot_repuestos
-             SET cantidad_recibida = cantidad
+             SET cantidad_recibida = COALESCE(oc_cantidad, cantidad)
            WHERE po_id = $1
              AND material_id = ANY($2::int[])
              AND (status_oc_codigo IS NULL OR status_oc_codigo NOT IN ('CONSUMIDO_ALMACEN','CONSUMIDO_OC_ABIERTA','ENTREGADO','COMPLETO','ANULADO'))`,

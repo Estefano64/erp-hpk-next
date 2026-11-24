@@ -50,6 +50,7 @@ export async function GET() {
             descripcion: true,
             unidad_medida: true,
             cantidad: true,
+            oc_cantidad: true,
             cantidad_recibida: true,
             precio_unitario: true,
             // Necesario para diferenciar SERVICIOS (SER) en el modal de
@@ -192,7 +193,8 @@ export async function GET() {
         const itemsRepuestosFree = c.ot_repuestos
           .filter((r: R) => r.material_id == null && r.tipo_codigo !== "SER" && !(ocDeServicio && r.solo_para_oc))
           .map((r: R) => {
-            const pendiente = Number(r.cantidad) - Number(r.cantidad_recibida ?? 0);
+            // Pendiente sobre lo comprado (cantidad de la OC si se modificó).
+            const pendiente = Number(r.oc_cantidad ?? r.cantidad) - Number(r.cantidad_recibida ?? 0);
             return {
               id: r.id,
               repuesto_id: r.id,

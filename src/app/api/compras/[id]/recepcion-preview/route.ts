@@ -41,6 +41,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
         material_codigo: true,
         descripcion: true,
         cantidad: true,
+        oc_cantidad: true,
         cantidad_recibida: true,
         ot_id: true,
         orden_trabajo_interna_id: true,
@@ -63,7 +64,8 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
     const items = await Promise.all(
       reqs.map(async (r) => {
-        const cantPedida = Number(r.cantidad);
+        // Lo comprado: cantidad de la OC si se modificó, si no la del req.
+        const cantPedida = Number(r.oc_cantidad ?? r.cantidad);
         const cantRecibida = Number(r.cantidad_recibida ?? 0);
         const pendiente = Math.max(cantPedida - cantRecibida, 0);
         const otCodigo = r.orden_trabajo?.ot != null
