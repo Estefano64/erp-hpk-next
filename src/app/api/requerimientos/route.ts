@@ -176,6 +176,8 @@ export async function GET(req: NextRequest) {
             cantidad: true, cantidad_recibida: true,
             descripcion: true, fabricante_codigo: true, unidad_medida: true,
             fecha_solicitud: true, fecha_requerida: true,
+            // F. Entrega: la usa el Excel de /requerimientos desde la vista "Por ítem".
+            fecha_entrega_esperada: true,
             precio_unitario: true, moneda: true,
             // Precio y cantidad REALES de la OC. El editor de OC no pisa el
             // requerimiento: guarda lo negociado con el proveedor en estas

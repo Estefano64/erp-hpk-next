@@ -465,21 +465,34 @@ export default function RequerimientosDetallePage() {
 // toggle "Por ítem" esté activo (sin navegar de página). Wrappeado en
 // Suspense porque internamente usa useSearchParams (Next.js requiere
 // Suspense para hooks de client navigation).
-export function RequerimientosDetalleEmbebido({ estadoOverride }: { estadoOverride?: string } = {}) {
+// `onFilasVisibles`: el padre (/requerimientos) exporta a Excel EXACTAMENTE lo
+// que se ve en esta vista (filtros + embudos de columna). Antes el botón de
+// Excel exportaba la vista "Por requerimiento" aunque se estuviera en
+// "Por ítem" (caso OI003126: 360 filas en pantalla, 121 en el Excel).
+export function RequerimientosDetalleEmbebido({ estadoOverride, onFilasVisibles }: {
+  estadoOverride?: string;
+  onFilasVisibles?: (rows: RequerimientoApi[]) => void;
+} = {}) {
   return (
     <Suspense fallback={<div style={{ padding: 24 }}>Cargando…</div>}>
-      <RequerimientosDetalleInner embebido estadoOverride={estadoOverride} />
+      <RequerimientosDetalleInner embebido estadoOverride={estadoOverride} onFilasVisibles={onFilasVisibles} />
     </Suspense>
   );
 }
 
-function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embebido?: boolean; estadoOverride?: string } = {}) {
+function RequerimientosDetalleInner({ embebido = false, estadoOverride, onFilasVisibles }: {
+  embebido?: boolean;
+  estadoOverride?: string;
+  onFilasVisibles?: (rows: RequerimientoApi[]) => void;
+} = {}) {
   const router = useRouter();
   const params = useSearchParams();
   const { message } = App.useApp();
   const { screens } = useResponsive();
 
   const [allData, setAllData] = useState<Requerimiento[]>([]);
+  // Filas crudas de la API por id: el Excel del padre usa ese formato.
+  const rawPorId = useRef<Map<number, RequerimientoApi>>(new Map());
   const [loading, setLoading] = useState(false);
   // Paginación controlada — el user puede elegir 10/20/50/100/500.
   const [page, setPage] = useState(1);
@@ -727,6 +740,7 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
       const res = await fetch("/api/requerimientos?limit=10000&slim=1");
       const json = await res.json();
       const raw = (json.data ?? []) as RequerimientoApi[];
+      rawPorId.current = new Map(raw.map((r) => [r.id, r]));
       // En la lista de Requerimientos (embebida) los borradores no salen: son
       // del solicitante y todavía no se enviaron a aprobación (2026-11-10).
       // El detalle por requerimiento/OT los sigue mostrando.
@@ -907,6 +921,17 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
 
     return rows;
   }, [allData, filtroTipoOT, filtroTipoMat, filtroOt, filtroNroReq, filtroRapido, filtroEstado, estadoOverride, embebido, search, rangoSol, rangoReq]);
+
+  // Lo que realmente se ve: filteredData menos los embudos de columna.
+  const [vistaTabla, setVistaTabla] = useState<Requerimiento[] | null>(null);
+  useEffect(() => { setVistaTabla(null); }, [filteredData]);
+  const filasVisibles = vistaTabla ?? filteredData;
+  useEffect(() => {
+    if (!onFilasVisibles) return;
+    onFilasVisibles(filasVisibles
+      .map((r) => rawPorId.current.get(r.id))
+      .filter((r): r is RequerimientoApi => r != null));
+  }, [filasVisibles, onFilasVisibles]);
 
   const otOptions = useMemo(() => {
     const map = new Map<number, string>();
@@ -3240,10 +3265,13 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
           components={tableComponents}
           dataSource={filteredData}
           loading={loading}
+          // Filtros de embudo de columna: guardamos lo que queda visible para
+          // el conteo y para el Excel del padre.
+          onChange={(_p, _f, _s, extra) => setVistaTabla(extra.currentDataSource as Requerimiento[])}
           pagination={paginacionEstandar({
             current: page,
             pageSize,
-            total: filteredData.length,
+            total: filasVisibles.length,
             onChange: (p, s) => { setPage(p); setPageSize(s); },
             // El filtro rápido se recuerda entre sesiones: decirlo junto al
             // conteo (caso OI003126: "360 registros" eran solo los ítems con OC).

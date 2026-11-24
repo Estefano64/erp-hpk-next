@@ -348,6 +348,9 @@ export default function RequerimientosPage() {
   // se expande para ver items) o plano por item (cada fila es un OTRepuesto).
   // Persistido en localStorage para que la elección sobreviva a refresh.
   const [vistaModo, setVistaModo] = usePersistedState<"grupos" | "items">("requerimientos-vista-modo", "grupos");
+  // Filas visibles de la vista "Por ítem" (las reporta el embebido) → Excel.
+  const [filasVistaItems, setFilasVistaItems] = useState<RequerimientoRow[]>([]);
+  const onFilasVistaItems = useCallback((rs: unknown[]) => setFilasVistaItems(rs as RequerimientoRow[]), []);
   const { rango: rangoSol, setRango: setRangoSol } = useRangoFechasPersistente("req-list-rango-sol");
   const { rango: rangoReq, setRango: setRangoReq } = useRangoFechasPersistente("req-list-rango-req");
   const [semanaSel, setSemanaSel] = useState<dayjs.Dayjs | null>(null);
@@ -1508,7 +1511,9 @@ export default function RequerimientosPage() {
             endpoint="/api/requerimientos?sin_borradores=1"
             filename="Requerimientos"
             sheetName="Requerimientos"
-            currentRows={itemsVisibles}
+            // En "Por ítem" se exporta lo que se ve en ESA vista (la reporta
+            // el embebido); en "Por requerimiento", los ítems de los grupos visibles.
+            currentRows={vistaModo === "items" ? filasVistaItems : itemsVisibles}
             // v3: el Excel sale de las columnas de la tabla (misma lista, orden
             // y ocultas) + el detalle de cada item al final.
             // v4: Subtotal se reemplazó por Costo pedido / Costo OC en USD y SOL
@@ -1768,7 +1773,7 @@ export default function RequerimientosPage() {
         // override para que los tabs (Todos/Aprobados/...) filtren también
         // en el modo Por ítem (antes el embebido corría su propio Select
         // y los tabs no hacían nada).
-        <RequerimientosDetalleEmbebido estadoOverride={filterStatusReq} />
+        <RequerimientosDetalleEmbebido estadoOverride={filterStatusReq} onFilasVisibles={onFilasVistaItems} />
       ) : rows.length === 0 && !loading ? (
         <Empty description="No hay requerimientos con esos filtros." />
       ) : (
