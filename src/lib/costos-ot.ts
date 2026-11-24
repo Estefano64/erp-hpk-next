@@ -167,6 +167,11 @@ export async function calcularCostosOT(
       cantidad_recibida: true,
       precio_unitario: true,
       moneda: true,
+      // Lo que realmente se compró (la OC puede modificar cantidad/precio y
+      // estar en otra moneda). Ver cálculo de ejecutado/proyectado abajo.
+      oc_cantidad: true,
+      oc_precio_unitario: true,
+      compra: { select: { moneda_codigo: true } },
       status_requerimiento_codigo: true,
       status_oc_codigo: true,
     },
@@ -201,20 +206,30 @@ export async function calcularCostosOT(
     const enProceso =
       r.status_requerimiento_codigo === "APROBADO"
       || (r.status_oc_codigo != null && r.status_oc_codigo !== "ANULADO");
-    const subEjecutado = recibido * precio;
-    const pendiente = Math.max(cantidad - recibido, 0);
-    const subProyectado = enProceso ? pendiente * precio : 0;
+    // ESTIMADO = plan del requerimiento (cantidad × precio del req, en su moneda).
+    // EJECUTADO / PROYECTADO = lo que se COMPRÓ: cantidad y precio de la OC si
+    // la OC los modificó, en la moneda de la OC cuando el precio viene de ella.
+    // Antes usaban cantidad/precio/moneda del req y se descuadraban con el Excel
+    // de Requerimientos (OI 3126-26: req 280 × 1,529 vs OC 12; req USD vs OC SOL).
+    // Un item sin OC solo suma real si se entregó (almacén / caja chica):
+    // sin entrega su cantidad_recibida es 0.
+    const cantidadCompra = r.oc_cantidad != null ? dec(r.oc_cantidad) : cantidad;
+    const precioCompra = r.oc_precio_unitario != null ? dec(r.oc_precio_unitario) : precio;
+    const monedaCompra = r.oc_precio_unitario != null ? (r.compra?.moneda_codigo ?? moneda) : moneda;
+    const subEjecutado = recibido * precioCompra;
+    const pendiente = Math.max(cantidadCompra - recibido, 0);
+    const subProyectado = enProceso ? pendiente * precioCompra : 0;
     const item: MaterialItem = {
       id: r.id,
       nro_req: r.nro_req,
       item_req: r.item_req,
       material_codigo: r.material_codigo,
       descripcion: r.descripcion ?? r.material_codigo ?? "—",
-      cantidad,
+      cantidad: cantidadCompra,
       cantidad_recibida: recibido,
-      precio_unitario: precio,
-      moneda,
-      subtotal: cantidad * precio,
+      precio_unitario: precioCompra,
+      moneda: monedaCompra,
+      subtotal: cantidadCompra * precioCompra,
       subtotal_ejecutado: subEjecutado,
       subtotal_proyectado: subProyectado,
       status_req: r.status_requerimiento_codigo,
@@ -223,21 +238,21 @@ export async function calcularCostosOT(
     const subEstimado = cantidad * precio;
     if (r.tipo_codigo === "SER") {
       servicios.push(item);
-      sumarMoneda(totalEjecutadoSer, moneda, subEjecutado);
-      sumarMoneda(totalProyectadoSer, moneda, subProyectado);
+      sumarMoneda(totalEjecutadoSer, monedaCompra, subEjecutado);
+      sumarMoneda(totalProyectadoSer, monedaCompra, subProyectado);
       sumarMoneda(totalEstimadoSer, moneda, subEstimado);
     } else if (r.tipo_codigo === "CAD") {
       // CAD = "cargo directo" / item free sin catálogo (servicios menores,
       // gastos directos imputados a la OT). Se separan de MAC en el resumen
       // Estimado/Real.
       cargoDirecto.push(item);
-      sumarMoneda(totalEjecutadoCad, moneda, subEjecutado);
-      sumarMoneda(totalProyectadoCad, moneda, subProyectado);
+      sumarMoneda(totalEjecutadoCad, monedaCompra, subEjecutado);
+      sumarMoneda(totalProyectadoCad, monedaCompra, subProyectado);
       sumarMoneda(totalEstimadoCad, moneda, subEstimado);
     } else {
       materiales.push(item);
-      sumarMoneda(totalEjecutadoMat, moneda, subEjecutado);
-      sumarMoneda(totalProyectadoMat, moneda, subProyectado);
+      sumarMoneda(totalEjecutadoMat, monedaCompra, subEjecutado);
+      sumarMoneda(totalProyectadoMat, monedaCompra, subProyectado);
       sumarMoneda(totalEstimadoMat, moneda, subEstimado);
     }
   }
@@ -581,6 +596,7 @@ export async function calcularCostosResumenBatch(
     select: {
       ot_id: true, cantidad: true, cantidad_recibida: true, precio_unitario: true,
       moneda: true, status_requerimiento_codigo: true, status_oc_codigo: true, solo_para_oc: true,
+      oc_precio_unitario: true, compra: { select: { moneda_codigo: true } },
     },
   });
   for (const r of reps) {
@@ -590,7 +606,10 @@ export async function calcularCostosResumenBatch(
     const moneda = r.moneda ?? "USD";
     const precio = dec(r.precio_unitario);
     sumarMoneda(acc.estimado, moneda, dec(r.cantidad) * precio);
-    sumarMoneda(acc.real, moneda, dec(r.cantidad_recibida) * precio);
+    // Real con el precio/moneda de la OC (mismo criterio que calcularCostosOT).
+    const precioCompra = r.oc_precio_unitario != null ? dec(r.oc_precio_unitario) : precio;
+    const monedaCompra = r.oc_precio_unitario != null ? (r.compra?.moneda_codigo ?? moneda) : moneda;
+    sumarMoneda(acc.real, monedaCompra, dec(r.cantidad_recibida) * precioCompra);
   }
 
   // ── HH: real (sesiones cerradas × costo) + estimado (horas_estimadas × tasa) ──
