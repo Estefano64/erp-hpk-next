@@ -14,7 +14,7 @@ import {
   InfoCircleOutlined, EyeOutlined, UnorderedListOutlined,
   TruckOutlined, DollarOutlined,
 } from "@ant-design/icons";
-import type { ColumnsType } from "antd/es/table";
+import type { ColumnsType, ColumnType } from "antd/es/table";
 import dayjs from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
 import { brand } from "@/lib/theme";
@@ -26,11 +26,13 @@ import { formatDateOnly, formatDateOnlyShort, dateOnlyLocal } from "@/lib/dates"
 import { formatOtCodigo, formatOtInternaCodigo } from "@/lib/ot-formato";
 import { R2FileLink } from "@/components/R2FileLink";
 import FabricanteSelect from "@/components/FabricanteSelect";
-import { ExportarExcelButton } from "@/components/ExportarExcelButton";
+import { ExportarExcelButton, type ExportColumn } from "@/components/ExportarExcelButton";
 import { RequerimientosDetalleEmbebido } from "@/app/(dashboard)/requerimientos/detalle/page";
 import { puedeEscribirApi } from "@/lib/acceso-rutas";
 import {
   numeracionColumn,
+  columnasParaExcel,
+  type ExcelSpec,
   paginacionEstandar,
   PAGINATION_PAGE_SIZE,
   useColumnasOcultas,
@@ -84,7 +86,7 @@ interface RequerimientoRow {
   almacen_zona?: { codigo: string; nombre: string } | null;
   almacen_posicion?: { codigo: string } | null;
   proveedor: { id: number; razon_social: string } | null;
-  compra: { id: number; numero_po: string } | null;
+  compra: { id: number; numero_po: string; moneda_codigo?: string | null } | null;
   po_id: number | null;
   es_adicional: boolean | null;
   orden_trabajo: {
@@ -165,6 +167,13 @@ function precioEfectivo(r: RequerimientoRow): number | null {
 // Cantidad efectiva (override de la OC si existe).
 function cantidadEfectiva(r: RequerimientoRow): number {
   return Number(r.oc_cantidad ?? r.cantidad ?? 0);
+}
+// Moneda del precio efectivo: si el precio viene de la OC, va en la moneda de
+// la OC (un item pedido en USD puede comprarse en SOL). Mismo criterio que la
+// pestaña Costos de la OT (src/lib/costos-ot.ts).
+function monedaEfectiva(r: RequerimientoRow): string {
+  if (r.oc_precio_unitario != null) return r.compra?.moneda_codigo ?? r.moneda ?? "";
+  return r.moneda ?? "";
 }
 
 // Stock que este requerimiento puede realmente tomar del almacén: el físico
@@ -781,11 +790,20 @@ export default function RequerimientosPage() {
     };
   }
 
-  // Columnas del nivel "grupo" (header de cada nro_req)
-  const groupColumns: ColumnsType<GrupoReq> = [
-    numeracionColumn<GrupoReq>({ current: page, pageSize }),
+  // Columnas del nivel "grupo" (header de cada nro_req). Cada una declara su
+  // `excel`: el Excel sale de ESTA lista (mismo orden, respeta ocultas) con una
+  // fila por item, por eso `excel.value` recibe el item (RequerimientoRow).
+  type ColumnasGrupoConExcel = (ColumnType<GrupoReq> & {
+    excel?: false | ExcelSpec<RequerimientoRow> | ExcelSpec<RequerimientoRow>[];
+  })[];
+  const otCodigoDe = (r: RequerimientoRow) => r.orden_trabajo?.ot != null
+    ? formatOtCodigo(r.orden_trabajo.ot, r.orden_trabajo.tipo_codigo, "")
+    : formatOtInternaCodigo(r.orden_trabajo_interna?.ot, "");
+  const groupColumns: ColumnasGrupoConExcel = [
+    { ...numeracionColumn<GrupoReq>({ current: page, pageSize }), excel: false },
     {
       title: "OT", key: "ot", width: 110, align: "center",
+      excel: { label: "OT", value: otCodigoDe },
       ...filtroProyectado(gruposFiltrados, (g) => {
         if (g.orden_trabajo?.ot != null) {
           return formatOtCodigo(g.orden_trabajo.ot, g.orden_trabajo.tipo_codigo, "");
@@ -826,6 +844,7 @@ export default function RequerimientosPage() {
     },
     {
       title: "Nro Req", key: "nro", width: 160, align: "center",
+      excel: { label: "Nro REQ", value: (r) => r.nro_req ?? "" },
       ...filtroPorColumna(gruposFiltrados, "nro_req"),
       sorter: (a, b) => (a.nro_req ?? "").localeCompare(b.nro_req ?? ""),
       render: (_, g) => (
@@ -837,6 +856,10 @@ export default function RequerimientosPage() {
     },
     {
       title: "Cliente / Cod. Rep.", key: "cliente", width: 200, ellipsis: true, align: "left",
+      excel: [
+        { key: "cliente", label: "Cliente", value: (r) => r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "" },
+        { key: "codrep", label: "Cod. Rep.", value: (r) => r.orden_trabajo?.codigo_reparacion?.codigo ?? "" },
+      ],
       ...filtroProyectado(gruposFiltrados, (g) =>
         g.orden_trabajo?.cliente?.nombre_comercial ?? g.orden_trabajo?.cliente?.razon_social ?? null,
       ),
@@ -854,6 +877,7 @@ export default function RequerimientosPage() {
     },
     {
       title: "Descripción OT", key: "desc_ot", width: 220, ellipsis: true, align: "left",
+      excel: { label: "Descripción OT", value: (r) => r.orden_trabajo?.descripcion ?? r.orden_trabajo_interna?.descripcion ?? "" },
       ...filtroProyectado(gruposFiltrados, (g) => g.orden_trabajo?.descripcion ?? null),
       sorter: (a, b) => (a.orden_trabajo?.descripcion ?? "").localeCompare(b.orden_trabajo?.descripcion ?? ""),
       render: (_, g) => g.orden_trabajo?.descripcion
@@ -862,6 +886,7 @@ export default function RequerimientosPage() {
     },
     {
       title: "Flota", key: "flota", width: 130, ellipsis: true, align: "left",
+      excel: { label: "Flota", value: (r) => r.orden_trabajo?.cod_rep_flota ?? "" },
       ...filtroProyectado(gruposFiltrados, (g) => g.orden_trabajo?.cod_rep_flota ?? null),
       sorter: (a, b) => (a.orden_trabajo?.cod_rep_flota ?? "").localeCompare(b.orden_trabajo?.cod_rep_flota ?? ""),
       render: (_, g) => g.orden_trabajo?.cod_rep_flota
@@ -870,12 +895,14 @@ export default function RequerimientosPage() {
     },
     {
       title: "Proveedor", key: "prov", width: 140, ellipsis: true, align: "left",
+      excel: { label: "Proveedor", value: (r) => r.proveedor?.razon_social ?? "" },
       ...filtroPorColumna(gruposFiltrados, "proveedor_nombre"),
       sorter: (a, b) => (a.proveedor_nombre ?? "").localeCompare(b.proveedor_nombre ?? ""),
       render: (_, g) => g.proveedor_nombre ?? <Text type="secondary">—</Text>,
     },
     {
       title: "REQ", key: "req", width: 110, align: "center",
+      excel: { label: "Estado REQ", value: (r) => r.status_requerimiento?.nombre ?? r.status_requerimiento_codigo ?? "" },
       // Filtros estáticos por estado conocido (resumen mixto no mapea a un solo valor).
       filters: [
         { text: "Sin aprobación", value: "SIN_APROBACION" },
@@ -888,6 +915,14 @@ export default function RequerimientosPage() {
     },
     {
       title: "Precio Estimado", key: "precio_estimado", width: 130, align: "right",
+      excel: [
+        // Mismo cálculo que la celda (precio de catálogo × cantidad), por item.
+        { key: "monto", label: "Precio estimado (catálogo)", z: "#,##0.00", value: (r) => {
+          const pc = Number(r.material?.precio ?? 0);
+          return Number.isFinite(pc) && pc > 0 ? pc * Number(r.cantidad) : "";
+        } },
+        { key: "moneda", label: "Moneda estimado", value: (r) => Number(r.material?.precio ?? 0) > 0 ? (r.material?.moneda_codigo ?? "USD").toUpperCase() : "" },
+      ],
       sorter: (a, b) =>
         (a.total_estimado_usd + a.total_estimado_sol) - (b.total_estimado_usd + b.total_estimado_sol),
       render: (_, g) => {
@@ -904,6 +939,10 @@ export default function RequerimientosPage() {
     },
     {
       title: "OC", key: "oc", width: 140, align: "center",
+      excel: [
+        { key: "estado", label: "Estado OC", value: (r) => r.status_oc?.nombre ?? r.status_oc_codigo ?? "" },
+        { key: "nro", label: "Nro OC", value: (r) => r.compra?.numero_po ?? "" },
+      ],
       filters: [
         { text: "Pendiente OC", value: "PEND_OC" },
         { text: "En proceso", value: "PROCESO" },
@@ -932,6 +971,8 @@ export default function RequerimientosPage() {
         </Tooltip>
       ),
       key: "fsol", width: 100, align: "center",
+      // Fechas como Date real; dateOnlyLocal toma el día UTC (= lo que muestra la tabla).
+      excel: { label: "F. Solicitud", value: (r) => dateOnlyLocal(r.fecha_solicitud) },
       ...filtroProyectado(gruposFiltrados, (g) => g.fecha_solicitud ? formatDateOnlyShort(g.fecha_solicitud) : null),
       sorter: (a, b) => (a.fecha_solicitud ? new Date(a.fecha_solicitud).getTime() : 0)
         - (b.fecha_solicitud ? new Date(b.fecha_solicitud).getTime() : 0),
@@ -946,6 +987,7 @@ export default function RequerimientosPage() {
         </Tooltip>
       ),
       key: "faprob", width: 110, align: "center",
+      excel: { label: "F. Aprobación", value: (r) => dateOnlyLocal(r.fecha_aprobacion) },
       ...filtroProyectado(gruposFiltrados, (g) => g.fecha_aprobacion ? formatDateOnlyShort(g.fecha_aprobacion) : null),
       sorter: (a, b) => (a.fecha_aprobacion ? new Date(a.fecha_aprobacion).getTime() : 0)
         - (b.fecha_aprobacion ? new Date(b.fecha_aprobacion).getTime() : 0),
@@ -960,6 +1002,7 @@ export default function RequerimientosPage() {
         </Tooltip>
       ),
       key: "freq", width: 100, align: "center",
+      excel: { label: "F. Requerida", value: (r) => dateOnlyLocal(r.fecha_requerida) },
       ...filtroProyectado(gruposFiltrados, (g) => g.fecha_requerida ? formatDateOnlyShort(g.fecha_requerida) : null),
       sorter: (a, b) => (a.fecha_requerida ? new Date(a.fecha_requerida).getTime() : 0)
         - (b.fecha_requerida ? new Date(b.fecha_requerida).getTime() : 0),
@@ -969,6 +1012,7 @@ export default function RequerimientosPage() {
     },
     {
       title: "F. Entrega", key: "fent", width: 100, align: "center",
+      excel: { label: "F. Entrega", value: (r) => dateOnlyLocal(r.fecha_entrega_esperada) },
       ...filtroProyectado(gruposFiltrados, (g) => g.fecha_entrega_esperada ? formatDateOnlyShort(g.fecha_entrega_esperada) : null),
       sorter: (a, b) => (a.fecha_entrega_esperada ? new Date(a.fecha_entrega_esperada).getTime() : 0)
         - (b.fecha_entrega_esperada ? new Date(b.fecha_entrega_esperada).getTime() : 0),
@@ -978,6 +1022,7 @@ export default function RequerimientosPage() {
     },
     {
       title: "Acciones", key: "actions_grupo", width: 200, fixed: "right", align: "center",
+      excel: false,
       render: (_, g) => {
         const borrador = g.items.filter((i) => i.status_requerimiento_codigo === "BORRADOR");
         const sinAprob = g.items.filter((i) => i.status_requerimiento_codigo === "SIN_APROBACION");
@@ -1378,6 +1423,26 @@ export default function RequerimientosPage() {
     },
   ];
 
+  // Detalle de cada item (la tabla lo muestra al entrar al requerimiento).
+  // Cantidad, precio y moneda son los de la OC si los modificó: coherentes con
+  // la pestaña Costos de la OT. Se agregan al final del Excel.
+  const excelDetalleItem: ExportColumn<RequerimientoRow>[] = [
+    { key: "det.item", label: "Item", value: (r) => r.item_req ?? "" },
+    { key: "det.tipo", label: "Tipo", value: (r) => r.tipo_codigo },
+    { key: "det.codigo", label: "Código", value: (r) => r.material?.codigo ?? r.material_codigo ?? "" },
+    { key: "det.material", label: "Material", value: (r) => r.material?.descripcion ?? r.descripcion ?? "" },
+    { key: "det.cant", label: "Cantidad", value: (r) => cantidadEfectiva(r) },
+    { key: "det.um", label: "UM", value: (r) => r.unidad_medida ?? r.material?.unidad_medida_codigo ?? "" },
+    { key: "det.punit", label: "P. Unit", value: (r) => precioEfectivo(r) ?? "", z: "#,##0.00" },
+    { key: "det.moneda", label: "Moneda", value: (r) => monedaEfectiva(r) },
+    { key: "det.subtotal", label: "Subtotal", value: (r) => { const pe = precioEfectivo(r); return pe != null ? pe * cantidadEfectiva(r) : ""; }, z: "#,##0.00" },
+    { key: "det.cant_req", label: "Cantidad pedida (req)", value: (r) => Number(r.cantidad), defaultSelected: false },
+    { key: "det.punit_req", label: "P. Unit pedido (req)", value: (r) => r.precio_unitario != null ? Number(r.precio_unitario) : "", z: "#,##0.00", defaultSelected: false },
+    { key: "det.moneda_req", label: "Moneda pedido (req)", value: (r) => r.moneda ?? "", defaultSelected: false },
+    { key: "det.ubic", label: "Ubicación almacén", value: (r) => ubicacionAlmacenDe(r)?.texto ?? "", defaultSelected: false },
+    { key: "det.coment", label: "Comentario aprob.", value: (r) => r.comentario_aprobacion ?? "" },
+  ];
+
   return (
     <div>
       {contextHolder}
@@ -1396,44 +1461,14 @@ export default function RequerimientosPage() {
             filename="Requerimientos"
             sheetName="Requerimientos"
             currentRows={itemsVisibles}
-            // v2: las keys de columna pasaron de label a key de la tabla.
-            storageKey="excel-export-Requerimientos-v2"
+            // v3: el Excel sale de las columnas de la tabla (misma lista, orden
+            // y ocultas) + el detalle de cada item al final.
+            storageKey="excel-export-Requerimientos-v3"
             tablaLayout={{ ocultas }}
-            columns={[
-              {
-                key: "ot", label: "OT",
-                value: (r) => r.orden_trabajo?.ot != null
-                  ? formatOtCodigo(r.orden_trabajo.ot, r.orden_trabajo.tipo_codigo, "")
-                  : formatOtInternaCodigo(r.orden_trabajo_interna?.ot, ""),
-              },
-              { key: "req", label: "Estado REQ", value: (r) => r.status_requerimiento?.nombre ?? r.status_requerimiento_codigo ?? "" },
-              { key: "oc", label: "Estado OC", value: (r) => r.status_oc?.nombre ?? r.status_oc_codigo ?? "" },
-              { key: "nro", label: "Nro REQ", value: (r) => r.nro_req ?? "" },
-              { label: "Item", value: (r) => r.item_req ?? "" },
-              { label: "Tipo", value: (r) => r.tipo_codigo },
-              { label: "Código", value: (r) => r.material?.codigo ?? r.material_codigo ?? "" },
-              { label: "Material", value: (r) => r.material?.descripcion ?? r.descripcion ?? "" },
-              { label: "Ubicación almacén", value: (r) => ubicacionAlmacenDe(r)?.texto ?? "" },
-              { label: "Cantidad", value: (r) => Number(r.cantidad) },
-              { label: "UM", value: (r) => r.unidad_medida ?? r.material?.unidad_medida_codigo ?? "" },
-              { label: "Stock físico", value: (r) => r.material ? Number(r.material.stock_actual ?? 0) : "" },
-              { label: "Reservado a OTs", value: (r) => r.material ? Number(r._stock_reservado ?? 0) : "" },
-              { label: "Stock libre", value: (r) => r.material ? stockLibreDe(r) : "" },
-              { key: "cliente", label: "Cliente", value: (r) => r.orden_trabajo?.cliente?.nombre_comercial ?? r.orden_trabajo?.cliente?.razon_social ?? "" },
-              { label: "P. Unit", value: (r) => precioEfectivo(r) ?? "", z: "#,##0.00" },
-              { label: "P. Unit pedido", value: (r) => r.precio_unitario != null ? Number(r.precio_unitario) : "", z: "#,##0.00" },
-              { label: "Moneda", value: (r) => r.moneda ?? "" },
-              { label: "Subtotal", value: (r) => { const pe = precioEfectivo(r); return pe != null ? pe * cantidadEfectiva(r) : ""; }, z: "#,##0.00" },
-              { key: "oc.nro", grupo: "oc", label: "Nro OC", value: (r) => r.compra?.numero_po ?? "" },
-              { key: "prov", label: "Proveedor", value: (r) => r.proveedor?.razon_social ?? "" },
-              // Fechas como Date real (celda fecha en Excel); dateOnlyLocal
-              // toma la parte de fecha UTC — mismo día que muestra la tabla.
-              { key: "fsol", label: "F. Solicitud", value: (r) => dateOnlyLocal(r.fecha_solicitud) },
-              { key: "faprob", label: "F. Aprobación", value: (r) => dateOnlyLocal(r.fecha_aprobacion) },
-              { key: "freq", label: "F. Requerida", value: (r) => dateOnlyLocal(r.fecha_requerida) },
-              { key: "fent", label: "F. Entrega", value: (r) => dateOnlyLocal(r.fecha_entrega_esperada) },
-              { key: "comentario_aprobacion", label: "Comentario aprob.", value: (r) => r.comentario_aprobacion ?? "" },
-            ]}
+            columns={columnasParaExcel<RequerimientoRow>(
+              groupColumnsResizable as unknown as ColumnsType<RequerimientoRow>,
+              excelDetalleItem,
+            )}
           />
           <ColumnasToggleButton<GrupoReq>
             columns={groupColumns}
