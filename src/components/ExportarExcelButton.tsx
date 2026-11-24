@@ -150,6 +150,13 @@ interface Props<T> {
   };
   /** Texto del botón */
   children?: React.ReactNode;
+  /**
+   * Opcional: se llama con las filas ya resueltas justo antes de armar el
+   * .xlsx y devuelve las filas finales (puede agregar filas que la tabla no
+   * muestra; ej. ítems libres de OC en /requerimientos). Si falla, se exporta
+   * lo que había. Sin esta prop, el comportamiento no cambia.
+   */
+  completarFilas?: (rows: T[]) => Promise<T[]> | T[];
 }
 
 // Resuelve un key estable por columna (cae a label si no se pasa explícito).
@@ -179,6 +186,7 @@ export function ExportarExcelButton<T>({
   endpointParams,
   tablaLayout,
   children,
+  completarFilas,
 }: Props<T>) {
   const { message } = App.useApp();
   const [loading, setLoading] = useState(false);
@@ -352,6 +360,13 @@ export function ExportarExcelButton<T>({
       } else {
         // Sin filtros de tabla — descarga "todo" con los filtros del modal.
         filtrados = aplicarFiltrosCliente(await fetchAll());
+      }
+      if (completarFilas && filtrados.length > 0) {
+        try {
+          filtrados = await completarFilas(filtrados);
+        } catch {
+          message.warning("No se pudieron agregar algunas filas extra; se exporta lo visible.");
+        }
       }
       if (filtrados.length === 0) {
         message.info(usarFiltrosActivos

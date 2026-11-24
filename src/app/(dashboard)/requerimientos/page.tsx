@@ -89,6 +89,9 @@ interface RequerimientoRow {
   compra: { id: number; numero_po: string; moneda_codigo?: string | null } | null;
   po_id: number | null;
   es_adicional: boolean | null;
+  // Ítem libre agregado en el editor de OC (no es un requerimiento). Solo
+  // llega al Excel (completarFilasExcel), nunca a la tabla.
+  solo_para_oc?: boolean | null;
   orden_trabajo: {
     id: number;
     // OrdenTrabajo.ot es INTEGER en BD (NNNNYY); union por defensa.
@@ -175,6 +178,8 @@ const monedaNorm = (m: string | null | undefined) => {
 };
 // Costo de lo PEDIDO (requerimiento), solo en la columna de su moneda.
 function costoPedido(r: RequerimientoRow, moneda: "USD" | "SOL"): number | "" {
+  // Un ítem libre de OC no se pidió: solo tiene costo OC.
+  if (r.solo_para_oc) return "";
   if (r.precio_unitario == null || monedaNorm(r.moneda) !== moneda) return "";
   return Number(r.cantidad ?? 0) * Number(r.precio_unitario);
 }
@@ -944,7 +949,7 @@ export default function RequerimientosPage() {
     },
     {
       title: "REQ", key: "req", width: 110, align: "center",
-      excel: { label: "Estado REQ", value: (r) => r.status_requerimiento?.nombre ?? r.status_requerimiento_codigo ?? "" },
+      excel: { label: "Estado REQ", value: (r) => r.solo_para_oc ? "Libre de OC" : (r.status_requerimiento?.nombre ?? r.status_requerimiento_codigo ?? "") },
       // Filtros estáticos por estado conocido (resumen mixto no mapea a un solo valor).
       filters: [
         { text: "Sin aprobación", value: "SIN_APROBACION" },
@@ -1465,6 +1470,32 @@ export default function RequerimientosPage() {
     },
   ];
 
+  // Ítems libres de OC: se agregan al Excel (no a la tabla) para que el total
+  // cuadre con la pestaña Costos de la OT, que sí los cuenta. Se traen los de
+  // las OCs que aparecen en las filas exportadas; van al final, marcados
+  // "Libre de OC" y solo con Costo OC.
+  const completarFilasExcel = useCallback(async (filas: RequerimientoRow[]) => {
+    const poIds = [...new Set(filas.map((r) => r.po_id).filter((x): x is number => x != null))];
+    if (poIds.length === 0) return filas;
+    const libres: RequerimientoRow[] = [];
+    for (let i = 0; i < poIds.length; i += 300) {
+      const lote = poIds.slice(i, i + 300).join(",");
+      const res = await fetch(`/api/requerimientos?limit=10000&slim=1&libres_de_po=${lote}`);
+      if (!res.ok) throw new Error("libres");
+      const j = await res.json();
+      libres.push(...((j.data ?? []) as RequerimientoRow[]));
+    }
+    // Solo los imputados a una OT que ya está en el Excel: una OC compartida
+    // puede tener ítems libres de otra OT (que no se está exportando).
+    const otDe = (r: RequerimientoRow) => r.ot_id != null ? `E${r.ot_id}` : `I${r.orden_trabajo_interna?.id ?? ""}`;
+    const otsExportadas = new Set(filas.map(otDe));
+    const vivos = libres.filter((r) => r.status_requerimiento_codigo !== "ANULADO"
+      && r.status_requerimiento_codigo !== "DESAPROBADO"
+      && otsExportadas.has(otDe(r)));
+    if (vivos.length > 0) messageApi.info(`Se agregaron ${vivos.length} ítem(s) libre(s) de OC al Excel (marcados "Libre de OC").`);
+    return [...filas, ...vivos.map((r) => ({ ...r, solo_para_oc: true }))];
+  }, [messageApi]);
+
   // Detalle de cada item (la tabla lo muestra al entrar al requerimiento).
   // Cantidad, precio y moneda son los de la OC si los modificó: coherentes con
   // la pestaña Costos de la OT. Se agregan al final del Excel.
@@ -1514,6 +1545,7 @@ export default function RequerimientosPage() {
             // En "Por ítem" se exporta lo que se ve en ESA vista (la reporta
             // el embebido); en "Por requerimiento", los ítems de los grupos visibles.
             currentRows={vistaModo === "items" ? filasVistaItems : itemsVisibles}
+            completarFilas={completarFilasExcel}
             // v3: el Excel sale de las columnas de la tabla (misma lista, orden
             // y ocultas) + el detalle de cada item al final.
             // v4: Subtotal se reemplazó por Costo pedido / Costo OC en USD y SOL

@@ -23,12 +23,21 @@ export async function GET(req: NextRequest) {
     const sp = req.nextUrl.searchParams;
     const page = Math.max(1, Number(sp.get("page") ?? 1));
     const limit = Math.min(10000, Math.max(1, Number(sp.get("limit") ?? 100)));
+    const librePoIdsRaw = sp.get("libres_de_po");
+    const librePoIds = librePoIdsRaw
+      ? librePoIdsRaw.split(",").map((x) => Number(x)).filter((n) => Number.isInteger(n) && n > 0)
+      : null;
 
     const where: Record<string, unknown> = {
       // Excluir items "libres" agregados desde el editor de OC — esos
       // solo deben figurar en el PDF/editor de la OC, no como reqs.
       // Usamos AND para no chocar con el OR de search/ot que se setea abajo.
-      AND: [{ OR: [{ solo_para_oc: false }, { solo_para_oc: null }] }],
+      // libres_de_po=1,2,3: SOLO los ítems libres (agregados en el editor de OC)
+      // de esas OCs. Lo usa el Excel de /requerimientos para que el total
+      // cuadre con la pestaña Costos de la OT. Sin el param, se excluyen.
+      AND: [librePoIds
+        ? { solo_para_oc: true, po_id: { in: librePoIds } }
+        : { OR: [{ solo_para_oc: false }, { solo_para_oc: null }] }],
     };
     const otId = sp.get("ot_id");
     if (otId) where.ot_id = Number(otId);
@@ -186,6 +195,8 @@ export async function GET(req: NextRequest) {
             // aunque ya estuviera comprado a otro valor.
             oc_precio_unitario: true, oc_cantidad: true,
             po_id: true, nro_oc: true, observaciones: true,
+            // Ítem libre agregado en el editor de OC (Excel: "Libre de OC").
+            solo_para_oc: true,
             // fecha_aprobacion: alimenta la columna "Días s/OC" (antigüedad de
             // aprobados sin comprar) en /requerimientos/detalle.
             usuario_aprueba: true, comentario_aprobacion: true, fecha_aprobacion: true,
