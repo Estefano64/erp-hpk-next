@@ -885,7 +885,10 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
     // Estado REQ — el override viene del tab superior de la página parent
     // (/requerimientos con vistaModo="items"). Si el parent seleccionó un
     // estado en el Segmented, prevalece sobre el Select local del embebido.
-    const estadoEfectivo = estadoOverride ?? filtroEstado;
+    // Embebido: SOLO manda la pestaña de arriba. El Select local no se muestra
+    // en ese modo, pero su valor se recuerda entre sesiones; antes se aplicaba
+    // escondido cuando la pestaña estaba en "Todos" (filas "faltantes").
+    const estadoEfectivo = embebido ? estadoOverride : (estadoOverride ?? filtroEstado);
     if (estadoEfectivo) rows = rows.filter((r) => (r.status_req ?? "SIN_APROBACION") === estadoEfectivo);
 
     // Rango de fechas
@@ -903,7 +906,7 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
     }
 
     return rows;
-  }, [allData, filtroTipoOT, filtroTipoMat, filtroOt, filtroNroReq, filtroRapido, filtroEstado, estadoOverride, search, rangoSol, rangoReq]);
+  }, [allData, filtroTipoOT, filtroTipoMat, filtroOt, filtroNroReq, filtroRapido, filtroEstado, estadoOverride, embebido, search, rangoSol, rangoReq]);
 
   const otOptions = useMemo(() => {
     const map = new Map<number, string>();
@@ -3242,6 +3245,11 @@ function RequerimientosDetalleInner({ embebido = false, estadoOverride }: { embe
             pageSize,
             total: filteredData.length,
             onChange: (p, s) => { setPage(p); setPageSize(s); },
+            // El filtro rápido se recuerda entre sesiones: decirlo junto al
+            // conteo (caso OI003126: "360 registros" eran solo los ítems con OC).
+            label: filtroRapido !== "todos"
+              ? `registros · filtro rápido: ${({ listos_oc: "Listos para OC", en_oc: "En OC", almacen: "Almacén", aprobados_viejos: "Aprobados sin OC +15 días" } as Record<string, string>)[filtroRapido] ?? filtroRapido}`
+              : "registros",
           })}
           scroll={{ x: 2150 }}
           sticky={{ offsetHeader: 56, offsetScroll: 0 }}
