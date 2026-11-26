@@ -1769,7 +1769,7 @@ export default function OTRequerimientosTab({
             <Space size={4}>
               {/* Carga masiva: el formato tiene las columnas de este formulario. */}
               <Tooltip title="Descargar el formato Excel para cargar varios items">
-                <Button size="small" icon={<DownloadOutlined />} onClick={() => { void descargarFormatoRequerimiento(unidades); }}>
+                <Button size="small" icon={<DownloadOutlined />} onClick={() => { void descargarFormatoRequerimiento(unidades, fabricantesCat); }}>
                   Formato Excel
                 </Button>
               </Tooltip>

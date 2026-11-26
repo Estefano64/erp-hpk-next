@@ -56,39 +56,90 @@ const norm = (s: unknown) => String(s ?? "")
 
 export const MAX_ITEMS_REQ = 100;
 
-/** Descarga el formato vacío (con ejemplos e instrucciones). */
-export async function descargarFormatoRequerimiento(unidades: UnidadRef[]): Promise<void> {
-  const XLSX = await import("xlsx");
-  const wb = XLSX.utils.book_new();
-  const ejemplos = [
-    ["MAC", "(código del catálogo)", "", "", 2, "", "", "", "", "Si es MAC, la descripción, marca, U.M. y precio salen del catálogo"],
-    ["CAD", "", "Manguera hidráulica 1/2\" x 2 m", "PARKER", 4, "UNIDAD", 35.5, "USD", "", ""],
-    ["SER", "", "SVC Cromado de vástago", "", 1, "SERVICIO", 1200, "SOL", "", "Servicio externo"],
-  ];
-  const ws = XLSX.utils.aoa_to_sheet([COLUMNAS.map((c) => c.label), ...ejemplos]);
-  ws["!cols"] = [8, 20, 40, 14, 10, 12, 12, 9, 22, 40].map((wch) => ({ wch }));
-  XLSX.utils.book_append_sheet(wb, ws, "Requerimiento");
-  const instr = XLSX.utils.aoa_to_sheet([
-    ["Cómo llenar el formato"],
-    [""],
-    ["• Una fila por item. Borrá las 3 filas de ejemplo antes de cargar."],
-    ["• Tipo: MAC (material del catálogo), CAD (material libre) o SER (servicio). Vacío = MAC si hay código, si no CAD."],
-    ["• MAC: el Código material debe existir en el catálogo. Descripción, marca, U.M. y precio se completan solos."],
-    ["• CAD / SER: Descripción, Cantidad y Precio ref. son obligatorios."],
-    ["• Si falta algo o un valor no coincide, la fila se carga igual y lo completás en el formulario antes de guardar."],
-    ["• U.M.: usar un código de la hoja \"Unidades\" (si no coincide, queda UNIDAD)."],
-    ["• Marca: opcional; código o nombre de un fabricante del catálogo (si no coincide, queda vacía)."],
-    ["• Moneda: USD o SOL (vacío = USD)."],
-    ["• F. requerida: opcional, formato dd/mm/aaaa."],
-    [`• Máximo ${MAX_ITEMS_REQ} items por requerimiento.`],
-    ["• Al cargar, los items quedan en el borrador para revisarlos; recién se crean al Guardar."],
+/**
+ * Descarga el formato vacío con listas desplegables (Tipo, Moneda, U.M., Marca),
+ * ejemplos e instrucciones. Usa exceljs (la versión libre de `xlsx` no escribe
+ * validaciones de datos); se carga solo al pulsar el botón.
+ */
+export async function descargarFormatoRequerimiento(unidades: UnidadRef[], fabricantes: FabricanteRef[] = []): Promise<void> {
+  // Build de navegador (el entry por defecto de exceljs usa fs/stream de Node).
+  const mod = await import("exceljs/dist/exceljs.min.js");
+  const ExcelJS = ((mod as { default?: unknown }).default ?? mod) as typeof import("exceljs");
+  const wb = new ExcelJS.Workbook();
+
+  const ws = wb.addWorksheet("Requerimiento", { views: [{ state: "frozen", ySplit: 1 }] });
+  const anchos = [8, 20, 40, 18, 10, 14, 12, 9, 22, 40];
+  ws.columns = COLUMNAS.map((c, i) => ({ header: c.label, width: anchos[i] }));
+  const head = ws.getRow(1);
+  head.font = { bold: true, color: { argb: "FFFFFFFF" } };
+  head.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1F3864" } };
+  head.alignment = { vertical: "middle" };
+  ws.addRows([
+    ["MAC", "(código del catálogo)", "", "", 2, "", null, "", null, "Fila de ejemplo: borrala. Si es MAC, descripción, marca, U.M. y precio salen del catálogo"],
+    ["CAD", "", "Manguera hidráulica 1/2\" x 2 m", "", 4, "UNIDAD", 35.5, "USD", null, "Fila de ejemplo: borrala"],
+    ["SER", "", "SVC Cromado de vástago", "", 1, "", 1200, "SOL", null, "Fila de ejemplo: borrala"],
   ]);
-  instr["!cols"] = [{ wch: 110 }];
-  XLSX.utils.book_append_sheet(wb, instr, "Instrucciones");
-  const um = XLSX.utils.aoa_to_sheet([["Código", "Nombre"], ...unidades.map((u) => [u.codigo, u.nombre])]);
-  um["!cols"] = [{ wch: 16 }, { wch: 30 }];
-  XLSX.utils.book_append_sheet(wb, um, "Unidades");
-  XLSX.writeFile(wb, "Formato-requerimiento.xlsx");
+  for (let r = 2; r <= 4; r++) ws.getRow(r).font = { italic: true, color: { argb: "FF808080" } };
+
+  // Hojas de listas (fuente de los desplegables de U.M. y Marca).
+  const wsUm = wb.addWorksheet("Unidades");
+  wsUm.columns = [{ header: "Código", width: 16 }, { header: "Nombre", width: 30 }];
+  wsUm.getRow(1).font = { bold: true };
+  unidades.forEach((u) => wsUm.addRow([u.codigo, u.nombre]));
+  const wsFab = wb.addWorksheet("Marcas");
+  wsFab.columns = [{ header: "Nombre", width: 30 }, { header: "Código", width: 16 }];
+  wsFab.getRow(1).font = { bold: true };
+  fabricantes.forEach((f) => wsFab.addRow([f.nombre, f.codigo]));
+
+  // Validaciones en las filas de items (2..MAX+1).
+  const lista = (formula: string, titulo: string, msg: string, estricta = true) => ({
+    type: "list" as const, allowBlank: true, formulae: [formula],
+    showErrorMessage: true, errorStyle: estricta ? "stop" as const : "warning" as const,
+    errorTitle: titulo, error: msg,
+  });
+  const colDe = (k: ColKey) => COLUMNAS.findIndex((c) => c.key === k) + 1;
+  for (let r = 2; r <= MAX_ITEMS_REQ + 1; r++) {
+    const row = ws.getRow(r);
+    row.getCell(colDe("tipo")).dataValidation = lista('"MAC,CAD,SER"', "Tipo", "Elegí MAC, CAD o SER.");
+    row.getCell(colDe("moneda")).dataValidation = lista('"USD,SOL"', "Moneda", "Elegí USD o SOL.");
+    if (unidades.length > 0) {
+      row.getCell(colDe("um")).dataValidation = lista(`Unidades!$A$2:$A$${unidades.length + 1}`, "U.M.", "Elegí una unidad de la lista (hoja Unidades).");
+    }
+    if (fabricantes.length > 0) {
+      // Advertencia (no bloquea): la marca es opcional y puede crearse luego.
+      row.getCell(colDe("marca")).dataValidation = lista(`Marcas!$A$2:$A$${fabricantes.length + 1}`, "Marca", "Esa marca no está en el catálogo (hoja Marcas). Se puede dejar vacía.", false);
+    }
+    row.getCell(colDe("cantidad")).dataValidation = { type: "decimal", operator: "greaterThan", formulae: [0], allowBlank: true, showErrorMessage: true, errorTitle: "Cantidad", error: "La cantidad debe ser mayor a 0." };
+    row.getCell(colDe("fecha")).numFmt = "dd/mm/yyyy";
+  }
+
+  const wsInstr = wb.addWorksheet("Instrucciones");
+  wsInstr.getColumn(1).width = 110;
+  [
+    "Cómo llenar el formato",
+    "",
+    "• Una fila por item. Borrá las 3 filas de ejemplo antes de cargar.",
+    "• Tipo, Moneda, U.M. y Marca tienen lista desplegable (flecha al seleccionar la celda).",
+    "• Tipo: MAC (material del catálogo), CAD (material libre) o SER (servicio). Vacío = MAC si hay código, si no CAD.",
+    "• MAC: el Código material debe existir en el catálogo. Descripción, marca, U.M. y precio se completan solos.",
+    "• CAD / SER: Descripción, Cantidad y Precio ref. son obligatorios.",
+    "• Si falta algo o un valor no coincide, la fila se carga igual y lo completás en el formulario antes de guardar.",
+    "• Marca: opcional; elegila de la lista (hoja Marcas).",
+    "• Moneda: USD o SOL (vacío = USD).",
+    "• F. requerida: opcional, formato dd/mm/aaaa.",
+    `• Máximo ${MAX_ITEMS_REQ} items por requerimiento.`,
+    "• Al cargar, los items quedan en el borrador para revisarlos; recién se crean al Guardar.",
+  ].forEach((t, i) => { const c = wsInstr.getCell(i + 1, 1); c.value = t; if (i === 0) c.font = { bold: true, size: 13 }; });
+
+  const buf = await wb.xlsx.writeBuffer();
+  const url = URL.createObjectURL(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "Formato-requerimiento.xlsx";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function aFecha(v: unknown): dayjs.Dayjs | null {
