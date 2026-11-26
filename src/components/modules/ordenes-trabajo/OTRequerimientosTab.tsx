@@ -3,15 +3,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Table, Button, Tag, Space, Modal, Form, Input, InputNumber, Select, DatePicker, AutoComplete,
-  message, Popconfirm, Tooltip, Empty, Alert, Row, Col, Typography, Radio, Card, Popover, Pagination,
+  message, Popconfirm, Tooltip, Empty, Alert, Row, Col, Typography, Radio, Card, Popover, Pagination, Upload,
 } from "antd";
 import {
   PlusOutlined, ReloadOutlined, CloseOutlined, SaveOutlined,
   EditOutlined, DeleteOutlined, FileSyncOutlined, SendOutlined,
   PaperClipOutlined, CalendarOutlined, ThunderboltOutlined,
   EyeOutlined, SortAscendingOutlined, SortDescendingOutlined, SearchOutlined, StopOutlined,
-  ExclamationCircleOutlined,
+  ExclamationCircleOutlined, DownloadOutlined, UploadOutlined,
 } from "@ant-design/icons";
+import { descargarFormatoRequerimiento, leerExcelRequerimiento, MAX_ITEMS_REQ } from "@/lib/requerimientos-excel";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { formatDateOnly } from "@/lib/dates";
@@ -558,6 +559,77 @@ export default function OTRequerimientosTab({
   function quitarItemDraft(id: string) {
     setDraftItems((prev) => prev.filter((it) => it.id !== id));
   }
+  // Carga masiva desde Excel: llena el borrador (no guarda). Las filas vacías
+  // del borrador se reemplazan; las ya cargadas a mano se conservan.
+  const [cargandoExcel, setCargandoExcel] = useState(false);
+  async function cargarExcelEnDraft(file: File) {
+    setCargandoExcel(true);
+    try {
+      const { filas, errores } = await leerExcelRequerimiento(file, { materiales, unidades, fabricantes: fabricantesCat });
+      const conDatos = draftItems.filter((it) => it.descripcion.trim() || it.material_codigo);
+      if (conDatos.length + filas.length > MAX_ITEMS_REQ) {
+        modalApi.error({
+          title: "Demasiados items",
+          content: `El Excel trae ${filas.length} item(s) y el borrador ya tiene ${conDatos.length}. El máximo por requerimiento es ${MAX_ITEMS_REQ}: dividilo en varios requerimientos.`,
+        });
+        return;
+      }
+      const nuevos: DraftItem[] = filas.map((f) => {
+        const it: DraftItem = {
+          id: crypto.randomUUID(),
+          tipo_codigo: f.tipo_codigo,
+          material_codigo: f.material_codigo,
+          descripcion: f.descripcion,
+          cantidad: f.cantidad,
+          unidad_medida: f.unidad_medida,
+          fabricante_codigo: f.fabricante_codigo,
+          precio_unitario: f.precio_unitario,
+          moneda: f.moneda,
+          fecha_requerida: f.fecha_requerida ?? null,
+          observaciones: f.observaciones,
+        };
+        // Igual que a mano: SER de cromado lleva las medidas de la evaluación.
+        if (medidasCromado && esServicioCromado(it.tipo_codigo, it.descripcion)) {
+          it.observaciones = observacionesConMedidas(it.observaciones, medidasCromado) ?? undefined;
+        }
+        return it;
+      });
+      if (nuevos.length > 0) setDraftItems([...conDatos, ...nuevos]);
+      // Resumen por ítem del formulario (no por fila del Excel): qué completar.
+      const base = conDatos.length;
+      const porCompletar: string[] = [];
+      const ajustes: string[] = [];
+      filas.forEach((f, i) => {
+        const etiqueta = `Ítem ${base + i + 1} (fila ${f.fila} del Excel)`;
+        if (f.pendientes.length) porCompletar.push(`${etiqueta}: completar ${f.pendientes.join(", ")}`);
+        for (const a of f.avisos) ajustes.push(`${etiqueta}: ${a}`);
+      });
+      if (errores.length > 0 && nuevos.length === 0) {
+        modalApi.error({ title: "No se pudo cargar el Excel", content: errores.join(" ") });
+        return;
+      }
+      if (porCompletar.length === 0 && ajustes.length === 0) {
+        messageApi.success(`${nuevos.length} item(s) cargado(s) en el borrador. Revisalos y guardá.`);
+      } else {
+        (porCompletar.length > 0 ? modalApi.warning : modalApi.info)({
+          title: `${nuevos.length} item(s) cargado(s) en el borrador${porCompletar.length ? ` · ${porCompletar.length} por completar antes de guardar` : ""}`,
+          width: 680,
+          content: (
+            <div style={{ maxHeight: 340, overflow: "auto", fontSize: 12 }}>
+              {porCompletar.length > 0 && <div style={{ fontWeight: 600, margin: "4px 0" }}>Completar en el formulario:</div>}
+              {porCompletar.map((t) => <div key={t}>• {t}</div>)}
+              {ajustes.length > 0 && <div style={{ fontWeight: 600, margin: "8px 0 4px" }}>Valores ajustados (revisar):</div>}
+              {ajustes.map((t) => <div key={t}>• {t}</div>)}
+            </div>
+          ),
+        });
+      }
+    } catch {
+      messageApi.error("No se pudo leer el archivo. Usá el formato descargado (.xlsx).");
+    } finally {
+      setCargandoExcel(false);
+    }
+  }
   function actualizarDraftItem(id: string, patch: Partial<DraftItem>) {
     setDraftItems((prev) => prev.map((it) => {
       if (it.id !== id) return it;
@@ -751,6 +823,10 @@ export default function OTRequerimientosTab({
   const servicios = sersRes?.data ?? [];
   const umsRes = useCachedFetch<Wrapped<{ codigo: string; nombre: string; abreviatura?: string }>>("/api/catalogos?tabla=unidadMedida");
   const unidades = umsRes?.data ?? [];
+  // Fabricantes (misma URL que FabricanteSelect → comparte caché): la carga por
+  // Excel hace coincidir la Marca con el catálogo.
+  const fabsRes = useCachedFetch<Wrapped<{ codigo: string; nombre: string }>>("/api/catalogos?tabla=fabricante");
+  const fabricantesCat = fabsRes?.data ?? [];
 
   // ── Edición masiva de items del BORRADOR (al crear un nuevo requerimiento) ──
   const [draftSelected, setDraftSelected] = useState<string[]>([]);
@@ -1690,7 +1766,24 @@ export default function OTRequerimientosTab({
             </Space>
           }
           extra={
-            <Button size="small" type="text" icon={<CloseOutlined />} onClick={cerrarDraft} aria-label="Cerrar" />
+            <Space size={4}>
+              {/* Carga masiva: el formato tiene las columnas de este formulario. */}
+              <Tooltip title="Descargar el formato Excel para cargar varios items">
+                <Button size="small" icon={<DownloadOutlined />} onClick={() => { void descargarFormatoRequerimiento(unidades); }}>
+                  Formato Excel
+                </Button>
+              </Tooltip>
+              <Upload
+                accept=".xlsx,.xls"
+                showUploadList={false}
+                beforeUpload={(file) => { void cargarExcelEnDraft(file as File); return false; }}
+              >
+                <Tooltip title="Cargar los items desde el formato Excel (quedan en el borrador para revisar)">
+                  <Button size="small" icon={<UploadOutlined />} loading={cargandoExcel}>Cargar Excel</Button>
+                </Tooltip>
+              </Upload>
+              <Button size="small" type="text" icon={<CloseOutlined />} onClick={cerrarDraft} aria-label="Cerrar" />
+            </Space>
           }
         >
           {/* Edición masiva: marcá varios items y asignales U.M., Tipo, precio y/o moneda de una. */}
