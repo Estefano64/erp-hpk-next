@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  Button, Card, Col, DatePicker, Drawer, Empty, Input, InputNumber, Popconfirm, Progress, Row, Select, Space, Table, Tag, Tooltip, Typography, message,
+  Alert, Button, Card, Col, DatePicker, Drawer, Empty, Input, InputNumber, Popconfirm, Progress, Row, Select, Space, Table, Tag, Tooltip, Typography, message,
 } from "antd";
 import {
   PlusOutlined, UnorderedListOutlined, EditOutlined, DeleteOutlined, CloseOutlined,
@@ -727,7 +727,11 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
       onFilter: (value, r) => (r.estado ?? "abierto") === value,
       render: (v: string | null) => {
         const cat = estadosCat.find((e) => e.codigo === (v ?? "abierto"));
-        return <Tag color={cat?.color ?? "default"}>{cat?.nombre ?? v ?? "-"}</Tag>;
+        const tag = <Tag color={cat?.color ?? "default"}>{cat?.nombre ?? v ?? "-"}</Tag>;
+        // Una cancelada no sale en Gantt / dashboard / Planificación.
+        return v === "cancelado"
+          ? <Tooltip title="Cancelada: no aparece en Gantt, dashboard ni Planificación. Si le ponés fecha u operario se reactiva sola.">{tag}</Tooltip>
+          : tag;
       },
     },
     {
@@ -990,6 +994,9 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
           pagination={false}
           size="small"
           loading={loading}
+          // Canceladas atenuadas: se veían igual que las activas y se
+          // programaban sin notar que estaban canceladas (no aparecían en el Gantt).
+          onRow={(r) => (r.estado === "cancelado" ? { style: { opacity: 0.5 } } : {})}
           scroll={{ x: 1800 }}
           sticky={{ offsetHeader: 56, offsetScroll: 0 }}
           locale={{ emptyText: <Empty description="Sin tareas. Agregalas con el botón 'Nueva Tarea'." /> }}
@@ -1021,8 +1028,17 @@ export default function OTTareasTab({ otId, codRepCodigo }: Props) {
         {edit && (() => {
           const opsFila = opsParaParteTipo(edit.parte, edit.tipo_tarea);
           const libre = editUsaTextoLibre(edit);
+          const editCancelada = rows.find((x) => x.id === edit.id)?.estado === "cancelado";
           return (
             <Space direction="vertical" size={14} style={{ width: "100%" }}>
+              {editCancelada && (
+                <Alert
+                  type="warning"
+                  showIcon
+                  title="Esta tarea está cancelada"
+                  description="No aparece en Gantt, dashboard ni Planificación. Si le ponés inicio estimado u operario y guardás, se reactiva."
+                />
+              )}
               <div>
                 <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>Parte *</div>
                 <Select showSearch optionFilterProp="label"

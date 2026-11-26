@@ -299,7 +299,22 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
       }
 
       // ── 7) Auto-transiciones de estado ──
-      const estadoActual = current.estado ?? "abierto";
+      // 7·0) Programar una tarea CANCELADA la reactiva: si recibe fecha u
+      // operario/máquina sin que se pida un estado, vuelve a "abierto" (y 7b la
+      // pasa a "programado" si tiene fecha + recurso). Antes seguía cancelada y
+      // no aparecía en Gantt / dashboard / Planificación (11 tareas tras la
+      // limpieza del 20/11, programadas por el planner desde el detalle de OT).
+      // Solo cuenta si CAMBIA (el form de edición reenvía el operario siempre:
+      // editar solo el comentario de una cancelada no debe reactivarla).
+      const nuevoTexto = (v: unknown, actual: string | null) =>
+        typeof v === "string" && v.trim() !== "" && v.trim() !== (actual ?? "").trim();
+      const asignaRecurso = nuevoTexto(data.tecnico, current.tecnico) || nuevoTexto(data.maquina, current.maquina);
+      const cambiaFecha = data.fecha_inicio instanceof Date
+        && (!current.fecha_inicio || current.fecha_inicio.getTime() !== (data.fecha_inicio as Date).getTime());
+      const reactiva = current.estado === "cancelado" && input.estado === undefined
+        && (cambiaFecha || asignaRecurso);
+      const estadoOriginal = current.estado ?? "abierto";
+      const estadoActual = reactiva ? "abierto" : estadoOriginal;
       const estadoEnviado = input.estado;
       let estadoFinal = estadoEnviado ?? estadoActual;
 
@@ -325,7 +340,9 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
         estadoFinal = "abierto";
       }
 
-      if (estadoFinal !== estadoActual) {
+      // Se compara contra el estado ORIGINAL: una cancelada reactivada que queda
+      // "abierto" (sin fecha + recurso) también debe guardar el cambio.
+      if (estadoFinal !== estadoOriginal) {
         data.estado = estadoFinal;
       }
 
